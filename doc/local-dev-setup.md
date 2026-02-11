@@ -12,6 +12,12 @@
 - n8n 本地容器启动
 - 企业微信小程序目录与依赖
 
+## Phase 0 完成状态
+
+- 已完成：脚手架、D1/KV/R2、数据库初始化、中间件骨架、开发环境验证。
+- 阻塞项：Cloudflare Queue 远端创建（`wrangler queues create` 返回 `settings invalid`）。
+- 当前处理：已在 `wrangler.toml` 配置本地队列绑定用于开发联调。
+
 ## 目录
 
 - `packages/api`

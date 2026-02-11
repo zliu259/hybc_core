@@ -33,13 +33,17 @@
 ## Build, Lint, Test, Typecheck Commands
 
 ### Important Status
-- Commands below are documented in planning docs.
-- They are not runnable in the current workspace until the planned directories/files exist.
+- Commands below are now runnable for scaffolded modules.
+- Cloudflare Queue remote creation is currently blocked by account-side settings; local queue binding is available.
 
 ### Backend (`packages/api`) - documented
 - Dev: `npm run dev`
 - Deploy: `npm run deploy`
 - DB migration apply: `npx wrangler d1 migrations apply hengyue-db`
+- Local migration apply: `npm run db:migrate:local`
+- Lint: `npm run lint`
+- Format check: `npm run format`
+- Typecheck: `npm run typecheck`
 
 ### Web (`packages/web`) - documented
 - Dev: `npm run dev`
@@ -54,8 +58,9 @@
 - Start services: `docker-compose up -d`
 
 ### Lint/Test/Typecheck
-- No explicit lint/test/typecheck scripts are committed yet in this workspace.
-- `doc/开发计划.md` indicates ESLint + Prettier setup is planned (Phase 0), not present yet.
+- API lint/format/typecheck scripts are available in `packages/api/package.json`.
+- Web project contains its own lint/typecheck scripts in `packages/web/package.json`.
+- Unified test framework wiring is still pending for API/Web in current scaffold.
 
 ### Single-test execution guidance (when project is scaffolded)
 - API (Node/TS, common pattern):

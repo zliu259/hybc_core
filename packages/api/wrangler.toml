@@ -1,17 +1,32 @@
 name = "hybc-api"
 main = "src/index.ts"
 compatibility_date = "2026-02-11"
+account_id = "78939a17148c390144ef58e10a619393"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "hybc-local"
-database_id = "local-hybc-db"
+database_name = "hengyue-db"
+database_id = "89a0a8b0-802e-4cd4-a7b4-eb8d53c1cbfb"
 migrations_dir = "migrations"
+
+[[d1_databases]]
+binding = "LEGACY_DB"
+database_name = "hengyue-legacy-db"
+database_id = "d381d8f1-2d13-4665-91c9-84eacb36c906"
 
 [[r2_buckets]]
 binding = "FILES"
-bucket_name = "hybc-files-local"
-preview_bucket_name = "hybc-files-local-preview"
+bucket_name = "hengyue-files"
+preview_bucket_name = "hengyue-files"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "c8525e899f3e4be4a86c2ad8b50ae78a"
+preview_id = "432add25406d46039c8b24ae5d4fe43d"
+
+[[queues.producers]]
+binding = "EVENT_QUEUE"
+queue = "hengyue-events"
 
 [vars]
 APP_ENV = "local"
