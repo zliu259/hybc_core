@@ -1,15 +1,21 @@
 # AGENTS.md
 
 ## Repository Reality Check
-- Current workspace is documentation-only: no `packages/`, no `task-runner/`, no runnable source tree yet.
+- Current workspace now has a runnable scaffold: `packages/api`, `packages/web`, `packages/miniapp`, `task-runner`, `n8n`.
 - Source-of-truth files found:
   - `doc/CLAUDE.md`
   - `doc/开发计划.md`
   - `doc/background_inv.md`
-- No existing `AGENTS.md` at repo root before this file.
 - No Cursor rules found in `.cursor/rules/`.
 - No `.cursorrules` file found.
 - No Copilot instructions found in `.github/copilot-instructions.md`.
+
+## Documentation Rules (Mandatory)
+- Use `doc/README.md` as the document index and entry point.
+- Keep all development logs in a single file: `doc/开发记录.md`.
+- Never create additional dated dev-log files; always append a new timestamp section to `doc/开发记录.md`.
+- Timestamp section format: `## YYYY-MM-DD HH:mm (TZ)`.
+- UI changes must update page-level mapping in `doc/UI设计文档.md` with concrete file-path pointers.
 
 ## How To Use This File
 - Treat this as operational guidance for agentic coding in this repo.
@@ -153,6 +159,9 @@
   - currently executable behavior
 
 ## Quick Source References
+- Document index and maintenance rules: `doc/README.md`
+- Single-file development log: `doc/开发记录.md`
+- Page-level UI specification: `doc/UI设计文档.md`
 - Architecture and conventions: `doc/CLAUDE.md`
 - Development phases and testing expectations: `doc/开发计划.md`
 - Business field/naming context: `doc/background_inv.md`

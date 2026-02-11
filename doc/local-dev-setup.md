@@ -20,6 +20,12 @@
 - `n8n`
 - `packages/miniapp`
 
+## 文档指向
+
+- 文档总索引：`doc/README.md`
+- 统一开发记录：`doc/开发记录.md`
+- 页面级 UI 设计：`doc/UI设计文档.md`
+
 ## 运行前准备
 
 1. 安装 Node.js 20+

@@ -8,3 +8,4 @@ Monorepo scaffold for:
 - `n8n`: Local workflow automation container
 
 See `doc/local-dev-setup.md` for setup and run steps.
+See `doc/README.md` for index of this project
