@@ -30,3 +30,5 @@ queue = "hengyue-events"
 
 [vars]
 APP_ENV = "local"
+JWT_SECRET = "local-dev-jwt-secret"
+UPLOAD_SIGNING_SECRET = "local-dev-upload-signing-secret"

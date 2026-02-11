@@ -34,7 +34,10 @@
 
 ### 3.1 页面总索引（必须有明确文件指向）
 - 仪表盘：`packages/web/src/views/dashboard/index.vue`
+- 实体管理：`packages/web/src/views/entity/index.vue`
+- 数据字典管理：`packages/web/src/views/dict/index.vue`
 - 项目列表：`packages/web/src/views/project/list.vue`
+- 项目立项：`packages/web/src/views/project/create.vue`
 - 项目详情：`packages/web/src/views/project/detail.vue`
 - 对外付款申请列表：`packages/web/src/views/finance/payment/list.vue`
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`

@@ -5,4 +5,10 @@ export interface Env {
   FILES: R2Bucket;
   EVENT_QUEUE: Queue;
   APP_ENV: string;
+  JWT_SECRET: string;
+  UPLOAD_SIGNING_SECRET: string;
+  WECHAT_CORPID?: string;
+  WECHAT_SECRET?: string;
+  WECHAT_AGENT_ID?: string;
+  WECHAT_REDIRECT_URI?: string;
 }
