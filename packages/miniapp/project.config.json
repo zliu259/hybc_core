@@ -1,0 +1,14 @@
+{
+  "description": "HYBC WeCom Mini Program",
+  "miniprogramRoot": "./",
+  "compileType": "miniprogram",
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": false
+  },
+  "appid": "touristappid",
+  "projectname": "hybc-miniapp"
+}

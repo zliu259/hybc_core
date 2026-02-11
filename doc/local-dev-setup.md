@@ -7,9 +7,10 @@
 - Cloudflare Worker 本地运行
 - D1 本地数据库绑定
 - R2 本地对象存储绑定
-- Vue 3 前端本地调试
+- PureAdmin Thin 前端本地调试
 - Python task-runner 轮询联调
 - n8n 本地容器启动
+- 企业微信小程序目录与依赖
 
 ## 目录
 
@@ -17,6 +18,7 @@
 - `packages/web`
 - `task-runner`
 - `n8n`
+- `packages/miniapp`
 
 ## 运行前准备
 
@@ -38,7 +40,11 @@ npm run dev
 - `GET /api/v1/system/health`
 - `GET /api/v1/system/storage-check`
 
-## Web（Vue 3 + Vite）
+## Web（PureAdmin Thin）
+
+前端代码已通过下列仓库克隆初始化：
+
+- `https://github.com/pure-admin/pure-admin-thin.git`
 
 ```bash
 cd packages/web
@@ -47,6 +53,20 @@ npm run dev
 ```
 
 默认地址：`http://localhost:5173`
+
+## 企业微信小程序（目录 + 依赖）
+
+```bash
+cd packages/miniapp
+npm install
+```
+
+当前已创建：
+
+- 原生小程序基础目录
+- `miniprogram-api-typings`
+- `weui-miniprogram`
+- TypeScript 校验配置
 
 ## Task Runner（Python）
 
