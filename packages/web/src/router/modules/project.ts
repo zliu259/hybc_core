@@ -1,0 +1,43 @@
+const Layout = () => import("@/layout/index.vue");
+
+export default {
+  path: "/project",
+  name: "Project",
+  component: Layout,
+  redirect: "/project/list",
+  meta: {
+    icon: "ep:briefcase",
+    title: "项目管理",
+    rank: 13
+  },
+  children: [
+    {
+      path: "/project/list",
+      name: "ProjectList",
+      component: () => import("@/views/project/list.vue"),
+      meta: {
+        title: "项目列表",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/project/create",
+      name: "ProjectCreate",
+      component: () => import("@/views/project/create.vue"),
+      meta: {
+        title: "项目立项",
+        roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
+      path: "/project/detail/:id",
+      name: "ProjectDetail",
+      component: () => import("@/views/project/detail.vue"),
+      meta: {
+        title: "项目详情",
+        showLink: false,
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    }
+  ]
+} satisfies RouteConfigsTable;

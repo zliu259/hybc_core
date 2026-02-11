@@ -39,6 +39,7 @@
 - 项目列表：`packages/web/src/views/project/list.vue`
 - 项目立项：`packages/web/src/views/project/create.vue`
 - 项目详情：`packages/web/src/views/project/detail.vue`
+- 企业微信通讯录：`packages/web/src/views/wecom/contacts.vue`
 - 对外付款申请列表：`packages/web/src/views/finance/payment/list.vue`
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`
 - 报销批次列表：`packages/web/src/views/finance/reimbursement/list.vue`

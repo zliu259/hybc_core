@@ -76,6 +76,18 @@ export const useUserStore = defineStore("pure-user", {
           });
       });
     },
+    async loginByWeComCode(code: string) {
+      return new Promise<UserResult>((resolve, reject) => {
+        getLogin({ code })
+          .then(data => {
+            if (data?.success) setToken(data.data);
+            resolve(data);
+          })
+          .catch(error => {
+            reject(error);
+          });
+      });
+    },
     /** 前端登出（不调用接口） */
     logOut() {
       this.username = "";
