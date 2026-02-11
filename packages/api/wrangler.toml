@@ -1,0 +1,17 @@
+name = "hybc-api"
+main = "src/index.ts"
+compatibility_date = "2026-02-11"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "hybc-local"
+database_id = "local-hybc-db"
+migrations_dir = "migrations"
+
+[[r2_buckets]]
+binding = "FILES"
+bucket_name = "hybc-files-local"
+preview_bucket_name = "hybc-files-local-preview"
+
+[vars]
+APP_ENV = "local"

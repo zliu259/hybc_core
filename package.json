@@ -1,0 +1,15 @@
+{
+  "name": "hybc-core",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Hengyue Baichuan monorepo scaffold",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:api": "npm run dev -w @hybc/api",
+    "dev:web": "npm run dev -w @hybc/web",
+    "build:web": "npm run build -w @hybc/web",
+    "typecheck": "npm run typecheck -w @hybc/api && npm run typecheck -w @hybc/web"
+  }
+}

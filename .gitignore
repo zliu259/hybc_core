@@ -1,0 +1,21 @@
+# Node
+node_modules/
+dist/
+.npm/
+
+# Python
+__pycache__/
+.pytest_cache/
+.venv/
+
+# Cloudflare local state
+.wrangler/
+
+# Env files
+.env
+.env.local
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/

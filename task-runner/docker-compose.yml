@@ -1,0 +1,7 @@
+services:
+  task-runner:
+    build: .
+    container_name: hybc-task-runner
+    environment:
+      - API_BASE_URL=http://host.docker.internal:8787
+      - POLL_INTERVAL_SECONDS=5
