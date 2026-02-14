@@ -46,6 +46,10 @@
 - 收款登记列表：`packages/web/src/views/finance/receipt/list.vue`
 - 审批中心：`packages/web/src/views/approval/index.vue`
 - 审批详情：`packages/web/src/views/approval/detail.vue`
+- 审批模板配置：`packages/web/src/views/approval/template-config.vue`
+- 金额阈值配置：`packages/web/src/views/approval/threshold-config.vue`
+- AI配置管理：`packages/web/src/views/ai/config.vue`
+- 计算节点监控：`packages/web/src/views/ai/nodes.vue`
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 仓库库存：`packages/web/src/views/warehouse/index.vue`
 - 系统配置：`packages/web/src/views/admin/system.vue`
@@ -107,6 +111,31 @@
 - 中区：流程图 + 历史操作。
 - 下区：动作区（通过/拒绝/退回/转签/撤回）。
 - API 指向：`/api/v1/approval/:id/*`
+
+#### I-2. 审批模板配置 `views/approval/template-config.vue`
+- 模板列表表格：模板编码、名称、业务类型、状态、操作（编辑/预览/删除）。
+- 创建/编辑弹窗：基本信息 + ApprovalFlowDesigner 可视化编辑器。
+- 预览弹窗：只读模式 ApprovalFlowDesigner。
+- API 指向：`/api/v1/admin/approval-config`
+
+#### I-3. 金额阈值配置 `views/approval/threshold-config.vue`
+- 顶部模板选择器。
+- 阈值表格：条件字段、运算符、阈值、目标分支、优先级。
+- 创建/编辑弹窗：between运算符时显示双值输入。
+- API 指向：`/api/v1/admin/threshold`
+
+#### I-4. AI配置管理 `views/ai/config.vue`
+- 3标签页：AI供应商 / 路由规则 / 提示词模板。
+- 供应商Tab：CRUD表格（key、名称、endpoint、模型、优先级、并发）。
+- 路由规则Tab：CRUD表格（规则名、业务类型、任务类型、供应商、优先级）。
+- 提示词Tab：CRUD表格（key、名称、版本）+ 编辑弹窗含system/user prompt大文本区。
+- API 指向：`/api/v1/admin/ai-provider`, `/api/v1/admin/ai-routing`, `/api/v1/admin/ai-prompt`
+
+#### I-5. 计算节点监控 `views/ai/nodes.vue`
+- 节点列表卡片：节点ID、名称、类型、状态（颜色标签）、能力、CPU/内存、最后心跳（相对时间）。
+- 30秒自动刷新。
+- 任务队列卡片：筛选（状态/任务类型）+ 表格 + 分页。
+- API 指向：`/api/v1/task/nodes`, `/api/v1/task/queue`
 
 #### J. 资产台账 `views/asset/list.vue`
 - 列：资产码、类型、状态、所在项目、责任人、更新时间。

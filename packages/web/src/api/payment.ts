@@ -1,0 +1,191 @@
+import { http } from "@/utils/http";
+
+export type PaymentRequest = {
+  id: number;
+  serial_no: string;
+  contract_id: number;
+  project_id: number;
+  applicant_userid: string;
+  expected_payment_date: string;
+  category: string;
+  payee_id: number;
+  amount: number;
+  amount_cn: string;
+  content: string;
+  payment_method: string;
+  status: string;
+  approval_instance_id: number | null;
+  ai_risk_status: string;
+  ai_risk_result: string | null;
+  attachments_json: string | null;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type PaymentRequestDetail = PaymentRequest & {
+  contract: {
+    contract_no: string;
+    counterparty: string;
+    total_amount: number;
+    paid_amount: number;
+  } | null;
+  payee: {
+    name: string;
+    bank_name: string;
+    bank_account: string;
+  } | null;
+};
+
+export type Payee = {
+  id: number;
+  name: string;
+  bank_name: string;
+  bank_account: string;
+  phone: string | null;
+  type: "internal" | "external";
+  status: string;
+  created_by_userid: string;
+  created_at: string;
+  updated_at: string;
+};
+
+type Pagination = { page: number; pageSize: number; total: number };
+
+export const listPaymentRequests = (params?: {
+  contract_id?: number;
+  project_id?: number;
+  status?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: PaymentRequest[];
+    pagination: Pagination;
+  }>("get", "/api/v1/payment", { params });
+};
+
+export const getPaymentRequest = (id: number) => {
+  return http.request<{ success: boolean; data: PaymentRequestDetail }>(
+    "get",
+    `/api/v1/payment/${id}`
+  );
+};
+
+export const createPaymentRequest = (data: {
+  contract_id: number;
+  project_id: number;
+  expected_payment_date: string;
+  category: string;
+  payee_id: number;
+  amount: number;
+  content: string;
+  payment_method: string;
+  attachments_json?: string;
+  remark?: string;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: { id: number; serial_no: string; amount_cn: string };
+  }>("post", "/api/v1/payment", { data });
+};
+
+export const updatePaymentRequest = (
+  id: number,
+  data: {
+    expected_payment_date?: string;
+    category?: string;
+    payee_id?: number;
+    amount?: number;
+    content?: string;
+    payment_method?: string;
+    attachments_json?: string;
+    remark?: string;
+    status?: string;
+  }
+) => {
+  return http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/payment/${id}`,
+    { data }
+  );
+};
+
+export const markPaymentPaid = (id: number) => {
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/payment/${id}/mark-paid`
+  );
+};
+
+export const triggerRiskAssessment = (id: number) => {
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/payment/${id}/trigger-risk-assessment`
+  );
+};
+
+export const getRiskReport = (id: number) => {
+  return http.request<{
+    success: boolean;
+    data: { status: string; result: Record<string, unknown> | null };
+  }>("get", `/api/v1/payment/${id}/risk-report`);
+};
+
+export const listPayees = (params?: {
+  type?: string;
+  keyword?: string;
+}) => {
+  return http.request<{ success: boolean; data: Payee[] }>(
+    "get",
+    "/api/v1/payment/payee/list",
+    { params }
+  );
+};
+
+export const getPayee = (id: number) => {
+  return http.request<{ success: boolean; data: Payee }>(
+    "get",
+    `/api/v1/payment/payee/${id}`
+  );
+};
+
+export const createPayee = (data: {
+  name: string;
+  bank_name: string;
+  bank_account: string;
+  phone?: string;
+  type: "internal" | "external";
+}) => {
+  return http.request<{ success: boolean; data: { id: number } }>(
+    "post",
+    "/api/v1/payment/payee",
+    { data }
+  );
+};
+
+export const updatePayee = (
+  id: number,
+  data: {
+    name?: string;
+    bank_name?: string;
+    bank_account?: string;
+    phone?: string;
+    type?: "internal" | "external";
+  }
+) => {
+  return http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/payment/payee/${id}`,
+    { data }
+  );
+};
+
+export const deletePayee = (id: number) => {
+  return http.request<{ success: boolean }>(
+    "delete",
+    `/api/v1/payment/payee/${id}`
+  );
+};

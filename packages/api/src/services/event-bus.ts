@@ -14,7 +14,11 @@ export const domainEventTypes = [
   "TASK_CREATED",
   "TASK_ASSIGNED",
   "TASK_COMPLETED",
-  "TASK_FAILED"
+  "TASK_FAILED",
+  "CONTRACT_CREATED",
+  "CONTRACT_UPDATED",
+  "PAYMENT_REQUEST_CREATED",
+  "PAYMENT_COMPLETED"
 ] as const;
 
 export type DomainEventType = (typeof domainEventTypes)[number];
