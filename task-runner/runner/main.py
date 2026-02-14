@@ -1,29 +1,98 @@
 from __future__ import annotations
 
+import logging
 import os
+import signal
+import sys
 import time
 
-import requests
+from runner.config import Settings
+from runner.executor import TaskExecutor
+from runner.heartbeat import HeartbeatReporter
+from runner.poller import TaskPoller
+from runner.providers.claude import ClaudeProvider
+from runner.providers.local_rules import LocalRulesProvider
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S",
+)
+logger = logging.getLogger("task-runner")
 
 
-POLL_INTERVAL_SECONDS = float(os.getenv("POLL_INTERVAL_SECONDS", "5"))
-API_BASE_URL = os.getenv("API_BASE_URL", "http://127.0.0.1:8787")
+def build_executor() -> TaskExecutor:
+    """Build TaskExecutor with configured providers."""
+    providers = []
 
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
+    if anthropic_key:
+        model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
+        providers.append(ClaudeProvider(api_key=anthropic_key, model=model))
+        logger.info("Claude provider enabled (model=%s)", model)
+    else:
+        logger.warning("ANTHROPIC_API_KEY not set — Claude provider disabled")
 
-def poll_once() -> None:
-    endpoint = f"{API_BASE_URL}/api/v1/system/health"
-    response = requests.get(endpoint, timeout=10)
-    response.raise_for_status()
+    providers.append(LocalRulesProvider())
+    logger.info("LocalRules provider enabled")
+
+    return TaskExecutor(providers)
 
 
 def main() -> None:
-    while True:
-        try:
-            poll_once()
-            print("task-runner heartbeat ok")
-        except Exception as exc:
-            print(f"task-runner heartbeat failed: {exc}")
-        time.sleep(POLL_INTERVAL_SECONDS)
+    settings = Settings.from_env()
+    logger.info(
+        "Starting task-runner node_id=%s name=%s",
+        settings.node_id,
+        settings.node_name,
+    )
+
+    poller = TaskPoller(settings)
+    executor = build_executor()
+    heartbeat = HeartbeatReporter(settings, poller.client)
+
+    # Register node on startup
+    poller.register_node()
+    heartbeat.start()
+
+    # Graceful shutdown
+    running = True
+
+    def shutdown(signum: int, frame: object) -> None:
+        nonlocal running
+        logger.info("Received signal %d, shutting down...", signum)
+        running = False
+
+    signal.signal(signal.SIGTERM, shutdown)
+    signal.signal(signal.SIGINT, shutdown)
+
+    # Main poll loop
+    logger.info(
+        "Polling every %.1fs for tasks: %s",
+        settings.poll_interval_seconds,
+        ", ".join(settings.capabilities),
+    )
+
+    while running:
+        task = poller.poll()
+        if task:
+            task_id = task.get("id")
+            task_type = task.get("task_type", "unknown")
+            logger.info("Executing task %s (type=%s)", task_id, task_type)
+            try:
+                result = executor.execute(task)
+                if task_id is not None:
+                    poller.submit_result(task_id, result)
+            except Exception as exc:
+                logger.error("Task %s failed: %s", task_id, exc)
+                if task_id is not None:
+                    poller.submit_error(task_id, str(exc))
+        else:
+            time.sleep(settings.poll_interval_seconds)
+
+    heartbeat.stop()
+    poller.close()
+    logger.info("Task-runner stopped.")
 
 
 if __name__ == "__main__":

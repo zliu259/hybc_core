@@ -59,3 +59,4 @@ app.route("/api/v1/admin", adminRoutes);
 app.route("/api/v1/dashboard", dashboardRoutes);
 
 export default app;
+export { default as queue } from "./queue-handler";

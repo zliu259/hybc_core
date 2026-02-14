@@ -4,4 +4,13 @@ services:
     container_name: hybc-task-runner
     environment:
       - API_BASE_URL=http://host.docker.internal:8787
-      - POLL_INTERVAL_SECONDS=5
+      - API_KEY=local-dev-task-api-key
+      - NODE_ID=
+      - NODE_NAME=local-docker-node
+      - NODE_TYPE=docker
+      - POLL_INTERVAL_SECONDS=3
+      - HEARTBEAT_INTERVAL_SECONDS=30
+      - CAPABILITIES=contract_review,risk_assessment,reimbursement_check,log_analysis
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
+    restart: unless-stopped

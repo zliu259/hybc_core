@@ -143,6 +143,7 @@
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
 - 审批轨迹：`packages/web/src/components/ApprovalTimeline/*`
+- 审批流程设计器：`packages/web/src/components/ApprovalFlowDesigner/*`
 - 金额展示：`packages/web/src/components/AmountDisplay/*`
 - 风险卡片：`packages/web/src/components/RiskCard/*`
 

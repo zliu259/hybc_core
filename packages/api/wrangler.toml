@@ -28,10 +28,16 @@ preview_id = "432add25406d46039c8b24ae5d4fe43d"
 binding = "EVENT_QUEUE"
 queue = "hengyue-events"
 
+[[queues.consumers]]
+queue = "hengyue-events"
+max_batch_size = 10
+max_retries = 3
+
 [vars]
 APP_ENV = "local"
 JWT_SECRET = "local-dev-jwt-secret"
 UPLOAD_SIGNING_SECRET = "local-dev-upload-signing-secret"
-WECHAT_CORPID = ""
-WECHAT_AGENT_ID = ""
+TASK_API_KEY = "local-dev-task-api-key"
+WECHAT_CORPID = "ww3ddef5ccb9428432"
+WECHAT_AGENT_ID = "1000014"
 WECHAT_REDIRECT_URI = ""
