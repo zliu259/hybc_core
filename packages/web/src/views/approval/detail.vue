@@ -14,6 +14,7 @@ import {
   type ApprovalDetailResponse,
   type ApprovalTask
 } from "@/api/approval";
+import { getRiskReport } from "@/api/payment";
 
 defineOptions({ name: "ApprovalDetail" });
 
@@ -75,12 +76,31 @@ const transferDialogVisible = ref(false);
 const transferToUserid = ref("");
 const transferReason = ref("");
 
+type TagType = "primary" | "success" | "warning" | "danger" | "info";
+const paymentRiskStatus = ref("none");
+const paymentRiskReport = ref<Record<string, unknown> | null>(null);
+const riskTagType: Record<string, TagType> = {
+  none: "info",
+  pending: "warning",
+  completed: "success",
+  failed: "danger"
+};
+
 const loadDetail = async () => {
   loading.value = true;
   try {
     const result = await getApprovalDetail(instanceId.value);
     detail.value = result.data;
     selectedRound.value = result.data.instance.current_round;
+
+    if (result.data.instance.biz_type === "payment_request") {
+      const rr = await getRiskReport(result.data.instance.biz_id);
+      paymentRiskStatus.value = rr.data.status;
+      paymentRiskReport.value = rr.data.result;
+    } else {
+      paymentRiskStatus.value = "none";
+      paymentRiskReport.value = null;
+    }
   } catch {
     message("加载审批详情失败", { type: "error" });
   } finally {
@@ -243,6 +263,29 @@ onMounted(loadDetail);
               <el-descriptions-item label="完成时间">{{ detail.instance.completed_at ?? "—" }}</el-descriptions-item>
               <el-descriptions-item label="摘要" :span="2">{{ detail.instance.biz_summary }}</el-descriptions-item>
             </el-descriptions>
+
+            <template v-if="detail.instance.biz_type === 'payment_request'">
+              <el-divider>付款风险评估</el-divider>
+              <div style="margin-bottom: 8px">
+                <el-tag :type="riskTagType[paymentRiskStatus] || 'info'">
+                  {{ paymentRiskStatus }}
+                </el-tag>
+              </div>
+              <el-descriptions v-if="paymentRiskReport" :column="2" border>
+                <el-descriptions-item label="风险等级">
+                  {{ paymentRiskReport.overall_risk || "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item label="风险分数">
+                  {{ paymentRiskReport.score ?? "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item label="总结" :span="2">
+                  {{ paymentRiskReport.summary || "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item label="建议" :span="2">
+                  {{ Array.isArray(paymentRiskReport.recommendations) ? paymentRiskReport.recommendations.join("；") : "-" }}
+                </el-descriptions-item>
+              </el-descriptions>
+            </template>
           </el-card>
         </el-col>
 

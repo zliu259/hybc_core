@@ -132,6 +132,16 @@ export const createAmountChange = (
   );
 };
 
+export const submitAmountChangeApproval = (
+  contractId: number,
+  changeId: number
+) => {
+  return http.request<{
+    success: boolean;
+    data: { approval_instance_id: number; instance_no: string };
+  }>("post", `/api/v1/contract/${contractId}/amount-change/${changeId}/submit-approval`);
+};
+
 export const getAiReview = (contractId: number) => {
   return http.request<{
     success: boolean;
@@ -144,4 +154,11 @@ export const triggerAiReview = (contractId: number) => {
     "post",
     `/api/v1/contract/${contractId}/trigger-review`
   );
+};
+
+export const submitContractApproval = (contractId: number) => {
+  return http.request<{
+    success: boolean;
+    data: { approval_instance_id: number; instance_no: string };
+  }>("post", `/api/v1/contract/${contractId}/submit-approval`);
 };

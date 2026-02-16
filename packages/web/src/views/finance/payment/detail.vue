@@ -7,6 +7,7 @@ import {
   getPaymentRequest,
   getRiskReport,
   markPaymentPaid,
+  submitPaymentApproval,
   triggerRiskAssessment,
   updatePaymentRequest,
   listPayees,
@@ -153,7 +154,7 @@ const onSubmitApproval = async () => {
     message("请先保存申请", { type: "warning" });
     return;
   }
-  await updatePaymentRequest(requestId.value, { status: "pending_approval" });
+  await submitPaymentApproval(requestId.value);
   message("已提交审批", { type: "success" });
   await loadDetail();
 };

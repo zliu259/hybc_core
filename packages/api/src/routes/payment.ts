@@ -16,6 +16,7 @@ import { generateSerial } from "../services/serial";
 import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
 import { createTask } from "../services/ai-slot";
+import { submitForApproval } from "../services/approval/engine";
 
 const nowIso = () => new Date().toISOString();
 
@@ -25,6 +26,119 @@ export const paymentRoutes = new Hono<{
 }>();
 
 paymentRoutes.use("*", authMiddleware);
+
+paymentRoutes.get("/payee/list", async (c) => {
+  const type = c.req.query("type");
+  const keyword = c.req.query("keyword");
+
+  let sql = "SELECT * FROM payee WHERE status = 'active'";
+  const params: string[] = [];
+
+  if (type) {
+    sql += " AND type = ?";
+    params.push(type);
+  }
+  if (keyword) {
+    sql += " AND (name LIKE ? OR bank_account LIKE ?)";
+    params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  sql += " ORDER BY id DESC";
+
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params)
+    .all<Payee>();
+
+  return c.json({ success: true, data: rows.results ?? [] });
+});
+
+paymentRoutes.get("/payee/:id", async (c) => {
+  const id = Number(c.req.param("id"));
+  const payee = await c.env.DB.prepare(
+    "SELECT * FROM payee WHERE id = ? AND status = 'active'"
+  )
+    .bind(id)
+    .first<Payee>();
+
+  if (!payee) {
+    return c.json({ success: false, error: { message: "Payee not found" } }, 404);
+  }
+  return c.json({ success: true, data: payee });
+});
+
+paymentRoutes.post(
+  "/payee",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as CreatePayeeRequest;
+    const now = nowIso();
+
+    const result = await c.env.DB.prepare(
+      `INSERT INTO payee (name, bank_name, bank_account, phone, type, status, created_by_userid, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`
+    )
+      .bind(
+        body.name,
+        body.bank_name,
+        body.bank_account,
+        body.phone ?? null,
+        body.type,
+        auth.sub,
+        now,
+        now
+      )
+      .run();
+
+    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  }
+);
+
+paymentRoutes.put(
+  "/payee/:id",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json()) as UpdatePayeeRequest;
+
+    await c.env.DB.prepare(
+      `UPDATE payee SET
+        name = COALESCE(?, name),
+        bank_name = COALESCE(?, bank_name),
+        bank_account = COALESCE(?, bank_account),
+        phone = COALESCE(?, phone),
+        type = COALESCE(?, type),
+        updated_at = ?
+        WHERE id = ?`
+    )
+      .bind(
+        body.name ?? null,
+        body.bank_name ?? null,
+        body.bank_account ?? null,
+        body.phone ?? null,
+        body.type ?? null,
+        nowIso(),
+        id
+      )
+      .run();
+
+    return c.json({ success: true });
+  }
+);
+
+paymentRoutes.delete(
+  "/payee/:id",
+  requireRoles(["super_admin", "manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    await c.env.DB.prepare(
+      "UPDATE payee SET status = 'deleted', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), id)
+      .run();
+
+    return c.json({ success: true });
+  }
+);
 
 paymentRoutes.get("/", async (c) => {
   const contractId = c.req.query("contract_id");
@@ -292,6 +406,85 @@ paymentRoutes.put(
 );
 
 paymentRoutes.post(
+  "/:id/submit-approval",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+
+    const request = await c.env.DB.prepare(
+      "SELECT * FROM payment_request WHERE id = ?"
+    )
+      .bind(id)
+      .first<PaymentRequest>();
+
+    if (!request) {
+      return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
+    }
+
+    if (request.status !== "draft") {
+      return c.json(
+        { success: false, error: { message: "Only draft requests can be submitted" } },
+        400
+      );
+    }
+
+    if (request.approval_instance_id) {
+      const existing = await c.env.DB.prepare(
+        "SELECT status FROM approval_instance WHERE id = ?"
+      )
+        .bind(request.approval_instance_id)
+        .first<{ status: string }>();
+
+      if (existing && (existing.status === "pending" || existing.status === "in_progress")) {
+        return c.json(
+          { success: false, error: { message: "Approval instance already in progress" } },
+          400
+        );
+      }
+    }
+
+    const contract = await c.env.DB.prepare(
+      "SELECT total_amount, paid_amount, entity_id FROM contract WHERE id = ?"
+    )
+      .bind(request.contract_id)
+      .first<Pick<Contract, "total_amount" | "paid_amount" | "entity_id">>();
+
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    const instance = await submitForApproval(
+      c.env,
+      {
+        biz_type: "payment_request",
+        biz_id: id,
+        biz_summary: `${request.serial_no} | ${request.content} | ${request.amount}`,
+        context: {
+          amount: request.amount,
+          project_id: request.project_id,
+          entity_id: contract.entity_id,
+          biz_type: "payment_request",
+          biz_id: id
+        }
+      },
+      auth.sub
+    );
+
+    await c.env.DB.prepare(
+      "UPDATE payment_request SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(instance.id, nowIso(), id)
+      .run();
+
+    return c.json({
+      success: true,
+      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+    });
+  }
+);
+
+paymentRoutes.post(
   "/:id/mark-paid",
   requireRoles(["super_admin", "manager"]),
   async (c) => {
@@ -421,116 +614,3 @@ paymentRoutes.get("/:id/risk-report", async (c) => {
     data: { status: pr.ai_risk_status, result: parsedResult }
   });
 });
-
-paymentRoutes.get("/payee/list", async (c) => {
-  const type = c.req.query("type");
-  const keyword = c.req.query("keyword");
-
-  let sql = "SELECT * FROM payee WHERE status = 'active'";
-  const params: string[] = [];
-
-  if (type) {
-    sql += " AND type = ?";
-    params.push(type);
-  }
-  if (keyword) {
-    sql += " AND (name LIKE ? OR bank_account LIKE ?)";
-    params.push(`%${keyword}%`, `%${keyword}%`);
-  }
-  sql += " ORDER BY id DESC";
-
-  const rows = await c.env.DB.prepare(sql)
-    .bind(...params)
-    .all<Payee>();
-
-  return c.json({ success: true, data: rows.results ?? [] });
-});
-
-paymentRoutes.get("/payee/:id", async (c) => {
-  const id = Number(c.req.param("id"));
-  const payee = await c.env.DB.prepare(
-    "SELECT * FROM payee WHERE id = ? AND status = 'active'"
-  )
-    .bind(id)
-    .first<Payee>();
-
-  if (!payee) {
-    return c.json({ success: false, error: { message: "Payee not found" } }, 404);
-  }
-  return c.json({ success: true, data: payee });
-});
-
-paymentRoutes.post(
-  "/payee",
-  requireRoles(["super_admin", "manager", "site_manager"]),
-  async (c) => {
-    const auth = c.get("auth");
-    const body = (await c.req.json()) as CreatePayeeRequest;
-    const now = nowIso();
-
-    const result = await c.env.DB.prepare(
-      `INSERT INTO payee (name, bank_name, bank_account, phone, type, status, created_by_userid, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`
-    )
-      .bind(
-        body.name,
-        body.bank_name,
-        body.bank_account,
-        body.phone ?? null,
-        body.type,
-        auth.sub,
-        now,
-        now
-      )
-      .run();
-
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
-  }
-);
-
-paymentRoutes.put(
-  "/payee/:id",
-  requireRoles(["super_admin", "manager", "site_manager"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as UpdatePayeeRequest;
-
-    await c.env.DB.prepare(
-      `UPDATE payee SET
-        name = COALESCE(?, name),
-        bank_name = COALESCE(?, bank_name),
-        bank_account = COALESCE(?, bank_account),
-        phone = COALESCE(?, phone),
-        type = COALESCE(?, type),
-        updated_at = ?
-        WHERE id = ?`
-    )
-      .bind(
-        body.name ?? null,
-        body.bank_name ?? null,
-        body.bank_account ?? null,
-        body.phone ?? null,
-        body.type ?? null,
-        nowIso(),
-        id
-      )
-      .run();
-
-    return c.json({ success: true });
-  }
-);
-
-paymentRoutes.delete(
-  "/payee/:id",
-  requireRoles(["super_admin", "manager"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare(
-      "UPDATE payee SET status = 'deleted', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), id)
-      .run();
-
-    return c.json({ success: true });
-  }
-);

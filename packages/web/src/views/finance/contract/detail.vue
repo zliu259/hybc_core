@@ -6,8 +6,11 @@ import {
   createContract,
   getAiReview,
   getContract,
+  submitAmountChangeApproval,
+  submitContractApproval,
   triggerAiReview,
   updateContract,
+  type ContractAmountChange,
   type ContractDetail
 } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
@@ -142,7 +145,7 @@ const onSubmitApproval = async () => {
     message("请先保存合同", { type: "warning" });
     return;
   }
-  await updateContract(contractId.value, { status: "pending_approval" });
+  await submitContractApproval(contractId.value);
   message("已提交审批", { type: "success" });
   await loadDetail();
 };
@@ -155,6 +158,13 @@ const onTriggerAiReview = async () => {
   await triggerAiReview(contractId.value);
   message("已触发AI审查", { type: "success" });
   await loadAiReview();
+};
+
+const onSubmitAmountChange = async (row: ContractAmountChange) => {
+  if (isCreate.value) return;
+  await submitAmountChangeApproval(contractId.value, row.id);
+  message("金额变更已提交审批", { type: "success" });
+  await loadDetail();
 };
 
 const goBack = () => {
@@ -290,6 +300,18 @@ onMounted(async () => {
       <el-table-column prop="new_amount" label="新金额" width="120" />
       <el-table-column prop="status" label="状态" width="100" />
       <el-table-column prop="reason" label="原因" min-width="220" />
+      <el-table-column label="操作" width="150" fixed="right">
+        <template #default="scope">
+          <el-button
+            v-if="scope.row.status === 'pending'"
+            link
+            type="primary"
+            @click="onSubmitAmountChange(scope.row)"
+          >
+            提交审批
+          </el-button>
+        </template>
+      </el-table-column>
     </el-table>
 
     <el-divider v-if="detail">关联付款申请</el-divider>

@@ -13,6 +13,7 @@ import type {
 import { generateSerial } from "../services/serial";
 import { publishEvent } from "../services/event-bus";
 import { createTask } from "../services/ai-slot";
+import { submitForApproval } from "../services/approval/engine";
 
 const nowIso = () => new Date().toISOString();
 
@@ -274,6 +275,82 @@ contractRoutes.delete(
 );
 
 contractRoutes.post(
+  "/:id/submit-approval",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+
+    const contract = await c.env.DB.prepare(
+      "SELECT * FROM contract WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<Contract>();
+
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    if (contract.direction !== "outbound") {
+      return c.json(
+        { success: false, error: { message: "Only outbound contracts can submit this approval flow" } },
+        400
+      );
+    }
+
+    if (contract.status !== "draft" && contract.status !== "pending_review") {
+      return c.json(
+        { success: false, error: { message: "Only draft/pending_review contracts can be submitted" } },
+        400
+      );
+    }
+
+    if (contract.approval_instance_id) {
+      const existing = await c.env.DB.prepare(
+        "SELECT status FROM approval_instance WHERE id = ?"
+      )
+        .bind(contract.approval_instance_id)
+        .first<{ status: string }>();
+
+      if (existing && (existing.status === "pending" || existing.status === "in_progress")) {
+        return c.json(
+          { success: false, error: { message: "Approval instance already in progress" } },
+          400
+        );
+      }
+    }
+
+    const instance = await submitForApproval(
+      c.env,
+      {
+        biz_type: "outbound_contract",
+        biz_id: id,
+        biz_summary: `${contract.contract_no} | ${contract.counterparty} | ${contract.total_amount}`,
+        context: {
+          amount: contract.total_amount,
+          entity_id: contract.entity_id,
+          project_id: contract.project_id,
+          biz_type: "outbound_contract",
+          biz_id: id
+        }
+      },
+      auth.sub
+    );
+
+    await c.env.DB.prepare(
+      "UPDATE contract SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(instance.id, nowIso(), id)
+      .run();
+
+    return c.json({
+      success: true,
+      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+    });
+  }
+);
+
+contractRoutes.post(
   "/:id/amount-change",
   requireRoles(["super_admin", "manager"]),
   async (c) => {
@@ -331,6 +408,86 @@ contractRoutes.post(
       { success: true, data: { id: result.meta.last_row_id } },
       201
     );
+  }
+);
+
+contractRoutes.post(
+  "/:id/amount-change/:changeId/submit-approval",
+  requireRoles(["super_admin", "manager"]),
+  async (c) => {
+    const contractId = Number(c.req.param("id"));
+    const changeId = Number(c.req.param("changeId"));
+    const auth = c.get("auth");
+
+    const contract = await c.env.DB.prepare(
+      "SELECT * FROM contract WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(contractId)
+      .first<Contract>();
+
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    const change = await c.env.DB.prepare(
+      "SELECT * FROM contract_amount_change WHERE id = ? AND contract_id = ?"
+    )
+      .bind(changeId, contractId)
+      .first<ContractAmountChange>();
+
+    if (!change) {
+      return c.json({ success: false, error: { message: "Amount change record not found" } }, 404);
+    }
+
+    if (change.status !== "pending") {
+      return c.json(
+        { success: false, error: { message: "Only pending amount changes can be submitted" } },
+        400
+      );
+    }
+
+    if (change.approval_instance_id) {
+      const existing = await c.env.DB.prepare(
+        "SELECT status FROM approval_instance WHERE id = ?"
+      )
+        .bind(change.approval_instance_id)
+        .first<{ status: string }>();
+
+      if (existing && (existing.status === "pending" || existing.status === "in_progress")) {
+        return c.json(
+          { success: false, error: { message: "Approval instance already in progress" } },
+          400
+        );
+      }
+    }
+
+    const instance = await submitForApproval(
+      c.env,
+      {
+        biz_type: "contract_amount_change",
+        biz_id: changeId,
+        biz_summary: `${contract.contract_no} 金额变更 ${change.old_amount} -> ${change.new_amount}`,
+        context: {
+          amount: change.new_amount,
+          entity_id: contract.entity_id,
+          project_id: contract.project_id,
+          biz_type: "contract_amount_change",
+          biz_id: changeId
+        }
+      },
+      auth.sub
+    );
+
+    await c.env.DB.prepare(
+      "UPDATE contract_amount_change SET approval_instance_id = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(instance.id, nowIso(), changeId)
+      .run();
+
+    return c.json({
+      success: true,
+      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+    });
   }
 );
 

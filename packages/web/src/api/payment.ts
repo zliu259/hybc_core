@@ -127,6 +127,13 @@ export const triggerRiskAssessment = (id: number) => {
   );
 };
 
+export const submitPaymentApproval = (id: number) => {
+  return http.request<{
+    success: boolean;
+    data: { approval_instance_id: number; instance_no: string };
+  }>("post", `/api/v1/payment/${id}/submit-approval`);
+};
+
 export const getRiskReport = (id: number) => {
   return http.request<{
     success: boolean;
