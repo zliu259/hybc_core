@@ -40,8 +40,11 @@
 - 项目立项：`packages/web/src/views/project/create.vue`
 - 项目详情：`packages/web/src/views/project/detail.vue`
 - 企业微信通讯录：`packages/web/src/views/wecom/contacts.vue`
-- 对外付款申请列表：`packages/web/src/views/finance/payment/list.vue`
+- 合同管理列表：`packages/web/src/views/finance/contract/index.vue`
+- 合同详情/创建：`packages/web/src/views/finance/contract/detail.vue`
+- 对外付款申请列表：`packages/web/src/views/finance/payment/index.vue`
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`
+- 收款人管理：`packages/web/src/views/finance/payee/index.vue`
 - 报销批次列表：`packages/web/src/views/finance/reimbursement/list.vue`
 - 收款登记列表：`packages/web/src/views/finance/receipt/list.vue`
 - 审批中心：`packages/web/src/views/approval/index.vue`
@@ -79,17 +82,35 @@
 - 下区：关联单据与事件时间线。
 - API 指向：`/api/v1/project/:id`, `/api/v1/project/:id/financial-summary`
 
-#### D. 对外付款申请列表 `views/finance/payment/list.vue`
+#### D. 合同管理 `views/finance/contract/index.vue`
+- 固定筛选：合同方向、项目、状态、关键字。
+- 表格列：合同号、方向、对方单位、合同类型、总额、已付、剩余、状态、AI审查状态。
+- 行操作：查看详情、软删除。
+- API 指向：`/api/v1/contract`
+
+#### E. 合同详情 `views/finance/contract/detail.vue`
+- 表单区：方向、项目、实体、对方单位、类型、经办人、日期、金额、附件、备注。
+- 摘要区：合同总额、已付金额、剩余额度。
+- AI区：审查状态、风险等级、分数、总结、建议。
+- API 指向：`/api/v1/contract/:id`, `/api/v1/contract/:id/ai-review`
+
+#### F. 对外付款申请列表 `views/finance/payment/index.vue`
 - 固定筛选：合同号、项目、审批状态、金额区间。
 - 表格列：申请单号、合同号、金额、申请人、状态、提交时间。
 - 强约束：超额风险标红并显示剩余额度。
 - API 指向：`/api/v1/payment`
 
-#### E. 对外付款申请详情 `views/finance/payment/detail.vue`
+#### G. 对外付款申请详情 `views/finance/payment/detail.vue`
 - 左侧：申请信息、合同信息、附件。
 - 右侧：审批轨迹、风险评估报告。
 - 底部动作：通过/拒绝/退回/转签（必须填写意见）。
 - API 指向：`/api/v1/payment/:id`, `/api/v1/approval/:id/*`
+
+#### H. 收款人管理 `views/finance/payee/index.vue`
+- 双标签页：外部收款人/内部收款人。
+- 表格列：名称、开户行、账号、电话、创建时间。
+- 操作：新增、编辑、软删除。
+- API 指向：`/api/v1/payment/payee/*`
 
 #### F. 报销批次列表 `views/finance/reimbursement/list.vue`
 - 展示维度：批次、申报人、总额、异常数量、审批状态。

@@ -19,6 +19,7 @@ class Settings:
         default_factory=lambda: [
             "contract_review",
             "risk_assessment",
+            "payment_risk_assessment",
             "reimbursement_check",
             "log_analysis",
             "equipment_recommend",

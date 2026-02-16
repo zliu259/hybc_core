@@ -55,6 +55,7 @@ class ClaudeProvider(AiProvider):
         return task_type in [
             "contract_review",
             "risk_assessment",
+            "payment_risk_assessment",
             "reimbursement_check",
             "log_analysis",
             "approval_ai_gate",
