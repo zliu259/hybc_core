@@ -12,6 +12,7 @@ import type {
   UpdatePayeeRequest,
   Contract
 } from "../types/contract";
+import type { InstanceConfig } from "../types/approval";
 import { generateSerial } from "../services/serial";
 import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
@@ -19,6 +20,11 @@ import { createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 
 const nowIso = () => new Date().toISOString();
+
+type SubmitApprovalOptions = {
+  biz_summary?: string;
+  instance_config?: InstanceConfig;
+};
 
 export const paymentRoutes = new Hono<{
   Bindings: Env;
@@ -411,6 +417,7 @@ paymentRoutes.post(
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as SubmitApprovalOptions;
 
     const request = await c.env.DB.prepare(
       "SELECT * FROM payment_request WHERE id = ?"
@@ -459,14 +466,17 @@ paymentRoutes.post(
       {
         biz_type: "payment_request",
         biz_id: id,
-        biz_summary: `${request.serial_no} | ${request.content} | ${request.amount}`,
+        biz_summary:
+          body.biz_summary?.trim() ||
+          `${request.serial_no} | ${request.content} | ${request.amount}`,
         context: {
           amount: request.amount,
           project_id: request.project_id,
           entity_id: contract.entity_id,
           biz_type: "payment_request",
           biz_id: id
-        }
+        },
+        instance_config: body.instance_config
       },
       auth.sub
     );

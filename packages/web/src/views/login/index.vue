@@ -40,6 +40,13 @@ const loginByCode = async (code: string) => {
     const top = getTopMenu(true);
     await router.replace(top.path);
     message("登录成功", { type: "success" });
+  } catch (error: any) {
+    const backendMsg =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      "企业微信登录失败";
+    message(backendMsg, { type: "error" });
   } finally {
     loading.value = false;
   }
@@ -62,6 +69,8 @@ onMounted(() => {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
   if (code) {
+    const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash || ""}`;
+    window.history.replaceState({}, document.title, cleanUrl);
     void loginByCode(code);
   }
 });

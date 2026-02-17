@@ -7,6 +7,7 @@
     "dev": "wrangler dev src/index.ts --local --persist-to .wrangler/state",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply hengyue-db --local",
+    "phase3:e2e": "node scripts/phase3-e2e.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "format": "prettier --check \"src/**/*.ts\" --ignore-unknown"

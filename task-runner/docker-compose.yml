@@ -2,15 +2,18 @@ services:
   task-runner:
     build: .
     container_name: hybc-task-runner
+    env_file:
+      - .env
     environment:
-      - API_BASE_URL=http://host.docker.internal:8787
-      - API_KEY=local-dev-task-api-key
-      - NODE_ID=
-      - NODE_NAME=local-docker-node
-      - NODE_TYPE=docker
-      - POLL_INTERVAL_SECONDS=3
-      - HEARTBEAT_INTERVAL_SECONDS=30
-      - CAPABILITIES=contract_review,risk_assessment,reimbursement_check,log_analysis
+      - API_BASE_URL=${API_BASE_URL:-http://host.docker.internal:8787}
+      - API_KEY=${API_KEY:-local-dev-task-api-key}
+      - NODE_ID=${NODE_ID:-}
+      - NODE_NAME=${NODE_NAME:-local-docker-node}
+      - NODE_TYPE=${NODE_TYPE:-docker}
+      - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-3}
+      - HEARTBEAT_INTERVAL_SECONDS=${HEARTBEAT_INTERVAL_SECONDS:-30}
+      - CAPABILITIES=${CAPABILITIES:-contract_review,payment_risk_assessment,approval_ai_gate,reimbursement_check,log_analysis,ocr_extract,equipment_recommend,file_generate}
+      - MOCK_AI_ONLY=${MOCK_AI_ONLY:-true}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
     restart: unless-stopped

@@ -2,6 +2,7 @@
 node_modules/
 dist/
 .npm/
+package-lock.json
 
 # Python
 __pycache__/
@@ -14,6 +15,9 @@ __pycache__/
 # Env files
 .env
 .env.local
+
+# Local service runtime data
+n8n/data/
 
 # OS/editor
 .DS_Store

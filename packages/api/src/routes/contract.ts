@@ -10,12 +10,18 @@ import type {
   ContractAmountChange,
   CreateAmountChangeRequest
 } from "../types/contract";
+import type { InstanceConfig } from "../types/approval";
 import { generateSerial } from "../services/serial";
 import { publishEvent } from "../services/event-bus";
 import { createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 
 const nowIso = () => new Date().toISOString();
+
+type SubmitApprovalOptions = {
+  biz_summary?: string;
+  instance_config?: InstanceConfig;
+};
 
 export const contractRoutes = new Hono<{
   Bindings: Env;
@@ -280,6 +286,7 @@ contractRoutes.post(
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as SubmitApprovalOptions;
 
     const contract = await c.env.DB.prepare(
       "SELECT * FROM contract WHERE id = ? AND status != 'deleted'"
@@ -325,14 +332,17 @@ contractRoutes.post(
       {
         biz_type: "outbound_contract",
         biz_id: id,
-        biz_summary: `${contract.contract_no} | ${contract.counterparty} | ${contract.total_amount}`,
+        biz_summary:
+          body.biz_summary?.trim() ||
+          `${contract.contract_no} | ${contract.counterparty} | ${contract.total_amount}`,
         context: {
           amount: contract.total_amount,
           entity_id: contract.entity_id,
           project_id: contract.project_id,
           biz_type: "outbound_contract",
           biz_id: id
-        }
+        },
+        instance_config: body.instance_config
       },
       auth.sub
     );
@@ -418,6 +428,7 @@ contractRoutes.post(
     const contractId = Number(c.req.param("id"));
     const changeId = Number(c.req.param("changeId"));
     const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as SubmitApprovalOptions;
 
     const contract = await c.env.DB.prepare(
       "SELECT * FROM contract WHERE id = ? AND status != 'deleted'"
@@ -466,14 +477,17 @@ contractRoutes.post(
       {
         biz_type: "contract_amount_change",
         biz_id: changeId,
-        biz_summary: `${contract.contract_no} 金额变更 ${change.old_amount} -> ${change.new_amount}`,
+        biz_summary:
+          body.biz_summary?.trim() ||
+          `${contract.contract_no} 金额变更 ${change.old_amount} -> ${change.new_amount}`,
         context: {
           amount: change.new_amount,
           entity_id: contract.entity_id,
           project_id: contract.project_id,
           biz_type: "contract_amount_change",
           biz_id: changeId
-        }
+        },
+        instance_config: body.instance_config
       },
       auth.sub
     );

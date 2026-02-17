@@ -25,11 +25,20 @@ def build_executor() -> TaskExecutor:
     """Build TaskExecutor with configured providers."""
     providers = []
 
+    mock_ai_only = os.getenv("MOCK_AI_ONLY", "true").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
-    if anthropic_key:
+    if anthropic_key and not mock_ai_only:
         model = os.getenv("ANTHROPIC_MODEL", "claude-sonnet-4-20250514")
         providers.append(ClaudeProvider(api_key=anthropic_key, model=model))
         logger.info("Claude provider enabled (model=%s)", model)
+    elif anthropic_key and mock_ai_only:
+        logger.info("MOCK_AI_ONLY=true — Claude provider skipped")
     else:
         logger.warning("ANTHROPIC_API_KEY not set — Claude provider disabled")
 

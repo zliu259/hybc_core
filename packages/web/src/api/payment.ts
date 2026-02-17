@@ -1,4 +1,5 @@
 import { http } from "@/utils/http";
+import type { InstanceConfig } from "./contract";
 
 export type PaymentRequest = {
   id: number;
@@ -127,11 +128,14 @@ export const triggerRiskAssessment = (id: number) => {
   );
 };
 
-export const submitPaymentApproval = (id: number) => {
+export const submitPaymentApproval = (
+  id: number,
+  data?: { biz_summary?: string; instance_config?: InstanceConfig }
+) => {
   return http.request<{
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
-  }>("post", `/api/v1/payment/${id}/submit-approval`);
+  }>("post", `/api/v1/payment/${id}/submit-approval`, { data });
 };
 
 export const getRiskReport = (id: number) => {

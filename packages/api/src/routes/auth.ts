@@ -22,6 +22,11 @@ type WeComTokenResponse = {
   access_token?: string;
 };
 
+const weComErrorMessage = (errmsg: string | undefined, fallback: string): string => {
+  if (!errmsg || errmsg === "ok") return fallback;
+  return errmsg;
+};
+
 type WeComDepartment = {
   id: number;
   name: string;
@@ -53,7 +58,9 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
 
   const tokenJson = (await tokenResponse.json()) as WeComTokenResponse;
   if (tokenJson.errcode !== 0 || !tokenJson.access_token) {
-    throw new Error(tokenJson.errmsg ?? "Failed to get WeCom access_token");
+    throw new Error(
+      weComErrorMessage(tokenJson.errmsg, "Failed to get WeCom access_token")
+    );
   }
 
   return tokenJson.access_token;
@@ -71,13 +78,27 @@ const fetchWeComUserId = async (
     errcode?: number;
     errmsg?: string;
     UserId?: string;
+    userid?: string;
+    OpenId?: string;
+    openid?: string;
   };
 
-  if (userJson.errcode !== 0 || !userJson.UserId) {
-    throw new Error(userJson.errmsg ?? "Failed to fetch WeCom user");
+  if (userJson.errcode !== 0) {
+    throw new Error(
+      weComErrorMessage(userJson.errmsg, "Failed to fetch WeCom user")
+    );
   }
 
-  return userJson.UserId;
+  const userId = userJson.UserId ?? userJson.userid;
+  if (userId) return userId;
+
+  if (userJson.OpenId || userJson.openid) {
+    throw new Error(
+      "WeCom returned OpenId without UserId. Ensure scanner is an internal member and app visibility/scope is configured for this user."
+    );
+  }
+
+  throw new Error("WeCom getuserinfo returned success but missing UserId");
 };
 
 const fetchWeComProfile = async (accessToken: string, userId: string) => {
@@ -94,7 +115,9 @@ const fetchWeComProfile = async (accessToken: string, userId: string) => {
   };
 
   if (profileJson.errcode !== 0 || !profileJson.userid) {
-    throw new Error(profileJson.errmsg ?? "Failed to fetch WeCom profile");
+    throw new Error(
+      weComErrorMessage(profileJson.errmsg, "Failed to fetch WeCom profile")
+    );
   }
 
   return {
@@ -119,7 +142,9 @@ const getDepartmentList = async (
   };
 
   if (json.errcode !== 0) {
-    throw new Error(json.errmsg ?? "Failed to fetch department list");
+    throw new Error(
+      weComErrorMessage(json.errmsg, "Failed to fetch department list")
+    );
   }
 
   return json.department ?? [];
@@ -140,7 +165,9 @@ const getUsersByDepartment = async (
   };
 
   if (json.errcode !== 0) {
-    throw new Error(json.errmsg ?? "Failed to fetch users by department");
+    throw new Error(
+      weComErrorMessage(json.errmsg, "Failed to fetch users by department")
+    );
   }
 
   return json.userlist ?? [];

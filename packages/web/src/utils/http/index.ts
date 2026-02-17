@@ -10,7 +10,7 @@ import type {
   PureHttpRequestConfig
 } from "./types.d";
 import { stringify } from "qs";
-import { getToken, formatToken } from "@/utils/auth";
+import { getToken, formatToken, removeToken } from "@/utils/auth";
 import { useUserStoreHook } from "@/store/modules/user";
 
 // 相关配置请参考：www.axios-js.com/zh-cn/docs/#axios-request-config-1
@@ -35,7 +35,7 @@ class PureHttp {
   }
 
   /** `token`过期后，暂存待执行的请求 */
-  private static requests = [];
+  private static requests: Array<(token?: string) => void> = [];
 
   /** 防止重复刷新`token` */
   private static isRefreshing = false;
@@ -49,8 +49,10 @@ class PureHttp {
   /** 重连原始请求 */
   private static retryOriginalRequest(config: PureHttpRequestConfig) {
     return new Promise(resolve => {
-      PureHttp.requests.push((token: string) => {
-        config.headers["Authorization"] = formatToken(token);
+      PureHttp.requests.push((token?: string) => {
+        if (token) {
+          config.headers["Authorization"] = formatToken(token);
+        }
         resolve(config);
       });
     });
@@ -70,8 +72,12 @@ class PureHttp {
           return config;
         }
         /** 请求白名单，放置一些不需要`token`的接口（通过设置请求白名单，防止`token`过期后再请求造成的死循环问题） */
-        const whiteList = ["/api/v1/auth/refresh-token", "/api/v1/auth/login/web"];
-        return whiteList.some(url => config.url.endsWith(url))
+        const whiteList = [
+          "/api/v1/auth/refresh-token",
+          "/api/v1/auth/login/web",
+          "/api/v1/auth/oauth-url"
+        ];
+        return whiteList.some(url => config.url?.endsWith(url))
           ? config
           : new Promise(resolve => {
               const data = getToken();
@@ -88,6 +94,11 @@ class PureHttp {
                         const token = res.data.accessToken;
                         config.headers["Authorization"] = formatToken(token);
                         PureHttp.requests.forEach(cb => cb(token));
+                        PureHttp.requests = [];
+                      })
+                      .catch(() => {
+                        removeToken();
+                        PureHttp.requests.forEach(cb => cb());
                         PureHttp.requests = [];
                       })
                       .finally(() => {

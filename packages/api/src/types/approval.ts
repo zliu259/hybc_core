@@ -118,6 +118,7 @@ export interface ApprovalInstance {
   current_node_key: string | null;
   status: InstanceStatus;
   current_round: number;
+  instance_config_json: string | null;
   submitted_at: string;
   completed_at: string | null;
   created_at: string;
@@ -182,11 +183,23 @@ export interface RouteContext {
   [key: string]: unknown;
 }
 
+export interface NodeInstanceOverride {
+  assignee_userids?: string[];
+  timeout_hours?: number;
+}
+
+export interface InstanceConfig {
+  default_assignee_userids?: string[];
+  node_overrides?: Record<string, NodeInstanceOverride>;
+  note?: string;
+}
+
 export interface SubmitApprovalRequest {
   biz_type: string;
   biz_id: number;
   biz_summary: string;
   context?: RouteContext;
+  instance_config?: InstanceConfig;
 }
 
 export interface ApprovalActionRequest {

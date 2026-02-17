@@ -49,6 +49,12 @@ export type ContractDetail = Contract & {
 
 type Pagination = { page: number; pageSize: number; total: number };
 
+export type InstanceConfig = {
+  default_assignee_userids?: string[];
+  node_overrides?: Record<string, { assignee_userids?: string[]; timeout_hours?: number }>;
+  note?: string;
+};
+
 export const listContracts = (params?: {
   direction?: string;
   project_id?: number;
@@ -134,12 +140,13 @@ export const createAmountChange = (
 
 export const submitAmountChangeApproval = (
   contractId: number,
-  changeId: number
+  changeId: number,
+  data?: { biz_summary?: string; instance_config?: InstanceConfig }
 ) => {
   return http.request<{
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
-  }>("post", `/api/v1/contract/${contractId}/amount-change/${changeId}/submit-approval`);
+  }>("post", `/api/v1/contract/${contractId}/amount-change/${changeId}/submit-approval`, { data });
 };
 
 export const getAiReview = (contractId: number) => {
@@ -156,9 +163,12 @@ export const triggerAiReview = (contractId: number) => {
   );
 };
 
-export const submitContractApproval = (contractId: number) => {
+export const submitContractApproval = (
+  contractId: number,
+  data?: { biz_summary?: string; instance_config?: InstanceConfig }
+) => {
   return http.request<{
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
-  }>("post", `/api/v1/contract/${contractId}/submit-approval`);
+  }>("post", `/api/v1/contract/${contractId}/submit-approval`, { data });
 };

@@ -14,7 +14,7 @@ import {
   type Payee,
   type PaymentRequestDetail
 } from "@/api/payment";
-import { listContracts, type Contract } from "@/api/contract";
+import { listContracts, type Contract, type InstanceConfig } from "@/api/contract";
 
 defineOptions({ name: "PaymentDetail" });
 
@@ -61,6 +61,10 @@ const riskTagType: Record<string, TagType> = {
   completed: "success",
   failed: "danger"
 };
+
+const approvalDialogVisible = ref(false);
+const approvalSummary = ref("");
+const approvalConfigText = ref("{}");
 
 const loadRefs = async () => {
   const [contractRes, payeeRes] = await Promise.all([
@@ -154,7 +158,32 @@ const onSubmitApproval = async () => {
     message("请先保存申请", { type: "warning" });
     return;
   }
-  await submitPaymentApproval(requestId.value);
+  approvalSummary.value = detail.value?.serial_no
+    ? `${detail.value.serial_no} | ${detail.value.content} | ${detail.value.amount}`
+    : "";
+  approvalConfigText.value = "{}";
+  approvalDialogVisible.value = true;
+};
+
+const confirmSubmitApproval = async () => {
+  if (isCreate.value) return;
+
+  let instanceConfig: InstanceConfig | undefined;
+  const trimmed = approvalConfigText.value.trim();
+  if (trimmed && trimmed !== "{}") {
+    try {
+      instanceConfig = JSON.parse(trimmed) as InstanceConfig;
+    } catch {
+      message("实例级配置 JSON 格式不正确", { type: "warning" });
+      return;
+    }
+  }
+
+  await submitPaymentApproval(requestId.value, {
+    biz_summary: approvalSummary.value.trim() || undefined,
+    instance_config: instanceConfig
+  });
+  approvalDialogVisible.value = false;
   message("已提交审批", { type: "success" });
   await loadDetail();
 };
@@ -304,5 +333,25 @@ onMounted(async () => {
         {{ Array.isArray(riskReport.recommendations) ? riskReport.recommendations.join("；") : "-" }}
       </el-descriptions-item>
     </el-descriptions>
+
+    <el-dialog v-model="approvalDialogVisible" title="实例级二次设置" width="560px">
+      <el-form label-width="120px">
+        <el-form-item label="审批摘要">
+          <el-input v-model="approvalSummary" placeholder="可选，留空则使用系统默认摘要" />
+        </el-form-item>
+        <el-form-item label="实例配置(JSON)">
+          <el-input
+            v-model="approvalConfigText"
+            type="textarea"
+            :rows="7"
+            placeholder='例如 {"default_assignee_userids":["zhangsan"]}'
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="approvalDialogVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmSubmitApproval">确认提交</el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>

@@ -22,6 +22,7 @@ import { taskRoutes } from "./routes/task";
 import { uploadRoutes } from "./routes/upload";
 import { userRoutes } from "./routes/user";
 import { warehouseRoutes } from "./routes/warehouse";
+import { scheduled } from "./scheduled";
 import type { Env } from "./types/env";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -60,3 +61,4 @@ app.route("/api/v1/dashboard", dashboardRoutes);
 
 export default app;
 export { default as queue } from "./queue-handler";
+export { scheduled };

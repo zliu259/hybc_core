@@ -38,11 +38,19 @@
 2. 安装 Python 3.11+
 3. 安装 Docker / Docker Compose
 
+## 开发阶段约定（全本地模拟）
+
+- Cloudflare 相关能力全部走本地模拟（`wrangler dev --local` + 本地 D1/KV/R2/Queue）。
+- 计算节点使用本地 Docker / 本地 Python 轮询，不依赖云主机。
+- AI 任务默认走本地 mock（`MOCK_AI_ONLY=true`），即使未提供第三方模型密钥也可联调。
+- 企业微信仅保留变量占位；你提供注册信息后再填充到本地环境变量。
+
 ## API（Worker + D1 + R2）
 
 ```bash
 cd packages/api
 npm install
+cp .dev.vars.example .dev.vars
 npx wrangler d1 migrations apply hybc-local --local
 npm run dev
 ```
@@ -64,7 +72,7 @@ npm install
 npm run dev
 ```
 
-默认地址：`http://localhost:5173`
+默认地址：`http://localhost:8849`
 
 ## 企业微信配置（Web 扫码登录 + 通讯录）
 
@@ -79,15 +87,24 @@ npm run dev
 
 ### 2) 本系统变量与 wrangler.toml 对应关系
 
-`packages/api/wrangler.toml` 的 `[vars]` 中配置：
+`packages/api/.dev.vars` 建议统一配置（开发期）：
+
+- `APP_ENV`
+- `JWT_SECRET`
+- `UPLOAD_SIGNING_SECRET`
+- `TASK_API_KEY`
+- `WECHAT_CORPID`
+- `WECHAT_AGENT_ID`
+- `WECHAT_SECRET`
+- `WECHAT_REDIRECT_URI`
+
+`packages/api/wrangler.toml` 的 `[vars]` 可保留默认本地值作为兜底：
 
 - `WECHAT_CORPID` ← 企业微信 `corpid`
 - `WECHAT_AGENT_ID` ← 企业微信应用 `agentid`
 - `WECHAT_REDIRECT_URI` ← 扫码后回跳地址（例如 `http://localhost:8848/login`）
 
-敏感信息 Secret 不建议写入 `wrangler.toml`，本地使用 `packages/api/.dev.vars`：
-
-- `WECHAT_SECRET` ← 企业微信应用 `secret`
+敏感信息（`WECHAT_SECRET`、`JWT_SECRET`、`UPLOAD_SIGNING_SECRET`）建议只放 `.dev.vars`。
 
 示例文件：`packages/api/.dev.vars.example`
 
@@ -112,6 +129,25 @@ Web 端：
 - 登录页使用企业微信扫码登录：`packages/web/src/views/login/index.vue`
 - 通讯录页面可手动同步并查看：`packages/web/src/views/wecom/contacts.vue`
 
+### 5) 常见故障排查（本地 + 企微扫码）
+
+1. 报错：`not allow to access from your ip`（`errcode=60020`）
+   - 含义：当前后端出口公网 IP 不在企业微信应用「企业可信IP」白名单。
+   - 处理：在企业微信管理后台 -> 应用管理 -> 自建应用 -> 企业可信IP，添加报错中的 `from ip`。
+   - 注意：本地网络公网 IP 变化后需重新加白，建议后续切换到固定出口 IP 环境。
+
+2. 回调后 `POST /api/v1/auth/login/web` 返回 400
+   - 先检查回调地址：`WECHAT_REDIRECT_URI` 应为 `http://apix.hybcdg.com:8849/login`。
+   - 确认前端实际访问域名与企业微信可信域名一致（含端口）。
+   - 确认扫码后回调 URL 中包含 `code` 参数，且在 5 分钟内完成换取登录态。
+
+3. 返回体为 `{ "success": false, "error": { "message": "ok" } }`
+   - 含义：企业微信接口返回成功文本，但未返回后端期望的用户标识字段。
+   - 处理方向：
+     - 确认扫码账号是企业内部成员。
+     - 确认该成员在应用可见范围内。
+     - 确认应用配置与授权范围满足获取内部成员身份。
+
 ## 企业微信小程序（目录 + 依赖）
 
 ```bash
@@ -130,6 +166,7 @@ npm install
 
 ```bash
 cd task-runner
+cp .env.example .env
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
@@ -140,14 +177,23 @@ python -m runner.main
 
 ```bash
 cd task-runner
+cp .env.example .env
 docker-compose up -d
 docker-compose logs -f
 ```
+
+本地模拟关键变量：
+
+- `MOCK_AI_ONLY=true`（默认）
+- `API_BASE_URL=http://host.docker.internal:8787`
+- `API_KEY=local-dev-task-api-key`
+- `CAPABILITIES=contract_review,payment_risk_assessment,approval_ai_gate,...`
 
 ## n8n
 
 ```bash
 cd n8n
+cp .env.example .env
 docker-compose up -d
 ```
 

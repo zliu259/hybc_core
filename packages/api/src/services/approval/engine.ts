@@ -10,7 +10,9 @@ import type {
   SubmitApprovalRequest,
   AiGateHandler,
   RouteContext,
-  TemplateNodeConfig
+  TemplateNodeConfig,
+  InstanceConfig,
+  NodeInstanceOverride
 } from "../../types/approval";
 import { resolveTemplate } from "./router";
 import { parseTemplate, getNextNodeKey, type ParsedNode, type ParsedTemplate } from "./template-parser";
@@ -30,8 +32,38 @@ const buildContextFromInstance = (instance: ApprovalInstance): RouteContext => (
   biz_id: instance.biz_id
 });
 
-const getAssigneeUserids = (config: TemplateNodeConfig): string | null => {
-  return config.assignee_userids ? JSON.stringify(config.assignee_userids) : null;
+const getNodeOverride = (
+  instanceConfig: InstanceConfig | undefined,
+  nodeKey: string
+): NodeInstanceOverride | undefined => {
+  return instanceConfig?.node_overrides?.[nodeKey];
+};
+
+const getMergedAssignees = (
+  nodeConfig: TemplateNodeConfig,
+  nodeOverride: NodeInstanceOverride | undefined,
+  instanceConfig: InstanceConfig | undefined
+): string[] | undefined => {
+  if (nodeOverride?.assignee_userids && nodeOverride.assignee_userids.length > 0) {
+    return nodeOverride.assignee_userids;
+  }
+  if (instanceConfig?.default_assignee_userids && instanceConfig.default_assignee_userids.length > 0) {
+    return instanceConfig.default_assignee_userids;
+  }
+  return nodeConfig.assignee_userids;
+};
+
+const getTimeoutHours = (
+  nodeConfig: TemplateNodeConfig,
+  nodeOverride: NodeInstanceOverride | undefined
+): number | null => {
+  if (typeof nodeOverride?.timeout_hours === "number") {
+    return nodeOverride.timeout_hours;
+  }
+  if (typeof nodeConfig.timeout_hours === "number") {
+    return nodeConfig.timeout_hours;
+  }
+  return null;
 };
 
 // ─── Submit ──────────
@@ -58,19 +90,22 @@ export const submitForApproval = async (
   // 2. Generate serial
   const instanceNo = await generateSerial(env.DB, "SP", "approval_instance", "instance_no");
   const now = nowIso();
+  const instanceConfigJson = request.instance_config
+    ? JSON.stringify(request.instance_config)
+    : null;
 
   // 3. Insert instance
   const insertResult = await env.DB.prepare(
-    `INSERT INTO approval_instance
-      (instance_no, template_id, biz_type, biz_id, biz_summary,
-       initiator_userid, current_node_key, status, current_round,
-       submitted_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', 1, ?, ?, ?)`
+     `INSERT INTO approval_instance
+       (instance_no, template_id, biz_type, biz_id, biz_summary,
+        initiator_userid, current_node_key, status, current_round, instance_config_json,
+        submitted_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'in_progress', 1, ?, ?, ?, ?)`
   )
     .bind(
       instanceNo, template.id, request.biz_type, request.biz_id,
       request.biz_summary, userId, parsedTemplate.startKey,
-      now, now, now
+      instanceConfigJson, now, now, now
     )
     .run();
 
@@ -80,17 +115,20 @@ export const submitForApproval = async (
   for (let i = 0; i < parsedTemplate.nodeOrder.length; i++) {
     const nodeKey = parsedTemplate.nodeOrder[i];
     const node: ParsedNode = parsedTemplate.nodes.get(nodeKey)!;
-    const assigneeUserids = getAssigneeUserids(node.config);
+    const nodeOverride = getNodeOverride(request.instance_config, nodeKey);
+    const mergedAssignees = getMergedAssignees(node.config, nodeOverride, request.instance_config);
+    const assigneeUserids = mergedAssignees ? JSON.stringify(mergedAssignees) : null;
+    const timeoutHours = getTimeoutHours(node.config, nodeOverride);
 
     await env.DB.prepare(
       `INSERT INTO approval_node_instance
-        (instance_id, node_key, node_type, node_name, assignee_userids,
+        (instance_id, node_key, node_type, node_name, assignee_userids, timeout_hours,
          status, round, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?)`
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', 1, ?, ?, ?)`
     )
       .bind(
         instanceId, nodeKey, node.type, node.name,
-        assigneeUserids, i, now, now
+        assigneeUserids, timeoutHours, i, now, now
       )
       .run();
   }
@@ -424,6 +462,14 @@ export const handleResubmit = async (
   }
 
   const newRound = instance.current_round + 1;
+  let instanceConfig: InstanceConfig | undefined;
+  if (instance.instance_config_json) {
+    try {
+      instanceConfig = JSON.parse(instance.instance_config_json) as InstanceConfig;
+    } catch {
+      instanceConfig = undefined;
+    }
+  }
 
   // Load template
   const template = await env.DB.prepare(
@@ -442,17 +488,20 @@ export const handleResubmit = async (
   for (let i = 0; i < parsedTemplate.nodeOrder.length; i++) {
     const nodeKey = parsedTemplate.nodeOrder[i];
     const node: ParsedNode = parsedTemplate.nodes.get(nodeKey)!;
-    const assigneeUserids = getAssigneeUserids(node.config);
+    const nodeOverride = getNodeOverride(instanceConfig, nodeKey);
+    const mergedAssignees = getMergedAssignees(node.config, nodeOverride, instanceConfig);
+    const assigneeUserids = mergedAssignees ? JSON.stringify(mergedAssignees) : null;
+    const timeoutHours = getTimeoutHours(node.config, nodeOverride);
 
     await env.DB.prepare(
       `INSERT INTO approval_node_instance
-        (instance_id, node_key, node_type, node_name, assignee_userids,
+        (instance_id, node_key, node_type, node_name, assignee_userids, timeout_hours,
          status, round, sort_order, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
+        VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
     )
       .bind(
         instanceId, nodeKey, node.type, node.name,
-        assigneeUserids, newRound, i, now, now
+        assigneeUserids, timeoutHours, newRound, i, now, now
       )
       .run();
   }
@@ -633,7 +682,7 @@ export const checkApprovalTimeouts = async (env: Env): Promise<number> => {
     `SELECT * FROM approval_node_instance
      WHERE status = 'in_progress'
        AND started_at IS NOT NULL
-       AND (julianday(?) - julianday(started_at)) * 24 > 24`
+       AND (julianday(?) - julianday(started_at)) * 24 > COALESCE(timeout_hours, 24)`
   )
     .bind(now)
     .all<ApprovalNodeInstance>();
