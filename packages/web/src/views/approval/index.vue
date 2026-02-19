@@ -16,9 +16,9 @@ const router = useRouter();
 const activeTab = ref("pending");
 
 const bizTypeOptions = [
-  { label: "合同审批", value: "contract_approval" },
-  { label: "付款审批", value: "payment_approval" },
-  { label: "报销审批", value: "reimbursement_approval" }
+  { label: "合同审批", value: "outbound_contract" },
+  { label: "付款审批", value: "payment_request" },
+  { label: "报销审批", value: "reimbursement_batch" }
 ];
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
@@ -116,7 +116,11 @@ onMounted(loadPending);
   <el-card shadow="never">
     <el-form inline>
       <el-form-item label="关键字">
-        <el-input v-model="filters.keyword" placeholder="摘要关键字" clearable />
+        <el-input
+          v-model="filters.keyword"
+          placeholder="摘要关键字"
+          clearable
+        />
       </el-form-item>
       <el-form-item label="业务类型">
         <el-select v-model="filters.biz_type" clearable placeholder="全部">
@@ -143,21 +147,35 @@ onMounted(loadPending);
           />
         </template>
         <el-table
-          :data="pendingList"
           v-loading="pendingLoading"
+          :data="pendingList"
           style="width: 100%"
           @row-click="(row: PendingApprovalItem) => gotoDetail(row.id)"
         >
           <el-table-column label="业务类型" width="130">
-            <template #default="{ row }">{{ bizTypeLabel(row.biz_type) }}</template>
+            <template #default="{ row }">{{
+              bizTypeLabel(row.biz_type)
+            }}</template>
           </el-table-column>
-          <el-table-column prop="biz_summary" label="摘要" min-width="220" show-overflow-tooltip />
+          <el-table-column
+            prop="biz_summary"
+            label="摘要"
+            min-width="220"
+            show-overflow-tooltip
+          />
           <el-table-column prop="initiator_userid" label="发起人" width="140" />
-          <el-table-column prop="current_node_name" label="当前节点" width="140" />
+          <el-table-column
+            prop="current_node_name"
+            label="当前节点"
+            width="140"
+          />
           <el-table-column prop="submitted_at" label="提交时间" width="180" />
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
-              <el-tag :type="statusTagType[row.task_status] ?? 'info'" size="small">
+              <el-tag
+                :type="statusTagType[row.task_status] ?? 'info'"
+                size="small"
+              >
                 {{ row.task_status }}
               </el-tag>
             </template>
@@ -170,21 +188,33 @@ onMounted(loadPending);
           :current-page="pendingPage"
           :page-size="pendingPageSize"
           :total="pendingTotal"
-          @current-change="(val: number) => { pendingPage = val; loadPending(); }"
+          @current-change="
+            (val: number) => {
+              pendingPage = val;
+              loadPending();
+            }
+          "
         />
       </el-tab-pane>
 
       <el-tab-pane label="已处理" name="processed">
         <el-table
-          :data="processedList"
           v-loading="processedLoading"
+          :data="processedList"
           style="width: 100%"
           @row-click="(row: ProcessedApprovalItem) => gotoDetail(row.id)"
         >
           <el-table-column label="业务类型" width="130">
-            <template #default="{ row }">{{ bizTypeLabel(row.biz_type) }}</template>
+            <template #default="{ row }">{{
+              bizTypeLabel(row.biz_type)
+            }}</template>
           </el-table-column>
-          <el-table-column prop="biz_summary" label="摘要" min-width="220" show-overflow-tooltip />
+          <el-table-column
+            prop="biz_summary"
+            label="摘要"
+            min-width="220"
+            show-overflow-tooltip
+          />
           <el-table-column prop="initiator_userid" label="发起人" width="140" />
           <el-table-column prop="action" label="操作" width="100">
             <template #default="{ row }">
@@ -192,11 +222,17 @@ onMounted(loadPending);
                 v-if="row.action"
                 :type="row.action === 'approve' ? 'success' : 'danger'"
                 size="small"
-              >{{ row.action }}</el-tag>
+                >{{ row.action }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column prop="acted_at" label="操作时间" width="180" />
-          <el-table-column prop="comment" label="意见" min-width="150" show-overflow-tooltip />
+          <el-table-column
+            prop="comment"
+            label="意见"
+            min-width="150"
+            show-overflow-tooltip
+          />
         </el-table>
         <el-pagination
           style="margin-top: 12px; justify-content: flex-end"
@@ -205,21 +241,33 @@ onMounted(loadPending);
           :current-page="processedPage"
           :page-size="processedPageSize"
           :total="processedTotal"
-          @current-change="(val: number) => { processedPage = val; loadProcessed(); }"
+          @current-change="
+            (val: number) => {
+              processedPage = val;
+              loadProcessed();
+            }
+          "
         />
       </el-tab-pane>
 
       <el-tab-pane label="抄送我的" name="cc">
         <el-table
-          :data="ccList"
           v-loading="ccLoading"
+          :data="ccList"
           style="width: 100%"
           @row-click="(row: ApprovalInstance) => gotoDetail(row.id)"
         >
           <el-table-column label="业务类型" width="130">
-            <template #default="{ row }">{{ bizTypeLabel(row.biz_type) }}</template>
+            <template #default="{ row }">{{
+              bizTypeLabel(row.biz_type)
+            }}</template>
           </el-table-column>
-          <el-table-column prop="biz_summary" label="摘要" min-width="220" show-overflow-tooltip />
+          <el-table-column
+            prop="biz_summary"
+            label="摘要"
+            min-width="220"
+            show-overflow-tooltip
+          />
           <el-table-column prop="initiator_userid" label="发起人" width="140" />
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
@@ -237,7 +285,12 @@ onMounted(loadPending);
           :current-page="ccPage"
           :page-size="ccPageSize"
           :total="ccTotal"
-          @current-change="(val: number) => { ccPage = val; loadCc(); }"
+          @current-change="
+            (val: number) => {
+              ccPage = val;
+              loadCc();
+            }
+          "
         />
       </el-tab-pane>
     </el-tabs>

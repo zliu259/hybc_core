@@ -45,7 +45,12 @@
 - 对外付款申请列表：`packages/web/src/views/finance/payment/index.vue`
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`
 - 收款人管理：`packages/web/src/views/finance/payee/index.vue`
-- 报销批次列表：`packages/web/src/views/finance/reimbursement/list.vue`
+- 报销信封列表：`packages/web/src/views/finance/reimbursement/list.vue`
+- 报销信封详情：`packages/web/src/views/finance/reimbursement/detail.vue`
+- 报销预审工作台：`packages/web/src/views/finance/reimbursement/precheck.vue`
+- 报销查重中心：`packages/web/src/views/finance/reimbursement/duplicate.vue`
+- 报销集中审批批次列表：`packages/web/src/views/finance/reimbursement/batch.vue`
+- 报销集中审批批次详情：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 收款登记列表：`packages/web/src/views/finance/receipt/list.vue`
 - 审批中心：`packages/web/src/views/approval/index.vue`
 - 审批详情：`packages/web/src/views/approval/detail.vue`
@@ -112,10 +117,35 @@
 - 操作：新增、编辑、软删除。
 - API 指向：`/api/v1/payment/payee/*`
 
-#### F. 报销批次列表 `views/finance/reimbursement/list.vue`
-- 展示维度：批次、申报人、总额、异常数量、审批状态。
-- 支持入口：查看查重结果、查看 AI 审计报告。
+#### F. 报销信封列表 `views/finance/reimbursement/list.vue`
+- 展示维度：信封编号、UUID、项目、填报人、金额、状态、PDF状态。
+- 支持入口：批量生成信封、进入信封详情执行扫码填报/收件核对/PDF生成。
 - API 指向：`/api/v1/reimbursement`
+
+#### F-2. 报销信封详情 `views/finance/reimbursement/detail.vue`
+- 表单区：项目、填报人、通道、发票号、费用日期、金额、类别、说明、附件JSON。
+- 操作区：保存、扫码填报（模拟）、收件通过/异常、触发PDF生成、刷新PDF状态、刷新OCR状态、触发异常检测、预审动作。
+- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
+
+#### F-3. 报销预审工作台 `views/finance/reimbursement/precheck.vue`
+- 展示维度：信封编号、项目、填报人、金额、查重线索、预审状态。
+- 操作区：触发异常检测、预审通过/补充/驳回、跳转信封详情。
+- API 指向：`/api/v1/reimbursement/precheck/pending`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
+
+#### F-4. 报销查重中心 `views/finance/reimbursement/duplicate.vue`
+- 展示维度：信封编号、匹配类型、风险等级、匹配发票号、金额、说明。
+- 支持按风险等级筛选并跳转到对应信封详情。
+- API 指向：`/api/v1/reimbursement/duplicate-center`
+
+#### F-5. 报销集中审批批次列表 `views/finance/reimbursement/batch.vue`
+- 展示维度：批次号、项目、申报人、信封数、总金额、AI审计状态、审批状态。
+- 操作区：新建审批批次（可自动按项目+申报人汇总或手动指定信封ID）、进入批次详情。
+- API 指向：`/api/v1/reimbursement/batch`
+
+#### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
+- 展示维度：批次信息、AI审计报告、批次信封明细、查重风险汇总。
+- 操作区：触发AI审计、提交集中审批、标记批次付款、跳转审批详情。
+- API 指向：`/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/trigger-audit`, `/api/v1/reimbursement/batch/:id/audit-report`, `/api/v1/reimbursement/batch/:id/submit-approval`, `/api/v1/reimbursement/batch/:id/mark-paid`
 
 #### G. 收款登记列表 `views/finance/receipt/list.vue`
 - 核心列：收款编号、工程、收款账户、金额、收款日期。

@@ -57,6 +57,7 @@ class ClaudeProvider(AiProvider):
             "risk_assessment",
             "payment_risk_assessment",
             "reimbursement_check",
+            "reimbursement_anomaly",
             "log_analysis",
             "approval_ai_gate",
         ]

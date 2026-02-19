@@ -15,6 +15,7 @@ import {
   type ApprovalTask
 } from "@/api/approval";
 import { getRiskReport } from "@/api/payment";
+import { getBatchAuditReport } from "@/api/reimbursement";
 
 defineOptions({ name: "ApprovalDetail" });
 
@@ -79,6 +80,10 @@ const transferReason = ref("");
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 const paymentRiskStatus = ref("none");
 const paymentRiskReport = ref<Record<string, unknown> | null>(null);
+const reimbursementAuditStatus = ref("none");
+const reimbursementAuditReport = ref<Record<string, unknown> | string | null>(
+  null
+);
 const riskTagType: Record<string, TagType> = {
   none: "info",
   pending: "warning",
@@ -97,9 +102,19 @@ const loadDetail = async () => {
       const rr = await getRiskReport(result.data.instance.biz_id);
       paymentRiskStatus.value = rr.data.status;
       paymentRiskReport.value = rr.data.result;
+      reimbursementAuditStatus.value = "none";
+      reimbursementAuditReport.value = null;
+    } else if (result.data.instance.biz_type === "reimbursement_batch") {
+      const rr = await getBatchAuditReport(result.data.instance.biz_id);
+      reimbursementAuditStatus.value = rr.data.status;
+      reimbursementAuditReport.value = rr.data.result;
+      paymentRiskStatus.value = "none";
+      paymentRiskReport.value = null;
     } else {
       paymentRiskStatus.value = "none";
       paymentRiskReport.value = null;
+      reimbursementAuditStatus.value = "none";
+      reimbursementAuditReport.value = null;
     }
   } catch {
     message("加载审批详情失败", { type: "error" });
@@ -156,7 +171,8 @@ const handleReturn = async () => {
   try {
     await returnApproval(instanceId.value, {
       type: returnType.value,
-      target_node_key: returnType.value === "to" ? returnTargetNodeKey.value : undefined,
+      target_node_key:
+        returnType.value === "to" ? returnTargetNodeKey.value : undefined,
       comment: returnComment.value || undefined
     });
     message("已退回", { type: "success" });
@@ -242,9 +258,12 @@ onMounted(loadDetail);
 
 <template>
   <div v-loading="loading">
-    <el-page-header @back="goBack" style="margin-bottom: 16px">
+    <el-page-header style="margin-bottom: 16px" @back="goBack">
       <template #content>
-        <span v-if="detail">{{ detail.instance.instance_no }} — {{ detail.instance.biz_summary }}</span>
+        <span v-if="detail"
+          >{{ detail.instance.instance_no }} —
+          {{ detail.instance.biz_summary }}</span
+        >
       </template>
     </el-page-header>
 
@@ -253,15 +272,27 @@ onMounted(loadDetail);
         <el-col :md="14" :xs="24">
           <el-card shadow="never" header="业务摘要">
             <el-descriptions :column="2" border>
-              <el-descriptions-item label="审批编号">{{ detail.instance.instance_no }}</el-descriptions-item>
-              <el-descriptions-item label="业务类型">{{ detail.instance.biz_type }}</el-descriptions-item>
-              <el-descriptions-item label="发起人">{{ detail.instance.initiator_userid }}</el-descriptions-item>
+              <el-descriptions-item label="审批编号">{{
+                detail.instance.instance_no
+              }}</el-descriptions-item>
+              <el-descriptions-item label="业务类型">{{
+                detail.instance.biz_type
+              }}</el-descriptions-item>
+              <el-descriptions-item label="发起人">{{
+                detail.instance.initiator_userid
+              }}</el-descriptions-item>
               <el-descriptions-item label="状态">
                 <el-tag size="small">{{ detail.instance.status }}</el-tag>
               </el-descriptions-item>
-              <el-descriptions-item label="提交时间">{{ detail.instance.submitted_at }}</el-descriptions-item>
-              <el-descriptions-item label="完成时间">{{ detail.instance.completed_at ?? "—" }}</el-descriptions-item>
-              <el-descriptions-item label="摘要" :span="2">{{ detail.instance.biz_summary }}</el-descriptions-item>
+              <el-descriptions-item label="提交时间">{{
+                detail.instance.submitted_at
+              }}</el-descriptions-item>
+              <el-descriptions-item label="完成时间">{{
+                detail.instance.completed_at ?? "—"
+              }}</el-descriptions-item>
+              <el-descriptions-item label="摘要" :span="2">{{
+                detail.instance.biz_summary
+              }}</el-descriptions-item>
             </el-descriptions>
 
             <template v-if="detail.instance.biz_type === 'payment_request'">
@@ -282,9 +313,25 @@ onMounted(loadDetail);
                   {{ paymentRiskReport.summary || "-" }}
                 </el-descriptions-item>
                 <el-descriptions-item label="建议" :span="2">
-                  {{ Array.isArray(paymentRiskReport.recommendations) ? paymentRiskReport.recommendations.join("；") : "-" }}
+                  {{
+                    Array.isArray(paymentRiskReport.recommendations)
+                      ? paymentRiskReport.recommendations.join("；")
+                      : "-"
+                  }}
                 </el-descriptions-item>
               </el-descriptions>
+            </template>
+
+            <template v-if="detail.instance.biz_type === 'reimbursement_batch'">
+              <el-divider>报销批次AI审计报告</el-divider>
+              <div style="margin-bottom: 8px">
+                <el-tag :type="riskTagType[reimbursementAuditStatus] || 'info'">
+                  {{ reimbursementAuditStatus }}
+                </el-tag>
+              </div>
+              <pre style="white-space: pre-wrap; word-break: break-word">{{
+                reimbursementAuditReport || "-"
+              }}</pre>
             </template>
           </el-card>
         </el-col>
@@ -293,7 +340,11 @@ onMounted(loadDetail);
           <el-card shadow="never" header="审批流程">
             <div v-if="availableRounds.length > 1" style="margin-bottom: 12px">
               <el-radio-group v-model="selectedRound" size="small">
-                <el-radio-button v-for="r in availableRounds" :key="r" :value="r">
+                <el-radio-button
+                  v-for="r in availableRounds"
+                  :key="r"
+                  :value="r"
+                >
                   第 {{ r }} 轮
                 </el-radio-button>
               </el-radio-group>
@@ -310,20 +361,55 @@ onMounted(loadDetail);
                   :style="{
                     padding: '8px 12px',
                     borderRadius: '6px',
-                    border: detail.instance.current_node_key === node.node_key ? '1px solid #2f6c5f' : '1px solid transparent',
-                    background: detail.instance.current_node_key === node.node_key ? '#f0f9f6' : 'transparent'
+                    border:
+                      detail.instance.current_node_key === node.node_key
+                        ? '1px solid #2f6c5f'
+                        : '1px solid transparent',
+                    background:
+                      detail.instance.current_node_key === node.node_key
+                        ? '#f0f9f6'
+                        : 'transparent'
                   }"
                 >
-                  <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+                  <div
+                    style="
+                      display: flex;
+                      align-items: center;
+                      gap: 8px;
+                      margin-bottom: 4px;
+                    "
+                  >
                     <strong>{{ node.node_name }}</strong>
-                    <el-tag size="small" type="info">{{ nodeTypeLabelMap[node.node_type] ?? node.node_type }}</el-tag>
-                    <el-tag size="small" :type="node.status === 'completed' ? 'success' : 'info'">{{ node.status }}</el-tag>
+                    <el-tag size="small" type="info">{{
+                      nodeTypeLabelMap[node.node_type] ?? node.node_type
+                    }}</el-tag>
+                    <el-tag
+                      size="small"
+                      :type="node.status === 'completed' ? 'success' : 'info'"
+                      >{{ node.status }}</el-tag
+                    >
                   </div>
-                  <div v-for="task in getNodeTasks(node.id)" :key="task.id" style="font-size: 13px; color: #666; margin-top: 4px">
+                  <div
+                    v-for="task in getNodeTasks(node.id)"
+                    :key="task.id"
+                    style="font-size: 13px; color: #666; margin-top: 4px"
+                  >
                     <span>{{ task.assignee_userid }}</span>
-                    <el-tag v-if="task.action" size="small" style="margin-left: 6px">{{ task.action }}</el-tag>
-                    <span v-if="task.acted_at" style="margin-left: 6px; color: #999">{{ task.acted_at }}</span>
-                    <div v-if="task.comment" style="margin-top: 2px; color: #888; font-style: italic">
+                    <el-tag
+                      v-if="task.action"
+                      size="small"
+                      style="margin-left: 6px"
+                      >{{ task.action }}</el-tag
+                    >
+                    <span
+                      v-if="task.acted_at"
+                      style="margin-left: 6px; color: #999"
+                      >{{ task.acted_at }}</span
+                    >
+                    <div
+                      v-if="task.comment"
+                      style="margin-top: 2px; color: #888; font-style: italic"
+                    >
                       {{ task.comment }}
                     </div>
                   </div>
@@ -349,30 +435,61 @@ onMounted(loadDetail);
           style="margin-bottom: 12px"
         />
         <el-space>
-          <el-button v-if="hasAction('approve')" type="success" :loading="actionLoading" @click="handleApprove">
+          <el-button
+            v-if="hasAction('approve')"
+            type="success"
+            :loading="actionLoading"
+            @click="handleApprove"
+          >
             审批通过
           </el-button>
-          <el-button v-if="hasAction('reject')" type="danger" :loading="actionLoading" @click="handleReject">
+          <el-button
+            v-if="hasAction('reject')"
+            type="danger"
+            :loading="actionLoading"
+            @click="handleReject"
+          >
             驳回
           </el-button>
           <el-button
-            v-if="hasAction('return_initiator') || hasAction('return_prev') || hasAction('return_to')"
+            v-if="
+              hasAction('return_initiator') ||
+              hasAction('return_prev') ||
+              hasAction('return_to')
+            "
             type="warning"
             :loading="actionLoading"
             @click="openReturnDialog"
           >
             退回
           </el-button>
-          <el-button v-if="hasAction('transfer')" :loading="actionLoading" @click="openTransferDialog">
+          <el-button
+            v-if="hasAction('transfer')"
+            :loading="actionLoading"
+            @click="openTransferDialog"
+          >
             转办
           </el-button>
-          <el-button v-if="hasAction('withdraw')" :loading="actionLoading" @click="handleWithdraw">
+          <el-button
+            v-if="hasAction('withdraw')"
+            :loading="actionLoading"
+            @click="handleWithdraw"
+          >
             撤回
           </el-button>
-          <el-button v-if="hasAction('cancel')" :loading="actionLoading" @click="handleCancel">
+          <el-button
+            v-if="hasAction('cancel')"
+            :loading="actionLoading"
+            @click="handleCancel"
+          >
             取消
           </el-button>
-          <el-button v-if="hasAction('resubmit')" type="primary" :loading="actionLoading" @click="handleResubmit">
+          <el-button
+            v-if="hasAction('resubmit')"
+            type="primary"
+            :loading="actionLoading"
+            @click="handleResubmit"
+          >
             重新提交
           </el-button>
         </el-space>
@@ -404,7 +521,9 @@ onMounted(loadDetail);
       </el-form>
       <template #footer>
         <el-button @click="returnDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="actionLoading" @click="handleReturn">确定退回</el-button>
+        <el-button type="primary" :loading="actionLoading" @click="handleReturn"
+          >确定退回</el-button
+        >
       </template>
     </el-dialog>
 
@@ -419,7 +538,12 @@ onMounted(loadDetail);
       </el-form>
       <template #footer>
         <el-button @click="transferDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="actionLoading" @click="handleTransfer">确定转办</el-button>
+        <el-button
+          type="primary"
+          :loading="actionLoading"
+          @click="handleTransfer"
+          >确定转办</el-button
+        >
       </template>
     </el-dialog>
   </div>

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import time
+from io import BytesIO
 
 from .base import AiProvider, ProviderResult
 
@@ -20,6 +22,7 @@ class LocalRulesProvider(AiProvider):
             "payment_risk_assessment",
             "risk_assessment",
             "reimbursement_check",
+            "reimbursement_anomaly",
             "log_analysis",
             "file_generate",
             "approval_ai_gate",
@@ -43,6 +46,8 @@ class LocalRulesProvider(AiProvider):
             output = self._payment_risk_assessment(payload)
         elif task_type == "reimbursement_check":
             output = self._reimbursement_check(payload)
+        elif task_type == "reimbursement_anomaly":
+            output = self._reimbursement_anomaly(payload)
         elif task_type == "log_analysis":
             output = self._log_analysis(payload)
         elif task_type == "file_generate":
@@ -160,12 +165,106 @@ class LocalRulesProvider(AiProvider):
         )
 
     def _reimbursement_check(self, payload: dict[str, object]) -> str:
+        items_raw = payload.get("items", [])
+        duplicates_raw = payload.get("duplicate_checks", [])
+        items = items_raw if isinstance(items_raw, list) else []
+        duplicates = duplicates_raw if isinstance(duplicates_raw, list) else []
+
+        total_amount_raw = payload.get("total_amount", 0)
+        total_amount = (
+            float(total_amount_raw)
+            if isinstance(total_amount_raw, (int, float, str))
+            else 0.0
+        )
+
+        high_risk = 0
+        medium_risk = 0
+        for row in duplicates:
+            if not isinstance(row, dict):
+                continue
+            risk = row.get("risk_level")
+            if risk == "high":
+                high_risk += 1
+            elif risk == "medium":
+                medium_risk += 1
+
+        risk_level = "low"
+        if high_risk > 0:
+            risk_level = "high"
+        elif medium_risk > 0 or total_amount >= 10000:
+            risk_level = "medium"
+
+        recommendations: list[str] = []
+        if high_risk > 0:
+            recommendations.append("存在高风险重复票据，建议退回补充说明")
+        if total_amount >= 50000:
+            recommendations.append("批次金额较大，建议增加经理复核")
+        if not recommendations:
+            recommendations.append("可进入集中审批")
+
         return json.dumps(
             {
-                "duplicate_risk": "low",
-                "anomalies": [],
-                "summary": "本地模拟报销校验通过。",
-                "input": payload,
+                "overall_risk": risk_level,
+                "summary": "本地模拟报销审计报告。",
+                "stats": {
+                    "item_count": len(items),
+                    "duplicate_total": len(duplicates),
+                    "high_risk_duplicates": high_risk,
+                    "medium_risk_duplicates": medium_risk,
+                },
+                "compliance": {
+                    "required_fields_complete": True,
+                    "amount_reasonable": total_amount >= 0,
+                },
+                "recommendations": recommendations,
+            },
+            ensure_ascii=False,
+        )
+
+    def _reimbursement_anomaly(self, payload: dict[str, object]) -> str:
+        amount_raw = payload.get("amount", 0)
+        amount = float(amount_raw) if isinstance(amount_raw, (int, float, str)) else 0.0
+        duplicate_count_raw = payload.get("duplicate_count", 0)
+        duplicate_count = (
+            int(duplicate_count_raw)
+            if isinstance(duplicate_count_raw, (int, float, str))
+            else 0
+        )
+
+        risk_level = "low"
+        if duplicate_count > 0:
+            risk_level = "high"
+        elif amount >= 2000:
+            risk_level = "medium"
+
+        anomalies: list[dict[str, object]] = []
+        if duplicate_count > 0:
+            anomalies.append(
+                {
+                    "type": "duplicate_invoice",
+                    "level": "high",
+                    "message": f"发现 {duplicate_count} 条重复票据线索",
+                }
+            )
+        if amount >= 5000:
+            anomalies.append(
+                {
+                    "type": "amount_threshold",
+                    "level": "medium",
+                    "message": "金额超过本地预警阈值（5000）",
+                }
+            )
+
+        return json.dumps(
+            {
+                "risk_level": risk_level,
+                "summary": "本地模拟报销异常检测结果。",
+                "anomalies": anomalies,
+                "recommendation": (
+                    "建议补充材料并复核"
+                    if risk_level != "low"
+                    else "可进入预审"
+                ),
             },
             ensure_ascii=False,
         )
@@ -182,15 +281,102 @@ class LocalRulesProvider(AiProvider):
         )
 
     def _file_generate(self, payload: dict[str, object]) -> str:
-        return json.dumps(
-            {
-                "status": "generated",
-                "file_name": "local-mock-report.pdf",
-                "message": "本地模拟文件生成完成。",
-                "input": payload,
-            },
-            ensure_ascii=False,
-        )
+        try:
+            from reportlab.graphics import renderPDF
+            from reportlab.graphics.shapes import Drawing
+            from reportlab.lib.pagesizes import A4
+            from reportlab.lib.units import mm
+            from reportlab.pdfgen import canvas
+            from reportlab.graphics.barcode.qr import QrCodeWidget
+
+            envelope_uuid = str(payload.get("envelope_uuid", ""))
+            envelope_no = str(payload.get("envelope_no", ""))
+            project_id = str(payload.get("project_id", ""))
+            applicant_userid = str(payload.get("applicant_userid", ""))
+            submitted_at = str(payload.get("submitted_at", ""))
+            created_at = str(payload.get("created_at", ""))
+            received_at = str(payload.get("received_at", ""))
+
+            output_dir = "/tmp/hybc-pdf"
+            os.makedirs(output_dir, exist_ok=True)
+            file_name = f"envelope-{envelope_no or envelope_uuid or 'unknown'}.pdf"
+            local_path = os.path.join(output_dir, file_name)
+
+            width, height = A4
+            fold_y = height / 2
+
+            pdf_buffer = BytesIO()
+            pdf = canvas.Canvas(pdf_buffer, pagesize=A4)
+
+            pdf.setLineWidth(1)
+            pdf.setDash(4, 4)
+            pdf.line(12 * mm, fold_y, width - 12 * mm, fold_y)
+            pdf.setDash()
+
+            qr = QrCodeWidget(envelope_uuid)
+            qr_bounds = qr.getBounds()
+            qr_w = qr_bounds[2] - qr_bounds[0]
+            qr_h = qr_bounds[3] - qr_bounds[1]
+            qr_size = 45 * mm
+            drawing = Drawing(
+                qr_size,
+                qr_size,
+                transform=[qr_size / qr_w, 0, 0, qr_size / qr_h, 0, 0],
+            )
+            drawing.add(qr)
+            renderPDF.draw(drawing, pdf, 20 * mm, height - 65 * mm)
+
+            pdf.setFont("Helvetica-Bold", 14)
+            pdf.drawString(75 * mm, height - 28 * mm, "报销信封（A4对折）")
+            pdf.setFont("Helvetica", 10)
+            pdf.drawString(75 * mm, height - 40 * mm, f"明文UUID: {envelope_uuid}")
+            pdf.drawString(75 * mm, height - 52 * mm, f"信封编号: {envelope_no}")
+
+            top_y = height - 80 * mm
+            line_gap = 12 * mm
+            pdf.drawString(20 * mm, top_y, f"所属工程: {project_id}")
+            pdf.drawString(20 * mm, top_y - line_gap, f"申报人: {applicant_userid}")
+            pdf.drawString(20 * mm, top_y - line_gap * 2, f"填报日期: {created_at[:10] if created_at else ''}")
+            pdf.drawString(20 * mm, top_y - line_gap * 3, f"提交日期: {submitted_at[:10] if submitted_at else ''}")
+            pdf.drawString(20 * mm, top_y - line_gap * 4, f"签收日期: {received_at[:10] if received_at else ''}")
+
+            bottom_start = fold_y - 20 * mm
+            pdf.setFont("Helvetica-Bold", 11)
+            pdf.drawString(20 * mm, bottom_start, "票据内袋（对折后置于内侧）")
+            pdf.setFont("Helvetica", 10)
+            pdf.drawString(20 * mm, bottom_start - 12 * mm, "- 内装票据后沿折线对折")
+            pdf.drawString(20 * mm, bottom_start - 24 * mm, "- 线下字段可现场补充")
+            pdf.drawString(20 * mm, bottom_start - 36 * mm, "填报日期: ____________________")
+            pdf.drawString(20 * mm, bottom_start - 48 * mm, "提交日期: ____________________")
+            pdf.drawString(20 * mm, bottom_start - 60 * mm, "签收日期: ____________________")
+
+            pdf.drawString(20 * mm, 20 * mm, f"UUID: {envelope_uuid}")
+            pdf.drawString(120 * mm, 20 * mm, f"工程: {project_id}  申报人: {applicant_userid}")
+
+            pdf.save()
+            with open(local_path, "wb") as output:
+                output.write(pdf_buffer.getvalue())
+
+            return json.dumps(
+                {
+                    "status": "generated",
+                    "file_name": file_name,
+                    "file_key": f"local/reimbursement-envelope/{file_name}",
+                    "local_path": local_path,
+                    "message": "报销信封PDF模板生成完成。",
+                },
+                ensure_ascii=False,
+            )
+        except Exception as exc:
+            return json.dumps(
+                {
+                    "status": "failed",
+                    "message": f"PDF generation failed: {exc}",
+                    "input": payload,
+                },
+                ensure_ascii=False,
+            )
+
 
     def _approval_ai_gate(self, payload: dict[str, object]) -> str:
         return json.dumps(

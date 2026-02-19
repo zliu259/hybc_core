@@ -60,6 +60,22 @@ const handleApprovalApproved = async (
     )
       .bind(change.new_amount, now, change.contract_id)
       .run();
+    return;
+  }
+
+  if (context.biz_type === "reimbursement_batch") {
+    const now = nowIso();
+    await env.DB.prepare(
+      "UPDATE reimbursement_batch SET status = 'approved', updated_at = ? WHERE id = ?"
+    )
+      .bind(now, context.biz_id)
+      .run();
+
+    await env.DB.prepare(
+      "UPDATE reimbursement_envelope SET status = 'approved', updated_at = ? WHERE batch_id = ?"
+    )
+      .bind(now, context.biz_id)
+      .run();
   }
 };
 
@@ -93,6 +109,22 @@ const handleApprovalRejected = async (
       "UPDATE contract_amount_change SET status = 'rejected', updated_at = ? WHERE id = ?"
     )
       .bind(nowIso(), context.biz_id)
+      .run();
+    return;
+  }
+
+  if (context.biz_type === "reimbursement_batch") {
+    const now = nowIso();
+    await env.DB.prepare(
+      "UPDATE reimbursement_batch SET status = 'rejected', updated_at = ? WHERE id = ?"
+    )
+      .bind(now, context.biz_id)
+      .run();
+
+    await env.DB.prepare(
+      "UPDATE reimbursement_envelope SET status = 'received', updated_at = ? WHERE batch_id = ?"
+    )
+      .bind(now, context.biz_id)
       .run();
   }
 };

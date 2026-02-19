@@ -55,6 +55,60 @@ export default {
         title: "收款人管理",
         roles: ["super_admin", "manager", "site_manager"]
       }
+    },
+    {
+      path: "/finance/reimbursement",
+      name: "ReimbursementList",
+      component: () => import("@/views/finance/reimbursement/list.vue"),
+      meta: {
+        title: "报销信封",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/reimbursement/detail/:id",
+      name: "ReimbursementDetail",
+      component: () => import("@/views/finance/reimbursement/detail.vue"),
+      meta: {
+        title: "信封详情",
+        showLink: false
+      }
+    },
+    {
+      path: "/finance/reimbursement/precheck",
+      name: "ReimbursementPrecheck",
+      component: () => import("@/views/finance/reimbursement/precheck.vue"),
+      meta: {
+        title: "预审工作台",
+        roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
+      path: "/finance/reimbursement/duplicate",
+      name: "ReimbursementDuplicate",
+      component: () => import("@/views/finance/reimbursement/duplicate.vue"),
+      meta: {
+        title: "查重中心",
+        roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
+      path: "/finance/reimbursement/batch",
+      name: "ReimbursementBatchList",
+      component: () => import("@/views/finance/reimbursement/batch.vue"),
+      meta: {
+        title: "报销集中审批",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/reimbursement/batch/:id",
+      name: "ReimbursementBatchDetail",
+      component: () => import("@/views/finance/reimbursement/batch-detail.vue"),
+      meta: {
+        title: "报销批次详情",
+        showLink: false
+      }
     }
   ]
 } satisfies RouteConfigsTable;

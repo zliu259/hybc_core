@@ -21,6 +21,7 @@ class Settings:
             "risk_assessment",
             "payment_risk_assessment",
             "reimbursement_check",
+            "reimbursement_anomaly",
             "log_analysis",
             "equipment_recommend",
             "ocr_extract",
