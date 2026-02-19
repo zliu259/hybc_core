@@ -17,7 +17,8 @@
 
   <hy-panel-card title="项目现场">
     <view class="grid">
-      <t-button block variant="outline" data-path="/pages/log/index" bindtap="goTo">日志填报</t-button>
+      <t-button block variant="outline" data-path="/pages/operator-log/index" bindtap="goTo">操作员日志</t-button>
+      <t-button block variant="outline" data-path="/pages/manager-log/index" bindtap="goTo">管理员日志</t-button>
       <t-button block variant="outline" data-path="/pages/approval/index" bindtap="goTo">审批处理</t-button>
       <t-button block variant="outline" data-path="/pages/survey/index" bindtap="goTo">现场勘查</t-button>
       <t-button block variant="outline" data-path="/pages/progress/index" bindtap="goTo">进度概览</t-button>
@@ -28,7 +29,7 @@
     <view class="grid">
       <t-button block variant="outline" data-path="/pages/notice/index" bindtap="goTo">通知消息</t-button>
       <t-button block variant="outline" data-path="/pages/approval/index" bindtap="goTo">我的待办</t-button>
-      <t-button block variant="outline" data-path="/pages/log/index" bindtap="goTo">快捷填报</t-button>
+      <t-button block variant="outline" data-path="/pages/operator-log/index" bindtap="goTo">快捷填报</t-button>
       <t-button block variant="outline" data-path="/pages/survey/index" bindtap="goTo">快捷勘查</t-button>
     </view>
   </hy-panel-card>

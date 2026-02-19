@@ -278,7 +278,9 @@
 - 财务（Tab2）：`packages/miniapp/pages/finance/index`
 - 库房（Tab3）：`packages/miniapp/pages/warehouse/index`
 - 我（Tab4）：`packages/miniapp/pages/profile/index`
-- 日志填报：`packages/miniapp/pages/log/index`
+- 日志中心：`packages/miniapp/pages/log/index`
+- 操作员日志：`packages/miniapp/pages/operator-log/index`
+- 管理员日志：`packages/miniapp/pages/manager-log/index`
 - 审批待办：`packages/miniapp/pages/approval/index`
 - 报销扫码：`packages/miniapp/pages/reimbursement/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
@@ -291,7 +293,9 @@
 - 财务Tab：集中放置报销/审批/财务相关进度入口。
 - 库房Tab：集中放置设备扫码、勘查、库存协同入口。
 - 我Tab：放置个人资料、联调配置、会话管理。
-- 日志页：支持操作员日志 AI 预填 + 提交，管理员日志拍照上传 + 提交。
+- 日志中心：仅负责日志角色入口分流（操作员/管理员）。
+- 操作员日志页：支持 AI 预填 + 提交，班次使用中文选择（白班/夜班），内部存储保持 day/night。
+- 管理员日志页：支持拍照上传 + 结构化提交。
 - 审批页：移动端单手可完成通过/拒绝/退回/转签，危险动作前需确认弹窗。
 - 报销页：支持二维码识别、电子发票拍照上传(OCR)、PDF 生成状态追踪。
 - 设备页：支持扫码识别资产、状态查看与出入库事件确认。
@@ -319,7 +323,9 @@
 
 #### 4.3.3 组件映射（页面级）
 - 工作台 `packages/miniapp/pages/index/index.wxml`：`t-button` + 统计卡片 + 分区入口网格。
-- 日志 `packages/miniapp/pages/log/index.wxml`：`t-notice-bar`、`t-button`、`t-tag`，强化“预填-校对-提交”流程。
+- 日志中心 `packages/miniapp/pages/log/index.wxml`：`hy-panel-card` + 快捷入口，完成角色分流。
+- 操作员日志 `packages/miniapp/pages/operator-log/index.wxml`：`hy-project-picker`、日期选择、班次中文选择、`t-button`，强化“预填-校对-提交”。
+- 管理员日志 `packages/miniapp/pages/manager-log/index.wxml`：`hy-project-picker`、日期选择、拍照上传、`hy-status-chip`。
 - 审批 `packages/miniapp/pages/approval/index.wxml`：`t-button`、`t-empty`，用于动作一致性与无数据空态。
 - 报销 `packages/miniapp/pages/reimbursement/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，用于链路状态可视化（OCR/PDF）。
 - 勘查 `packages/miniapp/pages/survey/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，突出定位与图片采集流程。

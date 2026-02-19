@@ -1,43 +1,8 @@
 <view class="page">
-  <hy-panel-card title="操作员日志（AI预填）">
-    <t-notice-bar content="建议先点击AI预填，再校对后提交" theme="info" />
-    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="label required">日期</view>
-    <picker mode="date" value="{{operator.log_date}}" bindchange="onOperatorDateChange" disabled="{{busy}}">
-      <view class="input">{{operator.log_date}}</view>
-    </picker>
-    <view class="label required">班次</view>
-    <picker mode="selector" range="{{shiftOptions}}" value="{{shiftIndex}}" bindchange="onShiftChange" disabled="{{busy}}">
-      <view class="input">{{shiftOptions[shiftIndex]}}</view>
-    </picker>
-    <view class="label required">本班下管数</view>
-    <input class="input" type="number" value="{{operator.completed_pipe_count}}" data-key="completed_pipe_count" bindinput="onOperatorInput" disabled="{{busy}}" />
-    <view class="label">天气</view>
-    <input class="input" value="{{operator.weather}}" data-key="weather" bindinput="onOperatorInput" disabled="{{busy}}" />
-    <view class="label">问题摘要</view>
-    <textarea class="input" value="{{operator.issue_summary}}" data-key="issue_summary" bindinput="onOperatorInput" disabled="{{busy}}" />
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="smartFill" loading="{{busy}}" disabled="{{busy}}">AI预填</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitOperator" loading="{{busy}}" disabled="{{busy}}">提交操作员日志</t-button>
-    </view>
-  </hy-panel-card>
-
-  <hy-panel-card title="管理员日志 + 拍照上传">
-    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="label required">日期</view>
-    <picker mode="date" value="{{manager.log_date}}" bindchange="onManagerDateChange" disabled="{{busy}}">
-      <view class="input">{{manager.log_date}}</view>
-    </picker>
-    <view class="label">标题</view>
-    <input class="input" value="{{manager.title}}" data-key="title" bindinput="onManagerInput" disabled="{{busy}}" />
-    <view class="label">日志内容</view>
-    <textarea class="input" value="{{manager.detail_html}}" data-key="detail_html" bindinput="onManagerInput" disabled="{{busy}}" />
-    <view class="row">
-      <t-tag theme="primary" variant="light">已上传图片 {{manager.photos.length}} 张</t-tag>
-    </view>
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickManagerPhoto" loading="{{busy}}" disabled="{{busy}}">拍照/选图</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitManager" loading="{{busy}}" disabled="{{busy}}">提交管理员日志</t-button>
+  <hy-panel-card title="日志中心" subtitle="已拆分为操作员日志和管理员日志，按角色快速直达">
+    <view class="grid">
+      <t-button block variant="outline" data-path="/pages/operator-log/index" bindtap="goTo">操作员日志</t-button>
+      <t-button block variant="outline" data-path="/pages/manager-log/index" bindtap="goTo">管理员日志</t-button>
     </view>
   </hy-panel-card>
 </view>

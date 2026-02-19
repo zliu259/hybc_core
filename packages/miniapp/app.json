@@ -5,6 +5,8 @@
     "pages/warehouse/index",
     "pages/profile/index",
     "pages/log/index",
+    "pages/operator-log/index",
+    "pages/manager-log/index",
     "pages/approval/index",
     "pages/reimbursement/index",
     "pages/asset/index",
