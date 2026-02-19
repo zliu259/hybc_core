@@ -273,13 +273,20 @@
 - 审批待办：`packages/miniapp/pages/approval/index`
 - 报销扫码：`packages/miniapp/pages/reimbursement/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
+- 现场勘查：`packages/miniapp/pages/survey/index`
+- 项目进度概览：`packages/miniapp/pages/progress/index`
+- 通知消息：`packages/miniapp/pages/notice/index`
+- 个人中心：`packages/miniapp/pages/profile/index`
 
 ### 4.2 页面要求
 - 首页：展示待办数量、快捷入口、系统通知。
-- 日志页：支持班次、参数、照片上传与草稿保存。
+- 日志页：支持操作员日志 AI 预填 + 提交，管理员日志拍照上传 + 提交。
 - 审批页：移动端单手可完成通过/拒绝/退回。
-- 报销页：支持二维码识别、发票上传、状态追踪。
-- 设备页：支持扫码识别资产与出入库确认。
+- 报销页：支持二维码识别、电子发票拍照上传(OCR)、PDF 生成状态追踪。
+- 设备页：支持扫码识别资产、状态查看与出入库事件确认。
+- 勘查页：支持 GPS 定位、拍照上传、表单提交。
+- 进度页：支持项目日志指标与预警列表查看。
+- 个人中心：支持查看用户信息与退出登录。
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

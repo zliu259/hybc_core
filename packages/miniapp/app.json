@@ -1,5 +1,15 @@
 {
-  "pages": ["pages/index/index"],
+  "pages": [
+    "pages/index/index",
+    "pages/log/index",
+    "pages/approval/index",
+    "pages/reimbursement/index",
+    "pages/asset/index",
+    "pages/survey/index",
+    "pages/progress/index",
+    "pages/notice/index",
+    "pages/profile/index"
+  ],
   "window": {
     "navigationBarTitleText": "恒越百川",
     "navigationBarBackgroundColor": "#2f6c5f",

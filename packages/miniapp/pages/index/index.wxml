@@ -1,6 +1,30 @@
 <view class="page">
   <view class="card">
     <view class="title">{{title}}</view>
-    <view class="desc">已完成目录初始化与依赖声明，可继续接入登录、审批与日志填报模块。</view>
+    <view class="sub">待审批 {{pendingCount}} 条 · 通知 {{noticeCount}} 条</view>
+  </view>
+
+  <view class="card">
+    <view class="title">核心功能</view>
+    <view class="row">
+      <button class="btn" data-path="/pages/log/index" bindtap="goTo">日志填报</button>
+      <button class="btn" data-path="/pages/approval/index" bindtap="goTo">审批处理</button>
+    </view>
+    <view class="row">
+      <button class="btn" data-path="/pages/reimbursement/index" bindtap="goTo">报销扫码</button>
+      <button class="btn" data-path="/pages/notice/index" bindtap="goTo">通知消息</button>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="title">辅助功能</view>
+    <view class="row">
+      <button class="btn" data-path="/pages/survey/index" bindtap="goTo">现场勘查</button>
+      <button class="btn" data-path="/pages/asset/index" bindtap="goTo">设备扫码</button>
+    </view>
+    <view class="row">
+      <button class="btn" data-path="/pages/progress/index" bindtap="goTo">进度概览</button>
+      <button class="btn" data-path="/pages/profile/index" bindtap="goTo">个人中心</button>
+    </view>
   </view>
 </view>

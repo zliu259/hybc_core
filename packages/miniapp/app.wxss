@@ -3,3 +3,52 @@ page {
   color: #2a241d;
   font-family: PingFang SC, Hiragino Sans GB, sans-serif;
 }
+
+.page {
+  min-height: 100vh;
+  padding: 24rpx;
+}
+
+.card {
+  background: #fffaf2;
+  border: 1px solid #d9ceb9;
+  border-radius: 16rpx;
+  padding: 20rpx;
+  margin-bottom: 18rpx;
+}
+
+.title {
+  font-size: 34rpx;
+  font-weight: 600;
+  color: #2f6c5f;
+}
+
+.sub {
+  font-size: 26rpx;
+  color: #6e6458;
+}
+
+.row {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 14rpx;
+}
+
+.btn {
+  flex: 1;
+  border-radius: 12rpx;
+}
+
+.input {
+  border: 1px solid #d9ceb9;
+  border-radius: 12rpx;
+  padding: 14rpx;
+  margin-top: 12rpx;
+  background: #fff;
+}
+
+.label {
+  margin-top: 10rpx;
+  font-size: 26rpx;
+  color: #6e6458;
+}

@@ -1,0 +1,12 @@
+<view class="page">
+  <view class="card">
+    <view class="title">通知消息列表</view>
+    <button class="btn" bindtap="loadNotices">刷新</button>
+  </view>
+  <block wx:for="{{notices}}" wx:key="id">
+    <view class="card">
+      <view>{{item.title}}</view>
+      <view class="sub">{{item.content}}</view>
+    </view>
+  </block>
+</view>

@@ -1,0 +1,22 @@
+<view class="page">
+  <view class="card">
+    <view class="title">项目进度概览</view>
+    <view class="label">项目ID（可选）</view>
+    <input class="input" type="number" value="{{projectId}}" bindinput="onProjectInput" />
+    <button class="btn" bindtap="loadData">刷新</button>
+  </view>
+
+  <view class="card">
+    <view class="sub">操作员日志数: {{dashboard.operator_count || 0}}</view>
+    <view class="sub">管理员日志数: {{dashboard.manager_count || 0}}</view>
+    <view class="sub">累计下管: {{dashboard.completed_total || 0}}</view>
+    <view class="sub">累计进尺: {{dashboard.footage_total || 0}}</view>
+  </view>
+
+  <view class="card">
+    <view class="title">进度预警</view>
+    <block wx:for="{{alerts}}" wx:key="project_id">
+      <view class="sub">{{item.project_name}} · {{item.message}}</view>
+    </block>
+  </view>
+</view>

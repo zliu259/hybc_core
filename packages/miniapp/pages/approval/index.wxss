@@ -1,0 +1,3 @@
+.card view {
+  margin-top: 6rpx;
+}

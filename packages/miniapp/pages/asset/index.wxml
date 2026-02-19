@@ -1,0 +1,22 @@
+<view class="page">
+  <view class="card">
+    <view class="title">设备扫码（状态查看）</view>
+    <view class="label">资产ID</view>
+    <input class="input" type="number" value="{{assetId}}" bindinput="onAssetIdInput" />
+    <view class="row">
+      <button class="btn" bindtap="scanAsset">扫码</button>
+      <button class="btn" type="primary" bindtap="loadAsset">查看状态</button>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{asset.id}}">
+    <view class="title">{{asset.asset_code}}</view>
+    <view class="sub">名称：{{asset.asset_name}}</view>
+    <view class="sub">状态：{{asset.status}}</view>
+    <view class="sub">位置：{{asset.current_location || '-'}} </view>
+    <view class="row">
+      <button class="btn" data-type="stock_out" bindtap="markStockEvent">记录出库确认</button>
+      <button class="btn" data-type="stock_in" bindtap="markStockEvent">记录入库确认</button>
+    </view>
+  </view>
+</view>

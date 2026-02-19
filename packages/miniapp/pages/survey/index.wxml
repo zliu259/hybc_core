@@ -1,0 +1,23 @@
+<view class="page">
+  <view class="card">
+    <view class="title">现场勘查（GPS + 拍照 + 表单）</view>
+    <view class="label">项目ID</view>
+    <input class="input" type="number" value="{{form.project_id}}" data-key="project_id" bindinput="onInput" />
+    <view class="label">勘查日期</view>
+    <input class="input" value="{{form.survey_date}}" data-key="survey_date" bindinput="onInput" />
+    <view class="label">位置</view>
+    <input class="input" value="{{form.location}}" data-key="location" bindinput="onInput" />
+    <view class="label">天气</view>
+    <input class="input" value="{{form.weather}}" data-key="weather" bindinput="onInput" />
+    <view class="label">摘要</view>
+    <textarea class="input" value="{{form.summary}}" data-key="summary" bindinput="onInput" />
+    <view class="sub">照片数量: {{photoKeys.length}}</view>
+    <view class="row">
+      <button class="btn" bindtap="fillLocation">GPS定位</button>
+      <button class="btn" bindtap="addPhoto">拍照上传</button>
+    </view>
+    <view class="row">
+      <button class="btn" type="primary" bindtap="submitSurvey">提交勘查</button>
+    </view>
+  </view>
+</view>
