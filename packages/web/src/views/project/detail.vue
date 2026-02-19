@@ -22,8 +22,9 @@ const sections = ref<ProjectSection[]>([]);
 const summary = ref<{
   outboundPaidAmount: number;
   inboundReceivedAmount: number;
+  inboundInvoicedAmount: number;
   reimbursementAmount: number;
-  note: string;
+  receiptCount: number;
 } | null>(null);
 
 const sectionForm = ref({
@@ -112,19 +113,22 @@ onMounted(loadData);
     </el-col>
 
     <el-col :md="10" :xs="24">
-      <el-card shadow="never" header="财务汇总（预留）">
+      <el-card shadow="never" header="财务汇总">
         <el-descriptions :column="1" border>
           <el-descriptions-item label="对外付款已支付">
             {{ summary?.outboundPaidAmount ?? 0 }}
           </el-descriptions-item>
+          <el-descriptions-item label="收款已开票">
+            {{ summary?.inboundInvoicedAmount ?? 0 }}
+          </el-descriptions-item>
           <el-descriptions-item label="收款已到账">
             {{ summary?.inboundReceivedAmount ?? 0 }}
           </el-descriptions-item>
+          <el-descriptions-item label="收款登记笔数">
+            {{ summary?.receiptCount ?? 0 }}
+          </el-descriptions-item>
           <el-descriptions-item label="报销累计">
             {{ summary?.reimbursementAmount ?? 0 }}
-          </el-descriptions-item>
-          <el-descriptions-item label="说明">
-            {{ summary?.note ?? "-" }}
           </el-descriptions-item>
         </el-descriptions>
       </el-card>

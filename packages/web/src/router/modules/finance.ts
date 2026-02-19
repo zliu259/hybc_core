@@ -57,6 +57,42 @@ export default {
       }
     },
     {
+      path: "/finance/receipt/contract",
+      name: "InboundContractList",
+      component: () => import("@/views/finance/receipt/contract.vue"),
+      meta: {
+        title: "收款合同",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/receipt/invoice",
+      name: "InvoiceList",
+      component: () => import("@/views/finance/receipt/invoice.vue"),
+      meta: {
+        title: "发票管理",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/receipt",
+      name: "ReceiptList",
+      component: () => import("@/views/finance/receipt/list.vue"),
+      meta: {
+        title: "收款登记",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/receipt/dashboard",
+      name: "ReceiptDashboard",
+      component: () => import("@/views/finance/receipt/dashboard.vue"),
+      meta: {
+        title: "收款统计",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
       path: "/finance/reimbursement",
       name: "ReimbursementList",
       component: () => import("@/views/finance/reimbursement/list.vue"),

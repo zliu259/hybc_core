@@ -270,16 +270,48 @@ projectRoutes.delete(
   }
 );
 
-projectRoutes.get("/:id/financial-summary", (c) => {
+projectRoutes.get("/:id/financial-summary", async (c) => {
   const id = Number(c.req.param("id"));
+
+  const outbound = await c.env.DB.prepare(
+    "SELECT IFNULL(SUM(paid_amount), 0) as total FROM contract WHERE project_id = ? AND direction = 'outbound' AND status != 'deleted'"
+  )
+    .bind(id)
+    .first<{ total: number }>();
+
+  const inbound = await c.env.DB.prepare(
+    "SELECT IFNULL(SUM(received_amount), 0) as total FROM contract WHERE project_id = ? AND direction = 'inbound' AND status != 'deleted'"
+  )
+    .bind(id)
+    .first<{ total: number }>();
+
+  const invoiced = await c.env.DB.prepare(
+    "SELECT IFNULL(SUM(invoiced_amount), 0) as total FROM contract WHERE project_id = ? AND direction = 'inbound' AND status != 'deleted'"
+  )
+    .bind(id)
+    .first<{ total: number }>();
+
+  const reimbursement = await c.env.DB.prepare(
+    "SELECT IFNULL(SUM(total_amount), 0) as total FROM reimbursement_batch WHERE project_id = ? AND status IN ('approved', 'paid')"
+  )
+    .bind(id)
+    .first<{ total: number }>();
+
+  const receiptCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) as cnt FROM receipt WHERE project_id = ? AND status != 'deleted'"
+  )
+    .bind(id)
+    .first<{ cnt: number }>();
+
   return c.json({
     success: true,
     data: {
       projectId: id,
-      outboundPaidAmount: 0,
-      inboundReceivedAmount: 0,
-      reimbursementAmount: 0,
-      note: "Phase 1 placeholder response"
+      outboundPaidAmount: outbound?.total ?? 0,
+      inboundReceivedAmount: inbound?.total ?? 0,
+      inboundInvoicedAmount: invoiced?.total ?? 0,
+      reimbursementAmount: reimbursement?.total ?? 0,
+      receiptCount: receiptCount?.cnt ?? 0
     }
   });
 });

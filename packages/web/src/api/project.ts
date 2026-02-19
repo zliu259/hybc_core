@@ -38,7 +38,10 @@ export const listProjects = (params?: {
 };
 
 export const getProjectById = (id: number) => {
-  return http.request<{ success: boolean; data: Project }>("get", `/api/v1/project/${id}`);
+  return http.request<{ success: boolean; data: Project }>(
+    "get",
+    `/api/v1/project/${id}`
+  );
 };
 
 export const createProject = (data: {
@@ -58,9 +61,13 @@ export const createProject = (data: {
 };
 
 export const updateProjectStatus = (id: number, status: string) => {
-  return http.request<{ success: boolean }>("patch", `/api/v1/project/${id}/status`, {
-    data: { status }
-  });
+  return http.request<{ success: boolean }>(
+    "patch",
+    `/api/v1/project/${id}/status`,
+    {
+      data: { status }
+    }
+  );
 };
 
 export const listProjectSections = (projectId: number) => {
@@ -93,8 +100,9 @@ export const getProjectFinancialSummary = (projectId: number) => {
       projectId: number;
       outboundPaidAmount: number;
       inboundReceivedAmount: number;
+      inboundInvoicedAmount: number;
       reimbursementAmount: number;
-      note: string;
+      receiptCount: number;
     };
   }>("get", `/api/v1/project/${projectId}/financial-summary`);
 };

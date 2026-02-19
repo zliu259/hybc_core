@@ -104,7 +104,11 @@ const loadAiReview = async () => {
 };
 
 const onSave = async () => {
-  if (!form.value.project_id || !form.value.entity_id || !form.value.counterparty) {
+  if (
+    !form.value.project_id ||
+    !form.value.entity_id ||
+    !form.value.counterparty
+  ) {
     message("请先填写必填项", { type: "warning" });
     return;
   }
@@ -202,6 +206,14 @@ const goBack = () => {
 };
 
 onMounted(async () => {
+  if (isCreate.value && typeof route.query.direction === "string") {
+    if (
+      route.query.direction === "inbound" ||
+      route.query.direction === "outbound"
+    ) {
+      form.value.direction = route.query.direction;
+    }
+  }
   await loadBaseData();
   await loadDetail();
 });
@@ -210,15 +222,33 @@ onMounted(async () => {
 <template>
   <el-card shadow="never" :loading="loading" style="background: #fffaf2">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
-        <span>{{ isCreate ? "新建合同" : `合同详情 - ${detail?.contract_no || ""}` }}</span>
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <span>{{
+          isCreate ? "新建合同" : `合同详情 - ${detail?.contract_no || ""}`
+        }}</span>
         <div>
           <el-button @click="goBack">返回</el-button>
-          <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
-          <el-button type="warning" @click="onSubmitApproval" :disabled="isCreate">
+          <el-button type="primary" :loading="saving" @click="onSave"
+            >保存</el-button
+          >
+          <el-button
+            type="warning"
+            :disabled="isCreate"
+            @click="onSubmitApproval"
+          >
             提交审批
           </el-button>
-          <el-button type="success" @click="onTriggerAiReview" :disabled="isCreate">
+          <el-button
+            type="success"
+            :disabled="isCreate"
+            @click="onTriggerAiReview"
+          >
             触发AI审查
           </el-button>
         </div>
@@ -233,7 +263,12 @@ onMounted(async () => {
         </el-radio-group>
       </el-form-item>
       <el-form-item label="所属项目">
-        <el-select v-model="form.project_id" filterable clearable style="width: 360px">
+        <el-select
+          v-model="form.project_id"
+          filterable
+          clearable
+          style="width: 360px"
+        >
           <el-option
             v-for="item in projects"
             :key="item.id"
@@ -243,7 +278,12 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="我方主体">
-        <el-select v-model="form.entity_id" filterable clearable style="width: 360px">
+        <el-select
+          v-model="form.entity_id"
+          filterable
+          clearable
+          style="width: 360px"
+        >
           <el-option
             v-for="item in entities"
             :key="item.id"
@@ -265,7 +305,11 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="经办人">
-        <el-input v-model="form.handler_userid" placeholder="企微userid" style="width: 280px" />
+        <el-input
+          v-model="form.handler_userid"
+          placeholder="企微userid"
+          style="width: 280px"
+        />
       </el-form-item>
       <el-form-item label="合同日期">
         <el-date-picker
@@ -276,7 +320,12 @@ onMounted(async () => {
         />
       </el-form-item>
       <el-form-item label="合同金额">
-        <el-input-number v-model="form.total_amount" :min="0" :precision="2" :step="1000" />
+        <el-input-number
+          v-model="form.total_amount"
+          :min="0"
+          :precision="2"
+          :step="1000"
+        />
       </el-form-item>
       <el-form-item label="附件JSON">
         <el-input
@@ -293,13 +342,22 @@ onMounted(async () => {
 
     <el-divider v-if="detail">财务摘要</el-divider>
     <el-row v-if="detail" :gutter="12" style="margin-bottom: 8px">
-      <el-col :span="6"><el-statistic title="合同总额" :value="detail.total_amount" /></el-col>
-      <el-col :span="6"><el-statistic title="已付金额" :value="detail.paid_amount" /></el-col>
-      <el-col :span="6"><el-statistic title="剩余额度" :value="remainingAmount" /></el-col>
+      <el-col :span="6"
+        ><el-statistic title="合同总额" :value="detail.total_amount"
+      /></el-col>
+      <el-col :span="6"
+        ><el-statistic title="已付金额" :value="detail.paid_amount"
+      /></el-col>
+      <el-col :span="6"
+        ><el-statistic title="剩余额度" :value="remainingAmount"
+      /></el-col>
       <el-col :span="6">
         <div style="margin-top: 8px">
           AI审查状态
-          <el-tag :type="aiStatusTagType[aiStatus] || 'info'" style="margin-left: 8px">
+          <el-tag
+            :type="aiStatusTagType[aiStatus] || 'info'"
+            style="margin-left: 8px"
+          >
             {{ aiStatus }}
           </el-tag>
         </div>
@@ -318,7 +376,11 @@ onMounted(async () => {
         {{ aiReviewData.summary || "-" }}
       </el-descriptions-item>
       <el-descriptions-item label="建议" :span="2">
-        {{ Array.isArray(aiReviewData.recommendations) ? aiReviewData.recommendations.join("；") : "-" }}
+        {{
+          Array.isArray(aiReviewData.recommendations)
+            ? aiReviewData.recommendations.join("；")
+            : "-"
+        }}
       </el-descriptions-item>
     </el-descriptions>
 
@@ -344,10 +406,17 @@ onMounted(async () => {
       </el-table-column>
     </el-table>
 
-    <el-dialog v-model="approvalDialogVisible" title="实例级二次设置" width="560px">
+    <el-dialog
+      v-model="approvalDialogVisible"
+      title="实例级二次设置"
+      width="560px"
+    >
       <el-form label-width="120px">
         <el-form-item label="审批摘要">
-          <el-input v-model="approvalSummary" placeholder="可选，留空则使用系统默认摘要" />
+          <el-input
+            v-model="approvalSummary"
+            placeholder="可选，留空则使用系统默认摘要"
+          />
         </el-form-item>
         <el-form-item label="实例配置(JSON)">
           <el-input
@@ -360,7 +429,9 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="approvalDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSubmitApproval">确认提交</el-button>
+        <el-button type="primary" @click="confirmSubmitApproval"
+          >确认提交</el-button
+        >
       </template>
     </el-dialog>
 

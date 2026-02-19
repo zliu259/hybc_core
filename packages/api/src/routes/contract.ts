@@ -298,9 +298,9 @@ contractRoutes.post(
       return c.json({ success: false, error: { message: "Contract not found" } }, 404);
     }
 
-    if (contract.direction !== "outbound") {
+    if (contract.direction !== "outbound" && contract.direction !== "inbound") {
       return c.json(
-        { success: false, error: { message: "Only outbound contracts can submit this approval flow" } },
+        { success: false, error: { message: "Only outbound/inbound contracts can submit this approval flow" } },
         400
       );
     }
@@ -330,7 +330,7 @@ contractRoutes.post(
     const instance = await submitForApproval(
       c.env,
       {
-        biz_type: "outbound_contract",
+        biz_type: contract.direction === "outbound" ? "outbound_contract" : "inbound_contract",
         biz_id: id,
         biz_summary:
           body.biz_summary?.trim() ||

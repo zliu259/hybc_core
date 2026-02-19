@@ -51,7 +51,10 @@
 - 报销查重中心：`packages/web/src/views/finance/reimbursement/duplicate.vue`
 - 报销集中审批批次列表：`packages/web/src/views/finance/reimbursement/batch.vue`
 - 报销集中审批批次详情：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
+- 收款合同管理：`packages/web/src/views/finance/receipt/contract.vue`
+- 发票管理：`packages/web/src/views/finance/receipt/invoice.vue`
 - 收款登记列表：`packages/web/src/views/finance/receipt/list.vue`
+- 收款统计仪表盘：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 审批中心：`packages/web/src/views/approval/index.vue`
 - 审批详情：`packages/web/src/views/approval/detail.vue`
 - 审批模板配置：`packages/web/src/views/approval/template-config.vue`
@@ -147,10 +150,27 @@
 - 操作区：触发AI审计、提交集中审批、标记批次付款、跳转审批详情。
 - API 指向：`/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/trigger-audit`, `/api/v1/reimbursement/batch/:id/audit-report`, `/api/v1/reimbursement/batch/:id/submit-approval`, `/api/v1/reimbursement/batch/:id/mark-paid`
 
-#### G. 收款登记列表 `views/finance/receipt/list.vue`
-- 核心列：收款编号、工程、收款账户、金额、收款日期。
-- 校验提示：合同金额与已开票金额联动提醒。
-- API 指向：`/api/v1/receipt`, `/api/v1/invoice`
+#### G. 收款合同管理 `views/finance/receipt/contract.vue`
+- 核心列：合同号、项目、对方单位、合同总额、已开票、已收款、状态。
+- 操作：新建收款合同（direction=inbound）、查看合同详情并提交审批。
+- API 指向：`/api/v1/contract?direction=inbound`, `/api/v1/contract/:id/submit-approval`
+
+#### G-2. 发票管理 `views/finance/receipt/invoice.vue`
+- 核心列：发票单号、合同号、发票抬头、税号、开票日期、金额、状态。
+- 操作：签发发票、删除发票。
+- 校验：已开票总额 + 本次开票 ≤ 合同总额（后端强校验）。
+- API 指向：`/api/v1/receipt/invoice`
+
+#### G-3. 收款登记列表 `views/finance/receipt/list.vue`
+- 核心列：收款单号、合同号、关联发票号、收款日期、金额、收款账户、登记人、状态。
+- 操作：新增收款登记、删除登记。
+- 校验：合同收款总额与发票收款总额上限联动（后端强校验）。
+- API 指向：`/api/v1/receipt`
+
+#### G-4. 收款统计仪表盘 `views/finance/receipt/dashboard.vue`
+- 指标：收款合同已开票、收款合同已到账、收款登记笔数、对外付款已支付、报销累计。
+- 支持按项目切换统计。
+- API 指向：`/api/v1/project/:id/financial-summary`
 
 #### H. 审批中心 `views/approval/index.vue`
 - Tab：待审批、已处理、抄送我。

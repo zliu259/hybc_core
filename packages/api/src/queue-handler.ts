@@ -30,6 +30,15 @@ const handleApprovalApproved = async (
     return;
   }
 
+  if (context.biz_type === "inbound_contract") {
+    await env.DB.prepare(
+      "UPDATE contract SET status = 'active', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), context.biz_id)
+      .run();
+    return;
+  }
+
   if (context.biz_type === "payment_request") {
     await env.DB.prepare(
       "UPDATE payment_request SET status = 'approved', updated_at = ? WHERE id = ?"
@@ -87,6 +96,15 @@ const handleApprovalRejected = async (
   if (!context) return;
 
   if (context.biz_type === "outbound_contract") {
+    await env.DB.prepare(
+      "UPDATE contract SET status = 'draft', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), context.biz_id)
+      .run();
+    return;
+  }
+
+  if (context.biz_type === "inbound_contract") {
     await env.DB.prepare(
       "UPDATE contract SET status = 'draft', updated_at = ? WHERE id = ?"
     )
