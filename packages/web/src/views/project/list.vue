@@ -85,7 +85,9 @@ onMounted(loadProjects);
           <el-button link type="primary" @click="gotoDetail(scope.row.id)">
             详情
           </el-button>
-          <el-dropdown @command="(value: string) => changeStatus(scope.row.id, value)">
+          <el-dropdown
+            @command="(value: string) => changeStatus(scope.row.id, value)"
+          >
             <el-button link type="primary">状态流转</el-button>
             <template #dropdown>
               <el-dropdown-menu>
@@ -110,7 +112,12 @@ onMounted(loadProjects);
       :current-page="page"
       :page-size="pageSize"
       :total="total"
-      @current-change="(val: number) => { page = val; loadProjects(); }"
+      @current-change="
+        (val: number) => {
+          page = val;
+          loadProjects();
+        }
+      "
     />
   </el-card>
 </template>

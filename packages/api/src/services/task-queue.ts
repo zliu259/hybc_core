@@ -9,7 +9,7 @@ import type {
   CreateTaskRequest,
   AiProviderConfig
 } from "../types/ai";
-import { createTask, completeTask, resolveProvider, resolvePrompt } from "./ai-slot";
+import { createTask, completeTask, resolvePrompt } from "./ai-slot";
 
 const nowIso = () => new Date().toISOString();
 

@@ -292,6 +292,8 @@ class AutoExecutor implements NodeExecutor {
     config: TemplateNodeConfig,
     _instanceId: number
   ): Promise<void> {
+    void config;
+    void _instanceId;
     // Auto node completes immediately
     const now = nowIso();
     await env.DB.prepare(

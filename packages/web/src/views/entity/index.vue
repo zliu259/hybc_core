@@ -44,7 +44,9 @@ const invoiceForm = ref({
 });
 
 const selectedEntity = computed(() => {
-  return entities.value.find((item) => item.id === selectedEntityId.value) ?? null;
+  return (
+    entities.value.find(item => item.id === selectedEntityId.value) ?? null
+  );
 });
 
 const loadEntities = async () => {
@@ -97,7 +99,9 @@ const createInvoiceProfileRow = async () => {
     return;
   }
 
-  await createEntityInvoiceProfile(selectedEntityId.value, { ...invoiceForm.value });
+  await createEntityInvoiceProfile(selectedEntityId.value, {
+    ...invoiceForm.value
+  });
   invoiceForm.value = {
     invoice_title: "",
     tax_no: "",
@@ -127,7 +131,9 @@ onMounted(loadEntities);
           <el-form-item label="法人">
             <el-input v-model="entityForm.legal_person" />
           </el-form-item>
-          <el-button type="primary" @click="createEntityRow">新增实体</el-button>
+          <el-button type="primary" @click="createEntityRow"
+            >新增实体</el-button
+          >
         </el-form>
 
         <el-table
@@ -144,7 +150,10 @@ onMounted(loadEntities);
     </el-col>
 
     <el-col :md="14" :xs="24">
-      <el-card shadow="never" :header="`关联信息 - ${selectedEntity?.entity_name ?? '-'}`">
+      <el-card
+        shadow="never"
+        :header="`关联信息 - ${selectedEntity?.entity_name ?? '-'}`"
+      >
         <el-tabs>
           <el-tab-pane label="银行账户">
             <el-form inline>

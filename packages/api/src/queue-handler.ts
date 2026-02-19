@@ -85,6 +85,15 @@ const handleApprovalApproved = async (
     )
       .bind(now, context.biz_id)
       .run();
+    return;
+  }
+
+  if (context.biz_type === "stock_order") {
+    await env.DB.prepare(
+      "UPDATE stock_order SET status = 'approved', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), context.biz_id)
+      .run();
   }
 };
 
@@ -143,6 +152,15 @@ const handleApprovalRejected = async (
       "UPDATE reimbursement_envelope SET status = 'received', updated_at = ? WHERE batch_id = ?"
     )
       .bind(now, context.biz_id)
+      .run();
+    return;
+  }
+
+  if (context.biz_type === "stock_order") {
+    await env.DB.prepare(
+      "UPDATE stock_order SET status = 'rejected', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), context.biz_id)
       .run();
   }
 };

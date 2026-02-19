@@ -59,6 +59,9 @@ class ClaudeProvider(AiProvider):
             "reimbursement_check",
             "reimbursement_anomaly",
             "log_analysis",
+            "consumable_estimation",
+            "inventory_alert_analysis",
+            "consumption_anomaly",
             "approval_ai_gate",
         ]
 

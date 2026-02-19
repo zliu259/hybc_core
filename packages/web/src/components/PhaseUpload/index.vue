@@ -65,7 +65,7 @@ const beforeUpload = async (file: File) => {
 const removeFile = (key: string) => {
   emit(
     "update:modelValue",
-    props.modelValue.filter((item) => item.key !== key)
+    props.modelValue.filter(item => item.key !== key)
   );
 };
 </script>
@@ -86,7 +86,9 @@ const removeFile = (key: string) => {
       <el-table-column prop="name" label="文件名" />
       <el-table-column label="访问" width="120">
         <template #default="scope">
-          <el-link :href="scope.row.url" target="_blank" type="primary">查看</el-link>
+          <el-link :href="scope.row.url" target="_blank" type="primary"
+            >查看</el-link
+          >
         </template>
       </el-table-column>
       <el-table-column label="操作" width="100">

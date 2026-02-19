@@ -69,12 +69,20 @@ watch(
 <template>
   <div class="node-config-panel">
     <div class="panel-title">节点配置</div>
-    <el-form label-position="top" size="small" class="panel-form" :disabled="readonly">
+    <el-form
+      label-position="top"
+      size="small"
+      class="panel-form"
+      :disabled="readonly"
+    >
       <el-form-item label="节点名称">
         <el-input v-model="form.name" maxlength="32" show-word-limit />
       </el-form-item>
 
-      <el-form-item v-if="isApprovalType || form.type === 'cc'" label="审批人/抄送人userid">
+      <el-form-item
+        v-if="isApprovalType || form.type === 'cc'"
+        label="审批人/抄送人userid"
+      >
         <el-input
           v-model="assigneeText"
           placeholder="多个值用英文逗号分隔"

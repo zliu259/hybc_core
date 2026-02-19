@@ -107,11 +107,9 @@ export const updatePaymentRequest = (
     status?: string;
   }
 ) => {
-  return http.request<{ success: boolean }>(
-    "put",
-    `/api/v1/payment/${id}`,
-    { data }
-  );
+  return http.request<{ success: boolean }>("put", `/api/v1/payment/${id}`, {
+    data
+  });
 };
 
 export const markPaymentPaid = (id: number) => {
@@ -145,10 +143,7 @@ export const getRiskReport = (id: number) => {
   }>("get", `/api/v1/payment/${id}/risk-report`);
 };
 
-export const listPayees = (params?: {
-  type?: string;
-  keyword?: string;
-}) => {
+export const listPayees = (params?: { type?: string; keyword?: string }) => {
   return http.request<{ success: boolean; data: Payee[] }>(
     "get",
     "/api/v1/payment/payee/list",

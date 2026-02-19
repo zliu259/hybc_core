@@ -62,7 +62,14 @@
 - AI配置管理：`packages/web/src/views/ai/config.vue`
 - 计算节点监控：`packages/web/src/views/ai/nodes.vue`
 - 资产台账：`packages/web/src/views/asset/list.vue`
-- 仓库库存：`packages/web/src/views/warehouse/index.vue`
+- 资产详情：`packages/web/src/views/asset/detail.vue`
+- 设备总览：`packages/web/src/views/asset/dashboard.vue`
+- 仓库管理：`packages/web/src/views/warehouse/index.vue`
+- 仓库库存：`packages/web/src/views/warehouse/inventory.vue`
+- 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
+- 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`
+- 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
+- 项目设备视图：`packages/web/src/views/project/equipment-view.vue`
 - 系统配置：`packages/web/src/views/admin/system.vue`
 
 ### 3.2 页面模板规范
@@ -213,10 +220,38 @@
 - 支持：按资产类型动态展示属性字段。
 - API 指向：`/api/v1/asset`
 
-#### K. 仓库库存 `views/warehouse/index.vue`
-- 模块：库存总览、预警列表、出入库单。
-- 交互：低库存预警置顶、可一键发起补货申请。
-- API 指向：`/api/v1/warehouse`, `/api/v1/stock-order`
+#### K. 仓库管理 `views/warehouse/index.vue`
+- 模块：仓库档案列表、关键字检索、新增/编辑弹窗。
+- 交互：软删除，状态维护（active/inactive）。
+- API 指向：`/api/v1/warehouse`
+
+#### K-2. 仓库库存 `views/warehouse/inventory.vue`
+- 模块：库存总览、筛选、耗材消耗登记。
+- 交互：按仓库/资产类型过滤，登记消耗后刷新库存。
+- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`
+
+#### K-3. 库存预警中心 `views/warehouse/alert.vue`
+- 模块：低库存清单、缺口展示、AI分析触发。
+- 交互：预警项支持一键触发 `inventory_alert_analysis`。
+- API 指向：`/api/v1/warehouse/inventory/alert`, `/api/v1/warehouse/inventory/alert/:id/analyze`
+
+#### K-4. 出入库单管理 `views/warehouse/stock-order.vue`
+- 模块：出入库单列表、创建表单、审批提交与执行。
+- 交互：草稿单可提交审批；审批通过后可执行；草稿/待审可取消。
+- API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
+
+#### K-5. 项目设备规划 `views/warehouse/equipment-plan.vue`
+- 模块：设备规划列表、新建规划、AI推荐触发、推荐结果查看、确认生成出库单。
+- 交互：确认时自动生成出库单并回写规划单。
+- API 指向：`/api/v1/warehouse/equipment-plan`, `/api/v1/warehouse/equipment-plan/:id/trigger-recommend`, `/api/v1/warehouse/equipment-plan/:id/recommendation`, `/api/v1/warehouse/equipment-plan/:id/confirm`
+
+#### K-6. 设备总览 `views/asset/dashboard.vue`
+- 模块：按类型/状态/位置三维统计。
+- API 指向：`/api/v1/asset/dashboard/overview`
+
+#### K-7. 项目设备视图 `views/project/equipment-view.vue`
+- 模块：项目设备清单、项目维度物资消耗汇总。
+- API 指向：`/api/v1/asset/dashboard/project/:projectId`
 
 #### L. 系统配置 `views/admin/system.vue`
 - 配置项：审批阈值、AI 路由、字典项、角色权限。

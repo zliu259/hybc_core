@@ -51,7 +51,9 @@ const loadThresholds = async () => {
   }
   loading.value = true;
   try {
-    const result = await listThresholds({ template_id: selectedTemplateId.value });
+    const result = await listThresholds({
+      template_id: selectedTemplateId.value
+    });
     thresholds.value = result.data;
   } finally {
     loading.value = false;
@@ -98,7 +100,10 @@ const handleSave = async () => {
         condition_field: form.value.condition_field,
         operator: form.value.operator,
         threshold_value: form.value.threshold_value,
-        threshold_value_upper: form.value.operator === "between" ? form.value.threshold_value_upper : undefined,
+        threshold_value_upper:
+          form.value.operator === "between"
+            ? form.value.threshold_value_upper
+            : undefined,
         target_branch: form.value.target_branch,
         priority: form.value.priority
       });
@@ -108,7 +113,10 @@ const handleSave = async () => {
         condition_field: form.value.condition_field,
         operator: form.value.operator,
         threshold_value: form.value.threshold_value,
-        threshold_value_upper: form.value.operator === "between" ? form.value.threshold_value_upper : null,
+        threshold_value_upper:
+          form.value.operator === "between"
+            ? form.value.threshold_value_upper
+            : null,
         target_branch: form.value.target_branch,
         priority: form.value.priority
       });
@@ -140,7 +148,12 @@ onMounted(loadTemplates);
   <el-card shadow="never" header="金额阈值配置">
     <el-form inline style="margin-bottom: 12px">
       <el-form-item label="选择模板">
-        <el-select v-model="selectedTemplateId" clearable placeholder="请选择模板" style="width: 280px">
+        <el-select
+          v-model="selectedTemplateId"
+          clearable
+          placeholder="请选择模板"
+          style="width: 280px"
+        >
           <el-option
             v-for="t in templates"
             :key="t.id"
@@ -149,23 +162,31 @@ onMounted(loadTemplates);
           />
         </el-select>
       </el-form-item>
-      <el-button type="primary" :disabled="!selectedTemplateId" @click="openCreate">新增阈值</el-button>
+      <el-button
+        type="primary"
+        :disabled="!selectedTemplateId"
+        @click="openCreate"
+        >新增阈值</el-button
+      >
     </el-form>
 
-    <el-table :data="thresholds" v-loading="loading" style="width: 100%">
+    <el-table v-loading="loading" :data="thresholds" style="width: 100%">
       <el-table-column prop="condition_field" label="条件字段" width="120" />
       <el-table-column prop="operator" label="运算符" width="100" />
       <el-table-column prop="threshold_value" label="阈值" width="120" />
       <el-table-column label="上限值" width="120">
         <template #default="{ row }">
-          {{ row.operator === 'between' ? row.threshold_value_upper : '—' }}
+          {{ row.operator === "between" ? row.threshold_value_upper : "—" }}
         </template>
       </el-table-column>
       <el-table-column prop="target_branch" label="目标分支" min-width="140" />
       <el-table-column prop="priority" label="优先级" width="80" />
       <el-table-column prop="status" label="状态" width="90">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
+          <el-tag
+            :type="row.status === 'active' ? 'success' : 'info'"
+            size="small"
+          >
             {{ row.status }}
           </el-tag>
         </template>

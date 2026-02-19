@@ -19,7 +19,8 @@ const bizTypeOptions = [
   { label: "合同审批", value: "outbound_contract" },
   { label: "收款合同审批", value: "inbound_contract" },
   { label: "付款审批", value: "payment_request" },
-  { label: "报销审批", value: "reimbursement_batch" }
+  { label: "报销审批", value: "reimbursement_batch" },
+  { label: "出入库审批", value: "stock_order" }
 ];
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";

@@ -129,8 +129,12 @@ onMounted(loadData);
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openEdit(scope.row)">编辑</el-button>
-          <el-button link type="danger" @click="onDelete(scope.row)">删除</el-button>
+          <el-button link type="primary" @click="openEdit(scope.row)"
+            >编辑</el-button
+          >
+          <el-button link type="danger" @click="onDelete(scope.row)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -141,10 +145,18 @@ onMounted(loadData);
       width="560px"
     >
       <el-form label-width="88px">
-        <el-form-item label="名称"><el-input v-model="form.name" /></el-form-item>
-        <el-form-item label="开户行"><el-input v-model="form.bank_name" /></el-form-item>
-        <el-form-item label="账号"><el-input v-model="form.bank_account" /></el-form-item>
-        <el-form-item label="电话"><el-input v-model="form.phone" /></el-form-item>
+        <el-form-item label="名称"
+          ><el-input v-model="form.name"
+        /></el-form-item>
+        <el-form-item label="开户行"
+          ><el-input v-model="form.bank_name"
+        /></el-form-item>
+        <el-form-item label="账号"
+          ><el-input v-model="form.bank_account"
+        /></el-form-item>
+        <el-form-item label="电话"
+          ><el-input v-model="form.phone"
+        /></el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>

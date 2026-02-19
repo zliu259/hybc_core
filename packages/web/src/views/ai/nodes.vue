@@ -28,7 +28,14 @@ const nodeStatusType: Record<string, TagType> = {
   draining: "warning"
 };
 
-const taskStatusOptions = ["pending", "assigned", "running", "completed", "failed", "timeout"];
+const taskStatusOptions = [
+  "pending",
+  "assigned",
+  "running",
+  "completed",
+  "failed",
+  "timeout"
+];
 const taskTypeOptions = [
   "contract_review",
   "risk_assessment",
@@ -64,8 +71,12 @@ const parseCapabilities = (json: string | null): string => {
 const taskDuration = computed(() => {
   return (row: TaskQueueItem) => {
     if (!row.started_at) return "—";
-    const end = row.completed_at ? new Date(row.completed_at).getTime() : Date.now();
-    const seconds = Math.floor((end - new Date(row.started_at).getTime()) / 1000);
+    const end = row.completed_at
+      ? new Date(row.completed_at).getTime()
+      : Date.now();
+    const seconds = Math.floor(
+      (end - new Date(row.started_at).getTime()) / 1000
+    );
     if (seconds < 60) return `${seconds}s`;
     return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
   };
@@ -110,22 +121,33 @@ onUnmounted(() => {
 
 <template>
   <el-card shadow="never" header="计算节点" style="margin-bottom: 16px">
-    <el-table :data="nodes" v-loading="nodesLoading" style="width: 100%">
-      <el-table-column prop="node_id" label="节点ID" width="160" show-overflow-tooltip />
+    <el-table v-loading="nodesLoading" :data="nodes" style="width: 100%">
+      <el-table-column
+        prop="node_id"
+        label="节点ID"
+        width="160"
+        show-overflow-tooltip
+      />
       <el-table-column prop="node_name" label="名称" width="140" />
       <el-table-column prop="node_type" label="类型" width="100" />
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="nodeStatusType[row.status] ?? 'info'" size="small">{{ row.status }}</el-tag>
+          <el-tag :type="nodeStatusType[row.status] ?? 'info'" size="small">{{
+            row.status
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="能力" min-width="200" show-overflow-tooltip>
-        <template #default="{ row }">{{ parseCapabilities(row.capabilities_json) }}</template>
+        <template #default="{ row }">{{
+          parseCapabilities(row.capabilities_json)
+        }}</template>
       </el-table-column>
       <el-table-column prop="cpu_cores" label="CPU" width="70" />
       <el-table-column prop="memory_mb" label="内存(MB)" width="100" />
       <el-table-column label="最后心跳" width="120">
-        <template #default="{ row }">{{ relativeTime(row.last_heartbeat_at) }}</template>
+        <template #default="{ row }">{{
+          relativeTime(row.last_heartbeat_at)
+        }}</template>
       </el-table-column>
     </el-table>
   </el-card>
@@ -134,30 +156,63 @@ onUnmounted(() => {
     <el-form inline style="margin-bottom: 12px">
       <el-form-item label="状态">
         <el-select v-model="queueFilters.status" clearable placeholder="全部">
-          <el-option v-for="s in taskStatusOptions" :key="s" :label="s" :value="s" />
+          <el-option
+            v-for="s in taskStatusOptions"
+            :key="s"
+            :label="s"
+            :value="s"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="任务类型">
-        <el-select v-model="queueFilters.task_type" clearable placeholder="全部">
-          <el-option v-for="t in taskTypeOptions" :key="t" :label="t" :value="t" />
+        <el-select
+          v-model="queueFilters.task_type"
+          clearable
+          placeholder="全部"
+        >
+          <el-option
+            v-for="t in taskTypeOptions"
+            :key="t"
+            :label="t"
+            :value="t"
+          />
         </el-select>
       </el-form-item>
       <el-button type="primary" @click="loadQueue">查询</el-button>
     </el-form>
 
-    <el-table :data="queue" v-loading="queueLoading" style="width: 100%">
-      <el-table-column prop="task_code" label="任务编号" width="180" show-overflow-tooltip />
+    <el-table v-loading="queueLoading" :data="queue" style="width: 100%">
+      <el-table-column
+        prop="task_code"
+        label="任务编号"
+        width="180"
+        show-overflow-tooltip
+      />
       <el-table-column prop="task_type" label="任务类型" width="150" />
       <el-table-column prop="biz_type" label="业务类型" width="130" />
       <el-table-column label="状态" width="100">
         <template #default="{ row }">
           <el-tag
-            :type="row.status === 'completed' ? 'success' : row.status === 'failed' ? 'danger' : row.status === 'running' ? 'primary' : 'info'"
+            :type="
+              row.status === 'completed'
+                ? 'success'
+                : row.status === 'failed'
+                  ? 'danger'
+                  : row.status === 'running'
+                    ? 'primary'
+                    : 'info'
+            "
             size="small"
-          >{{ row.status }}</el-tag>
+            >{{ row.status }}</el-tag
+          >
         </template>
       </el-table-column>
-      <el-table-column prop="assigned_node_id" label="节点" width="140" show-overflow-tooltip />
+      <el-table-column
+        prop="assigned_node_id"
+        label="节点"
+        width="140"
+        show-overflow-tooltip
+      />
       <el-table-column prop="priority" label="优先级" width="70" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="耗时" width="90">
@@ -172,7 +227,12 @@ onUnmounted(() => {
       :current-page="queuePage"
       :page-size="queuePageSize"
       :total="queueTotal"
-      @current-change="(val: number) => { queuePage = val; loadQueue(); }"
+      @current-change="
+        (val: number) => {
+          queuePage = val;
+          loadQueue();
+        }
+      "
     />
   </el-card>
 </template>

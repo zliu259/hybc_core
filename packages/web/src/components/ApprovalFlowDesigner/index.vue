@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import {
   Handle,
   Position,
@@ -199,7 +206,9 @@ const onConnect = (connection: Connection) => {
   }
 
   const duplicated = edges.value.some(item => {
-    return item.source === connection.source && item.target === connection.target;
+    return (
+      item.source === connection.source && item.target === connection.target
+    );
   });
 
   if (duplicated) {
@@ -345,12 +354,19 @@ onBeforeUnmount(() => {
         <template #node-sequential="slotProps">
           <div class="flow-card" :class="{ selected: slotProps.selected }">
             <Handle type="target" :position="Position.Top" />
-            <div class="flow-card__head" :style="{ backgroundColor: NODE_COLORS.sequential }">
+            <div
+              class="flow-card__head"
+              :style="{ backgroundColor: NODE_COLORS.sequential }"
+            >
               <span class="flow-card__badge">顺序签</span>
             </div>
             <div class="flow-card__body">
-              <div class="flow-card__name">{{ slotProps.data.name || "顺序签" }}</div>
-              <div class="flow-card__meta">审批人 {{ slotProps.data.assignees.length }} 人</div>
+              <div class="flow-card__name">
+                {{ slotProps.data.name || "顺序签" }}
+              </div>
+              <div class="flow-card__meta">
+                审批人 {{ slotProps.data.assignees.length }} 人
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -359,12 +375,19 @@ onBeforeUnmount(() => {
         <template #node-countersign="slotProps">
           <div class="flow-card" :class="{ selected: slotProps.selected }">
             <Handle type="target" :position="Position.Top" />
-            <div class="flow-card__head" :style="{ backgroundColor: NODE_COLORS.countersign }">
+            <div
+              class="flow-card__head"
+              :style="{ backgroundColor: NODE_COLORS.countersign }"
+            >
               <span class="flow-card__badge">会签</span>
             </div>
             <div class="flow-card__body">
-              <div class="flow-card__name">{{ slotProps.data.name || "会签" }}</div>
-              <div class="flow-card__meta">审批人 {{ slotProps.data.assignees.length }} 人</div>
+              <div class="flow-card__name">
+                {{ slotProps.data.name || "会签" }}
+              </div>
+              <div class="flow-card__meta">
+                审批人 {{ slotProps.data.assignees.length }} 人
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -373,12 +396,19 @@ onBeforeUnmount(() => {
         <template #node-or_sign="slotProps">
           <div class="flow-card" :class="{ selected: slotProps.selected }">
             <Handle type="target" :position="Position.Top" />
-            <div class="flow-card__head" :style="{ backgroundColor: NODE_COLORS.or_sign }">
+            <div
+              class="flow-card__head"
+              :style="{ backgroundColor: NODE_COLORS.or_sign }"
+            >
               <span class="flow-card__badge">或签</span>
             </div>
             <div class="flow-card__body">
-              <div class="flow-card__name">{{ slotProps.data.name || "或签" }}</div>
-              <div class="flow-card__meta">审批人 {{ slotProps.data.assignees.length }} 人</div>
+              <div class="flow-card__name">
+                {{ slotProps.data.name || "或签" }}
+              </div>
+              <div class="flow-card__meta">
+                审批人 {{ slotProps.data.assignees.length }} 人
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -387,12 +417,19 @@ onBeforeUnmount(() => {
         <template #node-auto="slotProps">
           <div class="flow-card" :class="{ selected: slotProps.selected }">
             <Handle type="target" :position="Position.Top" />
-            <div class="flow-card__head" :style="{ backgroundColor: NODE_COLORS.auto }">
+            <div
+              class="flow-card__head"
+              :style="{ backgroundColor: NODE_COLORS.auto }"
+            >
               <span class="flow-card__badge">自动</span>
             </div>
             <div class="flow-card__body">
-              <div class="flow-card__name">{{ slotProps.data.name || "自动" }}</div>
-              <div class="flow-card__meta">动作 {{ slotProps.data.autoAction || "approve" }}</div>
+              <div class="flow-card__name">
+                {{ slotProps.data.name || "自动" }}
+              </div>
+              <div class="flow-card__meta">
+                动作 {{ slotProps.data.autoAction || "approve" }}
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -401,12 +438,19 @@ onBeforeUnmount(() => {
         <template #node-cc="slotProps">
           <div class="flow-card" :class="{ selected: slotProps.selected }">
             <Handle type="target" :position="Position.Top" />
-            <div class="flow-card__head" :style="{ backgroundColor: NODE_COLORS.cc }">
+            <div
+              class="flow-card__head"
+              :style="{ backgroundColor: NODE_COLORS.cc }"
+            >
               <span class="flow-card__badge">抄送</span>
             </div>
             <div class="flow-card__body">
-              <div class="flow-card__name">{{ slotProps.data.name || "抄送" }}</div>
-              <div class="flow-card__meta">接收人 {{ slotProps.data.assignees.length }} 人</div>
+              <div class="flow-card__name">
+                {{ slotProps.data.name || "抄送" }}
+              </div>
+              <div class="flow-card__meta">
+                接收人 {{ slotProps.data.assignees.length }} 人
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -415,19 +459,29 @@ onBeforeUnmount(() => {
         <template #node-ai_gate="slotProps">
           <div class="flow-card" :class="{ selected: slotProps.selected }">
             <Handle type="target" :position="Position.Top" />
-            <div class="flow-card__head" :style="{ backgroundColor: NODE_COLORS.ai_gate }">
+            <div
+              class="flow-card__head"
+              :style="{ backgroundColor: NODE_COLORS.ai_gate }"
+            >
               <span class="flow-card__badge">AI关卡</span>
             </div>
             <div class="flow-card__body">
-              <div class="flow-card__name">{{ slotProps.data.name || "AI关卡" }}</div>
-              <div class="flow-card__meta">Slot {{ slotProps.data.aiSlotId || "未配置" }}</div>
+              <div class="flow-card__name">
+                {{ slotProps.data.name || "AI关卡" }}
+              </div>
+              <div class="flow-card__meta">
+                Slot {{ slotProps.data.aiSlotId || "未配置" }}
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
         </template>
 
         <template #node-start="slotProps">
-          <div class="flow-point start" :class="{ selected: slotProps.selected }">
+          <div
+            class="flow-point start"
+            :class="{ selected: slotProps.selected }"
+          >
             <div class="flow-point__label">开始</div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -467,7 +521,11 @@ onBeforeUnmount(() => {
   overflow: hidden;
   color: var(--flow-text);
   font-family: "Noto Sans SC", "PingFang SC", sans-serif;
-  background: radial-gradient(circle at 12% 10%, #fff8ee 0%, var(--flow-bg) 48%);
+  background: radial-gradient(
+    circle at 12% 10%,
+    #fff8ee 0%,
+    var(--flow-bg) 48%
+  );
   border: 1px solid var(--flow-border);
   border-radius: 14px;
 }
@@ -566,7 +624,9 @@ onBeforeUnmount(() => {
 }
 
 .flow-point.selected {
-  box-shadow: 0 0 0 2px rgb(47 108 95 / 24%), 0 12px 24px rgb(42 36 29 / 16%);
+  box-shadow:
+    0 0 0 2px rgb(47 108 95 / 24%),
+    0 12px 24px rgb(42 36 29 / 16%);
 }
 
 .flow-point__label {

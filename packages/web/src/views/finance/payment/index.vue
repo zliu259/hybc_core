@@ -114,7 +114,12 @@ onMounted(async () => {
   <el-card shadow="never" style="background: #fffaf2">
     <el-form inline>
       <el-form-item label="所属项目">
-        <el-select v-model="filters.project_id" clearable filterable style="width: 220px">
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
           <el-option
             v-for="item in projects"
             :key="item.id"
@@ -124,7 +129,12 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="关联合同">
-        <el-select v-model="filters.contract_id" clearable filterable style="width: 220px">
+        <el-select
+          v-model="filters.contract_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
           <el-option
             v-for="item in contracts"
             :key="item.id"
@@ -144,7 +154,11 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="关键字">
-        <el-input v-model="filters.keyword" clearable placeholder="流水号/付款内容" />
+        <el-input
+          v-model="filters.keyword"
+          clearable
+          placeholder="流水号/付款内容"
+        />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
       <el-button @click="goCreate">新建申请</el-button>
@@ -153,28 +167,38 @@ onMounted(async () => {
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="serial_no" label="流水号" width="150" />
       <el-table-column label="合同号" width="150">
-        <template #default="scope">{{ contractMap[scope.row.contract_id] || scope.row.contract_id }}</template>
+        <template #default="scope">{{
+          contractMap[scope.row.contract_id] || scope.row.contract_id
+        }}</template>
       </el-table-column>
       <el-table-column label="所属项目" width="180">
-        <template #default="scope">{{ projectMap[scope.row.project_id] || scope.row.project_id }}</template>
+        <template #default="scope">{{
+          projectMap[scope.row.project_id] || scope.row.project_id
+        }}</template>
       </el-table-column>
       <el-table-column prop="amount" label="金额" width="120" />
       <el-table-column prop="amount_cn" label="金额大写" min-width="160" />
       <el-table-column prop="payment_method" label="付款方式" width="120" />
       <el-table-column label="状态" width="110">
         <template #default="scope">
-          <el-tag :type="statusTagType[scope.row.status] || 'info'">{{ scope.row.status }}</el-tag>
+          <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
+            scope.row.status
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="AI风险" width="110">
         <template #default="scope">
-          <el-tag :type="aiTagType[scope.row.ai_risk_status] || 'info'">{{ scope.row.ai_risk_status }}</el-tag>
+          <el-tag :type="aiTagType[scope.row.ai_risk_status] || 'info'">{{
+            scope.row.ai_risk_status
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="申请时间" width="180" />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="goDetail(scope.row.id)">详情</el-button>
+          <el-button link type="primary" @click="goDetail(scope.row.id)"
+            >详情</el-button
+          >
           <el-button
             v-if="scope.row.status === 'approved'"
             link
@@ -194,7 +218,12 @@ onMounted(async () => {
       :current-page="page"
       :page-size="pageSize"
       :total="total"
-      @current-change="(val: number) => { page = val; loadData(); }"
+      @current-change="
+        (val: number) => {
+          page = val;
+          loadData();
+        }
+      "
     />
   </el-card>
 </template>

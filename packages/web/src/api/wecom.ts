@@ -27,7 +27,12 @@ export const getWeComContacts = () => {
     success: boolean;
     data: {
       syncedAt: string;
-      departments: Array<{ id: number; name: string; parentid: number; order: number }>;
+      departments: Array<{
+        id: number;
+        name: string;
+        parentid: number;
+        order: number;
+      }>;
       users: Array<{
         userid: string;
         name: string;

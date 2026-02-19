@@ -14,7 +14,11 @@ import {
   type Payee,
   type PaymentRequestDetail
 } from "@/api/payment";
-import { listContracts, type Contract, type InstanceConfig } from "@/api/contract";
+import {
+  listContracts,
+  type Contract,
+  type InstanceConfig
+} from "@/api/contract";
 
 defineOptions({ name: "PaymentDetail" });
 
@@ -45,12 +49,16 @@ const form = ref({
 });
 
 const selectedContract = computed(() => {
-  return contracts.value.find(item => item.id === form.value.contract_id) ?? null;
+  return (
+    contracts.value.find(item => item.id === form.value.contract_id) ?? null
+  );
 });
 
 const remainingAmount = computed(() => {
   if (!selectedContract.value) return 0;
-  return selectedContract.value.total_amount - selectedContract.value.paid_amount;
+  return (
+    selectedContract.value.total_amount - selectedContract.value.paid_amount
+  );
 });
 
 const riskStatus = ref("none");
@@ -107,7 +115,11 @@ const loadDetail = async () => {
 };
 
 const onSave = async () => {
-  if (!form.value.contract_id || !form.value.project_id || !form.value.payee_id) {
+  if (
+    !form.value.contract_id ||
+    !form.value.project_id ||
+    !form.value.payee_id
+  ) {
     message("请填写完整信息", { type: "warning" });
     return;
   }
@@ -130,7 +142,9 @@ const onSave = async () => {
         payment_method: form.value.payment_method,
         remark: form.value.remark
       });
-      message(`创建成功，金额大写：${result.data.amount_cn}`, { type: "success" });
+      message(`创建成功，金额大写：${result.data.amount_cn}`, {
+        type: "success"
+      });
       router.replace(`/finance/payment/detail/${result.data.id}`);
       return;
     }
@@ -214,13 +228,33 @@ onMounted(async () => {
 <template>
   <el-card shadow="never" :loading="loading" style="background: #fffaf2">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
-        <span>{{ isCreate ? "新建付款申请" : `付款详情 - ${detail?.serial_no || ''}` }}</span>
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
+        <span>{{
+          isCreate ? "新建付款申请" : `付款详情 - ${detail?.serial_no || ""}`
+        }}</span>
         <div>
           <el-button @click="router.push('/finance/payment')">返回</el-button>
-          <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
-          <el-button type="warning" :disabled="isCreate" @click="onSubmitApproval">提交审批</el-button>
-          <el-button type="success" :disabled="isCreate" @click="onRiskAssessment">触发风险评估</el-button>
+          <el-button type="primary" :loading="saving" @click="onSave"
+            >保存</el-button
+          >
+          <el-button
+            type="warning"
+            :disabled="isCreate"
+            @click="onSubmitApproval"
+            >提交审批</el-button
+          >
+          <el-button
+            type="success"
+            :disabled="isCreate"
+            @click="onRiskAssessment"
+            >触发风险评估</el-button
+          >
           <el-button
             type="primary"
             plain
@@ -253,7 +287,11 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="所属项目">
-        <el-input :model-value="String(form.project_id || '')" disabled style="width: 180px" />
+        <el-input
+          :model-value="String(form.project_id || '')"
+          disabled
+          style="width: 180px"
+        />
       </el-form-item>
 
       <el-form-item label="剩余额度">
@@ -272,7 +310,12 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="收款人">
-        <el-select v-model="form.payee_id" filterable clearable style="width: 360px">
+        <el-select
+          v-model="form.payee_id"
+          filterable
+          clearable
+          style="width: 360px"
+        >
           <el-option
             v-for="item in payees"
             :key="item.id"
@@ -283,7 +326,12 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="申请金额">
-        <el-input-number v-model="form.amount" :min="0" :precision="2" :step="1000" />
+        <el-input-number
+          v-model="form.amount"
+          :min="0"
+          :precision="2"
+          :step="1000"
+        />
       </el-form-item>
 
       <el-form-item label="预计付款日">
@@ -314,30 +362,59 @@ onMounted(async () => {
 
     <el-divider v-if="detail">申请摘要</el-divider>
     <el-descriptions v-if="detail" :column="2" border>
-      <el-descriptions-item label="流水号">{{ detail.serial_no }}</el-descriptions-item>
-      <el-descriptions-item label="状态">{{ detail.status }}</el-descriptions-item>
-      <el-descriptions-item label="对方单位">{{ detail.contract?.counterparty || "-" }}</el-descriptions-item>
-      <el-descriptions-item label="收款人">{{ detail.payee?.name || "-" }}</el-descriptions-item>
-      <el-descriptions-item label="金额大写" :span="2">{{ detail.amount_cn }}</el-descriptions-item>
+      <el-descriptions-item label="流水号">{{
+        detail.serial_no
+      }}</el-descriptions-item>
+      <el-descriptions-item label="状态">{{
+        detail.status
+      }}</el-descriptions-item>
+      <el-descriptions-item label="对方单位">{{
+        detail.contract?.counterparty || "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="收款人">{{
+        detail.payee?.name || "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="金额大写" :span="2">{{
+        detail.amount_cn
+      }}</el-descriptions-item>
     </el-descriptions>
 
     <el-divider v-if="detail">AI风险评估</el-divider>
     <div v-if="detail" style="margin-bottom: 8px">
-      <el-tag :type="riskTagType[riskStatus] || 'info'">{{ riskStatus }}</el-tag>
+      <el-tag :type="riskTagType[riskStatus] || 'info'">{{
+        riskStatus
+      }}</el-tag>
     </div>
     <el-descriptions v-if="riskReport" :column="2" border>
-      <el-descriptions-item label="风险等级">{{ riskReport.overall_risk || "-" }}</el-descriptions-item>
-      <el-descriptions-item label="风险分数">{{ riskReport.score ?? "-" }}</el-descriptions-item>
-      <el-descriptions-item label="总结" :span="2">{{ riskReport.summary || "-" }}</el-descriptions-item>
+      <el-descriptions-item label="风险等级">{{
+        riskReport.overall_risk || "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="风险分数">{{
+        riskReport.score ?? "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="总结" :span="2">{{
+        riskReport.summary || "-"
+      }}</el-descriptions-item>
       <el-descriptions-item label="建议" :span="2">
-        {{ Array.isArray(riskReport.recommendations) ? riskReport.recommendations.join("；") : "-" }}
+        {{
+          Array.isArray(riskReport.recommendations)
+            ? riskReport.recommendations.join("；")
+            : "-"
+        }}
       </el-descriptions-item>
     </el-descriptions>
 
-    <el-dialog v-model="approvalDialogVisible" title="实例级二次设置" width="560px">
+    <el-dialog
+      v-model="approvalDialogVisible"
+      title="实例级二次设置"
+      width="560px"
+    >
       <el-form label-width="120px">
         <el-form-item label="审批摘要">
-          <el-input v-model="approvalSummary" placeholder="可选，留空则使用系统默认摘要" />
+          <el-input
+            v-model="approvalSummary"
+            placeholder="可选，留空则使用系统默认摘要"
+          />
         </el-form-item>
         <el-form-item label="实例配置(JSON)">
           <el-input
@@ -350,7 +427,9 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="approvalDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSubmitApproval">确认提交</el-button>
+        <el-button type="primary" @click="confirmSubmitApproval"
+          >确认提交</el-button
+        >
       </template>
     </el-dialog>
   </el-card>

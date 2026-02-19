@@ -38,6 +38,15 @@ export default {
         showLink: false,
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }
+    },
+    {
+      path: "/project/equipment-view",
+      name: "ProjectEquipmentView",
+      component: () => import("@/views/project/equipment-view.vue"),
+      meta: {
+        title: "项目设备视图",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
     }
   ]
 } satisfies RouteConfigsTable;

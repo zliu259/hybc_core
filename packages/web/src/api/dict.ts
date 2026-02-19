@@ -12,13 +12,12 @@ export type DictItem = {
 };
 
 export const listDictItems = (dictType?: string) => {
-  return http.request<{ success: boolean; data: Record<string, DictItem[]> | DictItem[] }>(
-    "get",
-    "/api/v1/dict",
-    {
-      params: dictType ? { dict_type: dictType } : undefined
-    }
-  );
+  return http.request<{
+    success: boolean;
+    data: Record<string, DictItem[]> | DictItem[];
+  }>("get", "/api/v1/dict", {
+    params: dictType ? { dict_type: dictType } : undefined
+  });
 };
 
 export const createDictItem = (data: {
@@ -44,7 +43,9 @@ export const updateDictItem = (
     status?: string;
   }
 ) => {
-  return http.request<{ success: boolean }>("put", `/api/v1/dict/${id}`, { data });
+  return http.request<{ success: boolean }>("put", `/api/v1/dict/${id}`, {
+    data
+  });
 };
 
 export const deleteDictItem = (id: number) => {

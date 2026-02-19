@@ -51,7 +51,10 @@ const onDragStart = (event: DragEvent, type: NodeType) => {
         :draggable="!readonly"
         @dragstart="onDragStart($event, item.type)"
       >
-        <span class="palette-item__icon" :style="{ backgroundColor: item.color }">
+        <span
+          class="palette-item__icon"
+          :style="{ backgroundColor: item.color }"
+        >
           <IconifyIconOffline :icon="item.icon" />
         </span>
         <span class="palette-item__label">{{ item.label }}</span>
@@ -91,7 +94,9 @@ const onDragStart = (event: DragEvent, type: NodeType) => {
   background: #fffaf2;
   border: 1px solid #d9ceb9;
   border-radius: 10px;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .palette-item:hover {

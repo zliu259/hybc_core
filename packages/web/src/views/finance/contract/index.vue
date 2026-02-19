@@ -3,11 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
-import {
-  listContracts,
-  deleteContract,
-  type Contract
-} from "@/api/contract";
+import { listContracts, deleteContract, type Contract } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
 
 defineOptions({ name: "ContractList" });
@@ -130,7 +126,12 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="所属项目">
-        <el-select v-model="filters.project_id" clearable filterable style="width: 220px">
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
           <el-option
             v-for="item in projects"
             :key="item.id"
@@ -150,7 +151,11 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="关键字">
-        <el-input v-model="filters.keyword" placeholder="合同号/对方单位/备注" clearable />
+        <el-input
+          v-model="filters.keyword"
+          placeholder="合同号/对方单位/备注"
+          clearable
+        />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
       <el-button @click="goCreate">新建合同</el-button>
@@ -165,23 +170,32 @@ onMounted(async () => {
       <el-table-column prop="contract_no" label="合同号" width="170" />
       <el-table-column label="方向" width="110">
         <template #default="scope">
-          <el-tag :type="scope.row.direction === 'outbound' ? 'warning' : 'success'">
+          <el-tag
+            :type="scope.row.direction === 'outbound' ? 'warning' : 'success'"
+          >
             {{ scope.row.direction === "outbound" ? "对外付款" : "收款" }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="所属项目" min-width="160">
         <template #default="scope">
-          {{ projectNameMap[scope.row.project_id] || `项目#${scope.row.project_id}` }}
+          {{
+            projectNameMap[scope.row.project_id] ||
+            `项目#${scope.row.project_id}`
+          }}
         </template>
       </el-table-column>
       <el-table-column prop="counterparty" label="对方单位" min-width="180" />
       <el-table-column prop="contract_type" label="合同类型" width="110" />
       <el-table-column label="合同金额" width="130">
-        <template #default="scope">{{ scope.row.total_amount.toFixed(2) }}</template>
+        <template #default="scope">{{
+          scope.row.total_amount.toFixed(2)
+        }}</template>
       </el-table-column>
       <el-table-column label="已付金额" width="130">
-        <template #default="scope">{{ scope.row.paid_amount.toFixed(2) }}</template>
+        <template #default="scope">{{
+          scope.row.paid_amount.toFixed(2)
+        }}</template>
       </el-table-column>
       <el-table-column label="剩余额度" width="130">
         <template #default="scope">
@@ -198,14 +212,21 @@ onMounted(async () => {
       <el-table-column label="AI审查" width="110">
         <template #default="scope">
           <el-tag :type="aiStatusTagType[scope.row.ai_review_status] || 'info'">
-            {{ aiLabelMap[scope.row.ai_review_status] || scope.row.ai_review_status }}
+            {{
+              aiLabelMap[scope.row.ai_review_status] ||
+              scope.row.ai_review_status
+            }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="160" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click.stop="goDetail(scope.row.id)">详情</el-button>
-          <el-button link type="danger" @click.stop="onDelete(scope.row)">删除</el-button>
+          <el-button link type="primary" @click.stop="goDetail(scope.row.id)"
+            >详情</el-button
+          >
+          <el-button link type="danger" @click.stop="onDelete(scope.row)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -217,7 +238,12 @@ onMounted(async () => {
       :current-page="page"
       :page-size="pageSize"
       :total="total"
-      @current-change="(val: number) => { page = val; loadData(); }"
+      @current-change="
+        (val: number) => {
+          page = val;
+          loadData();
+        }
+      "
     />
   </el-card>
 </template>

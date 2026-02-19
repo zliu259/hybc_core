@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
-import { createDictItem, deleteDictItem, listDictItems, type DictItem } from "@/api/dict";
+import {
+  createDictItem,
+  deleteDictItem,
+  listDictItems,
+  type DictItem
+} from "@/api/dict";
 
 defineOptions({
   name: "DictManagement"
@@ -27,7 +32,11 @@ const loadRows = async () => {
 };
 
 const createRow = async () => {
-  if (!form.value.dict_type || !form.value.dict_label || !form.value.dict_value) {
+  if (
+    !form.value.dict_type ||
+    !form.value.dict_label ||
+    !form.value.dict_value
+  ) {
     message("请填写字典类型/标签/值", { type: "warning" });
     return;
   }

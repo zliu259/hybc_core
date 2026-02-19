@@ -116,7 +116,15 @@ const loadPrompts = async () => {
 const openProviderCreate = () => {
   providerDialogMode.value = "create";
   providerEditingId.value = null;
-  providerForm.value = { provider_key: "", provider_name: "", api_endpoint: "", model_id: "", config_json: "", priority: 0, max_concurrent: 1 };
+  providerForm.value = {
+    provider_key: "",
+    provider_name: "",
+    api_endpoint: "",
+    model_id: "",
+    config_json: "",
+    priority: 0,
+    max_concurrent: 1
+  };
   providerDialogVisible.value = true;
 };
 
@@ -171,7 +179,15 @@ const deleteProviderRow = async (row: AiProviderConfig) => {
 const openRuleCreate = () => {
   ruleDialogMode.value = "create";
   ruleEditingId.value = null;
-  ruleForm.value = { rule_name: "", biz_type: "", task_type: "", condition_json: "", provider_id: undefined, prompt_template_id: undefined, priority: 0 };
+  ruleForm.value = {
+    rule_name: "",
+    biz_type: "",
+    task_type: "",
+    condition_json: "",
+    provider_id: undefined,
+    prompt_template_id: undefined,
+    priority: 0
+  };
   ruleDialogVisible.value = true;
 };
 
@@ -227,7 +243,13 @@ const deleteRuleRow = async (row: AiRoutingRule) => {
 const openPromptCreate = () => {
   promptDialogMode.value = "create";
   promptEditingId.value = null;
-  promptForm.value = { template_key: "", template_name: "", system_prompt: "", user_prompt_template: "", variables_schema: "" };
+  promptForm.value = {
+    template_key: "",
+    template_name: "",
+    system_prompt: "",
+    user_prompt_template: "",
+    variables_schema: ""
+  };
   promptDialogVisible.value = true;
 };
 
@@ -251,7 +273,10 @@ const savePrompt = async () => {
   }
   try {
     if (promptDialogMode.value === "create") {
-      await createAiPromptTemplate({ ...promptForm.value, variables_schema: promptForm.value.variables_schema || undefined });
+      await createAiPromptTemplate({
+        ...promptForm.value,
+        variables_schema: promptForm.value.variables_schema || undefined
+      });
       message("创建成功", { type: "success" });
     } else if (promptEditingId.value) {
       await updateAiPromptTemplate(promptEditingId.value, {
@@ -279,7 +304,8 @@ const providerName = (id: number) =>
   providers.value.find(p => p.id === id)?.provider_name ?? String(id);
 
 const onTabChange = () => {
-  if (activeTab.value === "providers" && !providers.value.length) loadProviders();
+  if (activeTab.value === "providers" && !providers.value.length)
+    loadProviders();
   if (activeTab.value === "routing" && !rules.value.length) loadRules();
   if (activeTab.value === "prompts" && !prompts.value.length) loadPrompts();
 };
@@ -296,24 +322,44 @@ onMounted(() => {
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane label="AI供应商" name="providers">
         <div style="margin-bottom: 12px; text-align: right">
-          <el-button type="primary" @click="openProviderCreate">新增供应商</el-button>
+          <el-button type="primary" @click="openProviderCreate"
+            >新增供应商</el-button
+          >
         </div>
-        <el-table :data="providers" v-loading="providersLoading" style="width: 100%">
+        <el-table
+          v-loading="providersLoading"
+          :data="providers"
+          style="width: 100%"
+        >
           <el-table-column prop="provider_key" label="Key" width="120" />
           <el-table-column prop="provider_name" label="名称" width="140" />
-          <el-table-column prop="api_endpoint" label="Endpoint" min-width="200" show-overflow-tooltip />
+          <el-table-column
+            prop="api_endpoint"
+            label="Endpoint"
+            min-width="200"
+            show-overflow-tooltip
+          />
           <el-table-column prop="model_id" label="模型" width="140" />
           <el-table-column prop="priority" label="优先级" width="80" />
           <el-table-column prop="max_concurrent" label="并发" width="70" />
           <el-table-column prop="status" label="状态" width="90">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+              <el-tag
+                :type="row.status === 'active' ? 'success' : 'info'"
+                size="small"
+                >{{ row.status }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column label="操作" width="140" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openProviderEdit(row)">编辑</el-button>
-              <el-popconfirm title="确定删除？" @confirm="deleteProviderRow(row)">
+              <el-button link type="primary" @click="openProviderEdit(row)"
+                >编辑</el-button
+              >
+              <el-popconfirm
+                title="确定删除？"
+                @confirm="deleteProviderRow(row)"
+              >
                 <template #reference>
                   <el-button link type="danger">删除</el-button>
                 </template>
@@ -327,22 +373,30 @@ onMounted(() => {
         <div style="margin-bottom: 12px; text-align: right">
           <el-button type="primary" @click="openRuleCreate">新增规则</el-button>
         </div>
-        <el-table :data="rules" v-loading="rulesLoading" style="width: 100%">
+        <el-table v-loading="rulesLoading" :data="rules" style="width: 100%">
           <el-table-column prop="rule_name" label="规则名" min-width="140" />
           <el-table-column prop="biz_type" label="业务类型" width="130" />
           <el-table-column prop="task_type" label="任务类型" width="150" />
           <el-table-column label="供应商" width="130">
-            <template #default="{ row }">{{ providerName(row.provider_id) }}</template>
+            <template #default="{ row }">{{
+              providerName(row.provider_id)
+            }}</template>
           </el-table-column>
           <el-table-column prop="priority" label="优先级" width="80" />
           <el-table-column prop="status" label="状态" width="90">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+              <el-tag
+                :type="row.status === 'active' ? 'success' : 'info'"
+                size="small"
+                >{{ row.status }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column label="操作" width="140" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openRuleEdit(row)">编辑</el-button>
+              <el-button link type="primary" @click="openRuleEdit(row)"
+                >编辑</el-button
+              >
               <el-popconfirm title="确定删除？" @confirm="deleteRuleRow(row)">
                 <template #reference>
                   <el-button link type="danger">删除</el-button>
@@ -355,20 +409,32 @@ onMounted(() => {
 
       <el-tab-pane label="提示词模板" name="prompts">
         <div style="margin-bottom: 12px; text-align: right">
-          <el-button type="primary" @click="openPromptCreate">新增模板</el-button>
+          <el-button type="primary" @click="openPromptCreate"
+            >新增模板</el-button
+          >
         </div>
-        <el-table :data="prompts" v-loading="promptsLoading" style="width: 100%">
+        <el-table
+          v-loading="promptsLoading"
+          :data="prompts"
+          style="width: 100%"
+        >
           <el-table-column prop="template_key" label="模板Key" width="160" />
           <el-table-column prop="template_name" label="名称" min-width="160" />
           <el-table-column prop="version" label="版本" width="70" />
           <el-table-column prop="status" label="状态" width="90">
             <template #default="{ row }">
-              <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">{{ row.status }}</el-tag>
+              <el-tag
+                :type="row.status === 'active' ? 'success' : 'info'"
+                size="small"
+                >{{ row.status }}</el-tag
+              >
             </template>
           </el-table-column>
           <el-table-column label="操作" width="140" fixed="right">
             <template #default="{ row }">
-              <el-button link type="primary" @click="openPromptEdit(row)">编辑</el-button>
+              <el-button link type="primary" @click="openPromptEdit(row)"
+                >编辑</el-button
+              >
               <el-popconfirm title="确定删除？" @confirm="deletePromptRow(row)">
                 <template #reference>
                   <el-button link type="danger">删除</el-button>
@@ -381,10 +447,17 @@ onMounted(() => {
     </el-tabs>
   </el-card>
 
-  <el-dialog v-model="providerDialogVisible" :title="providerDialogMode === 'create' ? '新增供应商' : '编辑供应商'" width="560px">
+  <el-dialog
+    v-model="providerDialogVisible"
+    :title="providerDialogMode === 'create' ? '新增供应商' : '编辑供应商'"
+    width="560px"
+  >
     <el-form label-width="90px">
       <el-form-item label="Provider Key">
-        <el-input v-model="providerForm.provider_key" :disabled="providerDialogMode === 'edit'" />
+        <el-input
+          v-model="providerForm.provider_key"
+          :disabled="providerDialogMode === 'edit'"
+        />
       </el-form-item>
       <el-form-item label="名称">
         <el-input v-model="providerForm.provider_name" />
@@ -396,7 +469,11 @@ onMounted(() => {
         <el-input v-model="providerForm.model_id" />
       </el-form-item>
       <el-form-item label="配置JSON">
-        <el-input v-model="providerForm.config_json" type="textarea" :rows="3" />
+        <el-input
+          v-model="providerForm.config_json"
+          type="textarea"
+          :rows="3"
+        />
       </el-form-item>
       <el-form-item label="优先级">
         <el-input-number v-model="providerForm.priority" :min="0" />
@@ -411,29 +488,57 @@ onMounted(() => {
     </template>
   </el-dialog>
 
-  <el-dialog v-model="ruleDialogVisible" :title="ruleDialogMode === 'create' ? '新增规则' : '编辑规则'" width="560px">
+  <el-dialog
+    v-model="ruleDialogVisible"
+    :title="ruleDialogMode === 'create' ? '新增规则' : '编辑规则'"
+    width="560px"
+  >
     <el-form label-width="100px">
       <el-form-item label="规则名称">
         <el-input v-model="ruleForm.rule_name" />
       </el-form-item>
       <el-form-item label="业务类型">
         <el-select v-model="ruleForm.biz_type" clearable>
-          <el-option v-for="opt in bizTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
+          <el-option
+            v-for="opt in bizTypeOptions"
+            :key="opt.value"
+            :label="opt.label"
+            :value="opt.value"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="任务类型">
         <el-select v-model="ruleForm.task_type">
-          <el-option v-for="t in taskTypeOptions" :key="t" :label="t" :value="t" />
+          <el-option
+            v-for="t in taskTypeOptions"
+            :key="t"
+            :label="t"
+            :value="t"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="供应商">
         <el-select v-model="ruleForm.provider_id" placeholder="选择供应商">
-          <el-option v-for="p in providers" :key="p.id" :label="p.provider_name" :value="p.id" />
+          <el-option
+            v-for="p in providers"
+            :key="p.id"
+            :label="p.provider_name"
+            :value="p.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="提示词模板">
-        <el-select v-model="ruleForm.prompt_template_id" clearable placeholder="可选">
-          <el-option v-for="pt in prompts" :key="pt.id" :label="pt.template_name" :value="pt.id" />
+        <el-select
+          v-model="ruleForm.prompt_template_id"
+          clearable
+          placeholder="可选"
+        >
+          <el-option
+            v-for="pt in prompts"
+            :key="pt.id"
+            :label="pt.template_name"
+            :value="pt.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="条件JSON">
@@ -449,22 +554,43 @@ onMounted(() => {
     </template>
   </el-dialog>
 
-  <el-dialog v-model="promptDialogVisible" :title="promptDialogMode === 'create' ? '新增提示词模板' : '编辑提示词模板'" width="640px">
+  <el-dialog
+    v-model="promptDialogVisible"
+    :title="promptDialogMode === 'create' ? '新增提示词模板' : '编辑提示词模板'"
+    width="640px"
+  >
     <el-form label-width="100px">
       <el-form-item label="模板Key">
-        <el-input v-model="promptForm.template_key" :disabled="promptDialogMode === 'edit'" />
+        <el-input
+          v-model="promptForm.template_key"
+          :disabled="promptDialogMode === 'edit'"
+        />
       </el-form-item>
       <el-form-item label="模板名称">
         <el-input v-model="promptForm.template_name" />
       </el-form-item>
       <el-form-item label="System Prompt">
-        <el-input v-model="promptForm.system_prompt" type="textarea" :rows="6" />
+        <el-input
+          v-model="promptForm.system_prompt"
+          type="textarea"
+          :rows="6"
+        />
       </el-form-item>
       <el-form-item label="User Prompt">
-        <el-input v-model="promptForm.user_prompt_template" type="textarea" :rows="8" placeholder="使用 {{variable}} 表示变量" />
+        <el-input
+          v-model="promptForm.user_prompt_template"
+          type="textarea"
+          :rows="8"
+          placeholder="使用 {{variable}} 表示变量"
+        />
       </el-form-item>
       <el-form-item label="变量Schema">
-        <el-input v-model="promptForm.variables_schema" type="textarea" :rows="3" placeholder="JSON格式的变量定义" />
+        <el-input
+          v-model="promptForm.variables_schema"
+          type="textarea"
+          :rows="3"
+          placeholder="JSON格式的变量定义"
+        />
       </el-form-item>
     </el-form>
     <template #footer>

@@ -30,7 +30,10 @@ export type EntityInvoiceProfile = {
   bank_account: string | null;
 };
 
-export const listEntities = (params?: { status?: string; keyword?: string }) => {
+export const listEntities = (params?: {
+  status?: string;
+  keyword?: string;
+}) => {
   return http.request<{ success: boolean; data: Entity[] }>(
     "get",
     "/api/v1/entity",
@@ -54,7 +57,9 @@ export const updateEntity = (
   id: number,
   data: { entity_name?: string; legal_person?: string | null; status?: string }
 ) => {
-  return http.request<{ success: boolean }>("put", `/api/v1/entity/${id}`, { data });
+  return http.request<{ success: boolean }>("put", `/api/v1/entity/${id}`, {
+    data
+  });
 };
 
 export const listEntityBankAccounts = (entityId: number) => {

@@ -230,10 +230,7 @@ export const transferApproval = (
   );
 };
 
-export const withdrawApproval = (
-  id: number,
-  data?: { comment?: string }
-) => {
+export const withdrawApproval = (id: number, data?: { comment?: string }) => {
   return http.request<{ success: boolean }>(
     "post",
     `/api/v1/approval/${id}/withdraw`,
@@ -241,10 +238,7 @@ export const withdrawApproval = (
   );
 };
 
-export const cancelApproval = (
-  id: number,
-  data?: { comment?: string }
-) => {
+export const cancelApproval = (id: number, data?: { comment?: string }) => {
   return http.request<{ success: boolean }>(
     "post",
     `/api/v1/approval/${id}/cancel`,

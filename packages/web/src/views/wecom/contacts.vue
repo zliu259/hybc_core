@@ -10,8 +10,12 @@ defineOptions({
 const syncing = ref(false);
 const loading = ref(false);
 const syncedAt = ref("");
-const departments = ref<Array<{ id: number; name: string; parentid: number }>>([]);
-const users = ref<Array<{ userid: string; name: string; department: number[] }>>([]);
+const departments = ref<Array<{ id: number; name: string; parentid: number }>>(
+  []
+);
+const users = ref<
+  Array<{ userid: string; name: string; department: number[] }>
+>([]);
 
 const loadContacts = async () => {
   loading.value = true;
@@ -54,7 +58,9 @@ onMounted(loadContacts);
       <el-button type="primary" :loading="syncing" @click="syncContacts">
         同步通讯录
       </el-button>
-      <el-tag class="ml-3" type="info">最后同步: {{ syncedAt || "未同步" }}</el-tag>
+      <el-tag class="ml-3" type="info"
+        >最后同步: {{ syncedAt || "未同步" }}</el-tag
+      >
     </div>
 
     <el-row :gutter="16">

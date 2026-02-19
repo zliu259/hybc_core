@@ -8,6 +8,9 @@ export const taskTypes = [
   "reimbursement_anomaly",
   "log_analysis",
   "equipment_recommend",
+  "consumable_estimation",
+  "inventory_alert_analysis",
+  "consumption_anomaly",
   "ocr_extract",
   "file_generate",
   "approval_ai_gate"

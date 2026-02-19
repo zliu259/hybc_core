@@ -17,6 +17,9 @@ class LocalRulesProvider(AiProvider):
     def supports(self, task_type: str) -> bool:
         return task_type in [
             "equipment_recommend",
+            "consumable_estimation",
+            "inventory_alert_analysis",
+            "consumption_anomaly",
             "ocr_extract",
             "contract_review",
             "payment_risk_assessment",
@@ -38,6 +41,12 @@ class LocalRulesProvider(AiProvider):
 
         if task_type == "equipment_recommend":
             output = self._equipment_recommend(payload)
+        elif task_type == "consumable_estimation":
+            output = self._consumable_estimation(payload)
+        elif task_type == "inventory_alert_analysis":
+            output = self._inventory_alert_analysis(payload)
+        elif task_type == "consumption_anomaly":
+            output = self._consumption_anomaly(payload)
         elif task_type == "ocr_extract":
             output = self._ocr_extract(payload)
         elif task_type == "contract_review":
@@ -90,6 +99,68 @@ class LocalRulesProvider(AiProvider):
                 "status": "placeholder",
                 "message": "OCR extraction not yet implemented",
                 "file_url": file_url,
+            },
+            ensure_ascii=False,
+        )
+
+    def _consumable_estimation(self, payload: dict[str, object]) -> str:
+        items_raw = payload.get("items", [])
+        items = items_raw if isinstance(items_raw, list) else []
+        estimated: list[dict[str, object]] = []
+        for item in items:
+            if not isinstance(item, dict):
+                continue
+            planned_qty = float(item.get("planned_qty", 0))
+            estimated.append(
+                {
+                    "asset_type_id": item.get("asset_type_id"),
+                    "estimated_consumable_qty": round(planned_qty * 0.15, 2),
+                }
+            )
+        return json.dumps(
+            {
+                "summary": "本地模拟耗材估算结果。",
+                "estimated_items": estimated,
+            },
+            ensure_ascii=False,
+        )
+
+    def _inventory_alert_analysis(self, payload: dict[str, object]) -> str:
+        quantity = float(payload.get("quantity", 0))
+        min_stock = float(payload.get("min_stock", 0) or 0)
+        gap = min_stock - quantity
+        level = "low"
+        if gap > 0 and min_stock > 0:
+            ratio = gap / min_stock
+            if ratio >= 0.5:
+                level = "high"
+            elif ratio >= 0.2:
+                level = "medium"
+
+        return json.dumps(
+            {
+                "alert_level": level,
+                "gap": gap,
+                "summary": "本地模拟库存预警分析结果。",
+                "recommendation": "建议尽快补货" if gap > 0 else "库存充足",
+            },
+            ensure_ascii=False,
+        )
+
+    def _consumption_anomaly(self, payload: dict[str, object]) -> str:
+        quantity = float(payload.get("quantity", 0))
+        risk = "low"
+        if quantity >= 100:
+            risk = "high"
+        elif quantity >= 30:
+            risk = "medium"
+        return json.dumps(
+            {
+                "risk_level": risk,
+                "summary": "本地模拟耗材消耗异常检测。",
+                "recommendation": (
+                    "建议复核当日领用记录" if risk != "low" else "消耗量在常规范围"
+                ),
             },
             ensure_ascii=False,
         )

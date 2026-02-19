@@ -47,7 +47,12 @@ const loadTemplates = async () => {
 const openCreate = () => {
   dialogMode.value = "create";
   editingId.value = null;
-  form.value = { template_code: "", template_name: "", biz_type: "", config_json: "" };
+  form.value = {
+    template_code: "",
+    template_name: "",
+    biz_type: "",
+    config_json: ""
+  };
   dialogVisible.value = true;
 };
 
@@ -69,7 +74,11 @@ const openPreview = (row: ApprovalTemplate) => {
 };
 
 const handleSave = async () => {
-  if (!form.value.template_code || !form.value.template_name || !form.value.biz_type) {
+  if (
+    !form.value.template_code ||
+    !form.value.template_name ||
+    !form.value.biz_type
+  ) {
     message("请填写完整信息", { type: "warning" });
     return;
   }
@@ -108,19 +117,28 @@ onMounted(loadTemplates);
 <template>
   <el-card shadow="never">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>审批模板配置</span>
         <el-button type="primary" @click="openCreate">新建模板</el-button>
       </div>
     </template>
 
-    <el-table :data="templates" v-loading="loading" style="width: 100%">
+    <el-table v-loading="loading" :data="templates" style="width: 100%">
       <el-table-column prop="template_code" label="模板编码" width="160" />
       <el-table-column prop="template_name" label="模板名称" min-width="180" />
       <el-table-column prop="biz_type" label="业务类型" width="140" />
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'active' ? 'success' : 'info'" size="small">
+          <el-tag
+            :type="row.status === 'active' ? 'success' : 'info'"
+            size="small"
+          >
             {{ row.status }}
           </el-tag>
         </template>
@@ -129,7 +147,9 @@ onMounted(loadTemplates);
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
-          <el-button link type="primary" @click="openPreview(row)">预览</el-button>
+          <el-button link type="primary" @click="openPreview(row)"
+            >预览</el-button
+          >
           <el-popconfirm title="确定删除此模板？" @confirm="handleDelete(row)">
             <template #reference>
               <el-button link type="danger">删除</el-button>
@@ -150,7 +170,10 @@ onMounted(loadTemplates);
       <el-row :gutter="16">
         <el-col :span="8">
           <el-form-item label="模板编码">
-            <el-input v-model="form.template_code" :disabled="dialogMode === 'edit'" />
+            <el-input
+              v-model="form.template_code"
+              :disabled="dialogMode === 'edit'"
+            />
           </el-form-item>
         </el-col>
         <el-col :span="8">

@@ -51,7 +51,10 @@ type Pagination = { page: number; pageSize: number; total: number };
 
 export type InstanceConfig = {
   default_assignee_userids?: string[];
-  node_overrides?: Record<string, { assignee_userids?: string[]; timeout_hours?: number }>;
+  node_overrides?: Record<
+    string,
+    { assignee_userids?: string[]; timeout_hours?: number }
+  >;
   note?: string;
 };
 
@@ -109,18 +112,13 @@ export const updateContract = (
     status?: string;
   }
 ) => {
-  return http.request<{ success: boolean }>(
-    "put",
-    `/api/v1/contract/${id}`,
-    { data }
-  );
+  return http.request<{ success: boolean }>("put", `/api/v1/contract/${id}`, {
+    data
+  });
 };
 
 export const deleteContract = (id: number) => {
-  return http.request<{ success: boolean }>(
-    "delete",
-    `/api/v1/contract/${id}`
-  );
+  return http.request<{ success: boolean }>("delete", `/api/v1/contract/${id}`);
 };
 
 export const createAmountChange = (
@@ -146,7 +144,11 @@ export const submitAmountChangeApproval = (
   return http.request<{
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
-  }>("post", `/api/v1/contract/${contractId}/amount-change/${changeId}/submit-approval`, { data });
+  }>(
+    "post",
+    `/api/v1/contract/${contractId}/amount-change/${changeId}/submit-approval`,
+    { data }
+  );
 };
 
 export const getAiReview = (contractId: number) => {

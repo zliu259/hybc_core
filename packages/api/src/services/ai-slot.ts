@@ -6,8 +6,7 @@ import type {
   CreateTaskRequest,
   TaskQueueItem,
   TaskResultSubmission,
-  ComputeNode,
-  TaskPollResponse
+  ComputeNode
 } from "../types/ai";
 import type { AiGateHandler } from "../types/approval";
 import { publishEvent } from "./event-bus";

@@ -58,16 +58,26 @@ const submit = async () => {
         <el-input v-model="form.manager_userid" placeholder="企微 userid" />
       </el-form-item>
       <el-form-item label="开始日期">
-        <el-date-picker v-model="form.start_date" type="date" value-format="YYYY-MM-DD" />
+        <el-date-picker
+          v-model="form.start_date"
+          type="date"
+          value-format="YYYY-MM-DD"
+        />
       </el-form-item>
       <el-form-item label="结束日期">
-        <el-date-picker v-model="form.end_date" type="date" value-format="YYYY-MM-DD" />
+        <el-date-picker
+          v-model="form.end_date"
+          type="date"
+          value-format="YYYY-MM-DD"
+        />
       </el-form-item>
       <el-form-item label="附件上传">
         <PhaseUpload v-model="attachments" category="project" />
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" :loading="saving" @click="submit">提交立项</el-button>
+        <el-button type="primary" :loading="saving" @click="submit"
+          >提交立项</el-button
+        >
         <el-button @click="router.push('/project/list')">返回列表</el-button>
       </el-form-item>
     </el-form>
