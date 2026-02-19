@@ -1,0 +1,21 @@
+services:
+  task-runner-primary:
+    build: .
+    container_name: hybc-task-runner-primary
+    env_file:
+      - ./env/node-primary.env
+    restart: unless-stopped
+
+  task-runner-secondary:
+    build: .
+    container_name: hybc-task-runner-secondary
+    env_file:
+      - ./env/node-secondary.env
+    restart: unless-stopped
+
+  task-runner-standby:
+    build: .
+    container_name: hybc-task-runner-standby
+    env_file:
+      - ./env/node-standby.env
+    restart: unless-stopped

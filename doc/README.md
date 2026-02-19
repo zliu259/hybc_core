@@ -7,6 +7,7 @@
 - 本地开发指南：`doc/local-dev-setup.md`
 - UI 页面级设计：`doc/UI设计文档.md`
 - 统一开发记录：`doc/开发记录.md`
+- Phase 8 本地与正式部署：`doc/Phase8本地部署与正式部署.md`
 
 ## 开发记录规则（强制）
 - 仅允许在 `doc/开发记录.md` 续写开发记录。
