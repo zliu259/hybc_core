@@ -1,22 +1,24 @@
 <view class="page">
   <view class="card">
     <view class="title">待审批列表</view>
-    <button class="btn" bindtap="loadPending">刷新</button>
+    <button class="btn" bindtap="loadPending" loading="{{loading}}" disabled="{{loading || acting}}">刷新</button>
   </view>
+
+  <view class="empty-state" wx:if="{{!loading && pending.length === 0}}">当前没有待审批事项</view>
 
   <block wx:for="{{pending}}" wx:key="id">
     <view class="card">
       <view>{{item.instance_no}} · {{item.biz_type}}</view>
       <view class="sub">{{item.biz_summary}}</view>
       <view class="label">意见</view>
-      <input class="input" value="{{commentMap[item.id] || ''}}" data-id="{{item.id}}" bindinput="onComment" />
+      <input class="input" value="{{commentMap[item.id] || ''}}" data-id="{{item.id}}" bindinput="onComment" disabled="{{acting}}" />
       <view class="row">
-        <button class="btn" type="primary" data-id="{{item.id}}" data-action="approve" bindtap="handleAction">通过</button>
-        <button class="btn" data-id="{{item.id}}" data-action="reject" bindtap="handleAction">拒绝</button>
+        <button class="btn" type="primary" data-id="{{item.id}}" data-action="approve" bindtap="handleAction" loading="{{acting}}" disabled="{{acting}}">通过</button>
+        <button class="btn" data-id="{{item.id}}" data-action="reject" bindtap="handleAction" disabled="{{acting}}">拒绝</button>
       </view>
       <view class="row">
-        <button class="btn" data-id="{{item.id}}" data-action="return" bindtap="handleAction">退回</button>
-        <button class="btn" data-id="{{item.id}}" data-action="transfer" bindtap="handleAction">转签给operator</button>
+        <button class="btn" data-id="{{item.id}}" data-action="return" bindtap="handleAction" disabled="{{acting}}">退回</button>
+        <button class="btn" data-id="{{item.id}}" data-action="transfer" bindtap="handleAction" disabled="{{acting}}">转签给operator</button>
       </view>
     </view>
   </block>

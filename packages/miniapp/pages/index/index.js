@@ -4,7 +4,8 @@ Page({
   data: {
     title: "HYBC 企业微信小程序",
     pendingCount: 0,
-    noticeCount: 0
+    noticeCount: 0,
+    loading: false
   },
 
   onShow() {
@@ -12,6 +13,7 @@ Page({
   },
 
   async loadWorkbench() {
+    this.setData({ loading: true });
     try {
       const pending = await request({
         method: "GET",
@@ -24,6 +26,8 @@ Page({
       });
     } catch {
       this.setData({ pendingCount: 0, noticeCount: 0 });
+    } finally {
+      this.setData({ loading: false });
     }
   },
 

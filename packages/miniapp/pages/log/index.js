@@ -1,6 +1,7 @@
 const { request } = require("../../utils/request");
 const { uploadFileToR2 } = require("../../utils/upload");
 const { wxChooseMediaImage } = require("../../utils/wx");
+const { required, positiveNumber, ymdDate, firstError } = require("../../utils/validation");
 
 Page({
   data: {
@@ -18,7 +19,18 @@ Page({
       title: "",
       detail_html: "",
       photos: []
-    }
+    },
+    busy: false
+  },
+
+  runBusy(fn) {
+    if (this.data.busy) return;
+    this.setData({ busy: true });
+    return Promise.resolve()
+      .then(() => fn())
+      .finally(() => {
+        this.setData({ busy: false });
+      });
   },
 
   onOperatorInput(e) {
@@ -32,7 +44,15 @@ Page({
   },
 
   async smartFill() {
-    try {
+    const errorText = firstError([
+      required(this.data.operator.project_id, "项目ID"),
+      ymdDate(this.data.operator.log_date, "日期")
+    ]);
+    if (errorText) {
+      wx.showToast({ title: errorText, icon: "none" });
+      return;
+    }
+    return this.runBusy(async () => {
       const op = this.data.operator;
       const res = await request({
         method: "POST",
@@ -49,13 +69,23 @@ Page({
         "operator.issue_summary": res.data?.prefill?.issue_summary || ""
       });
       wx.showToast({ title: "预填完成", icon: "success" });
-    } catch (error) {
-      wx.showToast({ title: error.message || "预填失败", icon: "none" });
-    }
+    }).catch((error) => wx.showToast({ title: error.message || "预填失败", icon: "none" }));
   },
 
   async submitOperator() {
-    try {
+    const op = this.data.operator;
+    const errorText = firstError([
+      required(op.project_id, "项目ID"),
+      ymdDate(op.log_date, "日期"),
+      required(op.shift, "班次"),
+      positiveNumber(op.completed_pipe_count, "本班下管数")
+    ]);
+    if (errorText) {
+      wx.showToast({ title: errorText, icon: "none" });
+      return;
+    }
+
+    return this.runBusy(async () => {
       const op = this.data.operator;
       await request({
         method: "POST",
@@ -71,13 +101,11 @@ Page({
         }
       });
       wx.showToast({ title: "提交成功", icon: "success" });
-    } catch (error) {
-      wx.showToast({ title: error.message || "提交失败", icon: "none" });
-    }
+    }).catch((error) => wx.showToast({ title: error.message || "提交失败", icon: "none" }));
   },
 
   async pickManagerPhoto() {
-    try {
+    return this.runBusy(async () => {
       const choose = await wxChooseMediaImage();
       const filePath = choose.tempFiles?.[0]?.tempFilePath;
       if (!filePath) return;
@@ -87,13 +115,21 @@ Page({
       ]);
       this.setData({ "manager.photos": photos });
       wx.showToast({ title: "上传完成", icon: "success" });
-    } catch (error) {
-      wx.showToast({ title: error.message || "上传失败", icon: "none" });
-    }
+    }).catch((error) => wx.showToast({ title: error.message || "上传失败", icon: "none" }));
   },
 
   async submitManager() {
-    try {
+    const mg = this.data.manager;
+    const errorText = firstError([
+      required(mg.project_id, "项目ID"),
+      ymdDate(mg.log_date, "日期")
+    ]);
+    if (errorText) {
+      wx.showToast({ title: errorText, icon: "none" });
+      return;
+    }
+
+    return this.runBusy(async () => {
       const mg = this.data.manager;
       await request({
         method: "POST",
@@ -108,8 +144,6 @@ Page({
         }
       });
       wx.showToast({ title: "提交成功", icon: "success" });
-    } catch (error) {
-      wx.showToast({ title: error.message || "提交失败", icon: "none" });
-    }
+    }).catch((error) => wx.showToast({ title: error.message || "提交失败", icon: "none" }));
   }
 });

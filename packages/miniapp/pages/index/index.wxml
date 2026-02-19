@@ -2,6 +2,7 @@
   <view class="card">
     <view class="title">{{title}}</view>
     <view class="sub">待审批 {{pendingCount}} 条 · 通知 {{noticeCount}} 条</view>
+    <button class="btn" bindtap="loadWorkbench" loading="{{loading}}" disabled="{{loading}}">刷新工作台</button>
   </view>
 
   <view class="card">

@@ -2,8 +2,8 @@
   <view class="card">
     <view class="title">项目进度概览</view>
     <view class="label">项目ID（可选）</view>
-    <input class="input" type="number" value="{{projectId}}" bindinput="onProjectInput" />
-    <button class="btn" bindtap="loadData">刷新</button>
+    <input class="input" type="number" value="{{projectId}}" bindinput="onProjectInput" disabled="{{loading}}" />
+    <button class="btn" bindtap="loadData" loading="{{loading}}" disabled="{{loading}}">刷新</button>
   </view>
 
   <view class="card">
@@ -15,6 +15,7 @@
 
   <view class="card">
     <view class="title">进度预警</view>
+    <view class="empty-state" wx:if="{{!loading && alerts.length === 0}}">当前无进度预警</view>
     <block wx:for="{{alerts}}" wx:key="project_id">
       <view class="sub">{{item.project_name}} · {{item.message}}</view>
     </block>

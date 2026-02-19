@@ -18,17 +18,39 @@ const setUserProfile = (profile) => {
 
 const getUserProfile = () => wx.getStorageSync(USER_KEY) || null;
 
-const loginWithWeComCode = (code) => {
+const normalizeUser = (data) => {
+  if (data?.user) return data.user;
+  return {
+    id: data?.id || "",
+    username: data?.username || "",
+    nickname: data?.nickname || "",
+    roles: data?.roles || []
+  };
+};
+
+const loginWithWeComCode = async (code, options = {}) => {
   const { loginRequest } = require("./request");
-  return loginRequest({ code }).then((data) => {
+  const username = options.username || "operator";
+
+  try {
+    const data = await loginRequest({ code: { code } });
     if (data?.accessToken) {
       setToken(data.accessToken);
     }
-    if (data?.user) {
-      setUserProfile(data.user);
-    }
+    setUserProfile(normalizeUser(data));
     return data;
-  });
+  } catch (error) {
+    if (!options.allowLocalFallback) {
+      throw error;
+    }
+
+    const localData = await loginRequest({ code: { username } });
+    if (localData?.accessToken) {
+      setToken(localData.accessToken);
+    }
+    setUserProfile(normalizeUser(localData));
+    return localData;
+  }
 };
 
 module.exports = {

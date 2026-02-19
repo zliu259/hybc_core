@@ -1,38 +1,38 @@
 <view class="page">
   <view class="card">
     <view class="title">操作员日志（AI预填）</view>
-    <view class="label">项目ID</view>
-    <input class="input" type="number" value="{{operator.project_id}}" data-key="project_id" bindinput="onOperatorInput" />
-    <view class="label">日期</view>
-    <input class="input" value="{{operator.log_date}}" data-key="log_date" bindinput="onOperatorInput" />
-    <view class="label">班次（day/night）</view>
-    <input class="input" value="{{operator.shift}}" data-key="shift" bindinput="onOperatorInput" />
-    <view class="label">本班下管数</view>
-    <input class="input" type="number" value="{{operator.completed_pipe_count}}" data-key="completed_pipe_count" bindinput="onOperatorInput" />
+    <view class="label required">项目ID</view>
+    <input class="input" type="number" value="{{operator.project_id}}" data-key="project_id" bindinput="onOperatorInput" disabled="{{busy}}" />
+    <view class="label required">日期</view>
+    <input class="input" value="{{operator.log_date}}" data-key="log_date" bindinput="onOperatorInput" placeholder="YYYY-MM-DD" disabled="{{busy}}" />
+    <view class="label required">班次（day/night）</view>
+    <input class="input" value="{{operator.shift}}" data-key="shift" bindinput="onOperatorInput" disabled="{{busy}}" />
+    <view class="label required">本班下管数</view>
+    <input class="input" type="number" value="{{operator.completed_pipe_count}}" data-key="completed_pipe_count" bindinput="onOperatorInput" disabled="{{busy}}" />
     <view class="label">天气</view>
-    <input class="input" value="{{operator.weather}}" data-key="weather" bindinput="onOperatorInput" />
+    <input class="input" value="{{operator.weather}}" data-key="weather" bindinput="onOperatorInput" disabled="{{busy}}" />
     <view class="label">问题摘要</view>
-    <textarea class="input" value="{{operator.issue_summary}}" data-key="issue_summary" bindinput="onOperatorInput" />
+    <textarea class="input" value="{{operator.issue_summary}}" data-key="issue_summary" bindinput="onOperatorInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="smartFill">AI预填</button>
-      <button class="btn" type="primary" bindtap="submitOperator">提交操作员日志</button>
+      <button class="btn" bindtap="smartFill" loading="{{busy}}" disabled="{{busy}}">AI预填</button>
+      <button class="btn" type="primary" bindtap="submitOperator" loading="{{busy}}" disabled="{{busy}}">提交操作员日志</button>
     </view>
   </view>
 
   <view class="card">
     <view class="title">管理员日志 + 拍照上传</view>
-    <view class="label">项目ID</view>
-    <input class="input" type="number" value="{{manager.project_id}}" data-key="project_id" bindinput="onManagerInput" />
-    <view class="label">日期</view>
-    <input class="input" value="{{manager.log_date}}" data-key="log_date" bindinput="onManagerInput" />
+    <view class="label required">项目ID</view>
+    <input class="input" type="number" value="{{manager.project_id}}" data-key="project_id" bindinput="onManagerInput" disabled="{{busy}}" />
+    <view class="label required">日期</view>
+    <input class="input" value="{{manager.log_date}}" data-key="log_date" bindinput="onManagerInput" placeholder="YYYY-MM-DD" disabled="{{busy}}" />
     <view class="label">标题</view>
-    <input class="input" value="{{manager.title}}" data-key="title" bindinput="onManagerInput" />
+    <input class="input" value="{{manager.title}}" data-key="title" bindinput="onManagerInput" disabled="{{busy}}" />
     <view class="label">日志内容</view>
-    <textarea class="input" value="{{manager.detail_html}}" data-key="detail_html" bindinput="onManagerInput" />
+    <textarea class="input" value="{{manager.detail_html}}" data-key="detail_html" bindinput="onManagerInput" disabled="{{busy}}" />
     <view class="sub">已上传图片: {{manager.photos.length}}</view>
     <view class="row">
-      <button class="btn" bindtap="pickManagerPhoto">拍照/选图</button>
-      <button class="btn" type="primary" bindtap="submitManager">提交管理员日志</button>
+      <button class="btn" bindtap="pickManagerPhoto" loading="{{busy}}" disabled="{{busy}}">拍照/选图</button>
+      <button class="btn" type="primary" bindtap="submitManager" loading="{{busy}}" disabled="{{busy}}">提交管理员日志</button>
     </view>
   </view>
 </view>

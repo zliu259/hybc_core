@@ -2,7 +2,8 @@ const { request } = require("../../utils/request");
 
 Page({
   data: {
-    notices: []
+    notices: [],
+    loading: false
   },
 
   onShow() {
@@ -10,6 +11,7 @@ Page({
   },
 
   async loadNotices() {
+    this.setData({ loading: true });
     try {
       const pending = await request({
         method: "GET",
@@ -23,6 +25,8 @@ Page({
       this.setData({ notices });
     } catch (error) {
       wx.showToast({ title: error.message || "加载失败", icon: "none" });
+    } finally {
+      this.setData({ loading: false });
     }
   }
 });

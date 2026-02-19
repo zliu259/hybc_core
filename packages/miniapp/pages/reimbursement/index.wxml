@@ -1,41 +1,41 @@
 <view class="page">
   <view class="card">
     <view class="title">信封扫码填报</view>
-    <view class="label">信封UUID</view>
-    <input class="input" value="{{scan.envelope_uuid}}" data-key="envelope_uuid" bindinput="onScanInput" />
-    <view class="label">项目ID</view>
-    <input class="input" type="number" value="{{scan.project_id}}" data-key="project_id" bindinput="onScanInput" />
+    <view class="label required">信封UUID</view>
+    <input class="input" value="{{scan.envelope_uuid}}" data-key="envelope_uuid" bindinput="onScanInput" disabled="{{busy}}" />
+    <view class="label required">项目ID</view>
+    <input class="input" type="number" value="{{scan.project_id}}" data-key="project_id" bindinput="onScanInput" disabled="{{busy}}" />
     <view class="label">发票号</view>
-    <input class="input" value="{{scan.invoice_no}}" data-key="invoice_no" bindinput="onScanInput" />
-    <view class="label">金额</view>
-    <input class="input" type="digit" value="{{scan.amount}}" data-key="amount" bindinput="onScanInput" />
+    <input class="input" value="{{scan.invoice_no}}" data-key="invoice_no" bindinput="onScanInput" disabled="{{busy}}" />
+    <view class="label required">金额</view>
+    <input class="input" type="digit" value="{{scan.amount}}" data-key="amount" bindinput="onScanInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="scanQr">扫码识别</button>
-      <button class="btn" type="primary" bindtap="submitScan">提交填报</button>
+      <button class="btn" bindtap="scanQr" disabled="{{busy}}">扫码识别</button>
+      <button class="btn" type="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">提交填报</button>
     </view>
   </view>
 
   <view class="card">
     <view class="title">电子发票拍照上传(OCR)</view>
-    <view class="label">项目ID</view>
-    <input class="input" type="number" value="{{invoice.project_id}}" data-key="project_id" bindinput="onInvoiceInput" />
+    <view class="label required">项目ID</view>
+    <input class="input" type="number" value="{{invoice.project_id}}" data-key="project_id" bindinput="onInvoiceInput" disabled="{{busy}}" />
     <view class="label">发票号（可选）</view>
-    <input class="input" value="{{invoice.invoice_no}}" data-key="invoice_no" bindinput="onInvoiceInput" />
+    <input class="input" value="{{invoice.invoice_no}}" data-key="invoice_no" bindinput="onInvoiceInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="pickInvoicePhoto">拍照上传</button>
-      <button class="btn" bindtap="refreshOcrStatus">刷新OCR状态</button>
+      <button class="btn" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">拍照上传</button>
+      <button class="btn" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy}}">刷新OCR状态</button>
     </view>
-    <view class="sub">OCR状态: {{ocrStatus}}</view>
+    <view class="sub">OCR状态: {{ocrStatusText}}</view>
   </view>
 
   <view class="card">
     <view class="title">生成报销信封PDF</view>
-    <view class="label">信封ID</view>
-    <input class="input" type="number" value="{{pdfEnvelopeId}}" bindinput="onPdfIdInput" />
+    <view class="label required">信封ID</view>
+    <input class="input" type="number" value="{{pdfEnvelopeId}}" bindinput="onPdfIdInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="generatePdf">触发PDF</button>
-      <button class="btn" bindtap="refreshPdfStatus">刷新PDF状态</button>
+      <button class="btn" bindtap="generatePdf" loading="{{busy}}" disabled="{{busy}}">触发PDF</button>
+      <button class="btn" bindtap="refreshPdfStatus" loading="{{busy}}" disabled="{{busy}}">刷新PDF状态</button>
     </view>
-    <view class="sub">PDF状态: {{pdfStatus}}</view>
+    <view class="sub">PDF状态: {{pdfStatusText}}</view>
   </view>
 </view>
