@@ -28,6 +28,7 @@
     "t-loading": "tdesign-miniprogram/loading/loading",
     "t-cell": "tdesign-miniprogram/cell/cell",
     "t-cell-group": "tdesign-miniprogram/cell-group/cell-group",
+    "t-icon": "tdesign-miniprogram/icon/icon",
     "t-notice-bar": "tdesign-miniprogram/notice-bar/notice-bar",
     "hy-panel-card": "components/business/panel-card/index",
     "hy-status-chip": "components/business/status-chip/index",

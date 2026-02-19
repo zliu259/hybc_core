@@ -122,3 +122,45 @@ page {
   gap: 14rpx;
   margin-top: 14rpx;
 }
+
+.entry-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-top: 14rpx;
+}
+
+.entry-card {
+  background: #f8faff;
+  border: 1px solid #e0e8f5;
+  border-radius: 16rpx;
+  padding: 16rpx;
+  min-height: 128rpx;
+  box-sizing: border-box;
+}
+
+.entry-top {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.entry-title {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2329;
+}
+
+.entry-desc {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #5c667a;
+  line-height: 1.4;
+}
+
+.profile-item {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  margin-top: 10rpx;
+}

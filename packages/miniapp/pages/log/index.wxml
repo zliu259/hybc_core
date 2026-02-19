@@ -1,8 +1,14 @@
 <view class="page">
-  <hy-panel-card title="日志中心" subtitle="已拆分为操作员日志和管理员日志，按角色快速直达">
-    <view class="grid">
-      <t-button block variant="outline" data-path="/pages/operator-log/index" bindtap="goTo">操作员日志</t-button>
-      <t-button block variant="outline" data-path="/pages/manager-log/index" bindtap="goTo">管理员日志</t-button>
+  <hy-panel-card title="日志中心" icon="file-1" subtitle="已拆分为操作员日志和管理员日志，按角色快速直达">
+    <view class="entry-grid">
+      <view class="entry-card" data-path="/pages/operator-log/index" bindtap="goTo">
+        <view class="entry-top"><t-icon name="edit" size="32rpx" color="#1677ff" /><view class="entry-title">操作员日志</view></view>
+        <view class="entry-desc">班次填报、AI预填、快速提交</view>
+      </view>
+      <view class="entry-card" data-path="/pages/manager-log/index" bindtap="goTo">
+        <view class="entry-top"><t-icon name="image" size="32rpx" color="#1677ff" /><view class="entry-title">管理员日志</view></view>
+        <view class="entry-desc">图文记录与拍照上传</view>
+      </view>
     </view>
   </hy-panel-card>
 </view>

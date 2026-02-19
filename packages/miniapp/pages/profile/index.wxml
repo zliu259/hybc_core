@@ -1,14 +1,14 @@
 <view class="page">
-  <hy-panel-card title="个人中心">
+  <hy-panel-card title="个人中心" icon="user-circle">
     <t-notice-bar content="开发联调可在此切换 API 地址" theme="info" />
     <view class="label required">API地址（企微开发者工具）</view>
     <input class="input" value="{{baseUrl}}" bindinput="onBaseUrlInput" />
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="saveBaseUrl">保存地址</t-button>
     </view>
-    <view class="sub">用户ID: {{profile.id || profile.username || '-'}}</view>
-    <view class="sub">昵称: {{profile.nickname || '-'}}</view>
-    <view class="sub">角色: {{profile.roles ? profile.roles.join(',') : '-'}}</view>
+    <view class="profile-item"><t-icon name="user" size="28rpx" color="#5c667a" /><view class="sub">用户ID: {{profile.id || profile.username || '-'}}</view></view>
+    <view class="profile-item"><t-icon name="user-avatar" size="28rpx" color="#5c667a" /><view class="sub">昵称: {{profile.nickname || '-'}}</view></view>
+    <view class="profile-item"><t-icon name="secured" size="28rpx" color="#5c667a" /><view class="sub">角色: {{profile.roles ? profile.roles.join(',') : '-'}}</view></view>
     <view class="row">
       <t-button class="btn btn-primary" theme="primary" bindtap="reloadProfile" loading="{{busy}}" disabled="{{busy}}">刷新资料</t-button>
       <t-button class="btn btn-warn" theme="danger" bindtap="logout">退出登录</t-button>

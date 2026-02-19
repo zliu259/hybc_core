@@ -1,10 +1,22 @@
 <view class="page">
-  <hy-panel-card title="库房工作台" subtitle="设备扫码、库存与现场物资协同">
-    <view class="grid">
-      <t-button block variant="outline" data-path="/pages/asset/index" bindtap="goTo">设备扫码</t-button>
-      <t-button block variant="outline" data-path="/pages/survey/index" bindtap="goTo">现场勘查</t-button>
-      <t-button block variant="outline" data-path="/pages/progress/index" bindtap="goTo">进度概览</t-button>
-      <t-button block variant="outline" data-path="/pages/notice/index" bindtap="goTo">通知消息</t-button>
+  <hy-panel-card title="库房工作台" icon="shop" subtitle="设备扫码、库存与现场物资协同">
+    <view class="entry-grid">
+      <view class="entry-card" data-path="/pages/asset/index" bindtap="goTo">
+        <view class="entry-top"><t-icon name="scan" size="32rpx" color="#1677ff" /><view class="entry-title">设备扫码</view></view>
+        <view class="entry-desc">资产状态与出入库确认</view>
+      </view>
+      <view class="entry-card" data-path="/pages/survey/index" bindtap="goTo">
+        <view class="entry-top"><t-icon name="gps" size="32rpx" color="#1677ff" /><view class="entry-title">现场勘查</view></view>
+        <view class="entry-desc">定位+拍照+表单一体化</view>
+      </view>
+      <view class="entry-card" data-path="/pages/progress/index" bindtap="goTo">
+        <view class="entry-top"><t-icon name="chart-bar-stacked" size="32rpx" color="#1677ff" /><view class="entry-title">进度概览</view></view>
+        <view class="entry-desc">项目节奏与预警查看</view>
+      </view>
+      <view class="entry-card" data-path="/pages/notice/index" bindtap="goTo">
+        <view class="entry-top"><t-icon name="chat" size="32rpx" color="#1677ff" /><view class="entry-title">通知消息</view></view>
+        <view class="entry-desc">物资协同消息集中查看</view>
+      </view>
     </view>
   </hy-panel-card>
 </view>

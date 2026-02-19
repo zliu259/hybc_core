@@ -8,6 +8,12 @@
   color: #1f2329;
 }
 
+.panel-title-row {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
 .panel-sub {
   margin-top: 8rpx;
   font-size: 24rpx;
