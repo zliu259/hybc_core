@@ -19,7 +19,39 @@
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
       "position": [300, 280]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.API_BASE_URL}}/api/v1/system/automation/log-missing-alert",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{$env.N8N_API_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "HTTP_GetMissingLogs",
+      "name": "Get Missing Logs",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, 280]
     }
   ],
-  "connections": {}
+  "connections": {
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Missing Logs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
 }

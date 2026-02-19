@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import json
 import logging
 from typing import Any
+from urllib.parse import urljoin
 
 import httpx
 
@@ -16,18 +16,54 @@ class TaskPoller:
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
-        self.client = httpx.Client(
-            base_url=settings.api_base_url,
-            headers={"X-API-Key": settings.api_key},
-            timeout=30.0,
-        )
+        self.base_urls = [settings.api_base_url, *settings.api_base_url_fallbacks]
+        self.headers = {"X-API-Key": settings.api_key}
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        json_body: dict[str, Any] | None = None,
+        extra_headers: dict[str, str] | None = None,
+    ) -> httpx.Response:
+        errors: list[str] = []
+        verify: bool | str = True
+        cert: tuple[str, str] | str | None = None
+
+        if self.settings.tls_ca_cert_path:
+            verify = self.settings.tls_ca_cert_path
+        if self.settings.tls_client_cert_path and self.settings.tls_client_key_path:
+            cert = (
+                self.settings.tls_client_cert_path,
+                self.settings.tls_client_key_path,
+            )
+
+        headers = {**self.headers, **(extra_headers or {})}
+
+        for base_url in self.base_urls:
+            try:
+                with httpx.Client(timeout=30.0, verify=verify, cert=cert) as client:
+                    return client.request(
+                        method,
+                        urljoin(base_url, path),
+                        params=params,
+                        json=json_body,
+                        headers=headers,
+                    )
+            except Exception as exc:
+                errors.append(f"{base_url}: {exc}")
+
+        raise RuntimeError("; ".join(errors) or "no base url available")
 
     def register_node(self) -> dict[str, Any] | None:
         """Register this compute node with the API."""
         try:
-            resp = self.client.post(
+            resp = self._request(
+                "post",
                 "/api/v1/task/nodes/register",
-                json={
+                json_body={
                     "node_id": self.settings.node_id,
                     "node_name": self.settings.node_name,
                     "node_type": self.settings.node_type,
@@ -45,7 +81,8 @@ class TaskPoller:
     def poll(self) -> dict[str, Any] | None:
         """Poll for a single task. Returns task dict or None."""
         try:
-            resp = self.client.get(
+            resp = self._request(
+                "get",
                 "/api/v1/task/poll",
                 params={
                     "node_id": self.settings.node_id,
@@ -65,9 +102,11 @@ class TaskPoller:
     def submit_result(self, task_id: int, result: dict[str, Any]) -> None:
         """Submit task result to the API."""
         try:
-            resp = self.client.post(
+            resp = self._request(
+                "post",
                 f"/api/v1/task/{task_id}/result",
-                json=result,
+                json_body=result,
+                extra_headers={"X-Node-Id": self.settings.node_id},
             )
             resp.raise_for_status()
             logger.info("Result submitted for task %d", task_id)
@@ -77,9 +116,11 @@ class TaskPoller:
     def submit_error(self, task_id: int, error: str) -> None:
         """Submit task error to the API."""
         try:
-            resp = self.client.post(
+            resp = self._request(
+                "post",
                 f"/api/v1/task/{task_id}/result",
-                json={"output": "", "metadata": {"error": error}},
+                json_body={"output": "", "metadata": {"error": error}},
+                extra_headers={"X-Node-Id": self.settings.node_id},
             )
             resp.raise_for_status()
             logger.info("Error submitted for task %d", task_id)
@@ -87,5 +128,16 @@ class TaskPoller:
             logger.error("Failed to submit error for task %d: %s", task_id, exc)
 
     def close(self) -> None:
-        """Close the HTTP client."""
-        self.client.close()
+        """No-op for short-lived clients per request."""
+        return
+
+    def heartbeat(self) -> None:
+        resp = self._request(
+            "post",
+            f"/api/v1/task/nodes/{self.settings.node_id}/heartbeat",
+            json_body={
+                "status": "online",
+                "active_tasks": 0,
+            },
+        )
+        resp.raise_for_status()

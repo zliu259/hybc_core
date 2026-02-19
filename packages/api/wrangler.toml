@@ -44,4 +44,4 @@ WECHAT_SECRET = "uvYndaTHtRDQvmD4bx3FknXzRBgPRBTXYWakLoNE5oE"
 WECHAT_REDIRECT_URI = "http://apix.hybcdg.com:8849/login"
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["*/5 * * * *", "0 * * * *", "0 18 * * *"]

@@ -10,7 +10,43 @@
       "type": "n8n-nodes-base.manualTrigger",
       "typeVersion": 1,
       "position": [300, 280]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.API_BASE_URL}}/api/v1/system/automation/project-init",
+        "sendBody": true,
+        "contentType": "json",
+        "specifyBody": "json",
+        "jsonBody": "={\"project_id\": 0, \"project_name\": \"manual-trigger\"}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "X-API-Key",
+              "value": "={{$env.N8N_API_TOKEN}}"
+            }
+          ]
+        }
+      },
+      "id": "HTTP_ProjectInit",
+      "name": "Project Init",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [560, 280]
     }
   ],
-  "connections": {}
+  "connections": {
+    "Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "Project Init",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
 }

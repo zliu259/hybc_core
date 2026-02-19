@@ -55,10 +55,14 @@ def main() -> None:
         settings.node_id,
         settings.node_name,
     )
+    if settings.api_base_url_fallbacks:
+        logger.info("Fallback API base URLs: %s", ", ".join(settings.api_base_url_fallbacks))
+    if settings.tls_ca_cert_path:
+        logger.info("mTLS/CA verify enabled")
 
     poller = TaskPoller(settings)
     executor = build_executor()
-    heartbeat = HeartbeatReporter(settings, poller.client)
+    heartbeat = HeartbeatReporter(settings, poller.heartbeat)
 
     # Register node on startup
     poller.register_node()

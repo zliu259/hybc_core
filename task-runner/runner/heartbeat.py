@@ -3,9 +3,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
-from typing import Any
-
-import httpx
+from typing import Callable
 
 from runner.config import Settings
 
@@ -15,9 +13,9 @@ logger = logging.getLogger(__name__)
 class HeartbeatReporter:
     """Reports heartbeat to the API at regular intervals in a background thread."""
 
-    def __init__(self, settings: Settings, client: httpx.Client) -> None:
+    def __init__(self, settings: Settings, send_heartbeat: Callable[[], None]) -> None:
         self.settings = settings
-        self.client = client
+        self.send_heartbeat = send_heartbeat
         self._running = False
         self._thread: threading.Thread | None = None
 
@@ -46,14 +44,7 @@ class HeartbeatReporter:
     def _report(self) -> None:
         """Send a single heartbeat to the API."""
         try:
-            resp = self.client.post(
-                f"/api/v1/task/nodes/{self.settings.node_id}/heartbeat",
-                json={
-                    "status": "online",
-                    "active_tasks": 0,
-                },
-            )
-            resp.raise_for_status()
+            self.send_heartbeat()
             logger.debug("Heartbeat sent")
         except Exception as exc:
             logger.warning("Heartbeat failed: %s", exc)

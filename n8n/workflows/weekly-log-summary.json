@@ -18,25 +18,18 @@
       "name": "Schedule Trigger",
       "type": "n8n-nodes-base.scheduleTrigger",
       "typeVersion": 1,
-      "position": [
-        300,
-        300
-      ]
+      "position": [300, 280]
     },
     {
       "parameters": {
         "method": "POST",
-        "url": "={{$env.API_BASE_URL}}/api/v1/log/summary/trigger",
-        "sendBody": true,
-        "contentType": "json",
-        "specifyBody": "json",
-        "jsonBody": "={\"report_type\":\"weekly\"}",
+        "url": "={{$env.API_BASE_URL}}/api/v1/system/automation/weekly-log-summary",
         "sendHeaders": true,
         "headerParameters": {
           "parameters": [
             {
-              "name": "Authorization",
-              "value": "={{'Bearer ' + $env.N8N_API_TOKEN}}"
+              "name": "X-API-Key",
+              "value": "={{$env.N8N_API_TOKEN}}"
             }
           ]
         }
@@ -45,10 +38,7 @@
       "name": "Trigger Weekly Summary",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
-      "position": [
-        560,
-        300
-      ]
+      "position": [560, 280]
     }
   ],
   "connections": {

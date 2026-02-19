@@ -4,6 +4,8 @@ services:
     container_name: hybc-task-runner-primary
     env_file:
       - ./env/node-primary.env
+    volumes:
+      - ./security/certs:/certs:ro
     restart: unless-stopped
 
   task-runner-secondary:
@@ -11,6 +13,8 @@ services:
     container_name: hybc-task-runner-secondary
     env_file:
       - ./env/node-secondary.env
+    volumes:
+      - ./security/certs:/certs:ro
     restart: unless-stopped
 
   task-runner-standby:
@@ -18,4 +22,6 @@ services:
     container_name: hybc-task-runner-standby
     env_file:
       - ./env/node-standby.env
+    volumes:
+      - ./security/certs:/certs:ro
     restart: unless-stopped

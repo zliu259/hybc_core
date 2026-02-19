@@ -1,0 +1,99 @@
+import { publishEvent } from "./event-bus";
+import type { Env } from "../types/env";
+import type { ComputeNode, TaskQueueItem } from "../types/ai";
+
+const nowIso = () => new Date().toISOString();
+
+export const checkNodeHeartbeat = async (env: Env, staleMinutes = 10): Promise<number> => {
+  const now = nowIso();
+  const rows = await env.DB.prepare(
+    `SELECT * FROM compute_node
+     WHERE status = 'online'
+       AND (
+         last_heartbeat_at IS NULL
+         OR (julianday(?) - julianday(last_heartbeat_at)) * 1440 > ?
+       )`
+  )
+    .bind(now, staleMinutes)
+    .all<ComputeNode>();
+
+  const nodes = rows.results ?? [];
+  for (const node of nodes) {
+    await env.DB.prepare("UPDATE compute_node SET status = 'offline', updated_at = ? WHERE id = ?")
+      .bind(now, node.id)
+      .run();
+    await publishEvent(env, "NODE_OFFLINE", "cron", {
+      node_id: node.node_id,
+      node_name: node.node_name,
+      last_heartbeat_at: node.last_heartbeat_at,
+      detected_at: now
+    });
+  }
+  return nodes.length;
+};
+
+export const requeueTimedOutTasks = async (env: Env): Promise<number> => {
+  const now = nowIso();
+  const rows = await env.DB.prepare(
+    `SELECT * FROM task_queue
+     WHERE status = 'timeout' AND retry_count < max_retries
+     ORDER BY updated_at ASC LIMIT 100`
+  ).all<TaskQueueItem>();
+
+  const tasks = rows.results ?? [];
+  for (const task of tasks) {
+    await env.DB.prepare(
+      `UPDATE task_queue SET
+         status = 'pending',
+         retry_count = retry_count + 1,
+         assigned_node_id = NULL,
+         assigned_at = NULL,
+         started_at = NULL,
+         error_message = NULL,
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(now, task.id)
+      .run();
+
+    await publishEvent(env, "TASK_REQUEUED", "cron", {
+      task_id: task.id,
+      task_type: task.task_type,
+      retry_count: task.retry_count + 1,
+      max_retries: task.max_retries,
+      requeued_at: now
+    });
+  }
+
+  return tasks.length;
+};
+
+export const detectMissingLogs = async (env: Env, targetDate?: string): Promise<number> => {
+  const date =
+    targetDate ??
+    new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const projects = await env.DB.prepare(
+    `SELECT p.id as project_id, p.project_name
+     FROM project p
+     WHERE p.status IN ('preparing', 'active', 'completing')
+       AND NOT EXISTS (
+         SELECT 1 FROM operator_log ol
+         WHERE ol.project_id = p.id
+           AND ol.status != 'deleted'
+           AND ol.log_date = ?
+       )`
+  )
+    .bind(date)
+    .all<{ project_id: number; project_name: string }>();
+
+  for (const row of projects.results ?? []) {
+    await publishEvent(env, "LOG_MISSING", "cron", {
+      project_id: row.project_id,
+      project_name: row.project_name,
+      log_date: date
+    });
+  }
+
+  return (projects.results ?? []).length;
+};

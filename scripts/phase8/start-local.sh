@@ -9,6 +9,11 @@ if docker ps --format '{{.Names}}' | grep -q '^hybc-task-runner$'; then
   echo "         docker-compose -f $ROOT_DIR/task-runner/docker-compose.yml down"
 fi
 
+if [[ ! -f "$ROOT_DIR/task-runner/security/certs/ca.crt" ]]; then
+  echo "[Phase8] Local TLS certs not found, generating..."
+  "$ROOT_DIR/task-runner/security/generate-local-certs.sh"
+fi
+
 echo "[Phase8] Starting local n8n..."
 docker-compose -f "$ROOT_DIR/n8n/docker-compose.yml" up -d
 

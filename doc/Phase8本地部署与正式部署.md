@@ -90,3 +90,26 @@ DELIVERY_TEST_PASSED=true ./scripts/phase8/formal-deploy.sh
 - `n8n/.env.example` 中 `N8N_API_TOKEN` 需在真实环境填充。
 - 若 API 不在本机，请同步调整 `API_BASE_URL`。
 - 若历史单节点容器 `hybc-task-runner` 正在运行，请先停止，避免多节点重复消费任务。
+
+## 10. 已执行测试记录（本次）
+- 脚本语法测试：
+  - `bash -n scripts/phase8/start-local.sh`
+  - `bash -n scripts/phase8/stop-local.sh`
+  - `bash -n scripts/phase8/status-local.sh`
+  - `bash -n scripts/phase8/logs-local.sh`
+  - `bash -n scripts/phase8/formal-deploy.sh`
+  - `bash -n n8n/scripts/import-workflows.sh`
+- 编排配置测试：
+  - `docker-compose -f task-runner/docker-compose.local.yml config`
+  - `docker-compose -f n8n/docker-compose.yml config`
+- 启停联调测试：
+  - 启动：`./scripts/phase8/start-local.sh`
+  - 状态：`./scripts/phase8/status-local.sh`
+  - 停止：`./scripts/phase8/stop-local.sh`
+  - 停止后复查：`./scripts/phase8/status-local.sh`
+- n8n 工作流基线检查：
+  - `./n8n/scripts/import-workflows.sh`
+  - 结果：10 个 Phase 8 工作流文件均被识别
+- 正式部署门禁测试：
+  - 未设置标志：`./scripts/phase8/formal-deploy.sh` → 正常阻止
+  - 设置标志：`DELIVERY_TEST_PASSED=true ./scripts/phase8/formal-deploy.sh` → 正常放行
