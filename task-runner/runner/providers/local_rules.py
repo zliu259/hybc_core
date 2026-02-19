@@ -26,7 +26,9 @@ class LocalRulesProvider(AiProvider):
             "risk_assessment",
             "reimbursement_check",
             "reimbursement_anomaly",
+            "log_smart_fill",
             "log_analysis",
+            "log_summary",
             "file_generate",
             "approval_ai_gate",
         ]
@@ -57,8 +59,12 @@ class LocalRulesProvider(AiProvider):
             output = self._reimbursement_check(payload)
         elif task_type == "reimbursement_anomaly":
             output = self._reimbursement_anomaly(payload)
+        elif task_type == "log_smart_fill":
+            output = self._log_smart_fill(payload)
         elif task_type == "log_analysis":
             output = self._log_analysis(payload)
+        elif task_type == "log_summary":
+            output = self._log_summary(payload)
         elif task_type == "file_generate":
             output = self._file_generate(payload)
         elif task_type == "approval_ai_gate":
@@ -347,6 +353,59 @@ class LocalRulesProvider(AiProvider):
                 "warnings": ["施工参数缺少完整上下文，建议补充"],
                 "summary": "本地模拟日志分析结果。",
                 "input": payload,
+            },
+            ensure_ascii=False,
+        )
+
+    def _log_smart_fill(self, payload: dict[str, object]) -> str:
+        previous_raw = payload.get("previous_log")
+        previous = previous_raw if isinstance(previous_raw, dict) else {}
+        completed_raw = payload.get("completed_pipe_count", 0)
+        completed = (
+            float(completed_raw)
+            if isinstance(completed_raw, (int, float, str))
+            else 0.0
+        )
+        previous_cumulative_raw = previous.get("cumulative_pipe_count", 0)
+        previous_cumulative = (
+            float(previous_cumulative_raw)
+            if isinstance(previous_cumulative_raw, (int, float, str))
+            else 0.0
+        )
+        cumulative = previous_cumulative + completed
+        return json.dumps(
+            {
+                "prefill": {
+                    "weather": previous.get("weather") or "晴",
+                    "issue_summary": previous.get("issue_summary")
+                    or "延续上一班次关注事项",
+                    "cumulative_pipe_count": round(cumulative, 2),
+                },
+                "summary": "已按上一班次自动预填并计算累计下管数量。",
+            },
+            ensure_ascii=False,
+        )
+
+    def _log_summary(self, payload: dict[str, object]) -> str:
+        report_type = str(payload.get("report_type", "daily"))
+        date_from = str(payload.get("date_from", ""))
+        date_to = str(payload.get("date_to", ""))
+        project_id = payload.get("project_id")
+        return json.dumps(
+            {
+                "report_type": report_type,
+                "project_id": project_id,
+                "date_range": {"from": date_from, "to": date_to},
+                "summary": "本地模拟施工日志汇总完成。",
+                "highlights": [
+                    "本周期日志填报完整性良好",
+                    "重点问题已进入跟踪列表",
+                    "建议持续关注进度偏差项目",
+                ],
+                "progress_alert": {
+                    "level": "medium",
+                    "message": "部分项目今日进度低于近7日均值",
+                },
             },
             ensure_ascii=False,
         )

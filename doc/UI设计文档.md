@@ -70,6 +70,13 @@
 - 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`
 - 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
 - 项目设备视图：`packages/web/src/views/project/equipment-view.vue`
+- 操作员日志列表：`packages/web/src/views/construction/operator-log/list.vue`
+- 操作员日志填报：`packages/web/src/views/construction/operator-log/form.vue`
+- 管理员日志：`packages/web/src/views/construction/manager-log/index.vue`
+- 贯通报告：`packages/web/src/views/construction/breakthrough-report/index.vue`
+- 现场勘查：`packages/web/src/views/construction/site-survey/index.vue`
+- 日志公示看板：`packages/web/src/views/construction/dashboard.vue`
+- 进度预警视图：`packages/web/src/views/construction/progress-alert.vue`
 - 系统配置：`packages/web/src/views/admin/system.vue`
 
 ### 3.2 页面模板规范
