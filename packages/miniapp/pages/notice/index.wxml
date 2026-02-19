@@ -1,13 +1,15 @@
 <view class="page">
-  <view class="card">
-    <view class="title">通知消息列表</view>
-    <button class="btn" bindtap="loadNotices" loading="{{loading}}" disabled="{{loading}}">刷新</button>
-  </view>
-  <view class="empty-state" wx:if="{{!loading && notices.length === 0}}">暂无通知消息</view>
-  <block wx:for="{{notices}}" wx:key="id">
-    <view class="card">
-      <view>{{item.title}}</view>
-      <view class="sub">{{item.content}}</view>
+  <hy-panel-card title="通知消息列表">
+    <view class="row">
+      <t-button class="btn btn-primary" theme="primary" block bindtap="loadNotices" loading="{{loading}}" disabled="{{loading}}">刷新</t-button>
     </view>
+  </hy-panel-card>
+
+  <t-empty wx:if="{{!loading && notices.length === 0}}" description="暂无通知消息" />
+
+  <block wx:for="{{notices}}" wx:key="id">
+    <hy-panel-card title="{{item.title}}">
+      <view class="sub">{{item.content}}</view>
+    </hy-panel-card>
   </block>
 </view>

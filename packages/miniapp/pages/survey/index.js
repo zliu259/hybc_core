@@ -3,15 +3,18 @@ const { uploadFileToR2 } = require("../../utils/upload");
 const { wxGetLocation, wxChooseMediaImage } = require("../../utils/wx");
 const { required, positiveNumber, ymdDate, firstError } = require("../../utils/validation");
 
+const today = () => new Date().toISOString().slice(0, 10);
+
 Page({
   data: {
     form: {
       project_id: "",
-      survey_date: "",
+      survey_date: today(),
       location: "",
       weather: "",
       summary: ""
     },
+    sharedProjectId: 0,
     photoKeys: [],
     busy: false
   },
@@ -29,6 +32,19 @@ Page({
     this.setData({ [`form.${key}`]: e.detail.value });
   },
 
+  onProjectChange(e) {
+    const projectId = Number(e.detail.projectId || 0);
+    if (!projectId) return;
+    this.setData({
+      sharedProjectId: projectId,
+      "form.project_id": String(projectId)
+    });
+  },
+
+  onDateChange(e) {
+    this.setData({ "form.survey_date": e.detail.value });
+  },
+
   async fillLocation() {
     return this.runBusy(async () => {
       const loc = await wxGetLocation();
@@ -41,7 +57,7 @@ Page({
   async addPhoto() {
     return this.runBusy(async () => {
       const choose = await wxChooseMediaImage();
-      const path = choose.tempFiles?.[0]?.tempFilePath;
+      const path = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
       if (!path) return;
       const file = await uploadFileToR2(path);
       this.setData({ photoKeys: this.data.photoKeys.concat([file.key]) });

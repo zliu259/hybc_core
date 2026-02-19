@@ -1,12 +1,15 @@
 <view class="page">
-  <view class="card">
-    <view class="title">操作员日志（AI预填）</view>
-    <view class="label required">项目ID</view>
-    <input class="input" type="number" value="{{operator.project_id}}" data-key="project_id" bindinput="onOperatorInput" disabled="{{busy}}" />
+  <hy-panel-card title="操作员日志（AI预填）">
+    <t-notice-bar content="建议先点击AI预填，再校对后提交" theme="info" />
+    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
     <view class="label required">日期</view>
-    <input class="input" value="{{operator.log_date}}" data-key="log_date" bindinput="onOperatorInput" placeholder="YYYY-MM-DD" disabled="{{busy}}" />
-    <view class="label required">班次（day/night）</view>
-    <input class="input" value="{{operator.shift}}" data-key="shift" bindinput="onOperatorInput" disabled="{{busy}}" />
+    <picker mode="date" value="{{operator.log_date}}" bindchange="onOperatorDateChange" disabled="{{busy}}">
+      <view class="input">{{operator.log_date}}</view>
+    </picker>
+    <view class="label required">班次</view>
+    <picker mode="selector" range="{{shiftOptions}}" value="{{shiftIndex}}" bindchange="onShiftChange" disabled="{{busy}}">
+      <view class="input">{{shiftOptions[shiftIndex]}}</view>
+    </picker>
     <view class="label required">本班下管数</view>
     <input class="input" type="number" value="{{operator.completed_pipe_count}}" data-key="completed_pipe_count" bindinput="onOperatorInput" disabled="{{busy}}" />
     <view class="label">天气</view>
@@ -14,25 +17,27 @@
     <view class="label">问题摘要</view>
     <textarea class="input" value="{{operator.issue_summary}}" data-key="issue_summary" bindinput="onOperatorInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="smartFill" loading="{{busy}}" disabled="{{busy}}">AI预填</button>
-      <button class="btn" type="primary" bindtap="submitOperator" loading="{{busy}}" disabled="{{busy}}">提交操作员日志</button>
+      <t-button class="btn" variant="outline" bindtap="smartFill" loading="{{busy}}" disabled="{{busy}}">AI预填</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitOperator" loading="{{busy}}" disabled="{{busy}}">提交操作员日志</t-button>
     </view>
-  </view>
+  </hy-panel-card>
 
-  <view class="card">
-    <view class="title">管理员日志 + 拍照上传</view>
-    <view class="label required">项目ID</view>
-    <input class="input" type="number" value="{{manager.project_id}}" data-key="project_id" bindinput="onManagerInput" disabled="{{busy}}" />
+  <hy-panel-card title="管理员日志 + 拍照上传">
+    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
     <view class="label required">日期</view>
-    <input class="input" value="{{manager.log_date}}" data-key="log_date" bindinput="onManagerInput" placeholder="YYYY-MM-DD" disabled="{{busy}}" />
+    <picker mode="date" value="{{manager.log_date}}" bindchange="onManagerDateChange" disabled="{{busy}}">
+      <view class="input">{{manager.log_date}}</view>
+    </picker>
     <view class="label">标题</view>
     <input class="input" value="{{manager.title}}" data-key="title" bindinput="onManagerInput" disabled="{{busy}}" />
     <view class="label">日志内容</view>
     <textarea class="input" value="{{manager.detail_html}}" data-key="detail_html" bindinput="onManagerInput" disabled="{{busy}}" />
-    <view class="sub">已上传图片: {{manager.photos.length}}</view>
     <view class="row">
-      <button class="btn" bindtap="pickManagerPhoto" loading="{{busy}}" disabled="{{busy}}">拍照/选图</button>
-      <button class="btn" type="primary" bindtap="submitManager" loading="{{busy}}" disabled="{{busy}}">提交管理员日志</button>
+      <t-tag theme="primary" variant="light">已上传图片 {{manager.photos.length}} 张</t-tag>
     </view>
-  </view>
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="pickManagerPhoto" loading="{{busy}}" disabled="{{busy}}">拍照/选图</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitManager" loading="{{busy}}" disabled="{{busy}}">提交管理员日志</t-button>
+    </view>
+  </hy-panel-card>
 </view>

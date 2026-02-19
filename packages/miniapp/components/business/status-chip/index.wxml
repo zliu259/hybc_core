@@ -1,0 +1,1 @@
+<t-tag theme="{{theme}}" variant="{{variant}}">{{text}}</t-tag>

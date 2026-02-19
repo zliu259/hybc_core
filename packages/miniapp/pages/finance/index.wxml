@@ -1,0 +1,10 @@
+<view class="page">
+  <hy-panel-card title="财务工作台" subtitle="最少操作完成报销与审批流程">
+    <view class="grid">
+      <t-button block variant="outline" data-path="/pages/reimbursement/index" bindtap="goTo">报销扫码</t-button>
+      <t-button block variant="outline" data-path="/pages/approval/index" bindtap="goTo">审批待办</t-button>
+      <t-button block variant="outline" data-path="/pages/notice/index" bindtap="goTo">通知消息</t-button>
+      <t-button block variant="outline" data-path="/pages/progress/index" bindtap="goTo">财务相关进度</t-button>
+    </view>
+  </hy-panel-card>
+</view>

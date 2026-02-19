@@ -22,6 +22,7 @@ Page({
       project_id: "",
       invoice_no: ""
     },
+    sharedProjectId: 0,
     latestEnvelopeId: 0,
     ocrStatus: "none",
     ocrStatusText: "未开始",
@@ -47,6 +48,16 @@ Page({
   onInvoiceInput(e) {
     const key = e.currentTarget.dataset.key;
     this.setData({ [`invoice.${key}`]: e.detail.value });
+  },
+
+  onProjectChange(e) {
+    const projectId = Number(e.detail.projectId || 0);
+    if (!projectId) return;
+    this.setData({
+      sharedProjectId: projectId,
+      "scan.project_id": String(projectId),
+      "invoice.project_id": String(projectId)
+    });
   },
 
   onPdfIdInput(e) {
@@ -99,7 +110,7 @@ Page({
 
     return this.runBusy(async () => {
       const choose = await wxChooseMediaImage();
-      const filePath = choose.tempFiles?.[0]?.tempFilePath;
+      const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
       if (!filePath) return;
       const file = await uploadFileToR2(filePath);
       const res = await request({
@@ -113,7 +124,7 @@ Page({
         }
       });
       this.setData({
-        latestEnvelopeId: res.data?.id || 0,
+        latestEnvelopeId: (res && res.data && res.data.id) || 0,
         ocrStatus: "pending",
         ocrStatusText: statusText("pending")
       });
@@ -132,7 +143,7 @@ Page({
         method: "GET",
         path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}/ocr-status`
       });
-      const status = res.data?.status || "unknown";
+      const status = (res && res.data && res.data.status) || "unknown";
       this.setData({ ocrStatus: status, ocrStatusText: statusText(status) });
     }).catch((error) => wx.showToast({ title: error.message || "查询失败", icon: "none" }));
   },
@@ -159,7 +170,7 @@ Page({
     }
     return this.runBusy(async () => {
       const res = await request({ method: "GET", path: `/api/v1/reimbursement/${id}/pdf-status` });
-      const status = res.data?.status || "unknown";
+      const status = (res && res.data && res.data.status) || "unknown";
       this.setData({ pdfStatus: status, pdfStatusText: statusText(status) });
     }).catch((error) => wx.showToast({ title: error.message || "查询失败", icon: "none" }));
   }

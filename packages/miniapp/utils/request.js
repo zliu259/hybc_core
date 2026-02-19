@@ -33,7 +33,7 @@ const request = ({ method = "GET", path, data, header = {} }) => {
           clearToken();
         }
 
-        reject(new Error(body?.error?.message || "Request failed"));
+        reject(new Error((body && body.error && body.error.message) || "Request failed"));
       },
       fail(err) {
         reject(err);
@@ -55,13 +55,13 @@ const loginRequest = ({ code: payload }) => {
       success(res) {
         const body = res.data || {};
         if (res.statusCode >= 200 && res.statusCode < 300 && body.success !== false) {
-          if (body.data?.accessToken) {
+          if (body.data && body.data.accessToken) {
             setToken(body.data.accessToken);
           }
           resolve(body.data || {});
           return;
         }
-        reject(new Error(body?.error?.message || "Login failed"));
+        reject(new Error((body && body.error && body.error.message) || "Login failed"));
       },
       fail(err) {
         reject(err);
@@ -93,7 +93,7 @@ const uploadBinary = ({ path, arrayBuffer, contentType }) => {
           clearToken();
         }
 
-        reject(new Error(body?.error?.message || "Upload failed"));
+        reject(new Error((body && body.error && body.error.message) || "Upload failed"));
       },
       fail(err) {
         reject(err);

@@ -1,0 +1,13 @@
+<view class="project-picker">
+  <view class="label required">{{label}}</view>
+  <picker mode="selector" range="{{projectNames}}" value="{{selectedIndex}}" bindchange="onPickerChange" disabled="{{loading || !projectNames.length}}">
+    <view class="input">
+      {{projectNames[selectedIndex] || "请选择项目"}}
+    </view>
+  </picker>
+  <view class="row">
+    <t-button class="btn" variant="outline" bindtap="loadProjects" loading="{{loading}}" disabled="{{loading}}">刷新项目</t-button>
+    <t-button class="btn" variant="outline" bindtap="autoSelectByGps" loading="{{loading}}" disabled="{{loading}}">定位匹配</t-button>
+  </view>
+  <view class="sub" wx:if="{{autoHint}}">{{autoHint}}</view>
+</view>

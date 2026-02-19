@@ -1,0 +1,7 @@
+<view class="card panel-card">
+  <view wx:if="{{title}}" class="panel-title">{{title}}</view>
+  <view wx:if="{{subtitle}}" class="panel-sub">{{subtitle}}</view>
+  <t-divider wx:if="{{divider}}" />
+  <slot></slot>
+  <slot name="footer"></slot>
+</view>

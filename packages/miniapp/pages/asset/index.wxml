@@ -1,22 +1,23 @@
 <view class="page">
-  <view class="card">
-    <view class="title">设备扫码（状态查看）</view>
+  <hy-panel-card title="设备扫码（状态查看）">
+    <t-notice-bar content="支持扫码识别或手动输入资产ID" theme="info" />
     <view class="label required">资产ID</view>
     <input class="input" type="number" value="{{assetId}}" bindinput="onAssetIdInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="scanAsset" disabled="{{busy}}">扫码</button>
-      <button class="btn" type="primary" bindtap="loadAsset" loading="{{busy}}" disabled="{{busy}}">查看状态</button>
+      <t-button class="btn" variant="outline" bindtap="scanAsset" disabled="{{busy}}">扫码</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="loadAsset" loading="{{busy}}" disabled="{{busy}}">查看状态</t-button>
     </view>
-  </view>
+  </hy-panel-card>
 
-  <view class="card" wx:if="{{asset.id}}">
-    <view class="title">{{asset.asset_code}}</view>
+  <hy-panel-card title="{{asset.asset_code}}" wx:if="{{asset.id}}">
     <view class="sub">名称：{{asset.asset_name}}</view>
     <view class="sub">状态：{{asset.status}}</view>
     <view class="sub">位置：{{asset.current_location || '-'}} </view>
     <view class="row">
-      <button class="btn" data-type="stock_out" bindtap="markStockEvent" loading="{{busy}}" disabled="{{busy}}">记录出库确认</button>
-      <button class="btn" data-type="stock_in" bindtap="markStockEvent" disabled="{{busy}}">记录入库确认</button>
+      <t-button class="btn" variant="outline" data-type="stock_out" bindtap="markStockEvent" loading="{{busy}}" disabled="{{busy}}">记录出库确认</t-button>
+      <t-button class="btn" variant="outline" data-type="stock_in" bindtap="markStockEvent" disabled="{{busy}}">记录入库确认</t-button>
     </view>
-  </view>
+  </hy-panel-card>
+
+  <t-empty wx:if="{{!busy && !asset.id}}" description="请先输入资产ID或扫码" />
 </view>

@@ -1,0 +1,10 @@
+{
+  "component": true,
+  "options": {
+    "styleIsolation": "apply-shared",
+    "multipleSlots": true
+  },
+  "usingComponents": {
+    "t-divider": "tdesign-miniprogram/divider/divider"
+  }
+}

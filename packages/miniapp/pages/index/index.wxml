@@ -1,31 +1,35 @@
 <view class="page">
-  <view class="card">
-    <view class="title">{{title}}</view>
-    <view class="sub">待审批 {{pendingCount}} 条 · 通知 {{noticeCount}} 条</view>
-    <button class="btn" bindtap="loadWorkbench" loading="{{loading}}" disabled="{{loading}}">刷新工作台</button>
-  </view>
+  <hy-panel-card title="{{title}}" subtitle="企业微信工作台 · 高效审批与现场协同">
+    <view class="stats-row">
+      <view class="stat-card">
+        <view class="stat-value">{{pendingCount}}</view>
+        <view class="stat-label">待审批</view>
+      </view>
+      <view class="stat-card">
+        <view class="stat-value">{{noticeCount}}</view>
+        <view class="stat-label">消息通知</view>
+      </view>
+    </view>
+    <view class="row">
+      <t-button class="btn btn-primary" theme="primary" block bindtap="loadWorkbench" loading="{{loading}}" disabled="{{loading}}">刷新工作台</t-button>
+    </view>
+  </hy-panel-card>
 
-  <view class="card">
-    <view class="title">核心功能</view>
-    <view class="row">
-      <button class="btn" data-path="/pages/log/index" bindtap="goTo">日志填报</button>
-      <button class="btn" data-path="/pages/approval/index" bindtap="goTo">审批处理</button>
+  <hy-panel-card title="项目现场">
+    <view class="grid">
+      <t-button block variant="outline" data-path="/pages/log/index" bindtap="goTo">日志填报</t-button>
+      <t-button block variant="outline" data-path="/pages/approval/index" bindtap="goTo">审批处理</t-button>
+      <t-button block variant="outline" data-path="/pages/survey/index" bindtap="goTo">现场勘查</t-button>
+      <t-button block variant="outline" data-path="/pages/progress/index" bindtap="goTo">进度概览</t-button>
     </view>
-    <view class="row">
-      <button class="btn" data-path="/pages/reimbursement/index" bindtap="goTo">报销扫码</button>
-      <button class="btn" data-path="/pages/notice/index" bindtap="goTo">通知消息</button>
-    </view>
-  </view>
+  </hy-panel-card>
 
-  <view class="card">
-    <view class="title">辅助功能</view>
-    <view class="row">
-      <button class="btn" data-path="/pages/survey/index" bindtap="goTo">现场勘查</button>
-      <button class="btn" data-path="/pages/asset/index" bindtap="goTo">设备扫码</button>
+  <hy-panel-card title="协同消息">
+    <view class="grid">
+      <t-button block variant="outline" data-path="/pages/notice/index" bindtap="goTo">通知消息</t-button>
+      <t-button block variant="outline" data-path="/pages/approval/index" bindtap="goTo">我的待办</t-button>
+      <t-button block variant="outline" data-path="/pages/log/index" bindtap="goTo">快捷填报</t-button>
+      <t-button block variant="outline" data-path="/pages/survey/index" bindtap="goTo">快捷勘查</t-button>
     </view>
-    <view class="row">
-      <button class="btn" data-path="/pages/progress/index" bindtap="goTo">进度概览</button>
-      <button class="btn" data-path="/pages/profile/index" bindtap="goTo">个人中心</button>
-    </view>
-  </view>
+  </hy-panel-card>
 </view>

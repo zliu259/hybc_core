@@ -1,41 +1,41 @@
 <view class="page">
-  <view class="card">
-    <view class="title">信封扫码填报</view>
+  <hy-panel-card title="信封扫码填报">
+    <t-notice-bar content="流程：扫码信封 -> 填写金额 -> 提交" theme="info" />
+    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
     <view class="label required">信封UUID</view>
     <input class="input" value="{{scan.envelope_uuid}}" data-key="envelope_uuid" bindinput="onScanInput" disabled="{{busy}}" />
-    <view class="label required">项目ID</view>
-    <input class="input" type="number" value="{{scan.project_id}}" data-key="project_id" bindinput="onScanInput" disabled="{{busy}}" />
     <view class="label">发票号</view>
     <input class="input" value="{{scan.invoice_no}}" data-key="invoice_no" bindinput="onScanInput" disabled="{{busy}}" />
     <view class="label required">金额</view>
     <input class="input" type="digit" value="{{scan.amount}}" data-key="amount" bindinput="onScanInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="scanQr" disabled="{{busy}}">扫码识别</button>
-      <button class="btn" type="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">提交填报</button>
+      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy}}">扫码识别</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">提交填报</t-button>
     </view>
-  </view>
+  </hy-panel-card>
 
-  <view class="card">
-    <view class="title">电子发票拍照上传(OCR)</view>
-    <view class="label required">项目ID</view>
-    <input class="input" type="number" value="{{invoice.project_id}}" data-key="project_id" bindinput="onInvoiceInput" disabled="{{busy}}" />
+  <hy-panel-card title="电子发票拍照上传(OCR)">
+    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
     <view class="label">发票号（可选）</view>
     <input class="input" value="{{invoice.invoice_no}}" data-key="invoice_no" bindinput="onInvoiceInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">拍照上传</button>
-      <button class="btn" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy}}">刷新OCR状态</button>
+      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">拍照上传</t-button>
+      <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy}}">刷新OCR状态</t-button>
     </view>
-    <view class="sub">OCR状态: {{ocrStatusText}}</view>
-  </view>
+    <view class="row">
+      <hy-status-chip text="OCR状态：{{ocrStatusText}}" theme="primary" variant="light" />
+    </view>
+  </hy-panel-card>
 
-  <view class="card">
-    <view class="title">生成报销信封PDF</view>
+  <hy-panel-card title="生成报销信封PDF">
     <view class="label required">信封ID</view>
     <input class="input" type="number" value="{{pdfEnvelopeId}}" bindinput="onPdfIdInput" disabled="{{busy}}" />
     <view class="row">
-      <button class="btn" bindtap="generatePdf" loading="{{busy}}" disabled="{{busy}}">触发PDF</button>
-      <button class="btn" bindtap="refreshPdfStatus" loading="{{busy}}" disabled="{{busy}}">刷新PDF状态</button>
+      <t-button class="btn" variant="outline" bindtap="generatePdf" loading="{{busy}}" disabled="{{busy}}">触发PDF</t-button>
+      <t-button class="btn" variant="outline" bindtap="refreshPdfStatus" loading="{{busy}}" disabled="{{busy}}">刷新PDF状态</t-button>
     </view>
-    <view class="sub">PDF状态: {{pdfStatusText}}</view>
-  </view>
+    <view class="row">
+      <hy-status-chip text="PDF状态：{{pdfStatusText}}" theme="success" variant="light" />
+    </view>
+  </hy-panel-card>
 </view>

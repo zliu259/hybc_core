@@ -1,0 +1,10 @@
+<view class="page">
+  <hy-panel-card title="库房工作台" subtitle="设备扫码、库存与现场物资协同">
+    <view class="grid">
+      <t-button block variant="outline" data-path="/pages/asset/index" bindtap="goTo">设备扫码</t-button>
+      <t-button block variant="outline" data-path="/pages/survey/index" bindtap="goTo">现场勘查</t-button>
+      <t-button block variant="outline" data-path="/pages/progress/index" bindtap="goTo">进度概览</t-button>
+      <t-button block variant="outline" data-path="/pages/notice/index" bindtap="goTo">通知消息</t-button>
+    </view>
+  </hy-panel-card>
+</view>

@@ -19,7 +19,7 @@ Page({
         method: "GET",
         path: "/api/v1/approval/pending?page=1&pageSize=20"
       });
-      const list = pending?.data || [];
+      const list = (pending && pending.data) || [];
       this.setData({
         pendingCount: list.length,
         noticeCount: list.length

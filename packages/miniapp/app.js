@@ -14,35 +14,38 @@ App({
     sessionReady: false
   },
 
-  onLaunch() {
+  onLaunch: function () {
     this.ensureSession();
   },
 
-  async ensureSession() {
+  ensureSession: function () {
     const token = getToken();
     if (token) {
-      return token;
+      return Promise.resolve(token);
     }
 
-    try {
-      const loginRes = await wxLogin();
-      if (!loginRes.code) {
-        throw new Error("wx.login failed");
-      }
-      const loginData = await loginWithWeComCode(loginRes.code, {
-        allowLocalFallback: shouldAllowLocalFallback(),
-        username: "operator"
+    return wxLogin()
+      .then((loginRes) => {
+        if (!loginRes || !loginRes.code) {
+          throw new Error("wx.login failed");
+        }
+        return loginWithWeComCode(loginRes.code, {
+          allowLocalFallback: shouldAllowLocalFallback(),
+          username: "operator"
+        });
+      })
+      .then((loginData) => {
+        this.globalData.sessionReady = true;
+        return loginData.accessToken;
+      })
+      .catch((error) => {
+        clearToken();
+        this.globalData.sessionReady = false;
+        wx.showToast({
+          title: "登录失败",
+          icon: "none"
+        });
+        throw error;
       });
-      this.globalData.sessionReady = true;
-      return loginData.accessToken;
-    } catch (error) {
-      clearToken();
-      this.globalData.sessionReady = false;
-      wx.showToast({
-        title: "登录失败",
-        icon: "none"
-      });
-      throw error;
-    }
   }
 });

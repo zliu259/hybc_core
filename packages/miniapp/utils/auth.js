@@ -19,38 +19,40 @@ const setUserProfile = (profile) => {
 const getUserProfile = () => wx.getStorageSync(USER_KEY) || null;
 
 const normalizeUser = (data) => {
-  if (data?.user) return data.user;
+  if (data && data.user) return data.user;
   return {
-    id: data?.id || "",
-    username: data?.username || "",
-    nickname: data?.nickname || "",
-    roles: data?.roles || []
+    id: (data && data.id) || "",
+    username: (data && data.username) || "",
+    nickname: (data && data.nickname) || "",
+    roles: (data && data.roles) || []
   };
 };
 
-const loginWithWeComCode = async (code, options = {}) => {
+const loginWithWeComCode = (code, options = {}) => {
   const { loginRequest } = require("./request");
   const username = options.username || "operator";
 
-  try {
-    const data = await loginRequest({ code: { code } });
-    if (data?.accessToken) {
-      setToken(data.accessToken);
-    }
-    setUserProfile(normalizeUser(data));
-    return data;
-  } catch (error) {
-    if (!options.allowLocalFallback) {
-      throw error;
-    }
+  return loginRequest({ code: { code } })
+    .then((data) => {
+      if (data && data.accessToken) {
+        setToken(data.accessToken);
+      }
+      setUserProfile(normalizeUser(data));
+      return data;
+    })
+    .catch((error) => {
+      if (!options.allowLocalFallback) {
+        throw error;
+      }
 
-    const localData = await loginRequest({ code: { username } });
-    if (localData?.accessToken) {
-      setToken(localData.accessToken);
-    }
-    setUserProfile(normalizeUser(localData));
-    return localData;
-  }
+      return loginRequest({ code: { username } }).then((localData) => {
+        if (localData && localData.accessToken) {
+          setToken(localData.accessToken);
+        }
+        setUserProfile(normalizeUser(localData));
+        return localData;
+      });
+    });
 };
 
 module.exports = {

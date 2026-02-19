@@ -1,23 +1,23 @@
 <view class="page">
-  <view class="card">
-    <view class="title">项目进度概览</view>
+  <hy-panel-card title="项目进度概览">
     <view class="label">项目ID（可选）</view>
     <input class="input" type="number" value="{{projectId}}" bindinput="onProjectInput" disabled="{{loading}}" />
-    <button class="btn" bindtap="loadData" loading="{{loading}}" disabled="{{loading}}">刷新</button>
-  </view>
+    <view class="row">
+      <t-button class="btn btn-primary" theme="primary" block bindtap="loadData" loading="{{loading}}" disabled="{{loading}}">刷新</t-button>
+    </view>
+  </hy-panel-card>
 
-  <view class="card">
+  <hy-panel-card title="关键指标">
     <view class="sub">操作员日志数: {{dashboard.operator_count || 0}}</view>
     <view class="sub">管理员日志数: {{dashboard.manager_count || 0}}</view>
     <view class="sub">累计下管: {{dashboard.completed_total || 0}}</view>
     <view class="sub">累计进尺: {{dashboard.footage_total || 0}}</view>
-  </view>
+  </hy-panel-card>
 
-  <view class="card">
-    <view class="title">进度预警</view>
-    <view class="empty-state" wx:if="{{!loading && alerts.length === 0}}">当前无进度预警</view>
+  <hy-panel-card title="进度预警">
+    <t-empty wx:if="{{!loading && alerts.length === 0}}" description="当前无进度预警" />
     <block wx:for="{{alerts}}" wx:key="project_id">
-      <view class="sub">{{item.project_name}} · {{item.message}}</view>
+      <t-cell title="{{item.project_name}}" note="{{item.message}}" hover="false" />
     </block>
-  </view>
+  </hy-panel-card>
 </view>

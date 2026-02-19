@@ -1,25 +1,25 @@
 <view class="page">
-  <view class="card">
-    <view class="title">待审批列表</view>
-    <button class="btn" bindtap="loadPending" loading="{{loading}}" disabled="{{loading || acting}}">刷新</button>
-  </view>
+  <hy-panel-card title="审批待办" subtitle="移动端单手处理审批动作">
+    <view class="row">
+      <t-button class="btn btn-primary" theme="primary" block bindtap="loadPending" loading="{{loading}}" disabled="{{loading || acting}}">刷新列表</t-button>
+    </view>
+  </hy-panel-card>
 
-  <view class="empty-state" wx:if="{{!loading && pending.length === 0}}">当前没有待审批事项</view>
+  <t-empty wx:if="{{!loading && pending.length === 0}}" description="当前没有待审批事项" />
 
   <block wx:for="{{pending}}" wx:key="id">
-    <view class="card">
-      <view>{{item.instance_no}} · {{item.biz_type}}</view>
-      <view class="sub">{{item.biz_summary}}</view>
+    <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+      <view class="sub">类型：{{item.biz_type}}</view>
       <view class="label">意见</view>
       <input class="input" value="{{commentMap[item.id] || ''}}" data-id="{{item.id}}" bindinput="onComment" disabled="{{acting}}" />
       <view class="row">
-        <button class="btn" type="primary" data-id="{{item.id}}" data-action="approve" bindtap="handleAction" loading="{{acting}}" disabled="{{acting}}">通过</button>
-        <button class="btn" data-id="{{item.id}}" data-action="reject" bindtap="handleAction" disabled="{{acting}}">拒绝</button>
+        <t-button class="btn btn-primary" theme="primary" data-id="{{item.id}}" data-action="approve" bindtap="handleAction" loading="{{acting}}" disabled="{{acting}}">通过</t-button>
+        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="reject" bindtap="handleAction" disabled="{{acting}}">拒绝</t-button>
       </view>
       <view class="row">
-        <button class="btn" data-id="{{item.id}}" data-action="return" bindtap="handleAction" disabled="{{acting}}">退回</button>
-        <button class="btn" data-id="{{item.id}}" data-action="transfer" bindtap="handleAction" disabled="{{acting}}">转签给operator</button>
+        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="return" bindtap="handleAction" disabled="{{acting}}">退回</t-button>
+        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="transfer" bindtap="handleAction" disabled="{{acting}}">转签给operator</t-button>
       </view>
-    </view>
+    </hy-panel-card>
   </block>
 </view>

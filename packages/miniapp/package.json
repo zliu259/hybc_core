@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "miniprogram-api-typings": "^4.0.0",
+    "tdesign-miniprogram": "^1.12.3",
     "weui-miniprogram": "^1.4.0"
   },
   "devDependencies": {

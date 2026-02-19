@@ -1,0 +1,15 @@
+.panel-card {
+  margin-bottom: 20rpx;
+}
+
+.panel-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2329;
+}
+
+.panel-sub {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #5c667a;
+}

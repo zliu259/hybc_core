@@ -1,0 +1,10 @@
+{
+  "component": true,
+  "options": {
+    "styleIsolation": "apply-shared"
+  },
+  "usingComponents": {
+    "t-button": "tdesign-miniprogram/button/button",
+    "t-loading": "tdesign-miniprogram/loading/loading"
+  }
+}

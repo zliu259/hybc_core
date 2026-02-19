@@ -45,7 +45,7 @@ Page({
 
   async markStockEvent(e) {
     const type = e.currentTarget.dataset.type;
-    const id = this.data.asset?.id;
+    const id = this.data.asset && this.data.asset.id;
     if (!id) return;
     const ok = await new Promise((resolve) => {
       wx.showModal({

@@ -267,8 +267,17 @@
 
 ## 4. 小程序页面级规范（企业微信）
 
+### 4.0 设计基准与参考
+- 企业微信样式规范参考：`https://developer.work.weixin.qq.com/document/path/90305`
+- TDesign 小程序组件库参考：`https://tdesign.tencent.com/miniprogram/`
+- 设计目标：在企业微信容器内保持原生一致性（轻量、清晰、可读），同时通过 TDesign 提升组件一致性与交互反馈质量。
+- 落地策略：业务结构保持现有 Phase 10 信息架构，仅重塑视觉层与交互层，不改变后端接口契约。
+
 ### 4.1 页面总索引
-- 工作台首页：`packages/miniapp/pages/index/index`
+- 项目（Tab1）：`packages/miniapp/pages/index/index`
+- 财务（Tab2）：`packages/miniapp/pages/finance/index`
+- 库房（Tab3）：`packages/miniapp/pages/warehouse/index`
+- 我（Tab4）：`packages/miniapp/pages/profile/index`
 - 日志填报：`packages/miniapp/pages/log/index`
 - 审批待办：`packages/miniapp/pages/approval/index`
 - 报销扫码：`packages/miniapp/pages/reimbursement/index`
@@ -276,10 +285,12 @@
 - 现场勘查：`packages/miniapp/pages/survey/index`
 - 项目进度概览：`packages/miniapp/pages/progress/index`
 - 通知消息：`packages/miniapp/pages/notice/index`
-- 个人中心：`packages/miniapp/pages/profile/index`
 
 ### 4.2 页面要求
-- 首页：展示待办数量、快捷入口、系统通知。
+- 首页（项目Tab）：展示待办数量、项目域快捷入口、协同消息入口。
+- 财务Tab：集中放置报销/审批/财务相关进度入口。
+- 库房Tab：集中放置设备扫码、勘查、库存协同入口。
+- 我Tab：放置个人资料、联调配置、会话管理。
 - 日志页：支持操作员日志 AI 预填 + 提交，管理员日志拍照上传 + 提交。
 - 审批页：移动端单手可完成通过/拒绝/退回/转签，危险动作前需确认弹窗。
 - 报销页：支持二维码识别、电子发票拍照上传(OCR)、PDF 生成状态追踪。
@@ -288,6 +299,58 @@
 - 进度页：支持项目日志指标与预警列表查看。
 - 个人中心：支持查看用户信息、API 地址配置（开发联调）与退出登录确认。
 - 通用交互：所有异步提交场景需有 loading、按钮禁用、空态提示与字段校验反馈。
+- 低操作成本原则：
+  - 项目选择统一使用下拉选择组件（`hy-project-picker`），避免手输项目ID。
+  - 支持“定位匹配项目”快捷动作；若项目未配置坐标，则保留手动选择。
+  - 日期统一使用 `picker mode=date`，避免手输日期格式。
+  - 班次统一使用中文选项（白班/夜班），内部存储使用英文值（day/night）。
+
+### 4.3 TDesign 组件库使用规范（小程序）
+
+#### 4.3.1 全局接入
+- 依赖：`packages/miniapp/package.json` 使用 `tdesign-miniprogram`。
+- 全局样式入口：`packages/miniapp/app.wxss` 通过 `@import "tdesign-miniprogram/common/style/index.wxss";` 引入。
+- 全局组件注册：`packages/miniapp/app.json` 统一注册 `t-button`、`t-tag`、`t-empty`、`t-divider`、`t-loading`、`t-cell`、`t-cell-group`、`t-notice-bar`。
+
+#### 4.3.2 视觉与排版规范
+- 页面背景采用低对比浅灰（`#f3f5f8`），信息承载用白卡片，强调层级优先通过字重和间距，不依赖重阴影。
+- 标题层级：页面主标题 `32rpx/600`，说明文字 `24rpx`，保持企业场景高可读性。
+- 间距节奏采用 8 的倍数（8/16/24/32rpx），页面边距 `24rpx`，关键动作区留足触控空间。
+
+#### 4.3.3 组件映射（页面级）
+- 工作台 `packages/miniapp/pages/index/index.wxml`：`t-button` + 统计卡片 + 分区入口网格。
+- 日志 `packages/miniapp/pages/log/index.wxml`：`t-notice-bar`、`t-button`、`t-tag`，强化“预填-校对-提交”流程。
+- 审批 `packages/miniapp/pages/approval/index.wxml`：`t-button`、`t-empty`，用于动作一致性与无数据空态。
+- 报销 `packages/miniapp/pages/reimbursement/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，用于链路状态可视化（OCR/PDF）。
+- 勘查 `packages/miniapp/pages/survey/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，突出定位与图片采集流程。
+- 设备 `packages/miniapp/pages/asset/index.wxml`：`t-notice-bar`、`t-empty`、`t-button`，突出扫码与状态查看。
+- 进度 `packages/miniapp/pages/progress/index.wxml`：`t-cell`、`t-empty`、`t-button`，提升指标与预警信息扫描效率。
+- 通知 `packages/miniapp/pages/notice/index.wxml`：`t-empty` + 列表卡片，保持消息列表简洁。
+- 个人中心 `packages/miniapp/pages/profile/index.wxml`：`t-notice-bar`、`t-button`，支持联调配置与安全退出。
+
+#### 4.3.6 业务组件下沉规范（components/）
+- 业务组件目录：`packages/miniapp/components/business/`
+- 组件分层原则：
+  - `panel-card`：统一页面区块容器（标题、副标题、内容 slot），用于替代页面内重复 `.card + .title + .sub` 结构。
+  - `status-chip`：统一状态标签封装（基于 `t-tag`），用于 OCR/PDF/数量等轻状态展示。
+- 当前已下沉组件：
+  - `packages/miniapp/components/business/panel-card/index.*`
+  - `packages/miniapp/components/business/status-chip/index.*`
+- 页面改造要求：
+  - 业务页优先使用 `hy-panel-card` 承载每个功能区块，禁止重复定义局部卡片容器样式。
+  - 状态短信息优先使用 `hy-status-chip`，禁止页面内直接堆叠零散 `t-tag` 并各自定义色值。
+
+#### 4.3.4 交互与反馈规范
+- 异步操作统一：按钮 `loading + disabled`，避免重复提交。
+- 危险/不可逆动作：必须二次确认（弹窗）后执行。
+- 空数据态：统一使用 `t-empty`；非空态优先卡片或 `t-cell` 展示。
+- 状态信息：统一使用 `t-tag`（如 OCR/PDF 状态），避免纯文本弱提示。
+- 表单字段：必填项在标签侧使用 `required` 语义标记，与前端校验规则一致。
+
+#### 4.3.5 禁止事项
+- 禁止页面内随意引入未注册的第三方 UI 组件，避免风格和交互碎片化。
+- 禁止在业务页硬编码大量独立色值，优先复用全局 tokens 与语义类。
+- 禁止以 toast 代替关键确认流程（删除、拒绝、转签等动作必须确认）。
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

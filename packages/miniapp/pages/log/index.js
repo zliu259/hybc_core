@@ -3,11 +3,17 @@ const { uploadFileToR2 } = require("../../utils/upload");
 const { wxChooseMediaImage } = require("../../utils/wx");
 const { required, positiveNumber, ymdDate, firstError } = require("../../utils/validation");
 
+const today = () => new Date().toISOString().slice(0, 10);
+const SHIFT_OPTIONS = [
+  { label: "白班", value: "day" },
+  { label: "夜班", value: "night" }
+];
+
 Page({
   data: {
     operator: {
       project_id: "",
-      log_date: "",
+      log_date: today(),
       shift: "day",
       completed_pipe_count: "0",
       weather: "",
@@ -15,11 +21,14 @@ Page({
     },
     manager: {
       project_id: "",
-      log_date: "",
+      log_date: today(),
       title: "",
       detail_html: "",
       photos: []
     },
+    sharedProjectId: 0,
+    shiftOptions: SHIFT_OPTIONS.map((item) => item.label),
+    shiftIndex: 0,
     busy: false
   },
 
@@ -41,6 +50,33 @@ Page({
   onManagerInput(e) {
     const key = e.currentTarget.dataset.key;
     this.setData({ [`manager.${key}`]: e.detail.value });
+  },
+
+  onProjectChange(e) {
+    const projectId = Number(e.detail.projectId || 0);
+    if (!projectId) return;
+    this.setData({
+      sharedProjectId: projectId,
+      "operator.project_id": String(projectId),
+      "manager.project_id": String(projectId)
+    });
+  },
+
+  onOperatorDateChange(e) {
+    this.setData({ "operator.log_date": e.detail.value });
+  },
+
+  onManagerDateChange(e) {
+    this.setData({ "manager.log_date": e.detail.value });
+  },
+
+  onShiftChange(e) {
+    const index = Number(e.detail.value || 0);
+    const shift = SHIFT_OPTIONS[index] || SHIFT_OPTIONS[0];
+    this.setData({
+      shiftIndex: index,
+      "operator.shift": shift.value
+    });
   },
 
   async smartFill() {
@@ -65,8 +101,8 @@ Page({
         }
       });
       this.setData({
-        "operator.weather": res.data?.prefill?.weather || "",
-        "operator.issue_summary": res.data?.prefill?.issue_summary || ""
+        "operator.weather": (((res || {}).data || {}).prefill || {}).weather || "",
+        "operator.issue_summary": (((res || {}).data || {}).prefill || {}).issue_summary || ""
       });
       wx.showToast({ title: "预填完成", icon: "success" });
     }).catch((error) => wx.showToast({ title: error.message || "预填失败", icon: "none" }));
@@ -107,7 +143,7 @@ Page({
   async pickManagerPhoto() {
     return this.runBusy(async () => {
       const choose = await wxChooseMediaImage();
-      const filePath = choose.tempFiles?.[0]?.tempFilePath;
+      const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
       if (!filePath) return;
       const signed = await uploadFileToR2(filePath);
       const photos = this.data.manager.photos.concat([

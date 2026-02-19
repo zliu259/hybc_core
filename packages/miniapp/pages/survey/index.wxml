@@ -1,23 +1,26 @@
 <view class="page">
-  <view class="card">
-    <view class="title">现场勘查（GPS + 拍照 + 表单）</view>
-    <view class="label required">项目ID</view>
-    <input class="input" type="number" value="{{form.project_id}}" data-key="project_id" bindinput="onInput" disabled="{{busy}}" />
+  <hy-panel-card title="现场勘查（GPS + 拍照 + 表单）">
+    <t-notice-bar content="优先定位，再补充勘查摘要和照片" theme="info" />
+    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
     <view class="label required">勘查日期</view>
-    <input class="input" value="{{form.survey_date}}" data-key="survey_date" bindinput="onInput" placeholder="YYYY-MM-DD" disabled="{{busy}}" />
+    <picker mode="date" value="{{form.survey_date}}" bindchange="onDateChange" disabled="{{busy}}">
+      <view class="input">{{form.survey_date}}</view>
+    </picker>
     <view class="label required">位置</view>
     <input class="input" value="{{form.location}}" data-key="location" bindinput="onInput" disabled="{{busy}}" />
     <view class="label">天气</view>
     <input class="input" value="{{form.weather}}" data-key="weather" bindinput="onInput" disabled="{{busy}}" />
     <view class="label">摘要</view>
     <textarea class="input" value="{{form.summary}}" data-key="summary" bindinput="onInput" disabled="{{busy}}" />
-    <view class="sub">照片数量: {{photoKeys.length}}</view>
     <view class="row">
-      <button class="btn" bindtap="fillLocation" loading="{{busy}}" disabled="{{busy}}">GPS定位</button>
-      <button class="btn" bindtap="addPhoto" loading="{{busy}}" disabled="{{busy}}">拍照上传</button>
+      <hy-status-chip text="照片数量：{{photoKeys.length}}" theme="primary" variant="light" />
     </view>
     <view class="row">
-      <button class="btn" type="primary" bindtap="submitSurvey" loading="{{busy}}" disabled="{{busy}}">提交勘查</button>
+      <t-button class="btn" variant="outline" bindtap="fillLocation" loading="{{busy}}" disabled="{{busy}}">GPS定位</t-button>
+      <t-button class="btn" variant="outline" bindtap="addPhoto" loading="{{busy}}" disabled="{{busy}}">拍照上传</t-button>
     </view>
-  </view>
+    <view class="row">
+      <t-button class="btn btn-primary" theme="primary" block bindtap="submitSurvey" loading="{{busy}}" disabled="{{busy}}">提交勘查</t-button>
+    </view>
+  </hy-panel-card>
 </view>
