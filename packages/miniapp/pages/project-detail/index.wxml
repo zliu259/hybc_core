@@ -1,0 +1,42 @@
+<view class="page">
+  <hy-panel-card title="项目详情" icon="app" subtitle="项目基础信息、标段与财务摘要">
+    <view wx:if="{{readonly}}" class="readonly-tip" bindtap="showReadonlyTip">
+      当前为只读模式（非参与者）
+    </view>
+
+    <view wx:if="{{project}}" class="project-box">
+      <view class="project-title">{{project.project_name}}</view>
+      <view class="project-sub">{{project.project_code}} · {{project.status}}</view>
+      <view class="project-sub">项目经理：{{project.manager_userid || '-'}}</view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="标段列表" icon="list">
+    <view wx:if="{{sections.length === 0}}" class="empty-tip">暂无标段</view>
+    <view wx:for="{{sections}}" wx:key="id" class="section-row">
+      <view class="section-name">{{item.section_name}}</view>
+      <view class="section-sub">{{item.section_code}} · {{item.status}}</view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="财务摘要" icon="money-circle">
+    <view wx:if="{{summary}}" class="summary-grid">
+      <view class="summary-item">
+        <view class="summary-label">对外付款已支付</view>
+        <view class="summary-value">{{summary.outboundPaidAmount}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">收款已开票</view>
+        <view class="summary-value">{{summary.inboundInvoicedAmount}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">收款已到账</view>
+        <view class="summary-value">{{summary.inboundReceivedAmount}}</view>
+      </view>
+      <view class="summary-item">
+        <view class="summary-label">报销累计</view>
+        <view class="summary-value">{{summary.reimbursementAmount}}</view>
+      </view>
+    </view>
+  </hy-panel-card>
+</view>

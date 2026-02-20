@@ -58,6 +58,40 @@ const baseRoutesByRole = {
             roles: ["super_admin", "manager", "site_manager", "operator"],
             showLink: false
           }
+        },
+        {
+          path: "/project/workspace",
+          name: "ProjectWorkspaceEntry",
+          component: "project/workspace-entry",
+          meta: {
+            title: "项目化视图",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
+        },
+        {
+          path: "/project/workspace/:id",
+          name: "ProjectWorkspace",
+          component: "project/workspace/index",
+          meta: {
+            title: "项目工作区",
+            roles: ["super_admin", "manager", "site_manager", "operator"],
+            showLink: false
+          }
+        }
+      ]
+    },
+    {
+      path: "/account",
+      meta: { title: "账号安全", icon: "ep:lock", rank: 18 },
+      children: [
+        {
+          path: "/account/passkey",
+          name: "AccountPasskey",
+          component: "account/passkey",
+          meta: {
+            title: "Passkey 管理",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
         }
       ]
     }
@@ -114,7 +148,9 @@ userRoutes.get("/me", (c) => {
           username: auth.username,
           nickname: auth.nickname,
           roles: auth.roles,
-          permissions: auth.permissions
+          permissions: auth.permissions,
+          auth_method: auth.auth_method,
+          wecom_verified_at: auth.wecom_verified_at
         }
       });
     })

@@ -70,6 +70,21 @@ export const updateProjectStatus = (id: number, status: string) => {
   );
 };
 
+export const updateProject = (
+  id: number,
+  data: {
+    project_name?: string;
+    entity_id?: number | null;
+    manager_userid?: string | null;
+    start_date?: string | null;
+    end_date?: string | null;
+  }
+) => {
+  return http.request<{ success: boolean }>("put", `/api/v1/project/${id}`, {
+    data
+  });
+};
+
 export const listProjectSections = (projectId: number) => {
   return http.request<{ success: boolean; data: ProjectSection[] }>(
     "get",

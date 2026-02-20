@@ -234,6 +234,33 @@ hengyue-system/
 | 现场管理员 | 管理员日志，付款申请，设备管理，所属项目范围 |
 | 现场操作员 | 操作员日志，报销提交，设备扫码，仅自己的数据 |
 
+## 认证模型（WeCom-first + Passkey）
+
+### 核心原则
+- Canonical identity 始终是企业微信 `userid`。
+- Passkey 是绑定到 `userid` 的可选认证器，不替代 WeCom 首次登录。
+- 首次登录必须走 WeCom OAuth；仅在已有 WeCom 会话后允许注册 Passkey。
+
+### 平台边界
+- Web 浏览器：支持 Passkey（WebAuthn）。
+- 企业微信小程序 WebView：不作为 Passkey 承载端。
+- 企业微信内置 WebView：不保证稳定支持 WebAuthn，按版本灰度验证。
+
+### 会话与凭证约束
+- JWT 会话必须携带 `auth_method`（`wecom_oauth` 或 `passkey`）和 `wecom_verified_at`。
+- Passkey challenge 存储在 KV，TTL 5 分钟，且必须单次消费。
+- Passkey 公钥凭证持久化在 D1，`public_key` 使用 `BLOB`。
+- 必须校验 signature counter；发现回退或异常时执行吊销并要求重新 WeCom 验证。
+
+### 安全与审计
+- 所有 Passkey 注册、认证、吊销、失败事件必须写入审计日志（`passkey_audit_log`）。
+- Feature Flag 由 KV 控制（`passkey:feature:config`），默认支持灰度与回滚。
+- 任何灰度关闭场景下，系统必须可完整回退至 WeCom-only 登录路径。
+
+### 实施约束
+- 迁移只允许增量建表，不得破坏现有认证链路（`/api/v1/auth/login/web`、`/api/v1/user/me`）。
+- Worker 若启用 `@simplewebauthn/server`，`wrangler.toml` 需开启 `nodejs_compat`。
+
 ## 开发约定
 
 ### 后端

@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="{{title}}" icon="dashboard" subtitle="企业微信工作台 · 高效审批与现场协同">
+  <hy-panel-card title="{{title}}" icon="dashboard" subtitle="项目列表与项目详情入口">
     <view class="stats-row">
       <view class="stat-card">
         <view class="stat-value">{{pendingCount}}</view>
@@ -10,54 +10,18 @@
         <view class="stat-label">消息通知</view>
       </view>
     </view>
-    <view class="row">
-      <t-button class="btn btn-primary" theme="primary" block bindtap="loadWorkbench" loading="{{loading}}" disabled="{{loading}}">刷新工作台</t-button>
+    <view class="row mt-2">
+      <input class="search-input" placeholder="按项目编号或名称筛选" value="{{keyword}}" bindinput="onKeywordInput" />
+      <t-button class="btn btn-primary mt-2" theme="primary" block bindtap="searchProjects" loading="{{loading}}" disabled="{{loading}}">查询项目</t-button>
     </view>
-  </hy-panel-card>
-
-  <hy-panel-card title="项目现场" icon="app">
-    <view class="entry-grid">
-      <view class="entry-card" data-path="/pages/operator-log/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="edit-1" size="32rpx" color="#1677ff" /><view class="entry-title">操作员日志</view></view>
-        <view class="entry-desc">AI预填后快速提交</view>
+    <view wx:if="{{projects.length === 0}}" class="empty-tip">暂无项目数据</view>
+    <view wx:for="{{projects}}" wx:key="id" class="project-card" data-id="{{item.id}}" data-participant="{{item.participant}}" bindtap="openProjectDetail">
+      <view class="project-title-row">
+        <view class="project-title">{{item.project_name}}</view>
+        <hy-status-chip text="{{item.participant ? '参与者' : '只读'}}" type="{{item.participant ? 'success' : 'warning'}}" />
       </view>
-      <view class="entry-card" data-path="/pages/manager-log/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="file-add-1" size="32rpx" color="#1677ff" /><view class="entry-title">管理员日志</view></view>
-        <view class="entry-desc">拍照上传与结构化记录</view>
-      </view>
-      <view class="entry-card" data-path="/pages/approval/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="task" size="32rpx" color="#1677ff" /><view class="entry-title">审批处理</view></view>
-        <view class="entry-desc">通过/拒绝/退回/转签</view>
-      </view>
-      <view class="entry-card" data-path="/pages/survey/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="location" size="32rpx" color="#1677ff" /><view class="entry-title">现场勘查</view></view>
-        <view class="entry-desc">GPS定位与拍照采集</view>
-      </view>
-      <view class="entry-card" data-path="/pages/progress/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="chart-bar" size="32rpx" color="#1677ff" /><view class="entry-title">进度概览</view></view>
-        <view class="entry-desc">关键指标与预警</view>
-      </view>
-    </view>
-  </hy-panel-card>
-
-  <hy-panel-card title="协同消息" icon="notification">
-    <view class="entry-grid">
-      <view class="entry-card" data-path="/pages/notice/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="mail" size="32rpx" color="#1677ff" /><view class="entry-title">通知消息</view></view>
-        <view class="entry-desc">业务进展与提醒集中查看</view>
-      </view>
-      <view class="entry-card" data-path="/pages/approval/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="assignment" size="32rpx" color="#1677ff" /><view class="entry-title">我的待办</view></view>
-        <view class="entry-desc">待办审批一键进入</view>
-      </view>
-      <view class="entry-card" data-path="/pages/operator-log/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="flash" size="32rpx" color="#1677ff" /><view class="entry-title">快捷填报</view></view>
-        <view class="entry-desc">常用日志入口快捷直达</view>
-      </view>
-      <view class="entry-card" data-path="/pages/survey/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="gesture-pray" size="32rpx" color="#1677ff" /><view class="entry-title">快捷勘查</view></view>
-        <view class="entry-desc">现场信息快速采集</view>
-      </view>
+      <view class="project-sub">{{item.project_code}} · {{item.status}}</view>
+      <view class="project-sub">项目经理：{{item.manager_userid}}</view>
     </view>
   </hy-panel-card>
 </view>

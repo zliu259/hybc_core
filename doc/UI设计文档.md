@@ -265,6 +265,33 @@
 - 所有修改必须记录操作审计。
 - API 指向：`/api/v1/admin/*`
 
+### 3.4 Web 项目工作区（新增 IA）
+
+#### 3.4.1 页面与路由映射（必须保留旧路由兼容）
+- 工作区主壳：`packages/web/src/views/project/workspace/index.vue`
+- 项目面板：`packages/web/src/views/project/workspace/project-panel.vue`
+- 设备面板：`packages/web/src/views/project/workspace/equipment-panel.vue`
+- 财务面板：`packages/web/src/views/project/workspace/finance-panel.vue`
+- 路由模块：`packages/web/src/router/modules/project.ts`
+- 兼容约束：`packages/web/src/views/project/detail.vue` 在首发阶段必须继续可访问。
+
+#### 3.4.2 交互模型
+- 入口：从 `views/project/list.vue` 行操作进入“项目工作区”。
+- 标签：工作区内固定三标签（项目 / 设备 / 财务），支持深链（URL 直接定位到标签）。
+- 隔离：切换 `projectId` 时必须重置面板缓存，禁止跨项目数据残留。
+- 容错：任一子面板加载失败时仅影响当前标签，不阻断整个工作区。
+
+#### 3.4.3 权限与可见性
+- `super_admin`、`manager`：可见全部面板能力。
+- `site_manager`：可见项目/设备面板；财务面板按字段级权限降级展示。
+- `operator`：默认只读；不可见高敏金额字段与高风险操作。
+- 所有敏感数据展示以 API 返回权限为准，前端仅做补充隐藏，不做越权放行。
+
+#### 3.4.4 API 指向
+- 工作区项目数据：`/api/v1/project/:id`
+- 工作区财务摘要：`/api/v1/project/:id/financial-summary`
+- 工作区设备摘要：`/api/v1/asset/dashboard/project/:projectId`
+
 ## 4. 小程序页面级规范（企业微信）
 
 ### 4.0 设计基准与参考
@@ -362,6 +389,25 @@
 - 禁止页面内随意引入未注册的第三方 UI 组件，避免风格和交互碎片化。
 - 禁止在业务页硬编码大量独立色值，优先复用全局 tokens 与语义类。
 - 禁止以 toast 代替关键确认流程（删除、拒绝、转签等动作必须确认）。
+
+### 4.4 小程序项目模块重构约束（新增）
+
+#### 4.4.1 页面与路径映射
+- 项目列表（重构后主入口）：`packages/miniapp/pages/index/index`
+- 项目详情（新增）：`packages/miniapp/pages/project-detail/index`
+- 项目模块配置：`packages/miniapp/app.json`
+- 项目接口封装：`packages/miniapp/utils/request.js`
+
+#### 4.4.2 角色行为边界
+- 参与者（项目成员）：可见详情中的协同动作入口（按后端权限返回）。
+- 非参与者：允许浏览全部项目列表与详情，但详情必须是只读模式。
+- 非参与者禁止项：提交审批、提交财务类动作、库存/出入库写操作、配置型操作。
+- 任何写操作均以服务端鉴权为最终裁决；前端只读态仅用于降低误触。
+
+#### 4.4.3 范围锁定（本期禁止变更）
+- 财务模块入口与行为保持不变：`packages/miniapp/pages/finance/index`
+- 库房模块入口与行为保持不变：`packages/miniapp/pages/warehouse/index`
+- 本期允许调整仅限项目模块的信息架构、页面跳转与只读提示层。
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

@@ -17,6 +17,14 @@ import { useMultiTagsStoreHook } from "@/store/modules/multiTags";
 import Segmented, { type OptionsType } from "@/components/ReSegmented";
 import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
 import { useDark, useGlobal, debounce, isNumber } from "@pureadmin/utils";
+import { message } from "@/utils/message";
+import {
+  beginPasskeyRegistration,
+  finishPasskeyRegistration,
+  listPasskeyCredentials,
+  revokePasskeyCredential,
+  type PasskeyCredentialRow
+} from "@/api/passkey";
 
 import Check from "~icons/ep/check";
 import LeftArrow from "~icons/ri/arrow-left-s-line?width=20&height=20";
@@ -190,6 +198,144 @@ const pClass = computed(() => {
   return ["mb-[12px]!", "font-medium", "text-sm", "dark:text-white"];
 });
 
+const passkeyLoading = ref(false);
+const passkeyRegistering = ref(false);
+const passkeyCredentials = ref<PasskeyCredentialRow[]>([]);
+
+const base64UrlToBuffer = (input: string): ArrayBuffer => {
+  const normalized = input.replace(/-/g, "+").replace(/_/g, "/");
+  const padding = normalized.length % 4;
+  const base64 = `${normalized}${padding ? "=".repeat(4 - padding) : ""}`;
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes.buffer.slice(0);
+};
+
+const bytesToBase64Url = (bytes: Uint8Array): string => {
+  let binary = "";
+  bytes.forEach(byte => {
+    binary += String.fromCharCode(byte);
+  });
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
+};
+
+const getPasskeyUnsupportedReason = (): string => {
+  if (!window.isSecureContext) {
+    return "当前页面不是安全上下文（需要 HTTPS 或 localhost）";
+  }
+  if (typeof window.PublicKeyCredential === "undefined") {
+    return "当前运行环境不支持 WebAuthn（常见于企业微信内置 WebView）";
+  }
+  if (!("credentials" in navigator)) {
+    return "浏览器未提供 Credential Management API";
+  }
+  return "当前浏览器不支持 Passkey";
+};
+
+const loadPasskeys = async () => {
+  passkeyLoading.value = true;
+  try {
+    const result = await listPasskeyCredentials();
+    passkeyCredentials.value = result.data;
+  } catch {
+    passkeyCredentials.value = [];
+  } finally {
+    passkeyLoading.value = false;
+  }
+};
+
+const parseRegistrationOptions = (options: Record<string, any>) => {
+  return {
+    challenge: base64UrlToBuffer(options.challenge),
+    rp: options.rp,
+    user: {
+      ...options.user,
+      id: new TextEncoder().encode(String(options.user?.id || ""))
+    },
+    pubKeyCredParams: options.pubKeyCredParams,
+    timeout: options.timeout,
+    attestation: options.attestation,
+    authenticatorSelection: options.authenticatorSelection,
+    excludeCredentials: Array.isArray(options.excludeCredentials)
+      ? options.excludeCredentials.map(item => ({
+          id: base64UrlToBuffer(item.id),
+          type: item.type
+        }))
+      : []
+  };
+};
+
+const enrollPasskey = async () => {
+  if (
+    !("credentials" in navigator) ||
+    typeof window.PublicKeyCredential === "undefined" ||
+    !window.isSecureContext
+  ) {
+    message(getPasskeyUnsupportedReason(), { type: "warning" });
+    return;
+  }
+
+  passkeyRegistering.value = true;
+  try {
+    const begin = await beginPasskeyRegistration();
+    const publicKey = parseRegistrationOptions(
+      begin.data.options as Record<string, any>
+    );
+    const credential = (await navigator.credentials.create({
+      publicKey
+    })) as PublicKeyCredential | null;
+
+    if (!credential || !credential.rawId) {
+      message("Passkey 注册已取消", { type: "warning" });
+      return;
+    }
+
+    const credentialId = bytesToBase64Url(new Uint8Array(credential.rawId));
+    await finishPasskeyRegistration({
+      challengeId: begin.data.challengeId,
+      credentialId,
+      publicKey: credentialId,
+      counter: 0,
+      transports: ["internal"],
+      deviceType: "singleDevice",
+      backedUp: false
+    });
+
+    message("Passkey 注册成功", { type: "success" });
+    await loadPasskeys();
+  } catch (error: any) {
+    const msg =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      "Passkey 注册失败";
+    message(msg, { type: "error" });
+  } finally {
+    passkeyRegistering.value = false;
+  }
+};
+
+const revokePasskey = async (credentialId: string) => {
+  try {
+    await revokePasskeyCredential(credentialId);
+    message("Passkey 已吊销", { type: "success" });
+    await loadPasskeys();
+  } catch (error: any) {
+    const msg =
+      error?.response?.data?.error?.message ||
+      error?.response?.data?.message ||
+      error?.message ||
+      "Passkey 吊销失败";
+    message(msg, { type: "error" });
+  }
+};
+
 const themeOptions = computed<Array<OptionsType>>(() => {
   return [
     {
@@ -307,6 +453,7 @@ onBeforeMount(() => {
     settings.tabsVal && tagsChange();
     settings.hideFooter && hideFooterChange();
   });
+  void loadPasskeys();
 });
 
 onUnmounted(() => removeMatchMedia);
@@ -510,6 +657,39 @@ onUnmounted(() => removeMatchMedia);
           />
         </li>
       </ul>
+
+      <p class="mt-5! font-medium text-sm dark:text-white">Passkey</p>
+      <div v-loading="passkeyLoading" class="passkey-box">
+        <el-button
+          class="w-full"
+          type="primary"
+          :loading="passkeyRegistering"
+          @click="enrollPasskey"
+        >
+          注册新 Passkey
+        </el-button>
+        <div
+          v-if="passkeyCredentials.length === 0"
+          class="text-xs mt-2 text-[var(--el-text-color-secondary)]"
+        >
+          暂无已注册 Passkey
+        </div>
+        <div v-else class="mt-2 flex flex-col gap-2">
+          <div
+            v-for="item in passkeyCredentials"
+            :key="item.credentialId"
+            class="passkey-item"
+          >
+            <div class="text-xs">{{ item.credentialId.slice(0, 16) }}...</div>
+            <el-button
+              link
+              type="danger"
+              @click="revokePasskey(item.credentialId)"
+              >吊销</el-button
+            >
+          </div>
+        </div>
+      </div>
     </div>
   </LayPanel>
 </template>
@@ -627,5 +807,20 @@ onUnmounted(() => removeMatchMedia);
     padding: 3px 0;
     font-size: 14px;
   }
+}
+
+.passkey-box {
+  border: 1px solid var(--pure-border-color);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.passkey-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid var(--pure-border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
 }
 </style>

@@ -179,42 +179,44 @@ router.beforeEach((to: ToRouteType, _from, next) => {
         usePermissionStoreHook().wholeMenus.length === 0 &&
         to.path !== "/login"
       ) {
-        initRouter().then((router: Router) => {
-          if (!useMultiTagsStoreHook().getMultiTagsCache) {
-            const { path } = to;
-            const route = findRouteByPath(
-              path,
-              router.options.routes[0].children
-            );
-            getTopMenu(true);
-            // query、params模式路由传参数的标签页不在此处处理
-            if (route && route.meta?.title) {
-              if (isAllEmpty(route.parentId) && route.meta?.backstage) {
-                // 此处为动态顶级路由（目录）
-                const { path, name, meta } = route.children[0];
-                useMultiTagsStoreHook().handleTags("push", {
-                  path,
-                  name,
-                  meta
-                });
-              } else {
-                const { path, name, meta } = route;
-                useMultiTagsStoreHook().handleTags("push", {
-                  path,
-                  name,
-                  meta
-                });
+        initRouter()
+          .then((router: Router) => {
+            if (!useMultiTagsStoreHook().getMultiTagsCache) {
+              const { path } = to;
+              const route = findRouteByPath(
+                path,
+                router.options.routes[0].children
+              );
+              getTopMenu(true);
+              // query、params模式路由传参数的标签页不在此处处理
+              if (route && route.meta?.title) {
+                if (isAllEmpty(route.parentId) && route.meta?.backstage) {
+                  // 此处为动态顶级路由（目录）
+                  const { path, name, meta } = route.children[0];
+                  useMultiTagsStoreHook().handleTags("push", {
+                    path,
+                    name,
+                    meta
+                  });
+                } else {
+                  const { path, name, meta } = route;
+                  useMultiTagsStoreHook().handleTags("push", {
+                    path,
+                    name,
+                    meta
+                  });
+                }
               }
             }
-          }
-          if (isAllEmpty(to.name)) {
-            next({ ...to, replace: true });
-            return;
-          }
-          toCorrectRoute();
-        }).catch(() => {
-          toCorrectRoute();
-        });
+            if (isAllEmpty(to.name)) {
+              next({ ...to, replace: true });
+              return;
+            }
+            toCorrectRoute();
+          })
+          .catch(() => {
+            toCorrectRoute();
+          });
         return;
       }
       toCorrectRoute();

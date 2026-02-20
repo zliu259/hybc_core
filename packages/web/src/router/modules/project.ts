@@ -47,6 +47,25 @@ export default {
         title: "项目设备视图",
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }
+    },
+    {
+      path: "/project/workspace",
+      name: "ProjectWorkspaceEntry",
+      component: () => import("@/views/project/workspace-entry.vue"),
+      meta: {
+        title: "项目化视图",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/project/workspace/:id",
+      name: "ProjectWorkspace",
+      component: () => import("@/views/project/workspace/index.vue"),
+      meta: {
+        title: "项目工作区",
+        showLink: false,
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
     }
   ]
 } satisfies RouteConfigsTable;

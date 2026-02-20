@@ -46,6 +46,10 @@ const gotoDetail = (id: number) => {
   router.push(`/project/detail/${id}`);
 };
 
+const gotoWorkspace = (id: number) => {
+  router.push(`/project/workspace/${id}?tab=project`);
+};
+
 const changeStatus = async (id: number, status: string) => {
   await updateProjectStatus(id, status);
   await loadProjects();
@@ -80,10 +84,13 @@ onMounted(loadProjects);
       <el-table-column prop="status" label="状态" width="120" />
       <el-table-column prop="manager_userid" label="项目经理" width="140" />
       <el-table-column prop="updated_at" label="更新时间" width="200" />
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="320" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="gotoDetail(scope.row.id)">
             详情
+          </el-button>
+          <el-button link type="primary" @click="gotoWorkspace(scope.row.id)">
+            工作区
           </el-button>
           <el-dropdown
             @command="(value: string) => changeStatus(scope.row.id, value)"

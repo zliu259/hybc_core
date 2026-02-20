@@ -13,6 +13,8 @@ export type UserResult = {
     roles: Array<string>;
     /** 按钮级别权限 */
     permissions: Array<string>;
+    auth_method?: "wecom_oauth" | "passkey";
+    wecom_verified_at?: string;
     /** `token` */
     accessToken: string;
     /** 用于调用刷新`accessToken`的接口时所需的`token` */
@@ -59,6 +61,8 @@ export const getCurrentUser = () => {
       nickname: string;
       roles: string[];
       permissions: string[];
+      auth_method?: "wecom_oauth" | "passkey";
+      wecom_verified_at?: string;
     };
   }>("get", "/api/v1/user/me");
 };

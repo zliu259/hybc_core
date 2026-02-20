@@ -17,6 +17,8 @@ export interface AuthTokenPayload {
   permissions: string[];
   tokenId: string;
   type: "access" | "refresh";
+  auth_method: "wecom_oauth" | "passkey";
+  wecom_verified_at: string;
   exp: number;
   iat: number;
 }
@@ -28,6 +30,8 @@ export interface SessionPayload {
   avatar: string;
   roles: UserRole[];
   permissions: string[];
+  auth_method: "wecom_oauth" | "passkey";
+  wecom_verified_at: string;
 }
 
 export interface LoginResponse {
@@ -38,6 +42,8 @@ export interface LoginResponse {
     nickname: string;
     roles: string[];
     permissions: string[];
+    auth_method: "wecom_oauth" | "passkey";
+    wecom_verified_at: string;
     accessToken: string;
     refreshToken: string;
     expires: string;

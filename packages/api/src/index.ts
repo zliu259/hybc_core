@@ -13,6 +13,7 @@ import { dictRoutes } from "./routes/dict";
 import { entityRoutes } from "./routes/entity";
 import { logRoutes } from "./routes/log";
 import { paymentRoutes } from "./routes/payment";
+import { passkeyRoutes } from "./routes/passkeys";
 import { projectRoutes } from "./routes/project";
 import { receiptRoutes } from "./routes/receipt";
 import { reimbursementRoutes } from "./routes/reimbursement";
@@ -41,6 +42,7 @@ app.get("/", (c) => {
 
 app.route("/api/v1/system", systemRoutes);
 app.route("/api/v1/auth", authRoutes);
+app.route("/api/v1/passkeys", passkeyRoutes);
 app.route("/api/v1/user", userRoutes);
 app.route("/api/v1/entity", entityRoutes);
 app.route("/api/v1/project", projectRoutes);

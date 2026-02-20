@@ -1,6 +1,7 @@
 {
   "pages": [
     "pages/index/index",
+    "pages/project-detail/index",
     "pages/finance/index",
     "pages/warehouse/index",
     "pages/profile/index",

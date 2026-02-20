@@ -50,8 +50,14 @@ export const createSessionPayload = (input: {
   nickname?: string;
   avatar?: string;
   role?: UserRole;
+}, metadata?: {
+  authMethod?: "wecom_oauth" | "passkey";
+  wecomVerifiedAt?: string;
 }): SessionPayload => {
   const role = input.role ?? roleFromUsername(input.username);
+  const wecomVerifiedAt =
+    metadata?.wecomVerifiedAt ??
+    new Date().toISOString();
   return {
     userId: input.userId,
     username: input.username,
@@ -60,7 +66,9 @@ export const createSessionPayload = (input: {
       input.avatar ??
       "https://static.hybc.local/avatar/default.png",
     roles: [role],
-    permissions: defaultPermissionsByRole[role]
+    permissions: defaultPermissionsByRole[role],
+    auth_method: metadata?.authMethod ?? "wecom_oauth",
+    wecom_verified_at: wecomVerifiedAt
   };
 };
 
@@ -81,6 +89,8 @@ export const issueTokens = async (
     permissions: session.permissions,
     tokenId: accessTokenId,
     type: "access",
+    auth_method: session.auth_method,
+    wecom_verified_at: session.wecom_verified_at,
     iat: now,
     exp: now + ACCESS_TOKEN_TTL_SECONDS
   };
@@ -101,7 +111,8 @@ export const issueTokens = async (
       JSON.stringify({
         userId: session.userId,
         refreshTokenId,
-        username: session.username
+        username: session.username,
+        auth_method: session.auth_method
       }),
       { expirationTtl: ACCESS_TOKEN_TTL_SECONDS }
     ),
@@ -113,7 +124,9 @@ export const issueTokens = async (
         nickname: session.nickname,
         avatar: session.avatar,
         roles: session.roles,
-        permissions: session.permissions
+        permissions: session.permissions,
+        auth_method: session.auth_method,
+        wecom_verified_at: session.wecom_verified_at
       }),
       { expirationTtl: REFRESH_TOKEN_TTL_SECONDS }
     )
@@ -125,6 +138,8 @@ export const issueTokens = async (
     nickname: session.nickname,
     roles: session.roles,
     permissions: session.permissions,
+    auth_method: session.auth_method,
+    wecom_verified_at: session.wecom_verified_at,
     accessToken,
     refreshToken,
     expires: new Date((now + ACCESS_TOKEN_TTL_SECONDS) * 1000).toISOString()
@@ -166,7 +181,9 @@ export const getRefreshSession = async (
     nickname: parsed.nickname,
     avatar: parsed.avatar,
     roles: parsed.roles,
-    permissions: parsed.permissions
+    permissions: parsed.permissions,
+    auth_method: parsed.auth_method,
+    wecom_verified_at: parsed.wecom_verified_at
   };
 };
 

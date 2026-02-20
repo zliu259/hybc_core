@@ -55,11 +55,7 @@ watch(
 </script>
 
 <template>
-  <div
-    v-if="device !== 'mobile'"
-    v-loading="usePermissionStoreHook().wholeMenus.length === 0"
-    class="horizontal-header"
-  >
+  <div v-if="device !== 'mobile'" class="horizontal-header">
     <el-menu
       ref="menuRef"
       router
@@ -101,7 +97,11 @@ watch(
       <!-- 退出登录 -->
       <el-dropdown trigger="click">
         <span class="el-dropdown-link navbar-bg-hover select-none">
-          <img :src="userAvatar" :style="avatarsStyle" @error="onUserAvatarError" />
+          <img
+            :src="userAvatar"
+            :style="avatarsStyle"
+            @error="onUserAvatarError"
+          />
           <p v-if="username" class="dark:text-white">{{ username }}</p>
         </span>
         <template #dropdown>
@@ -128,10 +128,6 @@ watch(
 </template>
 
 <style lang="scss" scoped>
-:deep(.el-loading-mask) {
-  opacity: 0.45;
-}
-
 .logout {
   width: 120px;
 

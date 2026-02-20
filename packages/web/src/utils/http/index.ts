@@ -75,7 +75,9 @@ class PureHttp {
         const whiteList = [
           "/api/v1/auth/refresh-token",
           "/api/v1/auth/login/web",
-          "/api/v1/auth/oauth-url"
+          "/api/v1/auth/oauth-url",
+          "/api/v1/passkeys/auth/begin",
+          "/api/v1/passkeys/auth/finish"
         ];
         return whiteList.some(url => config.url?.endsWith(url))
           ? config

@@ -19,6 +19,8 @@ export interface DataInfo<T> {
   roles?: Array<string>;
   /** 当前登录用户的按钮级别权限 */
   permissions?: Array<string>;
+  auth_method?: "wecom_oauth" | "passkey";
+  wecom_verified_at?: string;
 }
 
 export const userKey = "user-info";
@@ -68,7 +70,15 @@ export function setToken(data: DataInfo<Date>) {
       : {}
   );
 
-  function setUserKey({ avatar, username, nickname, roles, permissions }) {
+  function setUserKey({
+    avatar,
+    username,
+    nickname,
+    roles,
+    permissions,
+    authMethod,
+    wecomVerifiedAt
+  }) {
     useUserStoreHook().SET_AVATAR(avatar);
     useUserStoreHook().SET_USERNAME(username);
     useUserStoreHook().SET_NICKNAME(nickname);
@@ -81,7 +91,9 @@ export function setToken(data: DataInfo<Date>) {
       username,
       nickname,
       roles,
-      permissions
+      permissions,
+      auth_method: authMethod,
+      wecom_verified_at: wecomVerifiedAt
     });
   }
 
@@ -92,7 +104,9 @@ export function setToken(data: DataInfo<Date>) {
       username,
       nickname: data?.nickname ?? "",
       roles,
-      permissions: data?.permissions ?? []
+      permissions: data?.permissions ?? [],
+      authMethod: data?.auth_method,
+      wecomVerifiedAt: data?.wecom_verified_at
     });
   } else {
     const avatar =
@@ -105,12 +119,18 @@ export function setToken(data: DataInfo<Date>) {
       storageLocal().getItem<DataInfo<number>>(userKey)?.roles ?? [];
     const permissions =
       storageLocal().getItem<DataInfo<number>>(userKey)?.permissions ?? [];
+    const authMethod =
+      storageLocal().getItem<DataInfo<number>>(userKey)?.auth_method;
+    const wecomVerifiedAt =
+      storageLocal().getItem<DataInfo<number>>(userKey)?.wecom_verified_at;
     setUserKey({
       avatar,
       username,
       nickname,
       roles,
-      permissions
+      permissions,
+      authMethod,
+      wecomVerifiedAt
     });
   }
 }

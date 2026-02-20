@@ -41,7 +41,9 @@ TASK_API_KEY = "local-dev-task-api-key"
 WECHAT_CORPID = "ww3ddef5ccb9428432"
 WECHAT_AGENT_ID = "1000014"
 WECHAT_SECRET = "uvYndaTHtRDQvmD4bx3FknXzRBgPRBTXYWakLoNE5oE"
-WECHAT_REDIRECT_URI = "http://apix.hybcdg.com:8849/login"
+WECHAT_REDIRECT_URI = "https://apix.hybcdg.com:8849/login"
+PASSKEY_RP_ID = "apix.hybcdg.com"
+PASSKEY_RP_NAME = "HYBC"
 
 [triggers]
 crons = ["*/5 * * * *", "0 * * * *", "0 18 * * *"]
