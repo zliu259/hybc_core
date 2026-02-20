@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { message } from "@/utils/message";
+import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
 
 type UploadedItem = {
@@ -39,7 +40,8 @@ const beforeUpload = async (file: File) => {
     await fetch(signed.uploadUrl, {
       method: "PUT",
       headers: {
-        "content-type": file.type || "application/octet-stream"
+        "content-type": file.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
       },
       body: file
     });

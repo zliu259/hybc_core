@@ -3,6 +3,7 @@ import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
 import { message } from "@/utils/message";
 import { useUserStoreHook } from "@/store/modules/user";
+import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
 import {
   createProjectFile,
@@ -181,7 +182,8 @@ const uploadProjectFileBySignedUrl = async (options: UploadRequestOptions) => {
     const uploadResp = await fetch(signed.uploadUrl, {
       method: "PUT",
       headers: {
-        "content-type": rawFile.type || "application/octet-stream"
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
       },
       body: rawFile
     });

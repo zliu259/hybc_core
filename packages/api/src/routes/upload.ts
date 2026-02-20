@@ -39,9 +39,7 @@ export const uploadRoutes = new Hono<{
   Variables: AuthVariables;
 }>();
 
-uploadRoutes.use("*", authMiddleware);
-
-uploadRoutes.post("/sign", async (c) => {
+uploadRoutes.post("/sign", authMiddleware, async (c) => {
   const body = (await c.req.json()) as {
     fileName: string;
     contentType?: string;
@@ -66,10 +64,23 @@ uploadRoutes.post("/sign", async (c) => {
   });
 });
 
-uploadRoutes.put("/object/:key{.+}", async (c) => {
-  const key = c.req.param("key");
+uploadRoutes.put("/object/:key{.+}", authMiddleware, async (c) => {
+  const rawKey = c.req.param("key");
   const expires = Number(c.req.query("expires") ?? "0");
   const signature = c.req.query("signature") ?? "";
+
+  let key = rawKey;
+  try {
+    key = decodeURIComponent(rawKey);
+  } catch {
+    return c.json(
+      {
+        success: false,
+        error: { message: "Invalid upload key" }
+      },
+      400
+    );
+  }
 
   if (!key || !expires || !signature || Number.isNaN(expires)) {
     return c.json(
@@ -121,7 +132,19 @@ uploadRoutes.put("/object/:key{.+}", async (c) => {
 });
 
 uploadRoutes.get("/object/:key{.+}", async (c) => {
-  const key = c.req.param("key");
+  const rawKey = c.req.param("key");
+  let key = rawKey;
+  try {
+    key = decodeURIComponent(rawKey);
+  } catch {
+    return c.json(
+      {
+        success: false,
+        error: { message: "Invalid file key" }
+      },
+      400
+    );
+  }
   const object = await c.env.FILES.get(key);
   if (!object || !object.body) {
     return c.json(
