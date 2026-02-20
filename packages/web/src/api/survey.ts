@@ -24,6 +24,7 @@ export type SiteSurvey = {
 
 export const listBreakthroughReports = (params?: {
   project_id?: number;
+  section_id?: number;
   date_from?: string;
   date_to?: string;
 }) =>

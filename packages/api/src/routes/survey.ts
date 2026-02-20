@@ -20,6 +20,7 @@ surveyRoutes.get(
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const projectId = c.req.query("project_id");
+    const sectionId = c.req.query("section_id");
     const dateFrom = c.req.query("date_from");
     const dateTo = c.req.query("date_to");
     let sql = "SELECT * FROM breakthrough_report WHERE status != 'deleted'";
@@ -27,6 +28,10 @@ surveyRoutes.get(
     if (projectId) {
       sql += " AND project_id = ?";
       params.push(Number(projectId));
+    }
+    if (sectionId) {
+      sql += " AND section_id = ?";
+      params.push(Number(sectionId));
     }
     if (dateFrom) {
       sql += " AND report_date >= ?";

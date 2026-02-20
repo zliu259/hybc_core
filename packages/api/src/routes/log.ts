@@ -52,6 +52,7 @@ logRoutes.get(
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const projectId = c.req.query("project_id");
+    const sectionId = c.req.query("section_id");
     const dateFrom = c.req.query("date_from");
     const dateTo = c.req.query("date_to");
     const shift = c.req.query("shift");
@@ -67,6 +68,11 @@ logRoutes.get(
       sql += " AND project_id = ?";
       countSql += " AND project_id = ?";
       params.push(Number(projectId));
+    }
+    if (sectionId) {
+      sql += " AND section_id = ?";
+      countSql += " AND section_id = ?";
+      params.push(Number(sectionId));
     }
     if (dateFrom) {
       sql += " AND log_date >= ?";

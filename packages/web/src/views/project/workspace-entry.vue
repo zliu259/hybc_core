@@ -42,13 +42,25 @@ onMounted(load);
       <el-table-column prop="status" label="状态" width="120" />
       <el-table-column label="进入" width="240" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openWorkspace(scope.row.id, 'project')">
+          <el-button
+            link
+            type="primary"
+            @click="openWorkspace(scope.row.id, 'project')"
+          >
             项目面板
           </el-button>
-          <el-button link type="primary" @click="openWorkspace(scope.row.id, 'equipment')">
+          <el-button
+            link
+            type="primary"
+            @click="openWorkspace(scope.row.id, 'equipment')"
+          >
             设备面板
           </el-button>
-          <el-button link type="primary" @click="openWorkspace(scope.row.id, 'finance')">
+          <el-button
+            link
+            type="primary"
+            @click="openWorkspace(scope.row.id, 'finance')"
+          >
             财务面板
           </el-button>
         </template>

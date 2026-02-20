@@ -60,6 +60,20 @@ npm run dev
 - `GET /api/v1/system/health`
 - `GET /api/v1/system/storage-check`
 
+### API 模拟数据（全面联调）
+
+```bash
+cd packages/api
+npm run db:migrate:local
+npm run db:seed:mock:local
+```
+
+说明：
+
+- `scripts/mock-data.sql` 会先清理同前缀 `MOCK-*` 的旧测试数据，再写入新一批完整业务链路数据。
+- 覆盖模块：实体、项目、合同、付款、收款/发票、报销（含查重/批次）、资产仓库、施工日志、勘查、审批实例、AI任务样例。
+- 该脚本只清理 `MOCK-*` 范围内数据，不会删除业务真实数据。
+
 ## Web（PureAdmin Thin）
 
 前端代码已通过下列仓库克隆初始化：

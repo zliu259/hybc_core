@@ -34,7 +34,10 @@ const bytesToBase64Url = (bytes: Uint8Array): string => {
   bytes.forEach(byte => {
     binary += String.fromCharCode(byte);
   });
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  return btoa(binary)
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/g, "");
 };
 
 const getPasskeyUnsupportedReason = (): string => {
@@ -63,7 +66,11 @@ const load = async () => {
 };
 
 const enroll = async () => {
-  if (!("credentials" in navigator) || typeof window.PublicKeyCredential === "undefined" || !window.isSecureContext) {
+  if (
+    !("credentials" in navigator) ||
+    typeof window.PublicKeyCredential === "undefined" ||
+    !window.isSecureContext
+  ) {
     message(getPasskeyUnsupportedReason(), { type: "warning" });
     return;
   }

@@ -31,6 +31,7 @@ export type ManagerLog = {
 
 export const listOperatorLogs = (params?: {
   project_id?: number;
+  section_id?: number;
   date_from?: string;
   date_to?: string;
   shift?: string;

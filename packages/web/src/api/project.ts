@@ -24,6 +24,24 @@ export type ProjectSection = {
   updated_at: string;
 };
 
+export type ProjectFile = {
+  id: number;
+  project_id: number;
+  section_id: number | null;
+  section_code?: string | null;
+  section_name?: string | null;
+  file_name: string;
+  file_key: string;
+  file_size: number | null;
+  file_url: string;
+  category: string | null;
+  remark: string | null;
+  uploaded_by_userid: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+};
+
 export const listProjects = (params?: {
   page?: number;
   pageSize?: number;
@@ -120,4 +138,43 @@ export const getProjectFinancialSummary = (projectId: number) => {
       receiptCount: number;
     };
   }>("get", `/api/v1/project/${projectId}/financial-summary`);
+};
+
+export const listProjectFiles = (
+  projectId: number,
+  params?: {
+    section_id?: number;
+    category?: string;
+  }
+) => {
+  return http.request<{ success: boolean; data: ProjectFile[] }>(
+    "get",
+    `/api/v1/project/${projectId}/files`,
+    { params }
+  );
+};
+
+export const createProjectFile = (
+  projectId: number,
+  data: {
+    file_name: string;
+    file_key: string;
+    file_size?: number | null;
+    category?: string | null;
+    section_id?: number | null;
+    remark?: string | null;
+  }
+) => {
+  return http.request<{ success: boolean; data: { id: number } }>(
+    "post",
+    `/api/v1/project/${projectId}/files`,
+    { data }
+  );
+};
+
+export const deleteProjectFile = (projectId: number, fileId: number) => {
+  return http.request<{ success: boolean }>(
+    "delete",
+    `/api/v1/project/${projectId}/files/${fileId}`
+  );
 };

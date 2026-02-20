@@ -292,6 +292,13 @@
 - 工作区财务摘要：`/api/v1/project/:id/financial-summary`
 - 工作区设备摘要：`/api/v1/asset/dashboard/project/:projectId`
 
+#### 3.4.5 项目面板一站式信息聚合（新增）
+- 文件管理区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持项目相关人员上传并沉淀项目文件，文件可选绑定标段。
+- 标段详情弹窗：在项目面板“标段总览”点击“查看详情”进入，显示标段基础信息、该标段操作员日志、该标段贯通报告。
+- 项目日志聚合区：同页集中展示该项目全部操作员日志、管理员日志、贯通报告，保证参与人员无需跨模块即可获取项目全貌。
+- 贯通报告标段绑定：贯通报告按 `section_id` 归集，在项目层与标段层均可追溯。
+- 对应 API：`/api/v1/project/:id/files`、`/api/v1/project/:id/files/:fileId`、`/api/v1/log/operator?project_id=:id&section_id=:sectionId`、`/api/v1/survey/breakthrough?project_id=:id&section_id=:sectionId`。
+
 ## 4. 小程序页面级规范（企业微信）
 
 ### 4.0 设计基准与参考

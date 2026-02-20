@@ -203,6 +203,147 @@ projectRoutes.get("/:id/sections", async (c) => {
   return c.json({ success: true, data: rows.results ?? [] });
 });
 
+projectRoutes.get("/:id/files", async (c) => {
+  const projectId = Number(c.req.param("id"));
+  const sectionIdQuery = c.req.query("section_id");
+  const category = c.req.query("category");
+
+  let sql =
+    "SELECT pf.*, ps.section_code, ps.section_name FROM project_file pf LEFT JOIN project_section ps ON ps.id = pf.section_id WHERE pf.project_id = ? AND pf.status = 'active'";
+  const params: Array<string | number> = [projectId];
+
+  if (sectionIdQuery) {
+    sql += " AND pf.section_id = ?";
+    params.push(Number(sectionIdQuery));
+  }
+
+  if (category) {
+    sql += " AND pf.category = ?";
+    params.push(category);
+  }
+
+  sql += " ORDER BY pf.id DESC";
+
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params)
+    .all();
+
+  const data = (rows.results ?? []).map((item) => {
+    const key = String(item.file_key ?? "");
+    return {
+      ...item,
+      file_url: `/api/v1/upload/object/${encodeURIComponent(key)}`
+    };
+  });
+
+  return c.json({ success: true, data });
+});
+
+projectRoutes.post(
+  "/:id/files",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const projectId = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      file_name: string;
+      file_key: string;
+      file_size?: number | null;
+      category?: string | null;
+      section_id?: number | null;
+      remark?: string | null;
+    };
+
+    if (!body.file_name?.trim() || !body.file_key?.trim()) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "file_name and file_key are required" }
+        },
+        400
+      );
+    }
+
+    const project = await c.env.DB.prepare("SELECT id FROM project WHERE id = ?")
+      .bind(projectId)
+      .first<{ id: number }>();
+    if (!project) {
+      return c.json({ success: false, error: { message: "Project not found" } }, 404);
+    }
+
+    if (body.section_id) {
+      const section = await c.env.DB.prepare(
+        "SELECT id FROM project_section WHERE id = ? AND project_id = ?"
+      )
+        .bind(body.section_id, projectId)
+        .first<{ id: number }>();
+      if (!section) {
+        return c.json(
+          { success: false, error: { message: "Section not found in this project" } },
+          400
+        );
+      }
+    }
+
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO project_file
+        (project_id, section_id, file_name, file_key, file_size, category, remark, uploaded_by_userid, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+    )
+      .bind(
+        projectId,
+        body.section_id ?? null,
+        body.file_name.trim(),
+        body.file_key.trim(),
+        body.file_size ?? null,
+        body.category?.trim() || null,
+        body.remark?.trim() || null,
+        auth.sub,
+        now,
+        now
+      )
+      .run();
+
+    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  }
+);
+
+projectRoutes.delete(
+  "/:id/files/:fileId",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const projectId = Number(c.req.param("id"));
+    const fileId = Number(c.req.param("fileId"));
+    const auth = c.get("auth");
+
+    const row = await c.env.DB.prepare(
+      "SELECT id, uploaded_by_userid FROM project_file WHERE id = ? AND project_id = ? AND status = 'active'"
+    )
+      .bind(fileId, projectId)
+      .first<{ id: number; uploaded_by_userid: string }>();
+
+    if (!row) {
+      return c.json({ success: false, error: { message: "Project file not found" } }, 404);
+    }
+
+    const privileged = auth.roles.some((role) =>
+      ["super_admin", "manager", "site_manager"].includes(role)
+    );
+    if (!privileged && auth.sub !== row.uploaded_by_userid) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    await c.env.DB.prepare(
+      "UPDATE project_file SET status = 'deleted', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), fileId)
+      .run();
+
+    return c.json({ success: true });
+  }
+);
+
 projectRoutes.post("/:id/sections", requireRoles(["super_admin", "manager", "site_manager"]), async (c) => {
   const projectId = Number(c.req.param("id"));
   const body = (await c.req.json()) as {
