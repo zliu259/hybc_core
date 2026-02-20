@@ -18,6 +18,10 @@ export type PaymentRequest = {
   approval_instance_id: number | null;
   ai_risk_status: string;
   ai_risk_result: string | null;
+  paid_at: string | null;
+  paid_by_userid: string | null;
+  payment_reference: string | null;
+  payment_account: string | null;
   attachments_json: string | null;
   remark: string | null;
   created_at: string;
@@ -112,10 +116,19 @@ export const updatePaymentRequest = (
   });
 };
 
-export const markPaymentPaid = (id: number) => {
+export const markPaymentPaid = (
+  id: number,
+  data?: {
+    paid_at?: string;
+    payment_reference?: string;
+    payment_account?: string;
+    remark?: string;
+  }
+) => {
   return http.request<{ success: boolean }>(
     "post",
-    `/api/v1/payment/${id}/mark-paid`
+    `/api/v1/payment/${id}/mark-paid`,
+    { data }
   );
 };
 

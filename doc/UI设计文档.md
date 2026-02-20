@@ -118,15 +118,16 @@
 
 #### F. 对外付款申请列表 `views/finance/payment/index.vue`
 - 固定筛选：合同号、项目、审批状态、金额区间。
-- 表格列：申请单号、合同号、金额、申请人、状态、提交时间。
+- 表格列：申请单号、合同号、金额、申请人、状态、提交时间、支付时间。
 - 强约束：超额风险标红并显示剩余额度。
 - API 指向：`/api/v1/payment`
 
 #### G. 对外付款申请详情 `views/finance/payment/detail.vue`
 - 左侧：申请信息、合同信息、附件。
 - 右侧：审批轨迹、风险评估报告。
-- 底部动作：通过/拒绝/退回/转签（必须填写意见）。
-- API 指向：`/api/v1/payment/:id`, `/api/v1/approval/:id/*`
+- 付款执行：`已审批`状态下登记支付日期、支付流水号、付款账户、付款备注并标记付款。
+- 底部动作：通过/拒绝/退回/转签（必须填写意见）、标记付款。
+- API 指向：`/api/v1/payment/:id`, `/api/v1/payment/:id/mark-paid`, `/api/v1/approval/:id/*`
 
 #### H. 收款人管理 `views/finance/payee/index.vue`
 - 双标签页：外部收款人/内部收款人。

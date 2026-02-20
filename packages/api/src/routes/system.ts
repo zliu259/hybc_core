@@ -92,7 +92,7 @@ systemRoutes.get("/automation/monthly-financial-report", apiKeyMiddleware, async
     `SELECT IFNULL(SUM(amount), 0) as total
      FROM payment_request
      WHERE status = 'paid'
-       AND DATE(payment_date) BETWEEN DATE(?) AND DATE(?)`
+       AND DATE(COALESCE(paid_at, updated_at)) BETWEEN DATE(?) AND DATE(?)`
   )
     .bind(start, endExpr)
     .first<{ total: number }>();

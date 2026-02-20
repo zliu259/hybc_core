@@ -74,6 +74,15 @@ const approvalDialogVisible = ref(false);
 const approvalSummary = ref("");
 const approvalConfigText = ref("{}");
 
+const paidDialogVisible = ref(false);
+const paidSubmitting = ref(false);
+const paidForm = ref({
+  paid_at: "",
+  payment_reference: "",
+  payment_account: "",
+  remark: ""
+});
+
 const loadRefs = async () => {
   const [contractRes, payeeRes] = await Promise.all([
     listContracts({ page: 1, pageSize: 400, direction: "outbound" }),
@@ -214,9 +223,31 @@ const onRiskAssessment = async () => {
 
 const onMarkPaid = async () => {
   if (isCreate.value) return;
-  await markPaymentPaid(requestId.value);
-  message("已标记为已付款", { type: "success" });
-  await loadDetail();
+  paidForm.value = {
+    paid_at: new Date().toISOString().slice(0, 10),
+    payment_reference: "",
+    payment_account: detail.value?.payment_account ?? "",
+    remark: ""
+  };
+  paidDialogVisible.value = true;
+};
+
+const confirmMarkPaid = async () => {
+  if (isCreate.value) return;
+  paidSubmitting.value = true;
+  try {
+    await markPaymentPaid(requestId.value, {
+      paid_at: paidForm.value.paid_at || undefined,
+      payment_reference: paidForm.value.payment_reference || undefined,
+      payment_account: paidForm.value.payment_account || undefined,
+      remark: paidForm.value.remark || undefined
+    });
+    paidDialogVisible.value = false;
+    message("已标记为已付款", { type: "success" });
+    await loadDetail();
+  } finally {
+    paidSubmitting.value = false;
+  }
 };
 
 onMounted(async () => {
@@ -377,6 +408,15 @@ onMounted(async () => {
       <el-descriptions-item label="金额大写" :span="2">{{
         detail.amount_cn
       }}</el-descriptions-item>
+      <el-descriptions-item label="支付时间">
+        {{ detail.paid_at || "-" }}
+      </el-descriptions-item>
+      <el-descriptions-item label="支付流水号">
+        {{ detail.payment_reference || "-" }}
+      </el-descriptions-item>
+      <el-descriptions-item label="付款账户" :span="2">
+        {{ detail.payment_account || "-" }}
+      </el-descriptions-item>
     </el-descriptions>
 
     <el-divider v-if="detail">AI风险评估</el-divider>
@@ -429,6 +469,47 @@ onMounted(async () => {
         <el-button @click="approvalDialogVisible = false">取消</el-button>
         <el-button type="primary" @click="confirmSubmitApproval"
           >确认提交</el-button
+        >
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="paidDialogVisible"
+      title="登记付款执行信息"
+      width="560px"
+    >
+      <el-form label-width="120px">
+        <el-form-item label="支付日期">
+          <el-date-picker
+            v-model="paidForm.paid_at"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 220px"
+          />
+        </el-form-item>
+        <el-form-item label="支付流水号">
+          <el-input
+            v-model="paidForm.payment_reference"
+            placeholder="例如网银流水号"
+          />
+        </el-form-item>
+        <el-form-item label="付款账户">
+          <el-input
+            v-model="paidForm.payment_account"
+            placeholder="例如 建行-XX支行-1234"
+          />
+        </el-form-item>
+        <el-form-item label="付款备注">
+          <el-input v-model="paidForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="paidDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="paidSubmitting"
+          @click="confirmMarkPaid"
+          >确认标记</el-button
         >
       </template>
     </el-dialog>

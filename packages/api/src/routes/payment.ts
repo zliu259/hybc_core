@@ -26,6 +26,13 @@ type SubmitApprovalOptions = {
   instance_config?: InstanceConfig;
 };
 
+type MarkPaidBody = {
+  paid_at?: string;
+  payment_reference?: string;
+  payment_account?: string;
+  remark?: string;
+};
+
 export const paymentRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -499,6 +506,8 @@ paymentRoutes.post(
   requireRoles(["super_admin", "manager"]),
   async (c) => {
     const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as MarkPaidBody;
     const now = nowIso();
 
     const pr = await c.env.DB.prepare(
@@ -518,10 +527,28 @@ paymentRoutes.post(
       );
     }
 
+    const paidAt = body.paid_at?.trim() ? body.paid_at : now;
+
     await c.env.DB.prepare(
-      "UPDATE payment_request SET status = 'paid', updated_at = ? WHERE id = ?"
+      `UPDATE payment_request SET
+        status = 'paid',
+        paid_at = ?,
+        paid_by_userid = ?,
+        payment_reference = COALESCE(?, payment_reference),
+        payment_account = COALESCE(?, payment_account),
+        remark = COALESCE(?, remark),
+        updated_at = ?
+      WHERE id = ?`
     )
-      .bind(now, id)
+      .bind(
+        paidAt,
+        auth.sub,
+        body.payment_reference?.trim() || null,
+        body.payment_account?.trim() || null,
+        body.remark?.trim() || null,
+        now,
+        id
+      )
       .run();
 
     await c.env.DB.prepare(
