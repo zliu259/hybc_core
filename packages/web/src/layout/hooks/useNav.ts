@@ -55,6 +55,12 @@ export function useNav() {
     return username.value ? { marginRight: "10px" } : "";
   });
 
+  function onUserAvatarError(event: Event) {
+    const target = event.target as HTMLImageElement | null;
+    if (!target || target.src === Avatar) return;
+    target.src = Avatar;
+  }
+
   const isCollapse = computed(() => {
     return !pureApp.getSidebarStatus;
   });
@@ -151,6 +157,7 @@ export function useNav() {
     pureApp,
     username,
     userAvatar,
+    onUserAvatarError,
     avatarsStyle,
     tooltipEffect
   };

@@ -7,37 +7,62 @@ const buildUrl = (path) => {
   return `${getBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
+const ensureSessionReady = () => {
+  const token = getToken();
+  if (token) return Promise.resolve(token);
+
+  const app = typeof getApp === "function" ? getApp() : null;
+  if (!app || typeof app.ensureSession !== "function") {
+    return Promise.resolve("");
+  }
+
+  return app.ensureSession().catch((error) => {
+    clearToken();
+    throw error;
+  });
+};
+
 const request = ({ method = "GET", path, data, header = {} }) => {
-  return new Promise((resolve, reject) => {
-    const token = getToken();
-    const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
+  return ensureSessionReady().then(() => {
+    return new Promise((resolve, reject) => {
+      const token = getToken();
+      const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
 
-    wx.request({
-      url: buildUrl(path),
-      method,
-      data,
-      timeout: 15000,
-      header: {
-        "content-type": "application/json",
-        ...authHeader,
-        ...header
-      },
-      success(res) {
-        const body = res.data || {};
-        if (res.statusCode >= 200 && res.statusCode < 300 && body.success !== false) {
-          resolve(body);
-          return;
+      wx.request({
+        url: buildUrl(path),
+        method,
+        data,
+        timeout: 15000,
+        header: {
+          "content-type": "application/json",
+          ...authHeader,
+          ...header
+        },
+        success(res) {
+          const body = res.data || {};
+          if (
+            res.statusCode >= 200 &&
+            res.statusCode < 300 &&
+            body.success !== false
+          ) {
+            resolve(body);
+            return;
+          }
+
+          if (res.statusCode === 401) {
+            clearToken();
+          }
+
+          reject(
+            new Error(
+              (body && body.error && body.error.message) || "Request failed"
+            )
+          );
+        },
+        fail(err) {
+          reject(err);
         }
-
-        if (res.statusCode === 401) {
-          clearToken();
-        }
-
-        reject(new Error((body && body.error && body.error.message) || "Request failed"));
-      },
-      fail(err) {
-        reject(err);
-      }
+      });
     });
   });
 };
@@ -71,33 +96,41 @@ const loginRequest = ({ code: payload }) => {
 };
 
 const uploadBinary = ({ path, arrayBuffer, contentType }) => {
-  return new Promise((resolve, reject) => {
-    const token = getToken();
-    wx.request({
-      url: buildUrl(path),
-      method: "PUT",
-      data: arrayBuffer,
-      timeout: 30000,
-      header: {
-        "content-type": contentType || "application/octet-stream",
-        ...(token ? { Authorization: `Bearer ${token}` } : {})
-      },
-      success(res) {
-        const body = res.data || {};
-        if (res.statusCode >= 200 && res.statusCode < 300 && body.success !== false) {
-          resolve(body);
-          return;
-        }
+  return ensureSessionReady().then(() => {
+    return new Promise((resolve, reject) => {
+      const token = getToken();
+      wx.request({
+        url: buildUrl(path),
+        method: "PUT",
+        data: arrayBuffer,
+        timeout: 30000,
+        header: {
+          "content-type": contentType || "application/octet-stream",
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        success(res) {
+          const body = res.data || {};
+          if (
+            res.statusCode >= 200 &&
+            res.statusCode < 300 &&
+            body.success !== false
+          ) {
+            resolve(body);
+            return;
+          }
 
-        if (res.statusCode === 401) {
-          clearToken();
-        }
+          if (res.statusCode === 401) {
+            clearToken();
+          }
 
-        reject(new Error((body && body.error && body.error.message) || "Upload failed"));
-      },
-      fail(err) {
-        reject(err);
-      }
+          reject(
+            new Error((body && body.error && body.error.message) || "Upload failed")
+          );
+        },
+        fail(err) {
+          reject(err);
+        }
+      });
     });
   });
 };

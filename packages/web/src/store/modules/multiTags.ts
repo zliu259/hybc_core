@@ -70,12 +70,12 @@ export const useMultiTagsStore = defineStore("pure-multiTags", {
         case "push":
           {
             const tagVal = value as multiType;
+            const title = tagVal?.meta?.title;
             // 不添加到标签页
             if (tagVal?.meta?.hiddenTag) return;
             // 如果是外链无需添加信息到标签页
             if (isUrl(tagVal?.name)) return;
-            // 如果title为空拒绝添加空信息到标签页
-            if (tagVal?.meta?.title.length === 0) return;
+            if (typeof title !== "string" || title.length === 0) return;
             // showLink:false 不添加到标签页
             if (isBoolean(tagVal?.meta?.showLink) && !tagVal?.meta?.showLink)
               return;

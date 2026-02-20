@@ -98,7 +98,14 @@ const transitionMain = defineComponent({
         appear: true
       },
       {
-        default: () => [this.$slots.default()]
+        default: () =>
+          h(
+            "div",
+            {
+              class: "route-transition-host"
+            },
+            this.$slots.default?.()
+          )
       }
     );
   }
@@ -144,7 +151,6 @@ const transitionMain = defineComponent({
                   >
                     <component
                       :is="Comp"
-                      :key="fullPath"
                       :frameInfo="frameInfo"
                       class="main-content"
                     />
@@ -168,7 +174,6 @@ const transitionMain = defineComponent({
                 >
                   <component
                     :is="Comp"
-                    :key="fullPath"
                     :frameInfo="frameInfo"
                     class="main-content"
                   />
@@ -209,5 +214,9 @@ const transitionMain = defineComponent({
 
 .main-content {
   margin: 24px;
+}
+
+.route-transition-host {
+  width: 100%;
 }
 </style>

@@ -24,6 +24,7 @@ const {
   resolvePath,
   username,
   userAvatar,
+  onUserAvatarError,
   getDivStyle,
   avatarsStyle
 } = useNav();
@@ -100,7 +101,7 @@ watch(
       <!-- 退出登录 -->
       <el-dropdown trigger="click">
         <span class="el-dropdown-link navbar-bg-hover select-none">
-          <img :src="userAvatar" :style="avatarsStyle" />
+          <img :src="userAvatar" :style="avatarsStyle" @error="onUserAvatarError" />
           <p v-if="username" class="dark:text-white">{{ username }}</p>
         </span>
         <template #dropdown>
