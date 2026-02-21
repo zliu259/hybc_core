@@ -119,6 +119,14 @@ export const listThresholds = (params?: { template_id?: number }) => {
   );
 };
 
+export const listBizThresholds = (params?: { biz_type?: string }) => {
+  return http.request<{ success: boolean; data: ApprovalThreshold[] }>(
+    "get",
+    "/api/v1/admin/thresholds",
+    { params }
+  );
+};
+
 export const createThreshold = (data: {
   template_id: number;
   condition_field: string;

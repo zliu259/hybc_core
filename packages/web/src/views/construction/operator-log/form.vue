@@ -1,14 +1,16 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { createOperatorLog, smartFillOperatorLog } from "@/api/log";
+import { useProjectOptions } from "@/composables/useProjectOptions";
 
 defineOptions({ name: "OperatorLogForm" });
 
 const router = useRouter();
 const filling = ref(false);
 const submitting = ref(false);
+const { projects, loadProjects } = useProjectOptions();
 
 const form = ref({
   project_id: undefined as number | undefined,
@@ -73,6 +75,8 @@ const submit = async () => {
     submitting.value = false;
   }
 };
+
+onMounted(loadProjects);
 </script>
 
 <template>
@@ -92,7 +96,19 @@ const submit = async () => {
 
     <el-form label-width="120px">
       <el-form-item label="项目ID" required>
-        <el-input-number v-model="form.project_id" :min="1" />
+        <el-select
+          v-model="form.project_id"
+          filterable
+          placeholder="按时间排序选择项目"
+          style="width: 320px"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="`${item.project_name} (${item.project_code})`"
+            :value="item.id"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="标段ID">
         <el-input-number v-model="form.section_id" :min="1" />

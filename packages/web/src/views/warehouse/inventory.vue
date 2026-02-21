@@ -9,6 +9,7 @@ import {
   type InventoryRow,
   type Warehouse
 } from "@/api/warehouse";
+import { useProjectOptions } from "@/composables/useProjectOptions";
 
 defineOptions({ name: "WarehouseInventory" });
 
@@ -16,6 +17,7 @@ const loading = ref(false);
 const rows = ref<InventoryRow[]>([]);
 const warehouses = ref<Warehouse[]>([]);
 const assetTypes = ref<AssetType[]>([]);
+const { projects, loadProjects } = useProjectOptions();
 
 const filters = ref({
   warehouse_id: undefined as number | undefined,
@@ -95,7 +97,7 @@ const submitConsumption = async () => {
 };
 
 onMounted(async () => {
-  await loadMeta();
+  await Promise.all([loadMeta(), loadProjects()]);
   await loadData();
 });
 </script>
@@ -195,8 +197,21 @@ onMounted(async () => {
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="项目ID">
-        <el-input-number v-model="consumptionForm.project_id" :min="1" />
+      <el-form-item label="所属项目">
+        <el-select
+          v-model="consumptionForm.project_id"
+          clearable
+          filterable
+          placeholder="按时间排序选择项目"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="`${item.project_name} (${item.project_code})`"
+            :value="item.id"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="消耗数量">
         <el-input-number

@@ -21,6 +21,15 @@ export default {
       }
     },
     {
+      path: "/approval/unified-tasklist",
+      name: "ApprovalUnifiedTasklist",
+      component: () => import("@/views/approval/unified-tasklist.vue"),
+      meta: {
+        title: "统一工作台",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
       path: "/approval/detail/:id",
       name: "ApprovalDetail",
       component: () => import("@/views/approval/detail.vue"),

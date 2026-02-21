@@ -21,6 +21,15 @@ export default {
       }
     },
     {
+      path: "/finance/contract/monitor",
+      name: "ContractMonitor",
+      component: () => import("@/views/finance/contract/monitor.vue"),
+      meta: {
+        title: "合同执行监控",
+        roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
       path: "/finance/contract/detail/:id",
       name: "ContractDetail",
       component: () => import("@/views/finance/contract/detail.vue"),
@@ -35,6 +44,15 @@ export default {
       component: () => import("@/views/finance/payment/index.vue"),
       meta: {
         title: "付款管理",
+        roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
+      path: "/finance/payment/wizard",
+      name: "SmartPaymentWizard",
+      component: () => import("@/views/finance/payment/wizard.vue"),
+      meta: {
+        title: "智能发单台",
         roles: ["super_admin", "manager", "site_manager"]
       }
     },
@@ -135,6 +153,15 @@ export default {
       meta: {
         title: "报销集中审批",
         roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/reimbursement/payout",
+      name: "ReimbursementPayout",
+      component: () => import("@/views/finance/reimbursement/payout.vue"),
+      meta: {
+        title: "报销集中打款",
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {

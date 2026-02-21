@@ -16,7 +16,8 @@ import {
   verifyReimbursementEnvelope,
   type ReimbursementEnvelopeDetail
 } from "@/api/reimbursement";
-import { listProjects, type Project } from "@/api/project";
+import { useProjectOptions } from "@/composables/useProjectOptions";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ReimbursementDetail" });
 
@@ -29,7 +30,8 @@ const isCreate = computed(() => route.params.id === "create");
 const loading = ref(false);
 const saving = ref(false);
 const detail = ref<ReimbursementEnvelopeDetail | null>(null);
-const projects = ref<Project[]>([]);
+const { projects, loadProjects } = useProjectOptions();
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const form = ref({
   project_id: undefined as number | undefined,
@@ -46,11 +48,6 @@ const form = ref({
 const verifyNote = ref("");
 const ocrStatusText = ref("none");
 const anomalyStatusText = ref("none");
-
-const loadProjects = async () => {
-  const result = await listProjects({ page: 1, pageSize: 300 });
-  projects.value = result.data;
-};
 
 const loadDetail = async () => {
   if (isCreate.value) return;
@@ -223,7 +220,7 @@ const submitPrecheck = async (
 };
 
 onMounted(async () => {
-  await loadProjects();
+  await Promise.all([loadProjects(), loadWecomUsers()]);
   await loadDetail();
 });
 </script>
@@ -268,12 +265,21 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
 
-      <el-form-item label="填报人 userid">
-        <el-input
+      <el-form-item label="填报人">
+        <el-select
           v-model="form.applicant_userid"
+          clearable
+          filterable
           placeholder="留空默认当前登录人"
-          style="width: 320px"
-        />
+          style="width: 360px"
+        >
+          <el-option
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="`${item.name} (${item.userid})`"
+            :value="item.userid"
+          />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="通道">

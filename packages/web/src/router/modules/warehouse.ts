@@ -48,6 +48,15 @@ export default {
       }
     },
     {
+      path: "/warehouse/dispatch",
+      name: "WarehouseDispatch",
+      component: () => import("@/views/warehouse/dispatch.vue"),
+      meta: {
+        title: "出入库调度",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
       path: "/warehouse/equipment-plan",
       name: "WarehouseEquipmentPlan",
       component: () => import("@/views/warehouse/equipment-plan.vue"),

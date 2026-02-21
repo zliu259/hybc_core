@@ -14,8 +14,9 @@ import {
   type ContractAmountChange,
   type ContractDetail
 } from "@/api/contract";
-import { listProjects, type Project } from "@/api/project";
 import { listEntities, type Entity } from "@/api/entity";
+import { useProjectOptions } from "@/composables/useProjectOptions";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ContractDetail" });
 
@@ -26,7 +27,8 @@ const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
 
-const projects = ref<Project[]>([]);
+const { projects, loadProjects } = useProjectOptions();
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const entities = ref<Entity[]>([]);
 const detail = ref<ContractDetail | null>(null);
 
@@ -64,11 +66,7 @@ const approvalSummary = ref("");
 const approvalConfigText = ref("{}");
 
 const loadBaseData = async () => {
-  const [projectRes, entityRes] = await Promise.all([
-    listProjects({ page: 1, pageSize: 300 }),
-    listEntities()
-  ]);
-  projects.value = projectRes.data;
+  const [entityRes] = await Promise.all([listEntities(), loadProjects(), loadWecomUsers()]);
   entities.value = entityRes.data;
 };
 
@@ -305,11 +303,20 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="经办人">
-        <el-input
+        <el-select
           v-model="form.handler_userid"
-          placeholder="企微userid"
-          style="width: 280px"
-        />
+          clearable
+          filterable
+          placeholder="选择公司人员"
+          style="width: 360px"
+        >
+          <el-option
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="`${item.name} (${item.userid})`"
+            :value="item.userid"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="合同日期">
         <el-date-picker

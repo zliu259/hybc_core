@@ -30,6 +30,15 @@ export default {
       }
     },
     {
+      path: "/asset/ledger",
+      name: "AssetLedgerBoard",
+      component: () => import("@/views/asset/ledger.vue"),
+      meta: {
+        title: "资产运维看板",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
       path: "/asset/detail/:id",
       name: "AssetDetail",
       component: () => import("@/views/asset/detail.vue"),

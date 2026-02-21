@@ -25,6 +25,8 @@ const IFrame = () => import("@/layout/frame.vue");
 // https://cn.vitejs.dev/guide/features.html#glob-import
 const modulesRoutes = import.meta.glob("/src/views/**/*.{vue,tsx}");
 
+const TEMP_ALLOW_ALL_ROUTE_ROLES = true;
+
 function handRank(routeInfo: any) {
   const { name, path, parentId, meta } = routeInfo;
   return isAllEmpty(parentId)
@@ -70,6 +72,9 @@ function filterChildrenTree(data: RouteComponent[]) {
 
 /** 判断两个数组彼此是否存在相同值 */
 function isOneOfArray(a: Array<string>, b: Array<string>) {
+  if (TEMP_ALLOW_ALL_ROUTE_ROLES) {
+    return true;
+  }
   return Array.isArray(a) && Array.isArray(b)
     ? intersection(a, b).length > 0
       ? true

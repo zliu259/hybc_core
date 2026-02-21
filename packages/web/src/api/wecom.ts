@@ -1,5 +1,22 @@
 import { http } from "@/utils/http";
 
+export type WeComDepartment = {
+  id: number;
+  name: string;
+  parentid: number;
+  order: number;
+};
+
+export type WeComUser = {
+  userid: string;
+  name: string;
+  department: number[];
+  mobile?: string;
+  email?: string;
+  avatar?: string;
+  status?: number;
+};
+
 export const getWeComScanUrl = (redirectUri: string) => {
   return http.request<{
     success: boolean;
@@ -27,21 +44,8 @@ export const getWeComContacts = () => {
     success: boolean;
     data: {
       syncedAt: string;
-      departments: Array<{
-        id: number;
-        name: string;
-        parentid: number;
-        order: number;
-      }>;
-      users: Array<{
-        userid: string;
-        name: string;
-        department: number[];
-        mobile?: string;
-        email?: string;
-        avatar?: string;
-        status?: number;
-      }>;
+      departments: WeComDepartment[];
+      users: WeComUser[];
     };
   }>("get", "/api/v1/auth/wecom/contacts");
 };

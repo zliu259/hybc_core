@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { reactive, ref } from "vue";
+import { onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { createProject } from "@/api/project";
 import PhaseUpload from "@/components/PhaseUpload/index.vue";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({
   name: "ProjectCreate"
@@ -12,6 +13,7 @@ defineOptions({
 const router = useRouter();
 const saving = ref(false);
 const attachments = ref<{ name: string; key: string; url: string }[]>([]);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const form = reactive({
   project_code: "",
@@ -43,6 +45,8 @@ const submit = async () => {
     saving.value = false;
   }
 };
+
+onMounted(loadWecomUsers);
 </script>
 
 <template>
@@ -55,7 +59,20 @@ const submit = async () => {
         <el-input v-model="form.project_name" />
       </el-form-item>
       <el-form-item label="项目经理">
-        <el-input v-model="form.manager_userid" placeholder="企微 userid" />
+        <el-select
+          v-model="form.manager_userid"
+          clearable
+          filterable
+          placeholder="选择公司人员"
+          style="width: 320px"
+        >
+          <el-option
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="`${item.name} (${item.userid})`"
+            :value="item.userid"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="开始日期">
         <el-date-picker

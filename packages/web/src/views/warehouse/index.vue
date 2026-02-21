@@ -8,12 +8,14 @@ import {
   type Warehouse,
   updateWarehouse
 } from "@/api/warehouse";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "WarehouseIndex" });
 
 const loading = ref(false);
 const list = ref<Warehouse[]>([]);
 const keyword = ref("");
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const dialogVisible = ref(false);
 const submitting = ref(false);
@@ -105,6 +107,7 @@ const onDelete = async (row: Warehouse) => {
 };
 
 onMounted(loadData);
+onMounted(loadWecomUsers);
 </script>
 
 <template>
@@ -173,7 +176,20 @@ onMounted(loadData);
         <el-input v-model="form.location" />
       </el-form-item>
       <el-form-item label="负责人">
-        <el-input v-model="form.manager_userid" placeholder="企微userid" />
+        <el-select
+          v-model="form.manager_userid"
+          clearable
+          filterable
+          placeholder="选择公司人员"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="`${item.name} (${item.userid})`"
+            :value="item.userid"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item v-if="editingId" label="状态">
         <el-select v-model="form.status" style="width: 160px">

@@ -393,9 +393,17 @@ export const submitBatchApproval = (
   }>("post", `/api/v1/reimbursement/batch/${id}/submit-approval`, { data });
 };
 
-export const markBatchPaid = (id: number) => {
+export const markBatchPaid = (
+  id: number,
+  data?: {
+    paid_at?: string;
+    payment_reference?: string;
+    payment_account?: string;
+  }
+) => {
   return http.request<{ success: boolean }>(
     "post",
-    `/api/v1/reimbursement/batch/${id}/mark-paid`
+    `/api/v1/reimbursement/batch/${id}/mark-paid`,
+    { data }
   );
 };

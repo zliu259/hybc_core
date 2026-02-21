@@ -24,10 +24,12 @@ import {
   type OperatorLog
 } from "@/api/log";
 import { listBreakthroughReports, type BreakthroughReport } from "@/api/survey";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 const props = defineProps<{ projectId: number }>();
 
 const userStore = useUserStoreHook();
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const loading = ref(false);
 const saving = ref(false);
 const project = ref<Project | null>(null);
@@ -226,6 +228,7 @@ watch(
 );
 
 onMounted(loadData);
+onMounted(loadWecomUsers);
 </script>
 
 <template>
@@ -239,7 +242,20 @@ onMounted(loadData);
           <el-input v-model="form.project_name" />
         </el-form-item>
         <el-form-item label="项目经理">
-          <el-input v-model="form.manager_userid" />
+          <el-select
+            v-model="form.manager_userid"
+            clearable
+            filterable
+            placeholder="选择公司人员"
+            style="width: 320px"
+          >
+            <el-option
+              v-for="item in wecomUsers"
+              :key="item.userid"
+              :label="`${item.name} (${item.userid})`"
+              :value="item.userid"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="项目状态">
           <el-space>

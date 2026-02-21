@@ -12,6 +12,15 @@ export default {
   },
   children: [
     {
+      path: "/project/hub",
+      name: "ProjectHub",
+      component: () => import("@/views/project/hub.vue"),
+      meta: {
+        title: "项目选择大厅",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
       path: "/project/list",
       name: "ProjectList",
       component: () => import("@/views/project/list.vue"),

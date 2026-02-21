@@ -7,11 +7,13 @@ import {
   listBreakthroughReports,
   type BreakthroughReport
 } from "@/api/survey";
+import { useProjectOptions } from "@/composables/useProjectOptions";
 
 defineOptions({ name: "BreakthroughReport" });
 
 const loading = ref(false);
 const list = ref<BreakthroughReport[]>([]);
+const { projects, loadProjects } = useProjectOptions();
 const dialogVisible = ref(false);
 const submitting = ref(false);
 const filters = ref({
@@ -85,7 +87,9 @@ const remove = async (row: BreakthroughReport) => {
   await loadData();
 };
 
-onMounted(loadData);
+onMounted(async () => {
+  await Promise.all([loadData(), loadProjects()]);
+});
 </script>
 
 <template>
@@ -103,8 +107,21 @@ onMounted(loadData);
       </div>
     </template>
     <el-form inline>
-      <el-form-item label="项目ID">
-        <el-input-number v-model="filters.project_id" :min="1" />
+      <el-form-item label="项目">
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          placeholder="按时间排序选择项目"
+          style="width: 320px"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="`${item.project_name} (${item.project_code})`"
+            :value="item.id"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="日期范围">
         <el-date-picker
@@ -148,8 +165,20 @@ onMounted(loadData);
 
   <el-dialog v-model="dialogVisible" title="新建贯通报告" width="700px">
     <el-form label-width="110px">
-      <el-form-item label="项目ID" required>
-        <el-input-number v-model="form.project_id" :min="1" />
+      <el-form-item label="项目" required>
+        <el-select
+          v-model="form.project_id"
+          filterable
+          placeholder="按时间排序选择项目"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="`${item.project_name} (${item.project_code})`"
+            :value="item.id"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="标段ID">
         <el-input-number v-model="form.section_id" :min="1" />

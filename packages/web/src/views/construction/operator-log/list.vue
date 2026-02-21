@@ -7,6 +7,7 @@ import {
   listOperatorLogs,
   type OperatorLog
 } from "@/api/log";
+import { useProjectOptions } from "@/composables/useProjectOptions";
 
 defineOptions({ name: "OperatorLogList" });
 
@@ -16,6 +17,7 @@ const list = ref<OperatorLog[]>([]);
 const page = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
+const { projects, loadProjects } = useProjectOptions();
 const filters = ref({
   project_id: undefined as number | undefined,
   shift: "",
@@ -47,7 +49,9 @@ const remove = async (row: OperatorLog) => {
   await loadData();
 };
 
-onMounted(loadData);
+onMounted(async () => {
+  await Promise.all([loadData(), loadProjects()]);
+});
 </script>
 
 <template>
@@ -69,8 +73,21 @@ onMounted(loadData);
       </div>
     </template>
     <el-form inline>
-      <el-form-item label="项目ID">
-        <el-input-number v-model="filters.project_id" :min="1" />
+      <el-form-item label="项目">
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          placeholder="按时间排序选择项目"
+          style="width: 320px"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="`${item.project_name} (${item.project_code})`"
+            :value="item.id"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item label="班次">
         <el-select v-model="filters.shift" clearable style="width: 140px">

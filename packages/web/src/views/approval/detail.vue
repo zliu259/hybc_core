@@ -16,6 +16,7 @@ import {
 } from "@/api/approval";
 import { getRiskReport } from "@/api/payment";
 import { getBatchAuditReport } from "@/api/reimbursement";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ApprovalDetail" });
 
@@ -76,6 +77,7 @@ const returnComment = ref("");
 const transferDialogVisible = ref(false);
 const transferToUserid = ref("");
 const transferReason = ref("");
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 const paymentRiskStatus = ref("none");
@@ -253,7 +255,9 @@ const handleResubmit = async () => {
 
 const goBack = () => router.push("/approval/index");
 
-onMounted(loadDetail);
+onMounted(async () => {
+  await Promise.all([loadDetail(), loadWecomUsers()]);
+});
 </script>
 
 <template>
@@ -530,7 +534,20 @@ onMounted(loadDetail);
     <el-dialog v-model="transferDialogVisible" title="转办审批" width="480px">
       <el-form label-width="80px">
         <el-form-item label="转办给">
-          <el-input v-model="transferToUserid" placeholder="输入用户ID" />
+          <el-select
+            v-model="transferToUserid"
+            clearable
+            filterable
+            placeholder="选择公司人员"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in wecomUsers"
+              :key="item.userid"
+              :label="`${item.name} (${item.userid})`"
+              :value="item.userid"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="转办原因">
           <el-input v-model="transferReason" type="textarea" :rows="2" />
