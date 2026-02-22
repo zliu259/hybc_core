@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { useNav } from "@/layout/hooks/useNav";
 import LaySearch from "../lay-search/index.vue";
 import LayNotice from "../lay-notice/index.vue";
+import LaySupport from "../lay-support/index.vue";
 import LayNavMix from "../lay-sidebar/NavMix.vue";
 import LaySidebarFullScreen from "../lay-sidebar/components/SidebarFullScreen.vue";
 import LaySidebarBreadCrumb from "../lay-sidebar/components/SidebarBreadCrumb.vue";
@@ -9,6 +11,9 @@ import LaySidebarTopCollapse from "../lay-sidebar/components/SidebarTopCollapse.
 
 import LogoutCircleRLine from "~icons/ri/logout-circle-r-line";
 import Setting from "~icons/ri/settings-3-line";
+import CustomerService2Line from "~icons/ri/customer-service-2-line";
+
+const supportVisible = ref(false);
 
 const {
   layout,
@@ -47,6 +52,14 @@ const {
       <LaySidebarFullScreen id="full-screen" />
       <!-- 消息通知 -->
       <LayNotice id="header-notice" />
+      <!-- 技术支持 -->
+      <span
+        class="action-icon navbar-bg-hover"
+        title="技术支持"
+        @click="supportVisible = true"
+      >
+        <IconifyIconOffline :icon="CustomerService2Line" />
+      </span>
       <!-- 退出登录 -->
       <el-dropdown trigger="click">
         <span class="el-dropdown-link navbar-bg-hover select-none">
@@ -70,13 +83,15 @@ const {
         </template>
       </el-dropdown>
       <span
-        class="set-icon navbar-bg-hover"
+        class="action-icon navbar-bg-hover"
         title="打开系统配置"
         @click="onPanel"
       >
         <IconifyIconOffline :icon="Setting" />
       </span>
     </div>
+
+    <LaySupport v-model:visible="supportVisible" />
   </div>
 </template>
 
@@ -119,6 +134,16 @@ const {
         height: 22px;
         border-radius: 50%;
       }
+    }
+
+    .action-icon {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 40px;
+      height: 48px;
+      font-size: 18px;
+      cursor: pointer;
     }
   }
 

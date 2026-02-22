@@ -33,6 +33,7 @@
 ## 3. Web 页面级规范（PureAdmin）
 
 ### 3.1 页面总索引（必须有明确文件指向）
+- 个人工作台首页：`packages/web/src/views/welcome/index.vue`
 - 仪表盘：`packages/web/src/views/dashboard/index.vue`
 - 实体管理：`packages/web/src/views/entity/index.vue`
 - 数据字典管理：`packages/web/src/views/dict/index.vue`
@@ -87,6 +88,7 @@
 - 日志公示看板：`packages/web/src/views/construction/dashboard.vue`
 - 进度预警视图：`packages/web/src/views/construction/progress-alert.vue`
 - 系统配置：`packages/web/src/views/admin/system.vue`
+- 全局技术支持抽屉：`packages/web/src/layout/components/lay-support/index.vue`
 
 ### 3.2 页面模板规范
 - 列表页模板：`页面标题区 + 筛选区 + 表格区 + 分页区`
@@ -308,6 +310,84 @@
 - 项目日志聚合区：同页集中展示该项目全部操作员日志、管理员日志、贯通报告，保证参与人员无需跨模块即可获取项目全貌。
 - 贯通报告标段绑定：贯通报告按 `section_id` 归集，在项目层与标段层均可追溯。
 - 对应 API：`/api/v1/project/:id/files`、`/api/v1/project/:id/files/:fileId`、`/api/v1/log/operator?project_id=:id&section_id=:sectionId`、`/api/v1/survey/breakthrough?project_id=:id&section_id=:sectionId`。
+
+### 3.5 Sprint 1 重构落地点（2026-02）
+- 默认首页路由切换到个人工作台：`packages/web/src/router/modules/home.ts`（`/` -> `/workspace/home`，保留 `/welcome` 兼容重定向）。
+- 个人工作台页面：`packages/web/src/views/welcome/index.vue`（欢迎卡、快捷入口、收款卡区、报销时间线、证书网格与到期预警）。
+- 全局技术支持抽屉入口：`packages/web/src/layout/components/lay-navbar/index.vue`。
+- 全局技术支持抽屉实现：`packages/web/src/layout/components/lay-support/index.vue`。
+- 技术支持 API 封装：`packages/web/src/api/support.ts`（`POST /api/v1/support/tickets`、`GET /api/v1/support/tickets?creator_id=me`）。
+- Sprint 1 菜单收敛：`packages/web/src/router/modules/{project,finance,asset,warehouse,construction,entity,dict,wecom,account,ai}.ts` 顶层菜单设为隐藏，保留路由可访问与后续 Sprint 渐进恢复。
+- Sprint 1 审批动作约束：`packages/web/src/views/approval/unified-tasklist.vue` 中通过/驳回/转签均要求填写审批意见。
+
+### 3.6 Sprint 2 重构落地点（2026-02）
+- 菜单恢复与命名对齐：
+  - `packages/web/src/router/modules/project.ts` 顶层菜单恢复可见，标题调整为“项目与现场指挥”。
+  - `packages/web/src/router/modules/warehouse.ts` 顶层菜单恢复可见，标题调整为“库房调度”。
+  - `packages/web/src/router/modules/asset.ts` 顶层菜单恢复可见，标题调整为“资产台账”。
+- 项目选择大厅（卡片流）补齐创建动作门槛：`packages/web/src/views/project/hub.vue`，仅允许 `super_admin/manager/site_manager` 显示“+ 创建项目”。
+- 出入库制单台重构为“左检索 + 右购物车”模式：`packages/web/src/views/warehouse/stock-order.vue`。
+- 双向对冲调度看板补齐签收核验对话框：`packages/web/src/views/warehouse/dispatch.vue`，签收前必须完成设备状态复核与实际送达数量确认。
+- 项目工作区详情交互改为抽屉优先：
+  - `packages/web/src/views/project/workspace/project-panel.vue`：标段详情由 `Dialog` 改为 `Drawer`；文件详情新增右侧抽屉。
+  - `packages/web/src/views/project/workspace/equipment-panel.vue`：设备行新增详情入口并使用右侧抽屉承载详情。
+
+### 3.7 Sprint 3 重构落地点（2026-02）
+- 财务中心菜单恢复并命名对齐：`packages/web/src/router/modules/finance.ts`（顶层标题“财务中心”）。
+- 合同执行监控高密度改造：`packages/web/src/views/finance/contract/monitor.vue`
+  - 表格切换为紧凑模式（`size=small`）
+  - 打款进度增加风险等级标签（正常/阈值预警/超高风险）
+  - 阈值色带与金额变更抽屉保留
+- 智能发单台关系输入收敛：`packages/web/src/views/finance/payment/wizard.vue`
+  - 超阈值合同流中“对方单位”改为 `el-select`（来源收款人）
+  - 付款金额、实体 ID 保持 `el-input-number` 数值控件
+- 报销集中打款流程抽屉化：`packages/web/src/views/finance/reimbursement/payout.vue`
+  - 登记打款从 `Dialog` 改为 `Drawer`
+  - 新增批量选择金额汇总展示（批次数 + 合计金额）
+- 财务快照看板图表化：`packages/web/src/views/finance/receipt/dashboard.vue`
+  - 新增 ECharts 柱状图（应收已开票/应收已到账/对外付款/报销总额）
+  - 保留 KPI 卡片与项目筛选，形成“卡片 + 图表”双层快照
+
+### 3.8 Sprint 4 重构落地点（2026-02）
+- 超管统一入口：`packages/web/src/router/modules/admin.ts`
+  - 汇聚审批流程设计、阈值规则、AI/Runner、系统底座、企微集成、Raw Ops、Helpdesk
+  - 所有子页严格 `super_admin` 可见
+- 业务数据全量运维台（左树右表）：`packages/web/src/views/admin/raw-ops.vue`
+  - 左侧数据域树（实体/字典/企微成员/企微部门）
+  - 右侧高密度表格与刷新操作
+  - 顶部高风险红色告警
+- IT 支持工单处理台：`packages/web/src/views/admin/helpdesk.vue`
+  - 工单列表 + 状态筛选
+  - 单条详情右侧抽屉
+  - 处理说明填写与“标记已解决”闭环动作
+- 支持工单超管 API 扩展：`packages/web/src/api/support.ts`
+  - `GET /api/v1/support/tickets`
+  - `GET /api/v1/support/tickets/:id`
+  - `POST /api/v1/support/tickets/:id/resolve`
+- 系统底座权限收敛为超管：
+  - `packages/web/src/router/modules/entity.ts`
+  - `packages/web/src/router/modules/dict.ts`
+  - `packages/web/src/router/modules/wecom.ts`
+
+### 3.9 UI Refactor Plan 补齐项（2026-02）
+- IA 规范路径补齐：
+  - `packages/web/src/router/modules/workspace.ts`（`/workspace/home`）
+  - `packages/web/src/router/modules/field.ts`（`/field/projects`、`/field/project/:id`）
+  - `packages/web/src/router/modules/warehouse-assets.ts`（`/warehouse-assets/ledger`、`/warehouse-assets/creator`、`/warehouse-assets/templates`、`/warehouse-assets/dispatch`）
+  - `packages/web/src/router/modules/finance.ts` 新增 `/finance/snapshot`
+- 旧路径别名重定向（redirect-only）：
+  - `packages/web/src/router/modules/{project,warehouse,asset,ai,entity,dict,wecom}.ts`
+  - `packages/web/src/router/modules/approval.ts` 的模板/阈值旧入口重定向到 `/admin/*`
+- 项目工作区补齐文件库标签页：
+  - `packages/web/src/views/project/workspace/index.vue`
+  - `packages/web/src/views/project/workspace/file-panel.vue`
+- 财务阈值风险强化（>90%行高亮）：
+  - `packages/web/src/views/finance/contract/monitor.vue`
+- Raw Ops 管理能力补齐（超管侧实体/字典 CRUD）：
+  - `packages/web/src/views/admin/raw-ops.vue`
+- 技术支持附件从“名称记录”升级到“file_key 上传提交”：
+  - `packages/web/src/layout/components/lay-support/index.vue`
+  - `packages/web/src/views/admin/helpdesk.vue`（详情抽屉展示附件）
 
 ## 4. 小程序页面级规范（企业微信）
 

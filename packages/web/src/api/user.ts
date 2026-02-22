@@ -66,3 +66,18 @@ export const getCurrentUser = () => {
     };
   }>("get", "/api/v1/user/me");
 };
+
+export type MyBankAccount = {
+  id: number;
+  bank_name: string;
+  account_name: string;
+  account_no: string;
+  status?: string;
+};
+
+export const listMyBankAccounts = () => {
+  return http.request<{ success: boolean; data: MyBankAccount[] }>(
+    "get",
+    "/api/v1/user/me/bank-accounts"
+  );
+};

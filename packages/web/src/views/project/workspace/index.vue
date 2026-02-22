@@ -5,6 +5,7 @@ import { useUserStoreHook } from "@/store/modules/user";
 import ProjectWorkspaceProjectPanel from "./project-panel.vue";
 import ProjectWorkspaceEquipmentPanel from "./equipment-panel.vue";
 import ProjectWorkspaceFinancePanel from "./finance-panel.vue";
+import ProjectWorkspaceFilePanel from "./file-panel.vue";
 
 defineOptions({
   name: "ProjectWorkspace"
@@ -40,18 +41,21 @@ const isOperator = computed(() => (userStore.roles ?? []).includes("operator"));
           项目 ID: {{ projectId }}
         </div>
       </div>
-      <el-button @click="$router.push(`/project/detail/${projectId}`)">
-        打开旧版详情
+      <el-button @click="$router.push('/field/projects')">
+        返回项目大厅
       </el-button>
     </div>
   </el-card>
 
   <el-tabs v-model="activeTab" type="border-card">
-    <el-tab-pane label="项目面板" name="project">
+    <el-tab-pane label="动态日志与工作段" name="project">
       <ProjectWorkspaceProjectPanel :project-id="projectId" />
     </el-tab-pane>
-    <el-tab-pane label="设备面板" name="equipment">
+    <el-tab-pane label="设备与材料" name="equipment">
       <ProjectWorkspaceEquipmentPanel :project-id="projectId" />
+    </el-tab-pane>
+    <el-tab-pane label="文件库" name="files">
+      <ProjectWorkspaceFilePanel :project-id="projectId" />
     </el-tab-pane>
     <el-tab-pane label="财务面板" name="finance">
       <ProjectWorkspaceFinancePanel

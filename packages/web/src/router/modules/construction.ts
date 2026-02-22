@@ -8,7 +8,8 @@ export default {
   meta: {
     icon: "ep:histogram",
     title: "施工日志",
-    rank: 18
+    rank: 18,
+    showLink: false
   },
   children: [
     {

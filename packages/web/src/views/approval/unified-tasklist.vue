@@ -68,9 +68,13 @@ const selectRow = async (row: PendingApprovalItem) => {
 
 const handleApprove = async () => {
   if (!selectedId.value) return;
+  if (!comment.value.trim()) {
+    message("通过时请填写意见", { type: "warning" });
+    return;
+  }
   actionLoading.value = true;
   try {
-    await approveApproval(selectedId.value, { comment: comment.value || undefined });
+    await approveApproval(selectedId.value, { comment: comment.value.trim() });
     message("已通过", { type: "success" });
     comment.value = "";
     await loadPending();
@@ -102,11 +106,15 @@ const handleTransfer = async () => {
     message("请填写转签对象 userid", { type: "warning" });
     return;
   }
+  if (!comment.value.trim()) {
+    message("转签时请填写意见", { type: "warning" });
+    return;
+  }
   actionLoading.value = true;
   try {
     await transferApproval(selectedId.value, {
       to_userid: transferTo.value.trim(),
-      reason: comment.value || "统一工作台发起转签"
+      reason: comment.value.trim()
     });
     message("已转签", { type: "success" });
     transferTo.value = "";

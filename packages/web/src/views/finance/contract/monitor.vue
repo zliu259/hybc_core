@@ -33,6 +33,17 @@ const progressColor = (ratio: number) => {
   return "#2d5f9a";
 };
 
+const paidRatio = (row: Contract) => {
+  if (!row.total_amount || row.total_amount <= 0) return 0;
+  return Number(((row.paid_amount / row.total_amount) * 100).toFixed(2));
+};
+
+const riskTag = (ratio: number): { type: TagType; label: string } => {
+  if (ratio > 95) return { type: "danger", label: "超高风险" };
+  if (ratio >= 80) return { type: "warning", label: "阈值预警" };
+  return { type: "success", label: "正常" };
+};
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -88,6 +99,10 @@ const submitAmountChange = async () => {
 
 const tableRows = computed(() => rows.value);
 
+const tableRowClassName = ({ row }: { row: Contract }) => {
+  return paidRatio(row) > 90 ? "danger-row" : "";
+};
+
 onMounted(loadData);
 </script>
 
@@ -116,7 +131,14 @@ onMounted(loadData);
       <el-button type="primary" @click="loadData">查询</el-button>
     </el-form>
 
-    <el-table :data="tableRows" :loading="loading" style="margin-top: 14px" stripe>
+    <el-table
+      :data="tableRows"
+      :loading="loading"
+      :row-class-name="tableRowClassName"
+      style="margin-top: 14px"
+      stripe
+      size="small"
+    >
       <el-table-column prop="contract_no" label="合同号" width="170" />
       <el-table-column prop="counterparty" label="对方单位" min-width="180" />
       <el-table-column prop="total_amount" label="合同总额" width="140" />
@@ -124,10 +146,17 @@ onMounted(loadData);
       <el-table-column label="打款进度" min-width="260">
         <template #default="{ row }">
           <el-progress
-            :percentage="Number(((row.paid_amount / row.total_amount) * 100 || 0).toFixed(2))"
+            :percentage="paidRatio(row)"
             :stroke-width="16"
-            :color="progressColor((row.paid_amount / row.total_amount) * 100)"
+            :color="progressColor(paidRatio(row))"
           />
+        </template>
+      </el-table-column>
+      <el-table-column label="风险等级" width="120">
+        <template #default="{ row }">
+          <el-tag :type="riskTag(paidRatio(row)).type">
+            {{ riskTag(paidRatio(row)).label }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="状态" width="120">
@@ -201,5 +230,9 @@ onMounted(loadData);
   margin-top: 4px;
   font-size: 13px;
   color: #6e6458;
+}
+
+:deep(.danger-row > td) {
+  background: #fff1f1 !important;
 }
 </style>

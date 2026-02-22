@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { listAssetTypes, type AssetType } from "@/api/asset";
 import { listProjects, type Project } from "@/api/project";
@@ -24,8 +24,7 @@ const assetTypes = ref<AssetType[]>([]);
 const projects = ref<Project[]>([]);
 
 const filters = ref({ status: "", order_type: "" });
-
-const createDialogVisible = ref(false);
+const assetKeyword = ref("");
 const submitting = ref(false);
 const actionId = ref<number | null>(null);
 
@@ -35,13 +34,39 @@ const form = ref({
   from_warehouse_id: undefined as number | undefined,
   to_warehouse_id: undefined as number | undefined,
   remark: "",
-  items: [
-    { asset_type_id: undefined as number | undefined, quantity: 1 }
-  ] as Array<{
-    asset_type_id: number | undefined;
+  items: [] as Array<{
+    asset_type_id: number;
     quantity: number;
   }>
 });
+
+const filteredAssetTypes = computed(() => {
+  const q = assetKeyword.value.trim().toLowerCase();
+  if (!q) return assetTypes.value;
+  return assetTypes.value.filter(item => {
+    const source = `${item.type_name} ${item.type_code}`.toLowerCase();
+    return source.includes(q);
+  });
+});
+
+const canSubmit = computed(() => {
+  return form.value.items.length > 0 && !submitting.value;
+});
+
+const orderTypeLabel = (value: StockOrder["order_type"]) => {
+  if (value === "inbound") return "入库";
+  if (value === "outbound") return "出库";
+  return "调拨";
+};
+
+const statusTag = (status: string) => {
+  if (status === "executed") return "success";
+  if (status === "approved") return "primary";
+  if (status === "pending_approval") return "warning";
+  if (status === "rejected") return "danger";
+  if (status === "cancelled") return "info";
+  return "info";
+};
 
 const loadMeta = async () => {
   const [warehouseRes, typeRes, projectRes] = await Promise.all([
@@ -67,43 +92,70 @@ const loadData = async () => {
   }
 };
 
-const openCreate = () => {
+const resetCreator = () => {
   form.value = {
     order_type: "outbound",
     project_id: undefined,
     from_warehouse_id: undefined,
     to_warehouse_id: undefined,
     remark: "",
-    items: [{ asset_type_id: undefined, quantity: 1 }]
+    items: []
   };
-  createDialogVisible.value = true;
 };
 
-const addItem = () => {
-  form.value.items.push({ asset_type_id: undefined, quantity: 1 });
+const addAssetToCart = (assetTypeId: number) => {
+  if (form.value.items.some(item => item.asset_type_id === assetTypeId)) {
+    message("该资产类型已在制单清单中", { type: "info" });
+    return;
+  }
+  form.value.items.push({ asset_type_id: assetTypeId, quantity: 1 });
 };
 
-const removeItem = (index: number) => {
+const removeCartItem = (index: number) => {
   form.value.items.splice(index, 1);
 };
 
+const getAssetTypeName = (assetTypeId: number) => {
+  const found = assetTypes.value.find(item => item.id === assetTypeId);
+  return found ? found.type_name : `资产类型#${assetTypeId}`;
+};
+
+const validateOrder = () => {
+  if (!form.value.items.length) {
+    message("请先从左侧选择资产加入制单清单", { type: "warning" });
+    return false;
+  }
+  if (form.value.order_type === "outbound" && !form.value.from_warehouse_id) {
+    message("出库单必须选择来源仓库", { type: "warning" });
+    return false;
+  }
+  if (form.value.order_type === "inbound" && !form.value.to_warehouse_id) {
+    message("入库单必须选择目标仓库", { type: "warning" });
+    return false;
+  }
+  if (
+    form.value.order_type === "transfer" &&
+    (!form.value.from_warehouse_id ||
+      !form.value.to_warehouse_id ||
+      form.value.from_warehouse_id === form.value.to_warehouse_id)
+  ) {
+    message("调拨单必须选择不同的来源/目标仓库", { type: "warning" });
+    return false;
+  }
+  if (form.value.items.some(item => item.quantity <= 0)) {
+    message("数量必须大于 0", { type: "warning" });
+    return false;
+  }
+  return true;
+};
+
 const submit = async () => {
-  if (form.value.items.length === 0) {
-    message("请至少添加一个明细", { type: "warning" });
-    return;
-  }
+  if (!validateOrder()) return;
 
-  const items: StockOrderItemInput[] = form.value.items
-    .filter(item => item.asset_type_id && item.quantity > 0)
-    .map(item => ({
-      asset_type_id: item.asset_type_id,
-      quantity: item.quantity
-    }));
-
-  if (items.length === 0) {
-    message("请填写有效明细", { type: "warning" });
-    return;
-  }
+  const items: StockOrderItemInput[] = form.value.items.map(item => ({
+    asset_type_id: item.asset_type_id,
+    quantity: item.quantity
+  }));
 
   submitting.value = true;
   try {
@@ -115,8 +167,8 @@ const submit = async () => {
       remark: form.value.remark || undefined,
       items
     });
-    message(`出入库单创建成功: ${result.data.order_no}`, { type: "success" });
-    createDialogVisible.value = false;
+    message(`制单成功: ${result.data.order_no}`, { type: "success" });
+    resetCreator();
     await loadData();
   } finally {
     submitting.value = false;
@@ -165,48 +217,187 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" style="background: #fffaf2">
+  <el-card shadow="never" class="order-creator" v-loading="loading">
     <template #header>
-      <div
-        style="
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        "
-      >
-        <span>出入库单管理</span>
-        <el-button type="primary" @click="openCreate">新建出入库单</el-button>
+      <div class="order-creator__header">
+        <div>
+          <div class="title">出入库制单工作台</div>
+          <div class="sub">左侧检索资源，右侧购物车式制单</div>
+        </div>
       </div>
     </template>
 
-    <el-form inline>
-      <el-form-item label="类型">
-        <el-select v-model="filters.order_type" clearable style="width: 140px">
-          <el-option label="inbound" value="inbound" />
-          <el-option label="outbound" value="outbound" />
-          <el-option label="transfer" value="transfer" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select v-model="filters.status" clearable style="width: 160px">
-          <el-option label="draft" value="draft" />
-          <el-option label="pending_approval" value="pending_approval" />
-          <el-option label="approved" value="approved" />
-          <el-option label="executed" value="executed" />
-          <el-option label="rejected" value="rejected" />
-          <el-option label="cancelled" value="cancelled" />
-        </el-select>
-      </el-form-item>
-      <el-button type="primary" @click="loadData">查询</el-button>
-    </el-form>
+    <div class="creator-layout">
+      <div class="resource-panel">
+        <el-input
+          v-model="assetKeyword"
+          clearable
+          placeholder="搜索资产类型（名称/编码）"
+        />
 
-    <el-table :data="rows" :loading="loading" style="margin-top: 12px">
-      <el-table-column prop="order_no" label="单号" width="160" />
-      <el-table-column prop="order_type" label="类型" width="100" />
+        <el-scrollbar max-height="540px" class="resource-list">
+          <div
+            v-for="asset in filteredAssetTypes"
+            :key="asset.id"
+            class="resource-item"
+          >
+            <div>
+              <div class="resource-item__name">{{ asset.type_name }}</div>
+              <div class="resource-item__meta">{{ asset.type_code }} · {{ asset.unit || "件" }}</div>
+            </div>
+            <el-button type="primary" plain @click="addAssetToCart(asset.id)">加入</el-button>
+          </div>
+        </el-scrollbar>
+      </div>
+
+      <div class="cart-panel">
+        <el-form label-position="top">
+          <el-row :gutter="10">
+            <el-col :xs="24" :sm="8">
+              <el-form-item label="调拨类型">
+                <el-select v-model="form.order_type" style="width: 100%">
+                  <el-option label="入库" value="inbound" />
+                  <el-option label="出库" value="outbound" />
+                  <el-option label="调拨" value="transfer" />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="16">
+              <el-form-item label="关联项目">
+                <el-select
+                  v-model="form.project_id"
+                  clearable
+                  filterable
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="item in projects"
+                    :key="item.id"
+                    :label="`${item.project_name} (${item.project_code})`"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="10">
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="来源仓库">
+                <el-select
+                  v-model="form.from_warehouse_id"
+                  clearable
+                  filterable
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="item in warehouses"
+                    :key="item.id"
+                    :label="item.warehouse_name"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+            <el-col :xs="24" :sm="12">
+              <el-form-item label="目标仓库">
+                <el-select
+                  v-model="form.to_warehouse_id"
+                  clearable
+                  filterable
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="item in warehouses"
+                    :key="item.id"
+                    :label="item.warehouse_name"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-form-item label="备注">
+            <el-input v-model="form.remark" type="textarea" :rows="2" />
+          </el-form-item>
+        </el-form>
+
+        <el-table :data="form.items" size="small" empty-text="请从左侧加入资产" border>
+          <el-table-column label="资产类型" min-width="240">
+            <template #default="scope">
+              {{ getAssetTypeName(scope.row.asset_type_id) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="数量" width="150">
+            <template #default="scope">
+              <el-input-number
+                v-model="scope.row.quantity"
+                :min="0.01"
+                :precision="2"
+                :controls="true"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="90">
+            <template #default="scope">
+              <el-button link type="danger" @click="removeCartItem(scope.$index)">删除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <div class="cart-actions">
+          <el-button @click="resetCreator">清空</el-button>
+          <el-button type="primary" :disabled="!canSubmit" :loading="submitting" @click="submit">
+            提交制单
+          </el-button>
+        </div>
+      </div>
+    </div>
+  </el-card>
+
+  <el-card shadow="never" class="order-list" v-loading="loading">
+    <template #header>
+      <div class="order-list__header">
+        <span>出入库单列表</span>
+        <el-form inline>
+          <el-form-item label="类型">
+            <el-select v-model="filters.order_type" clearable style="width: 140px">
+              <el-option label="入库" value="inbound" />
+              <el-option label="出库" value="outbound" />
+              <el-option label="调拨" value="transfer" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select v-model="filters.status" clearable style="width: 160px">
+              <el-option label="draft" value="draft" />
+              <el-option label="pending_approval" value="pending_approval" />
+              <el-option label="approved" value="approved" />
+              <el-option label="executed" value="executed" />
+              <el-option label="rejected" value="rejected" />
+              <el-option label="cancelled" value="cancelled" />
+            </el-select>
+          </el-form-item>
+          <el-button type="primary" @click="loadData">查询</el-button>
+        </el-form>
+      </div>
+    </template>
+
+    <el-table :data="rows">
+      <el-table-column prop="order_no" label="单号" width="170" />
+      <el-table-column label="类型" width="90">
+        <template #default="scope">
+          {{ orderTypeLabel(scope.row.order_type) }}
+        </template>
+      </el-table-column>
       <el-table-column prop="project_id" label="项目ID" width="100" />
       <el-table-column prop="from_warehouse_id" label="来源仓库" width="110" />
       <el-table-column prop="to_warehouse_id" label="目标仓库" width="110" />
-      <el-table-column prop="status" label="状态" width="130" />
+      <el-table-column label="状态" width="120">
+        <template #default="scope">
+          <el-tag :type="statusTag(scope.row.status)">{{ scope.row.status }}</el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="updated_at" label="更新时间" width="190" />
       <el-table-column label="操作" width="240" fixed="right">
         <template #default="scope">
@@ -229,10 +420,7 @@ onMounted(async () => {
             执行
           </el-button>
           <el-button
-            v-if="
-              scope.row.status === 'draft' ||
-              scope.row.status === 'pending_approval'
-            "
+            v-if="scope.row.status === 'draft' || scope.row.status === 'pending_approval'"
             link
             type="danger"
             :loading="actionId === scope.row.id"
@@ -244,95 +432,88 @@ onMounted(async () => {
       </el-table-column>
     </el-table>
   </el-card>
-
-  <el-dialog v-model="createDialogVisible" title="新建出入库单" width="760px">
-    <el-form label-width="100px">
-      <el-form-item label="单据类型">
-        <el-select v-model="form.order_type" style="width: 180px">
-          <el-option label="inbound" value="inbound" />
-          <el-option label="outbound" value="outbound" />
-          <el-option label="transfer" value="transfer" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="项目">
-        <el-select
-          v-model="form.project_id"
-          clearable
-          filterable
-          style="width: 100%"
-        >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="来源仓库">
-        <el-select
-          v-model="form.from_warehouse_id"
-          clearable
-          filterable
-          style="width: 100%"
-        >
-          <el-option
-            v-for="item in warehouses"
-            :key="item.id"
-            :label="item.warehouse_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="目标仓库">
-        <el-select
-          v-model="form.to_warehouse_id"
-          clearable
-          filterable
-          style="width: 100%"
-        >
-          <el-option
-            v-for="item in warehouses"
-            :key="item.id"
-            :label="item.warehouse_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="备注">
-        <el-input v-model="form.remark" type="textarea" :rows="2" />
-      </el-form-item>
-      <el-divider>明细</el-divider>
-      <div
-        v-for="(item, index) in form.items"
-        :key="index"
-        style="display: flex; gap: 8px; margin-bottom: 8px"
-      >
-        <el-select
-          v-model="item.asset_type_id"
-          filterable
-          placeholder="资产类型"
-          style="flex: 1"
-        >
-          <el-option
-            v-for="t in assetTypes"
-            :key="t.id"
-            :label="t.type_name"
-            :value="t.id"
-          />
-        </el-select>
-        <el-input-number v-model="item.quantity" :min="0.01" :precision="2" />
-        <el-button :disabled="form.items.length <= 1" @click="removeItem(index)"
-          >删除</el-button
-        >
-      </div>
-      <el-button @click="addItem">新增明细</el-button>
-    </el-form>
-    <template #footer>
-      <el-button @click="createDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submit"
-        >创建</el-button
-      >
-    </template>
-  </el-dialog>
 </template>
+
+<style scoped>
+.order-creator,
+.order-list {
+  background: #fffaf2;
+  margin-bottom: 12px;
+}
+
+.title {
+  font-size: 18px;
+  font-weight: 700;
+  color: #2a241d;
+}
+
+.sub {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6e6458;
+}
+
+.creator-layout {
+  display: grid;
+  grid-template-columns: 34% 66%;
+  gap: 12px;
+}
+
+.resource-panel,
+.cart-panel {
+  border: 1px solid #d9ceb9;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+}
+
+.resource-list {
+  margin-top: 10px;
+}
+
+.resource-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid #e8ddc8;
+  border-radius: 8px;
+  padding: 10px;
+  margin-bottom: 8px;
+}
+
+.resource-item__name {
+  font-weight: 600;
+  color: #2a241d;
+}
+
+.resource-item__meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6e6458;
+}
+
+.cart-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.order-list__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+@media (max-width: 980px) {
+  .creator-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .order-list__header {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+}
+</style>

@@ -4,38 +4,39 @@ export default {
   path: "/wecom",
   name: "WeCom",
   component: Layout,
-  redirect: "/wecom/contacts",
+  redirect: "/admin/wecom-integration",
   meta: {
     icon: "ep:user",
     title: "企业微信",
-    rank: 14
+    rank: 14,
+    showLink: false
   },
   children: [
     {
       path: "/wecom/contacts",
       name: "WeComContacts",
-      component: () => import("@/views/wecom/contacts.vue"),
+      redirect: "/admin/wecom-integration",
       meta: {
-        title: "通讯录",
-        roles: ["super_admin", "manager", "site_manager"]
+        title: "通讯录(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/wecom/member-admin",
       name: "WeComMemberAdmin",
-      component: () => import("@/views/wecom/member-admin.vue"),
+      redirect: "/admin/wecom-integration",
       meta: {
-        title: "成员查看(管理员)",
-        roles: ["super_admin", "manager", "site_manager"]
+        title: "成员查看(管理员)(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/wecom/sdk",
       name: "WeComSdk",
-      component: () => import("@/views/wecom/sdk.vue"),
+      redirect: "/admin/wecom-integration",
       meta: {
-        title: "JS-SDK能力",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "JS-SDK能力(旧路径)",
+        showLink: false
       }
     }
   ]

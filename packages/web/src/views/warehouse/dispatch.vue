@@ -12,6 +12,10 @@ defineOptions({ name: "WarehouseDispatch" });
 const loading = ref(false);
 const actionLoading = ref(false);
 const rows = ref<StockOrder[]>([]);
+const confirmVisible = ref(false);
+const confirmOrder = ref<StockOrder | null>(null);
+const receiveStatus = ref("good");
+const receivedQty = ref(1);
 
 const columns = [
   { key: "inbound_pending", title: "待处理入库" },
@@ -68,18 +72,36 @@ const onDrop = async (event: DragEvent, columnKey: string) => {
   if (!row) return;
 
   if (columnKey === "done" && row.status === "approved") {
-    actionLoading.value = true;
-    try {
-      await executeStockOrder(row.id);
-      message(`单据 ${row.order_no} 已确认执行`, { type: "success" });
-      await loadData();
-    } finally {
-      actionLoading.value = false;
-    }
+    confirmOrder.value = row;
+    receiveStatus.value = "good";
+    receivedQty.value = 1;
+    confirmVisible.value = true;
     return;
   }
 
   message("当前拖拽仅支持将已审批单据拖入“已完成”并执行", { type: "info" });
+};
+
+const confirmReceive = async () => {
+  if (!confirmOrder.value) return;
+  if (receivedQty.value <= 0) {
+    message("实际送达数量必须大于 0", { type: "warning" });
+    return;
+  }
+
+  actionLoading.value = true;
+  try {
+    await executeStockOrder(confirmOrder.value.id);
+    message(
+      `单据 ${confirmOrder.value.order_no} 已签收（状态: ${receiveStatus.value}，数量: ${receivedQty.value}）`,
+      { type: "success" }
+    );
+    confirmVisible.value = false;
+    confirmOrder.value = null;
+    await loadData();
+  } finally {
+    actionLoading.value = false;
+  }
 };
 
 const onDragOver = (event: DragEvent) => {
@@ -124,6 +146,33 @@ onMounted(loadData);
       </div>
     </div>
   </el-card>
+
+  <el-dialog v-model="confirmVisible" title="签收核验" width="460px">
+    <el-form label-width="120px" label-position="left">
+      <el-form-item label="单据编号">
+        <span>{{ confirmOrder?.order_no }}</span>
+      </el-form-item>
+      <el-form-item label="调拨类型">
+        <span>{{ confirmOrder?.order_type }}</span>
+      </el-form-item>
+      <el-form-item label="设备状态复核">
+        <el-select v-model="receiveStatus" style="width: 100%">
+          <el-option label="良好" value="good" />
+          <el-option label="需维修" value="repair" />
+          <el-option label="报废" value="scrap" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="实际送达数量">
+        <el-input-number v-model="receivedQty" :min="0.01" :precision="2" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="confirmVisible = false">取消</el-button>
+      <el-button type="primary" :loading="actionLoading" @click="confirmReceive"
+        >确认签收</el-button
+      >
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>

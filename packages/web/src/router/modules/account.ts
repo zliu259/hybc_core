@@ -8,7 +8,8 @@ export default {
   meta: {
     icon: "ep:lock",
     title: "账号安全",
-    rank: 18
+    rank: 18,
+    showLink: false
   },
   children: [
     {

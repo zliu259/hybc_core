@@ -4,20 +4,21 @@ export default {
   path: "/entity",
   name: "Entity",
   component: Layout,
-  redirect: "/entity/index",
+  redirect: "/admin/system-base/entity",
   meta: {
     icon: "ep:office-building",
     title: "实体管理",
-    rank: 11
+    rank: 11,
+    showLink: false
   },
   children: [
     {
       path: "/entity/index",
       name: "EntityManagement",
-      component: () => import("@/views/entity/index.vue"),
+      redirect: "/admin/system-base/entity",
       meta: {
-        title: "实体管理",
-        roles: ["super_admin", "manager"]
+        title: "实体管理(旧路径)",
+        showLink: false
       }
     }
   ]

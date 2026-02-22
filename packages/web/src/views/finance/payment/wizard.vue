@@ -46,7 +46,7 @@ const directForm = ref({
 const contractForm = ref({
   project_id: undefined as number | undefined,
   entity_id: 1,
-  counterparty: "",
+  payee_id: undefined as number | undefined,
   contract_type: "outbound_service",
   handler_userid: "",
   contract_date: "",
@@ -67,6 +67,11 @@ const thresholdHint = computed(() =>
     ? `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`
     : `金额未超过阈值 ${thresholdLimit.value.toLocaleString()}，可直接走付款申请`
 );
+
+const selectedContractCounterparty = computed(() => {
+  const target = payees.value.find(item => item.id === contractForm.value.payee_id);
+  return target ? target.name : "";
+});
 
 const loadMeta = async () => {
   const [thresholdRes, payeeRes, contractRes] = await Promise.all([
@@ -135,7 +140,12 @@ const submitDirectPayment = async () => {
 };
 
 const submitContractFlow = async () => {
-  if (!amountInput.value || !contractForm.value.project_id || !contractForm.value.handler_userid) {
+  if (
+    !amountInput.value ||
+    !contractForm.value.project_id ||
+    !contractForm.value.payee_id ||
+    !contractForm.value.handler_userid
+  ) {
     message("请先填写合同关键字段", { type: "warning" });
     return;
   }
@@ -146,7 +156,7 @@ const submitContractFlow = async () => {
       direction: "outbound",
       project_id: contractForm.value.project_id,
       entity_id: contractForm.value.entity_id,
-      counterparty: contractForm.value.counterparty,
+      counterparty: selectedContractCounterparty.value,
       contract_type: contractForm.value.contract_type,
       handler_userid: contractForm.value.handler_userid,
       contract_date: contractForm.value.contract_date,
@@ -312,8 +322,21 @@ onMounted(async () => {
           <el-form-item label="经营实体ID">
             <el-input-number v-model="contractForm.entity_id" :min="1" style="width: 220px" />
           </el-form-item>
-          <el-form-item label="对方单位">
-            <el-input v-model="contractForm.counterparty" />
+          <el-form-item label="对方单位" required>
+            <el-select
+              v-model="contractForm.payee_id"
+              clearable
+              filterable
+              placeholder="选择收款单位"
+              style="width: 360px"
+            >
+              <el-option
+                v-for="item in payees"
+                :key="item.id"
+                :label="`${item.name} (${item.bank_name})`"
+                :value="item.id"
+              />
+            </el-select>
           </el-form-item>
           <el-form-item label="经办人">
             <el-select

@@ -4,65 +4,65 @@ export default {
   path: "/warehouse",
   name: "Warehouse",
   component: Layout,
-  redirect: "/warehouse/index",
+  redirect: "/warehouse-assets/creator",
   meta: {
     icon: "ep:goods",
-    title: "仓库管理",
-    rank: 17
+    title: "库房调度(旧路径)",
+    showLink: false
   },
   children: [
     {
       path: "/warehouse/index",
       name: "WarehouseIndex",
-      component: () => import("@/views/warehouse/index.vue"),
+      redirect: "/warehouse-assets/creator",
       meta: {
-        title: "仓库信息",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "仓库信息(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/warehouse/inventory",
       name: "WarehouseInventory",
-      component: () => import("@/views/warehouse/inventory.vue"),
+      redirect: "/warehouse-assets/ledger",
       meta: {
-        title: "库存概览",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "库存概览(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/warehouse/alert",
       name: "WarehouseAlert",
-      component: () => import("@/views/warehouse/alert.vue"),
+      redirect: "/warehouse-assets/dispatch",
       meta: {
-        title: "预警中心",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "预警中心(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/warehouse/stock-order",
       name: "WarehouseStockOrder",
-      component: () => import("@/views/warehouse/stock-order.vue"),
+      redirect: "/warehouse-assets/creator",
       meta: {
-        title: "出入库单",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "出入库单(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/warehouse/dispatch",
       name: "WarehouseDispatch",
-      component: () => import("@/views/warehouse/dispatch.vue"),
+      redirect: "/warehouse-assets/dispatch",
       meta: {
-        title: "出入库调度",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "出入库调度(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/warehouse/equipment-plan",
       name: "WarehouseEquipmentPlan",
-      component: () => import("@/views/warehouse/equipment-plan.vue"),
+      redirect: "/warehouse-assets/templates",
       meta: {
-        title: "设备规划",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "设备规划(旧路径)",
+        showLink: false
       }
     }
   ]

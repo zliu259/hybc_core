@@ -7,6 +7,13 @@ const props = defineProps<{ projectId: number }>();
 const loading = ref(false);
 const trackedAssets = ref<Array<Record<string, unknown>>>([]);
 const consumptions = ref<Array<Record<string, unknown>>>([]);
+const assetDetailDrawerVisible = ref(false);
+const currentAsset = ref<Record<string, unknown> | null>(null);
+
+const openAssetDetail = (row: Record<string, unknown>) => {
+  currentAsset.value = row;
+  assetDetailDrawerVisible.value = true;
+};
 
 const loadData = async () => {
   if (!props.projectId) return;
@@ -50,6 +57,13 @@ onMounted(loadData);
               label="位置"
               min-width="120"
             />
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="scope">
+                <el-button link type="primary" @click="openAssetDetail(scope.row)">
+                  详情
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
@@ -62,5 +76,30 @@ onMounted(loadData);
         </el-card>
       </el-col>
     </el-row>
+
+    <el-drawer
+      v-model="assetDetailDrawerVisible"
+      title="设备详情"
+      size="520px"
+      destroy-on-close
+    >
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="资产编码">
+          {{ currentAsset?.asset_code || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="资产名称">
+          {{ currentAsset?.asset_name || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="状态">
+          {{ currentAsset?.status || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="当前位置">
+          {{ currentAsset?.current_location || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="最近更新时间">
+          {{ currentAsset?.updated_at || "-" }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </el-drawer>
   </div>
 </template>

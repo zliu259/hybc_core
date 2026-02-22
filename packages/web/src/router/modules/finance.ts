@@ -7,7 +7,7 @@ export default {
   redirect: "/finance/contract",
   meta: {
     icon: "ep:money",
-    title: "财务管理",
+    title: "财务中心",
     rank: 15
   },
   children: [
@@ -102,12 +102,21 @@ export default {
       }
     },
     {
-      path: "/finance/receipt/dashboard",
-      name: "ReceiptDashboard",
+      path: "/finance/snapshot",
+      name: "FinanceSnapshot",
       component: () => import("@/views/finance/receipt/dashboard.vue"),
       meta: {
-        title: "收款统计",
+        title: "财务报表快照",
         roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/receipt/dashboard",
+      name: "ReceiptDashboard",
+      redirect: "/finance/snapshot",
+      meta: {
+        title: "收款统计(旧路径)",
+        showLink: false
       }
     },
     {

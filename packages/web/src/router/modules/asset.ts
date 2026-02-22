@@ -4,46 +4,46 @@ export default {
   path: "/asset",
   name: "Asset",
   component: Layout,
-  redirect: "/asset/list",
+  redirect: "/warehouse-assets/ledger",
   meta: {
     icon: "ep:box",
-    title: "资产管理",
-    rank: 16
+    title: "资产台账(旧路径)",
+    showLink: false
   },
   children: [
     {
       path: "/asset/type-config",
       name: "AssetTypeConfig",
-      component: () => import("@/views/asset/type-config.vue"),
+      redirect: "/warehouse-assets/templates",
       meta: {
-        title: "资产类型",
-        roles: ["super_admin", "manager", "site_manager"]
+        title: "资产类型(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/asset/list",
       name: "AssetList",
-      component: () => import("@/views/asset/list.vue"),
+      redirect: "/warehouse-assets/ledger",
       meta: {
-        title: "资产台账",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "资产台账(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/asset/ledger",
       name: "AssetLedgerBoard",
-      component: () => import("@/views/asset/ledger.vue"),
+      redirect: "/warehouse-assets/ledger",
       meta: {
-        title: "资产运维看板",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "资产运维看板(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/asset/detail/:id",
       name: "AssetDetail",
-      component: () => import("@/views/asset/detail.vue"),
+      redirect: "/warehouse-assets/ledger",
       meta: {
-        title: "资产详情",
+        title: "资产详情(旧路径)",
         showLink: false,
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }
@@ -51,10 +51,10 @@ export default {
     {
       path: "/asset/dashboard",
       name: "AssetDashboard",
-      component: () => import("@/views/asset/dashboard.vue"),
+      redirect: "/warehouse-assets/ledger",
       meta: {
-        title: "设备总览",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "设备总览(旧路径)",
+        showLink: false
       }
     }
   ]

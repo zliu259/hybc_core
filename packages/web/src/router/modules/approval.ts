@@ -7,7 +7,7 @@ export default {
   redirect: "/approval/index",
   meta: {
     icon: "ep:stamp",
-    title: "审批中心",
+    title: "审批流转",
     rank: 20
   },
   children: [
@@ -17,6 +17,7 @@ export default {
       component: () => import("@/views/approval/index.vue"),
       meta: {
         title: "审批中心",
+        showLink: false,
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }
     },
@@ -25,7 +26,7 @@ export default {
       name: "ApprovalUnifiedTasklist",
       component: () => import("@/views/approval/unified-tasklist.vue"),
       meta: {
-        title: "统一工作台",
+        title: "统一审批台",
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }
     },
@@ -41,19 +42,19 @@ export default {
     {
       path: "/approval/template-config",
       name: "ApprovalTemplateConfig",
-      component: () => import("@/views/approval/template-config.vue"),
+      redirect: "/admin/workflow-designer",
       meta: {
-        title: "审批模板配置",
-        roles: ["super_admin"]
+        title: "审批模板配置(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/approval/threshold-config",
       name: "ApprovalThresholdConfig",
-      component: () => import("@/views/approval/threshold-config.vue"),
+      redirect: "/admin/threshold-rules",
       meta: {
-        title: "金额阈值配置",
-        roles: ["super_admin"]
+        title: "金额阈值配置(旧路径)",
+        showLink: false
       }
     }
   ]

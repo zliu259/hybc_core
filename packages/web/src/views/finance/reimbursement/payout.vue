@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import {
   getReimbursementBatch,
@@ -23,6 +23,12 @@ const payForm = ref({
   paid_at: "",
   payment_reference: "",
   payment_account: ""
+});
+
+const selectedAmount = computed(() => {
+  return rows.value
+    .filter(row => selectedIds.value.includes(row.id))
+    .reduce((sum, row) => sum + Number(row.total_amount), 0);
 });
 
 const loadData = async () => {
@@ -99,6 +105,9 @@ onMounted(loadData);
         <div>
           <div class="title">报内报销集中打款台</div>
           <div class="sub">已审批批次可在此登记打款流水与付款账户</div>
+          <div v-if="selectedIds.length > 0" class="summary">
+            已选 {{ selectedIds.length }} 批次，合计 ¥{{ selectedAmount.toFixed(2) }}
+          </div>
         </div>
         <el-button type="primary" @click="openPayDialog(selectedIds)">登记打款</el-button>
       </div>
@@ -107,6 +116,7 @@ onMounted(loadData);
     <el-table
       :data="rows"
       :loading="loading"
+      size="small"
       stripe
       @selection-change="onSelectionChange"
       @expand-change="onExpand"
@@ -144,7 +154,7 @@ onMounted(loadData);
     </el-table>
   </el-card>
 
-  <el-dialog v-model="payDialogVisible" title="登记打款" width="520px">
+  <el-drawer v-model="payDialogVisible" title="登记打款" size="520px" destroy-on-close>
     <el-form label-width="110px">
       <el-form-item label="打款日期" required>
         <el-date-picker
@@ -167,7 +177,7 @@ onMounted(loadData);
         提交
       </el-button>
     </template>
-  </el-dialog>
+  </el-drawer>
 </template>
 
 <style scoped>
@@ -187,5 +197,11 @@ onMounted(loadData);
   margin-top: 4px;
   font-size: 13px;
   color: #6e6458;
+}
+
+.summary {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #c4872b;
 }
 </style>

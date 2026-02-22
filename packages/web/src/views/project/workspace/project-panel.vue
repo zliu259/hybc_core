@@ -39,11 +39,13 @@ const operatorLogs = ref<OperatorLog[]>([]);
 const managerLogs = ref<ManagerLog[]>([]);
 const breakthroughReports = ref<BreakthroughReport[]>([]);
 
-const sectionDialogVisible = ref(false);
-const sectionDialogLoading = ref(false);
+const sectionDrawerVisible = ref(false);
+const sectionDrawerLoading = ref(false);
 const currentSection = ref<ProjectSection | null>(null);
 const sectionOperatorLogs = ref<OperatorLog[]>([]);
 const sectionBreakthroughReports = ref<BreakthroughReport[]>([]);
+const fileDrawerVisible = ref(false);
+const currentFile = ref<ProjectFile | null>(null);
 
 const uploading = ref(false);
 const uploadForm = ref({
@@ -141,10 +143,10 @@ const setStatus = async (status: string) => {
   await loadProjectMain();
 };
 
-const openSectionDialog = async (section: ProjectSection) => {
+const openSectionDrawer = async (section: ProjectSection) => {
   currentSection.value = section;
-  sectionDialogVisible.value = true;
-  sectionDialogLoading.value = true;
+  sectionDrawerVisible.value = true;
+  sectionDrawerLoading.value = true;
   try {
     const [sectionOperatorsRes, sectionBreakthroughRes] = await Promise.all([
       listOperatorLogs({
@@ -161,8 +163,13 @@ const openSectionDialog = async (section: ProjectSection) => {
     sectionOperatorLogs.value = sectionOperatorsRes.data;
     sectionBreakthroughReports.value = sectionBreakthroughRes.data;
   } finally {
-    sectionDialogLoading.value = false;
+    sectionDrawerLoading.value = false;
   }
+};
+
+const openFileDrawer = (row: ProjectFile) => {
+  currentFile.value = row;
+  fileDrawerVisible.value = true;
 };
 
 const uploadProjectFileBySignedUrl = async (options: UploadRequestOptions) => {
@@ -351,6 +358,9 @@ onMounted(loadWecomUsers);
         <el-table-column prop="created_at" label="上传时间" width="200" />
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
+            <el-button link type="primary" @click="openFileDrawer(scope.row)">
+              详情
+            </el-button>
             <el-link :href="scope.row.file_url" target="_blank" type="primary"
               >查看</el-link
             >
@@ -395,7 +405,7 @@ onMounted(loadWecomUsers);
             <el-button
               type="primary"
               link
-              @click="openSectionDialog(scope.row)"
+               @click="openSectionDrawer(scope.row)"
             >
               查看详情
             </el-button>
@@ -504,12 +514,13 @@ onMounted(loadWecomUsers);
       </el-tabs>
     </el-card>
 
-    <el-dialog
-      v-model="sectionDialogVisible"
+    <el-drawer
+      v-model="sectionDrawerVisible"
       :title="`标段详情 - ${currentSection?.section_code || ''}`"
-      width="1100px"
+      size="78%"
+      destroy-on-close
     >
-      <div v-loading="sectionDialogLoading">
+      <div v-loading="sectionDrawerLoading">
         <el-descriptions :column="4" border class="mb-3">
           <el-descriptions-item label="标段编码">{{
             currentSection?.section_code
@@ -577,7 +588,38 @@ onMounted(loadWecomUsers);
           </el-col>
         </el-row>
       </div>
-    </el-dialog>
+    </el-drawer>
+
+    <el-drawer
+      v-model="fileDrawerVisible"
+      title="文件详情"
+      size="520px"
+      destroy-on-close
+    >
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="文件名">{{ currentFile?.file_name }}</el-descriptions-item>
+        <el-descriptions-item label="分类">{{ currentFile?.category || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="标段">
+          {{
+            currentFile?.section_code
+              ? `${currentFile?.section_code} | ${currentFile?.section_name}`
+              : "项目级"
+          }}
+        </el-descriptions-item>
+        <el-descriptions-item label="大小">
+          {{ formatBytes(currentFile?.file_size || null) }}
+        </el-descriptions-item>
+        <el-descriptions-item label="上传人">{{ currentFile?.uploaded_by_userid }}</el-descriptions-item>
+        <el-descriptions-item label="上传时间">{{ currentFile?.created_at }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{ currentFile?.remark || '-' }}</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="mt-3">
+        <el-link :href="currentFile?.file_url || '#'" target="_blank" type="primary">
+          打开文件
+        </el-link>
+      </div>
+    </el-drawer>
   </div>
 </template>
 

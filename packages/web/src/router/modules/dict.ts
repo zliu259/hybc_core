@@ -4,20 +4,21 @@ export default {
   path: "/dict",
   name: "Dict",
   component: Layout,
-  redirect: "/dict/index",
+  redirect: "/admin/system-base/dict",
   meta: {
     icon: "ep:collection-tag",
     title: "数据字典",
-    rank: 12
+    rank: 12,
+    showLink: false
   },
   children: [
     {
       path: "/dict/index",
       name: "DictManagement",
-      component: () => import("@/views/dict/index.vue"),
+      redirect: "/admin/system-base/dict",
       meta: {
-        title: "数据字典",
-        roles: ["super_admin", "manager"]
+        title: "数据字典(旧路径)",
+        showLink: false
       }
     }
   ]

@@ -4,46 +4,46 @@ export default {
   path: "/project",
   name: "Project",
   component: Layout,
-  redirect: "/project/list",
+  redirect: "/field/projects",
   meta: {
     icon: "ep:briefcase",
-    title: "项目管理",
-    rank: 13
+    title: "项目与现场指挥(旧路径)",
+    showLink: false
   },
   children: [
     {
       path: "/project/hub",
       name: "ProjectHub",
-      component: () => import("@/views/project/hub.vue"),
+      redirect: "/field/projects",
       meta: {
-        title: "项目选择大厅",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "项目选择大厅(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/project/list",
       name: "ProjectList",
-      component: () => import("@/views/project/list.vue"),
+      redirect: "/field/projects",
       meta: {
-        title: "项目列表",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "项目列表(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/project/create",
       name: "ProjectCreate",
-      component: () => import("@/views/project/create.vue"),
+      redirect: "/field/project/create",
       meta: {
-        title: "项目立项",
-        roles: ["super_admin", "manager", "site_manager"]
+        title: "项目立项(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/project/detail/:id",
       name: "ProjectDetail",
-      component: () => import("@/views/project/detail.vue"),
+      redirect: "/field/project/:id",
       meta: {
-        title: "项目详情",
+        title: "项目详情(旧路径)",
         showLink: false,
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }
@@ -51,27 +51,27 @@ export default {
     {
       path: "/project/equipment-view",
       name: "ProjectEquipmentView",
-      component: () => import("@/views/project/equipment-view.vue"),
+      redirect: "/field/projects",
       meta: {
-        title: "项目设备视图",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "项目设备视图(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/project/workspace",
       name: "ProjectWorkspaceEntry",
-      component: () => import("@/views/project/workspace-entry.vue"),
+      redirect: "/field/projects",
       meta: {
-        title: "项目化视图",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        title: "项目化视图(旧路径)",
+        showLink: false
       }
     },
     {
       path: "/project/workspace/:id",
       name: "ProjectWorkspace",
-      component: () => import("@/views/project/workspace/index.vue"),
+      redirect: "/field/project/:id",
       meta: {
-        title: "项目工作区",
+        title: "项目工作区(旧路径)",
         showLink: false,
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }

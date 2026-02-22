@@ -2,10 +2,12 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { listProjects, type Project } from "@/api/project";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "ProjectHub" });
 
 const router = useRouter();
+const userStore = useUserStoreHook();
 const loading = ref(false);
 const rows = ref<Project[]>([]);
 const keyword = ref("");
@@ -29,6 +31,11 @@ const filteredRows = computed(() => {
   });
 });
 
+const canCreateProject = computed(() => {
+  const roles = userStore.roles || [];
+  return roles.includes("super_admin") || roles.includes("manager") || roles.includes("site_manager");
+});
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -40,7 +47,7 @@ const loadData = async () => {
 };
 
 const goWorkspace = (id: number) => {
-  router.push(`/project/workspace/${id}`);
+  router.push(`/field/project/${id}`);
 };
 
 onMounted(loadData);
@@ -54,7 +61,21 @@ onMounted(loadData);
           <div class="head__title">项目选择大厅</div>
           <div class="head__sub">卡片化进入项目工作区，优先展示在建项目</div>
         </div>
-        <el-input v-model="keyword" clearable placeholder="搜索项目编号/名称" style="width: 300px" />
+        <div class="head__actions">
+          <el-input
+            v-model="keyword"
+            clearable
+            placeholder="搜索项目编号/名称"
+            style="width: 300px"
+          />
+          <el-button
+            v-if="canCreateProject"
+            type="primary"
+            @click.stop="router.push('/field/project/create')"
+          >
+            + 创建项目
+          </el-button>
+        </div>
       </div>
     </template>
 
@@ -100,6 +121,26 @@ onMounted(loadData);
   margin-top: 4px;
   font-size: 13px;
   color: #6e6458;
+}
+
+.head__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (max-width: 768px) {
+  .head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  .head__actions {
+    width: 100%;
+    flex-direction: column;
+    align-items: stretch;
+  }
 }
 
 .project-card {

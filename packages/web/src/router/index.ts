@@ -119,6 +119,22 @@ const whiteList = ["/login"];
 
 const { VITE_HIDE_HOME } = import.meta.env;
 
+const roleAliasMap: Record<string, string> = {
+  SUPER_ADMIN: "super_admin",
+  LEADER: "manager",
+  FIELD_MGR: "site_manager",
+  FINANCE: "manager",
+  EMPLOYEE: "operator"
+};
+
+function normalizeRole(role: string) {
+  return roleAliasMap[role] || role;
+}
+
+function normalizeRoles(roles?: string[]) {
+  return (roles || []).map(normalizeRole);
+}
+
 router.beforeEach((to: ToRouteType, _from, next) => {
   to.meta.loaded = loadedPaths.has(to.path);
 
@@ -154,7 +170,9 @@ router.beforeEach((to: ToRouteType, _from, next) => {
   }
   if (Cookies.get(multipleTabsKey) && userInfo) {
     // 无权限跳转403页面
-    if (to.meta?.roles && !isOneOfArray(to.meta?.roles, userInfo?.roles)) {
+    const normalizedToRoles = normalizeRoles(to.meta?.roles as string[] | undefined);
+    const normalizedUserRoles = normalizeRoles(userInfo?.roles as string[] | undefined);
+    if (normalizedToRoles.length > 0 && !isOneOfArray(normalizedToRoles, normalizedUserRoles)) {
       next({ path: "/error/403" });
       return;
     }
