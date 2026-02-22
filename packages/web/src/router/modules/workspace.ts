@@ -8,7 +8,7 @@ export default {
   meta: {
     icon: "ep/home-filled",
     title: "个人工作台",
-    rank: 0
+    rank: 2
   },
   children: [
     {

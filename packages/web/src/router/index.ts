@@ -173,7 +173,7 @@ router.beforeEach((to: ToRouteType, _from, next) => {
     const normalizedToRoles = normalizeRoles(to.meta?.roles as string[] | undefined);
     const normalizedUserRoles = normalizeRoles(userInfo?.roles as string[] | undefined);
     if (normalizedToRoles.length > 0 && !isOneOfArray(normalizedToRoles, normalizedUserRoles)) {
-      next({ path: "/error/403" });
+      next({ path: "/access-denied" });
       return;
     }
     // 开启隐藏首页后在浏览器地址栏手动输入首页welcome路由则跳转到404页面
