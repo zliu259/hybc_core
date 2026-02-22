@@ -558,7 +558,6 @@ authRoutes.use("/wecom/*", authMiddleware);
 
 authRoutes.post(
   "/wecom/contacts/sync",
-  requireRoles(["super_admin", "manager"]),
   async (c) => {
     try {
       const accessToken = await fetchWeComAccessToken(c.env);
@@ -607,7 +606,6 @@ authRoutes.post(
 
 authRoutes.get(
   "/wecom/contacts",
-  requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
     const raw = await c.env.KV.get(CONTACT_BOOK_KV_KEY);
     if (!raw) {

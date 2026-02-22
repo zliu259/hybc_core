@@ -21,6 +21,15 @@ export default {
       }
     },
     {
+      path: "/wecom/member-admin",
+      name: "WeComMemberAdmin",
+      component: () => import("@/views/wecom/member-admin.vue"),
+      meta: {
+        title: "成员查看(管理员)",
+        roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
       path: "/wecom/sdk",
       name: "WeComSdk",
       component: () => import("@/views/wecom/sdk.vue"),
