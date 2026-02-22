@@ -17,13 +17,26 @@ export type WeComUser = {
   status?: number;
 };
 
-export const getWeComScanUrl = (redirectUri: string) => {
+export const getWeComScanUrl = (
+  redirectUri: string,
+  options?: {
+    mode?: "scan" | "oauth";
+    scope?: "snsapi_base" | "snsapi_privateinfo";
+  }
+) => {
   return http.request<{
     success: boolean;
-    data: { oauthUrl: string; scanUrl: string; state: string };
+    data: {
+      oauthUrl: string;
+      scanUrl: string;
+      loginUrl: string;
+      state: string;
+    };
   }>("get", "/api/v1/auth/oauth-url", {
     params: {
-      redirect_uri: redirectUri
+      redirect_uri: redirectUri,
+      mode: options?.mode,
+      scope: options?.scope
     }
   });
 };
@@ -48,4 +61,23 @@ export const getWeComContacts = () => {
       users: WeComUser[];
     };
   }>("get", "/api/v1/auth/wecom/contacts");
+};
+
+export const getWeComJsSdkConfig = (url: string) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      corpId: string;
+      agentId: string;
+      url: string;
+      timestamp: number;
+      nonceStr: string;
+      signature: string;
+      agentSignature: string;
+    };
+  }>("get", "/api/v1/auth/wecom/jssdk-config", {
+    params: {
+      url
+    }
+  });
 };

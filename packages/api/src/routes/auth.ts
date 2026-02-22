@@ -20,6 +20,14 @@ type WeComTokenResponse = {
   errcode?: number;
   errmsg?: string;
   access_token?: string;
+  expires_in?: number;
+};
+
+type WeComTicketResponse = {
+  errcode?: number;
+  errmsg?: string;
+  ticket?: string;
+  expires_in?: number;
 };
 
 const weComErrorMessage = (errmsg: string | undefined, fallback: string): string => {
@@ -46,8 +54,53 @@ type WeComUser = {
 
 const CONTACT_BOOK_KV_KEY = "wecom:contact-book:v1";
 const CONTACT_BOOK_TTL_SECONDS = 60 * 60;
+const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
+const CORP_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:corp:v1";
+const AGENT_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:agent:v1";
+const TOKEN_DEFAULT_TTL_SECONDS = 60 * 60;
+
+const randomNonce = () => {
+  return crypto.randomUUID().replace(/-/g, "");
+};
+
+const buildSignSource = (
+  ticket: string,
+  nonceStr: string,
+  timestamp: number,
+  url: string
+): string => {
+  return `jsapi_ticket=${ticket}&noncestr=${nonceStr}&timestamp=${timestamp}&url=${url}`;
+};
+
+const sha1Hex = async (value: string): Promise<string> => {
+  const buffer = new TextEncoder().encode(value);
+  const digest = await crypto.subtle.digest("SHA-1", buffer);
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const getCachedString = async (env: Env, key: string): Promise<string | null> => {
+  return env.KV.get(key);
+};
+
+const putCachedString = async (
+  env: Env,
+  key: string,
+  value: string,
+  expiresInSeconds?: number
+) => {
+  const ttl = Math.max(
+    60,
+    (expiresInSeconds ?? TOKEN_DEFAULT_TTL_SECONDS) - 300
+  );
+  await env.KV.put(key, value, { expirationTtl: ttl });
+};
 
 const fetchWeComAccessToken = async (env: Env): Promise<string> => {
+  const cached = await getCachedString(env, ACCESS_TOKEN_KV_KEY);
+  if (cached) return cached;
+
   if (!env.WECHAT_CORPID || !env.WECHAT_SECRET) {
     throw new Error("WECHAT_CORPID/WECHAT_SECRET is not configured");
   }
@@ -63,7 +116,72 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
     );
   }
 
+  await putCachedString(
+    env,
+    ACCESS_TOKEN_KV_KEY,
+    tokenJson.access_token,
+    tokenJson.expires_in
+  );
+
   return tokenJson.access_token;
+};
+
+const fetchCorpJsApiTicket = async (env: Env): Promise<string> => {
+  const cached = await getCachedString(env, CORP_JSAPI_TICKET_KV_KEY);
+  if (cached) return cached;
+
+  const accessToken = await fetchWeComAccessToken(env);
+  const response = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/get_jsapi_ticket?access_token=${encodeURIComponent(accessToken)}`
+  );
+  const json = (await response.json()) as WeComTicketResponse;
+
+  if (json.errcode !== 0 || !json.ticket) {
+    throw new Error(
+      weComErrorMessage(json.errmsg, "Failed to get corp jsapi_ticket")
+    );
+  }
+
+  await putCachedString(
+    env,
+    CORP_JSAPI_TICKET_KV_KEY,
+    json.ticket,
+    json.expires_in
+  );
+  return json.ticket;
+};
+
+const fetchAgentJsApiTicket = async (env: Env): Promise<string> => {
+  const cached = await getCachedString(env, AGENT_JSAPI_TICKET_KV_KEY);
+  if (cached) return cached;
+
+  const accessToken = await fetchWeComAccessToken(env);
+  const response = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/ticket/get?access_token=${encodeURIComponent(accessToken)}&type=agent_config`
+  );
+  const json = (await response.json()) as WeComTicketResponse;
+
+  if (json.errcode !== 0 || !json.ticket) {
+    throw new Error(
+      weComErrorMessage(json.errmsg, "Failed to get agent jsapi_ticket")
+    );
+  }
+
+  await putCachedString(
+    env,
+    AGENT_JSAPI_TICKET_KV_KEY,
+    json.ticket,
+    json.expires_in
+  );
+  return json.ticket;
+};
+
+const normalizeSignUrl = (input: string): string => {
+  const trimmed = input.trim();
+  if (!trimmed) return "";
+
+  const hashIndex = trimmed.indexOf("#");
+  return hashIndex >= 0 ? trimmed.slice(0, hashIndex) : trimmed;
 };
 
 const fetchWeComUserId = async (
@@ -182,6 +300,16 @@ const buildWeComScanUrl = (
   return `https://open.work.weixin.qq.com/wwopen/sso/qrConnect?appid=${encodeURIComponent(corpid)}&agentid=${encodeURIComponent(agentId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(state)}`;
 };
 
+const buildWeComOAuthUrl = (
+  corpid: string,
+  agentId: string,
+  redirectUri: string,
+  state: string,
+  scope: "snsapi_base" | "snsapi_privateinfo" = "snsapi_base"
+): string => {
+  return `https://open.weixin.qq.com/connect/oauth2/authorize?appid=${encodeURIComponent(corpid)}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&scope=${encodeURIComponent(scope)}&state=${encodeURIComponent(state)}&agentid=${encodeURIComponent(agentId)}#wechat_redirect`;
+};
+
 const getRedirectUri = (c: { req: { query: (key: string) => string | undefined }; env: Env }) => {
   return c.req.query("redirect_uri") ?? c.env.WECHAT_REDIRECT_URI ?? "";
 };
@@ -206,18 +334,32 @@ authRoutes.get("/oauth-url", (c) => {
   }
 
   const state = c.req.query("state") ?? `${Date.now()}`;
+  const mode = c.req.query("mode") ?? "scan";
+  const scope = c.req.query("scope") === "snsapi_privateinfo"
+    ? "snsapi_privateinfo"
+    : "snsapi_base";
   const scanUrl = buildWeComScanUrl(
     c.env.WECHAT_CORPID,
     c.env.WECHAT_AGENT_ID,
     redirectUri,
     state
   );
+  const oauthUrl = buildWeComOAuthUrl(
+    c.env.WECHAT_CORPID,
+    c.env.WECHAT_AGENT_ID,
+    redirectUri,
+    state,
+    scope
+  );
+
+  const loginUrl = mode === "oauth" ? oauthUrl : scanUrl;
 
   return c.json({
     success: true,
     data: {
-      oauthUrl: scanUrl,
+      oauthUrl,
       scanUrl,
+      loginUrl,
       state
     }
   });
@@ -268,6 +410,78 @@ authRoutes.post("/login/web", async (c) => {
         success: false,
         error: {
           message: error instanceof Error ? error.message : "Login failed"
+        }
+      },
+      400
+    );
+  }
+});
+
+authRoutes.get("/wecom/jssdk-config", async (c) => {
+  const rawUrl = c.req.query("url") ?? "";
+  const url = normalizeSignUrl(rawUrl);
+
+  if (!url) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          message: "Missing url"
+        }
+      },
+      400
+    );
+  }
+
+  if (!c.env.WECHAT_CORPID || !c.env.WECHAT_AGENT_ID) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          message: "WECHAT_OAUTH_CONFIG_MISSING"
+        }
+      },
+      400
+    );
+  }
+
+  try {
+    const nonceStr = randomNonce();
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    const [corpTicket, agentTicket] = await Promise.all([
+      fetchCorpJsApiTicket(c.env),
+      fetchAgentJsApiTicket(c.env)
+    ]);
+
+    const signature = await sha1Hex(
+      buildSignSource(corpTicket, nonceStr, timestamp, url)
+    );
+    const agentSignature = await sha1Hex(
+      buildSignSource(agentTicket, nonceStr, timestamp, url)
+    );
+
+    return c.json({
+      success: true,
+      data: {
+        corpId: c.env.WECHAT_CORPID,
+        agentId: c.env.WECHAT_AGENT_ID,
+        url,
+        timestamp,
+        nonceStr,
+        signature,
+        agentSignature
+      }
+    });
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          message:
+            error instanceof Error
+              ? error.message
+              : "Failed to create WeCom jssdk config"
         }
       },
       400

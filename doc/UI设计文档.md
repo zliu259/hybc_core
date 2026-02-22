@@ -41,6 +41,7 @@
 - 项目立项：`packages/web/src/views/project/create.vue`
 - 项目详情：`packages/web/src/views/project/detail.vue`
 - 企业微信通讯录：`packages/web/src/views/wecom/contacts.vue`
+- 企业微信 JS-SDK 能力台：`packages/web/src/views/wecom/sdk.vue`
 - 合同管理列表：`packages/web/src/views/finance/contract/index.vue`
 - 合同执行监控大屏：`packages/web/src/views/finance/contract/monitor.vue`
 - 合同详情/创建：`packages/web/src/views/finance/contract/detail.vue`

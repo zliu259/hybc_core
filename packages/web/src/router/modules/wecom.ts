@@ -19,6 +19,15 @@ export default {
         title: "通讯录",
         roles: ["super_admin", "manager", "site_manager"]
       }
+    },
+    {
+      path: "/wecom/sdk",
+      name: "WeComSdk",
+      component: () => import("@/views/wecom/sdk.vue"),
+      meta: {
+        title: "JS-SDK能力",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
     }
   ]
 } satisfies RouteConfigsTable;

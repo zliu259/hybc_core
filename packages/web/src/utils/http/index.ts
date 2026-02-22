@@ -76,6 +76,7 @@ class PureHttp {
           "/api/v1/auth/refresh-token",
           "/api/v1/auth/login/web",
           "/api/v1/auth/oauth-url",
+          "/api/v1/auth/wecom/jssdk-config",
           "/api/v1/passkeys/auth/begin",
           "/api/v1/passkeys/auth/finish"
         ];

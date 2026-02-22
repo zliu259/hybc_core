@@ -2,7 +2,7 @@
 import Motion from "./utils/motion";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
-import { onMounted, ref, toRaw } from "vue";
+import { onBeforeUnmount, onMounted, ref, toRaw } from "vue";
 import { useNav } from "@/layout/hooks/useNav";
 import { useLayout } from "@/layout/hooks/useLayout";
 import { bg, avatar, illustration } from "./utils/static";
@@ -15,6 +15,10 @@ import {
   beginPasskeyAuthentication,
   finishPasskeyAuthentication
 } from "@/api/passkey";
+import {
+  createWeComLoginPanel,
+  isInWeComClient
+} from "@/composables/useWeComJsSdk";
 
 import dayIcon from "@/assets/svg/day.svg?component";
 import darkIcon from "@/assets/svg/dark.svg?component";
@@ -27,6 +31,11 @@ const router = useRouter();
 const loading = ref(false);
 const passkeyLoading = ref(false);
 const passkeyUserId = ref("");
+const panelLoading = ref(false);
+const panelEnabled = ref(false);
+const panelElId = "wecom-login-panel";
+const panelUnmount = ref<null | (() => void)>(null);
+const autoRedirecting = ref(false);
 const { initStorage } = useLayout();
 initStorage();
 
@@ -177,12 +186,49 @@ const startWeComScan = async () => {
   loading.value = true;
   try {
     const redirectUri = `${window.location.origin}${window.location.pathname}`;
-    const result = await getWeComScanUrl(redirectUri);
-    window.location.href = result.data.scanUrl;
+    const inWeCom = isInWeComClient();
+    const result = await getWeComScanUrl(redirectUri, {
+      mode: inWeCom ? "oauth" : "scan",
+      scope: "snsapi_base"
+    });
+    window.location.href = result.data.loginUrl;
   } catch {
-    message("获取企业微信扫码地址失败", { type: "error" });
+    message("获取企业微信登录地址失败", { type: "error" });
   } finally {
     loading.value = false;
+  }
+};
+
+const initDesktopLoginPanel = async () => {
+  if (isInWeComClient()) return;
+
+  const appid = import.meta.env.VITE_WECOM_CORPID?.trim();
+  const agentid = import.meta.env.VITE_WECOM_AGENT_ID?.trim();
+  if (!appid || !agentid) return;
+
+  panelLoading.value = true;
+  try {
+    const redirectUri = `${window.location.origin}${window.location.pathname}`;
+    const state = `panel_${Date.now()}`;
+    const panel = await createWeComLoginPanel({
+      el: `#${panelElId}`,
+      appid,
+      agentid,
+      redirectUri,
+      state,
+      onLoginSuccess: (code) => {
+        void loginByCode(code);
+      },
+      onLoginFail: () => {
+        message("企业微信登录面板调用失败，请改用扫码登录", { type: "warning" });
+      }
+    });
+    panelEnabled.value = true;
+    panelUnmount.value = panel.unmount;
+  } catch {
+    panelEnabled.value = false;
+  } finally {
+    panelLoading.value = false;
   }
 };
 
@@ -193,7 +239,21 @@ onMounted(() => {
     const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, document.title, cleanUrl);
     void loginByCode(code);
+    return;
   }
+
+  if (isInWeComClient()) {
+    autoRedirecting.value = true;
+    void startWeComScan();
+    return;
+  }
+
+  void initDesktopLoginPanel();
+});
+
+onBeforeUnmount(() => {
+  panelUnmount.value?.();
+  panelUnmount.value = null;
 });
 </script>
 
@@ -221,7 +281,7 @@ onMounted(() => {
           </Motion>
           <Motion :delay="150">
             <el-alert
-              title="请使用企业微信扫码登录"
+              :title="autoRedirecting ? '正在发起企业微信自动登录...' : '请使用企业微信扫码登录'"
               type="info"
               :closable="false"
               show-icon
@@ -239,6 +299,17 @@ onMounted(() => {
           </Motion>
           <Motion :delay="350">
             <div class="mt-4">
+              <div
+                v-if="!isInWeComClient()"
+                class="panel-wrapper"
+                v-loading="panelLoading"
+              >
+                <div class="panel-title">浏览器登录（JS-SDK 面板）</div>
+                <div :id="panelElId" class="panel-box" />
+                <div v-if="!panelEnabled" class="panel-tip">
+                  未检测到可用登录面板，请使用上方扫码登录
+                </div>
+              </div>
               <el-input
                 v-model="passkeyUserId"
                 placeholder="输入企业微信userid后使用Passkey"
@@ -261,4 +332,28 @@ onMounted(() => {
 
 <style scoped>
 @import url("@/style/login.css");
+
+.panel-wrapper {
+  margin-bottom: 12px;
+  padding: 10px;
+  border: 1px dashed rgb(47 108 95 / 35%);
+  border-radius: 8px;
+  background: #fffaf2;
+}
+
+.panel-title {
+  margin-bottom: 8px;
+  font-size: 12px;
+  color: #6e6458;
+}
+
+.panel-box {
+  min-height: 100px;
+}
+
+.panel-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8f8477;
+}
 </style>
