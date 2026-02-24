@@ -126,6 +126,22 @@ export const createProjectSection = (
   );
 };
 
+export const updateProjectSection = (
+  projectId: number,
+  sectionId: number,
+  data: {
+    section_name?: string;
+    section_length?: number | null;
+    status?: string;
+  }
+) => {
+  return http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/project/${projectId}/sections/${sectionId}`,
+    { data }
+  );
+};
+
 export const getProjectFinancialSummary = (projectId: number) => {
   return http.request<{
     success: boolean;

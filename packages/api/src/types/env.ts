@@ -12,6 +12,7 @@ export interface Env {
   WECHAT_SECRET?: string;
   WECHAT_AGENT_ID?: string;
   WECHAT_REDIRECT_URI?: string;
+  WECHAT_ROLE_TAG_MAPPING?: string;
   PASSKEY_RP_ID: string;
   PASSKEY_RP_NAME: string;
 }

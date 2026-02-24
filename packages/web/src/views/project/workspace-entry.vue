@@ -22,7 +22,7 @@ const load = async () => {
 };
 
 const openWorkspace = (id: number, tab = "project") => {
-  router.push(`/project/workspace/${id}?tab=${tab}`);
+  router.push(`/field/project/${id}?tab=${tab}`);
 };
 
 onMounted(load);

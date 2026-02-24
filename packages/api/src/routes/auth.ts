@@ -8,6 +8,7 @@ import {
   toFrontendLoginResponse,
   verifyToken
 } from "../services/auth";
+import type { UserRole } from "../types/auth";
 import { getWeComContactBook, syncWeComContactBook } from "../services/wecom-contact-book";
 import type { Env } from "../types/env";
 
@@ -28,6 +29,84 @@ type WeComTicketResponse = {
   errmsg?: string;
   ticket?: string;
   expires_in?: number;
+};
+
+type WeComTagListResponse = {
+  errcode?: number;
+  errmsg?: string;
+  taglist?: Array<{ tagid: number; tagname: string }>;
+};
+
+type WeComTagGetResponse = {
+  errcode?: number;
+  errmsg?: string;
+  userlist?: Array<{ userid?: string }>;
+};
+
+const defaultRoleTagMapping: Record<UserRole, string[]> = {
+  super_admin: ["HY_ROLE_SUPER_ADMIN"],
+  finance: ["HY_ROLE_FINANCE"],
+  manager: ["HY_ROLE_MANAGER"],
+  site_manager: ["HY_ROLE_SITE_MANAGER"],
+  operator: ["HY_ROLE_OPERATOR"]
+};
+
+const rolePriority: UserRole[] = [
+  "super_admin",
+  "finance",
+  "manager",
+  "site_manager",
+  "operator"
+];
+
+const parseRoleTagMapping = (
+  raw: string | undefined
+): Record<UserRole, string[]> => {
+  if (!raw?.trim()) return defaultRoleTagMapping;
+
+  const parsed: Record<UserRole, string[]> = {
+    super_admin: [],
+    finance: [],
+    manager: [],
+    site_manager: [],
+    operator: []
+  };
+
+  raw
+    .split(";")
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .forEach((item) => {
+      const [roleRaw, tagsRaw] = item.split(":");
+      const role = (roleRaw || "").trim() as UserRole;
+      if (!rolePriority.includes(role)) return;
+      const tags = (tagsRaw || "")
+        .split("|")
+        .map((tag) => tag.trim())
+        .filter(Boolean);
+      if (tags.length > 0) {
+        parsed[role] = tags;
+      }
+    });
+
+  return {
+    super_admin:
+      parsed.super_admin.length > 0
+        ? parsed.super_admin
+        : defaultRoleTagMapping.super_admin,
+    finance:
+      parsed.finance.length > 0 ? parsed.finance : defaultRoleTagMapping.finance,
+    manager:
+      parsed.manager.length > 0 ? parsed.manager : defaultRoleTagMapping.manager,
+    site_manager:
+      parsed.site_manager.length > 0
+        ? parsed.site_manager
+        : defaultRoleTagMapping.site_manager,
+    operator:
+      parsed.operator.length > 0
+        ? parsed.operator
+        : defaultRoleTagMapping.operator
+  };
 };
 
 const weComErrorMessage = (errmsg: string | undefined, fallback: string): string => {
@@ -227,6 +306,63 @@ const fetchWeComProfile = async (accessToken: string, userId: string) => {
   };
 };
 
+const fetchWeComTags = async (
+  accessToken: string
+): Promise<Array<{ tagid: number; tagname: string }>> => {
+  const response = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/tag/list?access_token=${encodeURIComponent(accessToken)}`
+  );
+  const json = (await response.json()) as WeComTagListResponse;
+  if (json.errcode !== 0) {
+    throw new Error(weComErrorMessage(json.errmsg, "Failed to fetch WeCom tags"));
+  }
+  return json.taglist ?? [];
+};
+
+const isUserInTag = async (
+  accessToken: string,
+  tagId: number,
+  userId: string
+): Promise<boolean> => {
+  const response = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/tag/get?access_token=${encodeURIComponent(accessToken)}&tagid=${tagId}`
+  );
+  const json = (await response.json()) as WeComTagGetResponse;
+  if (json.errcode !== 0) {
+    throw new Error(
+      weComErrorMessage(json.errmsg, `Failed to get members by WeCom tag ${tagId}`)
+    );
+  }
+  return (json.userlist ?? []).some((user) => user.userid === userId);
+};
+
+const resolveRoleByWeComTags = async (
+  env: Env,
+  accessToken: string,
+  userId: string
+): Promise<UserRole | undefined> => {
+  const mapping = parseRoleTagMapping(env.WECHAT_ROLE_TAG_MAPPING);
+  const tagList = await fetchWeComTags(accessToken);
+  const tagIdByName = new Map<string, number>();
+  tagList.forEach((item) => {
+    tagIdByName.set(item.tagname, item.tagid);
+  });
+
+  for (const role of rolePriority) {
+    const tagNames = mapping[role] || [];
+    for (const tagName of tagNames) {
+      const tagId = tagIdByName.get(tagName);
+      if (!tagId) continue;
+      const matched = await isUserInTag(accessToken, tagId, userId);
+      if (matched) {
+        return role;
+      }
+    }
+  }
+
+  return undefined;
+};
+
 const buildWeComScanUrl = (
   corpid: string,
   agentId: string,
@@ -309,12 +445,14 @@ authRoutes.post("/login/web", async (c) => {
       username: string;
       nickname: string;
       avatar?: string;
+      role?: UserRole;
     };
 
     if (body.code) {
       const accessToken = await fetchWeComAccessToken(c.env);
       const userId = await fetchWeComUserId(accessToken, body.code);
       identity = await fetchWeComProfile(accessToken, userId);
+      identity.role = await resolveRoleByWeComTags(c.env, accessToken, userId);
     } else {
       if (c.env.APP_ENV !== "local") {
         return c.json(

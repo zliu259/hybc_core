@@ -124,7 +124,7 @@ contractRoutes.get("/:id", async (c) => {
 
 contractRoutes.post(
   "/",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateContractRequest;
@@ -206,7 +206,7 @@ contractRoutes.post(
 
 contractRoutes.put(
   "/:id",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdateContractRequest;
@@ -267,7 +267,7 @@ contractRoutes.put(
 
 contractRoutes.delete(
   "/:id",
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     await c.env.DB.prepare(
@@ -282,7 +282,7 @@ contractRoutes.delete(
 
 contractRoutes.post(
   "/:id/submit-approval",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
@@ -362,7 +362,7 @@ contractRoutes.post(
 
 contractRoutes.post(
   "/:id/amount-change",
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
     const contractId = Number(c.req.param("id"));
     const auth = c.get("auth");
@@ -423,7 +423,7 @@ contractRoutes.post(
 
 contractRoutes.post(
   "/:id/amount-change/:changeId/submit-approval",
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
     const contractId = Number(c.req.param("id"));
     const changeId = Number(c.req.param("changeId"));
@@ -537,7 +537,7 @@ contractRoutes.get("/:id/ai-review", async (c) => {
 
 contractRoutes.post(
   "/:id/trigger-review",
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const now = nowIso();

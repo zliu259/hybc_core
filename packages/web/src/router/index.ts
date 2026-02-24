@@ -123,7 +123,7 @@ const roleAliasMap: Record<string, string> = {
   SUPER_ADMIN: "super_admin",
   LEADER: "manager",
   FIELD_MGR: "site_manager",
-  FINANCE: "manager",
+  FINANCE: "finance",
   EMPLOYEE: "operator"
 };
 

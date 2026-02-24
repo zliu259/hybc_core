@@ -1,5 +1,6 @@
 export const roles = [
   "super_admin",
+  "finance",
   "manager",
   "site_manager",
   "operator"

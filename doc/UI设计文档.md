@@ -389,6 +389,39 @@
   - `packages/web/src/layout/components/lay-support/index.vue`
   - `packages/web/src/views/admin/helpdesk.vue`（详情抽屉展示附件）
 
+### 3.10 顶部通知中心 API 化（2026-02）
+- 顶部 `通知/消息/待办` 全量改为实时 API 数据，不再使用本地 mock：
+  - `packages/web/src/layout/components/lay-notice/index.vue`
+  - 通知：`listCcApprovals`
+  - 消息：`listProcessedApprovals`
+  - 待办：`listPendingApprovals`
+- 移除无用组件与静态数据：
+  - `packages/web/src/layout/components/lay-notice/components/NoticeList.vue`（删除）
+  - `packages/web/src/layout/components/lay-notice/components/NoticeItem.vue`（删除）
+  - `packages/web/src/layout/components/lay-notice/data.ts`（删除）
+
+### 3.11 个人工作台交互调整（2026-02）
+- 个人身份信息增强（全名 + 角色 + 权限）：
+  - `packages/web/src/views/welcome/index.vue`
+- 发起报销改为弹窗发起，不再先跳转审批台：
+  - `packages/web/src/views/welcome/index.vue`
+  - 弹窗内直接创建报销信封并跳转详情页
+- 填报日志拆分为两类入口：
+  - 施工日志：`/construction/operator-log/form`
+  - 项目日志：`/construction/manager-log`
+  - 文件：`packages/web/src/views/welcome/index.vue`
+
+### 3.12 项目工作区 Project Tab 重构（2026-02）
+- `tab=project` 从“信息+文件+表格堆叠”改为“项目运营驾驶舱”布局：
+  - 文件能力从 `project-panel` 完全移除（已迁移到 `tab=files` 的 `file-panel`）
+  - 标段总览改为卡片式并引入顶进进度条（累计顶进/标段里程）
+  - 项目日志一站式视图加入快速填写项目日志与单条日志详情抽屉
+  - 增加项目管理辅助动作（施工日志直达、日志中心直达、日报/周报汇总触发）
+  - 快速填写项目日志中的照片输入从 `file_key` 文本改为直接上传照片
+- 关键文件：
+  - `packages/web/src/views/project/workspace/project-panel.vue`
+  - `packages/web/src/views/project/workspace/index.vue`
+
 ## 4. 小程序页面级规范（企业微信）
 
 ### 4.0 设计基准与参考

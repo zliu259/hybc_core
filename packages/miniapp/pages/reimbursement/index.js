@@ -7,7 +7,12 @@ const { getUserProfile } = require("../../utils/auth");
 const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 const canGeneratePdfByRole = (roles) => {
-  return roles.includes("super_admin") || roles.includes("manager") || roles.includes("site_manager");
+  return (
+    roles.includes("super_admin") ||
+    roles.includes("manager") ||
+    roles.includes("site_manager") ||
+    roles.includes("finance")
+  );
 };
 
 const statusText = (status) => {

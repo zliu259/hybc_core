@@ -43,11 +43,11 @@ const loadProjects = async () => {
 };
 
 const gotoDetail = (id: number) => {
-  router.push(`/project/detail/${id}`);
+  router.push(`/field/project/${id}`);
 };
 
 const gotoWorkspace = (id: number) => {
-  router.push(`/project/workspace/${id}?tab=project`);
+  router.push(`/field/project/${id}?tab=project`);
 };
 
 const changeStatus = async (id: number, status: string) => {
@@ -75,7 +75,7 @@ onMounted(loadProjects);
         </el-select>
       </el-form-item>
       <el-button type="primary" @click="loadProjects">查询</el-button>
-      <el-button @click="router.push('/project/create')">新建立项</el-button>
+      <el-button @click="router.push('/field/project/create')">新建立项</el-button>
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">

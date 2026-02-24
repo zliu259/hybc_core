@@ -18,7 +18,7 @@ export default {
       meta: {
         title: "审批中心",
         showLink: false,
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
       }
     },
     {
@@ -27,7 +27,7 @@ export default {
       component: () => import("@/views/approval/unified-tasklist.vue"),
       meta: {
         title: "统一审批台",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
       }
     },
     {

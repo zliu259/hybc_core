@@ -241,7 +241,7 @@ projectRoutes.get("/:id/files", async (c) => {
 
 projectRoutes.post(
   "/:id/files",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const projectId = Number(c.req.param("id"));
     const auth = c.get("auth");
@@ -311,7 +311,7 @@ projectRoutes.post(
 
 projectRoutes.delete(
   "/:id/files/:fileId",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const projectId = Number(c.req.param("id"));
     const fileId = Number(c.req.param("fileId"));

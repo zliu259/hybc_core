@@ -23,7 +23,11 @@ Page({
   onShow() {
     const profile = getUserProfile() || {};
     const roles = Array.isArray(profile.roles) ? profile.roles : [];
-    const allowed = roles.includes("super_admin") || roles.includes("manager") || roles.includes("site_manager");
+    const allowed =
+      roles.includes("super_admin") ||
+      roles.includes("manager") ||
+      roles.includes("site_manager") ||
+      roles.includes("finance");
     if (!allowed) {
       wx.showToast({ title: "当前角色无对外付款权限", icon: "none" });
       setTimeout(() => wx.navigateBack({ delta: 1 }), 400);

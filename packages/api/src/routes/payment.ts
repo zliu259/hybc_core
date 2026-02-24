@@ -80,7 +80,7 @@ paymentRoutes.get("/payee/:id", async (c) => {
 
 paymentRoutes.post(
   "/payee",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreatePayeeRequest;
@@ -108,7 +108,7 @@ paymentRoutes.post(
 
 paymentRoutes.put(
   "/payee/:id",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdatePayeeRequest;
@@ -237,7 +237,7 @@ paymentRoutes.get("/:id", async (c) => {
 
 paymentRoutes.post(
   "/",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreatePaymentRequestBody;
@@ -337,7 +337,7 @@ paymentRoutes.post(
 
 paymentRoutes.put(
   "/:id",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdatePaymentRequestBody;
@@ -420,7 +420,7 @@ paymentRoutes.put(
 
 paymentRoutes.post(
   "/:id/submit-approval",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
@@ -570,7 +570,7 @@ paymentRoutes.post(
 
 paymentRoutes.post(
   "/:id/trigger-risk-assessment",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const now = nowIso();

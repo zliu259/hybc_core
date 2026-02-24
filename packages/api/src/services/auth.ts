@@ -8,6 +8,19 @@ const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
 const defaultPermissionsByRole: Record<UserRole, string[]> = {
   super_admin: ["*:*:*"],
+  finance: [
+    "contract:read",
+    "contract:write",
+    "payment:read",
+    "payment:write",
+    "reimbursement:read",
+    "reimbursement:write",
+    "receipt:read",
+    "receipt:write",
+    "approval:read",
+    "approval:write",
+    "upload:write"
+  ],
   manager: [
     "entity:read",
     "entity:write",
@@ -30,6 +43,9 @@ const defaultPermissionsByRole: Record<UserRole, string[]> = {
 const roleFromUsername = (username: string): UserRole => {
   if (username === "super_admin" || username === "admin") {
     return "super_admin";
+  }
+  if (username === "finance") {
+    return "finance";
   }
   if (username === "manager") {
     return "manager";

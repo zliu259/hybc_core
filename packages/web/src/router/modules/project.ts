@@ -41,7 +41,7 @@ export default {
     {
       path: "/project/detail/:id",
       name: "ProjectDetail",
-      redirect: "/field/project/:id",
+      component: () => import("@/views/project/workspace/index.vue"),
       meta: {
         title: "项目详情(旧路径)",
         showLink: false,
@@ -69,7 +69,7 @@ export default {
     {
       path: "/project/workspace/:id",
       name: "ProjectWorkspace",
-      redirect: "/field/project/:id",
+      component: () => import("@/views/project/workspace/index.vue"),
       meta: {
         title: "项目工作区(旧路径)",
         showLink: false,

@@ -99,7 +99,11 @@ const baseRoutesByRole = {
 } as const;
 
 const getRoutesByRoles = (roles: string[]) => {
-  if (roles.includes("super_admin")) {
+  const normalizedRoles = roles.includes("finance")
+    ? [...roles, "manager"]
+    : roles;
+
+  if (normalizedRoles.includes("super_admin")) {
     return baseRoutesByRole.super_admin;
   }
 
@@ -108,7 +112,7 @@ const getRoutesByRoles = (roles: string[]) => {
       return {
         ...item,
         children: item.children.filter(
-          (child) => !child.meta.roles || child.meta.roles.some((role) => roles.includes(role))
+          (child) => !child.meta.roles || child.meta.roles.some((role) => normalizedRoles.includes(role))
         )
       };
     }
@@ -116,7 +120,7 @@ const getRoutesByRoles = (roles: string[]) => {
     return {
       ...item,
       children: item.children.filter(
-        (child) => !child.meta.roles || child.meta.roles.some((role) => roles.includes(role))
+        (child) => !child.meta.roles || child.meta.roles.some((role) => normalizedRoles.includes(role))
       )
     };
   });

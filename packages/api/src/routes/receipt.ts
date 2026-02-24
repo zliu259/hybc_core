@@ -25,7 +25,7 @@ receiptRoutes.use("*", authMiddleware);
 
 receiptRoutes.get(
   "/invoice",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const contractId = c.req.query("contract_id");
     const projectId = c.req.query("project_id");
@@ -79,7 +79,7 @@ receiptRoutes.get(
 
 receiptRoutes.post(
   "/invoice",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateInvoiceRequest;
@@ -164,7 +164,7 @@ receiptRoutes.post(
 
 receiptRoutes.put(
   "/invoice/:id",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdateInvoiceRequest;
@@ -272,7 +272,7 @@ receiptRoutes.delete(
 
 receiptRoutes.get(
   "/",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const contractId = c.req.query("contract_id");
     const projectId = c.req.query("project_id");
@@ -320,7 +320,7 @@ receiptRoutes.get(
 
 receiptRoutes.post(
   "/",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateReceiptRequest;
@@ -420,7 +420,7 @@ receiptRoutes.post(
 
 receiptRoutes.put(
   "/:id",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdateReceiptRequest;

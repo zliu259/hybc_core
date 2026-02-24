@@ -242,7 +242,7 @@ reimbursementRoutes.get("/", async (c) => {
 
 reimbursementRoutes.get(
   "/precheck/pending",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const projectId = c.req.query("project_id");
     const page = Number(c.req.query("page") ?? "1");
@@ -296,7 +296,7 @@ reimbursementRoutes.get(
 
 reimbursementRoutes.get(
   "/duplicate-center",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const riskLevel = c.req.query("risk_level");
     const page = Number(c.req.query("page") ?? "1");
@@ -334,7 +334,7 @@ reimbursementRoutes.get(
 
 reimbursementRoutes.get(
   "/batch",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const status = c.req.query("status");
     const projectId = c.req.query("project_id");
@@ -383,7 +383,7 @@ reimbursementRoutes.get(
 
 reimbursementRoutes.get(
   "/batch/:id",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
 
@@ -429,7 +429,7 @@ reimbursementRoutes.get(
 
 reimbursementRoutes.post(
   "/batch",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const body = (await c.req.json()) as CreateReimbursementBatchRequest;
 
@@ -543,7 +543,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.post(
   "/batch/:id/trigger-audit",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
 
@@ -605,7 +605,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.get(
   "/batch/:id/audit-report",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
 
@@ -669,7 +669,7 @@ reimbursementRoutes.get(
 
 reimbursementRoutes.post(
   "/batch/:id/submit-approval",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
@@ -749,7 +749,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.post(
   "/batch/:id/mark-paid",
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
 
@@ -788,7 +788,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.post(
   "/electronic-upload",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as ElectronicUploadRequest;
@@ -982,7 +982,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
 
 reimbursementRoutes.post(
   "/:id/trigger-anomaly-check",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const envelope = await c.env.DB.prepare(
@@ -1056,7 +1056,7 @@ reimbursementRoutes.get("/:id/anomaly-status", async (c) => {
 
 reimbursementRoutes.post(
   "/:id/precheck",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as PrecheckEnvelopeRequest;
@@ -1143,7 +1143,7 @@ reimbursementRoutes.get("/:id", async (c) => {
 
 reimbursementRoutes.post(
   "/",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateEnvelopeRequest;
@@ -1207,7 +1207,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.put(
   "/:id",
-  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
@@ -1278,7 +1278,7 @@ reimbursementRoutes.put(
 
 reimbursementRoutes.post(
   "/batch-generate",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as BatchGenerateEnvelopeRequest;
@@ -1391,7 +1391,7 @@ reimbursementRoutes.post("/scan", async (c) => {
 
 reimbursementRoutes.post(
   "/verify",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const body = (await c.req.json()) as VerifyEnvelopeRequest;
 
@@ -1447,7 +1447,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.post(
   "/:id/generate-pdf",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const envelope = await c.env.DB.prepare(

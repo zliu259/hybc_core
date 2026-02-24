@@ -8,10 +8,13 @@ import {
   listMyBankAccounts,
   type MyBankAccount
 } from "@/api/user";
+import { listProjects, type Project } from "@/api/project";
 import {
+  createReimbursementEnvelope,
   listReimbursementEnvelopes,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
+import { message } from "@/utils/message";
 
 defineOptions({
   name: "Welcome"
@@ -20,7 +23,20 @@ defineOptions({
 const router = useRouter();
 const loading = ref(false);
 const username = ref("");
+const fullName = ref("");
+const roles = ref<string[]>([]);
+const permissions = ref<string[]>([]);
 const reimbursements = ref<ReimbursementEnvelope[]>([]);
+const projects = ref<Project[]>([]);
+const reimbursementDialogVisible = ref(false);
+const reimbursementSubmitting = ref(false);
+
+const reimbursementForm = ref({
+  project_id: undefined as number | undefined,
+  amount: undefined as number | undefined,
+  category: "办公费用",
+  description: ""
+});
 
 const bankCards = ref<MyBankAccount[]>([]);
 
@@ -45,6 +61,24 @@ const pendingCount = computed(
   () => reimbursements.value.filter(item => item.status !== "paid").length
 );
 
+const roleNameMap: Record<string, string> = {
+  super_admin: "超级管理员",
+  finance: "财务人员",
+  manager: "项目经理",
+  site_manager: "现场经理",
+  operator: "操作员"
+};
+
+const roleLabels = computed(() =>
+  roles.value.map(role => roleNameMap[role] || role)
+);
+
+const permissionLabels = computed(() => permissions.value.filter(Boolean));
+
+const canWriteProjectLog = computed(() =>
+  roles.value.some(role => ["super_admin", "manager", "site_manager"].includes(role))
+);
+
 const certStatus = (expireDate: string) => {
   const remainDays = dayjs(expireDate).diff(dayjs(), "day");
   if (remainDays < 0) return { type: "danger", text: "已过期" } as const;
@@ -65,6 +99,9 @@ const loadData = async () => {
   try {
     const me = await getCurrentUser();
     username.value = me.data.username;
+    fullName.value = me.data.nickname || me.data.username;
+    roles.value = me.data.roles || [];
+    permissions.value = me.data.permissions || [];
     const [reimbursementResult, bankAccountResult] = await Promise.all([
       listReimbursementEnvelopes({
         creator_id: "me",
@@ -75,6 +112,11 @@ const loadData = async () => {
     ]);
     reimbursements.value = reimbursementResult.data;
     bankCards.value = bankAccountResult.data;
+    const projectResult = await listProjects({ page: 1, pageSize: 200, status: "active" });
+    projects.value = projectResult.data;
+    if (!reimbursementForm.value.project_id && projects.value.length > 0) {
+      reimbursementForm.value.project_id = projects.value[0].id;
+    }
     if (!bankCards.value.length) {
       bankCards.value = [
         {
@@ -124,25 +166,140 @@ const onCertUpload = (file: UploadFile) => {
   });
 };
 
+const openReimbursementDialog = () => {
+  reimbursementForm.value = {
+    project_id: projects.value[0]?.id,
+    amount: undefined,
+    category: "办公费用",
+    description: ""
+  };
+  reimbursementDialogVisible.value = true;
+};
+
+const submitReimbursement = async () => {
+  if (!reimbursementForm.value.project_id) {
+    message("请选择项目", { type: "warning" });
+    return;
+  }
+  reimbursementSubmitting.value = true;
+  try {
+    const result = await createReimbursementEnvelope({
+      project_id: reimbursementForm.value.project_id,
+      amount: reimbursementForm.value.amount,
+      category: reimbursementForm.value.category,
+      description: reimbursementForm.value.description || undefined,
+      channel: "physical"
+    });
+    message(`已创建报销信封 ${result.data.envelope_no}`, { type: "success" });
+    reimbursementDialogVisible.value = false;
+    await loadData();
+    router.push(`/finance/reimbursement/detail/${result.data.id}`);
+  } finally {
+    reimbursementSubmitting.value = false;
+  }
+};
+
 </script>
 
 <template>
   <div class="workspace" v-loading="loading">
     <el-card shadow="never" class="welcome-card">
-      <div class="welcome-card__title">你好，{{ username || "同事" }}</div>
+      <div class="welcome-card__title">你好，{{ fullName || username || "同事" }}</div>
+      <div class="welcome-card__identity">
+        <el-tag size="small" type="info">账号：{{ username || "-" }}</el-tag>
+        <el-tag
+          v-for="role in roleLabels"
+          :key="role"
+          size="small"
+          type="warning"
+        >
+          {{ role }}
+        </el-tag>
+      </div>
+      <div class="welcome-card__permissions">
+        <el-tag size="small" type="primary">权限</el-tag>
+        <el-tag
+          v-for="perm in permissionLabels"
+          :key="perm"
+          size="small"
+          effect="plain"
+          >{{ perm }}</el-tag
+        >
+        <el-tag v-if="permissionLabels.length === 0" size="small" effect="plain"
+          >无显式权限标识</el-tag
+        >
+      </div>
       <div class="welcome-card__sub">今天待处理事项 {{ pendingCount }} 条</div>
       <div class="welcome-card__actions">
-        <el-button type="primary" @click="router.push('/finance/reimbursement')"
+        <el-button type="primary" @click="openReimbursementDialog"
           >发起报销</el-button
         >
         <el-button @click="router.push('/construction/operator-log/form')"
-          >填报日志</el-button
+          >填报施工日志</el-button
+        >
+        <el-button
+          :disabled="!canWriteProjectLog"
+          @click="router.push('/construction/manager-log')"
+          >填报项目日志</el-button
         >
         <el-button @click="router.push('/approval/unified-tasklist')"
           >待我审批</el-button
         >
       </div>
     </el-card>
+
+    <el-dialog
+      v-model="reimbursementDialogVisible"
+      title="发起报销"
+      width="520px"
+      destroy-on-close
+    >
+      <el-form label-width="100px">
+        <el-form-item label="所属项目" required>
+          <el-select
+            v-model="reimbursementForm.project_id"
+            filterable
+            placeholder="请选择项目"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="project in projects"
+              :key="project.id"
+              :label="`${project.project_name} (${project.project_code})`"
+              :value="project.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="报销金额">
+          <el-input-number
+            v-model="reimbursementForm.amount"
+            :min="0"
+            :precision="2"
+            :step="100"
+            style="width: 220px"
+          />
+        </el-form-item>
+        <el-form-item label="类别">
+          <el-input v-model="reimbursementForm.category" />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input
+            v-model="reimbursementForm.description"
+            type="textarea"
+            :rows="3"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="reimbursementDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="reimbursementSubmitting"
+          @click="submitReimbursement"
+          >创建信封</el-button
+        >
+      </template>
+    </el-dialog>
 
     <div class="workspace__row">
       <el-card shadow="never" class="bank-card-block">
@@ -222,6 +379,20 @@ const onCertUpload = (file: UploadFile) => {
 .welcome-card__sub {
   margin-top: 6px;
   color: #6e6458;
+}
+
+.welcome-card__identity {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.welcome-card__permissions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
 }
 
 .welcome-card__actions {
