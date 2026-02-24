@@ -5,6 +5,7 @@ import { requireRoles } from "../middleware/rbac";
 import { generateSerial } from "../services/serial";
 import type { Env } from "../types/env";
 import type { BreakthroughReport, SiteSurvey, SiteSurveyItem } from "../types/survey";
+import { hydrateLegacyBreakthrough } from "../utils/legacy-compat";
 
 const nowIso = () => new Date().toISOString();
 
@@ -43,7 +44,10 @@ surveyRoutes.get(
     }
     sql += " ORDER BY report_date DESC, id DESC";
     const rows = await c.env.DB.prepare(sql).bind(...params).all<BreakthroughReport>();
-    return c.json({ success: true, data: rows.results ?? [] });
+    const data = (rows.results ?? []).map((item) =>
+      hydrateLegacyBreakthrough(item as unknown as Record<string, unknown>)
+    );
+    return c.json({ success: true, data });
   }
 );
 
@@ -102,7 +106,10 @@ surveyRoutes.get(
     if (!row) {
       return c.json({ success: false, error: { message: "Breakthrough report not found" } }, 404);
     }
-    return c.json({ success: true, data: row });
+    return c.json({
+      success: true,
+      data: hydrateLegacyBreakthrough(row as unknown as Record<string, unknown>)
+    });
   }
 );
 

@@ -5,6 +5,7 @@ import { requireRoles } from "../middleware/rbac";
 import { createTask } from "../services/ai-slot";
 import type { Env } from "../types/env";
 import type { ManagerLog, ManagerLogPhoto, OperatorLog } from "../types/log";
+import { hydrateLegacyManagerLog, hydrateLegacyOperatorLog } from "../utils/legacy-compat";
 
 const nowIso = () => new Date().toISOString();
 
@@ -98,9 +99,13 @@ logRoutes.get(
       .bind(...params)
       .first<{ total: number }>();
 
+    const data = (rows.results ?? []).map((item) =>
+      hydrateLegacyOperatorLog(item as unknown as Record<string, unknown>)
+    );
+
     return c.json({
       success: true,
-      data: rows.results ?? [],
+      data,
       pagination: { page, pageSize, total: totalRow?.total ?? 0 }
     });
   }
@@ -173,7 +178,10 @@ logRoutes.get(
     if (!row) {
       return c.json({ success: false, error: { message: "Operator log not found" } }, 404);
     }
-    return c.json({ success: true, data: row });
+    return c.json({
+      success: true,
+      data: hydrateLegacyOperatorLog(row as unknown as Record<string, unknown>)
+    });
   }
 );
 
@@ -303,7 +311,9 @@ logRoutes.post(
     return c.json({
       success: true,
       data: {
-        previous,
+        previous: previous
+          ? hydrateLegacyOperatorLog(previous as unknown as Record<string, unknown>)
+          : null,
         prefill: {
           weather: previous?.weather ?? "",
           issue_summary: previous?.issue_summary ?? "",
@@ -353,9 +363,13 @@ logRoutes.get(
       .bind(...params)
       .first<{ total: number }>();
 
+    const data = (rows.results ?? []).map((item) =>
+      hydrateLegacyManagerLog(item as unknown as Record<string, unknown>)
+    );
+
     return c.json({
       success: true,
-      data: rows.results ?? [],
+      data,
       pagination: { page, pageSize, total: totalRow?.total ?? 0 }
     });
   }
@@ -436,7 +450,13 @@ logRoutes.get(
       .bind(id)
       .all<ManagerLogPhoto>();
 
-    return c.json({ success: true, data: { ...managerLog, photos: photos.results ?? [] } });
+    return c.json({
+      success: true,
+      data: {
+        ...hydrateLegacyManagerLog(managerLog as unknown as Record<string, unknown>),
+        photos: photos.results ?? []
+      }
+    });
   }
 );
 

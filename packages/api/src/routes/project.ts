@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import type { Env } from "../types/env";
+import { hydrateLegacyProject, hydrateLegacySection } from "../utils/legacy-compat";
 
 const nowIso = () => new Date().toISOString();
 
@@ -55,9 +56,13 @@ projectRoutes.get("/", async (c) => {
     .bind(...params)
     .first<{ total: number }>();
 
+  const data = (listResult.results ?? []).map((item) =>
+    hydrateLegacyProject(item as unknown as Record<string, unknown>)
+  );
+
   return c.json({
     success: true,
-    data: listResult.results ?? [],
+    data,
     pagination: {
       page,
       pageSize,
@@ -84,7 +89,10 @@ projectRoutes.get("/:id", async (c) => {
     );
   }
 
-  return c.json({ success: true, data: project });
+  return c.json({
+    success: true,
+    data: hydrateLegacyProject(project as unknown as Record<string, unknown>)
+  });
 });
 
 projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"]), async (c) => {
@@ -200,7 +208,10 @@ projectRoutes.get("/:id/sections", async (c) => {
     .bind(projectId)
     .all();
 
-  return c.json({ success: true, data: rows.results ?? [] });
+  const data = (rows.results ?? []).map((item) =>
+    hydrateLegacySection(item as unknown as Record<string, unknown>)
+  );
+  return c.json({ success: true, data });
 });
 
 projectRoutes.get("/:id/files", async (c) => {
