@@ -34,9 +34,53 @@ const wxGetLocation = () =>
     });
   });
 
+const wxRecordAudioOnce = ({
+  duration = 6000,
+  format = "mp3",
+  sampleRate = 16000,
+  numberOfChannels = 1,
+  encodeBitRate = 96000
+} = {}) =>
+  new Promise((resolve, reject) => {
+    const recorder = wx.getRecorderManager();
+    let settled = false;
+
+    const cleanup = () => {
+      if (typeof recorder.offStop === "function") {
+        recorder.offStop();
+      }
+      if (typeof recorder.offError === "function") {
+        recorder.offError();
+      }
+    };
+
+    recorder.onStop((res) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      resolve(res);
+    });
+
+    recorder.onError((err) => {
+      if (settled) return;
+      settled = true;
+      cleanup();
+      reject(err);
+    });
+
+    recorder.start({
+      duration,
+      sampleRate,
+      numberOfChannels,
+      encodeBitRate,
+      format
+    });
+  });
+
 module.exports = {
   wxLogin,
   wxScanCode,
   wxChooseMediaImage,
-  wxGetLocation
+  wxGetLocation,
+  wxRecordAudioOnce
 };

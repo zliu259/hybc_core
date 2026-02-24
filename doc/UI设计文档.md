@@ -398,10 +398,10 @@
 - 落地策略：业务结构保持现有 Phase 10 信息架构，仅重塑视觉层与交互层，不改变后端接口契约。
 
 ### 4.1 页面总索引
-- 项目（Tab1）：`packages/miniapp/pages/index/index`
-- 财务（Tab2）：`packages/miniapp/pages/finance/index`
-- 库房（Tab3）：`packages/miniapp/pages/warehouse/index`
-- 我（Tab4）：`packages/miniapp/pages/profile/index`
+- 工作台（Tab1）：`packages/miniapp/pages/index/index`
+- 现场（Tab2）：`packages/miniapp/pages/warehouse/index`
+- 审批与申请（Tab3）：`packages/miniapp/pages/finance/index`
+- 我的（Tab4）：`packages/miniapp/pages/profile/index`
 - 日志中心：`packages/miniapp/pages/log/index`
 - 操作员日志：`packages/miniapp/pages/operator-log/index`
 - 管理员日志：`packages/miniapp/pages/manager-log/index`
@@ -413,10 +413,10 @@
 - 通知消息：`packages/miniapp/pages/notice/index`
 
 ### 4.2 页面要求
-- 首页（项目Tab）：展示待办数量、项目域快捷入口、协同消息入口。
-- 财务Tab：集中放置报销/审批/财务相关进度入口。
-- 库房Tab：集中放置设备扫码、勘查、库存协同入口。
-- 我Tab：放置个人资料、联调配置、会话管理。
+- 工作台Tab：首页展示红黄绿 KPI、九宫格高频入口、项目筛选与清单，并支持角色化“创建项目”入口。
+- 现场Tab：展示项目进度环/顶段进度条，并聚合双轨日志、设备查验、安全勘查入口。
+- 审批与申请Tab：通过分段器组织“待我审批/发起申请”，并提供快速审批与发单入口。
+- 我的Tab：放置个人申请时间线、证书预警、联调配置、会话管理。
 - 日志中心：仅负责日志角色入口分流（操作员/管理员）。
 - 操作员日志页：支持 AI 预填 + 提交，班次使用中文选择（白班/夜班），内部存储保持 day/night。
 - 管理员日志页：支持拍照上传 + 结构化提交。
@@ -432,6 +432,63 @@
   - 支持“定位匹配项目”快捷动作；若项目未配置坐标，则保留手动选择。
   - 日期统一使用 `picker mode=date`，避免手输日期格式。
   - 班次统一使用中文选项（白班/夜班），内部存储使用英文值（day/night）。
+
+### 4.2.1 Miniapp UI 重构落地点（2026-02）
+- 全局视觉系统：`packages/miniapp/app.wxss`
+  - 补齐红黄绿语义色、放大触控区、统一 KPI 卡片样式。
+  - 新增全局悬浮语音助手 FAB 样式（呼吸动画）。
+- 4 Tabs 信息架构（文案与顺序）：`packages/miniapp/app.json`
+  - `工作台`、`现场`、`流程`、`我的`。
+- 工作台首页重构：`packages/miniapp/pages/index/index.{js,wxml,wxss}`
+  - 欢迎区 + 红黄绿 KPI + 大入口网格 + 项目清单 + 全局语音助手。
+- 现场页重构：`packages/miniapp/pages/warehouse/index.{js,wxml,wxss}`
+  - 项目定位提示、顶段进度卡、现场动作入口聚合。
+- 审批与申请页重构：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
+  - 待办/发起分段器 + 快捷动作入口 + 全局语音助手。
+- 我的页重构：`packages/miniapp/pages/profile/index.{js,wxml,wxss}`
+  - 个人申请时间线、证书预警卡、联调配置区。
+- 核心业务页视觉强化：
+  - 审批：`packages/miniapp/pages/approval/index.{js,wxml,wxss}`（红黄绿摘要 + 长按后滑动解锁通过）
+  - 报销：`packages/miniapp/pages/reimbursement/index.{js,wxml}`（扫码/OCR/PDF 三段链路与语音助手）
+  - 对外付款：`packages/miniapp/pages/payment-apply/index.{js,wxml,json}`（付款草稿创建 + 提交审批）
+  - 施工日志：`packages/miniapp/pages/{log,operator-log,manager-log}/index.{js,wxml,wxss}`（双轨入口与语音提示）
+  - 设备/勘查：`packages/miniapp/pages/{asset,survey}/index.{js,wxml}`（图标化状态与风险提示）
+- 交互反馈工具：`packages/miniapp/utils/interaction.js`
+  - 封装短震/长震与统一 toast，供审批/报销/勘查等关键流程复用。
+- 权限一致性补齐：
+  - `packages/miniapp/pages/finance/index.{js,wxml}`：按角色显示“对外付款”入口
+  - `packages/miniapp/pages/reimbursement/index.{js,wxml}`：按角色控制 PDF 生成入口
+  - `packages/miniapp/pages/approval/index.{js,wxml}`：转签改为动态成员选择（基于企业微信通讯录）
+  - `packages/api/src/routes/survey.ts`：现场勘查提交支持 `operator` 角色
+
+### 4.2.2 Miniapp 语音助手联动（2026-02）
+- 后端语音能力：
+  - 新增 `packages/api/src/routes/voice.ts`
+  - `POST /api/v1/voice/stt`：提交语音识别任务（基于 AI Slot task_queue）
+  - `GET /api/v1/voice/stt/:taskId`：轮询识别状态与转写文本
+  - `POST /api/v1/voice/command-parse`：将文本解析为小程序动作（navigate/switchTab）
+- AI 任务类型扩展：
+  - 更新 `packages/api/src/types/ai.ts`，新增 `voice_stt` 任务类型
+  - 更新 `packages/api/src/index.ts`，注册 `/api/v1/voice` 路由
+- 小程序录音上传与指令执行：
+  - 新增 `packages/miniapp/utils/voice-assistant.js`（录音、上传、STT轮询、指令解析、动作执行）
+  - 更新 `packages/miniapp/utils/wx.js`，新增 `wxRecordAudioOnce`
+  - 语音助手 FAB 接入页面：
+    - `packages/miniapp/pages/index/index.js`
+    - `packages/miniapp/pages/finance/index.js`
+    - `packages/miniapp/pages/warehouse/index.js`
+    - `packages/miniapp/pages/log/index.js`
+    - `packages/miniapp/pages/profile/index.js`
+    - `packages/miniapp/pages/reimbursement/index.js`
+
+### 4.2.3 进度看板项目选择优化（2026-02）
+- miniapp 项目进度看板改为“项目名称下拉”而非“输入项目编号”：
+  - `packages/miniapp/pages/progress/index.js`
+  - `packages/miniapp/pages/progress/index.wxml`
+  - 复用组件 `packages/miniapp/components/business/project-picker/index.{js,wxml}`
+- web 施工进度看板改为“项目名称下拉（显示名称+编号）”而非“项目ID输入框”：
+  - `packages/web/src/views/construction/dashboard.vue`
+  - 复用 API `packages/web/src/api/project.ts` 的 `listProjects`
 
 ### 4.3 TDesign 组件库使用规范（小程序）
 

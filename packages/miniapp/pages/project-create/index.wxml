@@ -1,0 +1,27 @@
+<view class="page">
+  <hy-panel-card title="🏗️ 项目创建向导" subtitle="一步一问，快速完成项目立项">
+    <view class="label required">项目编号</view>
+    <input class="input" value="{{form.project_code}}" data-key="project_code" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label required">项目名称</view>
+    <input class="input" value="{{form.project_name}}" data-key="project_name" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label">项目经理（企微userid）</view>
+    <input class="input" value="{{form.manager_userid}}" data-key="manager_userid" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label">开始日期</view>
+    <picker mode="date" value="{{form.start_date}}" bindchange="onDateChange" data-key="start_date" disabled="{{busy}}">
+      <view class="input">{{form.start_date || "请选择"}}</view>
+    </picker>
+
+    <view class="label">结束日期</view>
+    <picker mode="date" value="{{form.end_date}}" bindchange="onDateChange" data-key="end_date" disabled="{{busy}}">
+      <view class="input">{{form.end_date || "请选择"}}</view>
+    </picker>
+
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="fillTodayCode" disabled="{{busy}}">自动生成编号</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">提交立项</t-button>
+    </view>
+  </hy-panel-card>
+</view>

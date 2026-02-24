@@ -2,12 +2,14 @@
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { getLogDashboard, triggerLogSummary } from "@/api/log";
+import { listProjects, type Project } from "@/api/project";
 
 defineOptions({ name: "ConstructionDashboard" });
 
 const loading = ref(false);
 const summaryLoading = ref(false);
 const projectId = ref<number | undefined>(undefined);
+const projects = ref<Project[]>([]);
 const data = ref({
   operator_count: 0,
   manager_count: 0,
@@ -32,6 +34,11 @@ const loadData = async () => {
   }
 };
 
+const loadProjects = async () => {
+  const result = await listProjects({ page: 1, pageSize: 200, status: "active" });
+  projects.value = result.data;
+};
+
 const trigger = async (report_type: "daily" | "weekly") => {
   summaryLoading.value = true;
   try {
@@ -47,15 +54,31 @@ const trigger = async (report_type: "daily" | "weekly") => {
   }
 };
 
-onMounted(loadData);
+onMounted(async () => {
+  await loadProjects();
+  await loadData();
+});
 </script>
 
 <template>
   <div v-loading="loading">
     <el-card shadow="never" style="margin-bottom: 16px; background: #fffaf2">
       <el-form inline>
-        <el-form-item label="项目ID">
-          <el-input-number v-model="projectId" :min="1" />
+        <el-form-item label="项目名称">
+          <el-select
+            v-model="projectId"
+            clearable
+            filterable
+            placeholder="全部项目"
+            style="width: 240px"
+          >
+            <el-option
+              v-for="item in projects"
+              :key="item.id"
+              :label="`${item.project_name} (${item.project_code})`"
+              :value="item.id"
+            />
+          </el-select>
         </el-form-item>
         <el-button type="primary" @click="loadData">查询</el-button>
         <el-button :loading="summaryLoading" @click="trigger('daily')"

@@ -1,0 +1,22 @@
+.segment-wrap {
+  display: flex;
+  border-radius: 16rpx;
+  overflow: hidden;
+  border: 1px solid #d9e5f5;
+  margin-bottom: 14rpx;
+}
+
+.segment-item {
+  flex: 1;
+  text-align: center;
+  padding: 20rpx 10rpx;
+  background: #f5f8fc;
+  font-size: 26rpx;
+  color: #55657b;
+}
+
+.segment-item.active {
+  background: #1677ff;
+  color: #fff;
+  font-weight: 600;
+}

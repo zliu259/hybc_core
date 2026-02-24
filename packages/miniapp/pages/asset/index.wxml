@@ -1,6 +1,6 @@
 <view class="page">
-  <hy-panel-card title="设备扫码（状态查看）">
-    <t-notice-bar content="支持扫码识别或手动输入资产ID" theme="info" />
+  <hy-panel-card title="📦 物资与设备查验" subtitle="扫码后红黄绿状态直观显示">
+    <t-notice-bar content="支持扫码识别或手动输入资产ID" theme="warning" />
     <view class="label required">资产ID</view>
     <input class="input" type="number" value="{{assetId}}" bindinput="onAssetIdInput" disabled="{{busy}}" />
     <view class="row">
@@ -11,7 +11,7 @@
 
   <hy-panel-card title="{{asset.asset_code}}" wx:if="{{asset.id}}">
     <view class="sub">名称：{{asset.asset_name}}</view>
-    <view class="sub">状态：{{asset.status}}</view>
+    <view class="sub">状态：{{asset.status === 'idle' ? '🟢 正常' : asset.status === 'repair' ? '🟡 待维修' : '🔴 异常'}}</view>
     <view class="sub">位置：{{asset.current_location || '-'}} </view>
     <view class="row">
       <t-button class="btn" variant="outline" data-type="stock_out" bindtap="markStockEvent" loading="{{busy}}" disabled="{{busy}}">记录出库确认</t-button>

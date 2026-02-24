@@ -1,19 +1,36 @@
 <view class="page">
-  <hy-panel-card title="{{title}}" icon="dashboard" subtitle="项目列表与项目详情入口">
-    <view class="stats-row">
-      <view class="stat-card">
-        <view class="stat-value">{{pendingCount}}</view>
-        <view class="stat-label">待审批</view>
+  <hy-panel-card title="早安，工程伙伴" icon="dashboard" subtitle="今天先看红黄绿，再做动作">
+    <view class="kpi-board">
+      <view class="kpi-item red">
+        <view class="kpi-label traffic-red">🔴 待审批</view>
+        <view class="kpi-value traffic-red">{{pendingCount}}</view>
       </view>
-      <view class="stat-card">
-        <view class="stat-value">{{noticeCount}}</view>
-        <view class="stat-label">消息通知</view>
+      <view class="kpi-item yellow">
+        <view class="kpi-label traffic-yellow">🟡 库存预警</view>
+        <view class="kpi-value traffic-yellow">{{warningCount}}</view>
+      </view>
+      <view class="kpi-item green">
+        <view class="kpi-label traffic-green">🟢 通知消息</view>
+        <view class="kpi-value traffic-green">{{noticeCount}}</view>
+      </view>
+      <view class="kpi-item">
+        <view class="kpi-label">📍 当前项目数</view>
+        <view class="kpi-value">{{projects.length}}</view>
       </view>
     </view>
+
     <view class="row mt-2">
       <input class="search-input" placeholder="按项目编号或名称筛选" value="{{keyword}}" bindinput="onKeywordInput" />
       <t-button class="btn btn-primary mt-2" theme="primary" block bindtap="searchProjects" loading="{{loading}}" disabled="{{loading}}">查询项目</t-button>
     </view>
+
+    <view class="entry-grid">
+      <view wx:for="{{entries}}" wx:key="title" class="entry-card" data-path="{{item.path}}" bindtap="goTo">
+        <view class="entry-top"><view class="entry-title">{{item.title}}</view></view>
+        <view class="entry-desc">{{item.desc}}</view>
+      </view>
+    </view>
+
     <view wx:if="{{projects.length === 0}}" class="empty-tip">暂无项目数据</view>
     <view wx:for="{{projects}}" wx:key="id" class="project-card" data-id="{{item.id}}" data-participant="{{item.participant}}" bindtap="openProjectDetail">
       <view class="project-title-row">
@@ -24,4 +41,6 @@
       <view class="project-sub">项目经理：{{item.manager_userid}}</view>
     </view>
   </hy-panel-card>
+
+  <view class="fab-helper" bindtap="openGlobalHelper">🎤</view>
 </view>

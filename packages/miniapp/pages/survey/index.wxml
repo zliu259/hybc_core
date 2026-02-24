@@ -1,16 +1,16 @@
 <view class="page">
-  <hy-panel-card title="现场勘查（GPS + 拍照 + 表单）">
-    <t-notice-bar content="优先定位，再补充勘查摘要和照片" theme="info" />
+  <hy-panel-card title="👷 现场安全勘查" subtitle="GPS + 拍照 + AI标注隐患">
+    <t-notice-bar content="优先定位，再补充勘查摘要和照片" theme="warning" />
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="label required">勘查日期</view>
+    <view class="label required">📅 勘查日期</view>
     <picker mode="date" value="{{form.survey_date}}" bindchange="onDateChange" disabled="{{busy}}">
       <view class="input">{{form.survey_date}}</view>
     </picker>
-    <view class="label required">位置</view>
+    <view class="label required">📍 位置</view>
     <input class="input" value="{{form.location}}" data-key="location" bindinput="onInput" disabled="{{busy}}" />
-    <view class="label">天气</view>
+    <view class="label">🌦 天气</view>
     <input class="input" value="{{form.weather}}" data-key="weather" bindinput="onInput" disabled="{{busy}}" />
-    <view class="label">摘要</view>
+    <view class="label">🧠 摘要</view>
     <textarea class="input" value="{{form.summary}}" data-key="summary" bindinput="onInput" disabled="{{busy}}" />
     <view class="row">
       <hy-status-chip text="照片数量：{{photoKeys.length}}" theme="primary" variant="light" />

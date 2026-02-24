@@ -1,6 +1,7 @@
 <view class="page">
-  <hy-panel-card title="操作员日志" icon="edit-1" subtitle="最少输入：项目、日期、班次、本班下管数">
+  <hy-panel-card title="🚜 报顶进数据（施工日志）" icon="edit-1" subtitle="先选顶段，再语音报数，系统自动提取关键值">
     <hy-project-picker value="{{projectId}}" label="所属项目" bind:change="onProjectChange" />
+    <view class="voice-box">🎤 按住说话：今天顶了3.5米，最大推力120吨，注浆量5方</view>
     <view class="label required">日期</view>
     <picker mode="date" value="{{form.log_date}}" bindchange="onDateChange" disabled="{{busy}}">
       <view class="input">{{form.log_date}}</view>
@@ -9,11 +10,11 @@
     <picker mode="selector" range="{{shiftOptions}}" value="{{shiftIndex}}" bindchange="onShiftChange" disabled="{{busy}}">
       <view class="input">{{shiftOptions[shiftIndex]}}</view>
     </picker>
-    <view class="label required">本班下管数</view>
+    <view class="label required">📏 本班下管数</view>
     <input class="input" type="number" value="{{form.completed_pipe_count}}" data-key="completed_pipe_count" bindinput="onInput" disabled="{{busy}}" />
-    <view class="label">天气</view>
+    <view class="label">🌦 天气</view>
     <input class="input" value="{{form.weather}}" data-key="weather" bindinput="onInput" disabled="{{busy}}" />
-    <view class="label">问题摘要</view>
+    <view class="label">🧠 问题摘要</view>
     <textarea class="input" value="{{form.issue_summary}}" data-key="issue_summary" bindinput="onInput" disabled="{{busy}}" />
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="smartFill" loading="{{busy}}" disabled="{{busy}}">AI预填</t-button>

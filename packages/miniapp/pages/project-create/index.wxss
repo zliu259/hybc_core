@@ -1,0 +1,5 @@
+.hint {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #607080;
+}

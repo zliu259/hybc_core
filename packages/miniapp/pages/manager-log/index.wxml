@@ -1,13 +1,14 @@
 <view class="page">
-  <hy-panel-card title="管理员日志" icon="file-image" subtitle="支持拍照上传与结构化提交流程">
+  <hy-panel-card title="📸 写现场概况（管理日志）" icon="file-image" subtitle="按住说话 + 拍照必传，系统自动摘要">
     <hy-project-picker value="{{projectId}}" label="所属项目" bind:change="onProjectChange" />
+    <view class="voice-box">🎤 按住说话：白班阵雨，2台设备进场，1处安全隐患已处理</view>
     <view class="label required">日期</view>
     <picker mode="date" value="{{form.log_date}}" bindchange="onDateChange" disabled="{{busy}}">
       <view class="input">{{form.log_date}}</view>
     </picker>
-    <view class="label">标题</view>
+    <view class="label">📰 标题</view>
     <input class="input" value="{{form.title}}" data-key="title" bindinput="onInput" disabled="{{busy}}" />
-    <view class="label">日志内容</view>
+    <view class="label">🧾 日志内容</view>
     <textarea class="input" value="{{form.detail_html}}" data-key="detail_html" bindinput="onInput" disabled="{{busy}}" />
     <view class="row">
       <hy-status-chip text="已上传图片 {{form.photos.length}} 张" theme="primary" variant="light" />

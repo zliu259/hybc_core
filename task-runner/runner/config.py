@@ -35,6 +35,7 @@ class Settings:
             "consumption_anomaly",
             "ocr_extract",
             "file_generate",
+            "voice_stt",
             "approval_ai_gate",
         ]
     )

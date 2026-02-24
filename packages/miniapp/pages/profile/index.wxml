@@ -1,5 +1,26 @@
 <view class="page">
-  <hy-panel-card title="个人中心" icon="user-circle">
+  <hy-panel-card title="👤 我的中心" icon="user-circle" subtitle="个人申请追踪、报销与证书预警">
+    <view class="section-title">📌 我的申请时间线</view>
+    <view wx:for="{{timeline}}" wx:key="text" class="timeline-item">
+      <view class="timeline-left">{{item.icon}}</view>
+      <view class="timeline-main">
+        <view class="timeline-text">{{item.text}}</view>
+        <view class="timeline-status">{{item.status}}</view>
+      </view>
+    </view>
+
+    <view class="row">
+      <t-button class="btn" variant="outline">🔔 一键催办</t-button>
+      <t-button class="btn btn-primary" theme="primary" data-path="/pages/reimbursement/index" bindtap="goToReimbursement">🧾 去报销</t-button>
+    </view>
+
+    <view class="section-title">📚 我的证书</view>
+    <view class="cert-grid">
+      <view class="cert-card warn">⚠️ 特种作业证（7天后到期）</view>
+      <view class="cert-card ok">✅ 安全员证（正常）</view>
+    </view>
+
+    <view class="section-title">⚙️ 联调设置</view>
     <t-notice-bar content="开发联调可在此切换 API 地址" theme="info" />
     <view class="label required">API地址（企微开发者工具）</view>
     <input class="input" value="{{baseUrl}}" bindinput="onBaseUrlInput" />
@@ -14,4 +35,6 @@
       <t-button class="btn btn-warn" theme="danger" bindtap="logout">退出登录</t-button>
     </view>
   </hy-panel-card>
+
+  <view class="fab-helper" bindtap="openGlobalHelper">🎤</view>
 </view>

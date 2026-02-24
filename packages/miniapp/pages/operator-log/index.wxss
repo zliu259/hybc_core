@@ -1,0 +1,9 @@
+.voice-box {
+  margin-top: 10rpx;
+  border-radius: 14rpx;
+  background: #eaf4ff;
+  border: 1px solid #cde2ff;
+  color: #1f4f8e;
+  font-size: 24rpx;
+  padding: 14rpx;
+}

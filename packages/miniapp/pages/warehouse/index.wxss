@@ -1,0 +1,17 @@
+.section-card {
+  margin-top: 14rpx;
+  background: #fff;
+  border: 1px solid #d8ead8;
+  border-radius: 16rpx;
+  padding: 16rpx;
+}
+
+.section-title {
+  margin-bottom: 10rpx;
+}
+
+.section-sub {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #506070;
+}

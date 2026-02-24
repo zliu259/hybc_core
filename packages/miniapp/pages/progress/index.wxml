@@ -1,7 +1,6 @@
 <view class="page">
   <hy-panel-card title="项目进度概览">
-    <view class="label">项目ID（可选）</view>
-    <input class="input" type="number" value="{{projectId}}" bindinput="onProjectInput" disabled="{{loading}}" />
+    <hy-project-picker value="{{projectId}}" label="项目名称（可选）" bind:change="onProjectChange" />
     <view class="row">
       <t-button class="btn btn-primary" theme="primary" block bindtap="loadData" loading="{{loading}}" disabled="{{loading}}">刷新</t-button>
     </view>

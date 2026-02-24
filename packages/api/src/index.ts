@@ -22,6 +22,7 @@ import { surveyRoutes } from "./routes/survey";
 import { taskRoutes } from "./routes/task";
 import { uploadRoutes } from "./routes/upload";
 import { userRoutes } from "./routes/user";
+import { voiceRoutes } from "./routes/voice";
 import { warehouseRoutes } from "./routes/warehouse";
 import { scheduled } from "./scheduled";
 import type { Env } from "./types/env";
@@ -58,6 +59,7 @@ app.route("/api/v1/warehouse", warehouseRoutes);
 app.route("/api/v1/task", taskRoutes);
 app.route("/api/v1/dict", dictRoutes);
 app.route("/api/v1/upload", uploadRoutes);
+app.route("/api/v1/voice", voiceRoutes);
 app.route("/api/v1/admin", adminRoutes);
 app.route("/api/v1/dashboard", dashboardRoutes);
 

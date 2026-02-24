@@ -186,7 +186,7 @@ surveyRoutes.get(
 
 surveyRoutes.post(
   "/site-survey",
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as {

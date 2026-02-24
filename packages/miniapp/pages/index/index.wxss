@@ -14,7 +14,7 @@
 
 .project-card {
   margin-top: 16rpx;
-  border: 1px solid #e4e9f2;
+  border: 1px solid #dbe8f7;
   border-radius: 16rpx;
   padding: 18rpx;
   background: #fff;
@@ -29,7 +29,7 @@
 .project-title {
   font-size: 30rpx;
   font-weight: 600;
-  color: #1f2d3d;
+  color: #18344f;
 }
 
 .project-sub {
@@ -42,4 +42,8 @@
   margin-top: 12rpx;
   color: #8a94a7;
   font-size: 24rpx;
+}
+
+.entry-grid {
+  margin-top: 14rpx;
 }

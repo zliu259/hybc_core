@@ -2,7 +2,7 @@ const { request } = require("../../utils/request");
 
 Page({
   data: {
-    projectId: "",
+    projectId: 0,
     dashboard: {},
     alerts: [],
     loading: false
@@ -12,14 +12,14 @@ Page({
     this.loadData();
   },
 
-  onProjectInput(e) {
-    this.setData({ projectId: e.detail.value });
+  onProjectChange(e) {
+    this.setData({ projectId: Number(e.detail.projectId || 0) });
   },
 
   async loadData() {
     this.setData({ loading: true });
     try {
-      const q = this.data.projectId ? `?project_id=${Number(this.data.projectId)}` : "";
+      const q = this.data.projectId ? `?project_id=${this.data.projectId}` : "";
       const dashboard = await request({ method: "GET", path: `/api/v1/log/dashboard${q}` });
       const alerts = await request({ method: "GET", path: "/api/v1/log/progress-alert" });
       this.setData({

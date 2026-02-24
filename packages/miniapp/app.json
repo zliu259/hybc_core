@@ -2,6 +2,7 @@
   "pages": [
     "pages/index/index",
     "pages/project-detail/index",
+    "pages/project-create/index",
     "pages/finance/index",
     "pages/warehouse/index",
     "pages/profile/index",
@@ -9,6 +10,7 @@
     "pages/operator-log/index",
     "pages/manager-log/index",
     "pages/approval/index",
+    "pages/payment-apply/index",
     "pages/reimbursement/index",
     "pages/asset/index",
     "pages/survey/index",
@@ -43,25 +45,25 @@
     "list": [
       {
         "pagePath": "pages/index/index",
-        "text": "项目",
+        "text": "工作台",
         "iconPath": "assets/tab/project.png",
         "selectedIconPath": "assets/tab/project-active.png"
       },
       {
-        "pagePath": "pages/finance/index",
-        "text": "财务",
-        "iconPath": "assets/tab/finance.png",
-        "selectedIconPath": "assets/tab/finance-active.png"
-      },
-      {
         "pagePath": "pages/warehouse/index",
-        "text": "库房",
+        "text": "现场",
         "iconPath": "assets/tab/warehouse.png",
         "selectedIconPath": "assets/tab/warehouse-active.png"
       },
       {
+        "pagePath": "pages/finance/index",
+        "text": "流程",
+        "iconPath": "assets/tab/finance.png",
+        "selectedIconPath": "assets/tab/finance-active.png"
+      },
+      {
         "pagePath": "pages/profile/index",
-        "text": "我",
+        "text": "我的",
         "iconPath": "assets/tab/me.png",
         "selectedIconPath": "assets/tab/me-active.png"
       }

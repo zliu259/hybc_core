@@ -1,14 +1,16 @@
 <view class="page">
-  <hy-panel-card title="日志中心" icon="file-1" subtitle="已拆分为操作员日志和管理员日志，按角色快速直达">
+  <hy-panel-card title="📝 双轨日志中心" icon="file-1" subtitle="管理日志 + 施工日志，减少文字输入">
     <view class="entry-grid">
       <view class="entry-card" data-path="/pages/operator-log/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="edit" size="32rpx" color="#1677ff" /><view class="entry-title">操作员日志</view></view>
-        <view class="entry-desc">班次填报、AI预填、快速提交</view>
+        <view class="entry-top"><view class="entry-title">🚜 报顶进数据</view></view>
+        <view class="entry-desc">选顶段 + 报米数 + 自动提取参数</view>
       </view>
       <view class="entry-card" data-path="/pages/manager-log/index" bindtap="goTo">
-        <view class="entry-top"><t-icon name="image" size="32rpx" color="#1677ff" /><view class="entry-title">管理员日志</view></view>
-        <view class="entry-desc">图文记录与拍照上传</view>
+        <view class="entry-top"><view class="entry-title">📸 写现场概况</view></view>
+        <view class="entry-desc">拍照 + 天气 + 人机料法环摘要</view>
       </view>
     </view>
   </hy-panel-card>
+
+  <view class="fab-helper" bindtap="openGlobalHelper">🎤</view>
 </view>

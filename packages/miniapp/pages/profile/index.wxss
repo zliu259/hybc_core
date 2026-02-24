@@ -1,3 +1,54 @@
 .sub {
   margin-top: 8rpx;
 }
+
+.timeline-item {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+  padding: 12rpx;
+  border-radius: 14rpx;
+  background: #f6f9fd;
+}
+
+.timeline-left {
+  font-size: 30rpx;
+}
+
+.timeline-main {
+  flex: 1;
+}
+
+.timeline-text {
+  font-size: 26rpx;
+  color: #20324a;
+}
+
+.timeline-status {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #5d6a7f;
+}
+
+.cert-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10rpx;
+  margin-top: 8rpx;
+}
+
+.cert-card {
+  border-radius: 14rpx;
+  padding: 14rpx;
+  font-size: 24rpx;
+}
+
+.cert-card.warn {
+  background: #fff3e6;
+  border: 1px solid #ffd39a;
+}
+
+.cert-card.ok {
+  background: #effcf0;
+  border: 1px solid #b7e7c3;
+}

@@ -2,6 +2,7 @@ const { request } = require("../../utils/request");
 const { uploadFileToR2 } = require("../../utils/upload");
 const { wxGetLocation, wxChooseMediaImage } = require("../../utils/wx");
 const { required, positiveNumber, ymdDate, firstError } = require("../../utils/validation");
+const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -51,7 +52,7 @@ Page({
       this.setData({
         "form.location": `${loc.latitude.toFixed(6)},${loc.longitude.toFixed(6)}`
       });
-    }).catch(() => wx.showToast({ title: "定位失败", icon: "none" }));
+    }).catch(() => sayToast({ title: "定位失败", icon: "none", danger: true }));
   },
 
   async addPhoto() {
@@ -61,8 +62,9 @@ Page({
       if (!path) return;
       const file = await uploadFileToR2(path);
       this.setData({ photoKeys: this.data.photoKeys.concat([file.key]) });
-      wx.showToast({ title: "照片已上传", icon: "success" });
-    }).catch((error) => wx.showToast({ title: error.message || "上传失败", icon: "none" }));
+      vibrateSuccess();
+      sayToast({ title: "照片已上传", icon: "success" });
+    }).catch((error) => sayToast({ title: error.message || "上传失败", icon: "none", danger: true }));
   },
 
   async submitSurvey() {
@@ -73,7 +75,7 @@ Page({
       required(form.location, "位置")
     ]);
     if (errorText) {
-      wx.showToast({ title: errorText, icon: "none" });
+      sayToast({ title: errorText, icon: "none", danger: true });
       return;
     }
 
@@ -98,7 +100,11 @@ Page({
           ]
         }
       });
-      wx.showToast({ title: "提交成功", icon: "success" });
-    }).catch((error) => wx.showToast({ title: error.message || "提交失败", icon: "none" }));
+      vibrateSuccess();
+      sayToast({ title: "提交成功", icon: "success" });
+    }).catch((error) => {
+      vibrateWarning();
+      sayToast({ title: error.message || "提交失败", icon: "none", danger: true });
+    });
   }
 });

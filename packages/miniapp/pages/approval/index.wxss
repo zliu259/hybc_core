@@ -1,3 +1,28 @@
 .card view {
   margin-top: 6rpx;
 }
+
+.risk-summary {
+  margin-top: 8rpx;
+  border-radius: 14rpx;
+  padding: 10rpx 14rpx;
+  background: #f7fafc;
+}
+
+.risk-row {
+  font-size: 23rpx;
+  line-height: 1.7;
+}
+
+.slide-approve {
+  flex: 1;
+  min-height: 88rpx;
+  border-radius: 44rpx;
+  background: linear-gradient(90deg, #d9ecff, #b5dbff);
+  color: #1054a8;
+  font-size: 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 16rpx;
+}

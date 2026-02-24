@@ -15,6 +15,7 @@ export const taskTypes = [
   "consumption_anomaly",
   "ocr_extract",
   "file_generate",
+  "voice_stt",
   "approval_ai_gate"
 ] as const;
 export type TaskType = (typeof taskTypes)[number];

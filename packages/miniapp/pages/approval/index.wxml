@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="审批待办" subtitle="移动端单手处理审批动作">
+  <hy-panel-card title="✅ 待我审批" subtitle="红黄绿摘要 + 滑动解锁确认">
     <view class="row">
       <t-button class="btn btn-primary" theme="primary" block bindtap="loadPending" loading="{{loading}}" disabled="{{loading || acting}}">刷新列表</t-button>
     </view>
@@ -9,16 +9,23 @@
 
   <block wx:for="{{pending}}" wx:key="id">
     <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+      <view class="risk-summary">
+        <view class="risk-row traffic-red">🔴 高风险：金额/合规请重点复核</view>
+        <view class="risk-row traffic-yellow">🟡 提醒：历史记录存在波动</view>
+        <view class="risk-row traffic-green">🟢 基础字段已齐全</view>
+      </view>
       <view class="sub">类型：{{item.biz_type}}</view>
       <view class="label">意见</view>
       <input class="input" value="{{commentMap[item.id] || ''}}" data-id="{{item.id}}" bindinput="onComment" disabled="{{acting}}" />
       <view class="row">
-        <t-button class="btn btn-primary" theme="primary" data-id="{{item.id}}" data-action="approve" bindtap="handleAction" loading="{{acting}}" disabled="{{acting}}">通过</t-button>
+        <view class="slide-approve" data-id="{{item.id}}" bindlongpress="markSliderReady" bindtouchend="clearSliderReady" bindtap="handleApproveUnlock">
+          👉 滑动解锁通过（先长按）
+        </view>
         <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="reject" bindtap="handleAction" disabled="{{acting}}">拒绝</t-button>
       </view>
       <view class="row">
         <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="return" bindtap="handleAction" disabled="{{acting}}">退回</t-button>
-        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="transfer" bindtap="handleAction" disabled="{{acting}}">转签给operator</t-button>
+        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="transfer" bindtap="handleAction" disabled="{{acting}}">转签成员</t-button>
       </view>
     </hy-panel-card>
   </block>

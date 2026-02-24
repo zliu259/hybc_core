@@ -1,0 +1,37 @@
+<view class="page">
+  <hy-panel-card title="💸 发起对外付款" subtitle="创建付款单并提交审批">
+    <view class="label required">关联合同ID</view>
+    <input class="input" type="number" value="{{form.contract_id}}" data-key="contract_id" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label required">项目ID</view>
+    <input class="input" type="number" value="{{form.project_id}}" data-key="project_id" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label required">收款方ID（payee）</view>
+    <input class="input" type="number" value="{{form.payee_id}}" data-key="payee_id" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label required">预计付款日期</view>
+    <picker mode="date" value="{{form.expected_payment_date}}" bindchange="onDateChange" disabled="{{busy}}">
+      <view class="input">{{form.expected_payment_date}}</view>
+    </picker>
+
+    <view class="label required">付款类别</view>
+    <input class="input" value="{{form.category}}" data-key="category" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label required">付款方式</view>
+    <input class="input" value="{{form.payment_method}}" data-key="payment_method" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label required">付款金额</view>
+    <input class="input" type="digit" value="{{form.amount}}" data-key="amount" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label required">付款内容</view>
+    <textarea class="input" value="{{form.content}}" data-key="content" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label">备注</view>
+    <textarea class="input" value="{{form.remark}}" data-key="remark" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="submitDraft" loading="{{busy}}" disabled="{{busy}}">仅保存草稿</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitAndApproval" loading="{{busy}}" disabled="{{busy}}">提交审批</t-button>
+    </view>
+  </hy-panel-card>
+</view>

@@ -21,6 +21,7 @@ class LocalRulesProvider(AiProvider):
             "inventory_alert_analysis",
             "consumption_anomaly",
             "ocr_extract",
+            "voice_stt",
             "contract_review",
             "payment_risk_assessment",
             "risk_assessment",
@@ -51,6 +52,8 @@ class LocalRulesProvider(AiProvider):
             output = self._consumption_anomaly(payload)
         elif task_type == "ocr_extract":
             output = self._ocr_extract(payload)
+        elif task_type == "voice_stt":
+            output = self._voice_stt(payload)
         elif task_type == "contract_review":
             output = self._contract_review(payload)
         elif task_type in ["payment_risk_assessment", "risk_assessment"]:
@@ -105,6 +108,38 @@ class LocalRulesProvider(AiProvider):
                 "status": "placeholder",
                 "message": "OCR extraction not yet implemented",
                 "file_url": file_url,
+            },
+            ensure_ascii=False,
+        )
+
+    def _voice_stt(self, payload: dict[str, object]) -> str:
+        scene = str(payload.get("scene", "miniapp"))
+        hints_raw = payload.get("hints", [])
+        hints = hints_raw if isinstance(hints_raw, list) else []
+        file_key = str(payload.get("file_key", ""))
+
+        transcript_seed = ""
+        if hints:
+            first_hint = hints[0]
+            transcript_seed = str(first_hint) if first_hint is not None else ""
+
+        if not transcript_seed:
+            if scene in ["finance", "payment"]:
+                transcript_seed = "我要发起对外付款"
+            elif scene in ["warehouse", "log"]:
+                transcript_seed = "我要报顶进数据"
+            elif scene in ["reimbursement"]:
+                transcript_seed = "我要发起报销"
+            else:
+                transcript_seed = "我要打开审批待办"
+
+        return json.dumps(
+            {
+                "transcript": transcript_seed,
+                "confidence": 0.76,
+                "scene": scene,
+                "source": "local_rules_mock_stt",
+                "file_key": file_key,
             },
             ensure_ascii=False,
         )

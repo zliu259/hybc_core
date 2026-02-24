@@ -1,20 +1,20 @@
 <view class="page">
-  <hy-panel-card title="信封扫码填报">
-    <t-notice-bar content="流程：扫码信封 -> 填写金额 -> 提交" theme="info" />
+  <hy-panel-card title="🧾 报销信封与票据填报" subtitle="扫码、拍照、OCR、防重一体化">
+    <t-notice-bar content="流程：扫码信封 -> 填写金额 -> 提交，异常会红色预警" theme="warning" />
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="label required">信封UUID</view>
+    <view class="label required">🧧 信封UUID</view>
     <input class="input" value="{{scan.envelope_uuid}}" data-key="envelope_uuid" bindinput="onScanInput" disabled="{{busy}}" />
-    <view class="label">发票号</view>
+    <view class="label">🧾 发票号</view>
     <input class="input" value="{{scan.invoice_no}}" data-key="invoice_no" bindinput="onScanInput" disabled="{{busy}}" />
-    <view class="label required">金额</view>
+    <view class="label required">💰 金额</view>
     <input class="input" type="digit" value="{{scan.amount}}" data-key="amount" bindinput="onScanInput" disabled="{{busy}}" />
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy}}">扫码识别</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">提交填报</t-button>
+      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy}}">📷 扫码识别</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">✅ 提交填报</t-button>
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="电子发票拍照上传(OCR)">
+  <hy-panel-card title="📸 电子发票拍照上传 (OCR)">
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
     <view class="label">发票号（可选）</view>
     <input class="input" value="{{invoice.invoice_no}}" data-key="invoice_no" bindinput="onInvoiceInput" disabled="{{busy}}" />
@@ -23,11 +23,11 @@
       <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy}}">刷新OCR状态</t-button>
     </view>
     <view class="row">
-      <hy-status-chip text="OCR状态：{{ocrStatusText}}" theme="primary" variant="light" />
+      <hy-status-chip text="OCR状态：{{ocrStatusText}}" theme="warning" variant="light" />
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="生成报销信封PDF">
+  <hy-panel-card wx:if="{{canGeneratePdf}}" title="📄 生成报销信封 PDF">
     <view class="label required">信封ID</view>
     <input class="input" type="number" value="{{pdfEnvelopeId}}" bindinput="onPdfIdInput" disabled="{{busy}}" />
     <view class="row">
@@ -38,4 +38,10 @@
       <hy-status-chip text="PDF状态：{{pdfStatusText}}" theme="success" variant="light" />
     </view>
   </hy-panel-card>
+
+  <hy-panel-card wx:else title="📄 生成报销信封 PDF">
+    <view class="sub">当前角色无生成 PDF 权限（仅 super_admin/manager/site_manager 可用）</view>
+  </hy-panel-card>
+
+  <view class="fab-helper" bindtap="openGlobalHelper">🎤</view>
 </view>
