@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
-import { requireRoles } from "../middleware/rbac";
 import {
   createSessionPayload,
   getRefreshSession,
@@ -9,6 +8,7 @@ import {
   toFrontendLoginResponse,
   verifyToken
 } from "../services/auth";
+import { getWeComContactBook, syncWeComContactBook } from "../services/wecom-contact-book";
 import type { Env } from "../types/env";
 
 type LoginBody = {
@@ -35,25 +35,6 @@ const weComErrorMessage = (errmsg: string | undefined, fallback: string): string
   return errmsg;
 };
 
-type WeComDepartment = {
-  id: number;
-  name: string;
-  parentid: number;
-  order: number;
-};
-
-type WeComUser = {
-  userid: string;
-  name: string;
-  department: number[];
-  mobile?: string;
-  email?: string;
-  avatar?: string;
-  status?: number;
-};
-
-const CONTACT_BOOK_KV_KEY = "wecom:contact-book:v1";
-const CONTACT_BOOK_TTL_SECONDS = 60 * 60;
 const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
 const CORP_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:corp:v1";
 const AGENT_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:agent:v1";
@@ -244,51 +225,6 @@ const fetchWeComProfile = async (accessToken: string, userId: string) => {
     nickname: profileJson.name ?? profileJson.userid,
     avatar: profileJson.avatar
   };
-};
-
-const getDepartmentList = async (
-  accessToken: string
-): Promise<WeComDepartment[]> => {
-  const response = await fetch(
-    `https://qyapi.weixin.qq.com/cgi-bin/department/list?access_token=${encodeURIComponent(accessToken)}`
-  );
-
-  const json = (await response.json()) as {
-    errcode?: number;
-    errmsg?: string;
-    department?: WeComDepartment[];
-  };
-
-  if (json.errcode !== 0) {
-    throw new Error(
-      weComErrorMessage(json.errmsg, "Failed to fetch department list")
-    );
-  }
-
-  return json.department ?? [];
-};
-
-const getUsersByDepartment = async (
-  accessToken: string,
-  departmentId: number
-): Promise<WeComUser[]> => {
-  const response = await fetch(
-    `https://qyapi.weixin.qq.com/cgi-bin/user/simplelist?access_token=${encodeURIComponent(accessToken)}&department_id=${departmentId}&fetch_child=0`
-  );
-
-  const json = (await response.json()) as {
-    errcode?: number;
-    errmsg?: string;
-    userlist?: WeComUser[];
-  };
-
-  if (json.errcode !== 0) {
-    throw new Error(
-      weComErrorMessage(json.errmsg, "Failed to fetch users by department")
-    );
-  }
-
-  return json.userlist ?? [];
 };
 
 const buildWeComScanUrl = (
@@ -560,26 +496,7 @@ authRoutes.post(
   "/wecom/contacts/sync",
   async (c) => {
     try {
-      const accessToken = await fetchWeComAccessToken(c.env);
-      const departments = await getDepartmentList(accessToken);
-
-      const userMap = new Map<string, WeComUser>();
-      for (const department of departments) {
-        const users = await getUsersByDepartment(accessToken, department.id);
-        users.forEach((user) => {
-          userMap.set(user.userid, user);
-        });
-      }
-
-      const payload = {
-        syncedAt: new Date().toISOString(),
-        departments,
-        users: [...userMap.values()]
-      };
-
-      await c.env.KV.put(CONTACT_BOOK_KV_KEY, JSON.stringify(payload), {
-        expirationTtl: CONTACT_BOOK_TTL_SECONDS
-      });
+      const payload = await syncWeComContactBook(c.env);
 
       return c.json({
         success: true,
@@ -607,24 +524,10 @@ authRoutes.post(
 authRoutes.get(
   "/wecom/contacts",
   async (c) => {
-    const raw = await c.env.KV.get(CONTACT_BOOK_KV_KEY);
-    if (!raw) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: "Contact book not synced yet"
-          }
-        },
-        404
-      );
-    }
-
-    const parsed = JSON.parse(raw) as {
-      syncedAt: string;
-      departments: WeComDepartment[];
-      users: WeComUser[];
-    };
+    const parsed = await getWeComContactBook(c.env, {
+      forceRefresh: false,
+      allowStaleOnRefreshError: true
+    });
 
     return c.json({
       success: true,

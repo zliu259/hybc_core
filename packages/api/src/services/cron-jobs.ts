@@ -1,4 +1,5 @@
 import { publishEvent } from "./event-bus";
+import { getWeComContactBook } from "./wecom-contact-book";
 import type { Env } from "../types/env";
 import type { ComputeNode, TaskQueueItem } from "../types/ai";
 
@@ -96,4 +97,16 @@ export const detectMissingLogs = async (env: Env, targetDate?: string): Promise<
   }
 
   return (projects.results ?? []).length;
+};
+
+export const refreshWeComContactsCache = async (env: Env): Promise<boolean> => {
+  try {
+    await getWeComContactBook(env, {
+      forceRefresh: true,
+      allowStaleOnRefreshError: true
+    });
+    return true;
+  } catch {
+    return false;
+  }
 };

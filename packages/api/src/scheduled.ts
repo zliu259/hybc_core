@@ -2,7 +2,12 @@ import type { ScheduledController } from "@cloudflare/workers-types";
 
 import { checkTimeouts } from "./services/ai-slot";
 import { checkApprovalTimeouts } from "./services/approval/engine";
-import { checkNodeHeartbeat, detectMissingLogs, requeueTimedOutTasks } from "./services/cron-jobs";
+import {
+  checkNodeHeartbeat,
+  detectMissingLogs,
+  refreshWeComContactsCache,
+  requeueTimedOutTasks
+} from "./services/cron-jobs";
 import type { Env } from "./types/env";
 
 export const scheduled = async (
@@ -24,7 +29,7 @@ export const scheduled = async (
       }
 
       if (cron === "0 * * * *") {
-        await checkApprovalTimeouts(env);
+        await Promise.all([checkApprovalTimeouts(env), refreshWeComContactsCache(env)]);
         return;
       }
 

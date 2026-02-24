@@ -4,7 +4,7 @@ export default {
   path: "/finance",
   name: "Finance",
   component: Layout,
-  redirect: "/finance/contract",
+  redirect: "/finance/outbound/contract",
   meta: {
     icon: "ep:money",
     title: "财务中心",
@@ -12,173 +12,227 @@ export default {
   },
   children: [
     {
-      path: "/finance/contract",
-      name: "ContractList",
-      component: () => import("@/views/finance/contract/index.vue"),
+      path: "/finance/internal-payment",
+      name: "FinanceInternalPayment",
+      component: Layout,
+      redirect: "/finance/reimbursement",
       meta: {
-        title: "合同管理",
-        roles: ["super_admin", "manager", "site_manager"]
-      }
-    },
-    {
-      path: "/finance/contract/monitor",
-      name: "ContractMonitor",
-      component: () => import("@/views/finance/contract/monitor.vue"),
-      meta: {
-        title: "合同执行监控",
-        roles: ["super_admin", "manager", "site_manager"]
-      }
-    },
-    {
-      path: "/finance/contract/detail/:id",
-      name: "ContractDetail",
-      component: () => import("@/views/finance/contract/detail.vue"),
-      meta: {
-        title: "合同详情",
-        showLink: false
-      }
-    },
-    {
-      path: "/finance/payment",
-      name: "PaymentList",
-      component: () => import("@/views/finance/payment/index.vue"),
-      meta: {
-        title: "付款管理",
-        roles: ["super_admin", "manager", "site_manager"]
-      }
-    },
-    {
-      path: "/finance/payment/wizard",
-      name: "SmartPaymentWizard",
-      component: () => import("@/views/finance/payment/wizard.vue"),
-      meta: {
-        title: "智能发单台",
-        roles: ["super_admin", "manager", "site_manager"]
-      }
-    },
-    {
-      path: "/finance/payment/detail/:id",
-      name: "PaymentDetail",
-      component: () => import("@/views/finance/payment/detail.vue"),
-      meta: {
-        title: "付款详情",
-        showLink: false
-      }
-    },
-    {
-      path: "/finance/payee",
-      name: "PayeeList",
-      component: () => import("@/views/finance/payee/index.vue"),
-      meta: {
-        title: "收款人管理",
-        roles: ["super_admin", "manager", "site_manager"]
-      }
-    },
-    {
-      path: "/finance/receipt/contract",
-      name: "InboundContractList",
-      component: () => import("@/views/finance/receipt/contract.vue"),
-      meta: {
-        title: "收款合同",
+        title: "对内付款",
         roles: ["super_admin", "manager", "site_manager", "operator"]
-      }
+      },
+      children: [
+        {
+          path: "/finance/reimbursement",
+          name: "ReimbursementList",
+          component: () => import("@/views/finance/reimbursement/list.vue"),
+          meta: {
+            title: "报销信封",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
+        },
+        {
+          path: "/finance/reimbursement/detail/:id",
+          name: "ReimbursementDetail",
+          component: () => import("@/views/finance/reimbursement/detail.vue"),
+          meta: {
+            title: "信封详情",
+            showLink: false
+          }
+        },
+        {
+          path: "/finance/reimbursement/precheck",
+          name: "ReimbursementPrecheck",
+          component: () => import("@/views/finance/reimbursement/precheck.vue"),
+          meta: {
+            title: "预审工作台",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/finance/reimbursement/duplicate",
+          name: "ReimbursementDuplicate",
+          component: () => import("@/views/finance/reimbursement/duplicate.vue"),
+          meta: {
+            title: "查重中心",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/finance/reimbursement/batch",
+          name: "ReimbursementBatchList",
+          component: () => import("@/views/finance/reimbursement/batch.vue"),
+          meta: {
+            title: "报销集中审批",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
+        },
+        {
+          path: "/finance/reimbursement/payout",
+          name: "ReimbursementPayout",
+          component: () => import("@/views/finance/reimbursement/payout.vue"),
+          meta: {
+            title: "报销集中打款",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/finance/reimbursement/batch/:id",
+          name: "ReimbursementBatchDetail",
+          component: () => import("@/views/finance/reimbursement/batch-detail.vue"),
+          meta: {
+            title: "报销批次详情",
+            showLink: false
+          }
+        }
+      ]
     },
     {
-      path: "/finance/receipt/invoice",
-      name: "InvoiceList",
-      component: () => import("@/views/finance/receipt/invoice.vue"),
+      path: "/finance/outbound-payment",
+      name: "FinanceOutboundPayment",
+      component: Layout,
+      redirect: "/finance/contract",
       meta: {
-        title: "发票管理",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
-      }
-    },
-    {
-      path: "/finance/receipt",
-      name: "ReceiptList",
-      component: () => import("@/views/finance/receipt/list.vue"),
-      meta: {
-        title: "收款登记",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
-      }
-    },
-    {
-      path: "/finance/snapshot",
-      name: "FinanceSnapshot",
-      component: () => import("@/views/finance/receipt/dashboard.vue"),
-      meta: {
-        title: "财务报表快照",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
-      }
-    },
-    {
-      path: "/finance/receipt/dashboard",
-      name: "ReceiptDashboard",
-      redirect: "/finance/snapshot",
-      meta: {
-        title: "收款统计(旧路径)",
-        showLink: false
-      }
-    },
-    {
-      path: "/finance/reimbursement",
-      name: "ReimbursementList",
-      component: () => import("@/views/finance/reimbursement/list.vue"),
-      meta: {
-        title: "报销信封",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
-      }
-    },
-    {
-      path: "/finance/reimbursement/detail/:id",
-      name: "ReimbursementDetail",
-      component: () => import("@/views/finance/reimbursement/detail.vue"),
-      meta: {
-        title: "信封详情",
-        showLink: false
-      }
-    },
-    {
-      path: "/finance/reimbursement/precheck",
-      name: "ReimbursementPrecheck",
-      component: () => import("@/views/finance/reimbursement/precheck.vue"),
-      meta: {
-        title: "预审工作台",
+        title: "对外付款",
         roles: ["super_admin", "manager", "site_manager"]
-      }
+      },
+      children: [
+        {
+          path: "/finance/contract",
+          name: "ContractList",
+          component: () => import("@/views/finance/contract/index.vue"),
+          meta: {
+            title: "合同管理",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/finance/outbound/contract",
+          name: "OutboundContractAlias",
+          redirect: "/finance/contract",
+          meta: {
+            title: "合同管理(别名)",
+            showLink: false
+          }
+        },
+        {
+          path: "/finance/contract/monitor",
+          name: "ContractMonitor",
+          component: () => import("@/views/finance/contract/monitor.vue"),
+          meta: {
+            title: "合同执行监控",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/finance/contract/detail/:id",
+          name: "ContractDetail",
+          component: () => import("@/views/finance/contract/detail.vue"),
+          meta: {
+            title: "合同详情",
+            showLink: false
+          }
+        },
+        {
+          path: "/finance/payment",
+          name: "PaymentList",
+          component: () => import("@/views/finance/payment/index.vue"),
+          meta: {
+            title: "付款管理",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/finance/payment/wizard",
+          name: "SmartPaymentWizard",
+          component: () => import("@/views/finance/payment/wizard.vue"),
+          meta: {
+            title: "智能发单台",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/finance/payment/detail/:id",
+          name: "PaymentDetail",
+          component: () => import("@/views/finance/payment/detail.vue"),
+          meta: {
+            title: "付款详情",
+            showLink: false
+          }
+        },
+        {
+          path: "/finance/payee",
+          name: "PayeeList",
+          component: () => import("@/views/finance/payee/index.vue"),
+          meta: {
+            title: "收款人管理",
+            roles: ["super_admin", "manager", "site_manager"]
+          }
+        }
+      ]
     },
     {
-      path: "/finance/reimbursement/duplicate",
-      name: "ReimbursementDuplicate",
-      component: () => import("@/views/finance/reimbursement/duplicate.vue"),
+      path: "/finance/receipts",
+      name: "FinanceReceipts",
+      component: Layout,
+      redirect: "/finance/receipt/contract",
       meta: {
-        title: "查重中心",
-        roles: ["super_admin", "manager", "site_manager"]
-      }
-    },
-    {
-      path: "/finance/reimbursement/batch",
-      name: "ReimbursementBatchList",
-      component: () => import("@/views/finance/reimbursement/batch.vue"),
-      meta: {
-        title: "报销集中审批",
+        title: "收款",
         roles: ["super_admin", "manager", "site_manager", "operator"]
-      }
+      },
+      children: [
+        {
+          path: "/finance/receipt/contract",
+          name: "InboundContractList",
+          component: () => import("@/views/finance/receipt/contract.vue"),
+          meta: {
+            title: "收款合同",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
+        },
+        {
+          path: "/finance/receipt/invoice",
+          name: "InvoiceList",
+          component: () => import("@/views/finance/receipt/invoice.vue"),
+          meta: {
+            title: "发票管理",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
+        },
+        {
+          path: "/finance/receipt",
+          name: "ReceiptList",
+          component: () => import("@/views/finance/receipt/list.vue"),
+          meta: {
+            title: "收款登记",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
+        },
+        {
+          path: "/finance/snapshot",
+          name: "FinanceSnapshot",
+          component: () => import("@/views/finance/receipt/dashboard.vue"),
+          meta: {
+            title: "财务报表快照",
+            roles: ["super_admin", "manager", "site_manager", "operator"]
+          }
+        },
+        {
+          path: "/finance/receipt/dashboard",
+          name: "ReceiptDashboard",
+          redirect: "/finance/snapshot",
+          meta: {
+            title: "收款统计(旧路径)",
+            showLink: false
+          }
+        }
+      ]
     },
     {
-      path: "/finance/reimbursement/payout",
-      name: "ReimbursementPayout",
-      component: () => import("@/views/finance/reimbursement/payout.vue"),
+      path: "/finance/legacy-reimbursement",
+      name: "ReimbursementLegacyRedirect",
+      redirect: "/finance/reimbursement",
       meta: {
-        title: "报销集中打款",
-        roles: ["super_admin", "manager", "site_manager"]
-      }
-    },
-    {
-      path: "/finance/reimbursement/batch/:id",
-      name: "ReimbursementBatchDetail",
-      component: () => import("@/views/finance/reimbursement/batch-detail.vue"),
-      meta: {
-        title: "报销批次详情",
+        title: "报销入口(旧路径)",
         showLink: false
       }
     }
