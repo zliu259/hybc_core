@@ -15,6 +15,8 @@ export type ReimbursementEnvelope = {
   status: string;
   precheck_status: string;
   verification_status: string;
+  ocr_status: string;
+  duplicate_check_status: string;
   pdf_status: string;
   pdf_task_id: number | null;
   pdf_file_key: string | null;

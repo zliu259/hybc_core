@@ -55,6 +55,34 @@ def make_project_code(project_name: str, short_name: str, index: int) -> str:
     return f"LEGACY-{digest}"
 
 
+def infer_machine_match(pipe_diameter_mm: float | None, soil_type: str) -> tuple[str, float, str]:
+    diameter = pipe_diameter_mm or 0
+    if diameter <= 0:
+        machine = "通用泥水平衡顶管机"
+        score = 0.4
+    elif diameter <= 800:
+        machine = "小型土压平衡顶管机"
+        score = 0.7
+    elif diameter <= 1200:
+        machine = "中型泥水平衡顶管机"
+        score = 0.78
+    elif diameter <= 1800:
+        machine = "中大型泥水平衡顶管机"
+        score = 0.82
+    else:
+        machine = "大型泥水平衡顶管机"
+        score = 0.86
+    note = f"基于管径({diameter if diameter > 0 else '未知'}mm){'与土质(' + soil_type + ')' if soil_type else ''}的启发式匹配"
+    return machine, score, note
+
+
+def normalized_date_or_none(value: Any) -> str | None:
+    text = as_text(value)
+    if not text:
+        return None
+    return text[:10]
+
+
 def sql_str(value: Any) -> str:
     if value is None:
         return "NULL"
@@ -88,6 +116,7 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     }
 
     project_by_norm_name: dict[str, str] = {}
+    project_meta_by_legacy: dict[str, dict[str, Any]] = {}
     project_seen: set[str] = set()
     stats = {
         "projects_prepared": 0,
@@ -101,6 +130,25 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
     }
 
     project_auto_index = 0
+
+    project_start_map: dict[str, str] = {}
+
+    def push_start_date(project_name: str, date_text: Any) -> None:
+        key = normalize_key(project_name)
+        date_val = normalized_date_or_none(date_text)
+        if not key or not date_val:
+            return
+        old = project_start_map.get(key)
+        if old is None or date_val < old:
+            project_start_map[key] = date_val
+
+    for row in operator_logs:
+        push_start_date(as_text(row.get("project_name")), row.get("log_date"))
+    for row in manager_logs:
+        push_start_date(as_text(row.get("project_name")), row.get("log_date"))
+    for row in breakthrough_reports:
+        push_start_date(as_text(row.get("project_name")), row.get("start_date"))
+        push_start_date(as_text(row.get("project_name")), row.get("report_date"))
 
     def register_project(row: dict[str, Any], synthetic: bool = False) -> None:
         nonlocal project_auto_index
@@ -119,6 +167,15 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         status = "active"
         created_at = now_iso()
         legacy_note = row.get("legacy_note")
+        location_text = " ".join(
+            [
+                as_text(row.get("province")),
+                as_text(row.get("city")),
+                as_text(row.get("district")),
+                as_text(row.get("address_detail")),
+            ]
+        ).strip()
+        project_start_at = project_start_map.get(normalize_key(project_name))
         if synthetic:
             legacy_note = as_text(legacy_note) or "auto-created from legacy logs mapping"
 
@@ -126,7 +183,8 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
             "INSERT INTO project ("
             "project_code, project_name, status, created_at, updated_at, "
             "legacy_data_id, project_short_name, project_alias, province, city, district, "
-            "address_detail, geotech_soil, machine_type, pipe_material, pipe_spec, legacy_note"
+            "address_detail, geotech_soil, machine_type, pipe_material, pipe_spec, legacy_note, "
+            "location_text, project_briefing, project_start_at"
             ") "
             "SELECT "
             f"{sql_str(project_code)}, {sql_str(project_name)}, {sql_str(status)}, "
@@ -134,10 +192,29 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
             f"{sql_str(row.get('project_short_name'))}, {sql_str(row.get('project_alias'))}, "
             f"{sql_str(row.get('province'))}, {sql_str(row.get('city'))}, {sql_str(row.get('district'))}, "
             f"{sql_str(row.get('address_detail'))}, {sql_str(row.get('geotech_soil'))}, {sql_str(row.get('machine_type'))}, "
-            f"{sql_str(row.get('pipe_material'))}, {sql_str(row.get('pipe_spec'))}, {sql_str(legacy_note)} "
+            f"{sql_str(row.get('pipe_material'))}, {sql_str(row.get('pipe_spec'))}, {sql_str(legacy_note)}, "
+            f"{sql_str(location_text)}, {sql_str(legacy_note)}, {sql_str(project_start_at)} "
             "WHERE NOT EXISTS ("
             f"SELECT 1 FROM project WHERE legacy_data_id = {sql_str(legacy_id)}"
             ");"
+        )
+        sql_lines.append(
+            "UPDATE project SET "
+            f"location_text = COALESCE({sql_str(location_text)}, location_text), "
+            f"project_briefing = COALESCE({sql_str(legacy_note)}, project_briefing), "
+            f"project_start_at = COALESCE({sql_str(project_start_at)}, project_start_at), "
+            f"project_short_name = COALESCE({sql_str(row.get('project_short_name'))}, project_short_name), "
+            f"project_alias = COALESCE({sql_str(row.get('project_alias'))}, project_alias), "
+            f"province = COALESCE({sql_str(row.get('province'))}, province), "
+            f"city = COALESCE({sql_str(row.get('city'))}, city), "
+            f"district = COALESCE({sql_str(row.get('district'))}, district), "
+            f"address_detail = COALESCE({sql_str(row.get('address_detail'))}, address_detail), "
+            f"geotech_soil = COALESCE({sql_str(row.get('geotech_soil'))}, geotech_soil), "
+            f"pipe_material = COALESCE({sql_str(row.get('pipe_material'))}, pipe_material), "
+            f"pipe_spec = COALESCE({sql_str(row.get('pipe_spec'))}, pipe_spec), "
+            f"legacy_note = COALESCE({sql_str(legacy_note)}, legacy_note), "
+            "updated_at = updated_at "
+            f"WHERE legacy_data_id = {sql_str(legacy_id)};"
         )
         name_keys = {
             normalize_key(project_name),
@@ -147,6 +224,11 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         for key in name_keys:
             if key:
                 project_by_norm_name.setdefault(key, legacy_id)
+        project_meta_by_legacy[legacy_id] = {
+            "pipe_material": as_text(row.get("pipe_material")) or None,
+            "pipe_model": as_text(row.get("pipe_spec")) or None,
+            "soil_type": as_text(row.get("geotech_soil")) or None,
+        }
         stats["projects_prepared"] += 1
 
     for row in projects:
@@ -205,6 +287,11 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         section_code_final = section_code or legacy_ref
         section_name_final = section_name or section_code or legacy_ref
         created_at = now_iso()
+        project_meta = project_meta_by_legacy.get(project_legacy_id, {})
+        pipe_material = as_text(project_meta.get("pipe_material")) or None
+        pipe_model = as_text(project_meta.get("pipe_model")) or None
+        soil_type = as_text(project_meta.get("soil_type")) or None
+        machine, score, note = infer_machine_match(as_float(row.get("pipe_diameter_mm")), soil_type or "")
 
         project_id_subquery = (
             f"(SELECT id FROM project WHERE legacy_data_id = {sql_str(project_legacy_id)} LIMIT 1)"
@@ -213,17 +300,38 @@ def build_import(payload: dict[str, Any]) -> tuple[list[str], dict[str, Any]]:
         sql_lines.append(
             "INSERT INTO project_section ("
             "project_id, section_code, section_name, section_length, status, created_at, updated_at, "
-            "legacy_section_ref, design_slope, pipe_diameter_mm"
+            "legacy_section_ref, design_slope, pipe_diameter_mm, pipe_material, pipe_model, soil_type, "
+            "assigned_machine_type, ai_machine_match_note, ai_machine_match_score"
             ") "
             "SELECT "
             f"{project_id_subquery}, {sql_str(section_code_final)}, {sql_str(section_name_final)}, "
             f"{sql_num(row.get('section_length'))}, 'active', {sql_str(created_at)}, {sql_str(created_at)}, "
-            f"{sql_str(legacy_ref)}, {sql_num(row.get('design_slope'))}, {sql_num(row.get('pipe_diameter_mm'))} "
+            f"{sql_str(legacy_ref)}, {sql_num(row.get('design_slope'))}, {sql_num(row.get('pipe_diameter_mm'))}, "
+            f"{sql_str(pipe_material)}, {sql_str(pipe_model)}, {sql_str(soil_type)}, "
+            f"{sql_str(machine)}, {sql_str(note)}, {sql_num(score)} "
             "WHERE "
             f"{project_id_subquery} IS NOT NULL "
             "AND NOT EXISTS ("
             "SELECT 1 FROM project_section "
             f"WHERE project_id = {project_id_subquery} AND legacy_section_ref = {sql_str(legacy_ref)}"
+            ");"
+        )
+        sql_lines.append(
+            "UPDATE project_section SET "
+            f"pipe_material = COALESCE({sql_str(pipe_material)}, pipe_material), "
+            f"pipe_model = COALESCE({sql_str(pipe_model)}, pipe_model), "
+            f"soil_type = COALESCE({sql_str(soil_type)}, soil_type), "
+            f"design_slope = COALESCE({sql_num(row.get('design_slope'))}, design_slope), "
+            f"pipe_diameter_mm = COALESCE({sql_num(row.get('pipe_diameter_mm'))}, pipe_diameter_mm), "
+            f"assigned_machine_type = COALESCE({sql_str(machine)}, assigned_machine_type), "
+            f"ai_machine_match_note = COALESCE({sql_str(note)}, ai_machine_match_note), "
+            f"ai_machine_match_score = COALESCE({sql_num(score)}, ai_machine_match_score), "
+            "updated_at = updated_at "
+            "WHERE id = ("
+            "SELECT s.id FROM project_section s "
+            "JOIN project p ON p.id = s.project_id "
+            f"WHERE p.legacy_data_id = {sql_str(project_legacy_id)} "
+            f"AND s.legacy_section_ref = {sql_str(legacy_ref)} LIMIT 1"
             ");"
         )
 

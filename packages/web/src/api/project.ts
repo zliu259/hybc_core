@@ -9,6 +9,9 @@ export type Project = {
   status: string;
   start_date: string | null;
   end_date: string | null;
+  location_text?: string | null;
+  project_briefing?: string | null;
+  project_start_at?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -20,6 +23,12 @@ export type ProjectSection = {
   section_name: string;
   section_length: number | null;
   status: string;
+  pipe_material?: string | null;
+  pipe_model?: string | null;
+  soil_type?: string | null;
+  assigned_machine_type?: string | null;
+  ai_machine_match_note?: string | null;
+  ai_machine_match_score?: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -47,6 +56,7 @@ export const listProjects = (params?: {
   pageSize?: number;
   status?: string;
   keyword?: string;
+  location?: string;
 }) => {
   return http.request<{
     success: boolean;
@@ -70,6 +80,9 @@ export const createProject = (data: {
   status?: string;
   start_date?: string | null;
   end_date?: string | null;
+  location_text?: string | null;
+  project_briefing?: string | null;
+  project_start_at?: string | null;
 }) => {
   return http.request<{ success: boolean; data: { id: number } }>(
     "post",
@@ -96,6 +109,9 @@ export const updateProject = (
     manager_userid?: string | null;
     start_date?: string | null;
     end_date?: string | null;
+    location_text?: string | null;
+    project_briefing?: string | null;
+    project_start_at?: string | null;
   }
 ) => {
   return http.request<{ success: boolean }>("put", `/api/v1/project/${id}`, {
@@ -117,6 +133,12 @@ export const createProjectSection = (
     section_name: string;
     section_length?: number | null;
     status?: string;
+    pipe_material?: string | null;
+    pipe_model?: string | null;
+    soil_type?: string | null;
+    assigned_machine_type?: string | null;
+    ai_machine_match_note?: string | null;
+    ai_machine_match_score?: number | null;
   }
 ) => {
   return http.request<{ success: boolean; data: { id: number } }>(
@@ -133,6 +155,12 @@ export const updateProjectSection = (
     section_name?: string;
     section_length?: number | null;
     status?: string;
+    pipe_material?: string | null;
+    pipe_model?: string | null;
+    soil_type?: string | null;
+    assigned_machine_type?: string | null;
+    ai_machine_match_note?: string | null;
+    ai_machine_match_score?: number | null;
   }
 ) => {
   return http.request<{ success: boolean }>(

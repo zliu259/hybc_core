@@ -64,7 +64,10 @@ const managerLogUploading = ref(false);
 
 const form = ref({
   project_name: "",
-  manager_userid: ""
+  manager_userid: "",
+  location_text: "",
+  project_briefing: "",
+  project_start_at: ""
 });
 
 const managerLogForm = ref({
@@ -190,6 +193,9 @@ const loadProjectMain = async () => {
   sections.value = sectionData.data;
   form.value.project_name = detail.data.project_name;
   form.value.manager_userid = detail.data.manager_userid || "";
+  form.value.location_text = detail.data.location_text || "";
+  form.value.project_briefing = detail.data.project_briefing || "";
+  form.value.project_start_at = detail.data.project_start_at || "";
 };
 
 const loadProjectLogData = async () => {
@@ -219,7 +225,10 @@ const saveBase = async () => {
   try {
     await updateProject(project.value.id, {
       project_name: form.value.project_name,
-      manager_userid: form.value.manager_userid || null
+      manager_userid: form.value.manager_userid || null,
+      location_text: form.value.location_text || null,
+      project_briefing: form.value.project_briefing || null,
+      project_start_at: form.value.project_start_at || null
     });
     message("项目信息已保存", { type: "success" });
     await loadProjectMain();
@@ -463,6 +472,30 @@ onMounted(loadWecomUsers);
               :value="item.userid"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item label="具体位置">
+          <el-input
+            v-model="form.location_text"
+            type="textarea"
+            :rows="2"
+            placeholder="可填写省市区及详细地址"
+          />
+        </el-form-item>
+        <el-form-item label="项目交底">
+          <el-input
+            v-model="form.project_briefing"
+            type="textarea"
+            :rows="3"
+            placeholder="填写项目交底/背景说明"
+          />
+        </el-form-item>
+        <el-form-item label="开始时间">
+          <el-date-picker
+            v-model="form.project_start_at"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择项目开始时间"
+          />
         </el-form-item>
         <el-form-item label="项目状态">
           <el-space>

@@ -152,7 +152,10 @@
 - API 指向：`/api/v1/reimbursement`
 
 #### F-2. 报销信封详情 `views/finance/reimbursement/detail.vue`
-- 表单区：项目、填报人、通道、发票号、费用日期、金额、类别、说明、附件JSON。
+- 页面分区：基础信息、信封标识、状态总览、附件（拖拽上传）、操作区。
+- 表单区：项目、填报人、通道、发票号、费用日期、金额、类别、说明。
+- 附件区：拖拽上传替代 JSON 手工录入；附件列表展示类型、文件名、大小、状态。
+- UUID 规则：上传附件后 UUID 锁定，不允许修改。
 - 操作区：保存、扫码填报（模拟）、收件通过/异常、触发PDF生成、刷新PDF状态、刷新OCR状态、触发异常检测、预审动作。
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
 
@@ -306,6 +309,7 @@
 
 #### 3.4.5 项目面板一站式信息聚合（新增）
 - 文件管理区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持项目相关人员上传并沉淀项目文件，文件可选绑定标段。
+- 项目信息编辑区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持在工作区直接查看/编辑 `location_text`（具体位置）、`project_briefing`（项目交底）、`project_start_at`（开始时间）。
 - 标段详情弹窗：在项目面板“标段总览”点击“查看详情”进入，显示标段基础信息、该标段操作员日志、该标段贯通报告。
 - 项目日志聚合区：同页集中展示该项目全部操作员日志、管理员日志、贯通报告，保证参与人员无需跨模块即可获取项目全貌。
 - 贯通报告标段绑定：贯通报告按 `section_id` 归集，在项目层与标段层均可追溯。
@@ -326,6 +330,10 @@
   - `packages/web/src/router/modules/warehouse.ts` 顶层菜单恢复可见，标题调整为“库房调度”。
   - `packages/web/src/router/modules/asset.ts` 顶层菜单恢复可见，标题调整为“资产台账”。
 - 项目选择大厅（卡片流）补齐创建动作门槛：`packages/web/src/views/project/hub.vue`，仅允许 `super_admin/manager/site_manager` 显示“+ 创建项目”。
+- 项目选择大厅卡片信息增强与排序：`packages/web/src/views/project/hub.vue`
+  - 卡片新增展示：`project_start_at/start_date`（开工时间）、`location_text`（位置合成字段）、`project_briefing`（项目交底）
+  - 排序规则调整为：状态优先（施工中 > 筹备中 > 规划中 > 收尾中 > 已归档），同状态按开工时间倒序
+  - 交互补充：支持分页、按状态筛选、按位置筛选
 - 出入库制单台重构为“左检索 + 右购物车”模式：`packages/web/src/views/warehouse/stock-order.vue`。
 - 双向对冲调度看板补齐签收核验对话框：`packages/web/src/views/warehouse/dispatch.vue`，签收前必须完成设备状态复核与实际送达数量确认。
 - 项目工作区详情交互改为抽屉优先：

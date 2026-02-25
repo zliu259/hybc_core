@@ -27,6 +27,7 @@ projectRoutes.use("*", authMiddleware);
 projectRoutes.get("/", async (c) => {
   const status = c.req.query("status");
   const keyword = c.req.query("keyword");
+  const location = c.req.query("location");
   const page = Math.max(Number(c.req.query("page") ?? "1"), 1);
   const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "20"), 1), 100);
   const offset = (page - 1) * pageSize;
@@ -45,8 +46,14 @@ projectRoutes.get("/", async (c) => {
     countSql += " AND (project_name LIKE ? OR project_code LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`);
   }
+  if (location) {
+    sql += " AND IFNULL(location_text, '') LIKE ?";
+    countSql += " AND IFNULL(location_text, '') LIKE ?";
+    params.push(`%${location}%`);
+  }
 
-  sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
+  sql +=
+    " ORDER BY CASE status WHEN 'active' THEN 1 WHEN 'preparing' THEN 2 WHEN 'planning' THEN 3 WHEN 'completing' THEN 4 WHEN 'archived' THEN 5 ELSE 9 END, COALESCE(project_start_at, start_date, created_at) DESC, id DESC LIMIT ? OFFSET ?";
 
   const listResult = await c.env.DB.prepare(sql)
     .bind(...params, pageSize, offset)
@@ -104,6 +111,9 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
     status?: ProjectStatus;
     start_date?: string | null;
     end_date?: string | null;
+    location_text?: string | null;
+    project_briefing?: string | null;
+    project_start_at?: string | null;
   };
 
   const status = body.status ?? "planning";
@@ -119,7 +129,7 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
 
   const createdAt = nowIso();
   const result = await c.env.DB.prepare(
-    "INSERT INTO project (project_code, project_name, entity_id, manager_userid, status, start_date, end_date, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO project (project_code, project_name, entity_id, manager_userid, status, start_date, end_date, location_text, project_briefing, project_start_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       body.project_code,
@@ -129,6 +139,9 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
       status,
       body.start_date ?? null,
       body.end_date ?? null,
+      body.location_text ?? null,
+      body.project_briefing ?? null,
+      body.project_start_at ?? null,
       createdAt,
       createdAt
     )
@@ -145,10 +158,13 @@ projectRoutes.put("/:id", requireRoles(["super_admin", "manager", "site_manager"
     manager_userid?: string | null;
     start_date?: string | null;
     end_date?: string | null;
+    location_text?: string | null;
+    project_briefing?: string | null;
+    project_start_at?: string | null;
   };
 
   await c.env.DB.prepare(
-    "UPDATE project SET project_name = COALESCE(?, project_name), entity_id = ?, manager_userid = ?, start_date = ?, end_date = ?, updated_at = ? WHERE id = ?"
+    "UPDATE project SET project_name = COALESCE(?, project_name), entity_id = ?, manager_userid = ?, start_date = ?, end_date = ?, location_text = COALESCE(?, location_text), project_briefing = COALESCE(?, project_briefing), project_start_at = COALESCE(?, project_start_at), updated_at = ? WHERE id = ?"
   )
     .bind(
       body.project_name ?? null,
@@ -156,6 +172,9 @@ projectRoutes.put("/:id", requireRoles(["super_admin", "manager", "site_manager"
       body.manager_userid ?? null,
       body.start_date ?? null,
       body.end_date ?? null,
+      body.location_text ?? null,
+      body.project_briefing ?? null,
+      body.project_start_at ?? null,
       nowIso(),
       id
     )
@@ -362,11 +381,17 @@ projectRoutes.post("/:id/sections", requireRoles(["super_admin", "manager", "sit
     section_name: string;
     section_length?: number | null;
     status?: ProjectStatus;
+    pipe_material?: string | null;
+    pipe_model?: string | null;
+    soil_type?: string | null;
+    assigned_machine_type?: string | null;
+    ai_machine_match_note?: string | null;
+    ai_machine_match_score?: number | null;
   };
 
   const createdAt = nowIso();
   const result = await c.env.DB.prepare(
-    "INSERT INTO project_section (project_id, section_code, section_name, section_length, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO project_section (project_id, section_code, section_name, section_length, status, pipe_material, pipe_model, soil_type, assigned_machine_type, ai_machine_match_note, ai_machine_match_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       projectId,
@@ -374,6 +399,12 @@ projectRoutes.post("/:id/sections", requireRoles(["super_admin", "manager", "sit
       body.section_name,
       body.section_length ?? null,
       body.status ?? "planning",
+      body.pipe_material ?? null,
+      body.pipe_model ?? null,
+      body.soil_type ?? null,
+      body.assigned_machine_type ?? null,
+      body.ai_machine_match_note ?? null,
+      body.ai_machine_match_score ?? null,
       createdAt,
       createdAt
     )
@@ -391,15 +422,27 @@ projectRoutes.put(
       section_name?: string;
       section_length?: number | null;
       status?: ProjectStatus;
+      pipe_material?: string | null;
+      pipe_model?: string | null;
+      soil_type?: string | null;
+      assigned_machine_type?: string | null;
+      ai_machine_match_note?: string | null;
+      ai_machine_match_score?: number | null;
     };
 
     await c.env.DB.prepare(
-      "UPDATE project_section SET section_name = COALESCE(?, section_name), section_length = ?, status = COALESCE(?, status), updated_at = ? WHERE id = ?"
+      "UPDATE project_section SET section_name = COALESCE(?, section_name), section_length = ?, status = COALESCE(?, status), pipe_material = COALESCE(?, pipe_material), pipe_model = COALESCE(?, pipe_model), soil_type = COALESCE(?, soil_type), assigned_machine_type = COALESCE(?, assigned_machine_type), ai_machine_match_note = COALESCE(?, ai_machine_match_note), ai_machine_match_score = COALESCE(?, ai_machine_match_score), updated_at = ? WHERE id = ?"
     )
       .bind(
         body.section_name ?? null,
         body.section_length ?? null,
         body.status ?? null,
+        body.pipe_material ?? null,
+        body.pipe_model ?? null,
+        body.soil_type ?? null,
+        body.assigned_machine_type ?? null,
+        body.ai_machine_match_note ?? null,
+        body.ai_machine_match_score ?? null,
         nowIso(),
         sectionId
       )

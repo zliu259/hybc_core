@@ -23,6 +23,14 @@ const normalizeShift = (value: unknown): string | undefined => {
   return undefined;
 };
 
+const suggestMachineByDiameter = (diameterMm: number | undefined): { type: string; score: number } => {
+  if (!diameterMm) return { type: "通用泥水平衡顶管机", score: 0.4 };
+  if (diameterMm <= 800) return { type: "小型土压平衡顶管机", score: 0.7 };
+  if (diameterMm <= 1200) return { type: "中型泥水平衡顶管机", score: 0.78 };
+  if (diameterMm <= 1800) return { type: "中大型泥水平衡顶管机", score: 0.82 };
+  return { type: "大型泥水平衡顶管机", score: 0.86 };
+};
+
 const withCompatFlag = (row: Row, usedCompat: boolean): Row => {
   if (!usedCompat) return row;
   return { ...row, compat_fallback_used: true };
@@ -45,6 +53,34 @@ export const hydrateLegacyProject = (input: Row): Row => {
     usedCompat = true;
   }
 
+  if (!asText(row.location_text)) {
+    const location = [
+      asText(row.province),
+      asText(row.city),
+      asText(row.district),
+      asText(row.address_detail)
+    ]
+      .filter(Boolean)
+      .join(" ");
+    if (location) {
+      row.location_text = location;
+      usedCompat = true;
+    }
+  }
+
+  if (!asText(row.project_briefing) && asText(row.legacy_note)) {
+    row.project_briefing = asText(row.legacy_note);
+    usedCompat = true;
+  }
+
+  if (!asText(row.project_start_at)) {
+    const fallback = asText(row.start_date) ?? asText(row.created_at);
+    if (fallback) {
+      row.project_start_at = fallback;
+      usedCompat = true;
+    }
+  }
+
   return withCompatFlag(row, usedCompat);
 };
 
@@ -52,6 +88,7 @@ export const hydrateLegacySection = (input: Row): Row => {
   const row = { ...input };
   let usedCompat = false;
   const ref = asText(row.legacy_section_ref);
+  const diameter = asNumber(row.pipe_diameter_mm);
 
   if (!asText(row.section_code) && ref) {
     row.section_code = ref;
@@ -60,6 +97,32 @@ export const hydrateLegacySection = (input: Row): Row => {
 
   if (!asText(row.section_name) && ref) {
     row.section_name = ref;
+    usedCompat = true;
+  }
+
+  if (!asText(row.pipe_model) && asText(row.pipe_spec)) {
+    row.pipe_model = asText(row.pipe_spec);
+    usedCompat = true;
+  }
+
+  if (!asText(row.assigned_machine_type)) {
+    const suggestion = suggestMachineByDiameter(diameter);
+    row.assigned_machine_type = suggestion.type;
+    usedCompat = true;
+  }
+
+  if (asNumber(row.ai_machine_match_score) === undefined) {
+    const suggestion = suggestMachineByDiameter(diameter);
+    row.ai_machine_match_score = suggestion.score;
+    usedCompat = true;
+  }
+
+  if (!asText(row.ai_machine_match_note)) {
+    const suggestion = suggestMachineByDiameter(diameter);
+    const soil = asText(row.soil_type);
+    const diameterText = diameter ? `${diameter}mm` : "未知管径";
+    row.ai_machine_match_note =
+      `基于管径(${diameterText})${soil ? `与土质(${soil})` : ""}的启发式匹配，建议机型：${suggestion.type}`;
     usedCompat = true;
   }
 
