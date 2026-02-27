@@ -25,6 +25,25 @@ export interface TrackedAsset {
   current_location: string | null;
   properties_json: string | null;
   purchased_date: string | null;
+  ownership_type: "owned" | "leased_in";
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AssetRentalTerm {
+  id: number;
+  rental_no: string;
+  tracked_asset_id: number;
+  rental_mode: "lease_in" | "lease_out";
+  project_id: number | null;
+  contract_id: number | null;
+  finance_mode: "contract" | "on_account";
+  start_date: string;
+  due_date: string;
+  returned_date: string | null;
+  status: "active" | "overdue" | "returned" | "closed";
+  note: string | null;
+  created_by: string;
   created_at: string;
   updated_at: string;
 }
@@ -81,6 +100,7 @@ export interface CreateTrackedAssetRequest {
   current_location?: string;
   properties_json?: string;
   purchased_date?: string;
+  ownership_type?: "owned" | "leased_in";
 }
 
 export interface UpdateTrackedAssetRequest {
@@ -94,4 +114,21 @@ export interface UpdateTrackedAssetRequest {
   current_location?: string;
   properties_json?: string;
   purchased_date?: string;
+  ownership_type?: "owned" | "leased_in";
+}
+
+export interface CreateAssetRentalTermRequest {
+  tracked_asset_id: number;
+  rental_mode: "lease_in" | "lease_out";
+  project_id?: number;
+  contract_id?: number;
+  finance_mode?: "contract" | "on_account";
+  start_date: string;
+  due_date: string;
+  note?: string;
+}
+
+export interface ReturnAssetRentalTermRequest {
+  returned_date?: string;
+  note?: string;
 }

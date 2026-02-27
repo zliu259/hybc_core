@@ -13,6 +13,7 @@ export const domainEventTypes = [
   "APPROVAL_TIMEOUT",
   "NODE_OFFLINE",
   "TASK_REQUEUED",
+  "RENTAL_OVERDUE_MARKED",
   "LOG_MISSING",
   "TASK_CREATED",
   "TASK_ASSIGNED",

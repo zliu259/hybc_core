@@ -32,6 +32,7 @@ export interface StockOrder {
   applicant_userid: string;
   status: string;
   approval_instance_id: number | null;
+  rental_term_id: number | null;
   executed_at: string | null;
   remark: string | null;
   created_at: string;
@@ -97,6 +98,7 @@ export interface CreateStockOrderRequest {
   project_id?: number;
   from_warehouse_id?: number;
   to_warehouse_id?: number;
+  rental_term_id?: number;
   remark?: string;
   items: {
     asset_type_id?: number;

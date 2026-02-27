@@ -10,6 +10,7 @@ const projects = ref<Project[]>([]);
 const projectId = ref<number | undefined>(undefined);
 const trackedAssets = ref<Array<Record<string, unknown>>>([]);
 const consumptions = ref<Array<Record<string, unknown>>>([]);
+const rentalAlert = ref({ active_count: 0, overdue_count: 0 });
 
 const projectMap = computed(() => {
   const map: Record<number, string> = {};
@@ -36,6 +37,18 @@ const loadData = async () => {
       (result.data.tracked_assets as Array<Record<string, unknown>>) ?? [];
     consumptions.value =
       (result.data.consumptions as Array<Record<string, unknown>>) ?? [];
+    rentalAlert.value =
+      (result.data.rental_alert as { active_count?: number; overdue_count?: number })?.active_count !==
+      undefined
+        ? {
+            active_count: Number(
+              (result.data.rental_alert as { active_count?: number }).active_count ?? 0
+            ),
+            overdue_count: Number(
+              (result.data.rental_alert as { overdue_count?: number }).overdue_count ?? 0
+            )
+          }
+        : { active_count: 0, overdue_count: 0 };
   } finally {
     loading.value = false;
   }
@@ -66,6 +79,17 @@ onMounted(async () => {
       <div v-if="projectId" style="margin-top: 8px; color: #6e6458">
         当前项目：{{ projectMap[projectId] || projectId }}
       </div>
+      <el-alert
+        v-if="rentalAlert.active_count > 0"
+        style="margin-top: 8px"
+        :type="rentalAlert.overdue_count > 0 ? 'error' : 'info'"
+        :title="
+          rentalAlert.overdue_count > 0
+            ? `存在 ${rentalAlert.overdue_count} 台逾期租赁设备（共 ${rentalAlert.active_count} 台租赁设备）`
+            : `当前有 ${rentalAlert.active_count} 台租赁设备`
+        "
+        show-icon
+      />
     </el-card>
 
     <el-row :gutter="16">
@@ -83,6 +107,29 @@ onMounted(async () => {
               min-width="140"
             />
             <el-table-column prop="status" label="状态" width="100" />
+            <el-table-column label="租赁" width="120">
+              <template #default="scope">
+                <el-tag v-if="scope.row.rental_mode" :type="scope.row.rental_mode === 'lease_in' ? 'warning' : 'primary'" size="small">
+                  {{ scope.row.rental_mode === "lease_in" ? "租入" : "外租" }}
+                </el-tag>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="到期/逾期" min-width="160">
+              <template #default="scope">
+                <span>
+                  {{ scope.row.rental_due_date || "-" }}
+                  <el-tag
+                    v-if="Number(scope.row.rental_overdue_days || 0) > 0"
+                    type="danger"
+                    size="small"
+                    style="margin-left: 6px"
+                  >
+                    逾期{{ scope.row.rental_overdue_days }}天
+                  </el-tag>
+                </span>
+              </template>
+            </el-table-column>
             <el-table-column
               prop="current_location"
               label="位置"

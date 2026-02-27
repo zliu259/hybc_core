@@ -45,6 +45,7 @@ const form = ref({
   model: "",
   serial_no: "",
   status: "idle",
+  ownership_type: "owned" as "owned" | "leased_in",
   current_location: "",
   properties_json: ""
 });
@@ -77,6 +78,7 @@ const loadData = async () => {
       model: result.data.model ?? "",
       serial_no: result.data.serial_no ?? "",
       status: result.data.status,
+      ownership_type: result.data.ownership_type ?? "owned",
       current_location: result.data.current_location ?? "",
       properties_json: result.data.properties_json ?? ""
     };
@@ -94,6 +96,7 @@ const saveAsset = async () => {
       model: form.value.model || undefined,
       serial_no: form.value.serial_no || undefined,
       status: form.value.status,
+      ownership_type: form.value.ownership_type,
       current_location: form.value.current_location || undefined,
       properties_json: form.value.properties_json || undefined
     });
@@ -186,6 +189,12 @@ onMounted(loadData);
                 <el-option label="using" value="using" />
                 <el-option label="repair" value="repair" />
                 <el-option label="scrapped" value="scrapped" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="归属">
+              <el-select v-model="form.ownership_type" style="width: 180px">
+                <el-option label="自有" value="owned" />
+                <el-option label="租入" value="leased_in" />
               </el-select>
             </el-form-item>
             <el-form-item label="当前位置">

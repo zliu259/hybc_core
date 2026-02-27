@@ -30,6 +30,7 @@ const filters = ref({
   status: "",
   project_id: undefined as number | undefined,
   warehouse_id: undefined as number | undefined,
+  ownership_type: "" as "" | "owned" | "leased_in",
   keyword: ""
 });
 
@@ -70,6 +71,8 @@ const form = ref({
   current_location: "",
   purchased_date: "",
   properties_json: '{"spec":""}'
+  ,
+  ownership_type: "owned" as "owned" | "leased_in"
 });
 
 const loadMeta = async () => {
@@ -93,6 +96,7 @@ const loadData = async () => {
       status: filters.value.status || undefined,
       project_id: filters.value.project_id,
       warehouse_id: filters.value.warehouse_id,
+      ownership_type: filters.value.ownership_type || undefined,
       keyword: filters.value.keyword || undefined
     });
     list.value = result.data;
@@ -114,6 +118,8 @@ const openCreate = () => {
     current_location: "",
     purchased_date: "",
     properties_json: '{"spec":""}'
+    ,
+    ownership_type: "owned"
   };
   createDialogVisible.value = true;
 };
@@ -136,7 +142,8 @@ const submitCreate = async () => {
       current_warehouse_id: form.value.current_warehouse_id,
       current_location: form.value.current_location || undefined,
       purchased_date: form.value.purchased_date || undefined,
-      properties_json: form.value.properties_json || undefined
+      properties_json: form.value.properties_json || undefined,
+      ownership_type: form.value.ownership_type
     });
     message(`创建成功：${result.data.asset_code}`, { type: "success" });
     createDialogVisible.value = false;
@@ -224,6 +231,12 @@ onMounted(async () => {
           />
         </el-select>
       </el-form-item>
+      <el-form-item label="归属">
+        <el-select v-model="filters.ownership_type" clearable style="width: 160px">
+          <el-option label="自有" value="owned" />
+          <el-option label="租入" value="leased_in" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="关键字">
         <el-input
           v-model="filters.keyword"
@@ -245,6 +258,13 @@ onMounted(async () => {
       <el-table-column prop="brand" label="品牌" width="120" />
       <el-table-column prop="model" label="型号" width="120" />
       <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="归属" width="100">
+        <template #default="scope">
+          <el-tag :type="scope.row.ownership_type === 'leased_in' ? 'warning' : 'success'" size="small">
+            {{ scope.row.ownership_type === "leased_in" ? "租入" : "自有" }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column label="当前项目" width="160">
         <template #default="scope">{{
           scope.row.current_project_id
@@ -348,6 +368,12 @@ onMounted(async () => {
           value-format="YYYY-MM-DD"
           style="width: 220px"
         />
+      </el-form-item>
+      <el-form-item label="资产归属">
+        <el-select v-model="form.ownership_type" style="width: 220px">
+          <el-option label="自有" value="owned" />
+          <el-option label="租入" value="leased_in" />
+        </el-select>
       </el-form-item>
       <el-form-item label="属性JSON">
         <el-input v-model="form.properties_json" type="textarea" :rows="4" />

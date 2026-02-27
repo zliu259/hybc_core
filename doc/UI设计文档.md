@@ -238,8 +238,9 @@
 - API 指向：`/api/v1/task/nodes`, `/api/v1/task/queue`
 
 #### J. 资产台账 `views/asset/list.vue`
-- 列：资产码、类型、状态、所在项目、责任人、更新时间。
+- 列：资产码、类型、状态、资产归属（自有/租入）、所在项目、责任人、更新时间。
 - 支持：按资产类型动态展示属性字段。
+- 支持：按资产归属筛选；新建资产可指定归属（默认自有）。
 - API 指向：`/api/v1/asset`
 
 #### K. 仓库管理 `views/warehouse/index.vue`
@@ -260,6 +261,7 @@
 #### K-4. 出入库单管理 `views/warehouse/stock-order.vue`
 - 模块：出入库单列表、创建表单、审批提交与执行。
 - 交互：草稿单可提交审批；审批通过后可执行；草稿/待审可取消。
+- 租赁增强：制单时可选关联 `rental_term_id`，逾期租期在出库前阻断；关联租期的入库执行会回填“已归还”。
 - API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
 
 #### K-5. 项目设备规划 `views/warehouse/equipment-plan.vue`
@@ -273,6 +275,7 @@
 
 #### K-7. 项目设备视图 `views/project/equipment-view.vue`
 - 模块：项目设备清单、项目维度物资消耗汇总。
+- 租赁提示：展示租赁模式、到期日、逾期天数，并在页头显示租赁设备与逾期设备汇总告警。
 - API 指向：`/api/v1/asset/dashboard/project/:projectId`
 
 #### L. 系统配置 `views/admin/system.vue`
@@ -338,7 +341,8 @@
 - 双向对冲调度看板补齐签收核验对话框：`packages/web/src/views/warehouse/dispatch.vue`，签收前必须完成设备状态复核与实际送达数量确认。
 - 项目工作区详情交互改为抽屉优先：
   - `packages/web/src/views/project/workspace/project-panel.vue`：标段详情由 `Dialog` 改为 `Drawer`；文件详情新增右侧抽屉。
-  - `packages/web/src/views/project/workspace/equipment-panel.vue`：设备行新增详情入口并使用右侧抽屉承载详情。
+- `packages/web/src/views/project/workspace/equipment-panel.vue`：设备行新增详情入口并使用右侧抽屉承载详情。
+- `packages/web/src/views/project/workspace/equipment-panel.vue`：新增租赁告警条、租赁列（模式/到期/逾期天数）和抽屉内租赁信息展示。
 
 ### 3.7 Sprint 3 重构落地点（2026-02）
 - 财务中心菜单恢复并命名对齐：`packages/web/src/router/modules/finance.ts`（顶层标题“财务中心”）。

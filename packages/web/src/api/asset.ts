@@ -27,8 +27,28 @@ export type TrackedAsset = {
   current_location: string | null;
   properties_json: string | null;
   purchased_date: string | null;
+  ownership_type: "owned" | "leased_in";
   created_at: string;
   updated_at: string;
+};
+
+export type AssetRentalTerm = {
+  id: number;
+  rental_no: string;
+  tracked_asset_id: number;
+  rental_mode: "lease_in" | "lease_out";
+  project_id: number | null;
+  contract_id: number | null;
+  finance_mode: "contract" | "on_account";
+  start_date: string;
+  due_date: string;
+  returned_date: string | null;
+  status: "active" | "overdue" | "returned" | "closed";
+  note: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+  overdue_days?: number;
 };
 
 type Pagination = { page: number; pageSize: number; total: number };
@@ -83,6 +103,7 @@ export const listTrackedAssets = (params?: {
   keyword?: string;
   page?: number;
   pageSize?: number;
+  ownership_type?: "owned" | "leased_in";
 }) =>
   http.request<{
     success: boolean;
@@ -103,6 +124,7 @@ export const createTrackedAsset = (data: {
   current_location?: string;
   properties_json?: string;
   purchased_date?: string;
+  ownership_type?: "owned" | "leased_in";
 }) =>
   http.request<{ success: boolean; data: { id: number; asset_code: string } }>(
     "post",
@@ -145,8 +167,47 @@ export const updateTrackedAsset = (
     current_location?: string;
     properties_json?: string;
     purchased_date?: string;
+    ownership_type?: "owned" | "leased_in";
   }
 ) => http.request<{ success: boolean }>("put", `/api/v1/asset/${id}`, { data });
+
+export const listAssetRentalTerms = (params?: {
+  status?: "active" | "overdue" | "returned" | "closed";
+  rental_mode?: "lease_in" | "lease_out";
+  project_id?: number;
+  overdue_only?: 1;
+}) =>
+  http.request<{ success: boolean; data: AssetRentalTerm[] }>(
+    "get",
+    "/api/v1/asset/rental/term",
+    { params }
+  );
+
+export const createAssetRentalTerm = (data: {
+  tracked_asset_id: number;
+  rental_mode: "lease_in" | "lease_out";
+  project_id?: number;
+  contract_id?: number;
+  finance_mode?: "contract" | "on_account";
+  start_date: string;
+  due_date: string;
+  note?: string;
+}) =>
+  http.request<{
+    success: boolean;
+    data: { id: number; rental_no: string; status: string };
+  }>("post", "/api/v1/asset/rental/term", { data });
+
+export const returnAssetRentalTerm = (
+  id: number,
+  data?: { returned_date?: string; note?: string }
+) => http.request<{ success: boolean }>("post", `/api/v1/asset/rental/term/${id}/return`, { data });
+
+export const scanOverdueRentalTerms = () =>
+  http.request<{ success: boolean; data: { updated: number } }>(
+    "post",
+    "/api/v1/asset/rental/term/scan-overdue"
+  );
 
 export const addAssetDocument = (
   id: number,

@@ -43,6 +43,7 @@ export type StockOrder = {
   applicant_userid: string;
   status: string;
   approval_instance_id: number | null;
+  rental_term_id: number | null;
   executed_at: string | null;
   remark: string | null;
   created_at: string;
@@ -169,6 +170,7 @@ export const createStockOrder = (data: {
   project_id?: number;
   from_warehouse_id?: number;
   to_warehouse_id?: number;
+  rental_term_id?: number;
   remark?: string;
   items: StockOrderItemInput[];
 }) =>

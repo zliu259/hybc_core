@@ -74,6 +74,23 @@ const upsertInventory = async (
 };
 
 const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<void> => {
+  if (order.rental_term_id) {
+    const term = await env.DB.prepare("SELECT * FROM asset_rental_term WHERE id = ?")
+      .bind(order.rental_term_id)
+      .first<{
+        id: number;
+        status: string;
+        due_date: string;
+        returned_date: string | null;
+      }>();
+    if (!term) {
+      throw new Error("Rental term not found");
+    }
+    if (order.order_type === "outbound" && term.status === "overdue") {
+      throw new Error("Rental term is overdue, outbound is blocked");
+    }
+  }
+
   const items = await env.DB.prepare("SELECT * FROM stock_order_item WHERE stock_order_id = ? AND status = 'active'")
     .bind(order.id)
     .all<{
@@ -143,6 +160,14 @@ const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<vo
       await upsertInventory(env.DB, order.from_warehouse_id, item.asset_type_id, -item.quantity);
       await upsertInventory(env.DB, order.to_warehouse_id, item.asset_type_id, item.quantity);
     }
+  }
+
+  if (order.rental_term_id && order.order_type === "inbound") {
+    await env.DB.prepare(
+      "UPDATE asset_rental_term SET returned_date = COALESCE(returned_date, ?), status = 'returned', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso().slice(0, 10), nowIso(), order.rental_term_id)
+      .run();
   }
 };
 
@@ -439,13 +464,33 @@ warehouseRoutes.post(
       return c.json({ success: false, error: { message: "order_type and items are required" } }, 400);
     }
 
+    if (body.rental_term_id) {
+      const term = await c.env.DB.prepare("SELECT * FROM asset_rental_term WHERE id = ?")
+        .bind(body.rental_term_id)
+        .first<{
+          id: number;
+          status: string;
+          due_date: string;
+          returned_date: string | null;
+        }>();
+      if (!term) {
+        return c.json({ success: false, error: { message: "rental_term_id not found" } }, 404);
+      }
+      if (body.order_type === "outbound" && term.status === "overdue") {
+        return c.json(
+          { success: false, error: { message: "rental term overdue; outbound blocked" } },
+          400
+        );
+      }
+    }
+
     const orderNo = await generateSerial(c.env.DB, "RK", "stock_order", "order_no");
     const now = nowIso();
     const result = await c.env.DB.prepare(
       `INSERT INTO stock_order
         (order_no, order_type, project_id, from_warehouse_id, to_warehouse_id,
-         applicant_userid, status, approval_instance_id, executed_at, remark, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'draft', NULL, NULL, ?, ?, ?)`
+         applicant_userid, status, approval_instance_id, rental_term_id, executed_at, remark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', NULL, ?, NULL, ?, ?, ?)`
     )
       .bind(
         orderNo,
@@ -454,6 +499,7 @@ warehouseRoutes.post(
         body.from_warehouse_id ?? null,
         body.to_warehouse_id ?? null,
         auth.sub,
+        body.rental_term_id ?? null,
         body.remark ?? null,
         now,
         now

@@ -5,6 +5,7 @@ import { checkApprovalTimeouts } from "./services/approval/engine";
 import {
   checkNodeHeartbeat,
   detectMissingLogs,
+  markOverdueRentalTerms,
   refreshWeComContactsCache,
   requeueTimedOutTasks
 } from "./services/cron-jobs";
@@ -29,7 +30,11 @@ export const scheduled = async (
       }
 
       if (cron === "0 * * * *") {
-        await Promise.all([checkApprovalTimeouts(env), refreshWeComContactsCache(env)]);
+        await Promise.all([
+          checkApprovalTimeouts(env),
+          refreshWeComContactsCache(env),
+          markOverdueRentalTerms(env)
+        ]);
         return;
       }
 

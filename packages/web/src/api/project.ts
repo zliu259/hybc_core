@@ -12,6 +12,8 @@ export type Project = {
   location_text?: string | null;
   project_briefing?: string | null;
   project_start_at?: string | null;
+  project_kind?: "internal" | "external";
+  external_party_name?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -57,6 +59,7 @@ export const listProjects = (params?: {
   status?: string;
   keyword?: string;
   location?: string;
+  project_kind?: "internal" | "external";
 }) => {
   return http.request<{
     success: boolean;
@@ -83,6 +86,8 @@ export const createProject = (data: {
   location_text?: string | null;
   project_briefing?: string | null;
   project_start_at?: string | null;
+  project_kind?: "internal" | "external";
+  external_party_name?: string | null;
 }) => {
   return http.request<{ success: boolean; data: { id: number } }>(
     "post",
@@ -112,6 +117,8 @@ export const updateProject = (
     location_text?: string | null;
     project_briefing?: string | null;
     project_start_at?: string | null;
+    project_kind?: "internal" | "external";
+    external_party_name?: string | null;
   }
 ) => {
   return http.request<{ success: boolean }>("put", `/api/v1/project/${id}`, {

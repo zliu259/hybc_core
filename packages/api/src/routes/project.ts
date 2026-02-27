@@ -26,6 +26,7 @@ projectRoutes.use("*", authMiddleware);
 
 projectRoutes.get("/", async (c) => {
   const status = c.req.query("status");
+  const projectKind = c.req.query("project_kind");
   const keyword = c.req.query("keyword");
   const location = c.req.query("location");
   const page = Math.max(Number(c.req.query("page") ?? "1"), 1);
@@ -40,6 +41,11 @@ projectRoutes.get("/", async (c) => {
     sql += " AND status = ?";
     countSql += " AND status = ?";
     params.push(status);
+  }
+  if (projectKind) {
+    sql += " AND project_kind = ?";
+    countSql += " AND project_kind = ?";
+    params.push(projectKind);
   }
   if (keyword) {
     sql += " AND (project_name LIKE ? OR project_code LIKE ?)";
@@ -114,7 +120,14 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
     location_text?: string | null;
     project_briefing?: string | null;
     project_start_at?: string | null;
+    project_kind?: "internal" | "external";
+    external_party_name?: string | null;
   };
+
+  const projectKind = body.project_kind ?? "internal";
+  if (projectKind !== "internal" && projectKind !== "external") {
+    return c.json({ success: false, error: { message: "project_kind must be internal or external" } }, 400);
+  }
 
   const status = body.status ?? "planning";
   if (!allowedStatus.includes(status)) {
@@ -129,7 +142,7 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
 
   const createdAt = nowIso();
   const result = await c.env.DB.prepare(
-    "INSERT INTO project (project_code, project_name, entity_id, manager_userid, status, start_date, end_date, location_text, project_briefing, project_start_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+    "INSERT INTO project (project_code, project_name, entity_id, manager_userid, status, start_date, end_date, location_text, project_briefing, project_start_at, project_kind, external_party_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
       body.project_code,
@@ -142,6 +155,8 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
       body.location_text ?? null,
       body.project_briefing ?? null,
       body.project_start_at ?? null,
+      projectKind,
+      body.external_party_name ?? null,
       createdAt,
       createdAt
     )
@@ -161,10 +176,20 @@ projectRoutes.put("/:id", requireRoles(["super_admin", "manager", "site_manager"
     location_text?: string | null;
     project_briefing?: string | null;
     project_start_at?: string | null;
+    project_kind?: "internal" | "external";
+    external_party_name?: string | null;
   };
 
+  if (
+    body.project_kind !== undefined &&
+    body.project_kind !== "internal" &&
+    body.project_kind !== "external"
+  ) {
+    return c.json({ success: false, error: { message: "project_kind must be internal or external" } }, 400);
+  }
+
   await c.env.DB.prepare(
-    "UPDATE project SET project_name = COALESCE(?, project_name), entity_id = ?, manager_userid = ?, start_date = ?, end_date = ?, location_text = COALESCE(?, location_text), project_briefing = COALESCE(?, project_briefing), project_start_at = COALESCE(?, project_start_at), updated_at = ? WHERE id = ?"
+    "UPDATE project SET project_name = COALESCE(?, project_name), entity_id = ?, manager_userid = ?, start_date = ?, end_date = ?, location_text = COALESCE(?, location_text), project_briefing = COALESCE(?, project_briefing), project_start_at = COALESCE(?, project_start_at), project_kind = COALESCE(?, project_kind), external_party_name = COALESCE(?, external_party_name), updated_at = ? WHERE id = ?"
   )
     .bind(
       body.project_name ?? null,
@@ -175,6 +200,8 @@ projectRoutes.put("/:id", requireRoles(["super_admin", "manager", "site_manager"
       body.location_text ?? null,
       body.project_briefing ?? null,
       body.project_start_at ?? null,
+      body.project_kind ?? null,
+      body.external_party_name ?? null,
       nowIso(),
       id
     )

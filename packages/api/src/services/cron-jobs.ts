@@ -110,3 +110,20 @@ export const refreshWeComContactsCache = async (env: Env): Promise<boolean> => {
     return false;
   }
 };
+
+export const markOverdueRentalTerms = async (env: Env): Promise<number> => {
+  const result = await env.DB.prepare(
+    "UPDATE asset_rental_term SET status = 'overdue', updated_at = ? WHERE status = 'active' AND returned_date IS NULL AND date(due_date) < date(?)"
+  )
+    .bind(nowIso(), new Date().toISOString().slice(0, 10))
+    .run();
+
+  const updated = Number(result.meta.changes ?? 0);
+  if (updated > 0) {
+    await publishEvent(env, "RENTAL_OVERDUE_MARKED", "cron", {
+      updated,
+      marked_at: nowIso()
+    });
+  }
+  return updated;
+};

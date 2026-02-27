@@ -1,7 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
-import { listAssetTypes, type AssetType } from "@/api/asset";
+import {
+  listAssetRentalTerms,
+  listAssetTypes,
+  type AssetRentalTerm,
+  type AssetType
+} from "@/api/asset";
 import { listProjects, type Project } from "@/api/project";
 import {
   cancelStockOrder,
@@ -22,6 +27,7 @@ const rows = ref<StockOrder[]>([]);
 const warehouses = ref<Warehouse[]>([]);
 const assetTypes = ref<AssetType[]>([]);
 const projects = ref<Project[]>([]);
+const rentalTerms = ref<AssetRentalTerm[]>([]);
 
 const filters = ref({ status: "", order_type: "" });
 const assetKeyword = ref("");
@@ -33,6 +39,7 @@ const form = ref({
   project_id: undefined as number | undefined,
   from_warehouse_id: undefined as number | undefined,
   to_warehouse_id: undefined as number | undefined,
+  rental_term_id: undefined as number | undefined,
   remark: "",
   items: [] as Array<{
     asset_type_id: number;
@@ -51,6 +58,18 @@ const filteredAssetTypes = computed(() => {
 
 const canSubmit = computed(() => {
   return form.value.items.length > 0 && !submitting.value;
+});
+
+const activeRentalTerms = computed(() =>
+  rentalTerms.value.filter(item => ["active", "overdue"].includes(item.status))
+);
+
+const rentalTermMap = computed(() => {
+  const map: Record<number, AssetRentalTerm> = {};
+  activeRentalTerms.value.forEach(item => {
+    map[item.id] = item;
+  });
+  return map;
 });
 
 const orderTypeLabel = (value: StockOrder["order_type"]) => {
@@ -77,6 +96,8 @@ const loadMeta = async () => {
   warehouses.value = warehouseRes.data;
   assetTypes.value = typeRes.data;
   projects.value = projectRes.data;
+  const rentalRes = await listAssetRentalTerms({ status: "active" });
+  rentalTerms.value = rentalRes.data;
 };
 
 const loadData = async () => {
@@ -98,6 +119,7 @@ const resetCreator = () => {
     project_id: undefined,
     from_warehouse_id: undefined,
     to_warehouse_id: undefined,
+    rental_term_id: undefined,
     remark: "",
     items: []
   };
@@ -146,6 +168,13 @@ const validateOrder = () => {
     message("数量必须大于 0", { type: "warning" });
     return false;
   }
+  if (form.value.order_type === "outbound" && form.value.rental_term_id) {
+    const term = rentalTermMap.value[form.value.rental_term_id];
+    if (term?.status === "overdue") {
+      message("该租赁周期已逾期，禁止继续出库", { type: "error" });
+      return false;
+    }
+  }
   return true;
 };
 
@@ -164,6 +193,7 @@ const submit = async () => {
       project_id: form.value.project_id,
       from_warehouse_id: form.value.from_warehouse_id,
       to_warehouse_id: form.value.to_warehouse_id,
+      rental_term_id: form.value.rental_term_id,
       remark: form.value.remark || undefined,
       items
     });
@@ -274,6 +304,27 @@ onMounted(async () => {
                     v-for="item in projects"
                     :key="item.id"
                     :label="`${item.project_name} (${item.project_code})`"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+            </el-col>
+          </el-row>
+
+          <el-row :gutter="10">
+            <el-col :xs="24" :sm="24">
+              <el-form-item label="关联租赁周期（可选）">
+                <el-select
+                  v-model="form.rental_term_id"
+                  clearable
+                  filterable
+                  style="width: 100%"
+                  placeholder="选择租赁周期以启用逾期校验与回库自动归还"
+                >
+                  <el-option
+                    v-for="item in activeRentalTerms"
+                    :key="item.id"
+                    :label="`${item.rental_no} | 资产#${item.tracked_asset_id} | ${item.rental_mode === 'lease_in' ? '租入' : '外租'} | 到期${item.due_date}`"
                     :value="item.id"
                   />
                 </el-select>
@@ -393,6 +444,11 @@ onMounted(async () => {
       <el-table-column prop="project_id" label="项目ID" width="100" />
       <el-table-column prop="from_warehouse_id" label="来源仓库" width="110" />
       <el-table-column prop="to_warehouse_id" label="目标仓库" width="110" />
+      <el-table-column label="租赁周期" width="130">
+        <template #default="scope">
+          {{ scope.row.rental_term_id || "-" }}
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="scope">
           <el-tag :type="statusTag(scope.row.status)">{{ scope.row.status }}</el-tag>
