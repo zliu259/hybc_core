@@ -2,6 +2,7 @@
   "pages": [
     "pages/index/index",
     "pages/project-detail/index",
+    "pages/project-section/index",
     "pages/project-create/index",
     "pages/finance/index",
     "pages/warehouse/index",

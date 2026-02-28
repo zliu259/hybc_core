@@ -1,0 +1,37 @@
+{
+  "mode": "apply",
+  "generated_at": "2026-02-28T03:09:53Z",
+  "tables": {
+    "payee": {
+      "total": 204,
+      "success": 204,
+      "failed": 0
+    },
+    "entity": {
+      "total": 13,
+      "success": 13,
+      "failed": 0
+    },
+    "contract": {
+      "total": 30,
+      "success": 30,
+      "failed": 0
+    },
+    "payment_request": {
+      "total": 73,
+      "success": 73,
+      "failed": 0
+    },
+    "reimbursement_envelope": {
+      "total": 124,
+      "success": 124,
+      "failed": 0
+    },
+    "reimbursement_batch": {
+      "total": 2089,
+      "success": 2089,
+      "failed": 0
+    }
+  },
+  "errors": []
+}

@@ -8,6 +8,8 @@
 - UI 页面级设计：`doc/UI设计文档.md`
 - 统一开发记录：`doc/开发记录.md`
 - 旧数据迁移兼容计划（测试阶段）：`doc/legacy_data/迁移兼容计划.md`
+- 财务旧数据结构映射（fin_data）：`doc/legacy_data/SCHEMA_MAP.md`
+- 财务旧数据迁移检查清单（fin_data）：`doc/legacy_data/MIGRATION_CHECKLIST.md`
 - Phase 8 本地与正式部署：`doc/Phase8本地部署与正式部署.md`
 
 ## 当前执行主线（2026-02）

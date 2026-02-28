@@ -36,6 +36,7 @@ contractRoutes.get("/", async (c) => {
   const entityId = c.req.query("entity_id");
   const status = c.req.query("status");
   const keyword = c.req.query("keyword");
+  const legacyDataId = c.req.query("legacy_data_id");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
@@ -68,6 +69,11 @@ contractRoutes.get("/", async (c) => {
     sql += " AND (contract_no LIKE ? OR counterparty LIKE ? OR remark LIKE ?)";
     countSql += " AND (contract_no LIKE ? OR counterparty LIKE ? OR remark LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+  }
+  if (legacyDataId) {
+    sql += " AND legacy_data_id = ?";
+    countSql += " AND legacy_data_id = ?";
+    params.push(legacyDataId);
   }
 
   sql += " ORDER BY id DESC LIMIT ? OFFSET ?";

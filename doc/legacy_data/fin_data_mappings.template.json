@@ -1,0 +1,14 @@
+{
+  "default_userid": "legacy_import",
+  "project_map": {
+    "示例工程简称": 1,
+    "示例工程全称": 1
+  },
+  "user_map": {
+    "示例申请人": "zhangsan",
+    "示例经办人": "lisi"
+  },
+  "entity_map": {
+    "示例公司名称": 1
+  }
+}

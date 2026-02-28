@@ -4,7 +4,7 @@
   background: #fff7e6;
   color: #ad6800;
   border-radius: 12rpx;
-  padding: 12rpx 14rpx;
+  padding: 16rpx;
   font-size: 24rpx;
 }
 
@@ -27,24 +27,145 @@
   color: #5c667a;
 }
 
-.section-row {
+.toolbar {
+  margin-top: 14rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.log-row {
   border: 1px solid #e4e9f2;
   border-radius: 12rpx;
   background: #fff;
-  padding: 14rpx;
-  margin-bottom: 12rpx;
+  margin-top: 12rpx;
+  overflow: hidden;
 }
 
-.section-name {
+.log-head {
+  min-height: 88rpx;
+  padding: 14rpx;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.log-head-left {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.log-date {
   font-size: 28rpx;
   font-weight: 600;
   color: #1f2d3d;
 }
 
-.section-sub {
-  margin-top: 6rpx;
+.log-status {
+  border: 1px solid #dce5f2;
+  border-radius: 999rpx;
+  padding: 2rpx 12rpx;
+  font-size: 22rpx;
+  color: #345176;
+  background: #f7fbff;
+}
+
+.log-arrow {
   font-size: 24rpx;
+  color: #345176;
+}
+
+.log-body {
+  border-top: 1px solid #edf2fa;
+  padding: 14rpx;
+}
+
+.log-sub {
+  margin-top: 6rpx;
+  font-size: 23rpx;
   color: #5c667a;
+}
+
+.log-content {
+  margin-top: 8rpx;
+  border-radius: 10rpx;
+  background: #f6f8fc;
+  padding: 10rpx;
+  font-size: 24rpx;
+  color: #2d3d52;
+  line-height: 1.45;
+}
+
+.log-risk {
+  margin-top: 8rpx;
+  border-radius: 10rpx;
+  background: #fff5e8;
+  padding: 10rpx;
+  font-size: 23rpx;
+  color: #c05800;
+}
+
+.photo-grid {
+  margin-top: 10rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10rpx;
+}
+
+.log-photo {
+  width: 100%;
+  height: 180rpx;
+  border-radius: 10rpx;
+  background: #f0f3f9;
+}
+
+.section-row {
+  border: 1px solid #e4e9f2;
+  border-radius: 12rpx;
+  background: #fff;
+  padding: 16rpx;
+  margin-top: 12rpx;
+}
+
+.section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16rpx;
+}
+
+.section-code {
+  font-size: 22rpx;
+  color: #7a8699;
+}
+
+.section-name {
+  margin-top: 4rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.section-status {
+  border: 1px solid #dce5f2;
+  border-radius: 999rpx;
+  padding: 2rpx 12rpx;
+  font-size: 22rpx;
+  color: #345176;
+  background: #f7fbff;
+}
+
+.section-sub {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  color: #5c667a;
+}
+
+.tap-tip {
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  color: #1677ff;
 }
 
 .summary-grid {

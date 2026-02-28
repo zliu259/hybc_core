@@ -43,6 +43,7 @@ paymentRoutes.use("*", authMiddleware);
 paymentRoutes.get("/payee/list", async (c) => {
   const type = c.req.query("type");
   const keyword = c.req.query("keyword");
+  const legacyDataId = c.req.query("legacy_data_id");
 
   let sql = "SELECT * FROM payee WHERE status = 'active'";
   const params: string[] = [];
@@ -54,6 +55,10 @@ paymentRoutes.get("/payee/list", async (c) => {
   if (keyword) {
     sql += " AND (name LIKE ? OR bank_account LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  if (legacyDataId) {
+    sql += " AND legacy_data_id = ?";
+    params.push(legacyDataId);
   }
   sql += " ORDER BY id DESC";
 
@@ -158,6 +163,7 @@ paymentRoutes.get("/", async (c) => {
   const projectId = c.req.query("project_id");
   const status = c.req.query("status");
   const keyword = c.req.query("keyword");
+  const legacyDataId = c.req.query("legacy_data_id");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
@@ -185,6 +191,11 @@ paymentRoutes.get("/", async (c) => {
     sql += " AND (serial_no LIKE ? OR content LIKE ?)";
     countSql += " AND (serial_no LIKE ? OR content LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  if (legacyDataId) {
+    sql += " AND legacy_data_id = ?";
+    countSql += " AND legacy_data_id = ?";
+    params.push(legacyDataId);
   }
 
   sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
@@ -217,11 +228,14 @@ paymentRoutes.get("/:id", async (c) => {
     return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
   }
 
-  const contract = await c.env.DB.prepare(
-    "SELECT contract_no, counterparty, total_amount, paid_amount FROM contract WHERE id = ?"
-  )
-    .bind(pr.contract_id)
-    .first();
+  const contract =
+    pr.contract_id !== null
+      ? await c.env.DB.prepare(
+          "SELECT contract_no, counterparty, total_amount, paid_amount FROM contract WHERE id = ?"
+        )
+          .bind(pr.contract_id)
+          .first()
+      : null;
 
   const payee = await c.env.DB.prepare(
     "SELECT name, bank_name, bank_account FROM payee WHERE id = ?"
@@ -523,6 +537,18 @@ paymentRoutes.post(
     if (pr.status !== "approved") {
       return c.json(
         { success: false, error: { message: "Only approved requests can be marked as paid" } },
+        400
+      );
+    }
+
+    if (pr.contract_id === null) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: "Legacy payment request without contract cannot use mark-paid. Migrate contract linkage first."
+          }
+        },
         400
       );
     }

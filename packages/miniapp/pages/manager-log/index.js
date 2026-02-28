@@ -18,6 +18,16 @@ Page({
     busy: false
   },
 
+  onLoad(query) {
+    const projectId = Number(query.projectId || 0);
+    if (projectId > 0) {
+      this.setData({
+        projectId,
+        "form.project_id": String(projectId)
+      });
+    }
+  },
+
   runBusy(fn) {
     if (this.data.busy) return;
     this.setData({ busy: true });
@@ -50,7 +60,13 @@ Page({
       const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
       if (!filePath) return;
       const signed = await uploadFileToR2(filePath);
-      const photos = this.data.form.photos.concat([{ file_key: signed.key, caption: "manager-log" }]);
+      const photos = this.data.form.photos.concat([
+        {
+          file_key: signed.key,
+          file_url: signed.fileUrl || signed.viewUrl || signed.publicUrl || "",
+          caption: "manager-log"
+        }
+      ]);
       this.setData({ "form.photos": photos });
       wx.showToast({ title: "上传完成", icon: "success" });
     }).catch((error) => wx.showToast({ title: error.message || "上传失败", icon: "none" }));
@@ -81,6 +97,9 @@ Page({
         }
       });
       wx.showToast({ title: "提交成功", icon: "success" });
+      setTimeout(() => {
+        wx.navigateBack({ delta: 1 });
+      }, 250);
     }).catch((error) => wx.showToast({ title: error.message || "提交失败", icon: "none" }));
   }
 });

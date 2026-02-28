@@ -18,15 +18,22 @@ import {
 } from "@/api/project";
 import {
   createManagerLog,
+  createOperatorLog,
   getManagerLog,
   getOperatorLog,
   listManagerLogs,
   listOperatorLogs,
   triggerLogSummary,
+  updateOperatorLog,
   type ManagerLog,
   type OperatorLog
 } from "@/api/log";
-import { listBreakthroughReports, type BreakthroughReport } from "@/api/survey";
+import {
+  createBreakthroughReport,
+  listBreakthroughReports,
+  updateBreakthroughReport,
+  type BreakthroughReport
+} from "@/api/survey";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 const props = defineProps<{ projectId: number }>();
@@ -78,6 +85,30 @@ const managerLogForm = ref({
 });
 
 const managerLogPhotos = ref<Array<{ file_key: string; file_url: string; file_name: string }>>([]);
+
+const operatorLogDialogVisible = ref(false);
+const operatorLogSubmitting = ref(false);
+const editingOperatorLogId = ref<number | null>(null);
+const operatorLogForm = ref({
+  log_date: "",
+  shift: "day",
+  weather: "",
+  completed_pipe_count: 0,
+  cumulative_pipe_count: 0,
+  footage_m: undefined as number | undefined,
+  issue_summary: "",
+  remark: ""
+});
+
+const breakthroughDialogVisible = ref(false);
+const breakthroughSubmitting = ref(false);
+const editingBreakthroughId = ref<number | null>(null);
+const breakthroughForm = ref({
+  report_date: "",
+  breakthrough_m: undefined as number | undefined,
+  summary: "",
+  detail: ""
+});
 
 const canWriteProjectLog = computed(() => {
   const roles = userStore.roles ?? [];
@@ -264,23 +295,27 @@ const openSectionDrawer = async (section: ProjectSection) => {
   sectionDrawerVisible.value = true;
   sectionDrawerLoading.value = true;
   try {
-    const [sectionOperatorsRes, sectionBreakthroughRes] = await Promise.all([
-      listOperatorLogs({
-        project_id: props.projectId,
-        section_id: section.id,
-        page: 1,
-        pageSize: 200
-      }),
-      listBreakthroughReports({
-        project_id: props.projectId,
-        section_id: section.id
-      })
-    ]);
-    sectionOperatorLogs.value = sectionOperatorsRes.data;
-    sectionBreakthroughReports.value = sectionBreakthroughRes.data;
+    await loadSectionDetailData(section.id);
   } finally {
     sectionDrawerLoading.value = false;
   }
+};
+
+const loadSectionDetailData = async (sectionId: number) => {
+  const [sectionOperatorsRes, sectionBreakthroughRes] = await Promise.all([
+    listOperatorLogs({
+      project_id: props.projectId,
+      section_id: sectionId,
+      page: 1,
+      pageSize: 200
+    }),
+    listBreakthroughReports({
+      project_id: props.projectId,
+      section_id: sectionId
+    })
+  ]);
+  sectionOperatorLogs.value = sectionOperatorsRes.data;
+  sectionBreakthroughReports.value = sectionBreakthroughRes.data;
 };
 
 const saveSectionStatus = async () => {
@@ -332,6 +367,132 @@ const openOperatorLogDetail = async (id: number) => {
     operatorLogDetail.value = result.data;
   } finally {
     operatorLogDetailLoading.value = false;
+  }
+};
+
+const resetOperatorLogForm = () => {
+  operatorLogForm.value = {
+    log_date: "",
+    shift: "day",
+    weather: "",
+    completed_pipe_count: 0,
+    cumulative_pipe_count: 0,
+    footage_m: undefined,
+    issue_summary: "",
+    remark: ""
+  };
+};
+
+const openCreateOperatorLog = () => {
+  editingOperatorLogId.value = null;
+  resetOperatorLogForm();
+  operatorLogDialogVisible.value = true;
+};
+
+const openEditOperatorLog = (row: OperatorLog) => {
+  editingOperatorLogId.value = row.id;
+  operatorLogForm.value = {
+    log_date: row.log_date,
+    shift: row.shift || "day",
+    weather: row.weather || "",
+    completed_pipe_count: row.completed_pipe_count,
+    cumulative_pipe_count: row.cumulative_pipe_count,
+    footage_m: row.footage_m === null ? undefined : row.footage_m,
+    issue_summary: row.issue_summary || "",
+    remark: row.remark || ""
+  };
+  operatorLogDialogVisible.value = true;
+};
+
+const submitOperatorLog = async () => {
+  if (!currentSection.value) return;
+  if (!operatorLogForm.value.log_date) {
+    message("请填写日志日期", { type: "warning" });
+    return;
+  }
+  operatorLogSubmitting.value = true;
+  try {
+    const payload = {
+      project_id: props.projectId,
+      section_id: currentSection.value.id,
+      log_date: operatorLogForm.value.log_date,
+      shift: operatorLogForm.value.shift,
+      weather: operatorLogForm.value.weather || undefined,
+      completed_pipe_count: operatorLogForm.value.completed_pipe_count,
+      cumulative_pipe_count: operatorLogForm.value.cumulative_pipe_count,
+      footage_m: operatorLogForm.value.footage_m,
+      issue_summary: operatorLogForm.value.issue_summary || undefined,
+      remark: operatorLogForm.value.remark || undefined,
+      status: "submitted"
+    };
+    if (editingOperatorLogId.value) {
+      await updateOperatorLog(editingOperatorLogId.value, payload);
+      message("施工日志已更新", { type: "success" });
+    } else {
+      await createOperatorLog(payload);
+      message("施工日志已创建", { type: "success" });
+    }
+    operatorLogDialogVisible.value = false;
+    await Promise.all([loadSectionDetailData(currentSection.value.id), loadProjectLogData()]);
+  } finally {
+    operatorLogSubmitting.value = false;
+  }
+};
+
+const resetBreakthroughForm = () => {
+  breakthroughForm.value = {
+    report_date: "",
+    breakthrough_m: undefined,
+    summary: "",
+    detail: ""
+  };
+};
+
+const openCreateBreakthrough = () => {
+  editingBreakthroughId.value = null;
+  resetBreakthroughForm();
+  breakthroughDialogVisible.value = true;
+};
+
+const openEditBreakthrough = (row: BreakthroughReport) => {
+  editingBreakthroughId.value = row.id;
+  breakthroughForm.value = {
+    report_date: row.report_date,
+    breakthrough_m: row.breakthrough_m === null ? undefined : row.breakthrough_m,
+    summary: row.summary || "",
+    detail: row.detail || ""
+  };
+  breakthroughDialogVisible.value = true;
+};
+
+const submitBreakthrough = async () => {
+  if (!currentSection.value) return;
+  if (!breakthroughForm.value.report_date) {
+    message("请填写报告日期", { type: "warning" });
+    return;
+  }
+  breakthroughSubmitting.value = true;
+  try {
+    const payload = {
+      project_id: props.projectId,
+      section_id: currentSection.value.id,
+      report_date: breakthroughForm.value.report_date,
+      breakthrough_m: breakthroughForm.value.breakthrough_m,
+      summary: breakthroughForm.value.summary || undefined,
+      detail: breakthroughForm.value.detail || undefined,
+      status: "submitted"
+    };
+    if (editingBreakthroughId.value) {
+      await updateBreakthroughReport(editingBreakthroughId.value, payload);
+      message("贯通报告已更新", { type: "success" });
+    } else {
+      await createBreakthroughReport(payload);
+      message("贯通报告已创建", { type: "success" });
+    }
+    breakthroughDialogVisible.value = false;
+    await Promise.all([loadSectionDetailData(currentSection.value.id), loadProjectLogData()]);
+  } finally {
+    breakthroughSubmitting.value = false;
   }
 };
 
@@ -558,67 +719,28 @@ onMounted(loadWecomUsers);
         <el-button type="primary" :disabled="!canWriteProjectLog" @click="openManagerLogDialog">
           快速填写项目日志
         </el-button>
-        <el-button @click="router.push('/construction/operator-log/form')">填写施工日志</el-button>
-        <el-button @click="router.push('/construction/manager-log')">打开日志中心</el-button>
+        <el-button @click="router.push('/construction/manager-log')">打开项目日志中心</el-button>
         <el-button @click="quickTriggerSummary('daily')">触发日报汇总</el-button>
         <el-button @click="quickTriggerSummary('weekly')">触发周报汇总</el-button>
       </div>
 
-      <el-descriptions :column="3" border class="mb-3">
-        <el-descriptions-item label="施工日志总数">{{ operatorLogs.length }}</el-descriptions-item>
+      <el-descriptions :column="2" border class="mb-3">
         <el-descriptions-item label="项目日志总数">{{ managerLogs.length }}</el-descriptions-item>
-        <el-descriptions-item label="贯通报告总数">{{ breakthroughReports.length }}</el-descriptions-item>
+        <el-descriptions-item label="最新日志日期">{{ managerLogs[0]?.log_date || '-' }}</el-descriptions-item>
       </el-descriptions>
 
-      <el-tabs>
-        <el-tab-pane label="施工日志">
-          <el-table :data="operatorLogs" max-height="320">
-            <el-table-column prop="log_date" label="日期" width="120" />
-                <el-table-column label="班次" width="90">
-                  <template #default="scope">{{ shiftLabel(scope.row.shift) }}</template>
-                </el-table-column>
-            <el-table-column label="标段" min-width="180">
-              <template #default="scope">
-                {{ sections.find(item => item.id === scope.row.section_id)?.section_name || "-" }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="completed_pipe_count" label="完成管节" width="110" />
-            <el-table-column prop="cumulative_pipe_count" label="累计管节" width="110" />
-            <el-table-column prop="footage_m" label="当日顶进(m)" width="120" />
-            <el-table-column prop="issue_summary" label="问题摘要" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="operator_userid" label="填报人" width="120" />
-          </el-table>
-        </el-tab-pane>
-
-        <el-tab-pane label="项目日志">
-          <el-table :data="managerLogs" max-height="320">
-            <el-table-column prop="log_date" label="日期" width="120" />
-            <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="risk_note" label="风险提示" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="manager_userid" label="填报人" width="120" />
-            <el-table-column prop="status" label="状态" width="100" />
-            <el-table-column label="操作" width="110" fixed="right">
-              <template #default="scope">
-                <el-button link type="primary" @click="openManagerLogDetail(scope.row.id)">查看单条日志</el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </el-tab-pane>
-
-        <el-tab-pane label="贯通报告">
-          <el-table :data="breakthroughReports" max-height="320">
-            <el-table-column prop="report_no" label="报告号" width="180" />
-            <el-table-column prop="report_date" label="报告日期" width="120" />
-            <el-table-column label="标段" min-width="180">
-              <template #default="scope">
-                {{ sections.find(item => item.id === scope.row.section_id)?.section_name || "未绑定标段" }}
-              </template>
-            </el-table-column>
-            <el-table-column prop="breakthrough_m" label="贯通里程(m)" width="120" />
-            <el-table-column prop="summary" label="摘要" min-width="220" show-overflow-tooltip />
-          </el-table>
-        </el-tab-pane>
-      </el-tabs>
+      <el-table :data="managerLogs" max-height="320">
+        <el-table-column prop="log_date" label="日期" width="120" />
+        <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="risk_note" label="风险提示" min-width="220" show-overflow-tooltip />
+        <el-table-column prop="manager_userid" label="填报人" width="120" />
+        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column label="操作" width="110" fixed="right">
+          <template #default="scope">
+            <el-button link type="primary" @click="openManagerLogDetail(scope.row.id)">查看单条日志</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-card>
 
     <el-drawer
@@ -686,6 +808,9 @@ onMounted(loadWecomUsers);
         <el-row :gutter="16">
           <el-col :span="14">
             <el-card shadow="never" header="该标段施工日志">
+              <div class="section-toolbar mb-3">
+                <el-button type="primary" @click="openCreateOperatorLog">新增施工日志</el-button>
+              </div>
               <el-table :data="sectionOperatorLogs" max-height="320">
                 <el-table-column prop="log_date" label="日期" width="120" />
                 <el-table-column label="班次" width="80">
@@ -696,8 +821,9 @@ onMounted(loadWecomUsers);
                 <el-table-column prop="footage_m" label="里程(m)" width="100" />
                 <el-table-column prop="issue_summary" label="问题摘要" min-width="200" show-overflow-tooltip />
                 <el-table-column prop="operator_userid" label="填报人" width="120" />
-                <el-table-column label="操作" width="110" fixed="right">
+                <el-table-column label="操作" width="180" fixed="right">
                   <template #default="scope">
+                    <el-button link type="primary" @click="openEditOperatorLog(scope.row)">编辑</el-button>
                     <el-button link type="primary" @click="openOperatorLogDetail(scope.row.id)">
                       查看详情
                     </el-button>
@@ -709,11 +835,19 @@ onMounted(loadWecomUsers);
 
           <el-col :span="10">
             <el-card shadow="never" header="该标段贯通报告">
+              <div class="section-toolbar mb-3">
+                <el-button type="primary" @click="openCreateBreakthrough">新增贯通报告</el-button>
+              </div>
               <el-table :data="sectionBreakthroughReports" max-height="320">
                 <el-table-column prop="report_no" label="报告号" min-width="180" />
                 <el-table-column prop="report_date" label="日期" width="110" />
                 <el-table-column prop="breakthrough_m" label="里程(m)" width="100" />
                 <el-table-column prop="status" label="状态" width="90" />
+                <el-table-column label="操作" width="90" fixed="right">
+                  <template #default="scope">
+                    <el-button link type="primary" @click="openEditBreakthrough(scope.row)">编辑</el-button>
+                  </template>
+                </el-table-column>
               </el-table>
             </el-card>
           </el-col>
@@ -760,6 +894,85 @@ onMounted(loadWecomUsers);
       <template #footer>
         <el-button @click="managerLogDialogVisible = false">取消</el-button>
         <el-button type="primary" :loading="creatingManagerLog" @click="submitManagerLog">提交日志</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="operatorLogDialogVisible"
+      :title="editingOperatorLogId ? '编辑施工日志' : '新增施工日志'"
+      width="720px"
+    >
+      <el-form label-width="120px">
+        <el-form-item label="日志日期" required>
+          <el-date-picker
+            v-model="operatorLogForm.log_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 220px"
+          />
+        </el-form-item>
+        <el-form-item label="班次">
+          <el-select v-model="operatorLogForm.shift" style="width: 160px">
+            <el-option label="day" value="day" />
+            <el-option label="night" value="night" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="天气">
+          <el-input v-model="operatorLogForm.weather" style="width: 220px" />
+        </el-form-item>
+        <el-form-item label="当班下管数量">
+          <el-input-number v-model="operatorLogForm.completed_pipe_count" :min="0" />
+        </el-form-item>
+        <el-form-item label="累计下管数量">
+          <el-input-number v-model="operatorLogForm.cumulative_pipe_count" :min="0" />
+        </el-form-item>
+        <el-form-item label="当日进尺(m)">
+          <el-input-number v-model="operatorLogForm.footage_m" :min="0" :precision="2" />
+        </el-form-item>
+        <el-form-item label="问题摘要">
+          <el-input v-model="operatorLogForm.issue_summary" type="textarea" :rows="3" />
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="operatorLogForm.remark" type="textarea" :rows="2" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="operatorLogDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="operatorLogSubmitting" @click="submitOperatorLog">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="breakthroughDialogVisible"
+      :title="editingBreakthroughId ? '编辑贯通报告' : '新增贯通报告'"
+      width="700px"
+    >
+      <el-form label-width="110px">
+        <el-form-item label="报告日期" required>
+          <el-date-picker
+            v-model="breakthroughForm.report_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 220px"
+          />
+        </el-form-item>
+        <el-form-item label="贯通里程(m)">
+          <el-input-number v-model="breakthroughForm.breakthrough_m" :min="0" :precision="2" />
+        </el-form-item>
+        <el-form-item label="摘要">
+          <el-input v-model="breakthroughForm.summary" />
+        </el-form-item>
+        <el-form-item label="详情">
+          <el-input v-model="breakthroughForm.detail" type="textarea" :rows="4" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="breakthroughDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="breakthroughSubmitting" @click="submitBreakthrough">
+          保存
+        </el-button>
       </template>
     </el-dialog>
 
@@ -862,6 +1075,11 @@ onMounted(loadWecomUsers);
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.section-toolbar {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .log-detail-content {

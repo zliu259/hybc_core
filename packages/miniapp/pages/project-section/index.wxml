@@ -1,0 +1,62 @@
+<view class="page">
+  <hy-panel-card title="标段详情" icon="layers" subtitle="标段信息、施工日志与贯通报告">
+    <view wx:if="{{section}}" class="section-box">
+      <view class="section-title">{{section.section_name}}</view>
+      <view class="section-sub">{{section.section_code}} · {{section.statusText}}</view>
+      <view class="section-sub">标段里程：{{section.section_length || '-'}}m</view>
+      <view class="section-sub">负责人：{{section.manager_userid || '-'}}</view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="施工日志" icon="edit-1" subtitle="按日期排序，适合现场快速回看">
+    <view class="toolbar">
+      <t-button size="small" theme="primary" disabled="{{readonly}}" bindtap="goCreateOperatorLog">新增施工日志</t-button>
+    </view>
+    <view wx:if="{{operatorLogs.length === 0}}" class="empty-tip">暂无施工日志</view>
+    <view wx:for="{{operatorLogs}}" wx:key="id" class="log-row">
+      <view class="log-title">{{item.log_date}} · {{item.shift}}</view>
+      <view class="log-sub">完成管节 {{item.completed_pipe_count}} · 累计管节 {{item.cumulative_pipe_count}}</view>
+      <view class="log-sub">当日顶进 {{item.footage_m || 0}}m · 填报人 {{item.operator_userid || '-'}}</view>
+      <view wx:if="{{item.issue_summary}}" class="log-sub">问题：{{item.issue_summary}}</view>
+      <view class="toolbar">
+        <t-button size="small" variant="outline" disabled="{{readonly}}" data-id="{{item.id}}" bindtap="goEditOperatorLog">编辑</t-button>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="贯通报告" icon="file-copy" subtitle="标段维度维护">
+    <view class="toolbar">
+      <t-button size="small" variant="outline" disabled="{{readonly}}" bindtap="openCreateBreakthrough">新增贯通报告</t-button>
+    </view>
+    <view wx:if="{{breakthroughReports.length === 0}}" class="empty-tip">暂无贯通报告</view>
+    <view wx:for="{{breakthroughReports}}" wx:key="id" class="log-row">
+      <view class="log-title">{{item.report_no || '未编号报告'}}</view>
+      <view class="log-sub">{{item.report_date}} · {{item.statusText}}</view>
+      <view class="log-sub">贯通里程 {{item.breakthrough_m || 0}}m</view>
+      <view wx:if="{{item.summary}}" class="log-sub">摘要：{{item.summary}}</view>
+      <view class="toolbar">
+        <t-button size="small" variant="outline" disabled="{{readonly}}" data-id="{{item.id}}" bindtap="openEditBreakthrough">编辑</t-button>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <view wx:if="{{breakthroughDialogVisible}}" class="dialog-mask">
+    <view class="dialog">
+      <view class="dialog-title">{{editingBreakthroughId ? '编辑贯通报告' : '新增贯通报告'}}</view>
+      <view class="label required">报告日期</view>
+      <picker mode="date" value="{{breakthroughForm.report_date}}" bindchange="onBreakthroughDateChange" disabled="{{breakthroughSubmitting}}">
+        <view class="input">{{breakthroughForm.report_date}}</view>
+      </picker>
+      <view class="label">贯通里程(m)</view>
+      <input class="input" type="digit" value="{{breakthroughForm.breakthrough_m}}" data-key="breakthrough_m" bindinput="onBreakthroughInput" disabled="{{breakthroughSubmitting}}" />
+      <view class="label">摘要</view>
+      <input class="input" value="{{breakthroughForm.summary}}" data-key="summary" bindinput="onBreakthroughInput" disabled="{{breakthroughSubmitting}}" />
+      <view class="label">详情</view>
+      <textarea class="input" value="{{breakthroughForm.detail}}" data-key="detail" bindinput="onBreakthroughInput" disabled="{{breakthroughSubmitting}}" />
+      <view class="toolbar">
+        <t-button size="small" variant="outline" bindtap="closeBreakthroughDialog" disabled="{{breakthroughSubmitting}}">取消</t-button>
+        <t-button size="small" theme="primary" bindtap="submitBreakthrough" loading="{{breakthroughSubmitting}}" disabled="{{breakthroughSubmitting}}">保存</t-button>
+      </view>
+    </view>
+  </view>
+</view>

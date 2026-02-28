@@ -1,21 +1,68 @@
 <view class="page">
-  <hy-panel-card title="项目详情" icon="app" subtitle="项目基础信息、标段与财务摘要">
-    <view wx:if="{{readonly}}" class="readonly-tip" bindtap="showReadonlyTip">
-      当前为只读模式（非参与者）
-    </view>
+  <hy-panel-card title="项目工作区" icon="app" subtitle="项目级日志 + 标段级详情，移动端快速操作">
+    <view wx:if="{{readonly}}" class="readonly-tip" bindtap="showReadonlyTip">当前为只读模式（非参与者）</view>
 
     <view wx:if="{{project}}" class="project-box">
       <view class="project-title">{{project.project_name}}</view>
-      <view class="project-sub">{{project.project_code}} · {{project.status}}</view>
+      <view class="project-sub">{{project.project_code}} · {{project.statusText}}</view>
       <view class="project-sub">项目经理：{{project.manager_userid || '-'}}</view>
+      <view class="project-sub">开工日期：{{project.project_start_at || '-'}}</view>
+      <view class="project-sub">项目位置：{{project.location_text || '-'}}</view>
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="标段列表" icon="list">
-    <view wx:if="{{sections.length === 0}}" class="empty-tip">暂无标段</view>
-    <view wx:for="{{sections}}" wx:key="id" class="section-row">
-      <view class="section-name">{{item.section_name}}</view>
-      <view class="section-sub">{{item.section_code}} · {{item.status}}</view>
+  <hy-panel-card title="项目日志" icon="file-1" subtitle="默认折叠，按日期排序，点开看完整内容">
+    <view class="toolbar">
+      <t-button theme="primary" size="small" disabled="{{readonly}}" bindtap="goCreateManagerLog">快速填写项目日志</t-button>
+    </view>
+
+    <view wx:if="{{managerLogs.length === 0}}" class="empty-tip">暂无项目日志</view>
+    <view wx:for="{{managerLogs}}" wx:key="id" class="log-row">
+      <view class="log-head" data-id="{{item.id}}" bindtap="toggleManagerLog">
+        <view class="log-head-left">
+          <view class="log-date">{{item.dayText}}</view>
+          <view class="log-status">{{item.statusText}}</view>
+        </view>
+        <view class="log-arrow">{{expandedManagerLogId === item.id ? '收起' : '展开'}}</view>
+      </view>
+
+      <view wx:if="{{expandedManagerLogId === item.id}}" class="log-body">
+        <view class="log-sub">标题：{{item.title}}</view>
+        <view class="log-sub">填报人：{{item.manager_userid}}</view>
+        <view wx:if="{{item.detailText}}" class="log-content">{{item.detailText}}</view>
+        <view wx:if="{{item.risk_note}}" class="log-risk">风险提示：{{item.risk_note}}</view>
+
+        <view wx:if="{{item.photos.length > 0}}" class="photo-grid">
+          <image
+            wx:for="{{item.photos}}"
+            wx:for-item="photo"
+            wx:key="url"
+            class="log-photo"
+            mode="aspectFill"
+            src="{{photo.url}}"
+            data-logid="{{item.id}}"
+            data-current="{{photo.url}}"
+            bindtap="previewLogPhoto"
+          />
+        </view>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="标段总览" icon="list" subtitle="点击进入标段页面，查看施工日志与贯通信息">
+    <view wx:if="{{sectionCards.length === 0}}" class="empty-tip">暂无标段</view>
+    <view wx:for="{{sectionCards}}" wx:key="id" class="section-row" data-id="{{item.id}}" bindtap="openSectionPage">
+      <view class="section-head">
+        <view>
+          <view class="section-code">{{item.section_code}}</view>
+          <view class="section-name">{{item.section_name}}</view>
+        </view>
+        <view class="section-status">{{item.statusText}}</view>
+      </view>
+      <view class="section-sub">顶进进度 {{item.progress}}% · 累计 {{item.footage}} / {{item.section_length}}m</view>
+      <view class="section-sub">施工日志 {{item.logCount}} · 贯通报告 {{item.breakthroughCount}}</view>
+      <view class="section-sub">最近更新：{{item.latestLogDate}}</view>
+      <view class="tap-tip">点击查看标段详情</view>
     </view>
   </hy-panel-card>
 

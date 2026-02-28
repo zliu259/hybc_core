@@ -136,7 +136,7 @@ export interface CreateAmountChangeRequest {
 export interface PaymentRequest {
   id: number;
   serial_no: string;
-  contract_id: number;
+  contract_id: number | null;
   project_id: number;
   applicant_userid: string;
   expected_payment_date: string;

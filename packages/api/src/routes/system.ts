@@ -259,3 +259,69 @@ systemRoutes.post("/automation/cron/run", apiKeyMiddleware, async (c) => {
 
   return c.json({ success: true, data: result });
 });
+
+systemRoutes.get("/automation/legacy-finance-compat", apiKeyMiddleware, async (c) => {
+  const tableCounts = {
+    entity: await c.env.DB.prepare(
+      "SELECT COUNT(*) as total, COUNT(legacy_data_id) as legacy_total FROM entity"
+    ).first<{ total: number; legacy_total: number }>(),
+    payee: await c.env.DB.prepare(
+      "SELECT COUNT(*) as total, COUNT(legacy_data_id) as legacy_total FROM payee"
+    ).first<{ total: number; legacy_total: number }>(),
+    contract: await c.env.DB.prepare(
+      "SELECT COUNT(*) as total, COUNT(legacy_data_id) as legacy_total FROM contract WHERE status != 'deleted'"
+    ).first<{ total: number; legacy_total: number }>(),
+    payment_request: await c.env.DB.prepare(
+      "SELECT COUNT(*) as total, COUNT(legacy_data_id) as legacy_total FROM payment_request WHERE status != 'cancelled'"
+    ).first<{ total: number; legacy_total: number }>(),
+    reimbursement_envelope: await c.env.DB.prepare(
+      "SELECT COUNT(*) as total, COUNT(legacy_data_id) as legacy_total FROM reimbursement_envelope WHERE status != 'deleted'"
+    ).first<{ total: number; legacy_total: number }>(),
+    reimbursement_batch: await c.env.DB.prepare(
+      "SELECT COUNT(*) as total, COUNT(legacy_data_id) as legacy_total FROM reimbursement_batch"
+    ).first<{ total: number; legacy_total: number }>()
+  };
+
+  const integrity = {
+    payment_request_missing_payee: await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt
+       FROM payment_request pr
+       WHERE pr.legacy_data_id IS NOT NULL
+         AND pr.payee_id NOT IN (SELECT id FROM payee)`
+    ).first<{ cnt: number }>(),
+    payment_request_missing_contract: await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt
+       FROM payment_request pr
+       WHERE pr.legacy_data_id IS NOT NULL
+         AND pr.contract_id IS NOT NULL
+         AND pr.contract_id NOT IN (SELECT id FROM contract)`
+    ).first<{ cnt: number }>(),
+    contract_missing_entity: await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt
+       FROM contract c
+       WHERE c.legacy_data_id IS NOT NULL
+         AND c.entity_id NOT IN (SELECT id FROM entity)`
+    ).first<{ cnt: number }>(),
+    contract_missing_project: await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt
+       FROM contract c
+       WHERE c.legacy_data_id IS NOT NULL
+         AND c.project_id NOT IN (SELECT id FROM project)`
+    ).first<{ cnt: number }>(),
+    reimbursement_envelope_missing_project: await c.env.DB.prepare(
+      `SELECT COUNT(*) as cnt
+       FROM reimbursement_envelope re
+       WHERE re.legacy_data_id IS NOT NULL
+         AND re.project_id NOT IN (SELECT id FROM project)`
+    ).first<{ cnt: number }>()
+  };
+
+  return c.json({
+    success: true,
+    data: {
+      generated_at: new Date().toISOString(),
+      table_counts: tableCounts,
+      integrity
+    }
+  });
+});

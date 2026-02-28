@@ -26,6 +26,7 @@ entityRoutes.use("*", authMiddleware);
 entityRoutes.get("/", async (c) => {
   const status = c.req.query("status");
   const keyword = c.req.query("keyword");
+  const legacyDataId = c.req.query("legacy_data_id");
 
   let sql = "SELECT * FROM entity WHERE 1=1";
   const params: string[] = [];
@@ -37,6 +38,10 @@ entityRoutes.get("/", async (c) => {
   if (keyword) {
     sql += " AND (entity_name LIKE ? OR entity_code LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`);
+  }
+  if (legacyDataId) {
+    sql += " AND legacy_data_id = ?";
+    params.push(legacyDataId);
   }
   sql += " ORDER BY id DESC";
 

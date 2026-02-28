@@ -189,6 +189,7 @@ reimbursementRoutes.get("/", async (c) => {
   const applicantUserid = c.req.query("applicant_userid");
   const channel = c.req.query("channel");
   const keyword = c.req.query("keyword");
+  const legacyDataId = c.req.query("legacy_data_id");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
@@ -221,6 +222,11 @@ reimbursementRoutes.get("/", async (c) => {
     sql += " AND (envelope_no LIKE ? OR envelope_uuid LIKE ? OR IFNULL(invoice_no, '') LIKE ? OR IFNULL(description, '') LIKE ?)";
     countSql += " AND (envelope_no LIKE ? OR envelope_uuid LIKE ? OR IFNULL(invoice_no, '') LIKE ? OR IFNULL(description, '') LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+  }
+  if (legacyDataId) {
+    sql += " AND legacy_data_id = ?";
+    countSql += " AND legacy_data_id = ?";
+    params.push(legacyDataId);
   }
 
   sql += " ORDER BY id DESC LIMIT ? OFFSET ?";

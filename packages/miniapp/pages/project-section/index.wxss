@@ -1,0 +1,77 @@
+.section-box {
+  border: 1px solid #e4e9f2;
+  border-radius: 14rpx;
+  background: #fff;
+  padding: 16rpx;
+}
+
+.section-title {
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.section-sub {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #5c667a;
+}
+
+.toolbar {
+  margin-top: 14rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.log-row {
+  border: 1px solid #e4e9f2;
+  border-radius: 12rpx;
+  background: #fff;
+  padding: 14rpx;
+  margin-top: 12rpx;
+}
+
+.log-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.log-sub {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  color: #5c667a;
+}
+
+.empty-tip {
+  color: #8a94a7;
+  font-size: 24rpx;
+}
+
+.dialog-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 22, 42, 0.45);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 99;
+  padding: 24rpx;
+}
+
+.dialog {
+  width: 100%;
+  max-width: 680rpx;
+  border-radius: 18rpx;
+  background: #fff;
+  padding: 22rpx;
+  box-sizing: border-box;
+}
+
+.dialog-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+  margin-bottom: 10rpx;
+}

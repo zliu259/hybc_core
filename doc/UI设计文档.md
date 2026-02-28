@@ -314,8 +314,9 @@
 - 文件管理区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持项目相关人员上传并沉淀项目文件，文件可选绑定标段。
 - 项目信息编辑区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持在工作区直接查看/编辑 `location_text`（具体位置）、`project_briefing`（项目交底）、`project_start_at`（开始时间）。
 - 标段详情弹窗：在项目面板“标段总览”点击“查看详情”进入，显示标段基础信息、该标段操作员日志、该标段贯通报告。
-- 项目日志聚合区：同页集中展示该项目全部操作员日志、管理员日志、贯通报告，保证参与人员无需跨模块即可获取项目全貌。
-- 贯通报告标段绑定：贯通报告按 `section_id` 归集，在项目层与标段层均可追溯。
+- 项目日志聚合区：仅展示项目级管理员日志（项目相关内容），不再承载施工日志/标段贯通内容。
+- 标段内日志能力：施工日志与贯通报告统一下沉到“标段详情抽屉”，支持查看、新增与编辑。
+- 贯通报告标段绑定：贯通报告按 `section_id` 归集，并在对应标段详情下追溯。
 - 对应 API：`/api/v1/project/:id/files`、`/api/v1/project/:id/files/:fileId`、`/api/v1/log/operator?project_id=:id&section_id=:sectionId`、`/api/v1/survey/breakthrough?project_id=:id&section_id=:sectionId`。
 
 ### 3.5 Sprint 1 重构落地点（2026-02）
@@ -427,8 +428,9 @@
 - `tab=project` 从“信息+文件+表格堆叠”改为“项目运营驾驶舱”布局：
   - 文件能力从 `project-panel` 完全移除（已迁移到 `tab=files` 的 `file-panel`）
   - 标段总览改为卡片式并引入顶进进度条（累计顶进/标段里程）
-  - 项目日志一站式视图加入快速填写项目日志与单条日志详情抽屉
-  - 增加项目管理辅助动作（施工日志直达、日志中心直达、日报/周报汇总触发）
+  - 项目日志一站式视图仅保留项目日志（管理员日志）并支持单条日志详情抽屉
+  - 标段详情抽屉补齐施工日志/贯通报告查看、新增、编辑
+  - 增加项目管理辅助动作（项目日志中心直达、日报/周报汇总触发）
   - 快速填写项目日志中的照片输入从 `file_key` 文本改为直接上传照片
 - 关键文件：
   - `packages/web/src/views/project/workspace/project-panel.vue`
@@ -594,6 +596,7 @@
 #### 4.4.1 页面与路径映射
 - 项目列表（重构后主入口）：`packages/miniapp/pages/index/index`
 - 项目详情（新增）：`packages/miniapp/pages/project-detail/index`
+- 标段详情（新增）：`packages/miniapp/pages/project-section/index`
 - 项目模块配置：`packages/miniapp/app.json`
 - 项目接口封装：`packages/miniapp/utils/request.js`
 
@@ -602,6 +605,10 @@
 - 非参与者：允许浏览全部项目列表与详情，但详情必须是只读模式。
 - 非参与者禁止项：提交审批、提交财务类动作、库存/出入库写操作、配置型操作。
 - 任何写操作均以服务端鉴权为最终裁决；前端只读态仅用于降低误触。
+- 项目日志边界与 Web 统一：项目详情中的“项目日志一站式视图”仅展示项目级管理员日志。
+- 标段内容边界与 Web 统一：施工日志与贯通报告仅在“标段详情”上下文展示与维护（查看/新增/编辑）。
+- 项目日志移动端交互：默认折叠，按日期降序展示，列表头只显示日期（精确到天）和中文状态；点击后展开完整内容与照片。
+- 标段入口移动端交互：项目详情中的标段卡片仅负责跳转，点击后进入独立标段页查看施工日志与贯通信息，减少长列表滚动与误触。
 
 #### 4.4.3 范围锁定（本期禁止变更）
 - 财务模块入口与行为保持不变：`packages/miniapp/pages/finance/index`
