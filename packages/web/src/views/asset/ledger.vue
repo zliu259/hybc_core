@@ -42,7 +42,7 @@ const checkedIds = computed(() =>
 );
 
 const goDetail = (id: number) => {
-  router.push(`/asset/detail/${id}`);
+  router.push(`/warehouse-assets/device/${id}`);
 };
 
 const handleBatchPrint = () => {

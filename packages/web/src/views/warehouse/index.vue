@@ -1,9 +1,13 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
   createWarehouse,
   deleteWarehouse,
+  listInventory,
+  listInventoryAlerts,
+  listStockOrders,
   listWarehouses,
   type Warehouse,
   updateWarehouse
@@ -15,7 +19,14 @@ defineOptions({ name: "WarehouseIndex" });
 const loading = ref(false);
 const list = ref<Warehouse[]>([]);
 const keyword = ref("");
+const router = useRouter();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const kpis = ref({
+  warehouseCount: 0,
+  pendingOrderCount: 0,
+  alertCount: 0,
+  inventoryCount: 0
+});
 
 const dialogVisible = ref(false);
 const submitting = ref(false);
@@ -32,13 +43,34 @@ const form = ref({
 const loadData = async () => {
   loading.value = true;
   try {
-    const result = await listWarehouses({
-      keyword: keyword.value || undefined
-    });
+    const [warehouseRes, stockOrderRes, alertRes, inventoryRes] = await Promise.all([
+      listWarehouses({
+        keyword: keyword.value || undefined
+      }),
+      listStockOrders(),
+      listInventoryAlerts(),
+      listInventory()
+    ]);
+    const pendingOrderCount = stockOrderRes.data.filter(item =>
+      ["draft", "pending_approval", "approved"].includes(item.status)
+    ).length;
+
+    kpis.value = {
+      warehouseCount: warehouseRes.data.length,
+      pendingOrderCount,
+      alertCount: alertRes.data.length,
+      inventoryCount: inventoryRes.data.length
+    };
+
+    const result = warehouseRes;
     list.value = result.data;
   } finally {
     loading.value = false;
   }
+};
+
+const goTo = (path: string) => {
+  router.push(path);
 };
 
 const openCreate = () => {
@@ -125,6 +157,40 @@ onMounted(loadWecomUsers);
       </div>
     </template>
 
+    <el-row :gutter="10" class="kpi-row">
+      <el-col :md="6" :sm="12" :xs="24">
+        <div class="kpi-card">
+          <div class="kpi-label">仓库数量</div>
+          <div class="kpi-value">{{ kpis.warehouseCount }}</div>
+        </div>
+      </el-col>
+      <el-col :md="6" :sm="12" :xs="24">
+        <div class="kpi-card kpi-card--warn">
+          <div class="kpi-label">待处理制单</div>
+          <div class="kpi-value">{{ kpis.pendingOrderCount }}</div>
+        </div>
+      </el-col>
+      <el-col :md="6" :sm="12" :xs="24">
+        <div class="kpi-card kpi-card--danger">
+          <div class="kpi-label">库存预警</div>
+          <div class="kpi-value">{{ kpis.alertCount }}</div>
+        </div>
+      </el-col>
+      <el-col :md="6" :sm="12" :xs="24">
+        <div class="kpi-card kpi-card--ok">
+          <div class="kpi-label">库存条目</div>
+          <div class="kpi-value">{{ kpis.inventoryCount }}</div>
+        </div>
+      </el-col>
+    </el-row>
+
+    <div class="entry-row">
+      <el-button type="primary" plain @click="goTo('/warehouse/stock-order')">出入库制单</el-button>
+      <el-button type="primary" plain @click="goTo('/warehouse/dispatch')">调度看板</el-button>
+      <el-button type="primary" plain @click="goTo('/warehouse/inventory')">库存与预警</el-button>
+      <el-button type="primary" plain @click="goTo('/asset/list')">资产设备查验</el-button>
+    </div>
+
     <el-form inline>
       <el-form-item label="关键字">
         <el-input v-model="keyword" clearable placeholder="编码/名称/位置" />
@@ -209,3 +275,47 @@ onMounted(loadWecomUsers);
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.kpi-row {
+  margin-bottom: 12px;
+}
+
+.kpi-card {
+  border: 1px solid #d9ceb9;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px;
+}
+
+.kpi-card--warn {
+  border-color: #f3d19e;
+}
+
+.kpi-card--danger {
+  border-color: #f6b6b6;
+}
+
+.kpi-card--ok {
+  border-color: #b9e2c0;
+}
+
+.kpi-label {
+  color: #6e6458;
+  font-size: 13px;
+}
+
+.kpi-value {
+  margin-top: 6px;
+  color: #2a241d;
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.entry-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+</style>

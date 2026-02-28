@@ -31,8 +31,33 @@ const rentalTerms = ref<AssetRentalTerm[]>([]);
 
 const filters = ref({ status: "", order_type: "" });
 const assetKeyword = ref("");
+const quickAddKeyword = ref("");
+const quickAddQty = ref(1);
 const submitting = ref(false);
 const actionId = ref<number | null>(null);
+
+const presetTemplates = [
+  {
+    id: "tbm-standard",
+    name: "标准顶管掘进组",
+    items: [
+      { keyword: "主机", qty: 1 },
+      { keyword: "泥浆泵", qty: 2 },
+      { keyword: "刀盘", qty: 20 },
+      { keyword: "连接件", qty: 50 }
+    ]
+  },
+  {
+    id: "safety-pack",
+    name: "现场安全巡检包",
+    items: [
+      { keyword: "安全", qty: 10 },
+      { keyword: "警示", qty: 20 },
+      { keyword: "照明", qty: 4 }
+    ]
+  }
+] as const;
+const selectedTemplateId = ref<(typeof presetTemplates)[number]["id"]>(presetTemplates[0].id);
 
 const form = ref({
   order_type: "outbound" as "inbound" | "outbound" | "transfer",
@@ -59,6 +84,10 @@ const filteredAssetTypes = computed(() => {
 const canSubmit = computed(() => {
   return form.value.items.length > 0 && !submitting.value;
 });
+
+const totalCartQty = computed(() =>
+  form.value.items.reduce((sum, item) => sum + Number(item.quantity || 0), 0)
+);
 
 const activeRentalTerms = computed(() =>
   rentalTerms.value.filter(item => ["active", "overdue"].includes(item.status))
@@ -131,6 +160,70 @@ const addAssetToCart = (assetTypeId: number) => {
     return;
   }
   form.value.items.push({ asset_type_id: assetTypeId, quantity: 1 });
+};
+
+const addAssetToCartWithQty = (assetTypeId: number, qty: number) => {
+  const safeQty = Number(qty || 0);
+  if (safeQty <= 0) return;
+  const hit = form.value.items.find(item => item.asset_type_id === assetTypeId);
+  if (hit) {
+    hit.quantity = Number(hit.quantity || 0) + safeQty;
+    return;
+  }
+  form.value.items.push({ asset_type_id: assetTypeId, quantity: safeQty });
+};
+
+const matchAssetTypeByKeyword = (keyword: string) => {
+  const q = keyword.trim().toLowerCase();
+  if (!q) return null;
+  const exact = assetTypes.value.find(item => {
+    const code = item.type_code.toLowerCase();
+    const name = item.type_name.toLowerCase();
+    return code === q || name === q;
+  });
+  if (exact) return exact;
+  return assetTypes.value.find(item => {
+    const source = `${item.type_name} ${item.type_code}`.toLowerCase();
+    return source.includes(q);
+  });
+};
+
+const quickAddByKeyword = () => {
+  if (!quickAddKeyword.value.trim()) {
+    message("请输入设备/耗材关键字或扫码结果", { type: "warning" });
+    return;
+  }
+  if (quickAddQty.value <= 0) {
+    message("快速加入数量必须大于 0", { type: "warning" });
+    return;
+  }
+  const match = matchAssetTypeByKeyword(quickAddKeyword.value);
+  if (!match) {
+    message("未匹配到资产类型，请改用左侧检索列表", { type: "warning" });
+    return;
+  }
+  addAssetToCartWithQty(match.id, quickAddQty.value);
+  message(`已加入：${match.type_name}`, { type: "success" });
+  quickAddKeyword.value = "";
+  quickAddQty.value = 1;
+};
+
+const applyPresetTemplate = () => {
+  const tpl = presetTemplates.find(item => item.id === selectedTemplateId.value);
+  if (!tpl) return;
+  let matched = 0;
+  tpl.items.forEach(row => {
+    const match = matchAssetTypeByKeyword(row.keyword);
+    if (match) {
+      addAssetToCartWithQty(match.id, row.qty);
+      matched += 1;
+    }
+  });
+  if (!matched) {
+    message("模板未匹配到任何资产类型，请维护资产类型后重试", { type: "warning" });
+    return;
+  }
+  message(`模板已套用：${tpl.name}（匹配 ${matched} 项）`, { type: "success" });
 };
 
 const removeCartItem = (index: number) => {
@@ -259,6 +352,29 @@ onMounted(async () => {
 
     <div class="creator-layout">
       <div class="resource-panel">
+        <div class="quick-create">
+          <el-input
+            v-model="quickAddKeyword"
+            clearable
+            placeholder="扫码值/关键字快速加入（编码、名称）"
+            @keyup.enter="quickAddByKeyword"
+          />
+          <el-input-number v-model="quickAddQty" :min="1" :precision="0" :step="1" />
+          <el-button type="primary" @click="quickAddByKeyword">快速加入</el-button>
+        </div>
+
+        <div class="template-row">
+          <el-select v-model="selectedTemplateId" style="width: 220px">
+            <el-option
+              v-for="tpl in presetTemplates"
+              :key="tpl.id"
+              :label="tpl.name"
+              :value="tpl.id"
+            />
+          </el-select>
+          <el-button @click="applyPresetTemplate">套用模板</el-button>
+        </div>
+
         <el-input
           v-model="assetKeyword"
           clearable
@@ -398,6 +514,7 @@ onMounted(async () => {
         </el-table>
 
         <div class="cart-actions">
+          <span class="cart-summary">已选 {{ form.items.length }} 项，合计数量 {{ totalCartQty }}</span>
           <el-button @click="resetCreator">清空</el-button>
           <el-button type="primary" :disabled="!canSubmit" :loading="submitting" @click="submit">
             提交制单
@@ -527,6 +644,19 @@ onMounted(async () => {
   margin-top: 10px;
 }
 
+.quick-create {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.template-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
 .resource-item {
   display: flex;
   justify-content: space-between;
@@ -551,8 +681,16 @@ onMounted(async () => {
 .cart-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.cart-summary {
+  margin-right: auto;
+  color: #6e6458;
+  font-size: 13px;
 }
 
 .order-list__header {
@@ -564,6 +702,14 @@ onMounted(async () => {
 @media (max-width: 980px) {
   .creator-layout {
     grid-template-columns: 1fr;
+  }
+
+  .quick-create {
+    grid-template-columns: 1fr;
+  }
+
+  .template-row {
+    flex-direction: column;
   }
 
   .order-list__header {

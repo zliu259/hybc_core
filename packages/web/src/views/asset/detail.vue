@@ -2,6 +2,8 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { listProjects } from "@/api/project";
+import { listWarehouses, type Warehouse } from "@/api/warehouse";
 import {
   addAssetDocument,
   addAssetEvent,
@@ -39,6 +41,81 @@ const asset = ref<
   (TrackedAsset & { documents: AssetDocument[]; events: AssetEvent[] }) | null
 >(null);
 
+type LocationOption = {
+  label: string;
+  value: string;
+  kind: "warehouse" | "project" | "rent_out";
+  warehouseId?: number;
+  projectId?: number;
+};
+
+const warehouses = ref<Warehouse[]>([]);
+const activeProjects = ref<Array<{ id: number; project_name: string; status: string }>>([]);
+
+const statusOptions = [
+  { label: "在库", value: "idle" },
+  { label: "出库中", value: "using" },
+  { label: "维修", value: "repair" },
+  { label: "报废", value: "scrapped" }
+];
+
+const statusLabelMap: Record<string, string> = {
+  idle: "在库",
+  using: "出库中",
+  repair: "维修",
+  scrapped: "报废"
+};
+
+const eventTypeLabelMap: Record<string, string> = {
+  create: "建档",
+  update: "更新",
+  maintenance: "维护",
+  repair: "维修",
+  transfer: "调拨",
+  check: "查验",
+  incident: "事件"
+};
+
+const docTypeOptions = [
+  { label: "操作手册", value: "manual" },
+  { label: "合格证", value: "certificate" },
+  { label: "检查记录", value: "inspection" },
+  { label: "合同文件", value: "contract" },
+  { label: "图片资料", value: "image" },
+  { label: "其他", value: "other" }
+];
+
+const docTypeLabelMap: Record<string, string> = {
+  manual: "操作手册",
+  certificate: "合格证",
+  inspection: "检查记录",
+  contract: "合同文件",
+  image: "图片资料",
+  other: "其他"
+};
+
+const locationOptions = computed<LocationOption[]>(() => {
+  const options: LocationOption[] = [];
+  warehouses.value.forEach(item => {
+    options.push({
+      label: `库房：${item.warehouse_name}`,
+      value: `warehouse:${item.id}`,
+      kind: "warehouse",
+      warehouseId: item.id
+    });
+  });
+  activeProjects.value.forEach(item => {
+    options.push({
+      label: `项目：${item.project_name}`,
+      value: `project:${item.id}`,
+      kind: "project",
+      projectId: item.id
+    });
+  });
+  options.push({ label: "出租", value: "rent_out", kind: "rent_out" });
+  return options;
+});
+
 const form = ref({
   asset_name: "",
   brand: "",
@@ -47,7 +124,7 @@ const form = ref({
   status: "idle",
   ownership_type: "owned" as "owned" | "leased_in",
   current_location: "",
-  properties_json: ""
+  remarks: ""
 });
 
 const docDialogVisible = ref(false);
@@ -62,16 +139,109 @@ const docForm = ref({
 const eventDialogVisible = ref(false);
 const eventSubmitting = ref(false);
 const eventForm = ref({
-  event_type: "maintenance",
+  event_type: "maintenance" as "maintenance" | "repair" | "incident" | "transfer" | "check",
   event_time: "",
   detail: ""
 });
+
+const eventTypeOptions = [
+  { label: "维护记录", value: "maintenance" },
+  { label: "维修记录", value: "repair" },
+  { label: "事件记录", value: "incident" },
+  { label: "调拨记录", value: "transfer" },
+  { label: "查验记录", value: "check" }
+];
+
+const selectedLocation = ref("");
+const propertySnapshot = ref<Record<string, unknown> | null>(null);
+
+const parseRemarkFromProperties = (value: string | null): string => {
+  if (!value) return "";
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const obj = parsed as Record<string, unknown>;
+      propertySnapshot.value = obj;
+      const remark = obj.remark;
+      if (typeof remark === "string") return remark;
+      const spec = obj.spec;
+      if (typeof spec === "string") return spec;
+      return "";
+    }
+  } catch {
+    return value;
+  }
+  return "";
+};
+
+const buildPropertiesJson = (remarks: string): string | undefined => {
+  const base = propertySnapshot.value ? { ...propertySnapshot.value } : {};
+  if (remarks.trim()) {
+    base.remark = remarks.trim();
+  } else {
+    delete base.remark;
+  }
+  if (Object.keys(base).length === 0) return undefined;
+  return JSON.stringify(base);
+};
+
+const toDisplayTime = (isoText: string): string => {
+  const stamp = Date.parse(isoText);
+  if (Number.isNaN(stamp)) return isoText;
+  return new Date(stamp).toLocaleString("zh-CN", { hour12: false });
+};
+
+const toEventDetailText = (detail: string | null): string => {
+  if (!detail) return "-";
+  try {
+    const parsed = JSON.parse(detail) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const text = (parsed as { text?: unknown }).text;
+      if (typeof text === "string" && text.trim()) return text;
+    }
+  } catch {
+    return detail;
+  }
+  return detail;
+};
+
+const resolveLocationSelection = (result: TrackedAsset) => {
+  if (result.current_warehouse_id) return `warehouse:${result.current_warehouse_id}`;
+  if (result.current_project_id) return `project:${result.current_project_id}`;
+  if ((result.current_location ?? "").trim() === "出租") return "rent_out";
+  return "";
+};
+
+const applyLocationSelection = (value: string) => {
+  const target = locationOptions.value.find(item => item.value === value);
+  if (!target) return;
+  if (target.kind === "warehouse") {
+    form.value.current_location = target.label;
+  } else if (target.kind === "project") {
+    form.value.current_location = target.label;
+  } else {
+    form.value.current_location = "出租";
+  }
+};
+
+const loadMeta = async () => {
+  const [warehouseRes, projectRes] = await Promise.all([
+    listWarehouses(),
+    listProjects({ page: 1, pageSize: 500 })
+  ]);
+  warehouses.value = warehouseRes.data;
+  const doneStatuses = new Set(["completed", "closed", "cancelled", "archived", "done"]);
+  activeProjects.value = projectRes.data
+    .filter(item => !doneStatuses.has((item.status || "").toLowerCase()))
+    .map(item => ({ id: item.id, project_name: item.project_name, status: item.status }));
+};
 
 const loadData = async () => {
   loading.value = true;
   try {
     const result = await getTrackedAsset(id.value);
     asset.value = result.data;
+    propertySnapshot.value = null;
     form.value = {
       asset_name: result.data.asset_name,
       brand: result.data.brand ?? "",
@@ -80,8 +250,9 @@ const loadData = async () => {
       status: result.data.status,
       ownership_type: result.data.ownership_type ?? "owned",
       current_location: result.data.current_location ?? "",
-      properties_json: result.data.properties_json ?? ""
+      remarks: parseRemarkFromProperties(result.data.properties_json)
     };
+    selectedLocation.value = resolveLocationSelection(result.data);
   } finally {
     loading.value = false;
   }
@@ -97,8 +268,14 @@ const saveAsset = async () => {
       serial_no: form.value.serial_no || undefined,
       status: form.value.status,
       ownership_type: form.value.ownership_type,
+      current_project_id: selectedLocation.value.startsWith("project:")
+        ? Number(selectedLocation.value.slice("project:".length))
+        : undefined,
+      current_warehouse_id: selectedLocation.value.startsWith("warehouse:")
+        ? Number(selectedLocation.value.slice("warehouse:".length))
+        : undefined,
       current_location: form.value.current_location || undefined,
-      properties_json: form.value.properties_json || undefined
+      properties_json: buildPropertiesJson(form.value.remarks)
     });
     message("资产信息已更新", { type: "success" });
     await loadData();
@@ -130,7 +307,11 @@ const submitDocument = async () => {
 
 const submitEvent = async () => {
   if (!eventForm.value.event_type.trim()) {
-    message("请填写事件类型", { type: "warning" });
+    message("请选择记录类型", { type: "warning" });
+    return;
+  }
+  if (!eventForm.value.detail.trim()) {
+    message("请填写记录说明", { type: "warning" });
     return;
   }
   eventSubmitting.value = true;
@@ -148,9 +329,12 @@ const submitEvent = async () => {
   }
 };
 
-const goBack = () => router.push("/asset/list");
+const goBack = () => router.push("/warehouse-assets/ledger");
 
-onMounted(loadData);
+onMounted(async () => {
+  await loadMeta();
+  await loadData();
+});
 </script>
 
 <template>
@@ -185,10 +369,12 @@ onMounted(loadData);
             </el-form-item>
             <el-form-item label="状态">
               <el-select v-model="form.status" style="width: 180px">
-                <el-option label="idle" value="idle" />
-                <el-option label="using" value="using" />
-                <el-option label="repair" value="repair" />
-                <el-option label="scrapped" value="scrapped" />
+                <el-option
+                  v-for="item in statusOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
               </el-select>
             </el-form-item>
             <el-form-item label="归属">
@@ -198,13 +384,28 @@ onMounted(loadData);
               </el-select>
             </el-form-item>
             <el-form-item label="当前位置">
-              <el-input v-model="form.current_location" />
+              <el-select
+                v-model="selectedLocation"
+                filterable
+                clearable
+                placeholder="请选择库房/施工项目/出租"
+                style="width: 100%"
+                @change="applyLocationSelection"
+              >
+                <el-option
+                  v-for="item in locationOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
             </el-form-item>
-            <el-form-item label="属性JSON">
+            <el-form-item label="备注">
               <el-input
-                v-model="form.properties_json"
+                v-model="form.remarks"
                 type="textarea"
                 :rows="4"
+                placeholder="请填写设备使用备注，便于库房人员交接"
               />
             </el-form-item>
           </el-form>
@@ -220,7 +421,9 @@ onMounted(loadData);
             >添加文档</el-button
           >
           <el-table :data="asset?.documents ?? []" style="margin-top: 12px">
-            <el-table-column prop="doc_type" label="文档类型" width="120" />
+            <el-table-column label="文档类型" width="120">
+              <template #default="scope">{{ docTypeLabelMap[scope.row.doc_type] || scope.row.doc_type }}</template>
+            </el-table-column>
             <el-table-column prop="file_name" label="文件名" min-width="140" />
             <el-table-column
               prop="file_key"
@@ -244,11 +447,11 @@ onMounted(loadData);
             <el-timeline-item
               v-for="item in asset?.events ?? []"
               :key="item.id"
-              :timestamp="item.event_time"
+              :timestamp="toDisplayTime(item.event_time)"
               placement="top"
             >
-              <div>{{ item.event_type }} · {{ item.operator_userid }}</div>
-              <div style="color: #6e6458">{{ item.detail || "-" }}</div>
+              <div>{{ eventTypeLabelMap[item.event_type] || item.event_type }} · 操作人：{{ item.operator_userid }}</div>
+              <div style="color: #6e6458">{{ toEventDetailText(item.detail) }}</div>
             </el-timeline-item>
           </el-timeline>
         </el-card>
@@ -258,7 +461,14 @@ onMounted(loadData);
     <el-dialog v-model="docDialogVisible" title="添加文档" width="520px">
       <el-form label-width="100px">
         <el-form-item label="文档类型">
-          <el-input v-model="docForm.doc_type" />
+          <el-select v-model="docForm.doc_type" style="width: 100%">
+            <el-option
+              v-for="item in docTypeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="文件Key" required>
           <el-input v-model="docForm.file_key" />
@@ -281,13 +491,21 @@ onMounted(loadData);
       </template>
     </el-dialog>
 
-    <el-dialog v-model="eventDialogVisible" title="记录事件" width="520px">
+    <el-dialog v-model="eventDialogVisible" title="记录维护/事件" width="520px">
       <el-form label-width="100px">
-        <el-form-item label="事件类型" required>
-          <el-input
+        <el-form-item label="记录类型" required>
+          <el-select
             v-model="eventForm.event_type"
-            placeholder="如 maintenance/repair/transfer"
-          />
+            placeholder="请选择维护或事件类型"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in eventTypeOptions"
+              :key="item.value"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
         </el-form-item>
         <el-form-item label="事件时间">
           <el-date-picker
@@ -298,7 +516,12 @@ onMounted(loadData);
           />
         </el-form-item>
         <el-form-item label="说明">
-          <el-input v-model="eventForm.detail" type="textarea" :rows="2" />
+          <el-input
+            v-model="eventForm.detail"
+            type="textarea"
+            :rows="2"
+            placeholder="请填写本次维护或事件说明"
+          />
         </el-form-item>
       </el-form>
       <template #footer>

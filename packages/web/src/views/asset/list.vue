@@ -154,7 +154,7 @@ const submitCreate = async () => {
 };
 
 const goDetail = (id: number) => {
-  router.push(`/asset/detail/${id}`);
+  router.push(`/warehouse-assets/device/${id}`);
 };
 
 onMounted(async () => {
@@ -248,13 +248,25 @@ onMounted(async () => {
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
-      <el-table-column prop="asset_code" label="资产编码" width="170" />
+      <el-table-column label="资产编码" width="170">
+        <template #default="scope">
+          <el-button link type="primary" @click="goDetail(scope.row.id)">
+            {{ scope.row.asset_code }}
+          </el-button>
+        </template>
+      </el-table-column>
       <el-table-column label="类型" width="140">
         <template #default="scope">{{
           typeMap[scope.row.asset_type_id] || scope.row.asset_type_id
         }}</template>
       </el-table-column>
-      <el-table-column prop="asset_name" label="资产名称" width="160" />
+      <el-table-column label="资产名称" width="160">
+        <template #default="scope">
+          <el-button link type="primary" @click="goDetail(scope.row.id)">
+            {{ scope.row.asset_name }}
+          </el-button>
+        </template>
+      </el-table-column>
       <el-table-column prop="brand" label="品牌" width="120" />
       <el-table-column prop="model" label="型号" width="120" />
       <el-table-column prop="status" label="状态" width="100" />

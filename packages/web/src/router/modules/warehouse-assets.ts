@@ -46,6 +46,16 @@ export default {
         title: "双向对冲调度看板",
         roles: ["super_admin", "manager", "site_manager", "operator"]
       }
+    },
+    {
+      path: "/warehouse-assets/device/:id",
+      name: "WarehouseAssetsDeviceDetail",
+      component: () => import("@/views/asset/detail.vue"),
+      meta: {
+        title: "设备管理",
+        showLink: false,
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
     }
   ]
 } satisfies RouteConfigsTable;

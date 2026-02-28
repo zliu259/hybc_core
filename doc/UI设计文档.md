@@ -241,17 +241,18 @@
 - 列：资产码、类型、状态、资产归属（自有/租入）、所在项目、责任人、更新时间。
 - 支持：按资产类型动态展示属性字段。
 - 支持：按资产归属筛选；新建资产可指定归属（默认自有）。
+- 交互：资产编码与资产名称支持点击进入单设备管理详情页（`/warehouse-assets/device/:id`，页面文件 `views/asset/detail.vue`）。
 - API 指向：`/api/v1/asset`
 
 #### K. 仓库管理 `views/warehouse/index.vue`
-- 模块：仓库档案列表、关键字检索、新增/编辑弹窗。
+- 模块：仓库 KPI 总览（仓库数/待处理制单/库存预警/库存条目）、业务入口（制单/调度/库存/资产查验）、仓库档案列表。
 - 交互：软删除，状态维护（active/inactive）。
 - API 指向：`/api/v1/warehouse`
 
 #### K-2. 仓库库存 `views/warehouse/inventory.vue`
-- 模块：库存总览、筛选、耗材消耗登记。
-- 交互：按仓库/资产类型过滤，登记消耗后刷新库存。
-- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`
+- 模块：库存总览、筛选、耗材消耗登记、页内预警清单。
+- 交互：按仓库/资产类型过滤，登记消耗后刷新库存；预警项支持一键触发 AI 分析。
+- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`, `/api/v1/warehouse/inventory/alert`, `/api/v1/warehouse/inventory/alert/:id/analyze`
 
 #### K-3. 库存预警中心 `views/warehouse/alert.vue`
 - 模块：低库存清单、缺口展示、AI分析触发。
@@ -259,8 +260,9 @@
 - API 指向：`/api/v1/warehouse/inventory/alert`, `/api/v1/warehouse/inventory/alert/:id/analyze`
 
 #### K-4. 出入库单管理 `views/warehouse/stock-order.vue`
-- 模块：出入库单列表、创建表单、审批提交与执行。
+- 模块：出入库单列表、购物车式创建表单、模板快速套用、关键字快速加入。
 - 交互：草稿单可提交审批；审批通过后可执行；草稿/待审可取消。
+- 交互增强：支持“扫码值/关键字 + 数量”快速加入清单，支持预制模板一键套用后继续编辑。
 - 租赁增强：制单时可选关联 `rental_term_id`，逾期租期在出库前阻断；关联租期的入库执行会回填“已归还”。
 - API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
 

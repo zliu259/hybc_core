@@ -41,7 +41,7 @@ export default {
     {
       path: "/asset/detail/:id",
       name: "AssetDetail",
-      redirect: "/warehouse-assets/ledger",
+      redirect: "/warehouse-assets/device/:id",
       meta: {
         title: "资产详情(旧路径)",
         showLink: false,

@@ -3,8 +3,10 @@ import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { listAssetTypes, type AssetType } from "@/api/asset";
 import {
+  analyzeInventoryAlert,
   createConsumption,
   listInventory,
+  listInventoryAlerts,
   listWarehouses,
   type InventoryRow,
   type Warehouse
@@ -15,6 +17,8 @@ defineOptions({ name: "WarehouseInventory" });
 
 const loading = ref(false);
 const rows = ref<InventoryRow[]>([]);
+const alerts = ref<InventoryRow[]>([]);
+const alertLoadingId = ref<number | null>(null);
 const warehouses = ref<Warehouse[]>([]);
 const assetTypes = ref<AssetType[]>([]);
 const { projects, loadProjects } = useProjectOptions();
@@ -47,13 +51,27 @@ const loadMeta = async () => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const result = await listInventory({
+    const [inventoryRes, alertRes] = await Promise.all([
+      listInventory({
       warehouse_id: filters.value.warehouse_id,
       asset_type_id: filters.value.asset_type_id
-    });
-    rows.value = result.data;
+      }),
+      listInventoryAlerts()
+    ]);
+    rows.value = inventoryRes.data;
+    alerts.value = alertRes.data;
   } finally {
     loading.value = false;
+  }
+};
+
+const triggerAlertAnalyze = async (row: InventoryRow) => {
+  alertLoadingId.value = row.id;
+  try {
+    await analyzeInventoryAlert(row.id);
+    message("已触发 AI 分析", { type: "success" });
+  } finally {
+    alertLoadingId.value = null;
   }
 };
 
@@ -161,6 +179,30 @@ onMounted(async () => {
       <el-table-column prop="min_stock" label="最小库存" width="110" />
       <el-table-column prop="updated_at" label="更新时间" width="190" />
     </el-table>
+
+    <el-card shadow="never" class="alert-card" style="margin-top: 12px">
+      <template #header>
+        <div class="alert-head">库存预警</div>
+      </template>
+      <el-table :data="alerts" size="small" empty-text="当前无预警">
+        <el-table-column prop="warehouse_name" label="仓库" min-width="140" />
+        <el-table-column prop="type_name" label="资产类型" min-width="160" />
+        <el-table-column prop="quantity" label="当前库存" width="100" />
+        <el-table-column prop="min_stock" label="最小库存" width="100" />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="scope">
+            <el-button
+              link
+              type="primary"
+              :loading="alertLoadingId === scope.row.id"
+              @click="triggerAlertAnalyze(scope.row)"
+            >
+              AI分析
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-card>
   </el-card>
 
   <el-dialog
@@ -240,3 +282,14 @@ onMounted(async () => {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.alert-head {
+  font-weight: 600;
+  color: #2a241d;
+}
+
+.alert-card {
+  border: 1px solid #e8ddc8;
+}
+</style>
