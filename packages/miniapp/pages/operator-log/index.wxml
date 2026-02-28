@@ -1,29 +1,47 @@
 <view class="page">
-  <hy-panel-card title="🚜 报顶进数据（施工日志）" icon="edit-1" subtitle="先选顶段，再语音报数，系统自动提取关键值">
+  <hy-panel-card title="🚜 填写顶进数据（施工日志）" icon="edit-1" subtitle="标段选择 + 班次自动判定 + 本班/累计双向联动">
     <hy-project-picker value="{{projectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="label">标段ID</view>
-    <input class="input" type="number" value="{{form.section_id}}" bindinput="onSectionInput" disabled="{{busy}}" />
+
+    <view class="label required">标段</view>
+    <picker mode="selector" range="{{sectionNames}}" value="{{sectionIndex >= 0 ? sectionIndex : 0}}" bindchange="onSectionChange" disabled="{{busy || sectionNames.length === 0}}">
+      <view class="input">{{sectionIndex >= 0 ? sectionNames[sectionIndex] : (sectionNames.length ? '请选择标段' : '当前项目暂无标段')}}</view>
+    </picker>
+
     <view class="voice-box">🎤 按住说话：今天顶了3.5米，最大推力120吨，注浆量5方</view>
+
     <view class="label required">日期</view>
     <picker mode="date" value="{{form.log_date}}" bindchange="onDateChange" disabled="{{busy}}">
       <view class="input">{{form.log_date}}</view>
     </picker>
-    <view class="label required">班次</view>
+
+    <view class="label required">班次（默认按填写时间判定）</view>
     <picker mode="selector" range="{{shiftOptions}}" value="{{shiftIndex}}" bindchange="onShiftChange" disabled="{{busy}}">
       <view class="input">{{shiftOptions[shiftIndex]}}</view>
     </picker>
+    <view class="row">
+      <t-button size="small" variant="outline" bindtap="autoShiftByTime" disabled="{{busy}}">按当前时间重判班次</t-button>
+    </view>
+
     <view class="label required">📏 本班下管数</view>
-    <input class="input" type="number" value="{{form.completed_pipe_count}}" data-key="completed_pipe_count" bindinput="onInput" disabled="{{busy}}" />
+    <input class="input" type="number" value="{{form.completed_pipe_count}}" bindinput="onCompletedInput" disabled="{{busy}}" />
+
     <view class="label required">📊 累计下管数</view>
-    <input class="input" type="number" value="{{form.cumulative_pipe_count}}" data-key="cumulative_pipe_count" bindinput="onInput" disabled="{{busy}}" />
+    <input class="input" type="number" value="{{form.cumulative_pipe_count}}" bindinput="onCumulativeInput" disabled="{{busy}}" />
+
+    <view class="calc-hint">{{calcHint || '可填写本班或累计任一项，系统自动推算另一项'}}</view>
+
     <view class="label">📐 当日顶进(m)</view>
     <input class="input" type="digit" value="{{form.footage_m}}" data-key="footage_m" bindinput="onInput" disabled="{{busy}}" />
+
     <view class="label">🌦 天气</view>
     <input class="input" value="{{form.weather}}" data-key="weather" bindinput="onInput" disabled="{{busy}}" />
+
     <view class="label">🧠 问题摘要</view>
     <textarea class="input" value="{{form.issue_summary}}" data-key="issue_summary" bindinput="onInput" disabled="{{busy}}" />
+
     <view class="label">📌 备注</view>
     <textarea class="input" value="{{form.remark}}" data-key="remark" bindinput="onInput" disabled="{{busy}}" />
+
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="smartFill" loading="{{busy}}" disabled="{{busy}}">AI预填</t-button>
       <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">{{submitLabel}}</t-button>

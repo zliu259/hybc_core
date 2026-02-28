@@ -1,3 +1,61 @@
 .sub {
   margin-top: 8rpx;
 }
+
+.record-item {
+  margin-top: 10rpx;
+  padding: 10rpx 12rpx;
+  border-radius: 12rpx;
+  border: 1px solid #e4e9f2;
+  background: #fff;
+}
+
+.empty-sub {
+  color: #8a94a7;
+  font-size: 24rpx;
+}
+
+.key-text {
+  word-break: break-all;
+}
+
+.action-tip {
+  color: #1677ff;
+}
+
+.event-photo-grid {
+  margin-top: 10rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8rpx;
+}
+
+.event-photo {
+  width: 100%;
+  height: 150rpx;
+  border-radius: 8rpx;
+  background: #eef3fb;
+}
+
+.candidate-box {
+  margin-top: 12rpx;
+  border: 1px solid #dbe8f7;
+  border-radius: 12rpx;
+  background: #fff;
+}
+
+.candidate-title {
+  padding: 10rpx 12rpx;
+  font-size: 22rpx;
+  color: #5c667a;
+  border-bottom: 1px solid #eef3fb;
+}
+
+.candidate-item {
+  padding: 10rpx 12rpx;
+  border-bottom: 1px solid #eef3fb;
+}
+
+.candidate-item:last-child {
+  border-bottom: 0;
+}

@@ -1,23 +1,77 @@
 <view class="page">
   <hy-panel-card title="📦 物资与设备查验" subtitle="扫码后红黄绿状态直观显示">
-    <t-notice-bar content="支持扫码识别或手动输入资产ID" theme="warning" />
-    <view class="label required">资产ID</view>
-    <input class="input" type="number" value="{{assetId}}" bindinput="onAssetIdInput" disabled="{{busy}}" />
+    <t-notice-bar content="支持扫码识别，也可输入关键字查询设备状态" theme="warning" />
+    <view class="label required">资产ID / 关键字</view>
+    <input class="input" value="{{assetQuery}}" bindinput="onAssetQueryInput" disabled="{{busy}}" placeholder="输入资产ID、编码或名称关键字" />
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="scanAsset" disabled="{{busy}}">扫码</t-button>
       <t-button class="btn btn-primary" theme="primary" bindtap="loadAsset" loading="{{busy}}" disabled="{{busy}}">查看状态</t-button>
+    </view>
+
+    <view wx:if="{{assetCandidates.length > 0}}" class="candidate-box">
+      <view class="candidate-title">关键字匹配结果（点击查看状态）</view>
+      <view wx:for="{{assetCandidates}}" wx:key="id" class="candidate-item" data-id="{{item.id}}" bindtap="onSelectCandidate">
+        <view class="sub">{{item.asset_code}} · {{item.asset_name}}</view>
+        <view class="sub">状态：{{item.status}} · 位置：{{item.current_location || '-'}}</view>
+      </view>
     </view>
   </hy-panel-card>
 
   <hy-panel-card title="{{asset.asset_code}}" wx:if="{{asset.id}}">
     <view class="sub">名称：{{asset.asset_name}}</view>
-    <view class="sub">状态：{{asset.status === 'idle' ? '🟢 正常' : asset.status === 'repair' ? '🟡 待维修' : '🔴 异常'}}</view>
+    <view class="sub">状态：{{asset.status === 'idle' ? '🟢 正常' : asset.status === 'using' ? '🔵 使用中' : asset.status === 'repair' ? '🟡 待维修' : '🔴 已报废'}}</view>
     <view class="sub">位置：{{asset.current_location || '-'}} </view>
+    <view class="label">调整状态</view>
+    <picker mode="selector" range="{{statusOptions}}" value="{{statusIndex}}" bindchange="onStatusChange" disabled="{{busy}}">
+      <view class="input">{{statusOptions[statusIndex]}}</view>
+    </picker>
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="updateAssetStatus" loading="{{busy}}" disabled="{{busy}}">更新状态</t-button>
+    </view>
     <view class="row">
       <t-button class="btn" variant="outline" data-type="stock_out" bindtap="markStockEvent" loading="{{busy}}" disabled="{{busy}}">记录出库确认</t-button>
       <t-button class="btn" variant="outline" data-type="stock_in" bindtap="markStockEvent" disabled="{{busy}}">记录入库确认</t-button>
     </view>
+    <view class="row">
+      <picker mode="selector" range="{{customEventTypeOptions}}" value="{{customEventTypeIndex}}" bindchange="onCustomEventTypeChange" disabled="{{busy}}">
+        <view class="input">{{customEventTypeOptions[customEventTypeIndex]}}</view>
+      </picker>
+      <t-button class="btn" variant="outline" bindtap="markCustomEvent" disabled="{{busy}}">记录所选类型</t-button>
+    </view>
   </hy-panel-card>
 
-  <t-empty wx:if="{{!busy && !asset.id}}" description="请先输入资产ID或扫码" />
+  <hy-panel-card title="📎 附件信息" wx:if="{{asset.id}}">
+    <view wx:if="{{assetDocuments.length === 0}}" class="empty-sub">暂无附件</view>
+    <view wx:for="{{assetDocuments}}" wx:key="id" class="record-item" data-filekey="{{item.file_key}}" bindtap="openDocument">
+      <view class="sub">{{item.file_name}}</view>
+      <view class="sub">类型：{{item.doc_type}} · 上传时间：{{item.created_at || '-'}}</view>
+      <view class="sub key-text">文件Key：{{item.file_key}}</view>
+      <view class="sub action-tip">点击查看或下载</view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="🛠️ 保养与事件记录" wx:if="{{asset.id}}">
+    <view wx:if="{{assetEvents.length === 0}}" class="empty-sub">暂无记录</view>
+    <view wx:for="{{assetEvents}}" wx:key="id" class="record-item" data-id="{{item.id}}" bindtap="openEventDetail">
+      <view class="sub">{{item.event_type_text}} · {{item.operator_userid}}</view>
+      <view class="sub">时间：{{item.event_time || '-'}}</view>
+      <view class="sub">说明：{{item.detail_text || '-'}}</view>
+      <view wx:if="{{item.photo_urls.length > 0}}" class="event-photo-grid">
+        <image
+          wx:for="{{item.photo_urls}}"
+          wx:for-item="photoUrl"
+          wx:key="*this"
+          class="event-photo"
+          mode="aspectFill"
+          src="{{photoUrl}}"
+          data-id="{{item.id}}"
+          data-current="{{photoUrl}}"
+          catchtap="previewEventPhoto"
+        />
+      </view>
+      <view class="sub action-tip">点击条目查看详情或上传图片</view>
+    </view>
+  </hy-panel-card>
+
+  <t-empty wx:if="{{!busy && !asset.id && assetCandidates.length === 0}}" description="请扫码或输入关键字查询设备" />
 </view>

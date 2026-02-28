@@ -1,0 +1,74 @@
+<view class="page">
+  <hy-panel-card title="🧾 出入库制单" icon="edit-1" subtitle="支持整套设备+耗材多条目，扫码或关键字快速选型">
+    <view class="label required">单据类型</view>
+    <picker mode="selector" range="{{orderTypeNames}}" value="{{orderTypeIndex}}" bindchange="onOrderTypeChange" disabled="{{busy}}">
+      <view class="input">{{orderTypeNames[orderTypeIndex]}}</view>
+    </picker>
+
+    <view class="label">来源仓库</view>
+    <picker mode="selector" range="{{warehouseNames}}" value="{{fromWarehouseIndex >= 0 ? fromWarehouseIndex : 0}}" bindchange="onFromWarehouseChange" disabled="{{busy || warehouseNames.length === 0}}">
+      <view class="input">{{fromWarehouseIndex >= 0 ? warehouseNames[fromWarehouseIndex] : '请选择来源仓库（入库可不选）'}}</view>
+    </picker>
+
+    <view class="label">目标仓库</view>
+    <picker mode="selector" range="{{warehouseNames}}" value="{{toWarehouseIndex >= 0 ? toWarehouseIndex : 0}}" bindchange="onToWarehouseChange" disabled="{{busy || warehouseNames.length === 0}}">
+      <view class="input">{{toWarehouseIndex >= 0 ? warehouseNames[toWarehouseIndex] : '请选择目标仓库（出库可不选）'}}</view>
+    </picker>
+
+    <view class="label">预制模板</view>
+    <picker mode="selector" range="{{templateNames}}" value="{{templateIndex}}" bindchange="onTemplateChange" disabled="{{busy || templateNames.length === 0}}">
+      <view class="input">{{templateNames[templateIndex] || '请选择模板'}}</view>
+    </picker>
+    <view class="row">
+      <t-button size="small" variant="outline" bindtap="applyTemplate" disabled="{{busy}}">套用模板并继续修改</t-button>
+      <t-button size="small" variant="outline" bindtap="clearCart" disabled="{{busy || cartItems.length === 0}}">清空清单</t-button>
+    </view>
+
+    <view class="label required">资产类型快速选型</view>
+    <input class="input" value="{{assetKeyword}}" bindinput="onAssetKeywordInput" placeholder="输入名称/编码关键字查询" disabled="{{busy}}" />
+    <view class="search-tip">仅在输入关键字后显示候选设备，避免长列表。</view>
+    <view class="row">
+      <input class="input qty-input" type="digit" value="{{currentAddQty}}" bindinput="onCurrentAddQtyInput" placeholder="添加数量" disabled="{{busy}}" />
+      <t-button size="small" variant="outline" bindtap="onScanAddAsset" disabled="{{busy}}">扫码加项</t-button>
+    </view>
+
+    <view class="asset-lib">
+      <view wx:if="{{!assetKeyword}}" class="empty-state">请输入关键字后检索设备</view>
+      <view wx:elif="{{filteredAssetTypes.length === 0}}" class="empty-state">未匹配到资产类型</view>
+      <view wx:for="{{filteredAssetTypes}}" wx:key="id" class="asset-row">
+        <view>
+          <view class="asset-title">{{item.type_code}} · {{item.type_name}}</view>
+          <view class="asset-sub">单位：{{item.unit || '-'}}</view>
+        </view>
+        <t-button size="small" theme="primary" data-id="{{item.id}}" bindtap="onTapAddAsset" disabled="{{busy}}">加入清单</t-button>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="🛒 制单清单" icon="view-list" subtitle="可逐项调整数量后统一提交审批">
+    <view wx:if="{{cartItems.length === 0}}" class="empty-state">请从上方加入设备/耗材</view>
+    <view wx:for="{{cartItems}}" wx:key="asset_type_id" class="cart-row">
+      <view>
+        <view class="cart-title">{{item.type_code}} · {{item.type_name}}</view>
+        <view class="cart-sub">单位：{{item.unit || '-'}}</view>
+      </view>
+      <view class="cart-actions">
+        <input class="input cart-qty" type="digit" value="{{item.quantity}}" data-index="{{index}}" bindinput="onCartQtyInput" disabled="{{busy}}" />
+        <t-button size="small" variant="outline" data-index="{{index}}" bindtap="removeCartItem" disabled="{{busy}}">移除</t-button>
+      </view>
+    </view>
+
+    <view class="row">
+      <t-button class="btn btn-primary" theme="primary" bindtap="createOrder" loading="{{busy}}" disabled="{{busy || cartItems.length === 0}}">创建并提交审批</t-button>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="📋 最近单据" icon="file-copy" subtitle="草稿/待审批/已通过/已执行">
+    <view wx:if="{{orders.length === 0}}" class="empty-state">暂无单据</view>
+    <view wx:for="{{orders}}" wx:key="id" class="order-item">
+      <view class="order-title">{{item.order_no}} · {{item.orderTypeText}}</view>
+      <view class="order-sub">状态：{{item.statusText}} · 更新时间：{{item.updated_at}}</view>
+      <view class="order-sub">来源仓库ID：{{item.from_warehouse_id || '-'}} · 目标仓库ID：{{item.to_warehouse_id || '-'}}</view>
+    </view>
+  </hy-panel-card>
+</view>

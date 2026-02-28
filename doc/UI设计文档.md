@@ -446,7 +446,7 @@
 
 ### 4.1 页面总索引
 - 工作台（Tab1）：`packages/miniapp/pages/index/index`
-- 现场（Tab2）：`packages/miniapp/pages/warehouse/index`
+- 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
 - 审批与申请（Tab3）：`packages/miniapp/pages/finance/index`
 - 我的（Tab4）：`packages/miniapp/pages/profile/index`
 - 日志中心：`packages/miniapp/pages/log/index`
@@ -460,8 +460,11 @@
 - 通知消息：`packages/miniapp/pages/notice/index`
 
 ### 4.2 页面要求
-- 工作台Tab：首页展示红黄绿 KPI、九宫格高频入口、项目筛选与清单，并支持角色化“创建项目”入口。
-- 现场Tab：展示项目进度环/顶段进度条，并聚合双轨日志、设备查验、安全勘查入口。
+- 工作台Tab：首页展示红黄绿 KPI、九宫格高频入口，并支持角色化“创建项目”入口。
+- 库房Tab：聚合库房与资产管理入口（出入库制单、调度看板、库存预警、资产查验），不承载项目/现场内容。
+- 出入库制单（miniapp）对齐 Web：支持多条目购物车（设备+耗材同单提审），不再限制单据仅单一设备类型。
+- 出入库制单（miniapp）选型加速：支持“扫码匹配资产类型”与“关键字检索资产类型”双通道。
+- 出入库制单（miniapp）模板加速：支持预制模板一键套用并继续逐项修改数量/删除后提交。
 - 审批与申请Tab：通过分段器组织“待我审批/发起申请”，并提供快速审批与发单入口。
 - 我的Tab：放置个人申请时间线、证书预警、联调配置、会话管理。
 - 日志中心：仅负责日志角色入口分流（操作员/管理员）。
@@ -485,11 +488,13 @@
   - 补齐红黄绿语义色、放大触控区、统一 KPI 卡片样式。
   - 新增全局悬浮语音助手 FAB 样式（呼吸动画）。
 - 4 Tabs 信息架构（文案与顺序）：`packages/miniapp/app.json`
-  - `工作台`、`现场`、`流程`、`我的`。
+  - `工作台`、`库房`、`流程`、`我的`。
 - 工作台首页重构：`packages/miniapp/pages/index/index.{js,wxml,wxss}`
   - 欢迎区 + 红黄绿 KPI + 大入口网格 + 项目清单 + 全局语音助手。
-- 现场页重构：`packages/miniapp/pages/warehouse/index.{js,wxml,wxss}`
-  - 项目定位提示、顶段进度卡、现场动作入口聚合。
+- 库房页重构：`packages/miniapp/pages/warehouse/index.{js,wxml,wxss}`
+  - 库房 KPI（仓库数、待处理制单、库存预警、库存条目）与库房业务入口聚合。
+  - 新增 `packages/miniapp/pages/{warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index.*` 承接制单、库存、调度。
+  - `warehouse-stock-order` 采用“检索库 + 购物车清单”结构，支持扫码加入、关键字筛选、模板套用、统一提审。
 - 审批与申请页重构：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
   - 待办/发起分段器 + 快捷动作入口 + 全局语音助手。
 - 我的页重构：`packages/miniapp/pages/profile/index.{js,wxml,wxss}`
@@ -595,6 +600,7 @@
 
 #### 4.4.1 页面与路径映射
 - 项目列表（重构后主入口）：`packages/miniapp/pages/index/index`
+- 项目列表（独立长列表页）：`packages/miniapp/pages/project-list/index`
 - 项目详情（新增）：`packages/miniapp/pages/project-detail/index`
 - 标段详情（新增）：`packages/miniapp/pages/project-section/index`
 - 项目模块配置：`packages/miniapp/app.json`
@@ -609,10 +615,15 @@
 - 标段内容边界与 Web 统一：施工日志与贯通报告仅在“标段详情”上下文展示与维护（查看/新增/编辑）。
 - 项目日志移动端交互：默认折叠，按日期降序展示，列表头只显示日期（精确到天）和中文状态；点击后展开完整内容与照片。
 - 标段入口移动端交互：项目详情中的标段卡片仅负责跳转，点击后进入独立标段页查看施工日志与贯通信息，减少长列表滚动与误触。
+- 工作台首页边界：`pages/index/index` 不直接承载项目长列表，仅提供“进入项目列表”入口，避免首页过长影响首屏操作效率。
+- 工作台与库房边界：项目/现场相关能力留在工作台与项目页，`pages/warehouse/index` 仅承载库房与资产管理能力。
+- 施工日志填写交互：`pages/operator-log/index` 使用“项目 -> 标段选择器”模式，禁止手输标段ID。
+- 班次判定交互：默认按填写时间自动判定（晚间偏白班收尾、早间偏夜班收尾），仍允许手动改班次并提供一键重判。
+- 下管数量交互：允许填写“本班下管数”或“累计下管数”任一项，前端自动联动推算另一项，并展示历史累计提示。
 
 #### 4.4.3 范围锁定（本期禁止变更）
 - 财务模块入口与行为保持不变：`packages/miniapp/pages/finance/index`
-- 库房模块入口与行为保持不变：`packages/miniapp/pages/warehouse/index`
+- 库房模块入口调整为“库房管理工作台”并对齐 Web：`packages/miniapp/pages/{warehouse,warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index`
 - 本期允许调整仅限项目模块的信息架构、页面跳转与只读提示层。
 
 ## 5. 组件与模块指向

@@ -617,6 +617,31 @@ assetRoutes.get(
   }
 );
 
+assetRoutes.put(
+  "/:id/event/:eventId",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const eventId = Number(c.req.param("eventId"));
+    const body = (await c.req.json()) as { detail?: string };
+    if (!body.detail?.trim()) {
+      return c.json({ success: false, error: { message: "detail is required" } }, 400);
+    }
+
+    const result = await c.env.DB.prepare(
+      "UPDATE tracked_asset_event SET detail = ? WHERE id = ? AND tracked_asset_id = ?"
+    )
+      .bind(body.detail.trim(), eventId, id)
+      .run();
+
+    if (!(result.meta.changes && result.meta.changes > 0)) {
+      return c.json({ success: false, error: { message: "event not found" } }, 404);
+    }
+
+    return c.json({ success: true });
+  }
+);
+
 assetRoutes.get(
   "/rental/term",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),

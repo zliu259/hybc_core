@@ -1,12 +1,59 @@
+const { request } = require("../../utils/request");
 const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 Page({
   data: {
-    currentProject: "[未定位项目]",
-    sections: [
-      { name: "东线顶管", done: 120, total: 300, percent: 40 },
-      { name: "西线顶管", done: 84, total: 200, percent: 42 }
-    ]
+    busy: false,
+    kpis: {
+      warehouseCount: 0,
+      pendingOrderCount: 0,
+      alertCount: 0,
+      inventoryCount: 0
+    }
+  },
+
+  onShow() {
+    this.loadData();
+  },
+
+  async loadData() {
+    if (this.data.busy) return;
+    this.setData({ busy: true });
+    try {
+      const [warehouseRes, orderRes, alertRes, inventoryRes] = await Promise.all([
+        request({ method: "GET", path: "/api/v1/warehouse" }),
+        request({ method: "GET", path: "/api/v1/warehouse/stock-order" }),
+        request({ method: "GET", path: "/api/v1/warehouse/inventory/alert" }),
+        request({ method: "GET", path: "/api/v1/warehouse/inventory" })
+      ]);
+
+      const warehouses = Array.isArray(warehouseRes.data) ? warehouseRes.data : [];
+      const orders = Array.isArray(orderRes.data) ? orderRes.data : [];
+      const alerts = Array.isArray(alertRes.data) ? alertRes.data : [];
+      const inventory = Array.isArray(inventoryRes.data) ? inventoryRes.data : [];
+
+      const pendingOrderCount = orders.filter((item) => ["draft", "pending_approval", "approved"].includes(item.status)).length;
+
+      this.setData({
+        kpis: {
+          warehouseCount: warehouses.length,
+          pendingOrderCount,
+          alertCount: alerts.length,
+          inventoryCount: inventory.length
+        }
+      });
+    } catch {
+      this.setData({
+        kpis: {
+          warehouseCount: 0,
+          pendingOrderCount: 0,
+          alertCount: 0,
+          inventoryCount: 0
+        }
+      });
+    } finally {
+      this.setData({ busy: false });
+    }
   },
 
   goTo(e) {
@@ -14,31 +61,23 @@ Page({
     wx.navigateTo({ url: path });
   },
 
-  onShow() {
-    wx.getLocation({
-      type: "gcj02",
-      success: () => this.setData({ currentProject: "[A1 顶管项目]" }),
-      fail: () => this.setData({ currentProject: "[定位失败，请手选项目]" })
-    });
-  },
-
   openGlobalHelper() {
     wx.showActionSheet({
-      itemList: ["🎙️ 录音识别指令", "🎤 写现场概况", "🎤 报顶进数据", "🎤 现场勘查"],
+      itemList: ["🎙️ 录音识别指令", "📦 出入库制单", "📊 库存概览", "🚚 调度看板"],
       success: async (res) => {
         if (res.tapIndex === 0) {
           await runVoiceAssistant({ scene: "warehouse" }).catch(() => {});
           return;
         }
         if (res.tapIndex === 1) {
-          wx.navigateTo({ url: "/pages/manager-log/index" });
+          wx.navigateTo({ url: "/pages/warehouse-stock-order/index" });
           return;
         }
         if (res.tapIndex === 2) {
-          wx.navigateTo({ url: "/pages/operator-log/index" });
+          wx.navigateTo({ url: "/pages/warehouse-inventory/index" });
           return;
         }
-        wx.navigateTo({ url: "/pages/survey/index" });
+        wx.navigateTo({ url: "/pages/warehouse-dispatch/index" });
       }
     });
   }

@@ -1,0 +1,27 @@
+.alert-item,
+.inventory-item {
+  margin-top: 12rpx;
+  padding: 12rpx;
+  border-radius: 12rpx;
+  border: 1px solid #dbe8f7;
+  background: #fff;
+}
+
+.alert-item {
+  border-color: #ffd0d0;
+  background: #fff5f5;
+}
+
+.alert-title,
+.inventory-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.alert-sub,
+.inventory-sub {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #5c667a;
+}

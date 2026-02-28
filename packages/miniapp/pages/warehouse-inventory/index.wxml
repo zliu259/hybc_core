@@ -1,0 +1,21 @@
+<view class="page">
+  <hy-panel-card title="📊 库存概览" icon="chart" subtitle="对齐 Web 库存视图与预警中心">
+    <view wx:if="{{alerts.length === 0}}" class="empty-state">当前无库存预警</view>
+    <view wx:for="{{alerts}}" wx:key="id" class="alert-item">
+      <view class="alert-title">{{item.warehouse_name || ('仓库#' + item.warehouse_id)}} · {{item.type_name || ('资产类型#' + item.asset_type_id)}}</view>
+      <view class="alert-sub">库存 {{item.quantity}} / 最小库存 {{item.min_stock || 0}}</view>
+      <view class="row">
+        <t-button size="small" variant="outline" data-id="{{item.id}}" bindtap="analyzeAlert" loading="{{busy}}" disabled="{{busy}}">AI分析</t-button>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="📦 库存条目" icon="view-list" subtitle="按仓库和资产类型聚合展示">
+    <view wx:if="{{inventory.length === 0}}" class="empty-state">暂无库存数据</view>
+    <view wx:for="{{inventory}}" wx:key="id" class="inventory-item">
+      <view class="inventory-title">{{item.warehouse_name || ('仓库#' + item.warehouse_id)}}</view>
+      <view class="inventory-sub">{{item.type_name || ('资产类型#' + item.asset_type_id)}} · 数量 {{item.quantity}} {{item.unit || ''}}</view>
+      <view class="inventory-sub">最小库存 {{item.min_stock || 0}} · 状态 {{item.status}}</view>
+    </view>
+  </hy-panel-card>
+</view>

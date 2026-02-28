@@ -1,32 +1,40 @@
 <view class="page">
-  <hy-panel-card title="📍 现场指挥中心" icon="location" subtitle="{{currentProject}}">
-    <view class="kpi-item green">
-      <view class="kpi-label traffic-green">🟢 项目总进度</view>
-      <view class="kpi-value traffic-green">57%</view>
-    </view>
-
-    <view wx:for="{{sections}}" wx:key="name" class="section-card">
-      <view class="section-title">🚧 {{item.name}}</view>
-      <progress percent="{{item.percent}}" stroke-width="10" activeColor="#17803d" backgroundColor="#f0d8b0" />
-      <view class="section-sub">{{item.done}}m / {{item.total}}m</view>
+  <hy-panel-card title="📦 库房管理" icon="goods" subtitle="对齐 Web 库房与资产模块，集中管理出入库与库存">
+    <view class="kpi-board">
+      <view class="kpi-item">
+        <view class="kpi-label">仓库数量</view>
+        <view class="kpi-value">{{kpis.warehouseCount}}</view>
+      </view>
+      <view class="kpi-item yellow">
+        <view class="kpi-label traffic-yellow">待处理制单</view>
+        <view class="kpi-value traffic-yellow">{{kpis.pendingOrderCount}}</view>
+      </view>
+      <view class="kpi-item red">
+        <view class="kpi-label traffic-red">库存预警</view>
+        <view class="kpi-value traffic-red">{{kpis.alertCount}}</view>
+      </view>
+      <view class="kpi-item green">
+        <view class="kpi-label traffic-green">库存条目</view>
+        <view class="kpi-value traffic-green">{{kpis.inventoryCount}}</view>
+      </view>
     </view>
 
     <view class="entry-grid">
-      <view class="entry-card" data-path="/pages/log/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">📝 双轨日志</view></view>
-        <view class="entry-desc">现场概况 + 顶进数据</view>
+      <view class="entry-card" data-path="/pages/warehouse-stock-order/index" bindtap="goTo">
+        <view class="entry-top"><view class="entry-title">🧾 出入库制单</view></view>
+        <view class="entry-desc">创建入库/出库/调拨单并提交审批</view>
       </view>
-      <view class="entry-card" data-path="/pages/operator-log/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">🚜 报顶进数据</view></view>
-        <view class="entry-desc">语音提取关键数值</view>
+      <view class="entry-card" data-path="/pages/warehouse-dispatch/index" bindtap="goTo">
+        <view class="entry-top"><view class="entry-title">🚚 调度看板</view></view>
+        <view class="entry-desc">查看待执行单据并快速执行</view>
+      </view>
+      <view class="entry-card" data-path="/pages/warehouse-inventory/index" bindtap="goTo">
+        <view class="entry-top"><view class="entry-title">📊 库存与预警</view></view>
+        <view class="entry-desc">库存总览、预警与耗材消耗登记</view>
       </view>
       <view class="entry-card" data-path="/pages/asset/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">📦 设备查验</view></view>
-        <view class="entry-desc">红黄绿设备状态</view>
-      </view>
-      <view class="entry-card" data-path="/pages/survey/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">👷 安全勘查</view></view>
-        <view class="entry-desc">拍照 + 经纬度 + AI标注</view>
+        <view class="entry-top"><view class="entry-title">📦 资产设备查验</view></view>
+        <view class="entry-desc">扫码查询设备状态并记录出入库事件</view>
       </view>
     </view>
   </hy-panel-card>

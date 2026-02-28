@@ -1,0 +1,34 @@
+<view class="page">
+  <hy-panel-card title="🚚 调度看板" icon="chart-bar" subtitle="对齐 Web 双向对冲调度看板">
+    <view class="stats-row">
+      <view class="stat-card">
+        <view class="stat-value">{{inboundPending.length}}</view>
+        <view class="stat-label">待入库</view>
+      </view>
+      <view class="stat-card">
+        <view class="stat-value">{{outboundPending.length}}</view>
+        <view class="stat-label">待出库/调拨</view>
+      </view>
+      <view class="stat-card">
+        <view class="stat-value">{{executing.length}}</view>
+        <view class="stat-label">待执行</view>
+      </view>
+      <view class="stat-card">
+        <view class="stat-value">{{done.length}}</view>
+        <view class="stat-label">已完成</view>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="⏳ 待执行单据" icon="time" subtitle="仅已通过审批的单据可执行">
+    <view wx:if="{{executing.length === 0}}" class="empty-state">暂无待执行单据</view>
+    <view wx:for="{{executing}}" wx:key="id" class="dispatch-item">
+      <view class="dispatch-title">{{item.order_no}} · {{item.orderTypeText}}</view>
+      <view class="dispatch-sub">来源仓库ID：{{item.from_warehouse_id || '-'}} · 目标仓库ID：{{item.to_warehouse_id || '-'}}</view>
+      <view class="dispatch-sub">状态：{{item.status}} · 更新时间：{{item.updated_at}}</view>
+      <view class="row">
+        <t-button size="small" theme="primary" data-id="{{item.id}}" bindtap="executeOrder" loading="{{busy}}" disabled="{{busy}}">执行单据</t-button>
+      </view>
+    </view>
+  </hy-panel-card>
+</view>

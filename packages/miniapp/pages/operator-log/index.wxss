@@ -7,3 +7,14 @@
   font-size: 24rpx;
   padding: 14rpx;
 }
+
+.calc-hint {
+  margin-top: 10rpx;
+  border-radius: 12rpx;
+  background: #f5f8ff;
+  border: 1px solid #dde8ff;
+  color: #345176;
+  font-size: 22rpx;
+  line-height: 1.4;
+  padding: 10rpx 12rpx;
+}
