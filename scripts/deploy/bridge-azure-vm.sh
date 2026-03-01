@@ -33,6 +33,7 @@ DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/hybc_core}"
 BRIDGE_ENV_FILE="${BRIDGE_ENV_FILE:-$DEPLOY_ROOT/bridge/.env}"
 BRIDGE_SERVICE_NAME="${BRIDGE_SERVICE_NAME:-hybc-bridge}"
 LOCAL_BUNDLE="${LOCAL_BUNDLE:-false}"
+INSTALL_DEPS="${INSTALL_DEPS:-true}"
 
 if [[ "$LOCAL_BUNDLE" != "true" && -z "$GIT_REPO_URL" ]]; then
   echo "[bridge-azure] GIT_REPO_URL is required"
@@ -41,8 +42,12 @@ fi
 
 require_cmd git
 
-as_root apt-get update -y
-as_root apt-get install -y python3 python3-venv python3-pip git
+if [[ "$INSTALL_DEPS" == "true" ]]; then
+  as_root apt-get update -y
+  as_root apt-get install -y python3 python3-venv python3-pip git
+fi
+
+require_cmd python3
 
 if [[ "$LOCAL_BUNDLE" == "true" ]]; then
   if [[ ! -d "$DEPLOY_ROOT/bridge" ]]; then

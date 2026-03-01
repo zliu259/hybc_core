@@ -49,5 +49,14 @@ jobs:
             if [ -d "$DEPLOY_ROOT/bridge/.venv" ]; then
               bash scripts/deploy/bridge-azure-update.sh
             else
-              LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh
+              if ! INSTALL_DEPS=false LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh; then
+                if [ ! -f /swapfile ]; then
+                  sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
+                  sudo chmod 600 /swapfile
+                  sudo mkswap /swapfile
+                  sudo swapon /swapfile
+                  echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
+                fi
+                INSTALL_DEPS=true LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh
+              fi
             fi
