@@ -47,3 +47,54 @@ PASSKEY_RP_NAME = "HYBC"
 
 [triggers]
 crons = ["*/5 * * * *", "0 * * * *", "0 18 * * *"]
+
+[env.prod]
+workers_dev = false
+routes = [
+  { pattern = "api.hybcdg.com/*", zone_name = "hybcdg.com" }
+]
+
+[[env.prod.d1_databases]]
+binding = "DB"
+database_name = "hybcdg-prod-db"
+database_id = "6dfb0cfc-bcb5-4800-ad86-48435b77a315"
+migrations_dir = "migrations"
+
+[[env.prod.d1_databases]]
+binding = "LEGACY_DB"
+database_name = "hybcdg-prod-legacy-db"
+database_id = "e2aae206-f20e-4029-b5dc-32fa14aa22f4"
+
+[[env.prod.r2_buckets]]
+binding = "FILES"
+bucket_name = "hybcdg-prod-files"
+preview_bucket_name = "hybcdg-prod-files"
+
+[[env.prod.kv_namespaces]]
+binding = "KV"
+id = "26185146a68f4571b8ce2003522d779f"
+preview_id = "d9ab79e68aa947f8b9f82718350b5962"
+
+[[env.prod.queues.producers]]
+binding = "EVENT_QUEUE"
+queue = "hybcdg-prod-events"
+
+[[env.prod.queues.consumers]]
+queue = "hybcdg-prod-events"
+max_batch_size = 10
+max_retries = 3
+
+[env.prod.vars]
+APP_ENV = "local"
+JWT_SECRET = "secret-in-worker-secret"
+UPLOAD_SIGNING_SECRET = "secret-in-worker-secret"
+TASK_API_KEY = "local-dev-task-api-key"
+WECHAT_CORPID = "ww3ddef5ccb9428432"
+WECHAT_AGENT_ID = "1000014"
+WECHAT_SECRET = "secret-in-worker-secret"
+WECHAT_REDIRECT_URI = "https://api.hybcdg.com/login"
+PASSKEY_RP_ID = "api.hybcdg.com"
+PASSKEY_RP_NAME = "HYBC"
+
+[env.prod.triggers]
+crons = ["*/5 * * * *", "0 * * * *", "0 18 * * *"]

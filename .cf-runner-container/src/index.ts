@@ -1,0 +1,36 @@
+import { Container } from "@cloudflare/containers";
+
+type Env = {
+  RUNNER: DurableObjectNamespace;
+};
+
+export class RunnerContainer extends Container {
+  defaultPort = 8080;
+  sleepAfter = "20s";
+  envVars = {
+    API_BASE_URL: "http://127.0.0.1:8787",
+    API_KEY: "local-dev-task-api-key",
+    NODE_NAME: "cf-container-runner",
+    NODE_TYPE: "cloudflare_container",
+    POLL_INTERVAL_SECONDS: "3",
+    HEARTBEAT_INTERVAL_SECONDS: "30",
+    CAPABILITIES: "contract_review,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate",
+    MOCK_AI_ONLY: "false",
+    OPENAI_MODEL: "gpt-4.1",
+    OPENAI_BASE_URL: "https://api.openai.com/v1",
+    ANTHROPIC_MODEL: "claude-sonnet-4-20250514"
+  };
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const url = new URL(request.url);
+    const container = env.RUNNER.getByName("singleton");
+
+    if (url.pathname === "/health") {
+      return new Response("ok", { status: 200 });
+    }
+
+    return container.fetch("http://container/");
+  }
+};

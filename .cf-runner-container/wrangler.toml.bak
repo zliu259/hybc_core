@@ -1,0 +1,22 @@
+name = "hybc-cf-runner"
+main = "src/index.ts"
+compatibility_date = "2026-03-01"
+workers_dev = false
+
+[[routes]]
+pattern = "__RUNNER_DOMAIN__"
+custom_domain = true
+
+[[containers]]
+max_instances = 1
+class_name = "RunnerContainer"
+image = "./Dockerfile"
+instance_type = "lite"
+
+[[durable_objects.bindings]]
+name = "RUNNER"
+class_name = "RunnerContainer"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["RunnerContainer"]
