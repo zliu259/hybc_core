@@ -26,6 +26,9 @@ jobs:
             export SERVICE_NAME=hybc-bridge
             export GIT_REPO_URL="https://github.com/${{ github.repository }}.git"
 
+            sudo mkdir -p "$DEPLOY_ROOT"
+            sudo chown -R "$USER":"$USER" "$DEPLOY_ROOT"
+
             if [ -d "$DEPLOY_ROOT/.git" ]; then
               cd "$DEPLOY_ROOT"
               bash scripts/deploy/bridge-azure-update.sh
