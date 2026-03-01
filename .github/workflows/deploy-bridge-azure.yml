@@ -46,4 +46,8 @@ jobs:
             chmod +x "$DEPLOY_ROOT/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/bridge-azure-update.sh"
 
             cd "$DEPLOY_ROOT"
-            LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh
+            if [ -d "$DEPLOY_ROOT/bridge/.venv" ]; then
+              bash scripts/deploy/bridge-azure-update.sh
+            else
+              LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh
+            fi
