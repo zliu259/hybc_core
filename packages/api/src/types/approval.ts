@@ -191,6 +191,7 @@ export interface NodeInstanceOverride {
 export interface InstanceConfig {
   default_assignee_userids?: string[];
   node_overrides?: Record<string, NodeInstanceOverride>;
+  route_context?: RouteContext;
   note?: string;
 }
 

@@ -2,6 +2,27 @@
   margin-top: 6rpx;
 }
 
+.tab-row {
+  display: flex;
+  gap: 8rpx;
+  margin: 4rpx 0 10rpx;
+}
+
+.tab-pill {
+  flex: 1;
+  border-radius: 999rpx;
+  padding: 14rpx 8rpx;
+  text-align: center;
+  font-size: 22rpx;
+  color: #55657b;
+  background: #eef4fb;
+}
+
+.tab-pill.active {
+  color: #fff;
+  background: #1677ff;
+}
+
 .risk-summary {
   margin-top: 8rpx;
   border-radius: 14rpx;

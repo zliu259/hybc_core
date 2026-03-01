@@ -88,6 +88,31 @@ export const createApprovalTemplate = (data: {
   );
 };
 
+export const bootstrapInitialApprovalConfig = () => {
+  return http.request<{
+    success: boolean;
+    data: { templates_active: number; thresholds_active: number };
+  }>("post", "/api/v1/admin/approval-config/bootstrap-initial");
+};
+
+export const bootstrapNearProductionOpenAIConfig = (data?: {
+  openai_model?: string;
+  openai_endpoint?: string;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      openai_model: string;
+      openai_endpoint: string;
+      templates_active: number;
+      thresholds_active: number;
+      ai_providers_active: number;
+      ai_routing_rules_active: number;
+      ai_prompts_active: number;
+    };
+  }>("post", "/api/v1/admin/bootstrap/near-production-openai", { data });
+};
+
 export const updateApprovalTemplate = (
   id: number,
   data: {

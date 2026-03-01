@@ -31,8 +31,30 @@ const normalizeUser = (data) => {
 const loginWithWeComCode = (code, options = {}) => {
   const { loginRequest } = require("./request");
   const username = options.username || "operator";
+  const codeLoginEndpoints = [
+    options.endpoint || "/api/v1/auth/login/web",
+    "/api/v1/auth/login/miniapp"
+  ].filter((item, index, arr) => arr.indexOf(item) === index);
 
-  return loginRequest({ code: { code } })
+  const loginByCode = (index = 0) => {
+    const endpoint = codeLoginEndpoints[index];
+    if (!endpoint) {
+      return Promise.reject(new Error("No available login endpoint"));
+    }
+
+    return loginRequest({
+      code,
+      endpoint,
+      includeLocalFallback: Boolean(options.allowLocalFallback)
+    }).catch((error) => {
+      if (index + 1 < codeLoginEndpoints.length) {
+        return loginByCode(index + 1);
+      }
+      throw error;
+    });
+  };
+
+  return loginByCode()
     .then((data) => {
       if (data && data.accessToken) {
         setToken(data.accessToken);

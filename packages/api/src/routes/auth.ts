@@ -43,6 +43,14 @@ type WeComTagGetResponse = {
   userlist?: Array<{ userid?: string }>;
 };
 
+type WeComMiniProgramSessionResponse = {
+  errcode?: number;
+  errmsg?: string;
+  userid?: string;
+  UserId?: string;
+  session_key?: string;
+};
+
 const defaultRoleTagMapping: Record<UserRole, string[]> = {
   super_admin: ["HY_ROLE_SUPER_ADMIN"],
   finance: ["HY_ROLE_FINANCE"],
@@ -279,6 +287,80 @@ const fetchWeComUserId = async (
   throw new Error("WeCom getuserinfo returned success but missing UserId");
 };
 
+const fetchWeComMiniProgramUserId = async (
+  accessToken: string,
+  code: string
+): Promise<string> => {
+  const response = await fetch(
+    `https://qyapi.weixin.qq.com/cgi-bin/miniprogram/jscode2session?access_token=${encodeURIComponent(accessToken)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`
+  );
+
+  const json = (await response.json()) as WeComMiniProgramSessionResponse;
+  if (json.errcode !== 0) {
+    throw new Error(
+      weComErrorMessage(json.errmsg, "Failed to exchange WeCom miniapp code")
+    );
+  }
+
+  const userId = json.userid ?? json.UserId;
+  if (!userId) {
+    throw new Error("WeCom miniapp jscode2session returned success but missing userid");
+  }
+
+  return userId;
+};
+
+const buildIdentityByCode = async (
+  env: Env,
+  code: string,
+  preferMiniProgram: boolean
+): Promise<{
+  userId: string;
+  username: string;
+  nickname: string;
+  avatar?: string;
+  role?: UserRole;
+}> => {
+  const accessToken = await fetchWeComAccessToken(env);
+
+  let userId: string | null = null;
+  const errors: string[] = [];
+
+  const tryMiniProgram = async () => {
+    try {
+      userId = await fetchWeComMiniProgramUserId(accessToken, code);
+    } catch (error) {
+      if (error instanceof Error) errors.push(error.message);
+    }
+  };
+
+  const tryGetUserInfo = async () => {
+    try {
+      userId = await fetchWeComUserId(accessToken, code);
+    } catch (error) {
+      if (error instanceof Error) errors.push(error.message);
+    }
+  };
+
+  if (preferMiniProgram) {
+    await tryMiniProgram();
+    if (!userId) await tryGetUserInfo();
+  } else {
+    await tryGetUserInfo();
+    if (!userId) await tryMiniProgram();
+  }
+
+  if (!userId) {
+    throw new Error(errors[0] ?? "Failed to resolve WeCom user from login code");
+  }
+
+  const profile = await fetchWeComProfile(accessToken, userId);
+  return {
+    ...profile,
+    role: await resolveRoleByWeComTags(env, accessToken, userId)
+  };
+};
+
 const fetchWeComProfile = async (accessToken: string, userId: string) => {
   const profileResponse = await fetch(
     `https://qyapi.weixin.qq.com/cgi-bin/user/get?access_token=${encodeURIComponent(accessToken)}&userid=${encodeURIComponent(userId)}`
@@ -449,10 +531,7 @@ authRoutes.post("/login/web", async (c) => {
     };
 
     if (body.code) {
-      const accessToken = await fetchWeComAccessToken(c.env);
-      const userId = await fetchWeComUserId(accessToken, body.code);
-      identity = await fetchWeComProfile(accessToken, userId);
-      identity.role = await resolveRoleByWeComTags(c.env, accessToken, userId);
+      identity = await buildIdentityByCode(c.env, body.code, false);
     } else {
       if (c.env.APP_ENV !== "local") {
         return c.json(
@@ -484,6 +563,38 @@ authRoutes.post("/login/web", async (c) => {
         success: false,
         error: {
           message: error instanceof Error ? error.message : "Login failed"
+        }
+      },
+      400
+    );
+  }
+});
+
+authRoutes.post("/login/miniapp", async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as LoginBody;
+  if (!body.code) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          message: "Missing WeCom miniapp code"
+        }
+      },
+      400
+    );
+  }
+
+  try {
+    const identity = await buildIdentityByCode(c.env, body.code, true);
+    const session = createSessionPayload(identity);
+    const tokenBundle = await issueTokens(c.env, session);
+    return c.json(toFrontendLoginResponse(tokenBundle));
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : "Miniapp login failed"
         }
       },
       400

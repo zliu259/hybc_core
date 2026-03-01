@@ -28,6 +28,7 @@ class TaskExecutor:
         task_type = task.get("task_type", "")
         payload = task.get("payload", {})
         prompt = task.get("prompt")
+        preferred_provider_key = task.get("_provider_key")
 
         # Parse payload if it's a string
         if isinstance(payload, str):
@@ -46,7 +47,10 @@ class TaskExecutor:
         if not isinstance(prompt, dict):
             prompt = None
 
-        provider = self._find_provider(task_type)
+        if not isinstance(preferred_provider_key, str):
+            preferred_provider_key = ""
+
+        provider = self._find_provider(task_type, preferred_provider_key)
         if not provider:
             raise ValueError(f"No provider supports task type: {task_type}")
 
@@ -73,7 +77,14 @@ class TaskExecutor:
                 "metadata": {"error": str(exc)},
             }
 
-    def _find_provider(self, task_type: str) -> AiProvider | None:
+    def _find_provider(
+        self, task_type: str, preferred_provider_key: str = ""
+    ) -> AiProvider | None:
+        if preferred_provider_key:
+            for provider in self.providers:
+                provider_key = getattr(provider, "provider_key", "")
+                if provider_key == preferred_provider_key and provider.supports(task_type):
+                    return provider
         for provider in self.providers:
             if provider.supports(task_type):
                 return provider

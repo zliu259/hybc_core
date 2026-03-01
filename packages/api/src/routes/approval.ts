@@ -88,16 +88,34 @@ approvalRoutes.get("/", async (c) => {
 
 approvalRoutes.get("/pending", async (c) => {
   const auth = c.get("auth");
+  const bizType = c.req.query("biz_type");
+  const keyword = c.req.query("keyword");
+  const status = c.req.query("status");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
+  let whereSql = " WHERE at2.assignee_userid = ? AND at2.status = 'pending'";
+  const params: (string | number)[] = [auth.sub];
+
+  if (bizType) {
+    whereSql += " AND ai.biz_type = ?";
+    params.push(bizType);
+  }
+  if (keyword) {
+    whereSql += " AND ai.biz_summary LIKE ?";
+    params.push(`%${keyword}%`);
+  }
+  if (status) {
+    whereSql += " AND ai.status = ?";
+    params.push(status);
+  }
+
   const countResult = await c.env.DB.prepare(
     `SELECT COUNT(*) as total FROM approval_task at2
-     JOIN approval_instance ai ON ai.id = at2.instance_id
-     WHERE at2.assignee_userid = ? AND at2.status = 'pending'`
+     JOIN approval_instance ai ON ai.id = at2.instance_id${whereSql}`
   )
-    .bind(auth.sub)
+    .bind(...params)
     .first<{ total: number }>();
 
   const rows = await c.env.DB.prepare(
@@ -109,10 +127,10 @@ approvalRoutes.get("/pending", async (c) => {
      JOIN approval_instance ai ON ai.id = at2.instance_id
      LEFT JOIN approval_node_instance ani ON ani.instance_id = ai.id
        AND ani.node_key = ai.current_node_key AND ani.round = ai.current_round
-     WHERE at2.assignee_userid = ? AND at2.status = 'pending'
+     ${whereSql}
      ORDER BY at2.created_at DESC LIMIT ? OFFSET ?`
   )
-    .bind(auth.sub, pageSize, offset)
+    .bind(...params, pageSize, offset)
     .all();
 
   return c.json({
@@ -126,15 +144,34 @@ approvalRoutes.get("/pending", async (c) => {
 
 approvalRoutes.get("/processed", async (c) => {
   const auth = c.get("auth");
+  const bizType = c.req.query("biz_type");
+  const keyword = c.req.query("keyword");
+  const status = c.req.query("status");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
+  let whereSql = " WHERE at2.assignee_userid = ? AND at2.status IN ('completed', 'transferred')";
+  const params: (string | number)[] = [auth.sub];
+
+  if (bizType) {
+    whereSql += " AND ai.biz_type = ?";
+    params.push(bizType);
+  }
+  if (keyword) {
+    whereSql += " AND ai.biz_summary LIKE ?";
+    params.push(`%${keyword}%`);
+  }
+  if (status) {
+    whereSql += " AND ai.status = ?";
+    params.push(status);
+  }
+
   const countResult = await c.env.DB.prepare(
-    `SELECT COUNT(*) as total FROM approval_task
-     WHERE assignee_userid = ? AND status IN ('completed', 'transferred')`
+    `SELECT COUNT(*) as total FROM approval_task at2
+     JOIN approval_instance ai ON ai.id = at2.instance_id${whereSql}`
   )
-    .bind(auth.sub)
+    .bind(...params)
     .first<{ total: number }>();
 
   const rows = await c.env.DB.prepare(
@@ -143,10 +180,10 @@ approvalRoutes.get("/processed", async (c) => {
        at2.action, at2.acted_at, at2.comment
      FROM approval_task at2
      JOIN approval_instance ai ON ai.id = at2.instance_id
-     WHERE at2.assignee_userid = ? AND at2.status IN ('completed', 'transferred')
+     ${whereSql}
      ORDER BY at2.acted_at DESC LIMIT ? OFFSET ?`
   )
-    .bind(auth.sub, pageSize, offset)
+    .bind(...params, pageSize, offset)
     .all();
 
   return c.json({
@@ -160,27 +197,45 @@ approvalRoutes.get("/processed", async (c) => {
 
 approvalRoutes.get("/cc", async (c) => {
   const auth = c.get("auth");
+  const bizType = c.req.query("biz_type");
+  const keyword = c.req.query("keyword");
+  const status = c.req.query("status");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
+  let whereSql = " WHERE ani.node_type = 'cc' AND at2.assignee_userid = ?";
+  const params: (string | number)[] = [auth.sub];
+
+  if (bizType) {
+    whereSql += " AND ai.biz_type = ?";
+    params.push(bizType);
+  }
+  if (keyword) {
+    whereSql += " AND ai.biz_summary LIKE ?";
+    params.push(`%${keyword}%`);
+  }
+  if (status) {
+    whereSql += " AND ai.status = ?";
+    params.push(status);
+  }
+
   const countResult = await c.env.DB.prepare(
     `SELECT COUNT(DISTINCT ai.id) as total FROM approval_instance ai
      JOIN approval_node_instance ani ON ani.instance_id = ai.id
-     JOIN approval_task at2 ON at2.node_instance_id = ani.id
-     WHERE ani.node_type = 'cc' AND at2.assignee_userid = ?`
+     JOIN approval_task at2 ON at2.node_instance_id = ani.id${whereSql}`
   )
-    .bind(auth.sub)
+    .bind(...params)
     .first<{ total: number }>();
 
   const rows = await c.env.DB.prepare(
     `SELECT DISTINCT ai.* FROM approval_instance ai
      JOIN approval_node_instance ani ON ani.instance_id = ai.id
      JOIN approval_task at2 ON at2.node_instance_id = ani.id
-     WHERE ani.node_type = 'cc' AND at2.assignee_userid = ?
+     ${whereSql}
      ORDER BY ai.created_at DESC LIMIT ? OFFSET ?`
   )
-    .bind(auth.sub, pageSize, offset)
+    .bind(...params, pageSize, offset)
     .all<ApprovalInstance>();
 
   return c.json({

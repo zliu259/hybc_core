@@ -41,6 +41,8 @@ class _ClaudeClient(Protocol):
 
 
 class ClaudeProvider(AiProvider):
+    provider_key = "claude"
+
     """AI provider using Anthropic Claude API."""
 
     def __init__(self, api_key: str, model: str = "claude-sonnet-4-20250514") -> None:

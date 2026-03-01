@@ -165,46 +165,41 @@ const handleApprovalRejected = async (
   }
 };
 
-export default {
-  async queue(batch: MessageBatch<DomainEvent>, env: Env): Promise<void> {
-    for (const msg of batch.messages) {
-      try {
-        const event = msg.body;
+export const queue = async (
+  batch: MessageBatch<DomainEvent>,
+  env: Env
+): Promise<void> => {
+  for (const msg of batch.messages) {
+    try {
+      const event = msg.body;
+      await logEvent(env, event);
 
-        // Log event to DB
-        await logEvent(env, event);
-
-        // Dispatch by event type
-        switch (event.type) {
-          case "APPROVAL_APPROVED": {
-            const instanceId = Number(event.payload?.instance_id ?? 0);
-            if (!Number.isNaN(instanceId) && instanceId > 0) {
-              await handleApprovalApproved(env, instanceId);
-            }
-            break;
+      switch (event.type) {
+        case "APPROVAL_APPROVED": {
+          const instanceId = Number(event.payload?.instance_id ?? 0);
+          if (!Number.isNaN(instanceId) && instanceId > 0) {
+            await handleApprovalApproved(env, instanceId);
           }
-          case "APPROVAL_REJECTED": {
-            const instanceId = Number(event.payload?.instance_id ?? 0);
-            if (!Number.isNaN(instanceId) && instanceId > 0) {
-              await handleApprovalRejected(env, instanceId);
-            }
-            break;
-          }
-          case "TASK_COMPLETED": {
-            // If task is linked to an ai_gate approval node,
-            // advance the approval workflow.
-            // Full implementation wired after integration testing.
-            break;
-          }
-          default:
-            break;
+          break;
         }
-
-        msg.ack();
-      } catch (err) {
-        console.error("Queue processing error:", err);
-        msg.retry();
+        case "APPROVAL_REJECTED": {
+          const instanceId = Number(event.payload?.instance_id ?? 0);
+          if (!Number.isNaN(instanceId) && instanceId > 0) {
+            await handleApprovalRejected(env, instanceId);
+          }
+          break;
+        }
+        case "TASK_COMPLETED": {
+          break;
+        }
+        default:
+          break;
       }
+
+      msg.ack();
+    } catch (err) {
+      console.error("Queue processing error:", err);
+      msg.retry();
     }
   }
 };

@@ -43,6 +43,21 @@
   font-size: 24rpx;
 }
 
+.cert-name {
+  font-size: 26rpx;
+  color: #20324a;
+}
+
+.cert-meta {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #5d6a7f;
+}
+
+.cert-actions {
+  margin-top: 10rpx;
+}
+
 .cert-card.warn {
   background: #fff3e6;
   border: 1px solid #ffd39a;

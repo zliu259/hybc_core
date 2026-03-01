@@ -24,6 +24,7 @@ import { uploadRoutes } from "./routes/upload";
 import { userRoutes } from "./routes/user";
 import { voiceRoutes } from "./routes/voice";
 import { warehouseRoutes } from "./routes/warehouse";
+import { queue } from "./queue-handler";
 import { scheduled } from "./scheduled";
 import type { Env } from "./types/env";
 
@@ -63,6 +64,8 @@ app.route("/api/v1/voice", voiceRoutes);
 app.route("/api/v1/admin", adminRoutes);
 app.route("/api/v1/dashboard", dashboardRoutes);
 
-export default app;
-export { default as queue } from "./queue-handler";
-export { scheduled };
+export default {
+  fetch: app.fetch,
+  queue,
+  scheduled
+};

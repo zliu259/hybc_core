@@ -16,8 +16,26 @@
 
     <view class="section-title">📚 我的证书</view>
     <view class="cert-grid">
-      <view class="cert-card warn">⚠️ 特种作业证（7天后到期）</view>
-      <view class="cert-card ok">✅ 安全员证（正常）</view>
+      <view wx:for="{{certificates}}" wx:key="id" class="cert-card {{item.level}}">
+        <view class="cert-name">{{item.level === 'warn' ? '⚠️' : '✅'}} {{item.name}}</view>
+        <view class="cert-meta">状态：{{item.statusText}}</view>
+        <view class="cert-meta">附件：{{item.fileName || '未上传附件'}}</view>
+        <view class="row cert-actions">
+          <t-button
+            class="btn"
+            variant="outline"
+            data-url="{{item.fileUrl}}"
+            bindtap="openCertFile"
+          >查看</t-button>
+          <t-button
+            class="btn btn-primary"
+            theme="primary"
+            data-url="{{item.fileUrl}}"
+            data-name="{{item.fileName || item.name}}"
+            bindtap="downloadCertFile"
+          >下载</t-button>
+        </view>
+      </view>
     </view>
 
     <view class="section-title">⚙️ 联调设置</view>

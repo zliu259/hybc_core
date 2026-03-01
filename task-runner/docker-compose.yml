@@ -13,7 +13,14 @@ services:
       - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-3}
       - HEARTBEAT_INTERVAL_SECONDS=${HEARTBEAT_INTERVAL_SECONDS:-30}
       - CAPABILITIES=${CAPABILITIES:-contract_review,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_analysis,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate,voice_stt}
-      - MOCK_AI_ONLY=${MOCK_AI_ONLY:-true}
+      - MOCK_AI_ONLY=${MOCK_AI_ONLY:-false}
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
+      - OPENAI_ORG_ID=${OPENAI_ORG_ID:-}
+      - OPENAI_PROJECT_ID=${OPENAI_PROJECT_ID:-}
+      - OPENAI_TIMEOUT_SECONDS=${OPENAI_TIMEOUT_SECONDS:-30}
+      - OPENAI_MAX_RETRIES=${OPENAI_MAX_RETRIES:-2}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
       - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-4-20250514}
     restart: unless-stopped

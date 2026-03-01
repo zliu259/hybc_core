@@ -3,17 +3,37 @@ const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/intera
 
 Page({
   data: {
+    activeTab: "pending",
     pending: [],
+    processed: [],
+    cc: [],
     commentMap: {},
     loading: false,
     acting: false,
     sliderReadyMap: {},
-    transferUsers: []
+    transferUsers: [],
+    pendingCount: 0,
+    processedCount: 0,
+    ccCount: 0
   },
 
   onShow() {
     this.loadTransferUsers();
-    this.loadPending();
+    this.loadAll();
+  },
+
+  statusLabel(status) {
+    const map = {
+      pending: "待处理",
+      in_progress: "进行中",
+      approved: "已通过",
+      rejected: "已驳回",
+      cancelled: "已取消",
+      withdrawn: "已撤回",
+      completed: "已处理",
+      transferred: "已转签"
+    };
+    return map[status] || status;
   },
 
   async loadTransferUsers() {
@@ -29,14 +49,39 @@ Page({
     }
   },
 
-  async loadPending() {
+  switchTab(e) {
+    const tab = e.currentTarget.dataset.tab;
+    this.setData({ activeTab: tab });
+  },
+
+  async loadAll() {
     this.setData({ loading: true });
     try {
-      const res = await request({
-        method: "GET",
-        path: "/api/v1/approval/pending?page=1&pageSize=50"
+      const [pendingRes, processedRes, ccRes] = await Promise.all([
+        request({
+          method: "GET",
+          path: "/api/v1/approval/pending?page=1&pageSize=50"
+        }),
+        request({
+          method: "GET",
+          path: "/api/v1/approval/processed?page=1&pageSize=50"
+        }),
+        request({
+          method: "GET",
+          path: "/api/v1/approval/cc?page=1&pageSize=50"
+        })
+      ]);
+      const pending = Array.isArray(pendingRes.data) ? pendingRes.data : [];
+      const processed = Array.isArray(processedRes.data) ? processedRes.data : [];
+      const cc = Array.isArray(ccRes.data) ? ccRes.data : [];
+      this.setData({
+        pending,
+        processed,
+        cc,
+        pendingCount: pending.length,
+        processedCount: processed.length,
+        ccCount: cc.length
       });
-      this.setData({ pending: res.data || [] });
     } catch (error) {
       sayToast({ title: error.message || "加载失败", icon: "none", danger: true });
     } finally {
@@ -124,7 +169,7 @@ Page({
       }
       vibrateSuccess();
       sayToast({ title: "已处理", icon: "success" });
-      await this.loadPending();
+      await this.loadAll();
     } catch (error) {
       vibrateWarning();
       sayToast({ title: error.message || "操作失败", icon: "none", danger: true });

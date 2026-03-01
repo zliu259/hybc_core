@@ -324,6 +324,7 @@
 ### 3.5 Sprint 1 重构落地点（2026-02）
 - 默认首页路由切换到个人工作台：`packages/web/src/router/modules/home.ts`（`/` -> `/workspace/home`，保留 `/welcome` 兼容重定向）。
 - 个人工作台页面：`packages/web/src/views/welcome/index.vue`（欢迎卡、快捷入口、收款卡区、报销时间线、证书网格与到期预警）。
+- 个人资质与证书卡片新增文件动作：`packages/web/src/views/welcome/index.vue`（单证书支持“查看/下载”附件；未上传附件时按钮禁用并提示）。
 - 全局技术支持抽屉入口：`packages/web/src/layout/components/lay-navbar/index.vue`。
 - 全局技术支持抽屉实现：`packages/web/src/layout/components/lay-support/index.vue`。
 - 技术支持 API 封装：`packages/web/src/api/support.ts`（`POST /api/v1/support/tickets`、`GET /api/v1/support/tickets?creator_id=me`）。
@@ -451,6 +452,7 @@
 - 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
 - 审批与申请（Tab3）：`packages/miniapp/pages/finance/index`
 - 我的（Tab4）：`packages/miniapp/pages/profile/index`
+- 登录恢复页：`packages/miniapp/pages/login/index`
 - 日志中心：`packages/miniapp/pages/log/index`
 - 操作员日志：`packages/miniapp/pages/operator-log/index`
 - 管理员日志：`packages/miniapp/pages/manager-log/index`
@@ -478,6 +480,7 @@
 - 勘查页：支持 GPS 定位、拍照上传、表单提交。
 - 进度页：支持项目日志指标与预警列表查看。
 - 个人中心：支持查看用户信息、API 地址配置（开发联调）与退出登录确认。
+- 登录恢复页：当自动登录失败时承接错误展示与“企业微信重新登录”重试动作。
 - 通用交互：所有异步提交场景需有 loading、按钮禁用、空态提示与字段校验反馈。
 - 低操作成本原则：
   - 项目选择统一使用下拉选择组件（`hy-project-picker`），避免手输项目ID。
@@ -501,6 +504,7 @@
   - 待办/发起分段器 + 快捷动作入口 + 全局语音助手。
 - 我的页重构：`packages/miniapp/pages/profile/index.{js,wxml,wxss}`
   - 个人申请时间线、证书预警卡、联调配置区。
+  - 个人证书卡新增附件入口：支持“查看/下载”证书文件（无附件时显示占位并给出提示）。
 - 核心业务页视觉强化：
   - 审批：`packages/miniapp/pages/approval/index.{js,wxml,wxss}`（红黄绿摘要 + 长按后滑动解锁通过）
   - 报销：`packages/miniapp/pages/reimbursement/index.{js,wxml}`（扫码/OCR/PDF 三段链路与语音助手）
@@ -627,6 +631,17 @@
 - 财务模块入口与行为保持不变：`packages/miniapp/pages/finance/index`
 - 库房模块入口调整为“库房管理工作台”并对齐 Web：`packages/miniapp/pages/{warehouse,warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index`
 - 本期允许调整仅限项目模块的信息架构、页面跳转与只读提示层。
+
+### 4.2.4 审批状态可视化补齐（2026-03）
+- 小程序审批页补齐三视图切换：`packages/miniapp/pages/approval/index.wxml`
+- 小程序审批页状态数据与动作联动：`packages/miniapp/pages/approval/index.js`
+- 小程序审批页状态样式与分段标签：`packages/miniapp/pages/approval/index.wxss`
+
+### 3.13 审批流程初始化与状态视图补齐（2026-03）
+- 审批模板页新增“一键初始化默认流程”入口：`packages/web/src/views/approval/template-config.vue`
+- 审批中心列表补齐实例状态/动作中文态与筛选联动：`packages/web/src/views/approval/index.vue`
+- 审批 API 参数扩展（biz_type/keyword/status）：`packages/web/src/api/approval.ts`
+- 审批初始化 API 封装：`packages/web/src/api/admin.ts`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

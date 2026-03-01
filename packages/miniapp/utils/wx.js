@@ -1,5 +1,19 @@
 const wxLogin = () =>
   new Promise((resolve, reject) => {
+    const qyLogin = wx?.qy && typeof wx.qy.login === "function" ? wx.qy.login : null;
+    if (qyLogin) {
+      qyLogin({
+        success: resolve,
+        fail() {
+          wx.login({
+            success: resolve,
+            fail: reject
+          });
+        }
+      });
+      return;
+    }
+
     wx.login({
       success: resolve,
       fail: reject

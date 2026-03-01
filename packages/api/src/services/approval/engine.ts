@@ -24,13 +24,28 @@ const nowIso = () => new Date().toISOString();
 
 // ─── Helper: Build route context from instance ──────────
 
-const buildContextFromInstance = (instance: ApprovalInstance): RouteContext => ({
-  amount: undefined,
-  entity_id: undefined,
-  project_id: undefined,
-  biz_type: instance.biz_type,
-  biz_id: instance.biz_id
-});
+const parseInstanceConfig = (
+  instance: ApprovalInstance
+): InstanceConfig | undefined => {
+  if (!instance.instance_config_json) {
+    return undefined;
+  }
+
+  try {
+    return JSON.parse(instance.instance_config_json) as InstanceConfig;
+  } catch {
+    return undefined;
+  }
+};
+
+const buildContextFromInstance = (instance: ApprovalInstance): RouteContext => {
+  const routeContext = parseInstanceConfig(instance)?.route_context;
+  return {
+    ...(routeContext ?? {}),
+    biz_type: instance.biz_type,
+    biz_id: instance.biz_id
+  };
+};
 
 const getNodeOverride = (
   instanceConfig: InstanceConfig | undefined,
@@ -90,8 +105,16 @@ export const submitForApproval = async (
   // 2. Generate serial
   const instanceNo = await generateSerial(env.DB, "SP", "approval_instance", "instance_no");
   const now = nowIso();
-  const instanceConfigJson = request.instance_config
-    ? JSON.stringify(request.instance_config)
+  const normalizedInstanceConfig: InstanceConfig | undefined =
+    request.instance_config || request.context
+      ? {
+          ...(request.instance_config ?? {}),
+          route_context: request.context ?? request.instance_config?.route_context
+        }
+      : undefined;
+
+  const instanceConfigJson = normalizedInstanceConfig
+    ? JSON.stringify(normalizedInstanceConfig)
     : null;
 
   // 3. Insert instance
@@ -115,8 +138,8 @@ export const submitForApproval = async (
   for (let i = 0; i < parsedTemplate.nodeOrder.length; i++) {
     const nodeKey = parsedTemplate.nodeOrder[i];
     const node: ParsedNode = parsedTemplate.nodes.get(nodeKey)!;
-    const nodeOverride = getNodeOverride(request.instance_config, nodeKey);
-    const mergedAssignees = getMergedAssignees(node.config, nodeOverride, request.instance_config);
+    const nodeOverride = getNodeOverride(normalizedInstanceConfig, nodeKey);
+    const mergedAssignees = getMergedAssignees(node.config, nodeOverride, normalizedInstanceConfig);
     const assigneeUserids = mergedAssignees ? JSON.stringify(mergedAssignees) : null;
     const timeoutHours = getTimeoutHours(node.config, nodeOverride);
 
@@ -333,8 +356,7 @@ export const advanceWorkflow = async (
     await nextExecutor.initializeNode(env, updatedNextNodeInst, nextNode.config, instanceId);
   }
 
-  // Auto-advance if next node is auto-completing (auto, cc)
-  if (nextNode.type === "auto" || nextNode.type === "cc") {
+  if (nextNode.type === "auto" || nextNode.type === "cc" || nextNode.type === "ai_gate") {
     await advanceWorkflow(env, instanceId, aiGateHandler);
   }
 };

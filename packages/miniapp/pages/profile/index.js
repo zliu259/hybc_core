@@ -1,4 +1,4 @@
-const { request } = require("../../utils/request");
+const { request, buildUrl } = require("../../utils/request");
 const { clearToken, getUserProfile } = require("../../utils/auth");
 const { getBaseUrl, setBaseUrl } = require("../../utils/config");
 const { runVoiceAssistant } = require("../../utils/voice-assistant");
@@ -12,7 +12,46 @@ Page({
       { icon: "💸", text: "付款申请 #P20260224-01", status: "👨‍💼 王总审批中" },
       { icon: "🧾", text: "报销信封 #R20260223-03", status: "⏳ 排队中" },
       { icon: "📝", text: "合同申请 #C20260222-02", status: "🟢 已通过" }
+    ],
+    certificates: [
+      {
+        id: "cert-1",
+        name: "特种作业证",
+        statusText: "7天后到期",
+        level: "warn",
+        fileName: "未上传附件",
+        fileUrl: ""
+      },
+      {
+        id: "cert-2",
+        name: "安全员证",
+        statusText: "正常",
+        level: "ok",
+        fileName: "未上传附件",
+        fileUrl: ""
+      }
     ]
+  },
+
+  normalizeCertificates(profile) {
+    const list = Array.isArray(profile && profile.certificates)
+      ? profile.certificates
+      : [];
+    if (!list.length) return null;
+    return list.map((item, index) => {
+      const certName = item.name || item.certificate_name || `证书${index + 1}`;
+      const rawUrl = item.file_url || item.fileUrl || "";
+      const fileUrl = rawUrl ? buildUrl(rawUrl) : "";
+      const statusText = item.status_text || item.statusText || "正常";
+      return {
+        id: item.id || `cert-${index + 1}`,
+        name: certName,
+        statusText,
+        level: /过期|预警|到期/.test(statusText) ? "warn" : "ok",
+        fileName: item.file_name || item.fileName || (rawUrl ? certName : "未上传附件"),
+        fileUrl
+      };
+    });
   },
 
   onShow() {
@@ -33,12 +72,72 @@ Page({
     this.setData({ busy: true });
     try {
       const res = await request({ method: "GET", path: "/api/v1/user/me" });
-      this.setData({ profile: res.data || getUserProfile() || {} });
+      const profile = res.data || getUserProfile() || {};
+      const certificates = this.normalizeCertificates(profile);
+      this.setData({
+        profile,
+        certificates: certificates || this.data.certificates
+      });
     } catch {
       this.setData({ profile: getUserProfile() || {} });
     } finally {
       this.setData({ busy: false });
     }
+  },
+
+  openCertFile(e) {
+    const { url } = e.currentTarget.dataset;
+    if (!url) {
+      wx.showToast({ title: "该证书暂无附件", icon: "none" });
+      return;
+    }
+    wx.downloadFile({
+      url,
+      success: (res) => {
+        const filePath = res.tempFilePath;
+        if (!filePath) {
+          wx.showToast({ title: "文件打开失败", icon: "none" });
+          return;
+        }
+        wx.openDocument({
+          filePath,
+          showMenu: true,
+          fail: () => wx.showToast({ title: "无法预览该文件", icon: "none" })
+        });
+      },
+      fail: () => wx.showToast({ title: "文件下载失败", icon: "none" })
+    });
+  },
+
+  downloadCertFile(e) {
+    const { url, name } = e.currentTarget.dataset;
+    if (!url) {
+      wx.showToast({ title: "该证书暂无附件", icon: "none" });
+      return;
+    }
+    wx.downloadFile({
+      url,
+      success: (res) => {
+        const tempFilePath = res.tempFilePath;
+        if (!tempFilePath) {
+          wx.showToast({ title: "下载失败", icon: "none" });
+          return;
+        }
+        wx.saveFile({
+          tempFilePath,
+          success: () => {
+            wx.showToast({
+              title: `${name || "证书文件"}已保存`,
+              icon: "success"
+            });
+          },
+          fail: () => {
+            wx.showToast({ title: "保存失败，请检查权限", icon: "none" });
+          }
+        });
+      },
+      fail: () => wx.showToast({ title: "文件下载失败", icon: "none" })
+    });
   },
 
   logout() {

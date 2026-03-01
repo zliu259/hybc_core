@@ -136,6 +136,9 @@ export const listApprovalInstances = (params?: {
 };
 
 export const listPendingApprovals = (params?: {
+  biz_type?: string;
+  keyword?: string;
+  status?: string;
   page?: number;
   pageSize?: number;
 }) => {
@@ -147,6 +150,9 @@ export const listPendingApprovals = (params?: {
 };
 
 export const listProcessedApprovals = (params?: {
+  biz_type?: string;
+  keyword?: string;
+  status?: string;
   page?: number;
   pageSize?: number;
 }) => {
@@ -158,6 +164,9 @@ export const listProcessedApprovals = (params?: {
 };
 
 export const listCcApprovals = (params?: {
+  biz_type?: string;
+  keyword?: string;
+  status?: string;
   page?: number;
   pageSize?: number;
 }) => {

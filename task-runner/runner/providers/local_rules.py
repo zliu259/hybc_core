@@ -12,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class LocalRulesProvider(AiProvider):
+    provider_key = "local"
+
     """Rule-based provider for tasks that don't need external AI API calls."""
 
     def supports(self, task_type: str) -> bool:

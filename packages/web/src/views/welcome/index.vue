@@ -40,9 +40,16 @@ const reimbursementForm = ref({
 
 const bankCards = ref<MyBankAccount[]>([]);
 
-const certificates = ref<
-  Array<{ id: number; name: string; issueDate: string; expireDate: string }>
->([
+type PersonalCertificate = {
+  id: number;
+  name: string;
+  issueDate: string;
+  expireDate: string;
+  fileUrl?: string;
+  fileName?: string;
+};
+
+const certificates = ref<PersonalCertificate[]>([
   {
     id: 1,
     name: "特种设备操作证",
@@ -84,6 +91,29 @@ const certStatus = (expireDate: string) => {
   if (remainDays < 0) return { type: "danger", text: "已过期" } as const;
   if (remainDays <= 30) return { type: "warning", text: "即将到期" } as const;
   return { type: "success", text: "有效" } as const;
+};
+
+const certHasFile = (cert: PersonalCertificate) => Boolean(cert.fileUrl);
+
+const openCertFile = (cert: PersonalCertificate) => {
+  if (!cert.fileUrl) {
+    message("该证书暂无附件可查看", { type: "warning" });
+    return;
+  }
+  window.open(cert.fileUrl, "_blank", "noopener,noreferrer");
+};
+
+const downloadCertFile = (cert: PersonalCertificate) => {
+  if (!cert.fileUrl) {
+    message("该证书暂无附件可下载", { type: "warning" });
+    return;
+  }
+  const link = document.createElement("a");
+  link.href = cert.fileUrl;
+  link.download = cert.fileName || `${cert.name}.pdf`;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
 };
 
 const reimbursementTagType = (status: string) => {
@@ -158,11 +188,15 @@ onMounted(async () => {
 });
 
 const onCertUpload = (file: UploadFile) => {
+  const raw = file.raw;
+  const objectUrl = raw ? URL.createObjectURL(raw) : file.url;
   certificates.value.push({
     id: Date.now(),
     name: file.name,
     issueDate: dayjs().format("YYYY-MM-DD"),
-    expireDate: dayjs().add(365, "day").format("YYYY-MM-DD")
+    expireDate: dayjs().add(365, "day").format("YYYY-MM-DD"),
+    fileUrl: objectUrl,
+    fileName: file.name
   });
 };
 
@@ -352,6 +386,27 @@ const submitReimbursement = async () => {
           <el-tag :type="certStatus(cert.expireDate).type">
             {{ certStatus(cert.expireDate).text }}
           </el-tag>
+          <div class="cert-item__file">{{ cert.fileName || "未上传附件" }}</div>
+          <div class="cert-item__actions">
+            <el-button
+              size="small"
+              text
+              type="primary"
+              :disabled="!certHasFile(cert)"
+              @click="openCertFile(cert)"
+            >
+              查看
+            </el-button>
+            <el-button
+              size="small"
+              text
+              type="primary"
+              :disabled="!certHasFile(cert)"
+              @click="downloadCertFile(cert)"
+            >
+              下载
+            </el-button>
+          </div>
         </el-card>
       </div>
     </el-card>
@@ -458,6 +513,18 @@ const submitReimbursement = async () => {
   margin-bottom: 8px;
   font-weight: 700;
   color: #2a241d;
+}
+
+.cert-item__file {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8b7f72;
+}
+
+.cert-item__actions {
+  margin-top: 8px;
+  display: flex;
+  gap: 8px;
 }
 
 @media (max-width: 980px) {

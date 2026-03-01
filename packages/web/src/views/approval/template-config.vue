@@ -6,6 +6,7 @@ import {
   createApprovalTemplate,
   updateApprovalTemplate,
   deleteApprovalTemplate,
+  bootstrapInitialApprovalConfig,
   type ApprovalTemplate
 } from "@/api/admin";
 import ApprovalFlowDesigner from "@/components/ApprovalFlowDesigner/index.vue";
@@ -29,10 +30,31 @@ const previewVisible = ref(false);
 const previewConfig = ref("");
 
 const bizTypeOptions = [
-  { label: "合同审批", value: "contract_approval" },
-  { label: "付款审批", value: "payment_approval" },
-  { label: "报销审批", value: "reimbursement_approval" }
+  { label: "对外合同审批", value: "outbound_contract" },
+  { label: "收款合同审批", value: "inbound_contract" },
+  { label: "付款申请审批", value: "payment_request" },
+  { label: "报销批次审批", value: "reimbursement_batch" },
+  { label: "出入库审批", value: "stock_order" },
+  { label: "合同金额变更", value: "contract_amount_change" }
 ];
+
+const bootstrapLoading = ref(false);
+
+const handleBootstrapInitialConfig = async () => {
+  bootstrapLoading.value = true;
+  try {
+    const result = await bootstrapInitialApprovalConfig();
+    message(
+      `初始化完成：模板 ${result.data.templates_active}，阈值 ${result.data.thresholds_active}`,
+      { type: "success" }
+    );
+    await loadTemplates();
+  } catch {
+    message("初始化失败", { type: "error" });
+  } finally {
+    bootstrapLoading.value = false;
+  }
+};
 
 const loadTemplates = async () => {
   loading.value = true;
@@ -125,7 +147,16 @@ onMounted(loadTemplates);
         "
       >
         <span>审批模板配置</span>
-        <el-button type="primary" @click="openCreate">新建模板</el-button>
+        <el-space>
+          <el-button
+            :loading="bootstrapLoading"
+            type="warning"
+            @click="handleBootstrapInitialConfig"
+          >
+            初始化默认流程
+          </el-button>
+          <el-button type="primary" @click="openCreate">新建模板</el-button>
+        </el-space>
       </div>
     </template>
 

@@ -1,6 +1,6 @@
-const { loginWithWeComCode, getToken, clearToken } = require("./utils/auth");
+const { loginWithWeComCode, getToken, clearToken, setUserProfile } = require("./utils/auth");
 const { wxLogin } = require("./utils/wx");
-const { getBaseUrl } = require("./utils/config");
+const { getBaseUrl, DEFAULT_REMOTE_BASE_URL } = require("./utils/config");
 
 const shouldAllowLocalFallback = () => {
   const baseUrl = getBaseUrl();
@@ -10,8 +10,9 @@ const shouldAllowLocalFallback = () => {
 App({
   globalData: {
     appName: "HYBC MiniApp",
-    apiBaseUrl: "http://127.0.0.1:8787",
-    sessionReady: false
+    apiBaseUrl: DEFAULT_REMOTE_BASE_URL,
+    sessionReady: false,
+    authError: ""
   },
 
   onLaunch: function () {
@@ -36,15 +37,20 @@ App({
       })
       .then((loginData) => {
         this.globalData.sessionReady = true;
+        this.globalData.authError = "";
         return loginData.accessToken;
       })
       .catch((error) => {
         clearToken();
+        setUserProfile(null);
         this.globalData.sessionReady = false;
+        this.globalData.authError =
+          (error && error.message) || "企业微信登录失败，请稍后重试";
         wx.showToast({
           title: "登录失败",
           icon: "none"
         });
+        wx.reLaunch({ url: "/pages/login/index" });
         throw error;
       });
   }

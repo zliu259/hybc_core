@@ -11,6 +11,7 @@ from runner.executor import TaskExecutor
 from runner.heartbeat import HeartbeatReporter
 from runner.poller import TaskPoller
 from runner.providers.claude import ClaudeProvider
+from runner.providers.openai_provider import OpenAIProvider
 from runner.providers.local_rules import LocalRulesProvider
 
 logging.basicConfig(
@@ -22,15 +23,39 @@ logger = logging.getLogger("task-runner")
 
 
 def build_executor() -> TaskExecutor:
-    """Build TaskExecutor with configured providers."""
     providers = []
 
-    mock_ai_only = os.getenv("MOCK_AI_ONLY", "true").strip().lower() in {
+    mock_ai_only = os.getenv("MOCK_AI_ONLY", "false").strip().lower() in {
         "1",
         "true",
         "yes",
         "on",
     }
+
+    openai_key = os.getenv("OPENAI_API_KEY", "")
+    if openai_key and not mock_ai_only:
+        openai_model = os.getenv("OPENAI_MODEL", "gpt-4.1")
+        openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        openai_org_id = os.getenv("OPENAI_ORG_ID", "")
+        openai_project_id = os.getenv("OPENAI_PROJECT_ID", "")
+        openai_timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
+        openai_retries = int(os.getenv("OPENAI_MAX_RETRIES", "2"))
+        providers.append(
+            OpenAIProvider(
+                api_key=openai_key,
+                model=openai_model,
+                base_url=openai_base_url,
+                organization=openai_org_id or None,
+                project=openai_project_id or None,
+                timeout_seconds=openai_timeout,
+                max_retries=openai_retries,
+            )
+        )
+        logger.info("OpenAI provider enabled (model=%s)", openai_model)
+    elif openai_key and mock_ai_only:
+        logger.info("MOCK_AI_ONLY=true — OpenAI provider skipped")
+    else:
+        logger.warning("OPENAI_API_KEY not set — OpenAI provider disabled")
 
     anthropic_key = os.getenv("ANTHROPIC_API_KEY", "")
     if anthropic_key and not mock_ai_only:

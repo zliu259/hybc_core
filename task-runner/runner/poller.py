@@ -91,10 +91,20 @@ class TaskPoller:
             )
             resp.raise_for_status()
             data = resp.json()
-            task = data.get("data", {}).get("task")
-            if task:
+            payload = data.get("data", {}) if isinstance(data, dict) else {}
+            task = payload.get("task") if isinstance(payload, dict) else None
+            if isinstance(task, dict):
+                provider = payload.get("provider")
+                prompt = payload.get("prompt")
+                if isinstance(provider, dict):
+                    provider_key = provider.get("key")
+                    if isinstance(provider_key, str):
+                        task["_provider_key"] = provider_key
+                    task["_provider"] = provider
+                if isinstance(prompt, dict):
+                    task["prompt"] = prompt
                 logger.info("Received task: %s (type=%s)", task.get("id"), task.get("task_type"))
-            return task if task else None
+            return task if isinstance(task, dict) else None
         except Exception as exc:
             logger.warning("Poll failed: %s", exc)
             return None
@@ -106,7 +116,7 @@ class TaskPoller:
                 "post",
                 f"/api/v1/task/{task_id}/result",
                 json_body=result,
-                extra_headers={"X-Node-Id": self.settings.node_id},
+                extra_headers={"x-node-id": self.settings.node_id},
             )
             resp.raise_for_status()
             logger.info("Result submitted for task %d", task_id)
@@ -120,7 +130,7 @@ class TaskPoller:
                 "post",
                 f"/api/v1/task/{task_id}/result",
                 json_body={"output": "", "metadata": {"error": error}},
-                extra_headers={"X-Node-Id": self.settings.node_id},
+                extra_headers={"x-node-id": self.settings.node_id},
             )
             resp.raise_for_status()
             logger.info("Error submitted for task %d", task_id)
