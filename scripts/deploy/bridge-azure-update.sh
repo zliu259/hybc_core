@@ -23,6 +23,20 @@ fi
 
 "$DEPLOY_ROOT/bridge/.venv/bin/pip" install -r "$DEPLOY_ROOT/bridge/requirements.txt"
 
+if command -v caddy >/dev/null 2>&1; then
+  DOMAIN_VALUE="$(grep -E '^BRIDGE_PUBLIC_DOMAIN=' "$DEPLOY_ROOT/bridge/.env" | tail -n 1 | cut -d '=' -f2-)"
+  if [[ -n "$DOMAIN_VALUE" ]]; then
+    sudo tee /etc/caddy/Caddyfile >/dev/null <<EOF
+${DOMAIN_VALUE} {
+  encode gzip
+  reverse_proxy 127.0.0.1:9001
+}
+EOF
+    sudo systemctl enable caddy
+    sudo systemctl restart caddy
+  fi
+fi
+
 sudo cp "$DEPLOY_ROOT/bridge/systemd/hybc-bridge.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 sudo systemctl daemon-reload
 sudo systemctl restart "$SERVICE_NAME"

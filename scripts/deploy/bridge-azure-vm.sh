@@ -44,7 +44,7 @@ require_cmd git
 
 if [[ "$INSTALL_DEPS" == "true" ]]; then
   as_root apt-get update -y
-  as_root apt-get install -y python3 python3-venv python3-pip git
+  as_root apt-get install -y python3 python3-venv python3-pip git caddy
 fi
 
 require_cmd python3
@@ -78,6 +78,9 @@ fi
 if [[ -n "${BRIDGE_HMAC_SECRET:-}" ]]; then
   as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_HMAC_SECRET' '${BRIDGE_HMAC_SECRET}'"
 fi
+if [[ -n "${BRIDGE_PUBLIC_DOMAIN:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_PUBLIC_DOMAIN' '${BRIDGE_PUBLIC_DOMAIN}'"
+fi
 
 as_root python3 -m venv "$DEPLOY_ROOT/bridge/.venv"
 as_root "$DEPLOY_ROOT/bridge/.venv/bin/pip" install --upgrade pip
@@ -87,6 +90,22 @@ as_root cp "$DEPLOY_ROOT/bridge/systemd/hybc-bridge.service" "/etc/systemd/syste
 as_root systemctl daemon-reload
 as_root systemctl enable "${BRIDGE_SERVICE_NAME}.service"
 as_root systemctl restart "${BRIDGE_SERVICE_NAME}.service"
+
+DOMAIN_VALUE="${BRIDGE_PUBLIC_DOMAIN:-}"
+if [[ -z "$DOMAIN_VALUE" ]]; then
+  DOMAIN_VALUE="$(grep -E '^BRIDGE_PUBLIC_DOMAIN=' "$BRIDGE_ENV_FILE" | tail -n 1 | cut -d '=' -f2-)"
+fi
+
+if command -v caddy >/dev/null 2>&1 && [[ -n "$DOMAIN_VALUE" ]]; then
+  as_root tee /etc/caddy/Caddyfile >/dev/null <<EOF
+${DOMAIN_VALUE} {
+  encode gzip
+  reverse_proxy 127.0.0.1:9001
+}
+EOF
+  as_root systemctl enable caddy
+  as_root systemctl restart caddy
+fi
 
 echo "[bridge-azure] Deployment completed"
 echo "- Service: sudo systemctl status ${BRIDGE_SERVICE_NAME}.service"

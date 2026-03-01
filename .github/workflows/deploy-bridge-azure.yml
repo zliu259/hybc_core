@@ -47,7 +47,11 @@ jobs:
 
             cd "$DEPLOY_ROOT"
             if [ -d "$DEPLOY_ROOT/bridge/.venv" ]; then
-              bash scripts/deploy/bridge-azure-update.sh
+              if command -v caddy >/dev/null 2>&1; then
+                bash scripts/deploy/bridge-azure-update.sh
+              else
+                INSTALL_DEPS=true LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh
+              fi
             else
               if ! INSTALL_DEPS=false LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh; then
                 if [ ! -f /swapfile ]; then
@@ -59,4 +63,10 @@ jobs:
                 fi
                 INSTALL_DEPS=true LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh
               fi
+            fi
+
+            sudo systemctl status hybc-bridge --no-pager
+            curl -fsS --max-time 8 http://127.0.0.1:9001/health
+            if command -v caddy >/dev/null 2>&1; then
+              sudo systemctl status caddy --no-pager
             fi

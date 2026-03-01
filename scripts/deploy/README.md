@@ -19,10 +19,16 @@ bash scripts/deploy/bridge-azure-vm.sh
 
 What it does:
 - installs Python runtime
+- installs Caddy (for HTTPS certificate and reverse proxy)
 - clones/updates repo to `/opt/hybc_core`
 - creates bridge venv and installs dependencies
 - initializes `bridge/.env`
 - installs and starts `hybc-bridge.service`
+
+Default TLS endpoint:
+
+- `BRIDGE_PUBLIC_DOMAIN` (default: `bridge.hybcdg.com`)
+- Caddy reverse-proxies `:443` to `127.0.0.1:9001`
 
 Auto update script on VM:
 
