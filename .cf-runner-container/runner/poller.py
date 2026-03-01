@@ -17,7 +17,10 @@ class TaskPoller:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.base_urls = [settings.api_base_url, *settings.api_base_url_fallbacks]
-        self.headers = {"X-API-Key": settings.api_key}
+        self.headers = {
+            "X-API-Key": settings.api_key,
+            "User-Agent": "HYBC-Runner/1.0 (+https://runner.hybcdg.com)",
+        }
 
     def _request(
         self,

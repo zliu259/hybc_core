@@ -8,8 +8,8 @@ export class RunnerContainer extends Container {
   defaultPort = 8080;
   sleepAfter = "20s";
   envVars = {
-    API_BASE_URL: "http://127.0.0.1:8787",
-    API_KEY: "local-dev-task-api-key",
+    API_BASE_URL: "https://api.hybcdg.com",
+    API_KEY: "40aea6c95e44af22a4fd04f6f0c2cf26",
     NODE_NAME: "cf-container-runner",
     NODE_TYPE: "cloudflare_container",
     POLL_INTERVAL_SECONDS: "3",
