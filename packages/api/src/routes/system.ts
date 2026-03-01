@@ -60,11 +60,11 @@ const checkExternalHealth = async (key: string, url: string): Promise<HealthItem
   try {
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 5000);
-    const resp = await fetch(url, { signal: controller.signal });
+    const resp = await fetch(url, { signal: controller.signal, redirect: "manual" });
     clearTimeout(timer);
     return {
       key,
-      status: resp.ok ? "up" : "down",
+      status: resp.status >= 200 && resp.status < 400 ? "up" : "down",
       checked_at: new Date().toISOString(),
       detail: `http ${resp.status}`,
       latency_ms: Date.now() - started,
