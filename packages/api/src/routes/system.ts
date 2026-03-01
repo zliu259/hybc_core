@@ -1,13 +1,84 @@
 import { Hono } from "hono";
 
 import { apiKeyMiddleware } from "../middleware/api-key";
+import { authMiddleware, type AuthVariables } from "../middleware/auth";
+import { requireRoles } from "../middleware/rbac";
 import type { Env } from "../types/env";
 import { checkApprovalTimeouts } from "../services/approval/engine";
 import { checkTimeouts } from "../services/ai-slot";
 import { createTask } from "../services/ai-slot";
 import { checkNodeHeartbeat, detectMissingLogs, requeueTimedOutTasks } from "../services/cron-jobs";
 
-export const systemRoutes = new Hono<{ Bindings: Env }>();
+export const systemRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+
+const textEncoder = new TextEncoder();
+
+const bytesToHex = (bytes: Uint8Array): string => {
+  return Array.from(bytes)
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+};
+
+const buildBridgeSignature = async (
+  secret: string,
+  timestamp: string,
+  nonce: string,
+  body: string
+): Promise<string> => {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    textEncoder.encode(secret),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+
+  const payload = `${timestamp}.${nonce}.${body}`;
+  const signature = await crypto.subtle.sign("HMAC", key, textEncoder.encode(payload));
+  return bytesToHex(new Uint8Array(signature));
+};
+
+const isBridgeTimestampFresh = (timestamp: string, windowSeconds = 300): boolean => {
+  const value = Number(timestamp);
+  if (!Number.isFinite(value)) {
+    return false;
+  }
+  const now = Math.floor(Date.now() / 1000);
+  return Math.abs(now - value) <= windowSeconds;
+};
+
+type HealthItem = {
+  key: string;
+  status: "up" | "down";
+  checked_at: string;
+  detail?: string;
+  latency_ms?: number;
+};
+
+const checkExternalHealth = async (key: string, url: string): Promise<HealthItem> => {
+  const started = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    const resp = await fetch(url, { signal: controller.signal });
+    clearTimeout(timer);
+    return {
+      key,
+      status: resp.ok ? "up" : "down",
+      checked_at: new Date().toISOString(),
+      detail: `http ${resp.status}`,
+      latency_ms: Date.now() - started,
+    };
+  } catch (error) {
+    return {
+      key,
+      status: "down",
+      checked_at: new Date().toISOString(),
+      detail: error instanceof Error ? error.message : "network error",
+      latency_ms: Date.now() - started,
+    };
+  }
+};
 
 systemRoutes.get("/health", (c) => {
   return c.json({
@@ -15,6 +86,141 @@ systemRoutes.get("/health", (c) => {
     service: "api",
     env: c.env.APP_ENV,
     now: new Date().toISOString()
+  });
+});
+
+systemRoutes.use("/ops/*", authMiddleware, requireRoles(["super_admin", "manager"]));
+
+systemRoutes.get("/ops/status-center", async (c) => {
+  const now = new Date().toISOString();
+  const items: HealthItem[] = [];
+
+  const d1Started = Date.now();
+  try {
+    await c.env.DB.prepare("SELECT 1 as ok").first();
+    items.push({
+      key: "worker_d1",
+      status: "up",
+      checked_at: now,
+      detail: "query ok",
+      latency_ms: Date.now() - d1Started,
+    });
+  } catch (error) {
+    items.push({
+      key: "worker_d1",
+      status: "down",
+      checked_at: now,
+      detail: error instanceof Error ? error.message : "query failed",
+      latency_ms: Date.now() - d1Started,
+    });
+  }
+
+  const kvStarted = Date.now();
+  try {
+    const markerKey = `health:ops:${Date.now()}`;
+    await c.env.KV.put(markerKey, "1", { expirationTtl: 60 });
+    const value = await c.env.KV.get(markerKey);
+    items.push({
+      key: "worker_kv",
+      status: value === "1" ? "up" : "down",
+      checked_at: now,
+      detail: value === "1" ? "read/write ok" : "read mismatch",
+      latency_ms: Date.now() - kvStarted,
+    });
+  } catch (error) {
+    items.push({
+      key: "worker_kv",
+      status: "down",
+      checked_at: now,
+      detail: error instanceof Error ? error.message : "kv failed",
+      latency_ms: Date.now() - kvStarted,
+    });
+  }
+
+  const r2Started = Date.now();
+  try {
+    const r2Key = `health/ops-${Date.now()}.txt`;
+    await c.env.FILES.put(r2Key, "ok", { httpMetadata: { contentType: "text/plain" } });
+    const object = await c.env.FILES.get(r2Key);
+    const text = object ? await object.text() : "";
+    items.push({
+      key: "worker_r2",
+      status: text === "ok" ? "up" : "down",
+      checked_at: now,
+      detail: text === "ok" ? "read/write ok" : "read mismatch",
+      latency_ms: Date.now() - r2Started,
+    });
+  } catch (error) {
+    items.push({
+      key: "worker_r2",
+      status: "down",
+      checked_at: now,
+      detail: error instanceof Error ? error.message : "r2 failed",
+      latency_ms: Date.now() - r2Started,
+    });
+  }
+
+  const queueStarted = Date.now();
+  try {
+    await c.env.EVENT_QUEUE.send({
+      type: "system.ops.health_ping",
+      at: now,
+    });
+    items.push({
+      key: "worker_queue",
+      status: "up",
+      checked_at: now,
+      detail: "enqueue ok",
+      latency_ms: Date.now() - queueStarted,
+    });
+  } catch (error) {
+    items.push({
+      key: "worker_queue",
+      status: "down",
+      checked_at: now,
+      detail: error instanceof Error ? error.message : "enqueue failed",
+      latency_ms: Date.now() - queueStarted,
+    });
+  }
+
+  const bridgeUrl = c.env.BRIDGE_HEALTH_URL || "https://bridge.hybcdg.com/health";
+  const runnerUrl = c.env.RUNNER_HEALTH_URL || "https://runner.hybcdg.com/health";
+  const [bridgeHealth, runnerHealth] = await Promise.all([
+    checkExternalHealth("bridge_service", bridgeUrl),
+    checkExternalHealth("runner_service", runnerUrl),
+  ]);
+  items.push(bridgeHealth, runnerHealth);
+
+  const nodeRows = await c.env.DB.prepare(
+    `SELECT node_id, node_name, status, last_heartbeat_at
+     FROM compute_node
+     ORDER BY last_heartbeat_at DESC
+     LIMIT 20`
+  ).all<{
+    node_id: string;
+    node_name: string;
+    status: string;
+    last_heartbeat_at: string | null;
+  }>();
+
+  const onlineCount = (nodeRows.results ?? []).filter((row) => {
+    if (row.status !== "online" || !row.last_heartbeat_at) {
+      return false;
+    }
+    return Date.now() - new Date(row.last_heartbeat_at).getTime() <= 10 * 60 * 1000;
+  }).length;
+
+  return c.json({
+    success: true,
+    data: {
+      checked_at: now,
+      services: items,
+      runner_nodes: {
+        online_recent_count: onlineCount,
+        sampled_total: (nodeRows.results ?? []).length,
+        latest: nodeRows.results ?? [],
+      },
+    },
   });
 });
 
@@ -258,6 +464,52 @@ systemRoutes.post("/automation/cron/run", apiKeyMiddleware, async (c) => {
   }
 
   return c.json({ success: true, data: result });
+});
+
+systemRoutes.post("/bridge/wecom-ingest", async (c) => {
+  const source = c.req.header("x-bridge-source") ?? "unknown";
+  const timestamp = c.req.header("x-bridge-timestamp") ?? "";
+  const nonce = c.req.header("x-bridge-nonce") ?? "";
+  const signature = c.req.header("x-bridge-signature") ?? "";
+
+  if (!timestamp || !nonce || !signature) {
+    return c.json({ success: false, error: { message: "missing bridge signature headers" } }, 401);
+  }
+
+  if (!isBridgeTimestampFresh(timestamp)) {
+    return c.json({ success: false, error: { message: "stale bridge timestamp" } }, 401);
+  }
+
+  const nonceKey = `bridge:nonce:${nonce}`;
+  const exists = await c.env.KV.get(nonceKey);
+  if (exists) {
+    return c.json({ success: false, error: { message: "replayed bridge nonce" } }, 409);
+  }
+
+  const rawBody = await c.req.text();
+  const sharedSecret = c.env.BRIDGE_HMAC_SECRET || c.env.TASK_API_KEY;
+  const expected = await buildBridgeSignature(sharedSecret, timestamp, nonce, rawBody);
+  if (expected !== signature) {
+    return c.json({ success: false, error: { message: "invalid bridge signature" } }, 401);
+  }
+
+  await c.env.KV.put(nonceKey, "1", { expirationTtl: 600 });
+
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(rawBody);
+  } catch {
+    payload = { raw: rawBody };
+  }
+
+  const now = new Date().toISOString();
+  await c.env.DB.prepare(
+    "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+  )
+    .bind("wecom_bridge_ingest", source, JSON.stringify(payload), now)
+    .run();
+
+  return c.json({ success: true, data: { accepted_at: now } }, 201);
 });
 
 systemRoutes.get("/automation/legacy-finance-compat", apiKeyMiddleware, async (c) => {

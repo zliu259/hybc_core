@@ -48,6 +48,15 @@ export default {
       }
     },
     {
+      path: "/admin/ops-center",
+      name: "AdminOpsCenter",
+      component: () => import("@/views/admin/ops-center.vue"),
+      meta: {
+        title: "服务监控中心",
+        roles: ["super_admin", "manager"]
+      }
+    },
+    {
       path: "/admin/system-base/entity",
       name: "AdminSystemBaseEntity",
       component: () => import("@/views/entity/index.vue"),

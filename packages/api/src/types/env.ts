@@ -8,6 +8,9 @@ export interface Env {
   JWT_SECRET: string;
   UPLOAD_SIGNING_SECRET: string;
   TASK_API_KEY: string;
+  BRIDGE_HMAC_SECRET?: string;
+  BRIDGE_HEALTH_URL?: string;
+  RUNNER_HEALTH_URL?: string;
   WECHAT_CORPID?: string;
   WECHAT_SECRET?: string;
   WECHAT_AGENT_ID?: string;

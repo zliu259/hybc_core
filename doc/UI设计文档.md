@@ -366,7 +366,7 @@
 
 ### 3.8 Sprint 4 重构落地点（2026-02）
 - 超管统一入口：`packages/web/src/router/modules/admin.ts`
-  - 汇聚审批流程设计、阈值规则、AI/Runner、系统底座、企微集成、Raw Ops、Helpdesk
+  - 汇聚审批流程设计、阈值规则、AI/Runner、服务监控中心、系统底座、企微集成、Raw Ops、Helpdesk
   - 所有子页严格 `super_admin` 可见
 - 业务数据全量运维台（左树右表）：`packages/web/src/views/admin/raw-ops.vue`
   - 左侧数据域树（实体/字典/企微成员/企微部门）
@@ -384,6 +384,9 @@
   - `packages/web/src/router/modules/entity.ts`
   - `packages/web/src/router/modules/dict.ts`
   - `packages/web/src/router/modules/wecom.ts`
+- 服务监控中心（前后端健康总览）：`packages/web/src/views/admin/ops-center.vue`
+  - 聚合 Worker D1/KV/R2/Queue、Bridge 服务、Runner 服务状态
+  - 展示最近心跳节点与在线统计
 
 ### 3.9 UI Refactor Plan 补齐项（2026-02）
 - IA 规范路径补齐：
