@@ -13,6 +13,7 @@ import type {
   AiProviderConfig,
   AiRoutingRule,
   AiPromptTemplate,
+  RunnerRuntimeConfigItem,
   ProviderConfigRequest,
   RoutingRuleRequest,
   PromptTemplateRequest
@@ -411,7 +412,82 @@ export const adminRoutes = new Hono<{
   Variables: AuthVariables;
 }>();
 
+const runnerConfigKeyPattern = /^[A-Z0-9_]{2,64}$/;
+
 adminRoutes.use("*", authMiddleware);
+
+adminRoutes.get(
+  "/runner-runtime-config",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM runner_runtime_config ORDER BY config_key ASC"
+    ).all<RunnerRuntimeConfigItem>();
+
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+adminRoutes.post(
+  "/runner-runtime-config",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      items?: Array<{
+        config_key?: string;
+        config_value?: string;
+        is_secret?: boolean | number;
+      }>;
+    };
+
+    if (!Array.isArray(body.items) || body.items.length === 0) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "items is required" }
+        },
+        400
+      );
+    }
+
+    const now = nowIso();
+    for (const item of body.items) {
+      const key = typeof item.config_key === "string" ? item.config_key.trim() : "";
+      const value = typeof item.config_value === "string" ? item.config_value : "";
+      const isSecret = item.is_secret ? 1 : 0;
+
+      if (!runnerConfigKeyPattern.test(key)) {
+        return c.json(
+          {
+            success: false,
+            error: { message: `invalid config_key: ${key}` }
+          },
+          400
+        );
+      }
+
+      await c.env.DB.prepare(
+        `INSERT INTO runner_runtime_config
+          (config_key, config_value, is_secret, updated_by, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(config_key) DO UPDATE SET
+           config_value = excluded.config_value,
+           is_secret = excluded.is_secret,
+           updated_by = excluded.updated_by,
+           updated_at = excluded.updated_at`
+      )
+        .bind(key, value, isSecret, auth.sub, now, now)
+        .run();
+    }
+
+    const rows = await c.env.DB.prepare(
+      "SELECT * FROM runner_runtime_config ORDER BY config_key ASC"
+    ).all<RunnerRuntimeConfigItem>();
+
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
 
 // ─── Approval Template CRUD ──────────
 

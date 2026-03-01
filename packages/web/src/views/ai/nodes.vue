@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { message } from "@/utils/message";
 import {
   listComputeNodes,
   listTaskQueue,
   type ComputeNode,
   type TaskQueueItem
 } from "@/api/task";
+import {
+  listRunnerRuntimeConfig,
+  upsertRunnerRuntimeConfig
+} from "@/api/admin";
 
 defineOptions({ name: "ComputeNodes" });
 
@@ -17,6 +22,17 @@ const queuePage = ref(1);
 const queuePageSize = ref(20);
 const queueTotal = ref(0);
 const queueFilters = ref({ status: "", task_type: "" });
+
+const runtimeLoading = ref(false);
+const runtimeSaving = ref(false);
+const runtimeForm = ref({
+  OPENAI_API_KEY: "",
+  OPENAI_MODEL: "gpt-4.1",
+  OPENAI_BASE_URL: "https://api.openai.com/v1",
+  ANTHROPIC_API_KEY: "",
+  ANTHROPIC_MODEL: "claude-sonnet-4-20250514",
+  MOCK_AI_ONLY: "false"
+});
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -108,9 +124,70 @@ const loadQueue = async () => {
   }
 };
 
+const loadRuntimeConfig = async () => {
+  runtimeLoading.value = true;
+  try {
+    const result = await listRunnerRuntimeConfig();
+    const map = new Map(
+      result.data.map(item => [item.config_key, item.config_value])
+    );
+    runtimeForm.value = {
+      OPENAI_API_KEY: map.get("OPENAI_API_KEY") ?? "",
+      OPENAI_MODEL: map.get("OPENAI_MODEL") ?? "gpt-4.1",
+      OPENAI_BASE_URL: map.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
+      ANTHROPIC_API_KEY: map.get("ANTHROPIC_API_KEY") ?? "",
+      ANTHROPIC_MODEL:
+        map.get("ANTHROPIC_MODEL") ?? "claude-sonnet-4-20250514",
+      MOCK_AI_ONLY: map.get("MOCK_AI_ONLY") ?? "false"
+    };
+  } finally {
+    runtimeLoading.value = false;
+  }
+};
+
+const saveRuntimeConfig = async () => {
+  runtimeSaving.value = true;
+  try {
+    await upsertRunnerRuntimeConfig([
+      {
+        config_key: "OPENAI_API_KEY",
+        config_value: runtimeForm.value.OPENAI_API_KEY,
+        is_secret: true
+      },
+      {
+        config_key: "OPENAI_MODEL",
+        config_value: runtimeForm.value.OPENAI_MODEL
+      },
+      {
+        config_key: "OPENAI_BASE_URL",
+        config_value: runtimeForm.value.OPENAI_BASE_URL
+      },
+      {
+        config_key: "ANTHROPIC_API_KEY",
+        config_value: runtimeForm.value.ANTHROPIC_API_KEY,
+        is_secret: true
+      },
+      {
+        config_key: "ANTHROPIC_MODEL",
+        config_value: runtimeForm.value.ANTHROPIC_MODEL
+      },
+      {
+        config_key: "MOCK_AI_ONLY",
+        config_value: runtimeForm.value.MOCK_AI_ONLY
+      }
+    ]);
+    message("Runner运行参数已保存", { type: "success" });
+  } catch {
+    message("保存失败", { type: "error" });
+  } finally {
+    runtimeSaving.value = false;
+  }
+};
+
 onMounted(() => {
   loadNodes();
   loadQueue();
+  loadRuntimeConfig();
   refreshTimer = setInterval(loadNodes, 30000);
 });
 
@@ -120,6 +197,67 @@ onUnmounted(() => {
 </script>
 
 <template>
+  <el-card shadow="never" header="Runner运行参数" style="margin-bottom: 16px">
+    <el-form v-loading="runtimeLoading" label-width="150px">
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="OPENAI_API_KEY">
+            <el-input
+              v-model="runtimeForm.OPENAI_API_KEY"
+              type="password"
+              show-password
+              placeholder="sk-..."
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="OPENAI_MODEL">
+            <el-input v-model="runtimeForm.OPENAI_MODEL" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="OPENAI_BASE_URL">
+            <el-input v-model="runtimeForm.OPENAI_BASE_URL" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="ANTHROPIC_API_KEY">
+            <el-input
+              v-model="runtimeForm.ANTHROPIC_API_KEY"
+              type="password"
+              show-password
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="ANTHROPIC_MODEL">
+            <el-input v-model="runtimeForm.ANTHROPIC_MODEL" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="MOCK_AI_ONLY">
+            <el-select v-model="runtimeForm.MOCK_AI_ONLY" style="width: 100%">
+              <el-option label="false" value="false" />
+              <el-option label="true" value="true" />
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
+
+      <el-form-item>
+        <el-button type="primary" :loading="runtimeSaving" @click="saveRuntimeConfig"
+          >保存运行参数</el-button
+        >
+      </el-form-item>
+    </el-form>
+  </el-card>
+
   <el-card shadow="never" header="计算节点" style="margin-bottom: 16px">
     <el-table v-loading="nodesLoading" :data="nodes" style="width: 100%">
       <el-table-column

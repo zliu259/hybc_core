@@ -13,6 +13,20 @@ import { createTask, completeTask, resolvePrompt } from "./ai-slot";
 
 const nowIso = () => new Date().toISOString();
 
+const loadRunnerRuntimeConfig = async (env: Env): Promise<Record<string, string>> => {
+  const rows = await env.DB.prepare(
+    "SELECT config_key, config_value FROM runner_runtime_config"
+  )
+    .all<{ config_key: string; config_value: string }>()
+    .catch(() => ({ results: [] as Array<{ config_key: string; config_value: string }> }));
+
+  const result: Record<string, string> = {};
+  for (const row of rows.results ?? []) {
+    result[row.config_key] = row.config_value;
+  }
+  return result;
+};
+
 // ─── Enqueue ──────────
 
 /**
@@ -76,6 +90,7 @@ export const pollForNode = async (
 
   // Resolve provider config
   let providerInfo: TaskPollResponse["provider"] = undefined;
+  const runnerRuntime = await loadRunnerRuntimeConfig(env);
   if (task.provider_id) {
     const provider = await env.DB.prepare(
       "SELECT * FROM ai_provider_config WHERE id = ?"
@@ -97,6 +112,28 @@ export const pollForNode = async (
         model: provider.model_id ?? "",
         config
       };
+
+      if (provider.provider_key === "openai") {
+        if (runnerRuntime.OPENAI_API_KEY) {
+          providerInfo.config.api_key = runnerRuntime.OPENAI_API_KEY;
+        }
+        if (runnerRuntime.OPENAI_BASE_URL) {
+          providerInfo.endpoint = runnerRuntime.OPENAI_BASE_URL;
+          providerInfo.config.base_url = runnerRuntime.OPENAI_BASE_URL;
+        }
+        if (runnerRuntime.OPENAI_MODEL) {
+          providerInfo.model = runnerRuntime.OPENAI_MODEL;
+        }
+      }
+
+      if (provider.provider_key === "claude") {
+        if (runnerRuntime.ANTHROPIC_API_KEY) {
+          providerInfo.config.api_key = runnerRuntime.ANTHROPIC_API_KEY;
+        }
+        if (runnerRuntime.ANTHROPIC_MODEL) {
+          providerInfo.model = runnerRuntime.ANTHROPIC_MODEL;
+        }
+      }
     }
   }
 
@@ -121,7 +158,7 @@ export const pollForNode = async (
     prompt = await resolvePrompt(env, rule.prompt_template_id, payload);
   }
 
-  return { task, provider: providerInfo, prompt };
+  return { task, provider: providerInfo, runner_runtime: runnerRuntime, prompt };
 };
 
 // ─── Result Submission ──────────

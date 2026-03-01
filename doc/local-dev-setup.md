@@ -9,7 +9,6 @@
 - R2 本地对象存储绑定
 - PureAdmin Thin 前端本地调试
 - Python task-runner 轮询联调
-- n8n 本地容器启动
 - 企业微信小程序目录与依赖
 
 ## Phase 0 完成状态
@@ -23,7 +22,6 @@
 - `packages/api`
 - `packages/web`
 - `task-runner`
-- `n8n`
 - `packages/miniapp`
 
 ## 文档指向
@@ -203,15 +201,11 @@ docker-compose logs -f
 - `API_KEY=local-dev-task-api-key`
 - `CAPABILITIES=contract_review,payment_risk_assessment,approval_ai_gate,...`
 
-## n8n
+## 自动化与定时任务（无 n8n）
 
-```bash
-cd n8n
-cp .env.example .env
-docker-compose up -d
-```
-
-默认地址：`http://localhost:5678`
+- 统一通过 Cloudflare Worker Cron + `task-runner` 执行自动化任务。
+- 本地可通过 API 触发自动化入口：`POST /api/v1/system/automation/cron/run`（需 `X-API-Key`）。
+- AI 相关任务仍通过 `task_queue` 分发并由 `task-runner` 轮询执行。
 
 ## 单测命令（当前与后续建议）
 

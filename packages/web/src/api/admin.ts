@@ -67,6 +67,16 @@ export type AiPromptTemplate = {
   updated_at: string;
 };
 
+export type RunnerRuntimeConfigItem = {
+  id: number;
+  config_key: string;
+  config_value: string;
+  is_secret: 0 | 1;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export const listApprovalTemplates = (params?: { biz_type?: string }) => {
   return http.request<{ success: boolean; data: ApprovalTemplate[] }>(
     "get",
@@ -339,5 +349,26 @@ export const deleteAiPromptTemplate = (id: number) => {
   return http.request<{ success: boolean }>(
     "delete",
     `/api/v1/admin/ai-prompt/${id}`
+  );
+};
+
+export const listRunnerRuntimeConfig = () => {
+  return http.request<{ success: boolean; data: RunnerRuntimeConfigItem[] }>(
+    "get",
+    "/api/v1/admin/runner-runtime-config"
+  );
+};
+
+export const upsertRunnerRuntimeConfig = (
+  items: Array<{
+    config_key: string;
+    config_value: string;
+    is_secret?: boolean;
+  }>
+) => {
+  return http.request<{ success: boolean; data: RunnerRuntimeConfigItem[] }>(
+    "post",
+    "/api/v1/admin/runner-runtime-config",
+    { data: { items } }
   );
 };

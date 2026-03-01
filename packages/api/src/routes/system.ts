@@ -172,7 +172,7 @@ systemRoutes.post("/automation/project-init", apiKeyMiddleware, async (c) => {
   )
     .bind(
       "project_init",
-      "n8n",
+      "runner_automation",
       JSON.stringify({ project_id: body.project_id ?? null, project_name: body.project_name ?? null, created_at: now }),
       now
     )

@@ -68,7 +68,7 @@
 - 审批模板配置：`packages/web/src/views/approval/template-config.vue`
 - 金额阈值配置：`packages/web/src/views/approval/threshold-config.vue`
 - AI配置管理：`packages/web/src/views/ai/config.vue`
-- 计算节点监控：`packages/web/src/views/ai/nodes.vue`
+- 计算节点监控与Runner运行参数：`packages/web/src/views/ai/nodes.vue`
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 资产运维看板：`packages/web/src/views/asset/ledger.vue`
 - 资产详情：`packages/web/src/views/asset/detail.vue`

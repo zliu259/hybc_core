@@ -96,6 +96,7 @@ class TaskPoller:
             if isinstance(task, dict):
                 provider = payload.get("provider")
                 prompt = payload.get("prompt")
+                runner_runtime = payload.get("runner_runtime")
                 if isinstance(provider, dict):
                     provider_key = provider.get("key")
                     if isinstance(provider_key, str):
@@ -103,6 +104,8 @@ class TaskPoller:
                     task["_provider"] = provider
                 if isinstance(prompt, dict):
                     task["prompt"] = prompt
+                if isinstance(runner_runtime, dict):
+                    task["_runner_runtime"] = runner_runtime
                 logger.info("Received task: %s (type=%s)", task.get("id"), task.get("task_type"))
             return task if isinstance(task, dict) else None
         except Exception as exc:

@@ -163,10 +163,21 @@ export interface TaskPollResponse {
     model: string;
     config: Record<string, unknown>;
   };
+  runner_runtime?: Record<string, string>;
   prompt?: {
     system: string;
     user: string;
   } | null;
+}
+
+export interface RunnerRuntimeConfigItem {
+  id: number;
+  config_key: string;
+  config_value: string;
+  is_secret: 0 | 1;
+  updated_by: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface TaskResultSubmission {
