@@ -6,6 +6,7 @@ on:
     branches: [main]
     paths:
       - "bridge/**"
+      - "scripts/deploy/bridge-azure-vm.sh"
       - "scripts/deploy/bridge-azure-update.sh"
       - ".github/workflows/deploy-bridge-azure.yml"
 
@@ -23,5 +24,13 @@ jobs:
             export DEPLOY_ROOT=/opt/hybc_core
             export GIT_BRANCH=main
             export SERVICE_NAME=hybc-bridge
-            cd /opt/hybc_core
-            bash scripts/deploy/bridge-azure-update.sh
+            export GIT_REPO_URL="https://github.com/${{ github.repository }}.git"
+
+            if [ -d "$DEPLOY_ROOT/.git" ]; then
+              cd "$DEPLOY_ROOT"
+              bash scripts/deploy/bridge-azure-update.sh
+            else
+              git clone --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEPLOY_ROOT"
+              cd "$DEPLOY_ROOT"
+              GIT_REPO_URL="$GIT_REPO_URL" GIT_BRANCH="$GIT_BRANCH" bash scripts/deploy/bridge-azure-vm.sh
+            fi
