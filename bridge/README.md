@@ -1,0 +1,89 @@
+# Azure Bridge (WeCom)
+
+This service runs on Azure VM with fixed public IP and bridges WeCom callbacks to Cloudflare Worker.
+
+## Scope
+
+- Current phase only covers WeCom bridge capability.
+- CosmosDB and ML data pipeline are deferred to future phases.
+
+## Local run
+
+```bash
+cd bridge
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --host 0.0.0.0 --port 9001
+```
+
+## API Contract
+
+### 1) WeCom callback verify
+
+- `GET /wecom/callback`
+- Query params:
+  - `msg_signature`
+  - `timestamp`
+  - `nonce`
+  - `echostr`
+- Behavior:
+  - Verifies signature with `WECOM_VERIFY_TOKEN`
+  - Returns `echostr` as plain text when valid
+
+### 2) WeCom callback ingest
+
+- `POST /wecom/callback`
+- Query params:
+  - `msg_signature`
+  - `timestamp`
+  - `nonce`
+- Body:
+  - Raw WeCom payload (XML/JSON)
+- Behavior:
+  - Verifies WeCom signature
+  - Wraps callback into normalized JSON payload with `trace_id`
+  - Forwards payload to Worker ingest endpoint
+
+### 3) Health check
+
+- `GET /health`
+- Returns service heartbeat JSON
+
+## Bridge -> Worker Signing Contract
+
+Bridge sends JSON body to `WORKER_INGEST_URL` with headers:
+
+- `X-Bridge-Source`: logical source tag
+- `X-Bridge-Timestamp`: unix timestamp (seconds)
+- `X-Bridge-Nonce`: random UUID hex
+- `X-Bridge-Signature`: hex(HMAC-SHA256(secret, "{timestamp}.{nonce}." + raw_body))
+
+Worker verifies:
+
+1. `timestamp` freshness window (default 5 minutes)
+2. nonce replay (KV cache)
+3. HMAC signature equality
+
+## Required env variables
+
+- `WECOM_VERIFY_TOKEN`
+- `WORKER_INGEST_URL`
+- `BRIDGE_HMAC_SECRET`
+
+Optional:
+
+- `BRIDGE_SOURCE`
+- `WORKER_TIMEOUT_SECONDS`
+- `WORKER_MAX_RETRIES`
+
+## Azure deployment notes
+
+Use systemd unit: `bridge/systemd/hybc-bridge.service`.
+
+Service file assumes deployment path:
+
+- code: `/opt/hybc_core/bridge`
+- venv: `/opt/hybc_core/bridge/.venv`
+- env file: `/opt/hybc_core/bridge/.env`

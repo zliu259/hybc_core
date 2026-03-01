@@ -11,9 +11,12 @@
 - 财务旧数据结构映射（fin_data）：`doc/legacy_data/SCHEMA_MAP.md`
 - 财务旧数据迁移检查清单（fin_data）：`doc/legacy_data/MIGRATION_CHECKLIST.md`
 - Phase 8 本地与正式部署：`doc/Phase8本地部署与正式部署.md`
+- Azure 企业微信桥接设计：`bridge/README.md`
 
 ## 当前执行主线（2026-02）
 - Phase 12（Passkey + 项目化视图）：`doc/开发计划.md`
+- Phase 13（Azure 企业微信桥接）：`doc/开发计划.md`
+- Phase 14（CosmosDB + 机器学习，后续规划）：`doc/开发计划.md`
 - Web 项目工作区 IA 设计：`doc/UI设计文档.md`（3.4）
 - 小程序项目模块重构约束：`doc/UI设计文档.md`（4.4）
 - WeCom-first + Passkey 安全边界：`doc/CLAUDE.md`（认证模型章节）

@@ -2,6 +2,43 @@
 
 This directory contains runner-only deployment scripts (no n8n dependency).
 
+## 0) Azure WeCom Bridge
+
+Script: `scripts/deploy/bridge-azure-vm.sh`
+
+Example:
+
+```bash
+GIT_REPO_URL="https://github.com/<org>/hybc_core.git" \
+GIT_BRANCH="main" \
+WECOM_VERIFY_TOKEN="<wecom-token>" \
+WORKER_INGEST_URL="https://api.hybcdg.com/api/v1/system/bridge/wecom-ingest" \
+BRIDGE_HMAC_SECRET="<shared-secret>" \
+bash scripts/deploy/bridge-azure-vm.sh
+```
+
+What it does:
+- installs Python runtime
+- clones/updates repo to `/opt/hybc_core`
+- creates bridge venv and installs dependencies
+- initializes `bridge/.env`
+- installs and starts `hybc-bridge.service`
+
+Auto update script on VM:
+
+```bash
+bash scripts/deploy/bridge-azure-update.sh
+```
+
+CI auto deploy workflow:
+
+- File: `.github/workflows/deploy-bridge-azure.yml`
+- Trigger: push to `main` when `bridge/**` changes, or manual dispatch.
+- Required GitHub secrets:
+  - `AZURE_BRIDGE_HOST`
+  - `AZURE_BRIDGE_USER`
+  - `AZURE_BRIDGE_SSH_KEY`
+
 ## 1) Azure VM
 
 Script: `scripts/deploy/runner-azure-vm.sh`

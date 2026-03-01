@@ -1,0 +1,27 @@
+name: Deploy Azure Bridge
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "bridge/**"
+      - "scripts/deploy/bridge-azure-update.sh"
+      - ".github/workflows/deploy-bridge-azure.yml"
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy bridge on Azure VM over SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.AZURE_BRIDGE_HOST }}
+          username: ${{ secrets.AZURE_BRIDGE_USER }}
+          key: ${{ secrets.AZURE_BRIDGE_SSH_KEY }}
+          script: |
+            export DEPLOY_ROOT=/opt/hybc_core
+            export GIT_BRANCH=main
+            export SERVICE_NAME=hybc-bridge
+            cd /opt/hybc_core
+            bash scripts/deploy/bridge-azure-update.sh
