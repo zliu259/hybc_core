@@ -14,6 +14,18 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Upload bridge bundle to Azure VM
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.AZURE_BRIDGE_HOST }}
+          username: ${{ secrets.AZURE_BRIDGE_USER }}
+          key: ${{ secrets.AZURE_BRIDGE_SSH_KEY }}
+          source: "bridge,scripts/deploy/bridge-azure-vm.sh,scripts/deploy/bridge-azure-update.sh"
+          target: "~/hybc_core_ci"
+
       - name: Deploy bridge on Azure VM over SSH
         uses: appleboy/ssh-action@v1.2.0
         with:
@@ -24,16 +36,14 @@ jobs:
             export DEPLOY_ROOT=/opt/hybc_core
             export GIT_BRANCH=main
             export SERVICE_NAME=hybc-bridge
-            export GIT_REPO_URL="https://github.com/${{ github.repository }}.git"
 
             sudo mkdir -p "$DEPLOY_ROOT"
             sudo chown -R "$USER":"$USER" "$DEPLOY_ROOT"
+            mkdir -p "$DEPLOY_ROOT/scripts/deploy"
+            cp -R "$HOME/hybc_core_ci/bridge" "$DEPLOY_ROOT/"
+            cp "$HOME/hybc_core_ci/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/"
+            cp "$HOME/hybc_core_ci/scripts/deploy/bridge-azure-update.sh" "$DEPLOY_ROOT/scripts/deploy/"
+            chmod +x "$DEPLOY_ROOT/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/bridge-azure-update.sh"
 
-            if [ -d "$DEPLOY_ROOT/.git" ]; then
-              cd "$DEPLOY_ROOT"
-              bash scripts/deploy/bridge-azure-update.sh
-            else
-              git clone --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEPLOY_ROOT"
-              cd "$DEPLOY_ROOT"
-              GIT_REPO_URL="$GIT_REPO_URL" GIT_BRANCH="$GIT_BRANCH" bash scripts/deploy/bridge-azure-vm.sh
-            fi
+            cd "$DEPLOY_ROOT"
+            LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh

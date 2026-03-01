@@ -32,8 +32,9 @@ GIT_BRANCH="${GIT_BRANCH:-main}"
 DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/hybc_core}"
 BRIDGE_ENV_FILE="${BRIDGE_ENV_FILE:-$DEPLOY_ROOT/bridge/.env}"
 BRIDGE_SERVICE_NAME="${BRIDGE_SERVICE_NAME:-hybc-bridge}"
+LOCAL_BUNDLE="${LOCAL_BUNDLE:-false}"
 
-if [[ -z "$GIT_REPO_URL" ]]; then
+if [[ "$LOCAL_BUNDLE" != "true" && -z "$GIT_REPO_URL" ]]; then
   echo "[bridge-azure] GIT_REPO_URL is required"
   exit 1
 fi
@@ -43,13 +44,20 @@ require_cmd git
 as_root apt-get update -y
 as_root apt-get install -y python3 python3-venv python3-pip git
 
-if [[ ! -d "$DEPLOY_ROOT/.git" ]]; then
-  as_root mkdir -p "$(dirname "$DEPLOY_ROOT")"
-  as_root git clone --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEPLOY_ROOT"
+if [[ "$LOCAL_BUNDLE" == "true" ]]; then
+  if [[ ! -d "$DEPLOY_ROOT/bridge" ]]; then
+    echo "[bridge-azure] LOCAL_BUNDLE=true but $DEPLOY_ROOT/bridge not found" >&2
+    exit 1
+  fi
 else
-  as_root git -C "$DEPLOY_ROOT" fetch --all --prune
-  as_root git -C "$DEPLOY_ROOT" checkout "$GIT_BRANCH"
-  as_root git -C "$DEPLOY_ROOT" pull --ff-only origin "$GIT_BRANCH"
+  if [[ ! -d "$DEPLOY_ROOT/.git" ]]; then
+    as_root mkdir -p "$(dirname "$DEPLOY_ROOT")"
+    as_root git clone --branch "$GIT_BRANCH" "$GIT_REPO_URL" "$DEPLOY_ROOT"
+  else
+    as_root git -C "$DEPLOY_ROOT" fetch --all --prune
+    as_root git -C "$DEPLOY_ROOT" checkout "$GIT_BRANCH"
+    as_root git -C "$DEPLOY_ROOT" pull --ff-only origin "$GIT_BRANCH"
+  fi
 fi
 
 if [[ ! -f "$BRIDGE_ENV_FILE" ]]; then

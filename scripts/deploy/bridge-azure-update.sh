@@ -6,13 +6,20 @@ GIT_BRANCH="${GIT_BRANCH:-main}"
 SERVICE_NAME="${SERVICE_NAME:-hybc-bridge}"
 
 if [[ ! -d "$DEPLOY_ROOT/.git" ]]; then
-  echo "[bridge-update] Missing git repository at $DEPLOY_ROOT" >&2
-  exit 1
+  echo "[bridge-update] No git repo detected, using local bundle mode"
+else
+  git -C "$DEPLOY_ROOT" fetch --all --prune
+  git -C "$DEPLOY_ROOT" checkout "$GIT_BRANCH"
+  git -C "$DEPLOY_ROOT" pull --ff-only origin "$GIT_BRANCH"
 fi
 
-git -C "$DEPLOY_ROOT" fetch --all --prune
-git -C "$DEPLOY_ROOT" checkout "$GIT_BRANCH"
-git -C "$DEPLOY_ROOT" pull --ff-only origin "$GIT_BRANCH"
+if [[ ! -f "$DEPLOY_ROOT/bridge/.env" ]]; then
+  cp "$DEPLOY_ROOT/bridge/.env.example" "$DEPLOY_ROOT/bridge/.env"
+fi
+
+if [[ ! -d "$DEPLOY_ROOT/bridge/.venv" ]]; then
+  python3 -m venv "$DEPLOY_ROOT/bridge/.venv"
+fi
 
 "$DEPLOY_ROOT/bridge/.venv/bin/pip" install -r "$DEPLOY_ROOT/bridge/requirements.txt"
 
