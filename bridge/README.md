@@ -46,6 +46,18 @@ uvicorn app.main:app --host 0.0.0.0 --port 9001
   - Wraps callback into normalized JSON payload with `trace_id`
   - Forwards payload to Worker ingest endpoint
 
+### 2.1) WeCom outbound proxy (for Worker egress pinning)
+
+- `POST /wecom/proxy`
+- Request body:
+  - `{ "url": "https://qyapi.weixin.qq.com/cgi-bin/..." }`
+- Header:
+  - `X-Bridge-Token: <BRIDGE_PROXY_TOKEN>` (enforced when configured)
+- Behavior:
+  - Only allows `https://qyapi.weixin.qq.com/cgi-bin/*`
+  - Executes outbound request from Azure bridge public IP
+  - Returns upstream response body/status back to Worker
+
 ### 3) Health check
 
 - `GET /health`
