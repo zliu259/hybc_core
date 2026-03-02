@@ -24,5 +24,6 @@ class Settings:
     )
     bridge_hmac_secret: str = os.getenv("BRIDGE_HMAC_SECRET", "")
     bridge_source: str = os.getenv("BRIDGE_SOURCE", "azure_wecom_bridge")
+    bridge_proxy_token: str = os.getenv("BRIDGE_PROXY_TOKEN", "")
     worker_timeout_seconds: int = _int_env("WORKER_TIMEOUT_SECONDS", 10)
     worker_max_retries: int = _int_env("WORKER_MAX_RETRIES", 3)

@@ -5,6 +5,7 @@ import asyncio
 import time
 import uuid
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request, Response
@@ -97,3 +98,31 @@ async def wecom_callback(request: Request) -> dict[str, Any]:
             await asyncio.sleep(0.5 * (attempt + 1))
 
     raise HTTPException(status_code=502, detail=f"forward failed: {last_error}")
+
+
+@app.post("/wecom/proxy")
+async def wecom_proxy(request: Request) -> Response:
+    token_required = bool(settings.bridge_proxy_token and settings.bridge_proxy_token != "replace-me")
+    if token_required:
+        token = request.headers.get("x-bridge-token", "")
+        if token != settings.bridge_proxy_token:
+            raise HTTPException(status_code=401, detail="invalid bridge proxy token")
+
+    body = await request.json()
+    target_url = str(body.get("url") or "")
+    if not target_url:
+        raise HTTPException(status_code=400, detail="missing url")
+
+    parsed = urlparse(target_url)
+    if parsed.scheme != "https" or parsed.netloc != "qyapi.weixin.qq.com":
+        raise HTTPException(status_code=400, detail="target host not allowed")
+    if not parsed.path.startswith("/cgi-bin/"):
+        raise HTTPException(status_code=400, detail="target path not allowed")
+
+    async with httpx.AsyncClient(timeout=settings.worker_timeout_seconds) as client:
+        upstream = await client.get(target_url, headers={"User-Agent": "HYBC-Azure-Bridge/0.1"})
+        return Response(
+            content=upstream.text,
+            status_code=upstream.status_code,
+            media_type=upstream.headers.get("content-type", "application/json"),
+        )

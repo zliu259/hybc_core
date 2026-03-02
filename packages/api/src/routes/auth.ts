@@ -122,6 +122,26 @@ const weComErrorMessage = (errmsg: string | undefined, fallback: string): string
   return errmsg;
 };
 
+const fetchWeComJson = async <T>(env: Env, url: string): Promise<T> => {
+  if (env.WECHAT_BRIDGE_BASE_URL) {
+    const headers: Record<string, string> = {
+      "content-type": "application/json",
+    };
+    if (env.WECHAT_BRIDGE_TOKEN) {
+      headers["x-bridge-token"] = env.WECHAT_BRIDGE_TOKEN;
+    }
+    const resp = await fetch(`${env.WECHAT_BRIDGE_BASE_URL.replace(/\/$/, "")}/wecom/proxy`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ url }),
+    });
+    return (await resp.json()) as T;
+  }
+
+  const resp = await fetch(url);
+  return (await resp.json()) as T;
+};
+
 const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
 const CORP_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:corp:v1";
 const AGENT_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:agent:v1";
@@ -173,11 +193,10 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
     throw new Error("WECHAT_CORPID/WECHAT_SECRET is not configured");
   }
 
-  const tokenResponse = await fetch(
+  const tokenJson = await fetchWeComJson<WeComTokenResponse>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(env.WECHAT_CORPID)}&corpsecret=${encodeURIComponent(env.WECHAT_SECRET)}`
   );
-
-  const tokenJson = (await tokenResponse.json()) as WeComTokenResponse;
   if (tokenJson.errcode !== 0 || !tokenJson.access_token) {
     throw new Error(
       weComErrorMessage(tokenJson.errmsg, "Failed to get WeCom access_token")
@@ -199,10 +218,10 @@ const fetchCorpJsApiTicket = async (env: Env): Promise<string> => {
   if (cached) return cached;
 
   const accessToken = await fetchWeComAccessToken(env);
-  const response = await fetch(
+  const json = await fetchWeComJson<WeComTicketResponse>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/get_jsapi_ticket?access_token=${encodeURIComponent(accessToken)}`
   );
-  const json = (await response.json()) as WeComTicketResponse;
 
   if (json.errcode !== 0 || !json.ticket) {
     throw new Error(
@@ -224,10 +243,10 @@ const fetchAgentJsApiTicket = async (env: Env): Promise<string> => {
   if (cached) return cached;
 
   const accessToken = await fetchWeComAccessToken(env);
-  const response = await fetch(
+  const json = await fetchWeComJson<WeComTicketResponse>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/ticket/get?access_token=${encodeURIComponent(accessToken)}&type=agent_config`
   );
-  const json = (await response.json()) as WeComTicketResponse;
 
   if (json.errcode !== 0 || !json.ticket) {
     throw new Error(
@@ -253,21 +272,21 @@ const normalizeSignUrl = (input: string): string => {
 };
 
 const fetchWeComUserId = async (
+  env: Env,
   accessToken: string,
   code: string
 ): Promise<string> => {
-  const userResponse = await fetch(
-    `https://qyapi.weixin.qq.com/cgi-bin/auth/getuserinfo?access_token=${encodeURIComponent(accessToken)}&code=${encodeURIComponent(code)}`
-  );
-
-  const userJson = (await userResponse.json()) as {
+  const userJson = await fetchWeComJson<{
     errcode?: number;
     errmsg?: string;
     UserId?: string;
     userid?: string;
     OpenId?: string;
     openid?: string;
-  };
+  }>(
+    env,
+    `https://qyapi.weixin.qq.com/cgi-bin/auth/getuserinfo?access_token=${encodeURIComponent(accessToken)}&code=${encodeURIComponent(code)}`
+  );
 
   if (userJson.errcode !== 0) {
     throw new Error(
@@ -288,14 +307,14 @@ const fetchWeComUserId = async (
 };
 
 const fetchWeComMiniProgramUserId = async (
+  env: Env,
   accessToken: string,
   code: string
 ): Promise<string> => {
-  const response = await fetch(
+  const json = await fetchWeComJson<WeComMiniProgramSessionResponse>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/miniprogram/jscode2session?access_token=${encodeURIComponent(accessToken)}&js_code=${encodeURIComponent(code)}&grant_type=authorization_code`
   );
-
-  const json = (await response.json()) as WeComMiniProgramSessionResponse;
   if (json.errcode !== 0) {
     throw new Error(
       weComErrorMessage(json.errmsg, "Failed to exchange WeCom miniapp code")
@@ -328,7 +347,7 @@ const buildIdentityByCode = async (
 
   const tryMiniProgram = async () => {
     try {
-      userId = await fetchWeComMiniProgramUserId(accessToken, code);
+      userId = await fetchWeComMiniProgramUserId(env, accessToken, code);
     } catch (error) {
       if (error instanceof Error) errors.push(error.message);
     }
@@ -336,7 +355,7 @@ const buildIdentityByCode = async (
 
   const tryGetUserInfo = async () => {
     try {
-      userId = await fetchWeComUserId(accessToken, code);
+      userId = await fetchWeComUserId(env, accessToken, code);
     } catch (error) {
       if (error instanceof Error) errors.push(error.message);
     }
@@ -354,25 +373,24 @@ const buildIdentityByCode = async (
     throw new Error(errors[0] ?? "Failed to resolve WeCom user from login code");
   }
 
-  const profile = await fetchWeComProfile(accessToken, userId);
+  const profile = await fetchWeComProfile(env, accessToken, userId);
   return {
     ...profile,
     role: await resolveRoleByWeComTags(env, accessToken, userId)
   };
 };
 
-const fetchWeComProfile = async (accessToken: string, userId: string) => {
-  const profileResponse = await fetch(
-    `https://qyapi.weixin.qq.com/cgi-bin/user/get?access_token=${encodeURIComponent(accessToken)}&userid=${encodeURIComponent(userId)}`
-  );
-
-  const profileJson = (await profileResponse.json()) as {
+const fetchWeComProfile = async (env: Env, accessToken: string, userId: string) => {
+  const profileJson = await fetchWeComJson<{
     errcode?: number;
     errmsg?: string;
     userid?: string;
     name?: string;
     avatar?: string;
-  };
+  }>(
+    env,
+    `https://qyapi.weixin.qq.com/cgi-bin/user/get?access_token=${encodeURIComponent(accessToken)}&userid=${encodeURIComponent(userId)}`
+  );
 
   if (profileJson.errcode !== 0 || !profileJson.userid) {
     throw new Error(
@@ -389,12 +407,13 @@ const fetchWeComProfile = async (accessToken: string, userId: string) => {
 };
 
 const fetchWeComTags = async (
+  env: Env,
   accessToken: string
 ): Promise<Array<{ tagid: number; tagname: string }>> => {
-  const response = await fetch(
+  const json = await fetchWeComJson<WeComTagListResponse>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/tag/list?access_token=${encodeURIComponent(accessToken)}`
   );
-  const json = (await response.json()) as WeComTagListResponse;
   if (json.errcode !== 0) {
     throw new Error(weComErrorMessage(json.errmsg, "Failed to fetch WeCom tags"));
   }
@@ -402,14 +421,15 @@ const fetchWeComTags = async (
 };
 
 const isUserInTag = async (
+  env: Env,
   accessToken: string,
   tagId: number,
   userId: string
 ): Promise<boolean> => {
-  const response = await fetch(
+  const json = await fetchWeComJson<WeComTagGetResponse>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/tag/get?access_token=${encodeURIComponent(accessToken)}&tagid=${tagId}`
   );
-  const json = (await response.json()) as WeComTagGetResponse;
   if (json.errcode !== 0) {
     throw new Error(
       weComErrorMessage(json.errmsg, `Failed to get members by WeCom tag ${tagId}`)
@@ -424,7 +444,7 @@ const resolveRoleByWeComTags = async (
   userId: string
 ): Promise<UserRole | undefined> => {
   const mapping = parseRoleTagMapping(env.WECHAT_ROLE_TAG_MAPPING);
-  const tagList = await fetchWeComTags(accessToken);
+  const tagList = await fetchWeComTags(env, accessToken);
   const tagIdByName = new Map<string, number>();
   tagList.forEach((item) => {
     tagIdByName.set(item.tagname, item.tagid);
@@ -435,7 +455,7 @@ const resolveRoleByWeComTags = async (
     for (const tagName of tagNames) {
       const tagId = tagIdByName.get(tagName);
       if (!tagId) continue;
-      const matched = await isUserInTag(accessToken, tagId, userId);
+      const matched = await isUserInTag(env, accessToken, tagId, userId);
       if (matched) {
         return role;
       }

@@ -78,6 +78,9 @@ fi
 if [[ -n "${BRIDGE_HMAC_SECRET:-}" ]]; then
   as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_HMAC_SECRET' '${BRIDGE_HMAC_SECRET}'"
 fi
+if [[ -n "${BRIDGE_PROXY_TOKEN:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_PROXY_TOKEN' '${BRIDGE_PROXY_TOKEN}'"
+fi
 if [[ -n "${BRIDGE_PUBLIC_DOMAIN:-}" ]]; then
   as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_PUBLIC_DOMAIN' '${BRIDGE_PUBLIC_DOMAIN}'"
 fi

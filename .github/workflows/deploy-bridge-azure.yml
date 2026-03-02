@@ -45,6 +45,8 @@ jobs:
             cp "$HOME/hybc_core_ci/scripts/deploy/bridge-azure-update.sh" "$DEPLOY_ROOT/scripts/deploy/"
             chmod +x "$DEPLOY_ROOT/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/bridge-azure-update.sh"
 
+            export BRIDGE_PROXY_TOKEN="${{ secrets.AZURE_BRIDGE_PROXY_TOKEN }}"
+
             cd "$DEPLOY_ROOT"
             if [ -d "$DEPLOY_ROOT/bridge/.venv" ]; then
               if command -v caddy >/dev/null 2>&1; then
