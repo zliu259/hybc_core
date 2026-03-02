@@ -42,7 +42,10 @@ Page({
         throw new Error("未获取到企业微信登录凭证 code");
       }
 
-      await loginWithWeComCode(loginRes.code);
+      await loginWithWeComCode(loginRes.code, {
+        allowLocalFallback: isLocalOnlyBaseUrl(getBaseUrl()),
+        localUsername: "operator"
+      });
 
       app.globalData.sessionReady = true;
       app.globalData.authError = "";

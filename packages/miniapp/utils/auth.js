@@ -32,12 +32,23 @@ const normalizeUser = (data) => {
   };
 };
 
+const LOCAL_FALLBACK_USERNAME = "operator";
+
+const buildCodeLoginEndpoints = (options = {}) => {
+  const shouldFallbackToWeb =
+    typeof options.allowCodeFallbackToWeb === "boolean"
+      ? options.allowCodeFallbackToWeb
+      : !options.allowLocalFallback;
+  const endpoints = [options.endpoint || "/api/v1/auth/login/miniapp"];
+  if (shouldFallbackToWeb) {
+    endpoints.push("/api/v1/auth/login/web");
+  }
+  return endpoints.filter((item, index, arr) => arr.indexOf(item) === index);
+};
+
 const loginWithWeComCode = (code, options = {}) => {
   const { loginRequest } = require("./request");
-  const codeLoginEndpoints = [
-    options.endpoint || "/api/v1/auth/login/miniapp",
-    "/api/v1/auth/login/web"
-  ].filter((item, index, arr) => arr.indexOf(item) === index);
+  const codeLoginEndpoints = buildCodeLoginEndpoints(options);
 
   const loginByCode = (index = 0) => {
     const endpoint = codeLoginEndpoints[index];
@@ -57,7 +68,21 @@ const loginWithWeComCode = (code, options = {}) => {
     });
   };
 
+  const loginWithLocalFallback = (fallbackError) => {
+    if (!options.allowLocalFallback) {
+      return Promise.reject(fallbackError);
+    }
+    return loginRequest({
+      code: {
+        username: options.localUsername || LOCAL_FALLBACK_USERNAME
+      },
+      endpoint: "/api/v1/auth/login/web",
+      includeLocalFallback: true
+    });
+  };
+
   return loginByCode()
+    .catch((error) => loginWithLocalFallback(error))
     .then((data) => {
       if (data && data.accessToken) {
         setToken(data.accessToken);

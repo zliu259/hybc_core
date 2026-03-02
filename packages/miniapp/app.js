@@ -1,6 +1,10 @@
 const { loginWithWeComCode, getToken, clearToken, setUserProfile } = require("./utils/auth");
 const { wxLogin } = require("./utils/wx");
-const { getBaseUrl, DEFAULT_REMOTE_BASE_URL } = require("./utils/config");
+const {
+  getBaseUrl,
+  isLocalOnlyBaseUrl,
+  DEFAULT_REMOTE_BASE_URL
+} = require("./utils/config");
 
 App({
   globalData: {
@@ -25,7 +29,11 @@ App({
         if (!loginRes || !loginRes.code) {
           throw new Error("wx.login failed");
         }
-        return loginWithWeComCode(loginRes.code);
+        const currentBaseUrl = getBaseUrl();
+        return loginWithWeComCode(loginRes.code, {
+          allowLocalFallback: isLocalOnlyBaseUrl(currentBaseUrl),
+          localUsername: "operator"
+        });
       })
       .then((loginData) => {
         this.globalData.sessionReady = true;
