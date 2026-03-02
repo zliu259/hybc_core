@@ -33,6 +33,56 @@ const weComErrorMessage = (errmsg: string | undefined, fallback: string): string
   return errmsg;
 };
 
+const normalizeBridgeProxyUrl = (env: Env): string | null => {
+  const explicit = env.WECHAT_BRIDGE_PROXY_URL?.trim();
+  if (explicit) return explicit.replace(/\/$/, "");
+
+  const base = env.WECHAT_BRIDGE_BASE_URL?.trim();
+  if (!base) return null;
+  const normalized = base.replace(/\/$/, "");
+  if (normalized.endsWith("/wecom/proxy")) return normalized;
+  return `${normalized}/wecom/proxy`;
+};
+
+const fetchViaBridgeStrict = async <T>(
+  env: Env,
+  targetUrl: string
+): Promise<T> => {
+  const proxyUrl = normalizeBridgeProxyUrl(env);
+  if (!proxyUrl) {
+    throw new Error("WECHAT_BRIDGE_BASE_URL/WECHAT_BRIDGE_PROXY_URL is not configured");
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  const headers: Record<string, string> = {
+    "content-type": "application/json"
+  };
+  if (env.WECHAT_BRIDGE_TOKEN) {
+    headers["x-bridge-token"] = env.WECHAT_BRIDGE_TOKEN;
+  }
+
+  const resp = await fetch(proxyUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ url: targetUrl }),
+    redirect: "manual",
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeout));
+
+  if (resp.status >= 300 && resp.status < 400) {
+    const location = resp.headers.get("location") ?? "";
+    throw new Error(`bridge redirected ${resp.status}${location ? ` to ${location}` : ""}`);
+  }
+
+  if (!resp.ok) {
+    const bodyText = await resp.text();
+    throw new Error(`bridge response ${resp.status}: ${bodyText.slice(0, 300)}`);
+  }
+
+  return (await resp.json()) as T;
+};
+
 const getCachedString = async (env: Env, key: string): Promise<string | null> => {
   return env.KV.get(key);
 };
@@ -55,16 +105,15 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
     throw new Error("WECHAT_CORPID/WECHAT_SECRET is not configured");
   }
 
-  const tokenResponse = await fetch(
-    `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(env.WECHAT_CORPID)}&corpsecret=${encodeURIComponent(env.WECHAT_SECRET)}`
-  );
-
-  const tokenJson = (await tokenResponse.json()) as {
+  const tokenJson = await fetchViaBridgeStrict<{
     errcode?: number;
     errmsg?: string;
     access_token?: string;
     expires_in?: number;
-  };
+  }>(
+    env,
+    `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(env.WECHAT_CORPID)}&corpsecret=${encodeURIComponent(env.WECHAT_SECRET)}`
+  );
   if (tokenJson.errcode !== 0 || !tokenJson.access_token) {
     throw new Error(
       weComErrorMessage(tokenJson.errmsg, "Failed to get WeCom access_token")
@@ -82,17 +131,17 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
 };
 
 const getDepartmentList = async (
+  env: Env,
   accessToken: string
 ): Promise<WeComDepartment[]> => {
-  const response = await fetch(
-    `https://qyapi.weixin.qq.com/cgi-bin/department/list?access_token=${encodeURIComponent(accessToken)}`
-  );
-
-  const json = (await response.json()) as {
+  const json = await fetchViaBridgeStrict<{
     errcode?: number;
     errmsg?: string;
     department?: WeComDepartment[];
-  };
+  }>(
+    env,
+    `https://qyapi.weixin.qq.com/cgi-bin/department/list?access_token=${encodeURIComponent(accessToken)}`
+  );
 
   if (json.errcode !== 0) {
     throw new Error(
@@ -104,18 +153,18 @@ const getDepartmentList = async (
 };
 
 const getUsersByDepartment = async (
+  env: Env,
   accessToken: string,
   departmentId: number
 ): Promise<WeComUser[]> => {
-  const response = await fetch(
-    `https://qyapi.weixin.qq.com/cgi-bin/user/simplelist?access_token=${encodeURIComponent(accessToken)}&department_id=${departmentId}&fetch_child=0`
-  );
-
-  const json = (await response.json()) as {
+  const json = await fetchViaBridgeStrict<{
     errcode?: number;
     errmsg?: string;
     userlist?: WeComUser[];
-  };
+  }>(
+    env,
+    `https://qyapi.weixin.qq.com/cgi-bin/user/simplelist?access_token=${encodeURIComponent(accessToken)}&department_id=${departmentId}&fetch_child=0`
+  );
 
   if (json.errcode !== 0) {
     throw new Error(
@@ -148,11 +197,11 @@ const isBookStale = (book: WeComContactBook): boolean => {
 
 export const syncWeComContactBook = async (env: Env): Promise<WeComContactBook> => {
   const accessToken = await fetchWeComAccessToken(env);
-  const departments = await getDepartmentList(accessToken);
+  const departments = await getDepartmentList(env, accessToken);
 
   const userMap = new Map<string, WeComUser>();
   for (const department of departments) {
-    const users = await getUsersByDepartment(accessToken, department.id);
+    const users = await getUsersByDepartment(env, accessToken, department.id);
     users.forEach((user) => {
       userMap.set(user.userid, user);
     });

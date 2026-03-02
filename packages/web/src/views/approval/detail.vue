@@ -17,6 +17,7 @@ import {
 import { getRiskReport } from "@/api/payment";
 import { getBatchAuditReport } from "@/api/reimbursement";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalDetail" });
 
@@ -280,13 +281,13 @@ onMounted(async () => {
                 detail.instance.instance_no
               }}</el-descriptions-item>
               <el-descriptions-item label="业务类型">{{
-                detail.instance.biz_type
+                toBizTypeLabel(detail.instance.biz_type)
               }}</el-descriptions-item>
               <el-descriptions-item label="发起人">{{
                 detail.instance.initiator_userid
               }}</el-descriptions-item>
               <el-descriptions-item label="状态">
-                <el-tag size="small">{{ detail.instance.status }}</el-tag>
+                <el-tag size="small">{{ toStatusLabel(detail.instance.status) }}</el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="提交时间">{{
                 detail.instance.submitted_at
@@ -303,7 +304,7 @@ onMounted(async () => {
               <el-divider>付款风险评估</el-divider>
               <div style="margin-bottom: 8px">
                 <el-tag :type="riskTagType[paymentRiskStatus] || 'info'">
-                  {{ paymentRiskStatus }}
+                  {{ toStatusLabel(paymentRiskStatus) }}
                 </el-tag>
               </div>
               <el-descriptions v-if="paymentRiskReport" :column="2" border>
@@ -330,7 +331,7 @@ onMounted(async () => {
               <el-divider>报销批次AI审计报告</el-divider>
               <div style="margin-bottom: 8px">
                 <el-tag :type="riskTagType[reimbursementAuditStatus] || 'info'">
-                  {{ reimbursementAuditStatus }}
+                  {{ toStatusLabel(reimbursementAuditStatus) }}
                 </el-tag>
               </div>
               <pre style="white-space: pre-wrap; word-break: break-word">{{
@@ -390,7 +391,7 @@ onMounted(async () => {
                     <el-tag
                       size="small"
                       :type="node.status === 'completed' ? 'success' : 'info'"
-                      >{{ node.status }}</el-tag
+                      >{{ toStatusLabel(node.status) }}</el-tag
                     >
                   </div>
                   <div
@@ -403,7 +404,7 @@ onMounted(async () => {
                       v-if="task.action"
                       size="small"
                       style="margin-left: 6px"
-                      >{{ task.action }}</el-tag
+                      >{{ toActionLabel(task.action) }}</el-tag
                     >
                     <span
                       v-if="task.acted_at"

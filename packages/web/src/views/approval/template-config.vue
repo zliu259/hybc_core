@@ -10,6 +10,7 @@ import {
   type ApprovalTemplate
 } from "@/api/admin";
 import ApprovalFlowDesigner from "@/components/ApprovalFlowDesigner/index.vue";
+import { toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalTemplateConfig" });
 
@@ -163,14 +164,16 @@ onMounted(loadTemplates);
     <el-table v-loading="loading" :data="templates" style="width: 100%">
       <el-table-column prop="template_code" label="模板编码" width="160" />
       <el-table-column prop="template_name" label="模板名称" min-width="180" />
-      <el-table-column prop="biz_type" label="业务类型" width="140" />
+      <el-table-column label="业务类型" width="140">
+        <template #default="{ row }">{{ toBizTypeLabel(row.biz_type) }}</template>
+      </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
           <el-tag
             :type="row.status === 'active' ? 'success' : 'info'"
             size="small"
           >
-            {{ row.status }}
+            {{ toStatusLabel(row.status) }}
           </el-tag>
         </template>
       </el-table-column>

@@ -11,6 +11,7 @@ import {
   type ApprovalDetailResponse
 } from "@/api/approval";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalUnifiedTasklist" });
 
@@ -150,7 +151,7 @@ onMounted(async () => {
             ]"
             @click="selectRow(row)"
           >
-            <div class="task-item__biz">{{ row.biz_type }}</div>
+            <div class="task-item__biz">{{ toBizTypeLabel(row.biz_type) }}</div>
             <div class="task-item__summary">{{ row.biz_summary }}</div>
             <div class="task-item__meta">{{ row.initiator_userid }} · {{ row.submitted_at }}</div>
           </div>
@@ -165,7 +166,7 @@ onMounted(async () => {
           </div>
 
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="业务类型">{{ activePending.biz_type }}</el-descriptions-item>
+            <el-descriptions-item label="业务类型">{{ toBizTypeLabel(activePending.biz_type) }}</el-descriptions-item>
             <el-descriptions-item label="发起人">{{ activePending.initiator_userid }}</el-descriptions-item>
             <el-descriptions-item label="实例编号">{{ activePending.instance_no }}</el-descriptions-item>
             <el-descriptions-item label="提交时间">{{ activePending.submitted_at }}</el-descriptions-item>
@@ -181,7 +182,7 @@ onMounted(async () => {
                   :key="node.id"
                   :timestamp="node.completed_at || node.started_at || node.created_at"
                 >
-                  {{ node.node_name }} · {{ node.status }}
+                  {{ node.node_name }} · {{ toStatusLabel(node.status) }}
                 </el-timeline-item>
               </el-timeline>
             </el-collapse-item>

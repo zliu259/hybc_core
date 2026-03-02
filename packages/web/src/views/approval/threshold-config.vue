@@ -10,6 +10,7 @@ import {
   type ApprovalTemplate,
   type ApprovalThreshold
 } from "@/api/admin";
+import { toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalThresholdConfig" });
 
@@ -187,7 +188,7 @@ onMounted(loadTemplates);
             :type="row.status === 'active' ? 'success' : 'info'"
             size="small"
           >
-            {{ row.status }}
+            {{ toStatusLabel(row.status) }}
           </el-tag>
         </template>
       </el-table-column>

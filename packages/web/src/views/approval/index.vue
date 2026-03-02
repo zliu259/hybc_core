@@ -9,6 +9,7 @@ import {
   type ProcessedApprovalItem,
   type ApprovalInstance
 } from "@/api/approval";
+import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalCenter" });
 
@@ -34,22 +35,6 @@ const statusTagType: Record<string, TagType> = {
   withdrawn: "info"
 };
 
-const statusLabelMap: Record<string, string> = {
-  pending: "待处理",
-  in_progress: "进行中",
-  approved: "已通过",
-  rejected: "已驳回",
-  cancelled: "已取消",
-  withdrawn: "已撤回",
-  completed: "已处理",
-  transferred: "已转签",
-  approve: "通过",
-  reject: "驳回",
-  return_initiator: "退回发起人",
-  return_prev: "退回上一节点",
-  return_to: "退回指定节点",
-  transfer: "转签"
-};
 
 const pendingLoading = ref(false);
 const pendingList = ref<PendingApprovalItem[]>([]);
@@ -132,9 +117,7 @@ const gotoDetail = (id: number) => {
 };
 
 const bizTypeLabel = (value: string) =>
-  bizTypeOptions.find(o => o.value === value)?.label ?? value;
-
-const statusLabel = (value: string) => statusLabelMap[value] ?? value;
+  bizTypeOptions.find(o => o.value === value)?.label ?? toBizTypeLabel(value);
 
 onMounted(loadPending);
 </script>
@@ -203,7 +186,7 @@ onMounted(loadPending);
                 :type="statusTagType[row.task_status] ?? 'info'"
                 size="small"
               >
-                {{ statusLabel(row.task_status) }}
+                {{ toStatusLabel(row.task_status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -246,7 +229,7 @@ onMounted(loadPending);
           <el-table-column label="实例状态" width="110">
             <template #default="{ row }">
               <el-tag :type="statusTagType[row.status] ?? 'info'" size="small">
-                {{ statusLabel(row.status) }}
+                {{ toStatusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
@@ -256,7 +239,7 @@ onMounted(loadPending);
                 v-if="row.action"
                 :type="row.action === 'approve' ? 'success' : 'danger'"
                 size="small"
-                >{{ statusLabel(row.action) }}</el-tag
+                >{{ toActionLabel(row.action) }}</el-tag
               >
             </template>
           </el-table-column>
@@ -306,7 +289,7 @@ onMounted(loadPending);
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
               <el-tag :type="statusTagType[row.status] ?? 'info'" size="small">
-                {{ statusLabel(row.status) }}
+                {{ toStatusLabel(row.status) }}
               </el-tag>
             </template>
           </el-table-column>
