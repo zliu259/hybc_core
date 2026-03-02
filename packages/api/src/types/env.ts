@@ -17,6 +17,7 @@ export interface Env {
   WECHAT_REDIRECT_URI?: string;
   WECHAT_ROLE_TAG_MAPPING?: string;
   WECHAT_BRIDGE_BASE_URL?: string;
+  WECHAT_BRIDGE_PROXY_URL?: string;
   WECHAT_BRIDGE_TOKEN?: string;
   PASSKEY_RP_ID: string;
   PASSKEY_RP_NAME: string;

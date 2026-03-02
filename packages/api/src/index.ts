@@ -42,6 +42,12 @@ app.get("/", (c) => {
   });
 });
 
+app.get("/WW_verify_sVPd1Q6fW7UMqLN2.txt", (c) => {
+  return c.text("sVPd1Q6fW7UMqLN2", 200, {
+    "content-type": "text/plain; charset=utf-8"
+  });
+});
+
 app.route("/api/v1/system", systemRoutes);
 app.route("/api/v1/auth", authRoutes);
 app.route("/api/v1/passkeys", passkeyRoutes);

@@ -101,9 +101,18 @@ fi
 
 if command -v caddy >/dev/null 2>&1 && [[ -n "$DOMAIN_VALUE" ]]; then
   as_root tee /etc/caddy/Caddyfile >/dev/null <<EOF
-${DOMAIN_VALUE} {
+http://${DOMAIN_VALUE} {
   encode gzip
-  reverse_proxy 127.0.0.1:9001
+  reverse_proxy 127.0.0.1:9001 {
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
+https://${DOMAIN_VALUE} {
+  encode gzip
+  reverse_proxy 127.0.0.1:9001 {
+    header_up X-Forwarded-Proto {scheme}
+  }
 }
 EOF
   as_root systemctl enable caddy

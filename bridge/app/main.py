@@ -15,7 +15,7 @@ from .security import NonceCache, build_bridge_signature, verify_wecom_signature
 
 settings = Settings()
 nonce_cache = NonceCache(ttl_seconds=300)
-app = FastAPI(title="HYBC WeCom Bridge", version="0.1.0")
+app = FastAPI(title="HYBC WeCom Bridge", version="0.1.0", redirect_slashes=False)
 
 
 @app.get("/health")
@@ -101,6 +101,7 @@ async def wecom_callback(request: Request) -> dict[str, Any]:
 
 
 @app.post("/wecom/proxy")
+@app.post("/wecom/proxy/")
 async def wecom_proxy(request: Request) -> Response:
     token_required = bool(settings.bridge_proxy_token and settings.bridge_proxy_token != "replace-me")
     if token_required:

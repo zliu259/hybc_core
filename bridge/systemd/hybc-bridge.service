@@ -6,7 +6,7 @@ After=network.target
 Type=simple
 WorkingDirectory=/opt/hybc_core/bridge
 EnvironmentFile=/opt/hybc_core/bridge/.env
-ExecStart=/opt/hybc_core/bridge/.venv/bin/uvicorn app.main:app --host ${BRIDGE_HOST} --port ${BRIDGE_PORT}
+ExecStart=/opt/hybc_core/bridge/.venv/bin/uvicorn app.main:app --host ${BRIDGE_HOST} --port ${BRIDGE_PORT} --proxy-headers --forwarded-allow-ips=*
 Restart=always
 RestartSec=3
 

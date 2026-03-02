@@ -224,6 +224,16 @@ systemRoutes.get("/ops/status-center", async (c) => {
   });
 });
 
+systemRoutes.get("/ops/wecom-bridge-config", async (c) => {
+  return c.json({
+    success: true,
+    data: {
+      wechat_bridge_base_url: c.env.WECHAT_BRIDGE_BASE_URL || "",
+      has_bridge_token: Boolean(c.env.WECHAT_BRIDGE_TOKEN),
+    },
+  });
+});
+
 systemRoutes.get("/storage-check", async (c) => {
   const marker = `ping-${Date.now()}`;
   const key = `health/${marker}.txt`;

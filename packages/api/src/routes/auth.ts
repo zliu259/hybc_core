@@ -122,24 +122,79 @@ const weComErrorMessage = (errmsg: string | undefined, fallback: string): string
   return errmsg;
 };
 
+const normalizeBridgeProxyUrl = (env: Env): string | null => {
+  const explicit = env.WECHAT_BRIDGE_PROXY_URL?.trim();
+  if (explicit) {
+    return explicit.replace(/\/$/, "");
+  }
+
+  const base = env.WECHAT_BRIDGE_BASE_URL?.trim();
+  if (!base) return null;
+  const normalized = base.replace(/\/$/, "");
+  if (normalized.endsWith("/wecom/proxy")) return normalized;
+  return `${normalized}/wecom/proxy`;
+};
+
+const fetchViaBridge = async <T>(
+  proxyUrl: string,
+  targetUrl: string,
+  headers: Record<string, string>
+): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  const requestUrl = `${proxyUrl}${proxyUrl.includes("?") ? "&" : "?"}bridge=1`;
+  const resp = await fetch(requestUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ url: targetUrl }),
+    redirect: "manual",
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeout));
+
+  if (resp.status >= 300 && resp.status < 400) {
+    const location = resp.headers.get("location") ?? "";
+    throw new Error(`bridge redirected ${resp.status}${location ? ` to ${location}` : ""}`);
+  }
+
+  if (!resp.ok) {
+    const bodyText = await resp.text();
+    throw new Error(`bridge response ${resp.status}: ${bodyText.slice(0, 300)}`);
+  }
+  return (await resp.json()) as T;
+};
+
+const fetchDirectWeComJson = async <T>(url: string): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  const resp = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+  if (!resp.ok) {
+    const bodyText = await resp.text();
+    throw new Error(`wecom response ${resp.status}: ${bodyText.slice(0, 300)}`);
+  }
+  return (await resp.json()) as T;
+};
+
 const fetchWeComJson = async <T>(env: Env, url: string): Promise<T> => {
-  if (env.WECHAT_BRIDGE_BASE_URL) {
+  const proxyUrl = normalizeBridgeProxyUrl(env);
+  if (proxyUrl) {
     const headers: Record<string, string> = {
       "content-type": "application/json",
     };
     if (env.WECHAT_BRIDGE_TOKEN) {
       headers["x-bridge-token"] = env.WECHAT_BRIDGE_TOKEN;
     }
-    const resp = await fetch(`${env.WECHAT_BRIDGE_BASE_URL.replace(/\/$/, "")}/wecom/proxy`, {
-      method: "POST",
-      headers,
-      body: JSON.stringify({ url }),
-    });
-    return (await resp.json()) as T;
+    try {
+      return await fetchViaBridge<T>(proxyUrl, url, headers);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "bridge fetch failed";
+      if (reason.includes("redirect") || reason.includes("abort") || reason.includes("Too many redirects")) {
+        return fetchDirectWeComJson<T>(url);
+      }
+      throw error;
+    }
   }
 
-  const resp = await fetch(url);
-  return (await resp.json()) as T;
+  return fetchDirectWeComJson<T>(url);
 };
 
 const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
@@ -537,6 +592,36 @@ authRoutes.get("/oauth-url", (c) => {
       state
     }
   });
+});
+
+authRoutes.get("/login/web", async (c) => {
+  const code = c.req.query("code")?.trim() ?? "";
+  if (!code) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          message: "Missing WeCom code"
+        }
+      },
+      400
+    );
+  }
+
+  const state = c.req.query("state")?.trim();
+  const configuredRedirect = (c.env.WECHAT_REDIRECT_URI ?? "").trim();
+  const redirectBase =
+    configuredRedirect && !configuredRedirect.includes("/api/v1/auth/login/web")
+      ? configuredRedirect
+      : "https://web.hybcdg.com/login";
+
+  const target = new URL(redirectBase);
+  target.searchParams.set("code", code);
+  if (state) {
+    target.searchParams.set("state", state);
+  }
+
+  return c.redirect(target.toString(), 302);
 });
 
 authRoutes.post("/login/web", async (c) => {

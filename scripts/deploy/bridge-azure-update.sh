@@ -27,9 +27,18 @@ if command -v caddy >/dev/null 2>&1; then
   DOMAIN_VALUE="$(grep -E '^BRIDGE_PUBLIC_DOMAIN=' "$DEPLOY_ROOT/bridge/.env" | tail -n 1 | cut -d '=' -f2-)"
   if [[ -n "$DOMAIN_VALUE" ]]; then
     sudo tee /etc/caddy/Caddyfile >/dev/null <<EOF
-${DOMAIN_VALUE} {
+http://${DOMAIN_VALUE} {
   encode gzip
-  reverse_proxy 127.0.0.1:9001
+  reverse_proxy 127.0.0.1:9001 {
+    header_up X-Forwarded-Proto {scheme}
+  }
+}
+
+https://${DOMAIN_VALUE} {
+  encode gzip
+  reverse_proxy 127.0.0.1:9001 {
+    header_up X-Forwarded-Proto {scheme}
+  }
 }
 EOF
     sudo systemctl enable caddy
