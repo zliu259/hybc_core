@@ -19,21 +19,24 @@ const setUserProfile = (profile) => {
 const getUserProfile = () => wx.getStorageSync(USER_KEY) || null;
 
 const normalizeUser = (data) => {
-  if (data && data.user) return data.user;
+  const source = (data && data.user) ? data.user : (data || {});
   return {
-    id: (data && data.id) || "",
-    username: (data && data.username) || "",
-    nickname: (data && data.nickname) || "",
-    roles: (data && data.roles) || []
+    id: source.id || source.userId || "",
+    username: source.username || "",
+    nickname: source.nickname || "",
+    avatar: source.avatar || "",
+    roles: source.roles || [],
+    permissions: source.permissions || [],
+    auth_method: source.auth_method || "",
+    wecom_verified_at: source.wecom_verified_at || ""
   };
 };
 
 const loginWithWeComCode = (code, options = {}) => {
   const { loginRequest } = require("./request");
-  const username = options.username || "operator";
   const codeLoginEndpoints = [
-    options.endpoint || "/api/v1/auth/login/web",
-    "/api/v1/auth/login/miniapp"
+    options.endpoint || "/api/v1/auth/login/miniapp",
+    "/api/v1/auth/login/web"
   ].filter((item, index, arr) => arr.indexOf(item) === index);
 
   const loginByCode = (index = 0) => {
@@ -61,19 +64,6 @@ const loginWithWeComCode = (code, options = {}) => {
       }
       setUserProfile(normalizeUser(data));
       return data;
-    })
-    .catch((error) => {
-      if (!options.allowLocalFallback) {
-        throw error;
-      }
-
-      return loginRequest({ code: { username } }).then((localData) => {
-        if (localData && localData.accessToken) {
-          setToken(localData.accessToken);
-        }
-        setUserProfile(normalizeUser(localData));
-        return localData;
-      });
     });
 };
 

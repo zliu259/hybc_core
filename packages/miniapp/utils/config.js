@@ -1,12 +1,19 @@
 const API_BASE_KEY = "hybc_api_base_url";
 const DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:8787";
-const DEFAULT_REMOTE_BASE_URL = "https://apix.hybcdg.com:8787";
-const REMOTE_FALLBACK_BASE_URL = "https://apix.hybcdg.com:8849";
+const DEFAULT_REMOTE_BASE_URL = "https://api.hybcdg.com";
+const REMOTE_FALLBACK_BASE_URL = "https://api.hybcdg.com";
 
 const normalizeBaseUrl = (value) => {
   const raw = (value || "").trim();
   if (!raw) return DEFAULT_REMOTE_BASE_URL;
-  return raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  const normalized = raw.endsWith("/") ? raw.slice(0, -1) : raw;
+  if (
+    normalized.includes("apix.hybcdg.com:8787") ||
+    normalized.includes("apix.hybcdg.com:8849")
+  ) {
+    return DEFAULT_REMOTE_BASE_URL;
+  }
+  return normalized;
 };
 
 const isLocalOnlyBaseUrl = (value) => {

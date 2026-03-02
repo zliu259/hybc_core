@@ -7,11 +7,6 @@ const {
   isLocalOnlyBaseUrl
 } = require("../../utils/config");
 
-const shouldAllowLocalFallback = (baseUrl) => {
-  if (!baseUrl) return false;
-  return baseUrl.includes("127.0.0.1") || baseUrl.includes("localhost");
-};
-
 Page({
   data: {
     loading: false,
@@ -47,10 +42,7 @@ Page({
         throw new Error("未获取到企业微信登录凭证 code");
       }
 
-      await loginWithWeComCode(loginRes.code, {
-        allowLocalFallback: shouldAllowLocalFallback(this.data.baseUrl),
-        username: "operator"
-      });
+      await loginWithWeComCode(loginRes.code);
 
       app.globalData.sessionReady = true;
       app.globalData.authError = "";

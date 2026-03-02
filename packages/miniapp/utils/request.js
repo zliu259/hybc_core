@@ -108,7 +108,7 @@ const loginRequest = ({
       wx.request({
         url,
         method: "POST",
-        data: payload,
+        data: typeof payload === "string" ? { code: payload } : payload,
         header: {
           "content-type": "application/json"
         },

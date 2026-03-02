@@ -24,6 +24,7 @@ const {
   resolvePath,
   username,
   userAvatar,
+  hasUserAvatar,
   onUserAvatarError,
   getDivStyle,
   avatarsStyle
@@ -98,6 +99,7 @@ watch(
       <el-dropdown trigger="click">
         <span class="el-dropdown-link navbar-bg-hover select-none">
           <img
+            v-if="hasUserAvatar"
             :src="userAvatar"
             :style="avatarsStyle"
             @error="onUserAvatarError"

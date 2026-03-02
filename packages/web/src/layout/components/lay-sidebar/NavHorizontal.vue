@@ -28,6 +28,7 @@ const {
   getLogo,
   username,
   userAvatar,
+  hasUserAvatar,
   onUserAvatarError,
   backTopMenu,
   avatarsStyle
@@ -79,6 +80,7 @@ onMounted(() => {
       <el-dropdown trigger="click">
         <span class="el-dropdown-link navbar-bg-hover">
           <img
+            v-if="hasUserAvatar"
             :src="userAvatar"
             :style="avatarsStyle"
             @error="onUserAvatarError"

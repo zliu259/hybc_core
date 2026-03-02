@@ -78,9 +78,7 @@ export const createSessionPayload = (input: {
     userId: input.userId,
     username: input.username,
     nickname: input.nickname ?? input.username,
-    avatar:
-      input.avatar ??
-      "https://static.hybc.local/avatar/default.png",
+    avatar: input.avatar?.trim() ?? "",
     roles: [role],
     permissions: defaultPermissionsByRole[role],
     auth_method: metadata?.authMethod ?? "wecom_oauth",
