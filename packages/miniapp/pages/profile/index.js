@@ -1,12 +1,10 @@
 const { request, buildUrl } = require("../../utils/request");
-const { clearToken, getUserProfile } = require("../../utils/auth");
-const { getBaseUrl, setBaseUrl } = require("../../utils/config");
+const { clearToken, getUserProfile, setUserProfile } = require("../../utils/auth");
 const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 Page({
   data: {
     profile: {},
-    baseUrl: "",
     busy: false,
     timeline: [
       { icon: "💸", text: "付款申请 #P20260224-01", status: "👨‍💼 王总审批中" },
@@ -55,17 +53,7 @@ Page({
   },
 
   onShow() {
-    this.setData({ baseUrl: getBaseUrl() });
     this.reloadProfile();
-  },
-
-  onBaseUrlInput(e) {
-    this.setData({ baseUrl: e.detail.value });
-  },
-
-  saveBaseUrl() {
-    setBaseUrl(this.data.baseUrl);
-    wx.showToast({ title: "已保存地址", icon: "success" });
   },
 
   async reloadProfile() {
@@ -74,6 +62,7 @@ Page({
       const res = await request({ method: "GET", path: "/api/v1/user/me" });
       const profile = res.data || getUserProfile() || {};
       const certificates = this.normalizeCertificates(profile);
+      setUserProfile(profile);
       this.setData({
         profile,
         certificates: certificates || this.data.certificates

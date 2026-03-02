@@ -18,6 +18,29 @@ const setUserProfile = (profile) => {
 
 const getUserProfile = () => wx.getStorageSync(USER_KEY) || null;
 
+const inferRole = (source) => {
+  if (Array.isArray(source.roles) && source.roles.length > 0) {
+    return source.roles;
+  }
+  if (typeof source.role === "string" && source.role.trim()) {
+    return [source.role.trim()];
+  }
+  const username = (source.username || "").trim();
+  if (username === "super_admin" || username === "admin") {
+    return ["super_admin"];
+  }
+  if (username === "finance") {
+    return ["finance"];
+  }
+  if (username === "manager") {
+    return ["manager"];
+  }
+  if (username === "site_manager") {
+    return ["site_manager"];
+  }
+  return ["operator"];
+};
+
 const normalizeUser = (data) => {
   const source = (data && data.user) ? data.user : (data || {});
   return {
@@ -25,8 +48,8 @@ const normalizeUser = (data) => {
     username: source.username || "",
     nickname: source.nickname || "",
     avatar: source.avatar || "",
-    roles: source.roles || [],
-    permissions: source.permissions || [],
+    roles: inferRole(source),
+    permissions: Array.isArray(source.permissions) ? source.permissions : [],
     auth_method: source.auth_method || "",
     wecom_verified_at: source.wecom_verified_at || ""
   };
@@ -38,7 +61,7 @@ const buildCodeLoginEndpoints = (options = {}) => {
   const shouldFallbackToWeb =
     typeof options.allowCodeFallbackToWeb === "boolean"
       ? options.allowCodeFallbackToWeb
-      : !options.allowLocalFallback;
+      : false;
   const endpoints = [options.endpoint || "/api/v1/auth/login/miniapp"];
   if (shouldFallbackToWeb) {
     endpoints.push("/api/v1/auth/login/web");

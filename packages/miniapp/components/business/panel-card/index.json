@@ -5,7 +5,7 @@
     "multipleSlots": true
   },
   "usingComponents": {
-    "t-divider": "tdesign-miniprogram/divider/divider",
-    "t-icon": "tdesign-miniprogram/icon/icon"
+    "t-divider": "/miniprogram_npm/tdesign-miniprogram/divider/divider",
+    "t-icon": "/miniprogram_npm/tdesign-miniprogram/icon/icon"
   }
 }

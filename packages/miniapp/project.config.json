@@ -7,10 +7,10 @@
     "es6": true,
     "enhance": true,
     "postcss": true,
-    "minified": false,
+    "minified": true,
     "compileWorklet": false,
     "uglifyFileName": false,
-    "uploadWithSourceMap": true,
+    "uploadWithSourceMap": false,
     "packNpmManually": false,
     "packNpmRelationList": [],
     "minifyWXSS": true,
@@ -35,7 +35,12 @@
     "qywx_simulator_plugin": "2.27.3"
   },
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "tdesign-miniprogram"
+      }
+    ],
     "include": []
   },
   "editorSetting": {},

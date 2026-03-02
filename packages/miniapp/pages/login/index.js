@@ -7,6 +7,17 @@ const {
   isLocalOnlyBaseUrl
 } = require("../../utils/config");
 
+const formatLoginError = (error) => {
+  const rawMessage = (error && error.message) || "登录失败，请检查企业微信应用配置后重试";
+  if (rawMessage.includes("api forbidden") || rawMessage.includes("e=48002")) {
+    return `${rawMessage}\n请在企业微信管理后台检查：应用 Secret、应用与小程序关联、应用可见范围、企业可信IP。`;
+  }
+  if (rawMessage.includes("invalid code") || rawMessage.includes("e=40029")) {
+    return `${rawMessage}\n请重新发起企业微信登录获取新 code，避免复用过期 code。`;
+  }
+  return rawMessage;
+};
+
 Page({
   data: {
     loading: false,
@@ -51,8 +62,7 @@ Page({
       app.globalData.authError = "";
       wx.switchTab({ url: "/pages/index/index" });
     } catch (error) {
-      const message =
-        (error && error.message) || "登录失败，请检查企业微信应用配置后重试";
+      const message = formatLoginError(error);
       app.globalData.authError = message;
       this.setData({ errorMessage: message });
       wx.showToast({ title: "登录失败", icon: "none" });
