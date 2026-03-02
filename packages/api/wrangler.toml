@@ -5,39 +5,39 @@ account_id = "78939a17148c390144ef58e10a619393"
 
 [[d1_databases]]
 binding = "DB"
-database_name = "hengyue-db"
-database_id = "89a0a8b0-802e-4cd4-a7b4-eb8d53c1cbfb"
+database_name = "hybcdg-prod-db"
+database_id = "6dfb0cfc-bcb5-4800-ad86-48435b77a315"
 migrations_dir = "migrations"
 
 [[d1_databases]]
 binding = "LEGACY_DB"
-database_name = "hengyue-legacy-db"
-database_id = "d381d8f1-2d13-4665-91c9-84eacb36c906"
+database_name = "hybcdg-prod-legacy-db"
+database_id = "e2aae206-f20e-4029-b5dc-32fa14aa22f4"
 
 [[r2_buckets]]
 binding = "FILES"
-bucket_name = "hengyue-files"
-preview_bucket_name = "hengyue-files"
+bucket_name = "hybcdg-prod-files"
+preview_bucket_name = "hybcdg-prod-files"
 
 [[kv_namespaces]]
 binding = "KV"
-id = "c8525e899f3e4be4a86c2ad8b50ae78a"
-preview_id = "432add25406d46039c8b24ae5d4fe43d"
+id = "26185146a68f4571b8ce2003522d779f"
+preview_id = "d9ab79e68aa947f8b9f82718350b5962"
 
 [[queues.producers]]
 binding = "EVENT_QUEUE"
-queue = "hengyue-events"
+queue = "hybcdg-prod-events"
 
 [[queues.consumers]]
-queue = "hengyue-events"
+queue = "hybcdg-prod-events"
 max_batch_size = 10
 max_retries = 3
 
 [vars]
 APP_ENV = "local"
-JWT_SECRET = "local-dev-jwt-secret"
-UPLOAD_SIGNING_SECRET = "local-dev-upload-signing-secret"
-TASK_API_KEY = "local-dev-task-api-key"
+JWT_SECRET = "61dbd206859451fa6cbced9cf25d652f"
+UPLOAD_SIGNING_SECRET = "0c7213e73de53c76424506e589c2b285"
+TASK_API_KEY = "40aea6c95e44af22a4fd04f6f0c2cf26"
 BRIDGE_HEALTH_URL = "https://bridge.hybcdg.com/health"
 RUNNER_HEALTH_URL = "https://runner.hybcdg.com/health"
 WECHAT_CORPID = "ww3ddef5ccb9428432"
@@ -45,9 +45,9 @@ WECHAT_AGENT_ID = "1000014"
 WECHAT_SECRET = "uvYndaTHtRDQvmD4bx3FknXzRBgPRBTXYWakLoNE5oE"
 WECHAT_BRIDGE_BASE_URL = "https://bridge.hybcdg.com"
 WECHAT_BRIDGE_PROXY_URL = "https://bridge.hybcdg.com/wecom/proxy"
-WECHAT_BRIDGE_TOKEN = "local-dev-task-api-key"
-WECHAT_REDIRECT_URI = "https://apix.hybcdg.com:8849/login"
-PASSKEY_RP_ID = "apix.hybcdg.com"
+WECHAT_BRIDGE_TOKEN = "40aea6c95e44af22a4fd04f6f0c2cf26"
+WECHAT_REDIRECT_URI = "https://web.hybcdg.com/login"
+PASSKEY_RP_ID = "web.hybcdg.com"
 PASSKEY_RP_NAME = "HYBC"
 
 [triggers]
