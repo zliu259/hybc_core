@@ -40,9 +40,19 @@ jobs:
             sudo mkdir -p "$DEPLOY_ROOT"
             sudo chown -R "$USER":"$USER" "$DEPLOY_ROOT"
             mkdir -p "$DEPLOY_ROOT/scripts/deploy"
-            cp -R "$HOME/hybc_core_ci/bridge" "$DEPLOY_ROOT/"
-            cp "$HOME/hybc_core_ci/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/"
-            cp "$HOME/hybc_core_ci/scripts/deploy/bridge-azure-update.sh" "$DEPLOY_ROOT/scripts/deploy/"
+
+            SOURCE_BRIDGE_DIR="$(find "$HOME/hybc_core_ci" -type d -name bridge | head -n 1)"
+            SOURCE_DEPLOY_DIR="$(find "$HOME/hybc_core_ci" -type d -path '*/scripts/deploy' | head -n 1)"
+            if [ -z "$SOURCE_BRIDGE_DIR" ] || [ -z "$SOURCE_DEPLOY_DIR" ]; then
+              echo "bridge bundle not found in uploaded files" >&2
+              exit 1
+            fi
+
+            rm -rf "$DEPLOY_ROOT/bridge"
+            mkdir -p "$DEPLOY_ROOT"
+            cp -a "$SOURCE_BRIDGE_DIR" "$DEPLOY_ROOT/bridge"
+            cp "$SOURCE_DEPLOY_DIR/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/"
+            cp "$SOURCE_DEPLOY_DIR/bridge-azure-update.sh" "$DEPLOY_ROOT/scripts/deploy/"
             chmod +x "$DEPLOY_ROOT/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/bridge-azure-update.sh"
 
             export BRIDGE_PROXY_TOKEN="${{ secrets.AZURE_BRIDGE_PROXY_TOKEN }}"
@@ -52,6 +62,13 @@ jobs:
 
             sudo systemctl status hybc-bridge --no-pager
             curl -fsS --max-time 8 http://127.0.0.1:9001/health
+            grep -n "@app.post(\"/wecom/proxy\")" "$DEPLOY_ROOT/bridge/app/main.py"
+            curl -fsS --max-time 8 -X POST "http://127.0.0.1:9001/wecom/proxy" -H "Content-Type: application/json" -d '{"url":"https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=test&corpsecret=test"}' >/tmp/bridge_proxy_check.json || true
+            if grep -q 'Not Found' /tmp/bridge_proxy_check.json; then
+              echo "bridge proxy route not active" >&2
+              cat /tmp/bridge_proxy_check.json
+              exit 1
+            fi
             if command -v caddy >/dev/null 2>&1; then
               sudo systemctl status caddy --no-pager
             fi
