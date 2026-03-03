@@ -81,3 +81,30 @@ export const listMyBankAccounts = () => {
     "/api/v1/user/me/bank-accounts"
   );
 };
+
+export const createMyBankAccount = (data: {
+  bank_name: string;
+  account_name: string;
+  account_no: string;
+}) => {
+  return http.request<{ success: boolean; data: MyBankAccount }>(
+    "post",
+    "/api/v1/user/me/bank-accounts",
+    { data }
+  );
+};
+
+export const updateMyBankAccount = (
+  id: number,
+  data: {
+    bank_name?: string;
+    account_name?: string;
+    account_no?: string;
+  }
+) => {
+  return http.request<{ success: boolean; data: MyBankAccount }>(
+    "put",
+    `/api/v1/user/me/bank-accounts/${id}`,
+    { data }
+  );
+};

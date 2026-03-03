@@ -227,3 +227,98 @@ userRoutes.get("/me/bank-accounts", async (c) => {
     }))
   });
 });
+
+userRoutes.post("/me/bank-accounts", async (c) => {
+  const auth = c.get("auth");
+  const body = (await c.req.json().catch(() => ({}))) as {
+    bank_name?: string;
+    account_name?: string;
+    account_no?: string;
+  };
+
+  const bankName = (body.bank_name ?? "").trim();
+  const accountName = (body.account_name ?? "").trim();
+  const accountNo = (body.account_no ?? "").trim();
+  if (!bankName || !accountName || !accountNo) {
+    return c.json(
+      { success: false, error: { message: "bank_name/account_name/account_no are required" } },
+      400
+    );
+  }
+
+  const now = new Date().toISOString();
+  const result = await c.env.DB.prepare(
+    `INSERT INTO payee (
+      name, bank_name, bank_account, phone, type, status, created_by_userid, created_at, updated_at
+    ) VALUES (?, ?, ?, '', 'other', 'active', ?, ?, ?)`
+  )
+    .bind(accountName, bankName, accountNo, auth.sub, now, now)
+    .run();
+
+  const row = await c.env.DB.prepare(
+    `SELECT id, bank_name, name AS account_name, bank_account AS account_no, status
+     FROM payee WHERE id = ?`
+  )
+    .bind(result.meta.last_row_id)
+    .first<{
+      id: number;
+      bank_name: string;
+      account_name: string;
+      account_no: string;
+      status: string;
+    }>();
+
+  return c.json({ success: true, data: row }, 201);
+});
+
+userRoutes.put("/me/bank-accounts/:id", async (c) => {
+  const auth = c.get("auth");
+  const id = Number(c.req.param("id"));
+  if (!Number.isFinite(id) || id <= 0) {
+    return c.json({ success: false, error: { message: "invalid id" } }, 400);
+  }
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    bank_name?: string;
+    account_name?: string;
+    account_no?: string;
+  };
+
+  const bankName = body.bank_name?.trim();
+  const accountName = body.account_name?.trim();
+  const accountNo = body.account_no?.trim();
+  if (!bankName && !accountName && !accountNo) {
+    return c.json({ success: false, error: { message: "no updates provided" } }, 400);
+  }
+
+  const now = new Date().toISOString();
+  const result = await c.env.DB.prepare(
+    `UPDATE payee
+     SET bank_name = COALESCE(?, bank_name),
+         name = COALESCE(?, name),
+         bank_account = COALESCE(?, bank_account),
+         updated_at = ?
+     WHERE id = ? AND created_by_userid = ? AND status = 'active'`
+  )
+    .bind(bankName ?? null, accountName ?? null, accountNo ?? null, now, id, auth.sub)
+    .run();
+
+  if ((result.meta.changes ?? 0) === 0) {
+    return c.json({ success: false, error: { message: "bank account not found" } }, 404);
+  }
+
+  const row = await c.env.DB.prepare(
+    `SELECT id, bank_name, name AS account_name, bank_account AS account_no, status
+     FROM payee WHERE id = ?`
+  )
+    .bind(id)
+    .first<{
+      id: number;
+      bank_name: string;
+      account_name: string;
+      account_no: string;
+      status: string;
+    }>();
+
+  return c.json({ success: true, data: row });
+});

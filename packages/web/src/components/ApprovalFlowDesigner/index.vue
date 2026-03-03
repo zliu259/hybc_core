@@ -4,6 +4,7 @@ import {
   nextTick,
   onBeforeUnmount,
   onMounted,
+  onUpdated,
   ref,
   watch
 } from "vue";
@@ -49,12 +50,14 @@ const { screenToFlowCoordinate, fitView } = useVueFlow({ id: flowId });
 
 const nodes = ref<Node<FlowNodeData>[]>([]);
 const edges = ref<Edge[]>([]);
+const canvasRef = ref<HTMLElement | null>(null);
 
 const selectedNodeId = ref<string>("");
 const selectedEdgeId = ref<string>("");
 const syncingFromProps = ref(false);
 const lastEmittedConfig = ref("");
 let syncConfigTimer: ReturnType<typeof setTimeout> | null = null;
+let canvasResizeObserver: ResizeObserver | null = null;
 
 const NODE_COLORS: Record<NodeType, string> = {
   sequential: "#3B82F6",
@@ -88,14 +91,87 @@ const parseConfigString = (config: string): TemplateConfig | null => {
   }
 
   try {
-    const parsed = JSON.parse(config) as TemplateConfig;
+    const parsed = JSON.parse(config) as {
+      version?: number;
+      start_key?: string;
+      startKey?: string;
+      start_node_key?: string;
+      nodes?: Array<Record<string, unknown>>;
+    };
     if (!Array.isArray(parsed.nodes)) {
       return null;
     }
-    return parsed;
+
+    const normalizedNodes = parsed.nodes
+      .map(item => {
+        const key =
+          (typeof item.key === "string" && item.key) ||
+          (typeof item.id === "string" && item.id) ||
+          "";
+        const rawType =
+          (typeof item.type === "string" && item.type) ||
+          (typeof item.node_type === "string" && item.node_type) ||
+          "sequential";
+        const type = rawType as NodeType;
+        if (!key) return null;
+
+        const nextKey =
+          typeof item.next_key === "string"
+            ? item.next_key
+            : typeof item.nextKey === "string"
+              ? item.nextKey
+              : Array.isArray(item.next_keys) && typeof item.next_keys[0] === "string"
+                ? (item.next_keys[0] as string)
+                : null;
+
+        const assigneeUserids = Array.isArray(item.assignee_userids)
+          ? (item.assignee_userids as string[])
+          : Array.isArray(item.assignees)
+            ? (item.assignees as string[])
+            : [];
+
+        return {
+          key,
+          type,
+          name:
+            (typeof item.name === "string" && item.name) ||
+            (typeof item.node_name === "string" && item.node_name) ||
+            NODE_LABELS[type],
+          assignee_userids: assigneeUserids,
+          auto_action: typeof item.auto_action === "string" ? item.auto_action : undefined,
+          ai_slot_id: typeof item.ai_slot_id === "string" ? item.ai_slot_id : undefined,
+          timeout_hours:
+            typeof item.timeout_hours === "number" ? item.timeout_hours : undefined,
+          conditions: Array.isArray(item.conditions) ? item.conditions : [],
+          default_next_key:
+            typeof item.default_next_key === "string" ? item.default_next_key : undefined,
+          next_key: nextKey
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => item !== null);
+
+    if (!normalizedNodes.length) {
+      return null;
+    }
+
+    return {
+      version: Number(parsed.version ?? 1) || 1,
+      start_key:
+        (typeof parsed.start_key === "string" && parsed.start_key) ||
+        (typeof parsed.startKey === "string" && parsed.startKey) ||
+        (typeof parsed.start_node_key === "string" && parsed.start_node_key) ||
+        normalizedNodes[0].key,
+      nodes: normalizedNodes
+    };
   } catch {
     return null;
   }
+};
+
+const refitCanvas = () => {
+  nextTick(() => {
+    fitView({ padding: 0.2, duration: 200 });
+  });
 };
 
 const edgeId = (source: string, target: string) => `edge-${source}-${target}`;
@@ -135,7 +211,7 @@ const applyConfigToGraph = (config: string) => {
 
   nextTick(() => {
     syncingFromProps.value = false;
-    fitView({ padding: 0.2, duration: 200 });
+    refitCanvas();
   });
 };
 
@@ -356,10 +432,29 @@ watch(
 
 onMounted(() => {
   window.addEventListener("keydown", onKeyDown);
+  canvasResizeObserver = new ResizeObserver(() => {
+    if (nodes.value.length > 0) {
+      refitCanvas();
+    }
+  });
+  if (canvasRef.value) {
+    canvasResizeObserver.observe(canvasRef.value);
+  }
+});
+
+onUpdated(() => {
+  if (canvasRef.value && canvasResizeObserver) {
+    canvasResizeObserver.disconnect();
+    canvasResizeObserver.observe(canvasRef.value);
+  }
 });
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeyDown);
+  if (canvasResizeObserver) {
+    canvasResizeObserver.disconnect();
+    canvasResizeObserver = null;
+  }
   if (syncConfigTimer) {
     clearTimeout(syncConfigTimer);
     syncConfigTimer = null;
@@ -373,7 +468,7 @@ onBeforeUnmount(() => {
       <NodePalette :readonly="readonly" @dragstart="onDragStartFromPalette" />
     </aside>
 
-    <section class="designer-canvas" @dragover="onDragOver" @drop="onDrop">
+    <section ref="canvasRef" class="designer-canvas" @dragover="onDragOver" @drop="onDrop">
       <VueFlow
         :id="flowId"
         v-model:nodes="nodes"

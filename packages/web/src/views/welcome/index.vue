@@ -6,8 +6,11 @@ import { useRouter } from "vue-router";
 import {
   getCurrentUser,
   listMyBankAccounts,
+  createMyBankAccount,
+  updateMyBankAccount,
   type MyBankAccount
 } from "@/api/user";
+import { listPendingApprovals, type PendingApprovalItem } from "@/api/approval";
 import { listProjects, type Project } from "@/api/project";
 import {
   createReimbursementEnvelope,
@@ -39,6 +42,16 @@ const reimbursementForm = ref({
 });
 
 const bankCards = ref<MyBankAccount[]>([]);
+const bankEditVisible = ref(false);
+const bankEditMode = ref<"create" | "edit">("create");
+const bankSubmitting = ref(false);
+const editingBankId = ref<number | null>(null);
+const bankForm = ref({
+  bank_name: "",
+  account_name: "",
+  account_no: ""
+});
+const pendingApprovalItems = ref<PendingApprovalItem[]>([]);
 
 type PersonalCertificate = {
   id: number;
@@ -132,16 +145,18 @@ const loadData = async () => {
     fullName.value = me.data.nickname || me.data.username;
     roles.value = me.data.roles || [];
     permissions.value = me.data.permissions || [];
-    const [reimbursementResult, bankAccountResult] = await Promise.all([
+    const [reimbursementResult, bankAccountResult, pendingResult] = await Promise.all([
       listReimbursementEnvelopes({
         creator_id: "me",
         page: 1,
         pageSize: 8
       }),
-      listMyBankAccounts()
+      listMyBankAccounts(),
+      listPendingApprovals({ page: 1, pageSize: 6 })
     ]);
     reimbursements.value = reimbursementResult.data;
     bankCards.value = bankAccountResult.data;
+    pendingApprovalItems.value = pendingResult.data || [];
     const projectResult = await listProjects({ page: 1, pageSize: 200, status: "active" });
     projects.value = projectResult.data;
     if (!reimbursementForm.value.project_id && projects.value.length > 0) {
@@ -160,6 +175,59 @@ const loadData = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const openCreateBankCard = () => {
+  bankEditMode.value = "create";
+  editingBankId.value = null;
+  bankForm.value = {
+    bank_name: "",
+    account_name: fullName.value || username.value || "",
+    account_no: ""
+  };
+  bankEditVisible.value = true;
+};
+
+const openEditBankCard = (card: MyBankAccount) => {
+  bankEditMode.value = "edit";
+  editingBankId.value = card.id;
+  bankForm.value = {
+    bank_name: card.bank_name,
+    account_name: card.account_name,
+    account_no: card.account_no
+  };
+  bankEditVisible.value = true;
+};
+
+const submitBankCard = async () => {
+  const payload = {
+    bank_name: bankForm.value.bank_name.trim(),
+    account_name: bankForm.value.account_name.trim(),
+    account_no: bankForm.value.account_no.trim()
+  };
+  if (!payload.bank_name || !payload.account_name || !payload.account_no) {
+    message("请完整填写收款卡信息", { type: "warning" });
+    return;
+  }
+
+  bankSubmitting.value = true;
+  try {
+    if (bankEditMode.value === "create") {
+      await createMyBankAccount(payload);
+      message("已新增收款卡", { type: "success" });
+    } else if (editingBankId.value) {
+      await updateMyBankAccount(editingBankId.value, payload);
+      message("已更新收款卡", { type: "success" });
+    }
+    bankEditVisible.value = false;
+    await loadData();
+  } finally {
+    bankSubmitting.value = false;
+  }
+};
+
+const todoSummaryLabel = (item: PendingApprovalItem) => {
+  return `${item.instance_no} · ${item.biz_summary || item.biz_type}`;
 };
 
 const reimbursementStatusLabel = (status: string) => {
@@ -338,12 +406,18 @@ const submitReimbursement = async () => {
     <div class="workspace__row">
       <el-card shadow="never" class="bank-card-block">
         <template #header>
-          <div class="card-header">我的收款卡</div>
+          <div class="card-header card-header--with-action">
+            <span>我的收款卡</span>
+            <el-button link type="primary" @click="openCreateBankCard">新增</el-button>
+          </div>
         </template>
         <div v-for="card in bankCards" :key="card.id" class="bank-card">
           <div class="bank-card__bank">{{ card.bank_name }}</div>
           <div class="bank-card__no">{{ maskCardNo(card.account_no) }}</div>
           <div class="bank-card__holder">持卡人：{{ card.account_name }}</div>
+          <div class="bank-card__actions">
+            <el-button link type="primary" @click="openEditBankCard(card)">编辑</el-button>
+          </div>
         </div>
       </el-card>
 
@@ -410,6 +484,57 @@ const submitReimbursement = async () => {
         </el-card>
       </div>
     </el-card>
+
+    <el-card shadow="never" class="todo-card">
+      <template #header>
+        <div class="card-header">我的待办提醒</div>
+      </template>
+      <el-empty v-if="!pendingApprovalItems.length" description="当前没有待办审批" />
+      <el-timeline v-else>
+        <el-timeline-item
+          v-for="item in pendingApprovalItems"
+          :key="item.task_id"
+          :timestamp="item.submitted_at"
+        >
+          <div class="todo-item">
+            <div class="todo-item__title">{{ todoSummaryLabel(item) }}</div>
+            <div class="todo-item__meta">
+              当前节点：{{ item.current_node_name || item.current_node_key || "待处理" }}
+            </div>
+          </div>
+        </el-timeline-item>
+      </el-timeline>
+      <div class="todo-card__actions">
+        <el-button link type="primary" @click="router.push('/approval/unified-tasklist')"
+          >查看全部待办</el-button
+        >
+      </div>
+    </el-card>
+
+    <el-dialog
+      v-model="bankEditVisible"
+      :title="bankEditMode === 'create' ? '新增收款卡' : '编辑收款卡'"
+      width="460px"
+      destroy-on-close
+    >
+      <el-form label-width="90px">
+        <el-form-item label="开户行" required>
+          <el-input v-model="bankForm.bank_name" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="户名" required>
+          <el-input v-model="bankForm.account_name" maxlength="64" />
+        </el-form-item>
+        <el-form-item label="账号" required>
+          <el-input v-model="bankForm.account_no" maxlength="64" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="bankEditVisible = false">取消</el-button>
+        <el-button type="primary" :loading="bankSubmitting" @click="submitBankCard">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -467,9 +592,16 @@ const submitReimbursement = async () => {
   color: #2a241d;
 }
 
+.card-header--with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .bank-card-block,
 .timeline-card,
-.cert-card {
+.cert-card,
+.todo-card {
   border-color: #d9ceb9;
 }
 
@@ -490,6 +622,10 @@ const submitReimbursement = async () => {
 .cert-item__meta {
   margin-top: 6px;
   color: #6e6458;
+}
+
+.bank-card__actions {
+  margin-top: 6px;
 }
 
 .timeline-item {
@@ -525,6 +661,22 @@ const submitReimbursement = async () => {
   margin-top: 8px;
   display: flex;
   gap: 8px;
+}
+
+.todo-item__title {
+  font-weight: 600;
+  color: #2a241d;
+}
+
+.todo-item__meta {
+  margin-top: 4px;
+  color: #6e6458;
+  font-size: 12px;
+}
+
+.todo-card__actions {
+  margin-top: 6px;
+  text-align: right;
 }
 
 @media (max-width: 980px) {
