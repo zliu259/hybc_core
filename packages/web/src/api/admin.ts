@@ -372,3 +372,27 @@ export const upsertRunnerRuntimeConfig = (
     { data: { items } }
   );
 };
+
+export type AiRuntimeTestTaskResult = {
+  task_id: number;
+  task_code: string;
+  task_type: string;
+  biz_type: string;
+  biz_id: number;
+  status: string;
+  created_at: string;
+};
+
+export const createAiRuntimeTestTask = (data?: {
+  task_type?: string;
+  biz_type?: string;
+  biz_id?: number;
+  payload?: Record<string, unknown>;
+  priority?: number;
+}) => {
+  return http.request<{ success: boolean; data: AiRuntimeTestTaskResult }>(
+    "post",
+    "/api/v1/admin/ai-runtime/test-task",
+    { data }
+  );
+};

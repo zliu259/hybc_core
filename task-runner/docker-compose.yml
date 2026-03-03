@@ -15,7 +15,9 @@ services:
       - CAPABILITIES=${CAPABILITIES:-contract_review,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_analysis,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate,voice_stt}
       - MOCK_AI_ONLY=${MOCK_AI_ONLY:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
-      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4.1}
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.2}
+      - OPENAI_MODEL_CONTRACT_REVIEW_TEXT=${OPENAI_MODEL_CONTRACT_REVIEW_TEXT:-gpt-5.2}
+      - OPENAI_MODEL_CONTRACT_REVIEW_VISION=${OPENAI_MODEL_CONTRACT_REVIEW_VISION:-gpt-4o}
       - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
       - OPENAI_ORG_ID=${OPENAI_ORG_ID:-}
       - OPENAI_PROJECT_ID=${OPENAI_PROJECT_ID:-}

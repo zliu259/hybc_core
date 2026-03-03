@@ -68,12 +68,20 @@ const promptForm = ref({
 
 const taskTypeOptions = [
   "contract_review",
+  "payment_risk_assessment",
   "risk_assessment",
   "reimbursement_check",
+  "reimbursement_anomaly",
+  "log_smart_fill",
   "log_analysis",
+  "log_summary",
   "equipment_recommend",
+  "consumable_estimation",
+  "inventory_alert_analysis",
+  "consumption_anomaly",
   "ocr_extract",
   "file_generate",
+  "voice_stt",
   "approval_ai_gate"
 ];
 

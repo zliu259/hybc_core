@@ -9,7 +9,9 @@ import {
 } from "@/api/task";
 import {
   listRunnerRuntimeConfig,
-  upsertRunnerRuntimeConfig
+  upsertRunnerRuntimeConfig,
+  createAiRuntimeTestTask,
+  type AiRuntimeTestTaskResult
 } from "@/api/admin";
 
 defineOptions({ name: "ComputeNodes" });
@@ -27,12 +29,18 @@ const runtimeLoading = ref(false);
 const runtimeSaving = ref(false);
 const runtimeForm = ref({
   OPENAI_API_KEY: "",
-  OPENAI_MODEL: "gpt-4.1",
+  OPENAI_MODEL: "gpt-5.2",
   OPENAI_BASE_URL: "https://api.openai.com/v1",
+  OPENAI_MODEL_CONTRACT_REVIEW_TEXT: "gpt-5.2",
+  OPENAI_MODEL_CONTRACT_REVIEW_VISION: "gpt-4o",
   ANTHROPIC_API_KEY: "",
   ANTHROPIC_MODEL: "claude-sonnet-4-20250514",
   MOCK_AI_ONLY: "false"
 });
+
+const testTaskType = ref("contract_review");
+const testCreating = ref(false);
+const lastCreatedTestTask = ref<AiRuntimeTestTaskResult | null>(null);
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -54,12 +62,20 @@ const taskStatusOptions = [
 ];
 const taskTypeOptions = [
   "contract_review",
+  "payment_risk_assessment",
   "risk_assessment",
   "reimbursement_check",
+  "reimbursement_anomaly",
+  "log_smart_fill",
   "log_analysis",
+  "log_summary",
   "equipment_recommend",
+  "consumable_estimation",
+  "inventory_alert_analysis",
+  "consumption_anomaly",
   "ocr_extract",
   "file_generate",
+  "voice_stt",
   "approval_ai_gate"
 ];
 
@@ -133,8 +149,12 @@ const loadRuntimeConfig = async () => {
     );
     runtimeForm.value = {
       OPENAI_API_KEY: map.get("OPENAI_API_KEY") ?? "",
-      OPENAI_MODEL: map.get("OPENAI_MODEL") ?? "gpt-4.1",
+      OPENAI_MODEL: map.get("OPENAI_MODEL") ?? "gpt-5.2",
       OPENAI_BASE_URL: map.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
+      OPENAI_MODEL_CONTRACT_REVIEW_TEXT:
+        map.get("OPENAI_MODEL_CONTRACT_REVIEW_TEXT") ?? "gpt-5.2",
+      OPENAI_MODEL_CONTRACT_REVIEW_VISION:
+        map.get("OPENAI_MODEL_CONTRACT_REVIEW_VISION") ?? "gpt-4o",
       ANTHROPIC_API_KEY: map.get("ANTHROPIC_API_KEY") ?? "",
       ANTHROPIC_MODEL:
         map.get("ANTHROPIC_MODEL") ?? "claude-sonnet-4-20250514",
@@ -163,6 +183,14 @@ const saveRuntimeConfig = async () => {
         config_value: runtimeForm.value.OPENAI_BASE_URL
       },
       {
+        config_key: "OPENAI_MODEL_CONTRACT_REVIEW_TEXT",
+        config_value: runtimeForm.value.OPENAI_MODEL_CONTRACT_REVIEW_TEXT
+      },
+      {
+        config_key: "OPENAI_MODEL_CONTRACT_REVIEW_VISION",
+        config_value: runtimeForm.value.OPENAI_MODEL_CONTRACT_REVIEW_VISION
+      },
+      {
         config_key: "ANTHROPIC_API_KEY",
         config_value: runtimeForm.value.ANTHROPIC_API_KEY,
         is_secret: true
@@ -181,6 +209,25 @@ const saveRuntimeConfig = async () => {
     message("保存失败", { type: "error" });
   } finally {
     runtimeSaving.value = false;
+  }
+};
+
+const createTestTask = async () => {
+  testCreating.value = true;
+  try {
+    const result = await createAiRuntimeTestTask({
+      task_type: testTaskType.value,
+      biz_type: "ai_runtime_ui_test",
+      priority: 9
+    });
+    lastCreatedTestTask.value = result.data;
+    message(`测试任务已创建：${result.data.task_code}`, { type: "success" });
+    queuePage.value = 1;
+    await loadQueue();
+  } catch {
+    message("创建测试任务失败", { type: "error" });
+  } finally {
+    testCreating.value = false;
   }
 };
 
@@ -224,6 +271,19 @@ onUnmounted(() => {
           </el-form-item>
         </el-col>
         <el-col :span="12">
+          <el-form-item label="OPENAI_TEXT_MODEL">
+            <el-input v-model="runtimeForm.OPENAI_MODEL_CONTRACT_REVIEW_TEXT" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+
+      <el-row :gutter="16">
+        <el-col :span="12">
+          <el-form-item label="OPENAI_VISION_MODEL">
+            <el-input v-model="runtimeForm.OPENAI_MODEL_CONTRACT_REVIEW_VISION" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
           <el-form-item label="ANTHROPIC_API_KEY">
             <el-input
               v-model="runtimeForm.ANTHROPIC_API_KEY"
@@ -256,6 +316,36 @@ onUnmounted(() => {
         >
       </el-form-item>
     </el-form>
+  </el-card>
+
+  <el-card shadow="never" header="AI运行测试" style="margin-bottom: 16px">
+    <el-form inline>
+      <el-form-item label="任务类型">
+        <el-select v-model="testTaskType" style="width: 220px">
+          <el-option
+            v-for="t in taskTypeOptions"
+            :key="t"
+            :label="t"
+            :value="t"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item>
+        <el-button type="primary" :loading="testCreating" @click="createTestTask"
+          >创建测试任务</el-button
+        >
+      </el-form-item>
+    </el-form>
+
+    <el-alert
+      v-if="lastCreatedTestTask"
+      type="success"
+      :closable="false"
+      show-icon
+      style="margin-top: 8px"
+      :title="`已创建任务 ${lastCreatedTestTask.task_code}（${lastCreatedTestTask.task_type}）`"
+      :description="`任务ID: ${lastCreatedTestTask.task_id}，状态: ${lastCreatedTestTask.status}。可在下方任务队列中查看执行结果。`"
+    />
   </el-card>
 
   <el-card shadow="never" header="计算节点" style="margin-bottom: 16px">

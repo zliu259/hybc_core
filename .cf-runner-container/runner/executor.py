@@ -1,8 +1,14 @@
 from __future__ import annotations
 
+import base64
+from io import BytesIO
 import json
 import logging
+import mimetypes
 import os
+from urllib.parse import quote, urljoin
+
+import httpx
 
 from .providers.base import AiProvider
 from .providers.claude import ClaudeProvider
@@ -48,6 +54,8 @@ class TaskExecutor:
 
         if not isinstance(payload, dict):
             payload = {"raw": payload}
+
+        payload = self._prepare_payload_for_task(task_type, payload)
 
         if not isinstance(prompt, dict):
             prompt = None
@@ -145,9 +153,31 @@ class TaskExecutor:
 
             selected_model = model if isinstance(model, str) and model else runtime.get("OPENAI_MODEL")
             if not isinstance(selected_model, str) or not selected_model:
-                selected_model = os.getenv("OPENAI_MODEL", "gpt-4.1")
+                selected_model = os.getenv("OPENAI_MODEL", "gpt-5.2")
 
-            return OpenAIProvider(api_key=api_key, model=selected_model, base_url=base_url)
+            model_overrides: dict[str, str] = {}
+            runtime_map = runtime if isinstance(runtime, dict) else {}
+            override_mapping = {
+                "contract_review:text": "OPENAI_MODEL_CONTRACT_REVIEW_TEXT",
+                "contract_review:vision": "OPENAI_MODEL_CONTRACT_REVIEW_VISION",
+                "default:text": "OPENAI_MODEL",
+                "default:vision": "OPENAI_MODEL_VISION_FALLBACK",
+            }
+            for key, env_key in override_mapping.items():
+                value = runtime_map.get(env_key)
+                if isinstance(value, str) and value.strip():
+                    model_overrides[key] = value.strip()
+                    continue
+                env_val = os.getenv(env_key, "").strip()
+                if env_val:
+                    model_overrides[key] = env_val
+
+            return OpenAIProvider(
+                api_key=api_key,
+                model=selected_model,
+                base_url=base_url,
+                model_overrides=model_overrides,
+            )
 
         if provider_key == "claude":
             api_key = provider_cfg.get("api_key")
@@ -165,3 +195,161 @@ class TaskExecutor:
             return ClaudeProvider(api_key=api_key, model=selected_model)
 
         return None
+
+    def _prepare_payload_for_task(self, task_type: str, payload: dict[str, object]) -> dict[str, object]:
+        if task_type != "contract_review":
+            return payload
+
+        attachments = payload.get("attachments")
+        normalized = self._normalize_attachments(attachments)
+        if not normalized:
+            return payload
+
+        enriched = dict(payload)
+        text_blocks: list[dict[str, str]] = []
+        image_data_urls: list[str] = []
+
+        for attachment in normalized[:6]:
+            source = attachment["source"]
+            content_type = attachment["content_type"]
+            data = self._download_attachment(source)
+            if not data:
+                continue
+
+            if self._is_docx(source, content_type):
+                text = self._extract_docx_text(data)
+                if text:
+                    text_blocks.append({"source": source, "text": text[:24000]})
+                continue
+
+            if self._is_pdf(source, content_type):
+                text = self._extract_pdf_text(data)
+                if text and len(text.strip()) >= 200:
+                    text_blocks.append({"source": source, "text": text[:24000]})
+                else:
+                    image_data_urls.extend(self._render_pdf_pages_to_data_urls(data, max_pages=3))
+                continue
+
+            if self._is_image(source, content_type):
+                mime = content_type or mimetypes.guess_type(source)[0] or "image/png"
+                image_data_urls.append(f"data:{mime};base64,{base64.b64encode(data).decode('ascii')}")
+
+        if text_blocks or image_data_urls:
+            enriched["_attachment_context"] = {
+                "text_blocks": text_blocks,
+                "image_data_urls": image_data_urls,
+            }
+            enriched["_hy_input_mode"] = "vision" if image_data_urls else "text"
+            enriched["_attachment_processing"] = {
+                "text_blocks": len(text_blocks),
+                "image_pages": len(image_data_urls),
+            }
+
+        return enriched
+
+    def _normalize_attachments(self, attachments: object) -> list[dict[str, str]]:
+        if not isinstance(attachments, list):
+            return []
+
+        normalized: list[dict[str, str]] = []
+        for item in attachments:
+            if isinstance(item, str) and item.strip():
+                normalized.append({"source": item.strip(), "content_type": ""})
+                continue
+
+            if isinstance(item, dict):
+                raw_source = item.get("url") or item.get("key") or item.get("file_key") or item.get("path")
+                source = raw_source.strip() if isinstance(raw_source, str) else ""
+                if not source:
+                    continue
+                content_type = item.get("contentType") or item.get("content_type")
+                normalized.append(
+                    {
+                        "source": source,
+                        "content_type": content_type.strip() if isinstance(content_type, str) else "",
+                    }
+                )
+
+        return normalized
+
+    def _download_attachment(self, source: str) -> bytes | None:
+        url = source
+        if not source.startswith("http://") and not source.startswith("https://"):
+            base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8787")
+            normalized_key = source.lstrip("/")
+            if normalized_key.startswith("api/v1/upload/object/"):
+                url = urljoin(base_url, f"/{normalized_key}")
+            else:
+                url = urljoin(base_url, f"/api/v1/upload/object/{quote(normalized_key, safe='')}")
+
+        try:
+            response = httpx.get(url, timeout=25.0, follow_redirects=True)
+            response.raise_for_status()
+            return response.content
+        except Exception as exc:
+            logger.warning("Failed to download attachment source=%s error=%s", source, exc)
+            return None
+
+    @staticmethod
+    def _is_docx(source: str, content_type: str) -> bool:
+        lower_source = source.lower()
+        lower_content_type = content_type.lower()
+        return lower_source.endswith(".docx") or "wordprocessingml.document" in lower_content_type
+
+    @staticmethod
+    def _is_pdf(source: str, content_type: str) -> bool:
+        lower_source = source.lower()
+        lower_content_type = content_type.lower()
+        return lower_source.endswith(".pdf") or "application/pdf" in lower_content_type
+
+    @staticmethod
+    def _is_image(source: str, content_type: str) -> bool:
+        lower_source = source.lower()
+        lower_content_type = content_type.lower()
+        return (
+            lower_source.endswith(".png")
+            or lower_source.endswith(".jpg")
+            or lower_source.endswith(".jpeg")
+            or "image/" in lower_content_type
+        )
+
+    def _extract_docx_text(self, data: bytes) -> str:
+        try:
+            docx_module = __import__("docx")
+            document = docx_module.Document(BytesIO(data))
+            texts = [p.text.strip() for p in document.paragraphs if isinstance(p.text, str) and p.text.strip()]
+            return "\n".join(texts)
+        except Exception as exc:
+            logger.warning("DOCX extraction failed: %s", exc)
+            return ""
+
+    def _extract_pdf_text(self, data: bytes) -> str:
+        try:
+            pypdf_module = __import__("pypdf")
+            reader = pypdf_module.PdfReader(BytesIO(data))
+            chunks: list[str] = []
+            for page in reader.pages[:20]:
+                page_text = page.extract_text() or ""
+                page_text = page_text.strip()
+                if page_text:
+                    chunks.append(page_text)
+            return "\n".join(chunks)
+        except Exception as exc:
+            logger.warning("PDF text extraction failed: %s", exc)
+            return ""
+
+    def _render_pdf_pages_to_data_urls(self, data: bytes, max_pages: int) -> list[str]:
+        try:
+            fitz = __import__("fitz")
+            document = fitz.open(stream=data, filetype="pdf")
+            rendered: list[str] = []
+            for page_index in range(min(max_pages, len(document))):
+                page = document[page_index]
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(2, 2), alpha=False)
+                image_bytes = pixmap.tobytes("png")
+                rendered.append(f"data:image/png;base64,{base64.b64encode(image_bytes).decode('ascii')}")
+            document.close()
+            return rendered
+        except Exception as exc:
+            logger.warning("PDF image rendering failed: %s", exc)
+            return []

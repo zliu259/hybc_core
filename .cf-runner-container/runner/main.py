@@ -34,7 +34,7 @@ def build_executor() -> TaskExecutor:
 
     openai_key = os.getenv("OPENAI_API_KEY", "")
     if openai_key and not mock_ai_only:
-        openai_model = os.getenv("OPENAI_MODEL", "gpt-4.1")
+        openai_model = os.getenv("OPENAI_MODEL", "gpt-5.2")
         openai_base_url = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
         openai_org_id = os.getenv("OPENAI_ORG_ID", "")
         openai_project_id = os.getenv("OPENAI_PROJECT_ID", "")

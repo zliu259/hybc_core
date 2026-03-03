@@ -10,22 +10,9 @@ import type {
   AiProviderConfig
 } from "../types/ai";
 import { createTask, completeTask, resolvePrompt } from "./ai-slot";
+import { loadRunnerRuntimeMap } from "./runner-runtime";
 
 const nowIso = () => new Date().toISOString();
-
-const loadRunnerRuntimeConfig = async (env: Env): Promise<Record<string, string>> => {
-  const rows = await env.DB.prepare(
-    "SELECT config_key, config_value FROM runner_runtime_config"
-  )
-    .all<{ config_key: string; config_value: string }>()
-    .catch(() => ({ results: [] as Array<{ config_key: string; config_value: string }> }));
-
-  const result: Record<string, string> = {};
-  for (const row of rows.results ?? []) {
-    result[row.config_key] = row.config_value;
-  }
-  return result;
-};
 
 // ─── Enqueue ──────────
 
@@ -90,7 +77,7 @@ export const pollForNode = async (
 
   // Resolve provider config
   let providerInfo: TaskPollResponse["provider"] = undefined;
-  const runnerRuntime = await loadRunnerRuntimeConfig(env);
+  const runnerRuntime = await loadRunnerRuntimeMap(env);
   if (task.provider_id) {
     const provider = await env.DB.prepare(
       "SELECT * FROM ai_provider_config WHERE id = ?"

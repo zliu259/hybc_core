@@ -14,9 +14,11 @@ export class RunnerContainer extends Container {
     NODE_TYPE: "cloudflare_container",
     POLL_INTERVAL_SECONDS: "3",
     HEARTBEAT_INTERVAL_SECONDS: "30",
-    CAPABILITIES: "contract_review,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate",
+    CAPABILITIES: "contract_review,risk_assessment,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate,voice_stt",
     MOCK_AI_ONLY: "false",
-    OPENAI_MODEL: "gpt-4.1",
+    OPENAI_MODEL: "gpt-5.2",
+    OPENAI_MODEL_CONTRACT_REVIEW_TEXT: "gpt-5.2",
+    OPENAI_MODEL_CONTRACT_REVIEW_VISION: "gpt-4o",
     OPENAI_BASE_URL: "https://api.openai.com/v1",
     ANTHROPIC_MODEL: "claude-sonnet-4-20250514"
   };

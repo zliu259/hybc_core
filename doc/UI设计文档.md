@@ -234,8 +234,10 @@
 #### I-5. 计算节点监控 `views/ai/nodes.vue`
 - 节点列表卡片：节点ID、名称、类型、状态（颜色标签）、能力、CPU/内存、最后心跳（相对时间）。
 - 30秒自动刷新。
+- Runner运行参数卡片：支持在线维护 `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL`、合同文本/视觉模型键，参数落库后同步到 KV 供 Runner 轮询读取。
+- AI运行测试卡片：可按任务类型创建测试任务，任务进入队列后在下方队列表追踪结果。
 - 任务队列卡片：筛选（状态/任务类型）+ 表格 + 分页。
-- API 指向：`/api/v1/task/nodes`, `/api/v1/task/queue`
+- API 指向：`/api/v1/admin/runner-runtime-config`, `/api/v1/admin/ai-runtime/test-task`, `/api/v1/task/nodes`, `/api/v1/task/queue`
 
 #### J. 资产台账 `views/asset/list.vue`
 - 列：资产码、类型、状态、资产归属（自有/租入）、所在项目、责任人、更新时间。

@@ -13,12 +13,18 @@ import type {
   AiProviderConfig,
   AiRoutingRule,
   AiPromptTemplate,
-  RunnerRuntimeConfigItem,
   ProviderConfigRequest,
   RoutingRuleRequest,
   PromptTemplateRequest
 } from "../types/ai";
+import { taskTypes } from "../types/ai";
 import { validateTemplate } from "../services/approval/template-parser";
+import { createTask } from "../services/ai-slot";
+import {
+  listRunnerRuntimeConfig,
+  upsertRunnerRuntimeConfig,
+  refreshRunnerRuntimeKvFromDb
+} from "../services/runner-runtime";
 
 const nowIso = () => new Date().toISOString();
 
@@ -292,6 +298,42 @@ const seedDefaultAiConfig = async (
     .bind(JSON.stringify({ mode: "rule_based" }), now, now)
     .run();
 
+  const runnerRuntimeDefaults: Array<{
+    config_key: string;
+    config_value: string;
+    is_secret: 0 | 1;
+  }> = [
+    { config_key: "OPENAI_MODEL", config_value: options.openaiModel, is_secret: 0 },
+    { config_key: "OPENAI_MODEL_CONTRACT_REVIEW_TEXT", config_value: "gpt-5.2", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_CONTRACT_REVIEW_VISION", config_value: "gpt-4o", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_REASONING", config_value: "gpt-5.1", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_FAST", config_value: "gpt-5-mini", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_EFFICIENT", config_value: "gpt-5-nano", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_CHAT", config_value: "gpt-5.2-chat-latest", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_CHAT_COMPAT", config_value: "gpt-5.1-chat-latest", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_SEARCH", config_value: "gpt-5-search-api", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_TRANSCRIBE", config_value: "gpt-4o-transcribe", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_VISION_FALLBACK", config_value: "gpt-4o", is_secret: 0 },
+    { config_key: "OPENAI_API_KEY", config_value: "", is_secret: 1 },
+    { config_key: "OPENAI_BASE_URL", config_value: options.openaiEndpoint, is_secret: 0 }
+  ];
+
+  for (const item of runnerRuntimeDefaults) {
+    await db
+      .prepare(
+        `INSERT INTO runner_runtime_config
+          (config_key, config_value, is_secret, updated_by, created_at, updated_at)
+         VALUES (?, ?, ?, 'system', ?, ?)
+         ON CONFLICT(config_key) DO UPDATE SET
+           config_value = excluded.config_value,
+           is_secret = excluded.is_secret,
+           updated_by = excluded.updated_by,
+           updated_at = excluded.updated_at`
+      )
+      .bind(item.config_key, item.config_value, item.is_secret, now, now)
+      .run();
+  }
+
   for (const prompt of defaultAiPromptTemplates) {
     await db
       .prepare(
@@ -420,11 +462,8 @@ adminRoutes.get(
   "/runner-runtime-config",
   requireRoles(["super_admin"]),
   async (c) => {
-    const rows = await c.env.DB.prepare(
-      "SELECT * FROM runner_runtime_config ORDER BY config_key ASC"
-    ).all<RunnerRuntimeConfigItem>();
-
-    return c.json({ success: true, data: rows.results ?? [] });
+    const rows = await listRunnerRuntimeConfig(c.env);
+    return c.json({ success: true, data: rows });
   }
 );
 
@@ -451,7 +490,12 @@ adminRoutes.post(
       );
     }
 
-    const now = nowIso();
+    const normalized: Array<{
+      config_key: string;
+      config_value: string;
+      is_secret: 0 | 1;
+    }> = [];
+
     for (const item of body.items) {
       const key = typeof item.config_key === "string" ? item.config_key.trim() : "";
       const value = typeof item.config_value === "string" ? item.config_value : "";
@@ -467,25 +511,157 @@ adminRoutes.post(
         );
       }
 
-      await c.env.DB.prepare(
-        `INSERT INTO runner_runtime_config
-          (config_key, config_value, is_secret, updated_by, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT(config_key) DO UPDATE SET
-           config_value = excluded.config_value,
-           is_secret = excluded.is_secret,
-           updated_by = excluded.updated_by,
-           updated_at = excluded.updated_at`
-      )
-        .bind(key, value, isSecret, auth.sub, now, now)
-        .run();
+      normalized.push({
+        config_key: key,
+        config_value: value,
+        is_secret: isSecret
+      });
     }
 
-    const rows = await c.env.DB.prepare(
-      "SELECT * FROM runner_runtime_config ORDER BY config_key ASC"
-    ).all<RunnerRuntimeConfigItem>();
+    const rows = await upsertRunnerRuntimeConfig(c.env, normalized, auth.sub);
 
-    return c.json({ success: true, data: rows.results ?? [] });
+    return c.json({ success: true, data: rows });
+  }
+);
+
+adminRoutes.post(
+  "/ai-runtime/test-task",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      task_type?: string;
+      biz_type?: string;
+      biz_id?: number;
+      payload?: Record<string, unknown>;
+      priority?: number;
+    };
+
+    const requestedTaskType =
+      typeof body.task_type === "string" && body.task_type.trim()
+        ? body.task_type.trim()
+        : "contract_review";
+
+    if (!taskTypes.includes(requestedTaskType as (typeof taskTypes)[number])) {
+      return c.json(
+        {
+          success: false,
+          error: { message: `Unsupported task_type: ${requestedTaskType}` }
+        },
+        400
+      );
+    }
+
+    const taskType = requestedTaskType as (typeof taskTypes)[number];
+    const bizType =
+      typeof body.biz_type === "string" && body.biz_type.trim()
+        ? body.biz_type.trim()
+        : "ai_runtime_test";
+    const bizId =
+      typeof body.biz_id === "number" && Number.isFinite(body.biz_id)
+        ? body.biz_id
+        : Number(new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 12));
+
+    const defaultPayloadByTask: Record<(typeof taskTypes)[number], Record<string, unknown>> = {
+      contract_review: {
+        contract_id: bizId,
+        contract_name: "AI Runtime Test Contract",
+        total_amount: 128000,
+        payment_terms: "30%预付款，70%验收后支付"
+      },
+      risk_assessment: {
+        amount: 128000,
+        payee_name: "测试收款方",
+        scenario: "runtime_test"
+      },
+      payment_risk_assessment: {
+        amount: 128000,
+        payee_name: "测试收款方",
+        scenario: "runtime_test"
+      },
+      reimbursement_check: {
+        total_amount: 3680,
+        items: [{ amount: 1200, category: "交通" }, { amount: 2480, category: "材料" }]
+      },
+      reimbursement_anomaly: {
+        amount: 3680,
+        duplicate_count: 0
+      },
+      log_smart_fill: {
+        previous_log: { weather: "晴", cumulative_pipe_count: 48 },
+        completed_pipe_count: 6
+      },
+      log_analysis: {
+        content: "今日推进作业正常，设备状态良好。"
+      },
+      log_summary: {
+        report_type: "daily",
+        date_from: new Date().toISOString().slice(0, 10),
+        date_to: new Date().toISOString().slice(0, 10)
+      },
+      equipment_recommend: {
+        project_type: "municipal",
+        budget: 560000
+      },
+      consumable_estimation: {
+        items: [{ asset_type_id: 1, planned_qty: 120 }]
+      },
+      inventory_alert_analysis: {
+        quantity: 12,
+        min_stock: 30
+      },
+      consumption_anomaly: {
+        quantity: 66
+      },
+      ocr_extract: {
+        file_url: "test://sample-receipt"
+      },
+      file_generate: {
+        envelope_uuid: crypto.randomUUID(),
+        envelope_no: `TEST-${Date.now()}`,
+        project_id: "TEST-PROJ",
+        applicant_userid: "super_admin",
+        created_at: new Date().toISOString(),
+        submitted_at: new Date().toISOString(),
+        received_at: new Date().toISOString()
+      },
+      voice_stt: {
+        scene: "finance",
+        file_key: "test://voice"
+      },
+      approval_ai_gate: {
+        approval_id: bizId,
+        context: "runtime_test"
+      }
+    };
+
+    const mergedPayload = {
+      ...defaultPayloadByTask[taskType],
+      ...(body.payload ?? {})
+    };
+
+    const task = await createTask(c.env, {
+      task_type: taskType,
+      biz_type: bizType,
+      biz_id: bizId,
+      payload: mergedPayload,
+      priority:
+        typeof body.priority === "number" && Number.isFinite(body.priority)
+          ? body.priority
+          : 9
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        task_id: task.id,
+        task_code: task.task_code,
+        task_type: task.task_type,
+        biz_type: task.biz_type,
+        biz_id: task.biz_id,
+        status: task.status,
+        created_at: task.created_at
+      }
+    });
   }
 );
 
@@ -552,7 +728,7 @@ adminRoutes.post(
     const openaiModel =
       typeof body.openai_model === "string" && body.openai_model.trim()
         ? body.openai_model.trim()
-        : "gpt-4.1";
+        : "gpt-5.2";
     const openaiEndpoint =
       typeof body.openai_endpoint === "string" && body.openai_endpoint.trim()
         ? body.openai_endpoint.trim()
@@ -563,6 +739,7 @@ adminRoutes.post(
       openaiModel,
       openaiEndpoint
     });
+    await refreshRunnerRuntimeKvFromDb(c.env);
 
     const templates = await c.env.DB.prepare(
       "SELECT COUNT(*) as total FROM approval_template WHERE status = 'active'"
