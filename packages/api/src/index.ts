@@ -18,6 +18,7 @@ import { projectRoutes } from "./routes/project";
 import { receiptRoutes } from "./routes/receipt";
 import { reimbursementRoutes } from "./routes/reimbursement";
 import { systemRoutes } from "./routes/system";
+import { supportRoutes } from "./routes/support";
 import { surveyRoutes } from "./routes/survey";
 import { taskRoutes } from "./routes/task";
 import { uploadRoutes } from "./routes/upload";
@@ -49,6 +50,7 @@ app.get("/WW_verify_sVPd1Q6fW7UMqLN2.txt", (c) => {
 });
 
 app.route("/api/v1/system", systemRoutes);
+app.route("/api/v1/support", supportRoutes);
 app.route("/api/v1/auth", authRoutes);
 app.route("/api/v1/passkeys", passkeyRoutes);
 app.route("/api/v1/user", userRoutes);

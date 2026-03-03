@@ -22,53 +22,46 @@ const NODE_NAMES: Record<NodeType, string> = {
   end: "结束"
 };
 
-const defaultGraph = (): { nodes: Node<FlowNodeData>[]; edges: Edge[] } => {
-  const nodes: Node<FlowNodeData>[] = [
-    {
-      id: "start",
-      type: "start",
-      position: { x: ORIGIN_X + HORIZONTAL_GAP, y: ORIGIN_Y },
-      data: {
-        key: "start",
-        type: "start",
-        name: "开始",
-        assignees: []
-      }
-    },
-    {
-      id: "end",
-      type: "end",
-      position: { x: ORIGIN_X + HORIZONTAL_GAP, y: ORIGIN_Y + VERTICAL_GAP },
-      data: {
-        key: "end",
-        type: "end",
-        name: "结束",
-        assignees: []
+const VIRTUAL_START_ID = "start";
+const VIRTUAL_END_ID = "end";
+
+const isVirtualNode = (id: string, type: NodeType) => {
+  return id === VIRTUAL_START_ID || id === VIRTUAL_END_ID || type === "start" || type === "end";
+};
+
+const collectNextKeys = (node: TemplateNodeConfig): string[] => {
+  const output: string[] = [];
+  if (typeof node.next_key === "string" && node.next_key) {
+    output.push(node.next_key);
+  }
+
+  if (Array.isArray(node.conditions)) {
+    for (const condition of node.conditions) {
+      if (typeof condition.next_key === "string" && condition.next_key) {
+        output.push(condition.next_key);
       }
     }
-  ];
+  }
 
-  const edges: Edge[] = [
-    {
-      id: "edge-start-end",
-      source: "start",
-      target: "end",
-      type: "smoothstep"
-    }
-  ];
+  if (typeof node.default_next_key === "string" && node.default_next_key) {
+    output.push(node.default_next_key);
+  }
 
-  return { nodes, edges };
+  return [...new Set(output)];
 };
 
 const toFlowNodeData = (node: TemplateNodeConfig): FlowNodeData => {
   return {
     key: node.key,
-    type: node.node_type,
-    name: node.name || NODE_NAMES[node.node_type] || node.key,
+    type: node.type,
+    name: node.name || NODE_NAMES[node.type] || node.key,
     assignees: node.assignee_userids ?? [],
     autoAction: node.auto_action,
     aiSlotId: node.ai_slot_id,
-    timeoutHours: node.timeout_hours
+    timeoutHours: node.timeout_hours,
+    nextKey: node.next_key,
+    defaultNextKey: node.default_next_key,
+    conditions: node.conditions
   };
 };
 
@@ -76,48 +69,77 @@ const toTemplateNode = (
   node: Node<FlowNodeData>,
   nextKeys: string[]
 ): TemplateNodeConfig => {
+  const normalizedNext = nextKeys.filter(key => key !== VIRTUAL_END_ID);
+  const fallbackNext = normalizedNext[0] ?? null;
+  const explicitNext = node.data.nextKey;
+
   return {
     key: node.id,
-    node_type: node.data.type,
+    type: node.data.type,
     name: node.data.name,
     assignee_userids: node.data.assignees,
     auto_action: node.data.autoAction,
     ai_slot_id: node.data.aiSlotId,
     timeout_hours: node.data.timeoutHours,
-    next_keys: nextKeys
+    conditions: node.data.conditions,
+    default_next_key: node.data.defaultNextKey,
+    next_key:
+      typeof explicitNext === "string" || explicitNext === null
+        ? explicitNext
+        : fallbackNext
   };
 };
 
-const normalizeTemplate = (config: TemplateConfig): TemplateConfig => {
-  const normalizedNodes = Array.isArray(config.nodes) ? config.nodes : [];
-  const hasStart = normalizedNodes.some(item => item.node_type === "start");
-  const hasEnd = normalizedNodes.some(item => item.node_type === "end");
+const defaultGraph = (): { nodes: Node<FlowNodeData>[]; edges: Edge[] } => {
+  const businessStartId = "node_start_1";
+  const businessEndId = "node_end_1";
 
-  const nodes: TemplateNodeConfig[] = [...normalizedNodes];
+  const nodes: Node<FlowNodeData>[] = [
+    {
+      id: VIRTUAL_START_ID,
+      type: "start",
+      position: { x: ORIGIN_X + HORIZONTAL_GAP, y: ORIGIN_Y },
+      data: { key: VIRTUAL_START_ID, type: "start", name: "开始", assignees: [] }
+    },
+    {
+      id: businessStartId,
+      type: "sequential",
+      position: { x: ORIGIN_X + HORIZONTAL_GAP, y: ORIGIN_Y + VERTICAL_GAP },
+      data: {
+        key: businessStartId,
+        type: "sequential",
+        name: "流程发起",
+        assignees: ["manager"],
+        nextKey: businessEndId
+      }
+    },
+    {
+      id: businessEndId,
+      type: "cc",
+      position: { x: ORIGIN_X + HORIZONTAL_GAP, y: ORIGIN_Y + VERTICAL_GAP * 2 },
+      data: {
+        key: businessEndId,
+        type: "cc",
+        name: "抄送归档",
+        assignees: ["finance_manager"],
+        nextKey: null
+      }
+    },
+    {
+      id: VIRTUAL_END_ID,
+      type: "end",
+      position: { x: ORIGIN_X + HORIZONTAL_GAP, y: ORIGIN_Y + VERTICAL_GAP * 3 },
+      data: { key: VIRTUAL_END_ID, type: "end", name: "结束", assignees: [] }
+    }
+  ];
 
-  if (!hasStart) {
-    nodes.push({
-      key: "start",
-      node_type: "start",
-      name: "开始",
-      next_keys: ["end"]
-    });
-  }
+  const edges: Edge[] = [
+    { id: `edge-${VIRTUAL_START_ID}-${businessStartId}`, source: VIRTUAL_START_ID, target: businessStartId, type: "smoothstep" },
+    { id: `edge-${businessStartId}-${businessEndId}`, source: businessStartId, target: businessEndId, type: "smoothstep" },
+    { id: `edge-${businessEndId}-${VIRTUAL_END_ID}`, source: businessEndId, target: VIRTUAL_END_ID, type: "smoothstep" }
+  ];
 
-  if (!hasEnd) {
-    nodes.push({
-      key: "end",
-      node_type: "end",
-      name: "结束",
-      next_keys: []
-    });
-  }
-
-  return {
-    version: Number.isFinite(config.version) ? config.version : 1,
-    start_key: config.start_key || "start",
-    nodes
-  };
+  return { nodes, edges };
 };
 
 export const graphToTemplate = (
@@ -129,52 +151,47 @@ export const graphToTemplate = (
     return graphToTemplate(fallback.nodes, fallback.edges);
   }
 
+  const businessNodes = nodes.filter(node => !isVirtualNode(node.id, node.data.type));
+  if (!businessNodes.length) {
+    const fallback = defaultGraph();
+    return graphToTemplate(fallback.nodes, fallback.edges);
+  }
+
   const nodeIds = new Set(nodes.map(node => node.id));
   const nextMap = new Map<string, string[]>();
-
-  nodes.forEach(node => {
-    nextMap.set(node.id, []);
-  });
+  nodes.forEach(node => nextMap.set(node.id, []));
 
   edges.forEach(edge => {
-    if (!edge.source || !edge.target) {
-      return;
-    }
-
-    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) {
-      return;
-    }
-
+    if (!edge.source || !edge.target) return;
+    if (!nodeIds.has(edge.source) || !nodeIds.has(edge.target)) return;
     const list = nextMap.get(edge.source);
-    if (!list) {
-      return;
-    }
-
+    if (!list) return;
     if (!list.includes(edge.target)) {
       list.push(edge.target);
     }
   });
 
-  const sortedNodes = [...nodes].sort((left, right) => {
+  const sortedBusinessNodes = [...businessNodes].sort((left, right) => {
     if (left.position.y === right.position.y) {
       return left.position.x - right.position.x;
     }
     return left.position.y - right.position.y;
   });
 
-  const templateNodes = sortedNodes.map(node => {
-    const nextKeys = nextMap.get(node.id) ?? [];
-    return toTemplateNode(node, nextKeys);
-  });
+  let startKey = sortedBusinessNodes[0].id;
+  const startEdges = nextMap.get(VIRTUAL_START_ID) ?? [];
+  if (startEdges.length > 0 && businessNodes.some(node => node.id === startEdges[0])) {
+    startKey = startEdges[0];
+  }
 
-  const startNode =
-    nodes.find(node => node.data.type === "start") ||
-    nodes.find(node => node.id === "start") ||
-    nodes[0];
+  const templateNodes = sortedBusinessNodes.map(node => {
+    const outbound = (nextMap.get(node.id) ?? []).filter(target => target !== VIRTUAL_END_ID);
+    return toTemplateNode(node, outbound);
+  });
 
   return {
     version: 1,
-    start_key: startNode.id,
+    start_key: startKey,
     nodes: templateNodes
   };
 };
@@ -186,39 +203,33 @@ export const templateToGraph = (
     return defaultGraph();
   }
 
-  const normalized = normalizeTemplate(config);
   const nodeMap = new Map<string, TemplateNodeConfig>();
-  normalized.nodes.forEach(item => {
+  config.nodes.forEach(item => {
     nodeMap.set(item.key, {
       ...item,
-      next_keys: item.next_keys ?? []
+      conditions: item.conditions ?? []
     });
   });
 
-  const startKey = nodeMap.has(normalized.start_key)
-    ? normalized.start_key
-    : "start";
+  const startKey = nodeMap.has(config.start_key) ? config.start_key : config.nodes[0].key;
 
   const levelMap = new Map<string, number>();
   const queue: string[] = [startKey];
+  const visited = new Set<string>();
   levelMap.set(startKey, 0);
 
   while (queue.length > 0) {
     const key = queue.shift();
-    if (!key) {
-      continue;
-    }
+    if (!key) continue;
+    if (visited.has(key)) continue;
+    visited.add(key);
 
     const current = nodeMap.get(key);
     const currentLevel = levelMap.get(key) ?? 0;
-    if (!current) {
-      continue;
-    }
+    if (!current) continue;
 
-    current.next_keys.forEach(nextKey => {
-      if (!nodeMap.has(nextKey)) {
-        return;
-      }
+    collectNextKeys(current).forEach(nextKey => {
+      if (!nodeMap.has(nextKey)) return;
 
       const nextLevel = currentLevel + 1;
       const prevLevel = levelMap.get(nextKey);
@@ -239,13 +250,12 @@ export const templateToGraph = (
       maxLevel = Math.max(maxLevel, level);
       return;
     }
-
     maxLevel += 1;
     levelMap.set(key, maxLevel);
   });
 
   const lanes = new Map<number, number>();
-  const nodes = [...nodeMap.values()]
+  const businessNodes = [...nodeMap.values()]
     .sort((left, right) => {
       const leftLevel = levelMap.get(left.key) ?? 0;
       const rightLevel = levelMap.get(right.key) ?? 0;
@@ -261,18 +271,54 @@ export const templateToGraph = (
 
       return {
         id: item.key,
-        type: item.node_type,
+        type: item.type,
         position: {
           x: ORIGIN_X + lane * HORIZONTAL_GAP,
-          y: ORIGIN_Y + level * VERTICAL_GAP
+          y: ORIGIN_Y + VERTICAL_GAP + level * VERTICAL_GAP
         },
         data: toFlowNodeData(item)
       } satisfies Node<FlowNodeData>;
     });
 
+  const startNode: Node<FlowNodeData> = {
+    id: VIRTUAL_START_ID,
+    type: "start",
+    position: { x: ORIGIN_X + HORIZONTAL_GAP, y: ORIGIN_Y },
+    data: { key: VIRTUAL_START_ID, type: "start", name: "开始", assignees: [] }
+  };
+
+  const endLevel = Math.max(...Array.from(levelMap.values(), level => level), 0) + 2;
+  const endNode: Node<FlowNodeData> = {
+    id: VIRTUAL_END_ID,
+    type: "end",
+    position: {
+      x: ORIGIN_X + HORIZONTAL_GAP,
+      y: ORIGIN_Y + endLevel * VERTICAL_GAP
+    },
+    data: { key: VIRTUAL_END_ID, type: "end", name: "结束", assignees: [] }
+  };
+
   const edges: Edge[] = [];
+  edges.push({
+    id: `edge-${VIRTUAL_START_ID}-${startKey}`,
+    source: VIRTUAL_START_ID,
+    target: startKey,
+    type: "smoothstep"
+  });
+
   nodeMap.forEach(item => {
-    item.next_keys.forEach(nextKey => {
+    const nextKeys = collectNextKeys(item);
+    if (nextKeys.length === 0) {
+      edges.push({
+        id: `edge-${item.key}-${VIRTUAL_END_ID}`,
+        source: item.key,
+        target: VIRTUAL_END_ID,
+        type: "smoothstep"
+      });
+      return;
+    }
+
+    nextKeys.forEach(nextKey => {
       if (!nodeMap.has(nextKey)) {
         return;
       }
@@ -285,5 +331,8 @@ export const templateToGraph = (
     });
   });
 
-  return { nodes, edges };
+  return {
+    nodes: [startNode, ...businessNodes, endNode],
+    edges
+  };
 };

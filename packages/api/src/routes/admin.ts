@@ -46,7 +46,7 @@ const defaultApprovalTemplates: Array<{
     template_name: "付款申请审批模板",
     biz_type: "payment_request",
     config_json:
-      '{"version":1,"start_key":"dept_approve","nodes":[{"key":"dept_approve","type":"sequential","name":"部门负责人审批","assignee_userids":["site_manager"],"next_key":"ai_gate_risk"},{"key":"ai_gate_risk","type":"ai_gate","name":"AI风险关卡","ai_slot_id":"payment_risk_assessment","next_key":"finance_review"},{"key":"finance_review","type":"sequential","name":"财务审批","assignee_userids":["finance_manager"],"conditions":[{"field":"amount","operator":"gt","value":500000,"next_key":"gm_approve"}],"default_next_key":"cashier_execute"},{"key":"gm_approve","type":"sequential","name":"总经理审批","assignee_userids":["general_manager"],"next_key":"cashier_execute"},{"key":"cashier_execute","type":"auto","name":"出纳执行","auto_action":"approve","next_key":"notify_cc"},{"key":"notify_cc","type":"cc","name":"抄送归档","assignee_userids":["site_manager"],"next_key":null}]}'
+      '{"version":1,"start_key":"dept_approve","nodes":[{"key":"dept_approve","type":"sequential","name":"部门负责人审批","assignee_userids":["site_manager"],"next_key":"ai_gate_risk"},{"key":"ai_gate_risk","type":"ai_gate","name":"AI风险关卡","ai_slot_id":"payment_request","next_key":"finance_review"},{"key":"finance_review","type":"sequential","name":"财务审批","assignee_userids":["finance_manager"],"conditions":[{"field":"amount","operator":"gt","value":500000,"next_key":"gm_approve"}],"default_next_key":"cashier_execute"},{"key":"gm_approve","type":"sequential","name":"总经理审批","assignee_userids":["general_manager"],"next_key":"cashier_execute"},{"key":"cashier_execute","type":"auto","name":"出纳执行","auto_action":"approve","next_key":"notify_cc"},{"key":"notify_cc","type":"cc","name":"抄送归档","assignee_userids":["site_manager"],"next_key":null}]}'
   },
   {
     template_code: "TPL-REIMBURSEMENT-BATCH",
@@ -126,38 +126,41 @@ const defaultAiPromptTemplates: Array<{
     template_key: "prompt-payment-risk-v1",
     template_name: "付款风险评估默认提示词",
     system_prompt:
-      "你是企业财务风控助手。请基于输入输出结构化JSON，字段包含overall_risk、score、summary、recommendations。",
+      "你是企业财务风控助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为overall_risk、score、summary、recommendations、checks。",
     user_prompt_template:
-      "请评估以下付款申请风险，优先关注金额异常、重复支付与账户一致性：{{payload_json}}"
+      "请评估付款风险。任务类型={{task_type}}，业务类型={{biz_type}}，业务ID={{biz_id}}。输入JSON={{payload_json}}。重点检查：金额合理性、收款方一致性、历史重复支付、合同余额约束。若关键信息缺失，明确列出缺失字段并给出可执行补充建议。"
   },
   {
     template_key: "prompt-contract-review-v1",
     template_name: "合同审查默认提示词",
     system_prompt:
-      "你是企业合同审查助手。请输出结构化JSON，字段包含overall_risk、score、summary、clause_analysis、recommendations。",
-    user_prompt_template: "请审查以下合同数据并输出风险结论：{{payload_json}}"
+      "你是企业合同审查助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为overall_risk、score、summary、clause_analysis、recommendations。",
+    user_prompt_template:
+      "请审查合同。任务类型={{task_type}}，业务ID={{biz_id}}。合同编号={{contract_no}}，合同名称={{contract_name}}，相对方={{counterparty}}，金额={{total_amount}}。输入JSON={{payload_json}}。重点关注：付款条款、违约责任、验收条件、争议解决、金额与节点匹配。"
   },
   {
     template_key: "prompt-reimbursement-anomaly-v1",
     template_name: "报销异常检测默认提示词",
     system_prompt:
-      "你是企业报销审计助手。请输出结构化JSON，字段包含risk_level、summary、anomalies、recommendation。",
+      "你是企业报销审计助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为risk_level、summary、anomalies、recommendation。",
     user_prompt_template:
-      "请检测以下报销数据的异常与重复风险：{{payload_json}}"
+      "请检测报销异常。任务类型={{task_type}}，业务ID={{biz_id}}。报销单ID={{envelope_id}}，总金额={{total_amount}}，明细={{items}}。输入JSON={{payload_json}}。重点检查：重复票据、金额异常、类别异常、时间冲突、供应商异常。"
   },
   {
     template_key: "prompt-approval-ai-gate-v1",
     template_name: "审批AI关卡默认提示词",
     system_prompt:
-      "你是审批AI关卡助手。必须返回JSON，字段包含outcome(approve/reject)与comment。",
-    user_prompt_template: "请对以下审批上下文给出关卡决策：{{payload_json}}"
+      "你是审批AI关卡助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为outcome(approve/reject)和comment。",
+    user_prompt_template:
+      "请对审批关卡做决策。任务类型={{task_type}}，业务类型={{biz_type}}，业务ID={{biz_id}}。节点={{node_key}}，审批实例={{instance_id}}，上下文={{context}}。输入JSON={{payload_json}}。给出可执行的同意/拒绝结论与简洁理由。"
   },
   {
     template_key: "prompt-log-summary-v1",
     template_name: "施工日志汇总默认提示词",
     system_prompt:
-      "你是项目日志汇总助手。输出JSON，字段包含summary、highlights、progress_alert。",
-    user_prompt_template: "请汇总以下施工日志输入：{{payload_json}}"
+      "你是项目日志汇总助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为summary、highlights、progress_alert。",
+    user_prompt_template:
+      "请生成日志汇总。任务类型={{task_type}}，业务ID={{biz_id}}，汇总类型={{report_type}}，日期范围={{date_from}}到{{date_to}}，项目={{project_id}}。输入JSON={{payload_json}}。输出简洁摘要、关键进展和风险预警。"
   }
 ];
 
@@ -191,7 +194,7 @@ const defaultAiRoutingRules: Array<{
   },
   {
     rule_name: "OPENAI_APPROVAL_GATE_DEFAULT",
-    biz_type: "payment_request",
+    biz_type: "approval_ai_gate",
     task_type: "approval_ai_gate",
     prompt_key: "prompt-approval-ai-gate-v1",
     priority: 1
@@ -222,6 +225,19 @@ const seedDefaultApprovalConfig = async (db: Env["DB"], now: string) => {
         now,
         now
       )
+      .run();
+
+    await db
+      .prepare(
+        `UPDATE approval_template
+            SET template_name = ?,
+                biz_type = ?,
+                config_json = ?,
+                status = 'active',
+                updated_at = ?
+          WHERE template_code = ?`
+      )
+      .bind(item.template_name, item.biz_type, item.config_json, now, item.template_code)
       .run();
   }
 
@@ -1141,6 +1157,63 @@ adminRoutes.get(
       .all<AiRoutingRule>();
 
     return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+adminRoutes.get(
+  "/ai-slot-options",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const rows = await c.env.DB.prepare(
+      `SELECT
+         ar.rule_name,
+         ar.biz_type,
+         ar.task_type,
+         ap.provider_name,
+         pt.template_name
+       FROM ai_routing_rule ar
+       LEFT JOIN ai_provider_config ap ON ap.id = ar.provider_id
+       LEFT JOIN ai_prompt_template pt ON pt.id = ar.prompt_template_id
+       WHERE ar.status = 'active'
+         AND ar.task_type = 'approval_ai_gate'
+       ORDER BY ar.priority ASC, ar.id ASC`
+    ).all<{
+      rule_name: string;
+      biz_type: string;
+      task_type: string;
+      provider_name: string | null;
+      template_name: string | null;
+    }>();
+
+    const options = new Map<
+      string,
+      { slot_id: string; label: string; rule_name: string; task_type: string; source: string }
+    >();
+
+    for (const row of rows.results ?? []) {
+      const slotId = row.biz_type || "approval_ai_gate";
+      const providerPart = row.provider_name ? ` / ${row.provider_name}` : "";
+      const promptPart = row.template_name ? ` / ${row.template_name}` : "";
+      options.set(slotId, {
+        slot_id: slotId,
+        label: `${slotId} (${row.rule_name}${providerPart}${promptPart})`,
+        rule_name: row.rule_name,
+        task_type: row.task_type,
+        source: "routing"
+      });
+    }
+
+    if (!options.has("approval_ai_gate")) {
+      options.set("approval_ai_gate", {
+        slot_id: "approval_ai_gate",
+        label: "approval_ai_gate (default)",
+        rule_name: "",
+        task_type: "approval_ai_gate",
+        source: "builtin"
+      });
+    }
+
+    return c.json({ success: true, data: Array.from(options.values()) });
   }
 );
 

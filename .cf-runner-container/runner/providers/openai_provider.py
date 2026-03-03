@@ -120,7 +120,7 @@ class OpenAIProvider(AiProvider):
                     {"role": "user", "content": user_message_content},
                 ],
                 temperature=0.2,
-                max_tokens=2048,
+                max_completion_tokens=2048,
             )
             latency = int((time.monotonic() - start) * 1000)
             content = ""

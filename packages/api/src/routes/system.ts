@@ -299,6 +299,35 @@ systemRoutes.get("/automation/risk-alert", apiKeyMiddleware, async (c) => {
   return c.json({ success: true, data: rows.results ?? [] });
 });
 
+systemRoutes.get("/automation/task-queue-backlog", apiKeyMiddleware, async (c) => {
+  const pending = await c.env.DB.prepare(
+    `SELECT COUNT(*) as total FROM task_queue WHERE status = 'pending'`
+  ).first<{ total: number }>();
+
+  const assigned = await c.env.DB.prepare(
+    `SELECT COUNT(*) as total FROM task_queue WHERE status = 'assigned'`
+  ).first<{ total: number }>();
+
+  const oldestPending = await c.env.DB.prepare(
+    `SELECT task_code, created_at
+     FROM task_queue
+     WHERE status = 'pending'
+     ORDER BY created_at ASC
+     LIMIT 1`
+  ).first<{ task_code: string; created_at: string }>();
+
+  return c.json({
+    success: true,
+    data: {
+      pending: pending?.total ?? 0,
+      assigned: assigned?.total ?? 0,
+      should_wake_runner: (pending?.total ?? 0) > 0 || (assigned?.total ?? 0) > 0,
+      oldest_pending: oldestPending ?? null,
+      checked_at: new Date().toISOString()
+    }
+  });
+});
+
 systemRoutes.get("/automation/monthly-financial-report", apiKeyMiddleware, async (c) => {
   const month = c.req.query("month") ?? new Date().toISOString().slice(0, 7);
   const start = `${month}-01`;

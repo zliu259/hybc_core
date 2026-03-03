@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, reactive, watch } from "vue";
+import { computed, onBeforeUnmount, reactive, ref, watch } from "vue";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { listAiSlotOptions } from "@/api/admin";
 import type { FlowNodeData } from "./types";
 
 const props = defineProps<{
@@ -20,24 +22,54 @@ const form = reactive<FlowNodeData>({
   aiSlotId: "",
   timeoutHours: undefined
 });
+const syncingFromProps = ref(false);
+let emitTimer: ReturnType<typeof setTimeout> | null = null;
+const lastEmittedSignature = ref("");
 
-const assigneeText = computed({
-  get: () => form.assignees.join(","),
-  set: (value: string) => {
-    form.assignees = value
-      .split(",")
-      .map(item => item.trim())
-      .filter(Boolean);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const usersLoaded = ref(wecomUsers.value.length > 0);
+const usersLoading = ref(false);
+const aiSlotsLoaded = ref(false);
+const aiSlotsLoading = ref(false);
+const aiSlotOptionsRaw = ref<Array<{ slot_id: string; label: string }>>([]);
+
+const assigneeOptions = computed(() => {
+  const mapped = wecomUsers.value.map(user => ({
+    value: user.userid,
+    label: user.name ? `${user.name} (${user.userid})` : user.userid
+  }));
+
+  const existing = new Set(mapped.map(item => item.value));
+  for (const userid of form.assignees) {
+    if (!existing.has(userid)) {
+      mapped.push({ value: userid, label: userid });
+      existing.add(userid);
+    }
   }
+  return mapped;
 });
 
 const isApprovalType = computed(() => {
   return ["sequential", "countersign", "or_sign"].includes(form.type);
 });
 
+const aiSlotOptions = computed(() => {
+  const options = aiSlotOptionsRaw.value.map(item => ({
+    value: item.slot_id,
+    label: item.label
+  }));
+
+  if (form.aiSlotId && !options.some(item => item.value === form.aiSlotId)) {
+    options.push({ value: form.aiSlotId, label: form.aiSlotId });
+  }
+
+  return options;
+});
+
 watch(
   () => props.node,
   node => {
+    syncingFromProps.value = true;
     form.key = node.key;
     form.type = node.type;
     form.name = node.name;
@@ -45,25 +77,100 @@ watch(
     form.autoAction = node.autoAction;
     form.aiSlotId = node.aiSlotId;
     form.timeoutHours = node.timeoutHours;
+    syncingFromProps.value = false;
   },
-  { immediate: true, deep: true }
+  { immediate: true }
 );
 
+const scheduleEmitUpdate = () => {
+  if (syncingFromProps.value) {
+    return;
+  }
+
+  const payload: FlowNodeData = {
+    key: form.key,
+    type: form.type,
+    name: form.name,
+    assignees: [...form.assignees],
+    autoAction: form.autoAction,
+    aiSlotId: form.aiSlotId,
+    timeoutHours: form.timeoutHours
+  };
+  const signature = JSON.stringify(payload);
+  if (signature === lastEmittedSignature.value) {
+    return;
+  }
+
+  if (emitTimer) {
+    clearTimeout(emitTimer);
+  }
+  emitTimer = setTimeout(() => {
+    emitTimer = null;
+    if (syncingFromProps.value) {
+      return;
+    }
+    lastEmittedSignature.value = signature;
+    emit("update", payload);
+  }, 60);
+};
+
 watch(
-  form,
+  () => [
+    form.key,
+    form.type,
+    form.name,
+    form.autoAction,
+    form.aiSlotId,
+    form.timeoutHours,
+    form.assignees.join("|")
+  ],
   () => {
-    emit("update", {
-      key: form.key,
-      type: form.type,
-      name: form.name,
-      assignees: [...form.assignees],
-      autoAction: form.autoAction,
-      aiSlotId: form.aiSlotId,
-      timeoutHours: form.timeoutHours
-    });
-  },
-  { deep: true }
+    scheduleEmitUpdate();
+  }
 );
+
+const ensureWecomUsersLoaded = async () => {
+  if (usersLoaded.value || usersLoading.value) {
+    return;
+  }
+
+  usersLoading.value = true;
+  try {
+    await loadWecomUsers();
+    usersLoaded.value = true;
+  } catch {
+    // keep cached options only when remote load fails
+  } finally {
+    usersLoading.value = false;
+  }
+};
+
+const ensureAiSlotOptionsLoaded = async () => {
+  if (aiSlotsLoaded.value || aiSlotsLoading.value) {
+    return;
+  }
+
+  aiSlotsLoading.value = true;
+  try {
+    const result = await listAiSlotOptions();
+    aiSlotOptionsRaw.value = result.data.map(item => ({
+      slot_id: item.slot_id,
+      label: item.label
+    }));
+    aiSlotsLoaded.value = true;
+  } catch {
+    // keep manual fallback entry only
+  } finally {
+    aiSlotsLoading.value = false;
+  }
+};
+
+onBeforeUnmount(() => {
+  if (emitTimer) {
+    clearTimeout(emitTimer);
+    emitTimer = null;
+  }
+});
 </script>
 
 <template>
@@ -83,11 +190,18 @@ watch(
         v-if="isApprovalType || form.type === 'cc'"
         label="审批人/抄送人userid"
       >
-        <el-input
-          v-model="assigneeText"
-          placeholder="多个值用英文逗号分隔"
-          type="textarea"
-          :rows="2"
+        <el-select-v2
+          v-model="form.assignees"
+          :options="assigneeOptions"
+          multiple
+          filterable
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          :loading="usersLoading"
+          placeholder="请选择人员"
+          style="width: 100%"
+          @visible-change="visible => visible && ensureWecomUsersLoaded()"
         />
       </el-form-item>
 
@@ -99,7 +213,24 @@ watch(
       </el-form-item>
 
       <el-form-item v-if="form.type === 'ai_gate'" label="AI Slot ID">
-        <el-input v-model="form.aiSlotId" placeholder="例如: payment-risk-v1" />
+        <el-select
+          v-model="form.aiSlotId"
+          filterable
+          allow-create
+          default-first-option
+          clearable
+          :loading="aiSlotsLoading"
+          placeholder="请选择或输入AI Slot"
+          style="width: 100%"
+          @visible-change="visible => visible && ensureAiSlotOptionsLoaded()"
+        >
+          <el-option
+            v-for="item in aiSlotOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="超时时间(小时)">

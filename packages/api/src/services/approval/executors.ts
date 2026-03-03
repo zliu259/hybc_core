@@ -367,8 +367,12 @@ class AiGateExecutor implements NodeExecutor {
     if (_aiGateHandler) {
       // Create AI task via the handler
       try {
+        const aiSlotRoute =
+          typeof config.ai_slot_id === "string" && config.ai_slot_id.trim()
+            ? config.ai_slot_id.trim()
+            : "approval_ai_gate";
         await _aiGateHandler.createAiTask(env, {
-          biz_type: "approval_ai_gate",
+          biz_type: aiSlotRoute,
           biz_id: instanceId,
           payload: {
             node_key: nodeInstance.node_key,

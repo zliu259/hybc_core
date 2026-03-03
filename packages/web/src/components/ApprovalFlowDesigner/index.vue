@@ -54,6 +54,7 @@ const selectedNodeId = ref<string>("");
 const selectedEdgeId = ref<string>("");
 const syncingFromProps = ref(false);
 const lastEmittedConfig = ref("");
+let syncConfigTimer: ReturnType<typeof setTimeout> | null = null;
 
 const NODE_COLORS: Record<NodeType, string> = {
   sequential: "#3B82F6",
@@ -154,6 +155,16 @@ const syncConfigToParent = () => {
   emit("update:config", serialized);
 };
 
+const scheduleSyncConfigToParent = () => {
+  if (syncConfigTimer) {
+    clearTimeout(syncConfigTimer);
+  }
+  syncConfigTimer = setTimeout(() => {
+    syncConfigTimer = null;
+    syncConfigToParent();
+  }, 80);
+};
+
 const onDragStartFromPalette = (_type: NodeType) => {
   selectedEdgeId.value = "";
 };
@@ -246,8 +257,28 @@ const onUpdateSelectedNode = (payload: FlowNodeData) => {
     return;
   }
 
+  const sameAssignees = (left: string[], right: string[]) => {
+    if (left.length !== right.length) {
+      return false;
+    }
+    return left.every((item, idx) => item === right[idx]);
+  };
+
   nodes.value = nodes.value.map(node => {
     if (node.id !== selectedNodeId.value) {
+      return node;
+    }
+
+    const unchanged =
+      node.data.name === payload.name &&
+      sameAssignees(node.data.assignees, payload.assignees) &&
+      node.data.autoAction === payload.autoAction &&
+      node.data.aiSlotId === payload.aiSlotId &&
+      node.data.timeoutHours === payload.timeoutHours &&
+      node.data.nextKey === payload.nextKey &&
+      node.data.defaultNextKey === payload.defaultNextKey;
+
+    if (unchanged) {
       return node;
     }
 
@@ -295,6 +326,14 @@ const miniMapNodeColor = (node: Node<FlowNodeData>) => {
   return NODE_COLORS[node.data.type] ?? "#6B7280";
 };
 
+const formatAssigneeSummary = (assignees: string[]) => {
+  if (!Array.isArray(assignees) || assignees.length === 0) {
+    return "未设置负责人";
+  }
+  const preview = assignees.slice(0, 2).join(" / ");
+  return assignees.length > 2 ? `${preview} 等${assignees.length}人` : preview;
+};
+
 watch(
   () => props.config,
   value => {
@@ -310,7 +349,7 @@ watch(
 watch(
   [nodes, edges],
   () => {
-    syncConfigToParent();
+    scheduleSyncConfigToParent();
   },
   { deep: true }
 );
@@ -321,6 +360,10 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   window.removeEventListener("keydown", onKeyDown);
+  if (syncConfigTimer) {
+    clearTimeout(syncConfigTimer);
+    syncConfigTimer = null;
+  }
 });
 </script>
 
@@ -367,6 +410,9 @@ onBeforeUnmount(() => {
               <div class="flow-card__meta">
                 审批人 {{ slotProps.data.assignees.length }} 人
               </div>
+              <div class="flow-card__meta flow-card__owners">
+                {{ formatAssigneeSummary(slotProps.data.assignees) }}
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -388,6 +434,9 @@ onBeforeUnmount(() => {
               <div class="flow-card__meta">
                 审批人 {{ slotProps.data.assignees.length }} 人
               </div>
+              <div class="flow-card__meta flow-card__owners">
+                {{ formatAssigneeSummary(slotProps.data.assignees) }}
+              </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
           </div>
@@ -408,6 +457,9 @@ onBeforeUnmount(() => {
               </div>
               <div class="flow-card__meta">
                 审批人 {{ slotProps.data.assignees.length }} 人
+              </div>
+              <div class="flow-card__meta flow-card__owners">
+                {{ formatAssigneeSummary(slotProps.data.assignees) }}
               </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
@@ -450,6 +502,9 @@ onBeforeUnmount(() => {
               </div>
               <div class="flow-card__meta">
                 接收人 {{ slotProps.data.assignees.length }} 人
+              </div>
+              <div class="flow-card__meta flow-card__owners">
+                {{ formatAssigneeSummary(slotProps.data.assignees) }}
               </div>
             </div>
             <Handle type="source" :position="Position.Bottom" />
@@ -600,6 +655,16 @@ onBeforeUnmount(() => {
   color: var(--flow-muted);
   font-size: 12px;
   line-height: 16px;
+}
+
+.flow-card__owners {
+  margin-top: 2px;
+  color: #4f473d;
+}
+
+.approval-vue-flow :deep(.vue-flow__edge-path) {
+  stroke: #2f6c5f;
+  stroke-width: 2;
 }
 
 .flow-point {

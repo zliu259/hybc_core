@@ -9,6 +9,7 @@ import {
   writePasskeyAuditLog
 } from "../services/passkey";
 import type { Env } from "../types/env";
+import type { UserRole } from "../types/auth";
 
 type RegistrationBeginBody = {
   name?: string;
@@ -86,6 +87,111 @@ const getRequestMeta = (c: {
 const ensureFeatureEnabled = async (c: { env: Env }) => {
   const config = await getPasskeyFeatureConfig(c.env);
   return config.enabled && config.rolloutMode === "all";
+};
+
+const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
+const rolePriority: UserRole[] = ["super_admin", "finance", "manager", "site_manager", "operator"];
+
+const parseRoleTagMapping = (raw?: string): Partial<Record<UserRole, string[]>> => {
+  if (!raw?.trim()) return {};
+
+  const parsed: Partial<Record<UserRole, string[]>> = {};
+  for (const item of raw.split(";")) {
+    const [roleRaw, tagsRaw] = item.split(":");
+    const role = (roleRaw || "").trim() as UserRole;
+    if (!rolePriority.includes(role)) continue;
+    const tags = (tagsRaw || "")
+      .split(",")
+      .map((v) => v.trim())
+      .filter(Boolean);
+    parsed[role] = tags;
+  }
+  return parsed;
+};
+
+const fetchWeComJson = async <T>(url: string): Promise<T> => {
+  const res = await fetch(url);
+  if (!res.ok) {
+    throw new Error(`WeCom request failed: ${res.status}`);
+  }
+  return (await res.json()) as T;
+};
+
+const fetchWeComAccessToken = async (env: Env): Promise<string> => {
+  const cached = await env.KV.get(ACCESS_TOKEN_KV_KEY);
+  if (cached) {
+    return cached;
+  }
+
+  if (!env.WECHAT_CORPID || !env.WECHAT_SECRET) {
+    throw new Error("WECHAT_OAUTH_CONFIG_MISSING");
+  }
+
+  const json = await fetchWeComJson<{
+    errcode?: number;
+    errmsg?: string;
+    access_token?: string;
+    expires_in?: number;
+  }>(
+    `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(env.WECHAT_CORPID)}&corpsecret=${encodeURIComponent(env.WECHAT_SECRET)}`
+  );
+
+  if (json.errcode !== 0 || !json.access_token) {
+    throw new Error(`Failed to get WeCom access token: ${json.errmsg ?? "unknown"}`);
+  }
+
+  const ttl = Math.max((json.expires_in ?? 7200) - 120, 300);
+  await env.KV.put(ACCESS_TOKEN_KV_KEY, json.access_token, { expirationTtl: ttl });
+  return json.access_token;
+};
+
+const isUserInTag = async (accessToken: string, tagId: number, userId: string): Promise<boolean> => {
+  const json = await fetchWeComJson<{
+    errcode?: number;
+    errmsg?: string;
+    userlist?: Array<{ userid?: string }>;
+  }>(
+    `https://qyapi.weixin.qq.com/cgi-bin/tag/get?access_token=${encodeURIComponent(accessToken)}&tagid=${tagId}`
+  );
+
+  if (json.errcode !== 0) {
+    throw new Error(`Failed to get WeCom tag members: ${json.errmsg ?? "unknown"}`);
+  }
+  return (json.userlist ?? []).some((item) => item.userid === userId);
+};
+
+const resolveRoleByWeComTags = async (env: Env, userId: string): Promise<UserRole | undefined> => {
+  const mapping = parseRoleTagMapping(env.WECHAT_ROLE_TAG_MAPPING);
+  if (Object.keys(mapping).length === 0) {
+    return undefined;
+  }
+
+  const accessToken = await fetchWeComAccessToken(env);
+  const tagList = await fetchWeComJson<{
+    errcode?: number;
+    errmsg?: string;
+    taglist?: Array<{ tagid: number; tagname: string }>;
+  }>(`https://qyapi.weixin.qq.com/cgi-bin/tag/list?access_token=${encodeURIComponent(accessToken)}`);
+
+  if (tagList.errcode !== 0) {
+    throw new Error(`Failed to list WeCom tags: ${tagList.errmsg ?? "unknown"}`);
+  }
+
+  const tagIdByName = new Map<string, number>();
+  for (const tag of tagList.taglist ?? []) {
+    tagIdByName.set(tag.tagname, tag.tagid);
+  }
+
+  for (const role of rolePriority) {
+    for (const tagName of mapping[role] ?? []) {
+      const tagId = tagIdByName.get(tagName);
+      if (!tagId) continue;
+      const matched = await isUserInTag(accessToken, tagId, userId);
+      if (matched) return role;
+    }
+  }
+
+  return undefined;
 };
 
 export const passkeyRoutes = new Hono<{
@@ -378,11 +484,16 @@ passkeyRoutes.post("/auth/finish", async (c) => {
     .bind(nextCounter, usedAt, usedAt, credential.id)
     .run();
 
+  const resolvedRole = await resolveRoleByWeComTags(c.env, credential.user_id).catch(
+    () => undefined
+  );
+
   const session = createSessionPayload(
     {
       userId: credential.user_id,
       username: credential.user_id,
-      nickname: credential.user_id
+      nickname: credential.user_id,
+      role: resolvedRole
     },
     {
       authMethod: "passkey",

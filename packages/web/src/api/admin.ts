@@ -54,6 +54,14 @@ export type AiRoutingRule = {
   updated_at: string;
 };
 
+export type AiSlotOption = {
+  slot_id: string;
+  label: string;
+  rule_name: string;
+  task_type: string;
+  source: string;
+};
+
 export type AiPromptTemplate = {
   id: number;
   template_key: string;
@@ -261,6 +269,13 @@ export const listAiRoutingRules = (params?: {
     "get",
     "/api/v1/admin/ai-routing",
     { params }
+  );
+};
+
+export const listAiSlotOptions = () => {
+  return http.request<{ success: boolean; data: AiSlotOption[] }>(
+    "get",
+    "/api/v1/admin/ai-slot-options"
   );
 };
 

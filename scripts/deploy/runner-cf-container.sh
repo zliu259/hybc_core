@@ -17,8 +17,8 @@ API_BASE_URL="${API_BASE_URL:-}"
 API_KEY="${API_KEY:-}"
 NODE_NAME="${NODE_NAME:-cf-container-runner}"
 NODE_TYPE="${NODE_TYPE:-cloudflare_container}"
-POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-3}"
-HEARTBEAT_INTERVAL_SECONDS="${HEARTBEAT_INTERVAL_SECONDS:-30}"
+POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-8}"
+HEARTBEAT_INTERVAL_SECONDS="${HEARTBEAT_INTERVAL_SECONDS:-60}"
 CAPABILITIES="${CAPABILITIES:-contract_review,risk_assessment,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate,voice_stt}"
 MOCK_AI_ONLY="${MOCK_AI_ONLY:-false}"
 OPENAI_MODEL="${OPENAI_MODEL:-gpt-5.2}"
@@ -35,10 +35,12 @@ fi
 
 require_cmd docker
 require_cmd npm
+require_cmd curl
+require_cmd tar
 
 echo "[runner-cf] Preparing project in $PROJECT_DIR"
 rm -rf "$PROJECT_DIR"
-mkdir -p "$PROJECT_DIR/src" "$PROJECT_DIR/runner"
+mkdir -p "$PROJECT_DIR/src" "$PROJECT_DIR/runner" "$PROJECT_DIR/vendor"
 
 cp "$ROOT_DIR/task-runner/requirements.txt" "$PROJECT_DIR/requirements.txt"
 cp -R "$ROOT_DIR/task-runner/runner/." "$PROJECT_DIR/runner/"
@@ -51,15 +53,17 @@ cat >"$PROJECT_DIR/package.json" <<'EOF'
   "scripts": {
     "deploy": "wrangler deploy",
     "dev": "wrangler dev"
-  },
-  "dependencies": {
-    "@cloudflare/containers": "^0.1.1"
-  },
-  "devDependencies": {
-    "wrangler": "^4.35.0"
   }
 }
 EOF
+
+echo "[runner-cf] Vendoring @cloudflare/containers dist"
+TMP_DIR="$(mktemp -d)"
+CONTAINERS_TARBALL_URL="$(npm view @cloudflare/containers dist.tarball)"
+curl -sSL "$CONTAINERS_TARBALL_URL" -o "$TMP_DIR/containers.tgz"
+tar -xzf "$TMP_DIR/containers.tgz" -C "$TMP_DIR"
+cp -R "$TMP_DIR/package/dist" "$PROJECT_DIR/vendor/containers"
+rm -rf "$TMP_DIR"
 
 cat >"$PROJECT_DIR/Dockerfile" <<'EOF'
 FROM python:3.11-slim
@@ -77,15 +81,19 @@ CMD ["bash", "-lc", "python -m runner.main & python -m http.server 8080 --bind 0
 EOF
 
 cat >"$PROJECT_DIR/src/index.ts" <<EOF
-import { Container } from "@cloudflare/containers";
+import { Container } from "../vendor/containers/index.js";
 
 type Env = {
-  RUNNER: DurableObjectNamespace;
+  RUNNER: {
+    getByName(name: string): {
+      fetch(input: string | Request): Promise<Response>;
+    };
+  };
 };
 
 export class RunnerContainer extends Container {
   defaultPort = 8080;
-  sleepAfter = "20s";
+  sleepAfter = "3m";
   envVars = {
     API_BASE_URL: "${API_BASE_URL}",
     API_KEY: "${API_KEY}",
@@ -113,6 +121,33 @@ export default {
     }
 
     return container.fetch("http://container/");
+  },
+
+  async scheduled(_controller: unknown, env: Env): Promise<void> {
+    const shouldWake = await fetch("${API_BASE_URL}/api/v1/system/automation/task-queue-backlog", {
+      method: "GET",
+      headers: {
+        "x-api-key": "${API_KEY}"
+      }
+    })
+      .then(async (r) => {
+        if (!r.ok) {
+          return true;
+        }
+        const payload = (await r.json()) as {
+          success?: boolean;
+          data?: { should_wake_runner?: boolean };
+        };
+        return payload?.data?.should_wake_runner === true;
+      })
+      .catch(() => true);
+
+    if (!shouldWake) {
+      return;
+    }
+
+    const container = env.RUNNER.getByName("singleton");
+    await container.fetch("http://container/");
   }
 };
 EOF
@@ -140,12 +175,13 @@ class_name = "RunnerContainer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RunnerContainer"]
+
+[triggers]
+crons = ["*/2 * * * *"]
 EOF
 
 sed -i.bak "s/__RUNNER_DOMAIN__/${RUNNER_DOMAIN}/g" "$PROJECT_DIR/wrangler.toml"
-
-echo "[runner-cf] Installing deploy dependencies"
-npm --prefix "$PROJECT_DIR" install
+rm -f "$PROJECT_DIR/wrangler.toml.bak"
 
 echo "[runner-cf] Scaffold complete"
 echo "- Project: $PROJECT_DIR"

@@ -20,3 +20,6 @@ class_name = "RunnerContainer"
 [[migrations]]
 tag = "v1"
 new_sqlite_classes = ["RunnerContainer"]
+
+[triggers]
+crons = ["*/2 * * * *"]

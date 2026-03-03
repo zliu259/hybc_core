@@ -111,6 +111,34 @@ export const refreshWeComContactsCache = async (env: Env): Promise<boolean> => {
   }
 };
 
+export const wakeRunner = async (env: Env): Promise<boolean> => {
+  const healthUrl = env.RUNNER_HEALTH_URL || "https://runner.hybcdg.com/health";
+  const wakeUrl = healthUrl.endsWith("/health")
+    ? `${healthUrl.slice(0, -"/health".length)}/`
+    : `${healthUrl.replace(/\/+$/, "")}/`;
+
+  try {
+    const resp = await fetch(wakeUrl, {
+      method: "GET",
+      headers: { "cache-control": "no-cache" }
+    });
+    return resp.ok;
+  } catch {
+    return false;
+  }
+};
+
+export const shouldWakeRunner = async (env: Env): Promise<boolean> => {
+  const row = await env.DB.prepare(
+    `SELECT 1 as has_work
+     FROM task_queue
+     WHERE status IN ('pending', 'assigned')
+     LIMIT 1`
+  ).first<{ has_work: number }>();
+
+  return Boolean(row?.has_work);
+};
+
 export const markOverdueRentalTerms = async (env: Env): Promise<number> => {
   const result = await env.DB.prepare(
     "UPDATE asset_rental_term SET status = 'overdue', updated_at = ? WHERE status = 'active' AND returned_date IS NULL AND date(due_date) < date(?)"

@@ -14,6 +14,7 @@ import {
   createAiPromptTemplate,
   updateAiPromptTemplate,
   deleteAiPromptTemplate,
+  bootstrapNearProductionOpenAIConfig,
   type AiProviderConfig,
   type AiRoutingRule,
   type AiPromptTemplate
@@ -90,6 +91,31 @@ const bizTypeOptions = [
   { label: "付款审批", value: "payment_approval" },
   { label: "报销审批", value: "reimbursement_approval" }
 ];
+
+const bootstrapLoading = ref(false);
+const bootstrapForm = ref({
+  openai_model: "gpt-5.2",
+  openai_endpoint: "https://api.openai.com/v1"
+});
+
+const handleBootstrapAiConfig = async () => {
+  bootstrapLoading.value = true;
+  try {
+    const result = await bootstrapNearProductionOpenAIConfig({
+      openai_model: bootstrapForm.value.openai_model,
+      openai_endpoint: bootstrapForm.value.openai_endpoint
+    });
+    message(
+      `初始化完成：供应商 ${result.data.ai_providers_active}，路由 ${result.data.ai_routing_rules_active}，提示词 ${result.data.ai_prompts_active}`,
+      { type: "success" }
+    );
+    await Promise.all([loadProviders(), loadRules(), loadPrompts()]);
+  } catch {
+    message("AI引擎初始化失败", { type: "error" });
+  } finally {
+    bootstrapLoading.value = false;
+  }
+};
 
 const loadProviders = async () => {
   providersLoading.value = true;
@@ -327,6 +353,33 @@ onMounted(() => {
 
 <template>
   <el-card shadow="never">
+    <el-alert
+      :closable="false"
+      show-icon
+      type="info"
+      style="margin-bottom: 12px"
+      title="推荐先执行一次初始化"
+      description="会预置 OpenAI 供应商、常用任务路由和默认提示词模板。"
+    />
+
+    <el-form inline style="margin-bottom: 12px">
+      <el-form-item label="默认模型">
+        <el-input v-model="bootstrapForm.openai_model" style="width: 220px" />
+      </el-form-item>
+      <el-form-item label="OpenAI Endpoint">
+        <el-input v-model="bootstrapForm.openai_endpoint" style="width: 320px" />
+      </el-form-item>
+      <el-form-item>
+        <el-button
+          type="warning"
+          :loading="bootstrapLoading"
+          @click="handleBootstrapAiConfig"
+        >
+          一键初始化AI引擎配置
+        </el-button>
+      </el-form-item>
+    </el-form>
+
     <el-tabs v-model="activeTab" @tab-change="onTabChange">
       <el-tab-pane label="AI供应商" name="providers">
         <div style="margin-bottom: 12px; text-align: right">

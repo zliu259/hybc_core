@@ -214,8 +214,11 @@
 
 #### I-2. 审批模板配置 `views/approval/template-config.vue`
 - 模板列表表格：模板编码、名称、业务类型、状态、操作（编辑/预览/删除）。
-- 创建/编辑弹窗：基本信息 + ApprovalFlowDesigner 可视化编辑器。
-- 预览弹窗：只读模式 ApprovalFlowDesigner。
+- 创建/编辑弹窗：基本信息 + ApprovalFlowDesigner 可视化编辑器（显示节点连线、负责人摘要）。
+- 预览弹窗：只读模式 ApprovalFlowDesigner（保留连线和负责人摘要展示）。
+- 节点配置面板：审批人/抄送人改为企微人员下拉多选（按名称+userid展示），支持快速检索。
+- AI关卡节点：`ai_slot_id` 支持下拉选择（来源于后端可用 AI Slot 选项），也可手动输入自定义值。
+- 设计器实现：`packages/web/src/components/ApprovalFlowDesigner/{index.vue,serializer.ts,types.ts,NodeConfigPanel.vue}`。
 - API 指向：`/api/v1/admin/approval-config`
 
 #### I-3. 金额阈值配置 `views/approval/threshold-config.vue`
@@ -226,10 +229,11 @@
 
 #### I-4. AI配置管理 `views/ai/config.vue`
 - 3标签页：AI供应商 / 路由规则 / 提示词模板。
+- 初始化区：支持填写默认 OpenAI 模型与 Endpoint，并一键初始化 AI 供应商、路由规则、提示词模板。
 - 供应商Tab：CRUD表格（key、名称、endpoint、模型、优先级、并发）。
 - 路由规则Tab：CRUD表格（规则名、业务类型、任务类型、供应商、优先级）。
 - 提示词Tab：CRUD表格（key、名称、版本）+ 编辑弹窗含system/user prompt大文本区。
-- API 指向：`/api/v1/admin/ai-provider`, `/api/v1/admin/ai-routing`, `/api/v1/admin/ai-prompt`
+- API 指向：`/api/v1/admin/bootstrap/near-production-openai`, `/api/v1/admin/ai-provider`, `/api/v1/admin/ai-routing`, `/api/v1/admin/ai-prompt`
 
 #### I-5. 计算节点监控 `views/ai/nodes.vue`
 - 节点列表卡片：节点ID、名称、类型、状态（颜色标签）、能力、CPU/内存、最后心跳（相对时间）。

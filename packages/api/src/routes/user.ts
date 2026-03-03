@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 
-import { authMiddleware } from "../middleware/auth";
+import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { verifyToken } from "../services/auth";
 import type { Env } from "../types/env";
 
@@ -126,7 +126,7 @@ const getRoutesByRoles = (roles: string[]) => {
   });
 };
 
-export const userRoutes = new Hono<{ Bindings: Env }>();
+export const userRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
 const getAuthPayload = async (c: {
   req: { header: (key: string) => string | undefined };
@@ -190,5 +190,40 @@ userRoutes.get("/routes", (c) => {
         },
         401
       );
-    });
   });
+});
+
+userRoutes.get("/me/bank-accounts", async (c) => {
+  const auth = c.get("auth");
+  const rows = await c.env.DB.prepare(
+    `SELECT id,
+            bank_name,
+            name AS account_name,
+            bank_account AS account_no,
+            status
+     FROM payee
+     WHERE created_by_userid = ?
+       AND status = 'active'
+     ORDER BY id DESC
+     LIMIT 20`
+  )
+    .bind(auth.sub)
+    .all<{
+      id: number;
+      bank_name: string;
+      account_name: string;
+      account_no: string;
+      status: string;
+    }>();
+
+  return c.json({
+    success: true,
+    data: (rows.results ?? []).map((item) => ({
+      id: item.id,
+      bank_name: item.bank_name,
+      account_name: item.account_name,
+      account_no: item.account_no,
+      status: item.status
+    }))
+  });
+});

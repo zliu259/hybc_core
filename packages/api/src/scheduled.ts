@@ -7,6 +7,8 @@ import {
   detectMissingLogs,
   markOverdueRentalTerms,
   refreshWeComContactsCache,
+  shouldWakeRunner,
+  wakeRunner,
   requeueTimedOutTasks
 } from "./services/cron-jobs";
 import type { Env } from "./types/env";
@@ -20,12 +22,12 @@ export const scheduled = async (
     (async () => {
       const cron = event.cron;
 
-      if (cron === "*/5 * * * *") {
-        await Promise.all([
-          checkNodeHeartbeat(env),
-          checkTimeouts(env),
-          requeueTimedOutTasks(env)
-        ]);
+      if (cron === "*/2 * * * *") {
+        if (await shouldWakeRunner(env)) {
+          await wakeRunner(env);
+        }
+        await Promise.all([checkNodeHeartbeat(env), checkTimeouts(env)]);
+        await requeueTimedOutTasks(env);
         return;
       }
 
@@ -43,12 +45,8 @@ export const scheduled = async (
         return;
       }
 
-      await Promise.all([
-        checkNodeHeartbeat(env),
-        checkTimeouts(env),
-        requeueTimedOutTasks(env),
-        checkApprovalTimeouts(env)
-      ]);
+      await Promise.all([checkNodeHeartbeat(env), checkTimeouts(env), checkApprovalTimeouts(env)]);
+      await requeueTimedOutTasks(env);
     })()
   );
 };

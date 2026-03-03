@@ -16,17 +16,33 @@ export interface FlowNodeData {
   autoAction?: string;
   aiSlotId?: string;
   timeoutHours?: number;
+  nextKey?: string | null;
+  defaultNextKey?: string;
+  conditions?: Array<{
+    field: string;
+    operator: string;
+    value: unknown;
+    next_key: string;
+  }>;
 }
 
 export interface TemplateNodeConfig {
   key: string;
-  node_type: NodeType;
+  type: NodeType;
   name: string;
   assignee_userids?: string[];
+  assignee_rule?: { type: "role" | "field"; value: string };
   auto_action?: string;
   ai_slot_id?: string;
   timeout_hours?: number;
-  next_keys: string[];
+  conditions?: Array<{
+    field: string;
+    operator: string;
+    value: unknown;
+    next_key: string;
+  }>;
+  default_next_key?: string;
+  next_key?: string | null;
 }
 
 export interface TemplateConfig {

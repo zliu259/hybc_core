@@ -51,7 +51,7 @@ PASSKEY_RP_ID = "web.hybcdg.com"
 PASSKEY_RP_NAME = "HYBC"
 
 [triggers]
-crons = ["*/5 * * * *", "0 * * * *", "0 18 * * *"]
+crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
 
 [env.prod]
 workers_dev = false
@@ -107,4 +107,4 @@ PASSKEY_RP_ID = "web.hybcdg.com"
 PASSKEY_RP_NAME = "HYBC"
 
 [env.prod.triggers]
-crons = ["*/5 * * * *", "0 * * * *", "0 18 * * *"]
+crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]

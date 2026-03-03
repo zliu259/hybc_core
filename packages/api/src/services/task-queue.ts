@@ -49,7 +49,7 @@ export const pollForNode = async (
   // Atomically claim one task
   const claimResult = await env.DB.prepare(
     `UPDATE task_queue SET status = 'assigned', assigned_node_id = ?,
-       assigned_at = ?, updated_at = ?
+       assigned_at = ?, started_at = ?, updated_at = ?
      WHERE id = (
        SELECT id FROM task_queue
        WHERE status = 'pending' AND task_type IN (${placeholders})
@@ -57,7 +57,7 @@ export const pollForNode = async (
        LIMIT 1
      )`
   )
-    .bind(nodeId, now, now, ...capabilities)
+    .bind(nodeId, now, now, now, ...capabilities)
     .run();
 
   if (!claimResult.meta.changes || claimResult.meta.changes === 0) {
@@ -142,6 +142,10 @@ export const pollForNode = async (
     } catch {
       payload = {};
     }
+    payload.payload_json = task.payload_json;
+    payload.task_type = task.task_type;
+    payload.biz_type = task.biz_type;
+    payload.biz_id = task.biz_id;
     prompt = await resolvePrompt(env, rule.prompt_template_id, payload);
   }
 
