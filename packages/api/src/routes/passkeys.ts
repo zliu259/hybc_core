@@ -93,21 +93,56 @@ const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
 const PASSKEY_DISCOVERABLE_USER = "__discoverable__";
 const rolePriority: UserRole[] = ["super_admin", "finance", "manager", "site_manager", "operator"];
 
-const parseRoleTagMapping = (raw?: string): Partial<Record<UserRole, string[]>> => {
-  if (!raw?.trim()) return {};
+const defaultRoleTagMapping: Record<UserRole, string[]> = {
+  super_admin: ["HY_ROLE_SUPER_ADMIN"],
+  finance: ["HY_ROLE_FINANCE"],
+  manager: ["HY_ROLE_MANAGER"],
+  site_manager: ["HY_ROLE_SITE_MANAGER"],
+  operator: ["HY_ROLE_OPERATOR"]
+};
 
-  const parsed: Partial<Record<UserRole, string[]>> = {};
+const parseRoleTagMapping = (raw?: string): Record<UserRole, string[]> => {
+  if (!raw?.trim()) return defaultRoleTagMapping;
+
+  const parsed: Record<UserRole, string[]> = {
+    super_admin: [],
+    finance: [],
+    manager: [],
+    site_manager: [],
+    operator: []
+  };
+
   for (const item of raw.split(";")) {
     const [roleRaw, tagsRaw] = item.split(":");
     const role = (roleRaw || "").trim() as UserRole;
     if (!rolePriority.includes(role)) continue;
     const tags = (tagsRaw || "")
-      .split(",")
+      .split(/[|,]/)
       .map((v) => v.trim())
       .filter(Boolean);
-    parsed[role] = tags;
+    if (tags.length > 0) {
+      parsed[role] = tags;
+    }
   }
-  return parsed;
+
+  return {
+    super_admin:
+      parsed.super_admin.length > 0
+        ? parsed.super_admin
+        : defaultRoleTagMapping.super_admin,
+    finance:
+      parsed.finance.length > 0 ? parsed.finance : defaultRoleTagMapping.finance,
+    manager:
+      parsed.manager.length > 0 ? parsed.manager : defaultRoleTagMapping.manager,
+    site_manager:
+      parsed.site_manager.length > 0
+        ? parsed.site_manager
+        : defaultRoleTagMapping.site_manager,
+    operator:
+      parsed.operator.length > 0
+        ? parsed.operator
+        : defaultRoleTagMapping.operator
+  };
 };
 
 const normalizeBridgeProxyUrl = (env: Env): string | null => {
@@ -241,9 +276,6 @@ const isUserInTag = async (
 
 const resolveRoleByWeComTags = async (env: Env, userId: string): Promise<UserRole | undefined> => {
   const mapping = parseRoleTagMapping(env.WECHAT_ROLE_TAG_MAPPING);
-  if (Object.keys(mapping).length === 0) {
-    return undefined;
-  }
 
   const accessToken = await fetchWeComAccessToken(env);
   const tagList = await fetchWeComJson<{
