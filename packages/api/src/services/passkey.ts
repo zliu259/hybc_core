@@ -76,11 +76,11 @@ export const consumePasskeyChallenge = async (
   const raw = await env.KV.get(key);
   if (!raw) return null;
 
-  await env.KV.delete(key);
-
   const parsed = JSON.parse(raw) as PasskeyChallengePayload;
   if (parsed.action !== action) return null;
   if (parsed.userId !== userId) return null;
+
+  await env.KV.delete(key);
   return parsed;
 };
 

@@ -30,7 +30,6 @@ defineOptions({
 const router = useRouter();
 const loading = ref(false);
 const passkeyLoading = ref(false);
-const passkeyUserId = ref("");
 const panelLoading = ref(false);
 const panelEnabled = ref(false);
 const panelElId = "wecom-login-panel";
@@ -121,11 +120,6 @@ const parseAuthOptions = (options: Record<string, any>) => {
 };
 
 const loginByPasskey = async () => {
-  if (!passkeyUserId.value.trim()) {
-    message("请先输入用户ID（企业微信userid）", { type: "warning" });
-    return;
-  }
-
   if (
     !("credentials" in navigator) ||
     typeof window.PublicKeyCredential === "undefined" ||
@@ -139,7 +133,7 @@ const loginByPasskey = async () => {
 
   passkeyLoading.value = true;
   try {
-    const begin = await beginPasskeyAuthentication(passkeyUserId.value.trim());
+    const begin = await beginPasskeyAuthentication();
     const options = parseAuthOptions(begin.data.options as Record<string, any>);
     const assertion = (await navigator.credentials.get({
       publicKey: options
@@ -153,7 +147,6 @@ const loginByPasskey = async () => {
     const credentialId = bytesToBase64Url(new Uint8Array(assertion.rawId));
     const finish = await finishPasskeyAuthentication({
       challengeId: begin.data.challengeId,
-      userId: passkeyUserId.value.trim(),
       credentialId,
       counter: Date.now()
     });
@@ -310,17 +303,12 @@ onBeforeUnmount(() => {
                   未检测到可用登录面板，请使用上方扫码登录
                 </div>
               </div>
-              <el-input
-                v-model="passkeyUserId"
-                placeholder="输入企业微信userid后使用Passkey"
-                clearable
-              />
               <el-button
                 class="w-full mt-3!"
                 :loading="passkeyLoading"
                 @click="loginByPasskey"
               >
-                使用 Passkey 登录
+                使用 Passkey 直接登录
               </el-button>
             </div>
           </Motion>

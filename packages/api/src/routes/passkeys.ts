@@ -90,6 +90,7 @@ const ensureFeatureEnabled = async (c: { env: Env }) => {
 };
 
 const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
+const PASSKEY_DISCOVERABLE_USER = "__discoverable__";
 const rolePriority: UserRole[] = ["super_admin", "finance", "manager", "site_manager", "operator"];
 
 const parseRoleTagMapping = (raw?: string): Partial<Record<UserRole, string[]>> => {
@@ -109,12 +110,83 @@ const parseRoleTagMapping = (raw?: string): Partial<Record<UserRole, string[]>> 
   return parsed;
 };
 
-const fetchWeComJson = async <T>(url: string): Promise<T> => {
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`WeCom request failed: ${res.status}`);
+const normalizeBridgeProxyUrl = (env: Env): string | null => {
+  const explicit = env.WECHAT_BRIDGE_PROXY_URL?.trim();
+  if (explicit) {
+    return explicit.replace(/\/$/, "");
   }
-  return (await res.json()) as T;
+
+  const base = env.WECHAT_BRIDGE_BASE_URL?.trim();
+  if (!base) return null;
+  const normalized = base.replace(/\/$/, "");
+  if (normalized.endsWith("/wecom/proxy")) return normalized;
+  return `${normalized}/wecom/proxy`;
+};
+
+const fetchViaBridge = async <T>(
+  proxyUrl: string,
+  targetUrl: string,
+  headers: Record<string, string>
+): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
+  const requestUrl = `${proxyUrl}${proxyUrl.includes("?") ? "&" : "?"}bridge=1`;
+  const resp = await fetch(requestUrl, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ url: targetUrl }),
+    redirect: "manual",
+    signal: controller.signal
+  }).finally(() => clearTimeout(timeout));
+
+  if (resp.status >= 300 && resp.status < 400) {
+    const location = resp.headers.get("location") ?? "";
+    throw new Error(`bridge redirected ${resp.status}${location ? ` to ${location}` : ""}`);
+  }
+
+  if (!resp.ok) {
+    const bodyText = await resp.text();
+    throw new Error(`bridge response ${resp.status}: ${bodyText.slice(0, 300)}`);
+  }
+  return (await resp.json()) as T;
+};
+
+const fetchDirectWeComJson = async <T>(url: string): Promise<T> => {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 6000);
+  const resp = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeout));
+  if (!resp.ok) {
+    const bodyText = await resp.text();
+    throw new Error(`wecom response ${resp.status}: ${bodyText.slice(0, 300)}`);
+  }
+  return (await resp.json()) as T;
+};
+
+const fetchWeComJson = async <T>(env: Env, url: string): Promise<T> => {
+  const proxyUrl = normalizeBridgeProxyUrl(env);
+  if (proxyUrl) {
+    const headers: Record<string, string> = {
+      "content-type": "application/json"
+    };
+    if (env.WECHAT_BRIDGE_TOKEN) {
+      headers["x-bridge-token"] = env.WECHAT_BRIDGE_TOKEN;
+    }
+    try {
+      return await fetchViaBridge<T>(proxyUrl, url, headers);
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "bridge fetch failed";
+      if (
+        reason.includes("redirect") ||
+        reason.includes("abort") ||
+        reason.includes("Too many redirects")
+      ) {
+        return fetchDirectWeComJson<T>(url);
+      }
+      throw error;
+    }
+  }
+
+  return fetchDirectWeComJson<T>(url);
 };
 
 const fetchWeComAccessToken = async (env: Env): Promise<string> => {
@@ -133,6 +205,7 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
     access_token?: string;
     expires_in?: number;
   }>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(env.WECHAT_CORPID)}&corpsecret=${encodeURIComponent(env.WECHAT_SECRET)}`
   );
 
@@ -145,12 +218,18 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
   return json.access_token;
 };
 
-const isUserInTag = async (accessToken: string, tagId: number, userId: string): Promise<boolean> => {
+const isUserInTag = async (
+  env: Env,
+  accessToken: string,
+  tagId: number,
+  userId: string
+): Promise<boolean> => {
   const json = await fetchWeComJson<{
     errcode?: number;
     errmsg?: string;
     userlist?: Array<{ userid?: string }>;
   }>(
+    env,
     `https://qyapi.weixin.qq.com/cgi-bin/tag/get?access_token=${encodeURIComponent(accessToken)}&tagid=${tagId}`
   );
 
@@ -171,7 +250,7 @@ const resolveRoleByWeComTags = async (env: Env, userId: string): Promise<UserRol
     errcode?: number;
     errmsg?: string;
     taglist?: Array<{ tagid: number; tagname: string }>;
-  }>(`https://qyapi.weixin.qq.com/cgi-bin/tag/list?access_token=${encodeURIComponent(accessToken)}`);
+  }>(env, `https://qyapi.weixin.qq.com/cgi-bin/tag/list?access_token=${encodeURIComponent(accessToken)}`);
 
   if (tagList.errcode !== 0) {
     throw new Error(`Failed to list WeCom tags: ${tagList.errmsg ?? "unknown"}`);
@@ -186,7 +265,7 @@ const resolveRoleByWeComTags = async (env: Env, userId: string): Promise<UserRol
     for (const tagName of mapping[role] ?? []) {
       const tagId = tagIdByName.get(tagName);
       if (!tagId) continue;
-      const matched = await isUserInTag(accessToken, tagId, userId);
+      const matched = await isUserInTag(env, accessToken, tagId, userId);
       if (matched) return role;
     }
   }
@@ -353,27 +432,28 @@ passkeyRoutes.post("/auth/begin", async (c) => {
   }
 
   const body = (await c.req.json().catch(() => ({}))) as AuthenticationBeginBody;
-  const userId = body.userId?.trim();
-  if (!userId) {
-    return c.json(badRequest("Missing userId"), 400);
+  const userId = body.userId?.trim() || null;
+  let credentials: { results: Array<{ credential_id: string }> } = { results: [] };
+  if (userId) {
+    credentials = await c.env.DB.prepare(
+      `SELECT credential_id FROM passkey_credentials
+       WHERE user_id = ? AND status = 'active'
+       ORDER BY id DESC`
+    )
+      .bind(userId)
+      .all<{ credential_id: string }>();
+
+    if (!credentials.results.length) {
+      return c.json(badRequest("No passkey credential enrolled for this user"), 404);
+    }
   }
 
-  const credentials = await c.env.DB.prepare(
-    `SELECT credential_id FROM passkey_credentials
-     WHERE user_id = ? AND status = 'active'
-     ORDER BY id DESC`
-  )
-    .bind(userId)
-    .all<{ credential_id: string }>();
-
-  if (!credentials.results.length) {
-    return c.json(badRequest("No passkey credential enrolled for this user"), 404);
-  }
+  const challengeUserId = userId ?? PASSKEY_DISCOVERABLE_USER;
 
   const { challengeId, challenge } = await issuePasskeyChallenge(
     c.env,
     "authenticate",
-    userId
+    challengeUserId
   );
 
   return c.json({
@@ -385,10 +465,14 @@ passkeyRoutes.post("/auth/begin", async (c) => {
         timeout: 60000,
         rpId: c.env.PASSKEY_RP_ID,
         userVerification: "preferred",
-        allowCredentials: credentials.results.map((item) => ({
-          id: item.credential_id,
-          type: "public-key"
-        }))
+        ...(userId
+          ? {
+              allowCredentials: credentials.results.map((item) => ({
+                id: item.credential_id,
+                type: "public-key"
+              }))
+            }
+          : {})
       }
     }
   });
@@ -402,19 +486,22 @@ passkeyRoutes.post("/auth/finish", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as AuthenticationFinishBody;
   const { ip, userAgent } = getRequestMeta(c);
 
-  if (!body.challengeId || !body.userId || !body.credentialId) {
-    return c.json(badRequest("Missing challengeId/userId/credentialId"), 400);
+  if (!body.challengeId || !body.credentialId) {
+    return c.json(badRequest("Missing challengeId/credentialId"), 400);
   }
+
+  const requestedUserId = body.userId?.trim() || null;
+  const challengeUserId = requestedUserId ?? PASSKEY_DISCOVERABLE_USER;
 
   const challenge = await consumePasskeyChallenge(
     c.env,
     body.challengeId,
     "authenticate",
-    body.userId
+    challengeUserId
   );
   if (!challenge) {
     await writePasskeyAuditLog(c.env, {
-      userId: body.userId,
+      userId: requestedUserId ?? "unknown",
       credentialId: body.credentialId,
       action: "auth_finish",
       success: false,
@@ -425,18 +512,27 @@ passkeyRoutes.post("/auth/finish", async (c) => {
     return c.json(badRequest("Challenge invalid or expired"), 400);
   }
 
-  const credential = await c.env.DB.prepare(
-    `SELECT id, user_id, credential_id, counter, name, transports_json, created_at, last_used_at, wecom_verified_at, status
-     FROM passkey_credentials
-     WHERE user_id = ? AND credential_id = ? AND status = 'active'
-     LIMIT 1`
-  )
-    .bind(body.userId, body.credentialId)
-    .first<DbPasskeyCredential>();
+  const credential = requestedUserId
+    ? await c.env.DB.prepare(
+        `SELECT id, user_id, credential_id, counter, name, transports_json, created_at, last_used_at, wecom_verified_at, status
+         FROM passkey_credentials
+         WHERE user_id = ? AND credential_id = ? AND status = 'active'
+         LIMIT 1`
+      )
+        .bind(requestedUserId, body.credentialId)
+        .first<DbPasskeyCredential>()
+    : await c.env.DB.prepare(
+        `SELECT id, user_id, credential_id, counter, name, transports_json, created_at, last_used_at, wecom_verified_at, status
+         FROM passkey_credentials
+         WHERE credential_id = ? AND status = 'active'
+         LIMIT 1`
+      )
+        .bind(body.credentialId)
+        .first<DbPasskeyCredential>();
 
   if (!credential) {
     await writePasskeyAuditLog(c.env, {
-      userId: body.userId,
+      userId: requestedUserId ?? "unknown",
       credentialId: body.credentialId,
       action: "auth_finish",
       success: false,
@@ -459,7 +555,7 @@ passkeyRoutes.post("/auth/finish", async (c) => {
       .run();
 
     await writePasskeyAuditLog(c.env, {
-      userId: body.userId,
+      userId: credential.user_id,
       credentialId: body.credentialId,
       action: "auth_finish",
       success: false,
@@ -503,7 +599,7 @@ passkeyRoutes.post("/auth/finish", async (c) => {
   const tokenBundle = await issueTokens(c.env, session);
 
   await writePasskeyAuditLog(c.env, {
-    userId: body.userId,
+    userId: credential.user_id,
     credentialId: body.credentialId,
     action: "auth_finish",
     success: true,

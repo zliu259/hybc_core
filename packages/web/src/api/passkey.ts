@@ -43,19 +43,20 @@ export const finishPasskeyRegistration = (data: {
   );
 };
 
-export const beginPasskeyAuthentication = (userId: string) => {
+export const beginPasskeyAuthentication = (userId?: string) => {
   return http.request<{
     success: boolean;
     data: {
       challengeId: string;
       options: Record<string, unknown>;
     };
-  }>("post", "/api/v1/passkeys/auth/begin", { data: { userId } });
+  }>("post", "/api/v1/passkeys/auth/begin", {
+    data: userId ? { userId } : {}
+  });
 };
 
 export const finishPasskeyAuthentication = (data: {
   challengeId: string;
-  userId: string;
   credentialId: string;
   counter?: number;
 }) => {
