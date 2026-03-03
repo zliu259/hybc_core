@@ -33,6 +33,7 @@ const passkeyLoading = ref(false);
 const panelLoading = ref(false);
 const panelEnabled = ref(false);
 const panelElId = "wecom-login-panel";
+const weComButtonSrc = "/login_white_big_2x.png";
 const panelUnmount = ref<null | (() => void)>(null);
 const autoRedirecting = ref(false);
 const { initStorage } = useLayout();
@@ -268,9 +269,9 @@ onBeforeUnmount(() => {
       </div>
       <div class="login-box">
         <div class="login-form">
-          <avatar class="avatar" />
+          <img src="/hybclogo.png" alt="HYBC Logo" class="login-logo" />
           <Motion>
-            <h2 class="outline-hidden">{{ title }}</h2>
+            <h2 class="outline-hidden">{{ title }}管理系统</h2>
           </Motion>
           <Motion :delay="150">
             <el-alert
@@ -281,14 +282,18 @@ onBeforeUnmount(() => {
             />
           </Motion>
           <Motion :delay="250">
-            <el-button
-              class="w-full mt-6!"
-              type="primary"
-              :loading="loading"
+            <button
+              type="button"
+              class="w-full mt-6! wecom-login-btn"
+              :disabled="loading"
               @click="startWeComScan"
             >
-              企业微信扫码登录
-            </el-button>
+              <img
+                :src="weComButtonSrc"
+                alt="企业微信登录"
+                class="wecom-login-btn__img"
+              />
+            </button>
           </Motion>
           <Motion :delay="350">
             <div class="mt-4">
@@ -308,7 +313,7 @@ onBeforeUnmount(() => {
                 :loading="passkeyLoading"
                 @click="loginByPasskey"
               >
-                使用 Passkey 直接登录
+                使用 Passkey 登录
               </el-button>
             </div>
           </Motion>
@@ -343,5 +348,28 @@ onBeforeUnmount(() => {
   margin-top: 8px;
   font-size: 12px;
   color: #8f8477;
+}
+
+.wecom-login-btn {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.wecom-login-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.wecom-login-btn__img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.login-logo {
+  width: 80px;
+  margin-bottom: 20px;
 }
 </style>
