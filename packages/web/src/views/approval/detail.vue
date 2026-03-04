@@ -142,6 +142,7 @@ type AiReviewRow = {
 type AiReviewNormalized = {
   outcomeCode: string | null;
   outcomeLabel: string;
+  outcomeTagType: TagType;
   summaryText: string;
 };
 
@@ -165,6 +166,24 @@ const parseEmbeddedAiSummary = (text: string | null | undefined) => {
   }
 };
 
+const parseAiDecisionFromText = (text: string | null | undefined) => {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      outcome?: unknown;
+      comment?: unknown;
+    };
+    return {
+      outcome: typeof parsed.outcome === "string" ? parsed.outcome : null,
+      comment: typeof parsed.comment === "string" ? parsed.comment : null
+    };
+  } catch {
+    return null;
+  }
+};
+
 const toAiOutcomeLabel = (outcome: string | null | undefined, comment: string | null | undefined) => {
   if (outcome === "approve") return "建议通过";
   if (outcome === "reject") {
@@ -172,6 +191,18 @@ const toAiOutcomeLabel = (outcome: string | null | undefined, comment: string | 
     return /补充|资料|证据|材料/.test(text) ? "建议补充材料" : "建议拒绝";
   }
   return "-";
+};
+
+const toAiOutcomeTagType = (
+  outcome: string | null | undefined,
+  comment: string | null | undefined
+): TagType => {
+  if (outcome === "approve") return "success";
+  if (outcome === "reject") {
+    const text = comment ?? "";
+    return /补充|资料|证据|材料/.test(text) ? "warning" : "danger";
+  }
+  return "info";
 };
 
 const normalizeAiReview = (row: AiReviewRow): AiReviewNormalized => {
@@ -185,6 +216,7 @@ const normalizeAiReview = (row: AiReviewRow): AiReviewNormalized => {
   return {
     outcomeCode: outcome,
     outcomeLabel: toAiOutcomeLabel(outcome, comment),
+    outcomeTagType: toAiOutcomeTagType(outcome, comment),
     summaryText
   };
 };
@@ -206,16 +238,34 @@ const formatAiNodeDecision = (task: ApprovalTask) => {
   if (task.assignee_userid !== "AI_GATE") {
     return toActionLabel(task.action);
   }
-  if (task.action || task.comment) {
-    return toAiOutcomeLabel(task.action, task.comment);
+  const embedded = parseAiDecisionFromText(task.comment);
+  const outcome = embedded?.outcome ?? task.action;
+  const comment = embedded?.comment ?? task.comment;
+  if (outcome || comment) {
+    return toAiOutcomeLabel(outcome, comment);
   }
   const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
   const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
   return fallback?.outcomeLabel ?? "-";
 };
 
+const formatAiNodeDecisionTagType = (task: ApprovalTask): TagType => {
+  if (task.assignee_userid !== "AI_GATE") return "info";
+  const embedded = parseAiDecisionFromText(task.comment);
+  const outcome = embedded?.outcome ?? task.action;
+  const comment = embedded?.comment ?? task.comment;
+  if (outcome || comment) {
+    return toAiOutcomeTagType(outcome, comment);
+  }
+  const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
+  const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
+  return fallback?.outcomeTagType ?? "info";
+};
+
 const formatAiNodeComment = (task: ApprovalTask) => {
   if (task.assignee_userid !== "AI_GATE") return task.comment;
+  const embedded = parseAiDecisionFromText(task.comment);
+  if (embedded?.comment) return embedded.comment;
   if (task.comment) return task.comment;
   const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
   const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
@@ -663,7 +713,9 @@ onMounted(async () => {
                 </el-table-column>
                 <el-table-column label="结论" width="120">
                   <template #default="scope">
-                    {{ normalizeAiReview(scope.row).outcomeLabel }}
+                    <el-tag :type="normalizeAiReview(scope.row).outcomeTagType" size="small">
+                      {{ normalizeAiReview(scope.row).outcomeLabel }}
+                    </el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column label="总结" min-width="220">
@@ -761,6 +813,7 @@ onMounted(async () => {
                     <span>{{ task.assignee_userid }}</span>
                     <el-tag
                       v-if="task.action"
+                      :type="formatAiNodeDecisionTagType(task)"
                       size="small"
                       style="margin-left: 6px"
                       >{{ formatAiNodeDecision(task) }}</el-tag
