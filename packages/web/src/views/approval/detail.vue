@@ -26,6 +26,7 @@ import {
 } from "@/api/reimbursement";
 import { getContract, type ContractDetail } from "@/api/contract";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { resolveUploadUrl } from "@/api/upload";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalDetail" });
@@ -175,7 +176,29 @@ const contractAttachments = computed(() =>
   parseAttachments(contractDetail.value?.attachments_json)
 );
 const fileUrl = (fileKey: string) =>
-  `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
+  resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
+
+const previewDrawerVisible = ref(false);
+const previewFileUrl = ref("");
+const previewFileName = ref("");
+const previewInline = computed(() => {
+  const lower = previewFileName.value.toLowerCase();
+  return (
+    lower.endsWith(".pdf") ||
+    lower.endsWith(".png") ||
+    lower.endsWith(".jpg") ||
+    lower.endsWith(".jpeg") ||
+    lower.endsWith(".webp") ||
+    lower.endsWith(".gif") ||
+    lower.endsWith(".txt")
+  );
+});
+
+const openAttachmentPreview = (fileKey: string, fileName: string) => {
+  previewFileUrl.value = fileUrl(fileKey);
+  previewFileName.value = fileName;
+  previewDrawerVisible.value = true;
+};
 
 const loadDetail = async () => {
   loading.value = true;
@@ -455,10 +478,16 @@ onMounted(async () => {
                 <el-table-column label="大小" width="120">
                   <template #default="scope">{{ scope.row.file_size ?? '-' }}</template>
                 </el-table-column>
-                <el-table-column label="操作" width="120">
+                <el-table-column label="操作" width="190">
                   <template #default="scope">
+                    <el-link
+                      type="primary"
+                      @click="openAttachmentPreview(scope.row.file_key, scope.row.file_name)"
+                    >
+                      预览
+                    </el-link>
                     <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
-                      查看
+                      下载
                     </el-link>
                   </template>
                 </el-table-column>
@@ -487,10 +516,16 @@ onMounted(async () => {
                 <el-table-column label="大小" width="120">
                   <template #default="scope">{{ scope.row.file_size ?? '-' }}</template>
                 </el-table-column>
-                <el-table-column label="操作" width="120">
+                <el-table-column label="操作" width="190">
                   <template #default="scope">
+                    <el-link
+                      type="primary"
+                      @click="openAttachmentPreview(scope.row.file_key, scope.row.file_name)"
+                    >
+                      预览
+                    </el-link>
                     <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
-                      查看
+                      下载
                     </el-link>
                   </template>
                 </el-table-column>
@@ -744,6 +779,30 @@ onMounted(async () => {
         </el-space>
       </el-card>
     </template>
+
+    <el-drawer v-model="previewDrawerVisible" title="附件预览" size="70%">
+      <div style="height: calc(100vh - 120px)">
+        <div style="margin-bottom: 8px; color: #666">
+          {{ previewFileName }}
+        </div>
+        <template v-if="previewInline">
+          <iframe
+            :src="previewFileUrl"
+            style="width: 100%; height: 100%; border: none"
+          />
+        </template>
+        <template v-else>
+          <el-alert
+            type="info"
+            :closable="false"
+            title="该文件类型暂不支持内嵌预览，请使用下载打开"
+          />
+          <div style="margin-top: 12px">
+            <el-link :href="previewFileUrl" target="_blank" type="primary">下载附件</el-link>
+          </div>
+        </template>
+      </div>
+    </el-drawer>
 
     <el-dialog v-model="returnDialogVisible" title="退回审批" width="480px">
       <el-form label-width="80px">

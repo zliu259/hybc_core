@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import os
+import re
 from urllib.parse import quote, urljoin
 
 import httpx
@@ -197,10 +198,15 @@ class TaskExecutor:
         return None
 
     def _prepare_payload_for_task(self, task_type: str, payload: dict[str, object]) -> dict[str, object]:
-        if task_type != "contract_review":
+        if task_type not in {"contract_review", "approval_ai_gate"}:
             return payload
 
-        attachments = payload.get("attachments")
+        attachments: object = payload.get("attachments")
+        if not attachments and task_type == "approval_ai_gate":
+            context = payload.get("context")
+            if isinstance(context, dict):
+                attachments = context.get("attachments")
+
         normalized = self._normalize_attachments(attachments)
         if not normalized:
             return payload
@@ -218,6 +224,12 @@ class TaskExecutor:
 
             if self._is_docx(source, content_type):
                 text = self._extract_docx_text(data)
+                if text:
+                    text_blocks.append({"source": source, "text": text[:24000]})
+                continue
+
+            if self._is_doc(source, content_type):
+                text = self._extract_doc_text(data)
                 if text:
                     text_blocks.append({"source": source, "text": text[:24000]})
                 continue
@@ -259,6 +271,8 @@ class TaskExecutor:
 
             if isinstance(item, dict):
                 raw_source = item.get("url") or item.get("key") or item.get("file_key") or item.get("path")
+                if not raw_source:
+                    raw_source = item.get("file_url")
                 source = raw_source.strip() if isinstance(raw_source, str) else ""
                 if not source:
                     continue
@@ -303,6 +317,12 @@ class TaskExecutor:
         return lower_source.endswith(".pdf") or "application/pdf" in lower_content_type
 
     @staticmethod
+    def _is_doc(source: str, content_type: str) -> bool:
+        lower_source = source.lower()
+        lower_content_type = content_type.lower()
+        return lower_source.endswith(".doc") or "application/msword" in lower_content_type
+
+    @staticmethod
     def _is_image(source: str, content_type: str) -> bool:
         lower_source = source.lower()
         lower_content_type = content_type.lower()
@@ -322,6 +342,23 @@ class TaskExecutor:
         except Exception as exc:
             logger.warning("DOCX extraction failed: %s", exc)
             return ""
+
+    def _extract_doc_text(self, data: bytes) -> str:
+        chunks: list[str] = []
+        try:
+            latin_text = data.decode("latin-1", errors="ignore")
+            chunks.extend(re.findall(r"[\u4e00-\u9fffA-Za-z0-9，。！？；：《》、“”‘’（）()\-_,.:;@#$%&*+/\\\s]{20,}", latin_text))
+        except Exception:
+            pass
+
+        try:
+            utf16_text = data.decode("utf-16le", errors="ignore")
+            chunks.extend(re.findall(r"[\u4e00-\u9fffA-Za-z0-9，。！？；：《》、“”‘’（）()\-_,.:;@#$%&*+/\\\s]{20,}", utf16_text))
+        except Exception:
+            pass
+
+        normalized = "\n".join(piece.strip() for piece in chunks if piece and piece.strip())
+        return normalized[:32000]
 
     def _extract_pdf_text(self, data: bytes) -> str:
         try:

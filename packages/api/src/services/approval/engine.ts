@@ -152,19 +152,32 @@ export const submitForApproval = async (
     setAiGateHandler(aiGateHandler);
   }
 
+  const fallbackRouteContext: RouteContext = {
+    biz_type: request.biz_type,
+    biz_id: request.biz_id,
+    biz_summary: request.biz_summary
+  };
+  const requestRouteContext = request.context ?? request.instance_config?.route_context;
+  const resolvedRouteContext: RouteContext =
+    requestRouteContext && Object.keys(requestRouteContext).length > 0
+      ? requestRouteContext
+      : fallbackRouteContext;
+
   // 1. Resolve template + branch
   const { template, parsedTemplate } = await resolveTemplate(
-    env, request.biz_type, request.context ?? {}
+    env,
+    request.biz_type,
+    resolvedRouteContext
   );
 
   // 2. Generate serial
   const instanceNo = await generateSerial(env.DB, "SP", "approval_instance", "instance_no");
   const now = nowIso();
   const normalizedInstanceConfig: InstanceConfig | undefined =
-    request.instance_config || request.context
+    request.instance_config || resolvedRouteContext
       ? {
           ...(request.instance_config ?? {}),
-          route_context: request.context ?? request.instance_config?.route_context
+          route_context: resolvedRouteContext
         }
       : undefined;
 
@@ -229,7 +242,7 @@ export const submitForApproval = async (
           biz_type: request.biz_type,
           biz_id: request.biz_id,
           biz_summary: request.biz_summary,
-          context: normalizedInstanceConfig?.route_context ?? request.context ?? {}
+          context: normalizedInstanceConfig?.route_context ?? resolvedRouteContext
         }
       });
     }

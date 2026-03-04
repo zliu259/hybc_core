@@ -205,7 +205,14 @@ const loadAiGateContextFromInstance = async (
     biz_type: instance.biz_type,
     biz_id: instance.biz_id,
     biz_summary: instance.biz_summary,
-    context: routeContext
+    context:
+      Object.keys(routeContext).length > 0
+        ? routeContext
+        : {
+            biz_type: instance.biz_type,
+            biz_id: instance.biz_id,
+            biz_summary: instance.biz_summary
+          }
   };
 };
 

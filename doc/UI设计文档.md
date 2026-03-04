@@ -710,6 +710,11 @@
   - 图片：直接以 data URL 作为视觉输入
 - 提示词变量渲染增强：对象变量（如 `context`）改为 JSON 字符串渲染，避免模板出现 `[object Object]`：`packages/api/src/services/ai-slot.ts`
 
+### 3.22 流转台附件下载与快速预览优化（2026-03）
+- 流转台审批详情附件链接改为绝对 API 地址，修复点击下载跳转首页问题：`packages/web/src/views/approval/detail.vue`
+- 流转台新增附件抽屉预览能力，支持 PDF/图片/TXT 快速内嵌预览，其他格式保留下载打开：`packages/web/src/views/approval/detail.vue`
+- AI关卡 context 兜底增强：当业务侧未显式提供 context 时，后端自动补齐最小上下文（biz_type/biz_id/biz_summary），避免空 context 导致模型拒绝：`packages/api/src/services/approval/engine.ts`、`packages/api/src/services/approval/executors.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
