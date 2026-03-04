@@ -674,6 +674,20 @@
 - 发起校验收敛：合同流必须存在合同附件；直接付款必须存在付款附件；启用“首笔预付款”时必须存在首笔付款附件：`packages/web/src/views/finance/payment/wizard.vue`
 - 提交流程保持“创建并提审”闭环后自动跳转到刚创建的详情页（合同跳转合同详情，付款跳转付款详情）：`packages/web/src/views/finance/payment/wizard.vue`
 
+### 3.17 发单台与付款详情审批可用性增强（2026-03）
+- 智能发单台合同流字段补齐为“合同审查前置采集”模式：合同类型、经办人、合同日期、主体、对方单位、合同附件在发起前完成填写，减少提交后补录：`packages/web/src/views/finance/payment/wizard.vue`
+- 智能发单台“合同+同步付款”场景改为仅填写付款额外字段（首笔金额、付款类别、付款日期、付款方式、付款事由、首笔附件），不再重复填写合同内字段：`packages/web/src/views/finance/payment/wizard.vue`
+- 智能发单台“直接付款”场景要求完整付款审批字段（类别/日期/方式/内容/附件）后方可提交：`packages/web/src/views/finance/payment/wizard.vue`
+- 金额相关展示统一为“千分位 + 两位小数 + 中文大写”双显式格式，降低操作歧义：`packages/web/src/views/finance/payment/wizard.vue`、`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
+- 合同详情增强“我方主体”展示：显示主体全名并联动显示付款账号信息（开户行/账号）：`packages/web/src/views/finance/contract/detail.vue`
+- 付款详情增强信息聚合：项目名称、我方主体及账号、对方主体及账号、审批节点与意见、AI审核意见、附件查看/上传/下载：`packages/web/src/views/finance/payment/detail.vue`
+- 付款详情审批中锁定业务字段，但保留附件补传能力；审批中禁删附件以支持补传付款凭证：`packages/web/src/views/finance/payment/detail.vue`
+
+### 3.18 审批提交设置可视化改造（2026-03）
+- 合同详情与付款详情的“审批提交设置”改为可视化表单优先（审批摘要、临时审批人多选、审批说明），降低 JSON 配置心智负担：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
+- JSON 高级模式仅对 `super_admin` 暴露，其他角色仅可使用可视化模式：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
+- 可视化模式新增“审批说明常用模板”下拉，支持一键填充审批说明文本以提升提审效率：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

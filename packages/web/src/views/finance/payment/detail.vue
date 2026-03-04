@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { formatToken, getToken } from "@/utils/auth";
 import {
   createPaymentRequest,
   getPaymentRequest,
@@ -14,11 +16,22 @@ import {
   type Payee,
   type PaymentRequestDetail
 } from "@/api/payment";
+import { getApprovalDetail, type ApprovalDetailResponse } from "@/api/approval";
 import {
   listContracts,
   type Contract,
   type InstanceConfig
 } from "@/api/contract";
+import {
+  listEntities,
+  listEntityBankAccounts,
+  type Entity,
+  type EntityBankAccount
+} from "@/api/entity";
+import { listProjects, type Project } from "@/api/project";
+import { createUploadSignature } from "@/api/upload";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "PaymentDetail" });
 
@@ -26,25 +39,44 @@ type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
 const route = useRoute();
 const router = useRouter();
+const userStore = useUserStoreHook();
 const loading = ref(false);
 const saving = ref(false);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const isCreate = computed(() => route.params.id === "create");
 const requestId = computed(() => Number(route.params.id));
+const inApprovalFlow = computed(
+  () => !isCreate.value && detail.value?.status === "pending_approval"
+);
+const canEditFields = computed(() => isCreate.value || !inApprovalFlow.value);
 
 const contracts = ref<Contract[]>([]);
 const payees = ref<Payee[]>([]);
+const projects = ref<Project[]>([]);
+const entities = ref<Entity[]>([]);
+const entityBankAccountMap = ref<Record<number, EntityBankAccount[]>>({});
 const detail = ref<PaymentRequestDetail | null>(null);
+
+type PaymentAttachmentDraft = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+};
+const attachmentItems = ref<PaymentAttachmentDraft[]>([]);
+const uploadingAttachment = ref(false);
+
+const approvalDetail = ref<ApprovalDetailResponse | null>(null);
 
 const form = ref({
   contract_id: undefined as number | undefined,
   project_id: undefined as number | undefined,
   expected_payment_date: "",
-  category: "",
+  category: "其他费用",
   payee_id: undefined as number | undefined,
   amount: 0,
   content: "",
-  payment_method: "",
+  payment_method: "对公转账",
   remark: ""
 });
 
@@ -53,12 +85,104 @@ const selectedContract = computed(() => {
     contracts.value.find(item => item.id === form.value.contract_id) ?? null
   );
 });
+const selectedPayee = computed(() => {
+  return payees.value.find(item => item.id === form.value.payee_id) ?? null;
+});
+const projectName = computed(() => {
+  const target = projects.value.find(item => item.id === form.value.project_id);
+  return target ? `${target.project_name} (${target.project_code})` : "";
+});
+const selectedEntity = computed(() => {
+  const entityId = selectedContract.value?.entity_id;
+  if (!entityId) return null;
+  return entities.value.find(item => item.id === entityId) ?? null;
+});
+const selectedEntityAccount = computed(() => {
+  const entityId = selectedContract.value?.entity_id;
+  if (!entityId) return null;
+  const accounts = entityBankAccountMap.value[entityId] ?? [];
+  return accounts.find(item => item.status === "active") ?? accounts[0] ?? null;
+});
 
 const remainingAmount = computed(() => {
   if (!selectedContract.value) return 0;
   return (
     selectedContract.value.total_amount - selectedContract.value.paid_amount
   );
+});
+const toChineseAmount = (amount: number): string => {
+  if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
+  if (amount === 0) return "零元整";
+
+  const fractionUnits = ["角", "分"];
+  const digit = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+  const intUnits = ["", "拾", "佰", "仟"];
+  const sectionUnits = ["", "万", "亿", "兆"];
+
+  let value = Math.round(amount * 100);
+  const fraction = value % 100;
+  let result = "";
+
+  if (fraction === 0) {
+    result = "整";
+  } else {
+    const jiao = Math.floor(fraction / 10);
+    const fen = fraction % 10;
+    if (jiao > 0) result += `${digit[jiao]}${fractionUnits[0]}`;
+    if (fen > 0) result += `${digit[fen]}${fractionUnits[1]}`;
+  }
+
+  value = Math.floor(value / 100);
+  let sectionIndex = 0;
+  let intResult = "";
+
+  while (value > 0 && sectionIndex < sectionUnits.length) {
+    const sectionValue = value % 10000;
+    if (sectionValue !== 0) {
+      let sectionText = "";
+      let unitIndex = 0;
+      let section = sectionValue;
+      let zeroPending = false;
+      while (section > 0) {
+        const num = section % 10;
+        if (num === 0) {
+          if (!zeroPending && sectionText) {
+            zeroPending = true;
+            sectionText = `零${sectionText}`;
+          }
+        } else {
+          zeroPending = false;
+          sectionText = `${digit[num]}${intUnits[unitIndex]}${sectionText}`;
+        }
+        unitIndex += 1;
+        section = Math.floor(section / 10);
+      }
+      sectionText = sectionText.replace(/零+/g, "零").replace(/零$/g, "");
+      intResult = `${sectionText}${sectionUnits[sectionIndex]}${intResult}`;
+    } else if (intResult && !intResult.startsWith("零")) {
+      intResult = `零${intResult}`;
+    }
+    sectionIndex += 1;
+    value = Math.floor(value / 10000);
+  }
+
+  intResult = intResult.replace(/零+/g, "零").replace(/零([万亿兆])/g, "$1");
+  intResult = intResult.replace(/亿万/g, "亿").replace(/零$/g, "");
+  return `${intResult || "零"}元${result}`;
+};
+const amountDisplay = computed(() => {
+  const value = Number(form.value.amount || 0);
+  return `${value.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}（${toChineseAmount(value)}）`;
+});
+const remainingAmountDisplay = computed(() => {
+  const value = Number(remainingAmount.value || 0);
+  return `${value.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}（${toChineseAmount(value)}）`;
 });
 
 const riskStatus = ref("none");
@@ -70,9 +194,99 @@ const riskTagType: Record<string, TagType> = {
   failed: "danger"
 };
 
+const parseAttachments = (raw: string | null | undefined): PaymentAttachmentDraft[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const items: Array<PaymentAttachmentDraft | null> = parsed.map(item => {
+      if (typeof item === "string") {
+        return { file_key: item, file_name: item };
+      }
+      if (item && typeof item === "object") {
+        const row = item as {
+          file_key?: string;
+          key?: string;
+          file_name?: string;
+          name?: string;
+          file_size?: number;
+          size?: number;
+        };
+        const key = row.file_key ?? row.key;
+        if (!key) return null;
+        return {
+          file_key: key,
+          file_name: row.file_name ?? row.name ?? key,
+          file_size: row.file_size ?? row.size
+        };
+      }
+      return null;
+    });
+    return items.filter((item): item is PaymentAttachmentDraft => item !== null);
+  } catch {
+    return [];
+  }
+};
+
+const serializeAttachments = (): string => {
+  return JSON.stringify(
+    attachmentItems.value.map(item => ({
+      file_key: item.file_key,
+      file_name: item.file_name,
+      file_size: item.file_size ?? undefined
+    }))
+  );
+};
+
+const fileUrl = (fileKey: string) =>
+  `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
+
+const roundNodes = computed(() => {
+  if (!approvalDetail.value) return [];
+  return approvalDetail.value.nodes
+    .filter(item => item.round === approvalDetail.value?.instance.current_round)
+    .sort((a, b) => a.sort_order - b.sort_order);
+});
+
+const getNodeTasks = (nodeId: number) => {
+  if (!approvalDetail.value) return [];
+  return approvalDetail.value.tasks.filter(item => item.node_instance_id === nodeId);
+};
+
+const aiGateReviews = computed(() => approvalDetail.value?.ai_gate_reviews ?? []);
+
+const toActionLabel = (action: string | null) => {
+  if (!action) return "待处理";
+  if (action === "approve") return "通过";
+  if (action === "reject") return "驳回";
+  if (action === "return_initiator") return "退回发起人";
+  if (action === "return_prev") return "退回上一步";
+  if (action === "return_to") return "退回指定节点";
+  if (action === "transfer") return "转办";
+  return action;
+};
+
 const approvalDialogVisible = ref(false);
 const approvalSummary = ref("");
 const approvalConfigText = ref("{}");
+const approvalConfigMode = ref<"form" | "json">("form");
+const approvalFormConfig = ref({
+  default_assignee_userids: [] as string[],
+  note: ""
+});
+const approvalNoteTemplates = [
+  "请优先审批，业务节点加急。",
+  "付款凭证已补齐，请审核通过。",
+  "金额与收款信息已复核，请确认。",
+  "请关注付款时效，审批完成后将立即执行打款。"
+];
+const selectedApprovalNoteTemplate = ref("");
+const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
+
+const applyApprovalNoteTemplate = (value: string) => {
+  if (!value) return;
+  approvalFormConfig.value.note = value;
+};
 
 const paidDialogVisible = ref(false);
 const paidSubmitting = ref(false);
@@ -84,18 +298,42 @@ const paidForm = ref({
 });
 
 const loadRefs = async () => {
-  const [contractRes, payeeRes] = await Promise.all([
+  const [contractRes, payeeRes, projectRes, entityRes] = await Promise.all([
     listContracts({ page: 1, pageSize: 400, direction: "outbound" }),
-    listPayees()
+    listPayees(),
+    listProjects({ page: 1, pageSize: 400 }),
+    listEntities()
   ]);
   contracts.value = contractRes.data;
   payees.value = payeeRes.data;
+  projects.value = projectRes.data;
+  entities.value = entityRes.data;
+  const entries = await Promise.all(
+    entityRes.data.map(async item => {
+      const accountRes = await listEntityBankAccounts(item.id).catch(() => ({ data: [] }));
+      return [item.id, accountRes.data] as const;
+    })
+  );
+  entityBankAccountMap.value = Object.fromEntries(entries);
 };
 
 const onSelectContract = (contractId?: number) => {
   const selected = contracts.value.find(item => item.id === contractId);
   if (!selected) return;
   form.value.project_id = selected.project_id;
+};
+
+const loadApprovalDetail = async (approvalInstanceId: number | null) => {
+  if (!approvalInstanceId) {
+    approvalDetail.value = null;
+    return;
+  }
+  try {
+    const result = await getApprovalDetail(approvalInstanceId);
+    approvalDetail.value = result.data;
+  } catch {
+    approvalDetail.value = null;
+  }
 };
 
 const loadDetail = async () => {
@@ -115,21 +353,31 @@ const loadDetail = async () => {
       payment_method: result.data.payment_method,
       remark: result.data.remark ?? ""
     };
+    attachmentItems.value = parseAttachments(result.data.attachments_json);
     const rr = await getRiskReport(requestId.value);
     riskStatus.value = rr.data.status;
     riskReport.value = rr.data.result;
+    await loadApprovalDetail(result.data.approval_instance_id);
   } finally {
     loading.value = false;
   }
 };
 
 const onSave = async () => {
+  if (!canEditFields.value) {
+    message("审批进行中，付款字段已锁定", { type: "warning" });
+    return;
+  }
   if (
     !form.value.contract_id ||
     !form.value.project_id ||
-    !form.value.payee_id
+    !form.value.payee_id ||
+    !form.value.expected_payment_date ||
+    !form.value.category ||
+    !form.value.payment_method ||
+    !form.value.content.trim()
   ) {
-    message("请填写完整信息", { type: "warning" });
+    message("请完整填写付款审批字段", { type: "warning" });
     return;
   }
   if (form.value.amount > remainingAmount.value && isCreate.value) {
@@ -149,6 +397,7 @@ const onSave = async () => {
         amount: form.value.amount,
         content: form.value.content,
         payment_method: form.value.payment_method,
+        attachments_json: serializeAttachments(),
         remark: form.value.remark
       });
       message(`创建成功，金额大写：${result.data.amount_cn}`, {
@@ -165,6 +414,7 @@ const onSave = async () => {
       amount: form.value.amount,
       content: form.value.content,
       payment_method: form.value.payment_method,
+      attachments_json: serializeAttachments(),
       remark: form.value.remark
     });
     message("保存成功", { type: "success" });
@@ -184,6 +434,12 @@ const onSubmitApproval = async () => {
   approvalSummary.value = detail.value?.serial_no
     ? `${detail.value.serial_no} | ${detail.value.content} | ${detail.value.amount}`
     : "";
+  approvalConfigMode.value = "form";
+  approvalFormConfig.value = {
+    default_assignee_userids: [],
+    note: ""
+  };
+  selectedApprovalNoteTemplate.value = "";
   approvalConfigText.value = "{}";
   approvalDialogVisible.value = true;
 };
@@ -192,13 +448,26 @@ const confirmSubmitApproval = async () => {
   if (isCreate.value) return;
 
   let instanceConfig: InstanceConfig | undefined;
-  const trimmed = approvalConfigText.value.trim();
-  if (trimmed && trimmed !== "{}") {
-    try {
-      instanceConfig = JSON.parse(trimmed) as InstanceConfig;
-    } catch {
-      message("实例级配置 JSON 格式不正确", { type: "warning" });
-      return;
+  if (approvalConfigMode.value === "json") {
+    const trimmed = approvalConfigText.value.trim();
+    if (trimmed && trimmed !== "{}") {
+      try {
+        instanceConfig = JSON.parse(trimmed) as InstanceConfig;
+      } catch {
+        message("实例级配置 JSON 格式不正确", { type: "warning" });
+        return;
+      }
+    }
+  } else {
+    const pickedUserIds = approvalFormConfig.value.default_assignee_userids.filter(Boolean);
+    const note = approvalFormConfig.value.note.trim();
+    if (pickedUserIds.length > 0 || note) {
+      instanceConfig = {
+        ...(pickedUserIds.length > 0
+          ? { default_assignee_userids: pickedUserIds }
+          : {}),
+        ...(note ? { note } : {})
+      };
     }
   }
 
@@ -221,12 +490,71 @@ const onRiskAssessment = async () => {
   await loadDetail();
 };
 
+const persistAttachments = async () => {
+  if (isCreate.value) return;
+  await updatePaymentRequest(requestId.value, {
+    attachments_json: serializeAttachments()
+  });
+};
+
+const uploadAttachment = async (options: UploadRequestOptions) => {
+  const rawFile = options.file;
+  uploadingAttachment.value = true;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "payment"
+    });
+
+    const uploadResp = await fetch(signRes.data.uploadUrl, {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+
+    attachmentItems.value.unshift({
+      file_key: signRes.data.key,
+      file_name: rawFile.name,
+      file_size: rawFile.size
+    });
+    await persistAttachments();
+    message("附件上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("附件上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    uploadingAttachment.value = false;
+  }
+};
+
+const removeAttachment = async (index: number) => {
+  if (inApprovalFlow.value) {
+    message("审批中仅允许新增附件，不允许删除", { type: "warning" });
+    return;
+  }
+  attachmentItems.value.splice(index, 1);
+  await persistAttachments();
+};
+
 const onMarkPaid = async () => {
   if (isCreate.value) return;
   paidForm.value = {
     paid_at: new Date().toISOString().slice(0, 10),
     payment_reference: "",
-    payment_account: detail.value?.payment_account ?? "",
+    payment_account:
+      detail.value?.payment_account ??
+      (selectedEntityAccount.value
+        ? `${selectedEntityAccount.value.bank_name} / ${selectedEntityAccount.value.account_no}`
+        : ""),
     remark: ""
   };
   paidDialogVisible.value = true;
@@ -251,7 +579,7 @@ const confirmMarkPaid = async () => {
 };
 
 onMounted(async () => {
-  await loadRefs();
+  await Promise.all([loadRefs(), loadWecomUsers()]);
   await loadDetail();
 });
 </script>
@@ -271,7 +599,7 @@ onMounted(async () => {
         }}</span>
         <div>
           <el-button @click="router.push('/finance/payment')">返回</el-button>
-          <el-button type="primary" :loading="saving" @click="onSave"
+          <el-button type="primary" :loading="saving" :disabled="!canEditFields" @click="onSave"
             >保存</el-button
           >
           <el-button
@@ -298,6 +626,14 @@ onMounted(async () => {
       </div>
     </template>
 
+    <el-alert
+      v-if="inApprovalFlow"
+      title="当前付款申请处于审批中：业务字段锁定，但允许继续上传付款凭证附件"
+      type="warning"
+      :closable="false"
+      style="margin-bottom: 12px"
+    />
+
     <el-form label-width="120px" style="max-width: 900px">
       <el-form-item label="关联合同">
         <el-select
@@ -305,7 +641,7 @@ onMounted(async () => {
           filterable
           clearable
           style="width: 360px"
-          :disabled="!isCreate"
+          :disabled="!isCreate || !canEditFields"
           @change="onSelectContract"
         >
           <el-option
@@ -318,19 +654,15 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="所属项目">
-        <el-input
-          :model-value="String(form.project_id || '')"
-          disabled
-          style="width: 180px"
-        />
+        <el-input :model-value="projectName || '-'" disabled style="width: 360px" />
       </el-form-item>
 
       <el-form-item label="剩余额度">
-        <el-tag type="success">{{ remainingAmount.toFixed(2) }}</el-tag>
+        <el-tag type="success">{{ remainingAmountDisplay }}</el-tag>
       </el-form-item>
 
       <el-form-item label="付款类别">
-        <el-select v-model="form.category" clearable style="width: 220px">
+        <el-select v-model="form.category" clearable style="width: 220px" :disabled="!canEditFields">
           <el-option label="特殊审批" value="特殊审批" />
           <el-option label="行政费" value="行政费" />
           <el-option label="劳务费" value="劳务费" />
@@ -346,6 +678,7 @@ onMounted(async () => {
           filterable
           clearable
           style="width: 360px"
+          :disabled="!canEditFields"
         >
           <el-option
             v-for="item in payees"
@@ -357,12 +690,16 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="申请金额">
-        <el-input-number
-          v-model="form.amount"
-          :min="0"
-          :precision="2"
-          :step="1000"
-        />
+        <div style="display: flex; align-items: center; gap: 12px">
+          <el-input-number
+            v-model="form.amount"
+            :min="0"
+            :precision="2"
+            :step="1000"
+            :disabled="!canEditFields"
+          />
+          <span style="font-weight: 700; color: #6b4f2a">{{ amountDisplay }}</span>
+        </div>
       </el-form-item>
 
       <el-form-item label="预计付款日">
@@ -370,11 +707,17 @@ onMounted(async () => {
           v-model="form.expected_payment_date"
           type="date"
           value-format="YYYY-MM-DD"
+          :disabled="!canEditFields"
         />
       </el-form-item>
 
       <el-form-item label="付款方式">
-        <el-select v-model="form.payment_method" clearable style="width: 220px">
+        <el-select
+          v-model="form.payment_method"
+          clearable
+          style="width: 220px"
+          :disabled="!canEditFields"
+        >
           <el-option label="对公转账" value="对公转账" />
           <el-option label="现金" value="现金" />
           <el-option label="票据" value="票据" />
@@ -383,11 +726,85 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="付款内容">
-        <el-input v-model="form.content" type="textarea" :rows="3" />
+        <el-input v-model="form.content" type="textarea" :rows="3" :disabled="!canEditFields" />
       </el-form-item>
 
       <el-form-item label="备注">
-        <el-input v-model="form.remark" type="textarea" :rows="2" />
+        <el-input v-model="form.remark" type="textarea" :rows="2" :disabled="!canEditFields" />
+      </el-form-item>
+      <el-form-item label="我方付款主体">
+        <el-input
+          :model-value="selectedEntity ? selectedEntity.entity_name : '-'"
+          disabled
+          style="width: 360px"
+        />
+      </el-form-item>
+      <el-form-item label="我方付款账号">
+        <el-input
+          :model-value="selectedEntityAccount ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}` : '-'"
+          disabled
+          style="width: 520px"
+        />
+      </el-form-item>
+      <el-form-item label="对方主体">
+        <el-input :model-value="selectedPayee ? selectedPayee.name : '-'" disabled style="width: 360px" />
+      </el-form-item>
+      <el-form-item label="对方收款账号">
+        <el-input
+          :model-value="selectedPayee ? `${selectedPayee.bank_name} / ${selectedPayee.bank_account}` : '-'"
+          disabled
+          style="width: 520px"
+        />
+      </el-form-item>
+      <el-form-item label="付款附件">
+        <div style="width: 100%">
+          <el-upload
+            drag
+            action="#"
+            :show-file-list="false"
+            :disabled="uploadingAttachment"
+            :http-request="uploadAttachment"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+          >
+            <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+            <template #tip>
+              <div class="el-upload__tip">审批中支持补传付款凭证，审批中不允许删除附件</div>
+            </template>
+          </el-upload>
+
+          <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
+            <el-table-column label="文件名" min-width="260">
+              <template #default="scope">{{ scope.row.file_name }}</template>
+            </el-table-column>
+            <el-table-column label="大小" width="120">
+              <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="220" fixed="right">
+              <template #default="scope">
+                <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                  查看
+                </el-link>
+                <el-link
+                  :href="fileUrl(scope.row.file_key)"
+                  target="_blank"
+                  type="success"
+                  style="margin-left: 12px"
+                >
+                  下载
+                </el-link>
+                <el-button
+                  link
+                  type="danger"
+                  style="margin-left: 12px"
+                  :disabled="inApprovalFlow"
+                  @click="removeAttachment(scope.$index)"
+                >
+                  移除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </el-form-item>
     </el-form>
 
@@ -399,14 +816,27 @@ onMounted(async () => {
       <el-descriptions-item label="状态">{{
         detail.status
       }}</el-descriptions-item>
+      <el-descriptions-item label="所属项目">{{
+        projectName || detail.project_id
+      }}</el-descriptions-item>
+      <el-descriptions-item label="我方主体">{{
+        selectedEntity?.entity_name || "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="我方账号" :span="2">{{
+        selectedEntityAccount
+          ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
+          : "-"
+      }}</el-descriptions-item>
       <el-descriptions-item label="对方单位">{{
-        detail.contract?.counterparty || "-"
+        selectedPayee?.name || detail.contract?.counterparty || "-"
       }}</el-descriptions-item>
-      <el-descriptions-item label="收款人">{{
-        detail.payee?.name || "-"
+      <el-descriptions-item label="对方账号">{{
+        selectedPayee
+          ? `${selectedPayee.bank_name} / ${selectedPayee.bank_account}`
+          : "-"
       }}</el-descriptions-item>
-      <el-descriptions-item label="金额大写" :span="2">{{
-        detail.amount_cn
+      <el-descriptions-item label="申请金额" :span="2">{{
+        amountDisplay
       }}</el-descriptions-item>
       <el-descriptions-item label="支付时间">
         {{ detail.paid_at || "-" }}
@@ -444,24 +874,131 @@ onMounted(async () => {
       </el-descriptions-item>
     </el-descriptions>
 
+    <el-divider v-if="approvalDetail">审批信息</el-divider>
+    <el-descriptions v-if="approvalDetail" :column="2" border>
+      <el-descriptions-item label="审批单号">
+        {{ approvalDetail.instance.instance_no }}
+      </el-descriptions-item>
+      <el-descriptions-item label="审批状态">
+        {{ approvalDetail.instance.status }}
+      </el-descriptions-item>
+      <el-descriptions-item label="当前节点">
+        {{ approvalDetail.instance.current_node_key || "-" }}
+      </el-descriptions-item>
+      <el-descriptions-item label="发起人">
+        {{ approvalDetail.instance.initiator_userid }}
+      </el-descriptions-item>
+    </el-descriptions>
+
+    <el-table v-if="approvalDetail" :data="roundNodes" size="small" style="margin-top: 12px">
+      <el-table-column prop="node_name" label="节点" min-width="140" />
+      <el-table-column prop="node_type" label="类型" width="120" />
+      <el-table-column prop="status" label="状态" width="110" />
+      <el-table-column label="审批意见" min-width="260">
+        <template #default="scope">
+          <template v-if="getNodeTasks(scope.row.id).length">
+            <div v-for="task in getNodeTasks(scope.row.id)" :key="task.id" style="margin-bottom: 4px">
+              {{ task.assignee_userid }}：{{ toActionLabel(task.action) }}
+              <span v-if="task.comment">（{{ task.comment }}）</span>
+            </div>
+          </template>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <el-divider v-if="aiGateReviews.length > 0">AI审核意见</el-divider>
+    <el-table v-if="aiGateReviews.length > 0" :data="aiGateReviews" size="small">
+      <el-table-column prop="node_key" label="节点" width="160" />
+      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column prop="outcome" label="结论" width="100" />
+      <el-table-column label="总结/意见" min-width="260">
+        <template #default="scope">{{ scope.row.summary || scope.row.comment || "-" }}</template>
+      </el-table-column>
+      <el-table-column label="建议" min-width="260">
+        <template #default="scope">
+          {{
+            Array.isArray(scope.row.recommendations) && scope.row.recommendations.length > 0
+              ? scope.row.recommendations.join("；")
+              : "-"
+          }}
+        </template>
+      </el-table-column>
+    </el-table>
+
     <el-dialog
       v-model="approvalDialogVisible"
-      title="实例级二次设置"
+      title="审批提交设置"
       width="560px"
     >
+      <el-alert
+        type="info"
+        :closable="false"
+        title="用于临时指定审批人或补充审批说明；不填写时按模板默认流程执行"
+        style="margin-bottom: 12px"
+      />
       <el-form label-width="120px">
         <el-form-item label="审批摘要">
           <el-input
             v-model="approvalSummary"
-            placeholder="可选，留空则使用系统默认摘要"
+            placeholder="可选：补充本次提交重点，例如 付款节点加急"
           />
         </el-form-item>
-        <el-form-item label="实例配置(JSON)">
+        <el-form-item label="设置模式" v-if="isSuperAdmin">
+          <el-radio-group v-model="approvalConfigMode">
+            <el-radio-button value="form">可视化</el-radio-button>
+            <el-radio-button value="json">JSON(高级)</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="approvalConfigMode === 'form'">
+          <el-form-item label="临时审批人">
+            <el-select
+              v-model="approvalFormConfig.default_assignee_userids"
+              multiple
+              clearable
+              filterable
+              placeholder="可选，指定本次审批默认审批人"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in wecomUsers"
+                :key="item.userid"
+                :label="`${item.name} (${item.userid})`"
+                :value="item.userid"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="常用说明模板">
+            <el-select
+              v-model="selectedApprovalNoteTemplate"
+              clearable
+              placeholder="选择后自动填充审批说明"
+              style="width: 100%"
+              @change="applyApprovalNoteTemplate"
+            >
+              <el-option
+                v-for="item in approvalNoteTemplates"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="审批说明">
+            <el-input
+              v-model="approvalFormConfig.note"
+              type="textarea"
+              :rows="3"
+              placeholder="可选，用于补充本次实例级说明"
+            />
+          </el-form-item>
+        </template>
+        <el-form-item label="实例配置(JSON)" v-else-if="isSuperAdmin">
           <el-input
             v-model="approvalConfigText"
             type="textarea"
             :rows="7"
-            placeholder='例如 {"default_assignee_userids":["zhangsan"]}'
+            placeholder='例如 {"default_assignee_userids":["zhangsan"],"note":"付款凭证已补传"}'
           />
         </el-form-item>
       </el-form>

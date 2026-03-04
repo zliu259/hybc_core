@@ -18,6 +18,7 @@ import {
   type Payee
 } from "@/api/payment";
 import { createUploadSignature } from "@/api/upload";
+import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
@@ -33,6 +34,7 @@ const exceedsThreshold = ref(false);
 
 const contracts = ref<Contract[]>([]);
 const payees = ref<Payee[]>([]);
+const entities = ref<Entity[]>([]);
 const { projects, loadProjects } = useProjectOptions();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
@@ -43,14 +45,16 @@ const directForm = ref({
   contract_id: undefined as number | undefined,
   project_id: undefined as number | undefined,
   payee_id: undefined as number | undefined,
+  category: "其他费用",
   content: "",
-  payment_method: "bank_transfer",
-  expected_payment_date: ""
+  payment_method: "对公转账",
+  expected_payment_date: "",
+  remark: ""
 });
 
 const contractForm = ref({
   project_id: undefined as number | undefined,
-  entity_id: 1,
+  entity_id: undefined as number | undefined,
   payee_id: undefined as number | undefined,
   contract_type: "outbound_service",
   handler_userid: "",
@@ -59,10 +63,12 @@ const contractForm = ref({
 });
 
 const firstPaymentForm = ref({
-  payee_id: undefined as number | undefined,
+  amount: undefined as number | undefined,
+  category: "prepayment",
   content: "首笔预付款",
-  payment_method: "bank_transfer",
-  expected_payment_date: ""
+  payment_method: "对公转账",
+  expected_payment_date: "",
+  remark: ""
 });
 
 type AttachmentDraft = {
@@ -83,6 +89,83 @@ const thresholdHint = computed(() =>
     ? `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`
     : `金额未超过阈值 ${thresholdLimit.value.toLocaleString()}，可直接走付款申请`
 );
+
+const toChineseAmount = (amount: number): string => {
+  if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
+  if (amount === 0) return "零元整";
+
+  const fractionUnits = ["角", "分"];
+  const digit = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+  const intUnits = ["", "拾", "佰", "仟"];
+  const sectionUnits = ["", "万", "亿", "兆"];
+
+  let value = Math.round(amount * 100);
+  const fraction = value % 100;
+  let result = "";
+
+  if (fraction === 0) {
+    result = "整";
+  } else {
+    const jiao = Math.floor(fraction / 10);
+    const fen = fraction % 10;
+    if (jiao > 0) result += `${digit[jiao]}${fractionUnits[0]}`;
+    if (fen > 0) result += `${digit[fen]}${fractionUnits[1]}`;
+  }
+
+  value = Math.floor(value / 100);
+  let sectionIndex = 0;
+  let intResult = "";
+
+  while (value > 0 && sectionIndex < sectionUnits.length) {
+    const sectionValue = value % 10000;
+    if (sectionValue !== 0) {
+      let sectionText = "";
+      let unitIndex = 0;
+      let section = sectionValue;
+      let zeroPending = false;
+      while (section > 0) {
+        const num = section % 10;
+        if (num === 0) {
+          if (!zeroPending && sectionText) {
+            zeroPending = true;
+            sectionText = `零${sectionText}`;
+          }
+        } else {
+          zeroPending = false;
+          sectionText = `${digit[num]}${intUnits[unitIndex]}${sectionText}`;
+        }
+        unitIndex += 1;
+        section = Math.floor(section / 10);
+      }
+      sectionText = sectionText.replace(/零+/g, "零").replace(/零$/g, "");
+      intResult = `${sectionText}${sectionUnits[sectionIndex]}${intResult}`;
+    } else if (intResult && !intResult.startsWith("零")) {
+      intResult = `零${intResult}`;
+    }
+    sectionIndex += 1;
+    value = Math.floor(value / 10000);
+  }
+
+  intResult = intResult.replace(/零+/g, "零").replace(/零([万亿兆])/g, "$1");
+  intResult = intResult.replace(/亿万/g, "亿").replace(/零$/g, "");
+  return `${intResult || "零"}元${result}`;
+};
+
+const amountDisplay = computed(() => {
+  const value = Number(amountInput.value ?? 0);
+  return `${value.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}（${toChineseAmount(value)}）`;
+});
+
+const firstPaymentAmountDisplay = computed(() => {
+  const value = Number(firstPaymentForm.value.amount ?? 0);
+  return `${value.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}（${toChineseAmount(value)}）`;
+});
 
 const selectedContractCounterparty = computed(() => {
   const target = payees.value.find(item => item.id === contractForm.value.payee_id);
@@ -146,10 +229,11 @@ const removeAttachment = (target: AttachmentDraft[], index: number) => {
 };
 
 const loadMeta = async () => {
-  const [thresholdRes, payeeRes, contractRes] = await Promise.all([
+  const [thresholdRes, payeeRes, contractRes, entityRes] = await Promise.all([
     listBizThresholds({ biz_type: "payment_request" }).catch(() => null),
     listPayees(),
-    listContracts({ direction: "outbound", page: 1, pageSize: 200 })
+    listContracts({ direction: "outbound", page: 1, pageSize: 200 }),
+    listEntities()
   ]);
 
   if (thresholdRes?.data?.length) {
@@ -164,6 +248,7 @@ const loadMeta = async () => {
 
   payees.value = payeeRes.data;
   contracts.value = contractRes.data;
+  entities.value = entityRes.data;
   await Promise.all([loadProjects(), loadWecomUsers()]);
 };
 
@@ -192,6 +277,17 @@ const submitDirectPayment = async () => {
     message("请先上传付款附件后再发起", { type: "warning" });
     return;
   }
+  if (
+    !directForm.value.expected_payment_date ||
+    !directForm.value.category ||
+    !directForm.value.content.trim() ||
+    !directForm.value.payment_method
+  ) {
+    message("直接付款需完整填写付款审批字段（类别/日期/方式/内容）", {
+      type: "warning"
+    });
+    return;
+  }
 
   submitting.value = true;
   try {
@@ -199,12 +295,13 @@ const submitDirectPayment = async () => {
       contract_id: directForm.value.contract_id,
       project_id: directForm.value.project_id,
       expected_payment_date: directForm.value.expected_payment_date,
-      category: "general",
+      category: directForm.value.category,
       payee_id: directForm.value.payee_id,
       amount: amountInput.value,
-      content: directForm.value.content || "智能发单台创建",
+      content: directForm.value.content,
       payment_method: directForm.value.payment_method,
-      attachments_json: serializeAttachments(directPaymentAttachments.value)
+      attachments_json: serializeAttachments(directPaymentAttachments.value),
+      remark: directForm.value.remark
     });
     await submitPaymentApproval(created.data.id, {
       biz_summary: "智能发单台-直接付款",
@@ -221,10 +318,15 @@ const submitContractFlow = async () => {
   if (
     !amountInput.value ||
     !contractForm.value.project_id ||
+    !contractForm.value.entity_id ||
     !contractForm.value.payee_id ||
-    !contractForm.value.handler_userid
+    !contractForm.value.handler_userid ||
+    !contractForm.value.contract_type ||
+    !contractForm.value.contract_date
   ) {
-    message("请先填写合同关键字段", { type: "warning" });
+    message("合同流程需完整填写合同审查字段（类型/经办人/日期/项目/主体/对方单位/金额）", {
+      type: "warning"
+    });
     return;
   }
   if (!contractAttachments.value.length) {
@@ -233,6 +335,17 @@ const submitContractFlow = async () => {
   }
   if (withFirstPayment.value && !firstPaymentAttachments.value.length) {
     message("已开启首笔预付款，请先上传首笔付款附件", { type: "warning" });
+    return;
+  }
+  if (
+    withFirstPayment.value &&
+    (!firstPaymentForm.value.amount ||
+      !firstPaymentForm.value.expected_payment_date ||
+      !firstPaymentForm.value.category ||
+      !firstPaymentForm.value.content.trim() ||
+      !firstPaymentForm.value.payment_method)
+  ) {
+    message("首笔付款需填写额外付款字段（金额/类别/日期/方式/内容）", { type: "warning" });
     return;
   }
 
@@ -252,17 +365,18 @@ const submitContractFlow = async () => {
     });
 
     let paymentId: number | null = null;
-    if (withFirstPayment.value && firstPaymentForm.value.payee_id) {
+    if (withFirstPayment.value) {
       const payment = await createPaymentRequest({
         contract_id: contract.data.id,
         project_id: contractForm.value.project_id,
         expected_payment_date: firstPaymentForm.value.expected_payment_date,
-        category: "prepayment",
-        payee_id: firstPaymentForm.value.payee_id,
-        amount: amountInput.value,
+        category: firstPaymentForm.value.category,
+        payee_id: contractForm.value.payee_id,
+        amount: firstPaymentForm.value.amount,
         content: firstPaymentForm.value.content,
         payment_method: firstPaymentForm.value.payment_method,
-        attachments_json: serializeAttachments(firstPaymentAttachments.value)
+        attachments_json: serializeAttachments(firstPaymentAttachments.value),
+        remark: firstPaymentForm.value.remark
       });
       paymentId = payment.data.id;
     }
@@ -318,6 +432,9 @@ onMounted(async () => {
           <el-tag :type="exceedsThreshold ? 'danger' : 'success'" class="ml-3">
             {{ thresholdHint }}
           </el-tag>
+          <span style="margin-left: 12px; font-weight: 700; color: #6b4f2a">
+            {{ amountDisplay }}
+          </span>
         </el-form-item>
       </el-form>
 
@@ -381,8 +498,29 @@ onMounted(async () => {
               value-format="YYYY-MM-DD"
             />
           </el-form-item>
+          <el-form-item label="付款类别">
+            <el-select v-model="directForm.category" clearable style="width: 220px">
+              <el-option label="特殊审批" value="特殊审批" />
+              <el-option label="行政费" value="行政费" />
+              <el-option label="劳务费" value="劳务费" />
+              <el-option label="机械费" value="机械费" />
+              <el-option label="材料费" value="材料费" />
+              <el-option label="其他费用" value="其他费用" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="付款方式">
+            <el-select v-model="directForm.payment_method" clearable style="width: 220px">
+              <el-option label="对公转账" value="对公转账" />
+              <el-option label="现金" value="现金" />
+              <el-option label="票据" value="票据" />
+              <el-option label="其他" value="其他" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="付款事由">
             <el-input v-model="directForm.content" />
+          </el-form-item>
+          <el-form-item label="备注">
+            <el-input v-model="directForm.remark" type="textarea" :rows="2" />
           </el-form-item>
           <el-form-item label="付款附件" required>
             <div style="width: 100%">
@@ -441,8 +579,20 @@ onMounted(async () => {
               />
             </el-select>
           </el-form-item>
-          <el-form-item label="经营实体ID">
-            <el-input-number v-model="contractForm.entity_id" :min="1" style="width: 220px" />
+          <el-form-item label="我方主体">
+            <el-select
+              v-model="contractForm.entity_id"
+              clearable
+              filterable
+              style="width: 360px"
+            >
+              <el-option
+                v-for="item in entities"
+                :key="item.id"
+                :label="item.entity_name"
+                :value="item.id"
+              />
+            </el-select>
           </el-form-item>
           <el-form-item label="对方单位" required>
             <el-select
@@ -482,6 +632,15 @@ onMounted(async () => {
               type="date"
               value-format="YYYY-MM-DD"
             />
+          </el-form-item>
+          <el-form-item label="合同类型">
+            <el-select v-model="contractForm.contract_type" clearable style="width: 220px">
+              <el-option label="人工" value="人工" />
+              <el-option label="机械" value="机械" />
+              <el-option label="总包" value="总包" />
+              <el-option label="材料" value="材料" />
+              <el-option label="其他" value="其他" />
+            </el-select>
           </el-form-item>
           <el-form-item label="备注">
             <el-input v-model="contractForm.remark" type="textarea" :rows="2" />
@@ -527,14 +686,24 @@ onMounted(async () => {
             <el-switch v-model="withFirstPayment" />
           </el-form-item>
           <template v-if="withFirstPayment">
-            <el-form-item label="首笔收款人">
-              <el-select v-model="firstPaymentForm.payee_id" filterable style="width: 360px">
-                <el-option
-                  v-for="item in payees"
-                  :key="item.id"
-                  :label="`${item.name} (${item.bank_name})`"
-                  :value="item.id"
-                />
+            <el-form-item label="首笔金额">
+              <el-input-number
+                v-model="firstPaymentForm.amount"
+                :min="0"
+                :precision="2"
+                :step="1000"
+                style="width: 220px"
+              />
+              <span style="margin-left: 12px; font-weight: 700; color: #6b4f2a">
+                {{ firstPaymentAmountDisplay }}
+              </span>
+            </el-form-item>
+            <el-form-item label="首笔付款类别">
+              <el-select v-model="firstPaymentForm.category" clearable style="width: 220px">
+                <el-option label="预付款" value="prepayment" />
+                <el-option label="进度款" value="progress" />
+                <el-option label="结算款" value="settlement" />
+                <el-option label="其他费用" value="其他费用" />
               </el-select>
             </el-form-item>
             <el-form-item label="首笔付款日期">
@@ -543,6 +712,24 @@ onMounted(async () => {
                 type="date"
                 value-format="YYYY-MM-DD"
               />
+            </el-form-item>
+            <el-form-item label="首笔付款方式">
+              <el-select
+                v-model="firstPaymentForm.payment_method"
+                clearable
+                style="width: 220px"
+              >
+                <el-option label="对公转账" value="对公转账" />
+                <el-option label="现金" value="现金" />
+                <el-option label="票据" value="票据" />
+                <el-option label="其他" value="其他" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="首笔付款事由">
+              <el-input v-model="firstPaymentForm.content" />
+            </el-form-item>
+            <el-form-item label="首笔备注">
+              <el-input v-model="firstPaymentForm.remark" type="textarea" :rows="2" />
             </el-form-item>
             <el-form-item label="首笔付款附件" required>
               <div style="width: 100%">

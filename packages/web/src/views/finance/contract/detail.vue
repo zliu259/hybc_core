@@ -17,9 +17,15 @@ import {
   type ContractDetail
 } from "@/api/contract";
 import { createUploadSignature } from "@/api/upload";
-import { listEntities, type Entity } from "@/api/entity";
+import {
+  listEntities,
+  listEntityBankAccounts,
+  type Entity,
+  type EntityBankAccount
+} from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "ContractDetail" });
 
@@ -32,7 +38,9 @@ const saving = ref(false);
 
 const { projects, loadProjects } = useProjectOptions();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const userStore = useUserStoreHook();
 const entities = ref<Entity[]>([]);
+const entityBankAccountMap = ref<Record<number, EntityBankAccount[]>>({});
 const detail = ref<ContractDetail | null>(null);
 
 const form = ref({
@@ -91,6 +99,22 @@ const amountInput = computed({
 });
 
 const amountUppercase = computed(() => toChineseAmount(form.value.total_amount));
+const amountDisplay = computed(() => {
+  const value = Number(form.value.total_amount || 0);
+  return `${value.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  })}（${amountUppercase.value}）`;
+});
+const selectedEntity = computed(() =>
+  entities.value.find(item => item.id === form.value.entity_id) ?? null
+);
+const selectedEntityAccount = computed(() => {
+  const entityId = form.value.entity_id;
+  if (!entityId) return null;
+  const accounts = entityBankAccountMap.value[entityId] ?? [];
+  return accounts.find(item => item.status === "active") ?? accounts[0] ?? null;
+});
 
 const toChineseAmount = (amount: number): string => {
   if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
@@ -203,10 +227,35 @@ const fileUrl = (fileKey: string) =>
 const approvalDialogVisible = ref(false);
 const approvalSummary = ref("");
 const approvalConfigText = ref("{}");
+const approvalConfigMode = ref<"form" | "json">("form");
+const approvalFormConfig = ref({
+  default_assignee_userids: [] as string[],
+  note: ""
+});
+const approvalNoteTemplates = [
+  "请优先审批，业务节点加急。",
+  "合同资料已补齐，请按标准流程审批。",
+  "金额与条款已复核通过，请确认。",
+  "附件已更新到最新版本，请以最新附件为准。"
+];
+const selectedApprovalNoteTemplate = ref("");
+const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
+
+const applyApprovalNoteTemplate = (value: string) => {
+  if (!value) return;
+  approvalFormConfig.value.note = value;
+};
 
 const loadBaseData = async () => {
   const [entityRes] = await Promise.all([listEntities(), loadProjects(), loadWecomUsers()]);
   entities.value = entityRes.data;
+  const entries = await Promise.all(
+    entityRes.data.map(async item => {
+      const accountRes = await listEntityBankAccounts(item.id).catch(() => ({ data: [] }));
+      return [item.id, accountRes.data] as const;
+    })
+  );
+  entityBankAccountMap.value = Object.fromEntries(entries);
 };
 
 const loadDetail = async () => {
@@ -294,6 +343,12 @@ const onSubmitApproval = async () => {
   approvalSummary.value = detail.value?.contract_no
     ? `${detail.value.contract_no} | ${detail.value.counterparty} | ${detail.value.total_amount}`
     : "";
+  approvalConfigMode.value = "form";
+  approvalFormConfig.value = {
+    default_assignee_userids: [],
+    note: ""
+  };
+  selectedApprovalNoteTemplate.value = "";
   approvalConfigText.value = "{}";
   approvalDialogVisible.value = true;
 };
@@ -302,13 +357,26 @@ const confirmSubmitApproval = async () => {
   if (isCreate.value) return;
 
   let instanceConfig: InstanceConfig | undefined;
-  const trimmed = approvalConfigText.value.trim();
-  if (trimmed && trimmed !== "{}") {
-    try {
-      instanceConfig = JSON.parse(trimmed) as InstanceConfig;
-    } catch {
-      message("实例级配置 JSON 格式不正确", { type: "warning" });
-      return;
+  if (approvalConfigMode.value === "json") {
+    const trimmed = approvalConfigText.value.trim();
+    if (trimmed && trimmed !== "{}") {
+      try {
+        instanceConfig = JSON.parse(trimmed) as InstanceConfig;
+      } catch {
+        message("实例级配置 JSON 格式不正确", { type: "warning" });
+        return;
+      }
+    }
+  } else {
+    const pickedUserIds = approvalFormConfig.value.default_assignee_userids.filter(Boolean);
+    const note = approvalFormConfig.value.note.trim();
+    if (pickedUserIds.length > 0 || note) {
+      instanceConfig = {
+        ...(pickedUserIds.length > 0
+          ? { default_assignee_userids: pickedUserIds }
+          : {}),
+        ...(note ? { note } : {})
+      };
     }
   }
 
@@ -465,20 +533,28 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="我方主体">
-        <el-select
-          v-model="form.entity_id"
-          filterable
-          clearable
-          style="width: 360px"
-          :disabled="!isCreate && !canEdit"
-        >
-          <el-option
-            v-for="item in entities"
-            :key="item.id"
-            :value="item.id"
-            :label="item.entity_name"
-          />
-        </el-select>
+        <div style="width: 100%">
+          <el-select
+            v-model="form.entity_id"
+            filterable
+            clearable
+            style="width: 360px"
+            :disabled="!isCreate && !canEdit"
+          >
+            <el-option
+              v-for="item in entities"
+              :key="item.id"
+              :value="item.id"
+              :label="item.entity_name"
+            />
+          </el-select>
+          <div v-if="selectedEntity" style="margin-top: 6px; color: #6e6458; font-size: 13px">
+            {{ selectedEntity.entity_name }}
+            <span v-if="selectedEntityAccount">
+              | {{ selectedEntityAccount.bank_name }} / {{ selectedEntityAccount.account_no }}
+            </span>
+          </div>
+        </div>
       </el-form-item>
       <el-form-item label="对方单位">
         <el-input v-model="form.counterparty" :disabled="!canEdit" placeholder="请输入对方单位" />
@@ -527,7 +603,7 @@ onMounted(async () => {
             style="max-width: 260px"
             :disabled="!canEdit"
           />
-          <span style="font-weight: 700; color: #6b4f2a">{{ amountUppercase }}</span>
+          <span style="font-weight: 700; color: #6b4f2a">{{ amountDisplay }}</span>
         </div>
       </el-form-item>
       <el-form-item label="合同附件">
@@ -661,22 +737,77 @@ onMounted(async () => {
 
     <el-dialog
       v-model="approvalDialogVisible"
-      title="实例级二次设置"
+      title="审批提交设置"
       width="560px"
     >
+      <el-alert
+        type="info"
+        :closable="false"
+        title="推荐使用可视化方式设置临时审批人和审批说明；JSON 为超管高级模式"
+        style="margin-bottom: 12px"
+      />
       <el-form label-width="120px">
         <el-form-item label="审批摘要">
           <el-input
             v-model="approvalSummary"
-            placeholder="可选，留空则使用系统默认摘要"
+            placeholder="可选，留空使用系统默认摘要"
           />
         </el-form-item>
-        <el-form-item label="实例配置(JSON)">
+        <el-form-item label="设置模式" v-if="isSuperAdmin">
+          <el-radio-group v-model="approvalConfigMode">
+            <el-radio-button value="form">可视化</el-radio-button>
+            <el-radio-button value="json">JSON(高级)</el-radio-button>
+          </el-radio-group>
+        </el-form-item>
+        <template v-if="approvalConfigMode === 'form'">
+          <el-form-item label="临时审批人">
+            <el-select
+              v-model="approvalFormConfig.default_assignee_userids"
+              multiple
+              clearable
+              filterable
+              placeholder="可选，指定本次审批默认审批人"
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in wecomUsers"
+                :key="item.userid"
+                :label="`${item.name} (${item.userid})`"
+                :value="item.userid"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="常用说明模板">
+            <el-select
+              v-model="selectedApprovalNoteTemplate"
+              clearable
+              placeholder="选择后自动填充审批说明"
+              style="width: 100%"
+              @change="applyApprovalNoteTemplate"
+            >
+              <el-option
+                v-for="item in approvalNoteTemplates"
+                :key="item"
+                :label="item"
+                :value="item"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="审批说明">
+            <el-input
+              v-model="approvalFormConfig.note"
+              type="textarea"
+              :rows="3"
+              placeholder="可选，用于补充本次实例级说明"
+            />
+          </el-form-item>
+        </template>
+        <el-form-item label="实例配置(JSON)" v-else-if="isSuperAdmin">
           <el-input
             v-model="approvalConfigText"
             type="textarea"
             :rows="7"
-            placeholder='例如 {"default_assignee_userids":["zhangsan"]}'
+            placeholder='例如 {"default_assignee_userids":["zhangsan"],"note":"加急审批"}'
           />
         </el-form-item>
       </el-form>
