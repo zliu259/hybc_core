@@ -22,6 +22,32 @@ import "element-plus/dist/index.css";
 import "./assets/iconfont/iconfont.js";
 import "./assets/iconfont/iconfont.css";
 
+const dynamicImportReloadKey = "hybc:dynamic-import-reload-once";
+
+const reloadOnDynamicImportError = (): void => {
+  const token = `${window.location.pathname}${window.location.search}`;
+  const reloaded = window.sessionStorage.getItem(dynamicImportReloadKey) === token;
+  if (reloaded) return;
+  window.sessionStorage.setItem(dynamicImportReloadKey, token);
+  window.location.reload();
+};
+
+window.addEventListener("vite:preloadError", event => {
+  event.preventDefault();
+  reloadOnDynamicImportError();
+});
+
+window.addEventListener("unhandledrejection", event => {
+  const reason = event.reason;
+  const message = reason instanceof Error ? reason.message : String(reason ?? "");
+  if (message.includes("Failed to fetch dynamically imported module")) {
+    event.preventDefault();
+    reloadOnDynamicImportError();
+  }
+});
+
+window.sessionStorage.removeItem(dynamicImportReloadKey);
+
 const app = createApp(App);
 
 // 自定义指令
