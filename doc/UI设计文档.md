@@ -720,6 +720,7 @@
 - 审批流程线中 AI 节点动作改为建议性结论文案，并在同一行追加 comment：`packages/web/src/views/approval/detail.vue`
 - AI关卡任务总览（超管页）状态与动作文案中文化，时间统一北京时间：`packages/web/src/views/admin/ai-gate-tasks.vue`
 - 审批中心相关页面时间统一格式为北京时间 `YYYY-MM-DD HH:mm:ss`：`packages/web/src/views/approval/detail.vue`、`packages/web/src/views/approval/index.vue`、`packages/web/src/views/approval/unified-tasklist.vue`、`packages/web/src/utils/datetime.ts`
+- AI审核结果新增 `summary` JSON 兼容解析（回填 outcome/comment），避免历史数据顶层字段为空导致“结论/总结”空白：`packages/web/src/views/approval/detail.vue`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

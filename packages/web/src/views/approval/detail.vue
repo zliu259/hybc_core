@@ -130,6 +130,41 @@ const aiGateTagType: Record<string, TagType> = {
   timeout: "danger"
 };
 
+type AiReviewRow = {
+  node_key: string;
+  outcome: string | null;
+  comment: string | null;
+  summary: string | null;
+  completed_at: string | null;
+  created_at: string;
+};
+
+type AiReviewNormalized = {
+  outcomeCode: string | null;
+  outcomeLabel: string;
+  summaryText: string;
+};
+
+const parseEmbeddedAiSummary = (text: string | null | undefined) => {
+  if (!text) return null;
+  const trimmed = text.trim();
+  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
+  try {
+    const parsed = JSON.parse(trimmed) as {
+      outcome?: unknown;
+      comment?: unknown;
+      summary?: unknown;
+    };
+    return {
+      outcome: typeof parsed.outcome === "string" ? parsed.outcome : null,
+      comment: typeof parsed.comment === "string" ? parsed.comment : null,
+      summary: typeof parsed.summary === "string" ? parsed.summary : null
+    };
+  } catch {
+    return null;
+  }
+};
+
 const toAiOutcomeLabel = (outcome: string | null | undefined, comment: string | null | undefined) => {
   if (outcome === "approve") return "建议通过";
   if (outcome === "reject") {
@@ -139,11 +174,52 @@ const toAiOutcomeLabel = (outcome: string | null | undefined, comment: string | 
   return "-";
 };
 
+const normalizeAiReview = (row: AiReviewRow): AiReviewNormalized => {
+  const embedded = parseEmbeddedAiSummary(row.summary);
+  const outcome = row.outcome ?? embedded?.outcome ?? null;
+  const comment = row.comment ?? embedded?.comment ?? embedded?.summary ?? null;
+  const summaryText =
+    comment ??
+    (row.summary && !parseEmbeddedAiSummary(row.summary) ? row.summary : null) ??
+    "-";
+  return {
+    outcomeCode: outcome,
+    outcomeLabel: toAiOutcomeLabel(outcome, comment),
+    summaryText
+  };
+};
+
+const aiReviewByNodeKey = computed(() => {
+  const map = new Map<string, AiReviewNormalized>();
+  for (const row of aiGateReviews.value as AiReviewRow[]) {
+    if (!row.node_key) continue;
+    map.set(row.node_key, normalizeAiReview(row));
+  }
+  return map;
+});
+
+const getAiNodeSuggestion = (nodeKey: string): AiReviewNormalized | null => {
+  return aiReviewByNodeKey.value.get(nodeKey) ?? null;
+};
+
 const formatAiNodeDecision = (task: ApprovalTask) => {
   if (task.assignee_userid !== "AI_GATE") {
     return toActionLabel(task.action);
   }
-  return toAiOutcomeLabel(task.action, task.comment);
+  if (task.action || task.comment) {
+    return toAiOutcomeLabel(task.action, task.comment);
+  }
+  const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
+  const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
+  return fallback?.outcomeLabel ?? "-";
+};
+
+const formatAiNodeComment = (task: ApprovalTask) => {
+  if (task.assignee_userid !== "AI_GATE") return task.comment;
+  if (task.comment) return task.comment;
+  const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
+  const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
+  return fallback?.summaryText === "-" ? "" : fallback?.summaryText;
 };
 
 type AttachmentItem = {
@@ -587,12 +663,12 @@ onMounted(async () => {
                 </el-table-column>
                 <el-table-column label="结论" width="120">
                   <template #default="scope">
-                    {{ toAiOutcomeLabel(scope.row.outcome, scope.row.comment) }}
+                    {{ normalizeAiReview(scope.row).outcomeLabel }}
                   </template>
                 </el-table-column>
                 <el-table-column label="总结" min-width="220">
                   <template #default="scope">
-                    {{ scope.row.comment || "-" }}
+                    {{ normalizeAiReview(scope.row).summaryText }}
                   </template>
                 </el-table-column>
                 <el-table-column label="完成时间" width="170">
@@ -689,21 +765,15 @@ onMounted(async () => {
                       style="margin-left: 6px"
                       >{{ formatAiNodeDecision(task) }}</el-tag
                     >
-                    <span
-                      v-if="task.assignee_userid === 'AI_GATE' && task.comment"
-                      style="margin-left: 6px; color: #666"
-                    >
-                      ：{{ task.comment }}
+                    <span v-if="task.assignee_userid === 'AI_GATE' && formatAiNodeComment(task)" style="margin-left: 6px; color: #666">
+                      ：{{ formatAiNodeComment(task) }}
                     </span>
                     <span
                       v-if="task.acted_at"
                       style="margin-left: 6px; color: #999"
                       >{{ formatBeijingDateTime(task.acted_at) }}</span
                     >
-                    <div
-                      v-if="task.comment && task.assignee_userid !== 'AI_GATE'"
-                      style="margin-top: 2px; color: #888; font-style: italic"
-                    >
+                    <div v-if="task.comment && task.assignee_userid !== 'AI_GATE'" style="margin-top: 2px; color: #888; font-style: italic">
                       {{ task.comment }}
                     </div>
                   </div>
