@@ -504,7 +504,8 @@ class AiGateExecutor implements NodeExecutor {
             round: nodeInstance.round,
             node_instance_id: nodeInstance.id,
             rerun: true,
-            rerun_at: nowIso()
+            rerun_at: nowIso(),
+            ...(await loadAiGateContextFromInstance(env, instanceId))
           }
         });
         return;

@@ -14,6 +14,235 @@ import { generateSerial } from "./serial";
 
 const nowIso = () => new Date().toISOString();
 
+type AttachmentMeta = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+  file_url: string;
+};
+
+const parseAttachmentMeta = (raw: string | null): AttachmentMeta[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const items: Array<AttachmentMeta | null> = parsed.map(item => {
+      if (typeof item === "string") {
+        return {
+          file_key: item,
+          file_name: item,
+          file_size: null,
+          file_url: `/api/v1/upload/object/${encodeURIComponent(item)}`
+        };
+      }
+      if (item && typeof item === "object") {
+        const row = item as {
+          file_key?: string;
+          key?: string;
+          file_name?: string;
+          name?: string;
+          file_size?: number;
+          size?: number;
+          file_url?: string;
+          url?: string;
+        };
+        const key = row.file_key ?? row.key;
+        if (!key) return null;
+        return {
+          file_key: key,
+          file_name: row.file_name ?? row.name ?? key,
+          file_size: row.file_size ?? row.size ?? null,
+          file_url: row.file_url ?? row.url ?? `/api/v1/upload/object/${encodeURIComponent(key)}`
+        };
+      }
+      return null;
+    });
+    return items.filter((item): item is AttachmentMeta => item !== null);
+  } catch {
+    return [];
+  }
+};
+
+const asObject = (value: unknown): Record<string, unknown> => {
+  return value && typeof value === "object" ? (value as Record<string, unknown>) : {};
+};
+
+const asNumber = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+};
+
+const loadBizContextFromInstance = async (
+  env: Env,
+  instanceId: number
+): Promise<{
+  biz_type: string;
+  biz_id: number;
+  biz_summary: string;
+  context: Record<string, unknown>;
+} | null> => {
+  const instance = await env.DB.prepare(
+    "SELECT biz_type, biz_id, biz_summary, instance_config_json FROM approval_instance WHERE id = ?"
+  )
+    .bind(instanceId)
+    .first<{
+      biz_type: string;
+      biz_id: number;
+      biz_summary: string;
+      instance_config_json: string | null;
+    }>();
+  if (!instance) return null;
+
+  let context = {
+    biz_type: instance.biz_type,
+    biz_id: instance.biz_id,
+    biz_summary: instance.biz_summary
+  } as Record<string, unknown>;
+
+  if (instance.instance_config_json) {
+    try {
+      const parsed = JSON.parse(instance.instance_config_json) as {
+        route_context?: Record<string, unknown>;
+      };
+      if (parsed.route_context && typeof parsed.route_context === "object") {
+        context = { ...context, ...parsed.route_context };
+      }
+    } catch {
+      context = { ...context };
+    }
+  }
+
+  if (instance.biz_type === "payment_request") {
+    const payment = await env.DB.prepare(
+      `SELECT id, serial_no, contract_id, project_id, payee_id, amount, amount_cn,
+              expected_payment_date, category, content, payment_method, attachments_json, remark
+       FROM payment_request WHERE id = ?`
+    )
+      .bind(instance.biz_id)
+      .first<{
+        id: number;
+        serial_no: string;
+        contract_id: number;
+        project_id: number;
+        payee_id: number;
+        amount: number;
+        amount_cn: string;
+        expected_payment_date: string;
+        category: string;
+        content: string;
+        payment_method: string;
+        attachments_json: string | null;
+        remark: string | null;
+      }>();
+    if (payment) {
+      context = {
+        ...context,
+        amount: payment.amount,
+        project_id: payment.project_id,
+        serial_no: payment.serial_no,
+        payment: {
+          expected_payment_date: payment.expected_payment_date,
+          category: payment.category,
+          content: payment.content,
+          payment_method: payment.payment_method,
+          amount_cn: payment.amount_cn,
+          remark: payment.remark
+        },
+        attachments: parseAttachmentMeta(payment.attachments_json)
+      };
+    }
+  }
+
+  if (instance.biz_type === "outbound_contract" || instance.biz_type === "inbound_contract") {
+    const contract = await env.DB.prepare(
+      `SELECT id, contract_no, project_id, entity_id, direction, counterparty,
+              contract_type, handler_userid, contract_date, total_amount, paid_amount,
+              attachments_json, remark
+       FROM contract WHERE id = ?`
+    )
+      .bind(instance.biz_id)
+      .first<{
+        id: number;
+        contract_no: string;
+        project_id: number;
+        entity_id: number;
+        direction: string;
+        counterparty: string;
+        contract_type: string;
+        handler_userid: string;
+        contract_date: string;
+        total_amount: number;
+        paid_amount: number;
+        attachments_json: string | null;
+        remark: string | null;
+      }>();
+    if (contract) {
+      context = {
+        ...context,
+        amount: contract.total_amount,
+        project_id: contract.project_id,
+        entity_id: contract.entity_id,
+        contract: {
+          contract_no: contract.contract_no,
+          direction: contract.direction,
+          counterparty: contract.counterparty,
+          contract_type: contract.contract_type,
+          handler_userid: contract.handler_userid,
+          contract_date: contract.contract_date,
+          total_amount: contract.total_amount,
+          paid_amount: contract.paid_amount,
+          remark: contract.remark
+        },
+        attachments: parseAttachmentMeta(contract.attachments_json)
+      };
+    }
+  }
+
+  return {
+    biz_type: instance.biz_type,
+    biz_id: instance.biz_id,
+    biz_summary: instance.biz_summary,
+    context
+  };
+};
+
+const enrichAiGatePayload = async (
+  env: Env,
+  instanceIdHint: number,
+  payload: Record<string, unknown>
+): Promise<Record<string, unknown>> => {
+  const enriched = { ...payload };
+  const payloadInstanceId = asNumber(payload.instance_id);
+  const instanceId = payloadInstanceId ?? instanceIdHint;
+  const loaded = await loadBizContextFromInstance(env, instanceId);
+  if (!loaded) return enriched;
+
+  const loadedContext = asObject(loaded.context);
+  const currentContext = asObject(payload.context);
+  const mergedContext = { ...loadedContext, ...currentContext };
+
+  const currentAttachments = Array.isArray(currentContext.attachments)
+    ? currentContext.attachments
+    : [];
+  const loadedAttachments = Array.isArray(loadedContext.attachments)
+    ? loadedContext.attachments
+    : [];
+  if (currentAttachments.length === 0 && loadedAttachments.length > 0) {
+    mergedContext.attachments = loadedAttachments;
+  }
+
+  enriched.context = mergedContext;
+  if (!enriched.biz_type) enriched.biz_type = loaded.biz_type;
+  if (!enriched.biz_id) enriched.biz_id = loaded.biz_id;
+  if (!enriched.biz_summary) enriched.biz_summary = loaded.biz_summary;
+  if (!enriched.instance_id) enriched.instance_id = instanceId;
+  return enriched;
+};
+
 // ─── Task Lifecycle ──────────
 
 /**
@@ -367,11 +596,12 @@ export const createAiGateHandler = (): AiGateHandler => ({
     env: Env,
     request: { biz_type: string; biz_id: number; payload: Record<string, unknown> }
   ): Promise<{ task_id: number }> {
+    const payload = await enrichAiGatePayload(env, request.biz_id, request.payload);
     const task = await createTask(env, {
       task_type: "approval_ai_gate",
       biz_type: request.biz_type,
       biz_id: request.biz_id,
-      payload: request.payload,
+      payload,
       priority: 8
     });
     return { task_id: task.id };
