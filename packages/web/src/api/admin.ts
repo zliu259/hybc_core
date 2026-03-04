@@ -410,6 +410,13 @@ export const upsertRunnerRuntimeConfig = (
   );
 };
 
+export const activateRunnerNode = (nodeId: string) => {
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/admin/runner-nodes/${encodeURIComponent(nodeId)}/activate`
+  );
+};
+
 export type AiRuntimeTestTaskResult = {
   task_id: number;
   task_code: string;

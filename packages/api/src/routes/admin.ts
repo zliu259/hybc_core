@@ -542,6 +542,43 @@ adminRoutes.post(
 );
 
 adminRoutes.post(
+  "/runner-nodes/:nodeId/activate",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const nodeId = c.req.param("nodeId");
+    const now = nowIso();
+
+    const target = await c.env.DB.prepare(
+      "SELECT id FROM compute_node WHERE node_id = ?"
+    )
+      .bind(nodeId)
+      .first<{ id: number }>();
+
+    if (!target) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Runner节点不存在" }
+        },
+        404
+      );
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE compute_node
+       SET status = 'online',
+           last_heartbeat_at = ?,
+           updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(now, now, target.id)
+      .run();
+
+    return c.json({ success: true });
+  }
+);
+
+adminRoutes.post(
   "/ai-runtime/test-task",
   requireRoles(["super_admin"]),
   async (c) => {
@@ -1399,7 +1436,7 @@ adminRoutes.post(
       }
     }
 
-    const node = nodeKey
+    let node = nodeKey
       ? await c.env.DB.prepare(
           `SELECT *
            FROM approval_node_instance
@@ -1411,7 +1448,7 @@ adminRoutes.post(
            LIMIT 1`
         )
           .bind(task.biz_id, nodeKey)
-          .first<{ id: number; round: number }>()
+          .first<{ id: number; round: number; status: string }>()
       : await c.env.DB.prepare(
           `SELECT *
            FROM approval_node_instance
@@ -1422,7 +1459,32 @@ adminRoutes.post(
            LIMIT 1`
         )
           .bind(task.biz_id)
-          .first<{ id: number; round: number }>();
+          .first<{ id: number; round: number; status: string }>();
+
+    if (!node) {
+      node = nodeKey
+        ? await c.env.DB.prepare(
+            `SELECT *
+             FROM approval_node_instance
+             WHERE instance_id = ?
+               AND node_type = 'ai_gate'
+               AND node_key = ?
+             ORDER BY round DESC, id DESC
+             LIMIT 1`
+          )
+            .bind(task.biz_id, nodeKey)
+            .first<{ id: number; round: number; status: string }>()
+        : await c.env.DB.prepare(
+            `SELECT *
+             FROM approval_node_instance
+             WHERE instance_id = ?
+               AND node_type = 'ai_gate'
+             ORDER BY round DESC, id DESC
+             LIMIT 1`
+          )
+            .bind(task.biz_id)
+            .first<{ id: number; round: number; status: string }>();
+    }
 
     if (!node) {
       return c.json(
@@ -1492,11 +1554,13 @@ adminRoutes.post(
       .bind(JSON.stringify(mergedResult), now, now, task.id)
       .run();
 
-    await c.env.DB.prepare(
-      "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
-    )
-      .bind(now, now, node.id)
-      .run();
+    if (node.status !== "completed") {
+      await c.env.DB.prepare(
+        "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+      )
+        .bind(now, now, node.id)
+        .run();
+    }
 
     await c.env.DB.prepare(
       `INSERT INTO approval_task

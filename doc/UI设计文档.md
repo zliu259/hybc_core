@@ -666,6 +666,8 @@
 - 新增超管手动处置动作（放行/驳回/补充意见）：`packages/web/src/views/admin/ai-gate-tasks.vue`
 - 新增后端 AI关卡任务管理 API：`packages/api/src/routes/admin.ts`
 - 审批返回到 AI 节点后强制触发重新审核（避免复用旧结论）：`packages/api/src/services/approval/executors.ts`、`packages/api/src/services/approval/operations.ts`
+- Runner 监控页新增“手动激活节点”操作（超管）：`packages/web/src/views/ai/nodes.vue`
+- 新增 Runner 手动激活 API：`packages/api/src/routes/admin.ts`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

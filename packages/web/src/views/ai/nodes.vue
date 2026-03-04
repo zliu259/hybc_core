@@ -11,6 +11,7 @@ import {
   listRunnerRuntimeConfig,
   upsertRunnerRuntimeConfig,
   createAiRuntimeTestTask,
+  activateRunnerNode,
   type AiRuntimeTestTaskResult
 } from "@/api/admin";
 
@@ -41,6 +42,7 @@ const runtimeForm = ref({
 const testTaskType = ref("contract_review");
 const testCreating = ref(false);
 const lastCreatedTestTask = ref<AiRuntimeTestTaskResult | null>(null);
+const activatingNodeId = ref("");
 
 let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
@@ -231,6 +233,19 @@ const createTestTask = async () => {
   }
 };
 
+const activateNode = async (node: ComputeNode) => {
+  activatingNodeId.value = node.node_id;
+  try {
+    await activateRunnerNode(node.node_id);
+    message(`已手动激活节点 ${node.node_id}`, { type: "success" });
+    await loadNodes();
+  } catch {
+    message("手动激活失败", { type: "error" });
+  } finally {
+    activatingNodeId.value = "";
+  }
+};
+
 onMounted(() => {
   loadNodes();
   loadQueue();
@@ -376,6 +391,19 @@ onUnmounted(() => {
         <template #default="{ row }">{{
           relativeTime(row.last_heartbeat_at)
         }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="140" fixed="right">
+        <template #default="{ row }">
+          <el-button
+            link
+            type="primary"
+            :loading="activatingNodeId === row.node_id"
+            :disabled="row.status === 'online'"
+            @click="activateNode(row)"
+          >
+            手动激活
+          </el-button>
+        </template>
       </el-table-column>
     </el-table>
   </el-card>
