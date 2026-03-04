@@ -85,6 +85,28 @@ export type RunnerRuntimeConfigItem = {
   updated_at: string;
 };
 
+export type ApprovalAiGateTaskItem = {
+  task_id: number;
+  task_status: string;
+  task_biz_type: string;
+  error_message: string | null;
+  task_created_at: string;
+  task_completed_at: string | null;
+  node_key: string | null;
+  ai_slot_id: string | null;
+  node_status: string | null;
+  instance: {
+    id: number;
+    instance_no: string;
+    status: string;
+    biz_type: string;
+    biz_summary: string;
+    initiator_userid: string;
+    current_round: number;
+    current_node_key: string | null;
+  } | null;
+};
+
 export const listApprovalTemplates = (params?: { biz_type?: string }) => {
   return http.request<{ success: boolean; data: ApprovalTemplate[] }>(
     "get",
@@ -410,4 +432,30 @@ export const createAiRuntimeTestTask = (data?: {
     "/api/v1/admin/ai-runtime/test-task",
     { data }
   );
+};
+
+export const listApprovalAiGateTasks = (params?: {
+  status?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: ApprovalAiGateTaskItem[];
+    pagination: { page: number; pageSize: number; total: number };
+  }>("get", "/api/v1/admin/approval-ai-gate/tasks", { params });
+};
+
+export const handleApprovalAiGateTask = (
+  taskId: number,
+  data: {
+    action: "approve" | "reject" | "comment";
+    comment?: string;
+  }
+) => {
+  return http.request<{
+    success: boolean;
+    data: { task_id: number; handled: "approve" | "reject" | "comment" };
+  }>("post", `/api/v1/admin/approval-ai-gate/tasks/${taskId}/handle`, { data });
 };

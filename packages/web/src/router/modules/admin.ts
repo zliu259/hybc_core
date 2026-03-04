@@ -48,6 +48,15 @@ export default {
       }
     },
     {
+      path: "/admin/ai-gate-tasks",
+      name: "AdminAiGateTasks",
+      component: () => import("@/views/admin/ai-gate-tasks.vue"),
+      meta: {
+        title: "AI关卡任务管理",
+        roles: ["super_admin"]
+      }
+    },
+    {
       path: "/admin/ops-center",
       name: "AdminOpsCenter",
       component: () => import("@/views/admin/ops-center.vue"),

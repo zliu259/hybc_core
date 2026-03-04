@@ -19,7 +19,8 @@ import type {
 } from "../types/ai";
 import { taskTypes } from "../types/ai";
 import { validateTemplate } from "../services/approval/template-parser";
-import { createTask } from "../services/ai-slot";
+import { createAiGateHandler, createTask } from "../services/ai-slot";
+import { advanceWorkflow } from "../services/approval/engine";
 import {
   listRunnerRuntimeConfig,
   upsertRunnerRuntimeConfig,
@@ -1214,6 +1215,300 @@ adminRoutes.get(
     }
 
     return c.json({ success: true, data: Array.from(options.values()) });
+  }
+);
+
+adminRoutes.get(
+  "/approval-ai-gate/tasks",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const status = c.req.query("status");
+    const keyword = c.req.query("keyword");
+    const page = Number(c.req.query("page") ?? "1");
+    const pageSize = Number(c.req.query("pageSize") ?? "20");
+    const offset = (page - 1) * pageSize;
+
+    let whereSql = " WHERE tq.task_type = 'approval_ai_gate'";
+    const params: Array<string | number> = [];
+
+    if (status) {
+      whereSql += " AND tq.status = ?";
+      params.push(status);
+    }
+    if (keyword) {
+      whereSql +=
+        " AND (ai.instance_no LIKE ? OR ai.biz_summary LIKE ? OR ai.initiator_userid LIKE ? OR json_extract(tq.payload_json, '$.node_key') LIKE ?)";
+      params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+    }
+
+    const count = await c.env.DB.prepare(
+      `SELECT COUNT(*) as total
+       FROM task_queue tq
+       LEFT JOIN approval_instance ai ON ai.id = tq.biz_id${whereSql}`
+    )
+      .bind(...params)
+      .first<{ total: number }>();
+
+    const rows = await c.env.DB.prepare(
+      `SELECT
+         tq.id as task_id,
+         tq.status as task_status,
+         tq.biz_type as task_biz_type,
+         tq.error_message,
+         tq.created_at as task_created_at,
+         tq.completed_at as task_completed_at,
+         tq.payload_json,
+         ai.id as instance_id,
+         ai.instance_no,
+         ai.status as instance_status,
+         ai.biz_type,
+         ai.biz_summary,
+         ai.initiator_userid,
+         ai.current_round,
+         ai.current_node_key,
+         ani.status as node_status
+       FROM task_queue tq
+       LEFT JOIN approval_instance ai ON ai.id = tq.biz_id
+       LEFT JOIN approval_node_instance ani
+         ON ani.instance_id = ai.id
+         AND ani.node_type = 'ai_gate'
+         AND ani.round = ai.current_round
+         AND ani.node_key = json_extract(tq.payload_json, '$.node_key')
+       ${whereSql}
+       ORDER BY tq.created_at DESC
+       LIMIT ? OFFSET ?`
+    )
+      .bind(...params, pageSize, offset)
+      .all<{
+        task_id: number;
+        task_status: string;
+        task_biz_type: string;
+        error_message: string | null;
+        task_created_at: string;
+        task_completed_at: string | null;
+        payload_json: string | null;
+        instance_id: number | null;
+        instance_no: string | null;
+        instance_status: string | null;
+        biz_type: string | null;
+        biz_summary: string | null;
+        initiator_userid: string | null;
+        current_round: number | null;
+        current_node_key: string | null;
+        node_status: string | null;
+      }>();
+
+    const data = (rows.results ?? []).map((row) => {
+      let nodeKey: string | null = null;
+      let aiSlotId: string | null = null;
+      if (row.payload_json) {
+        try {
+          const payload = JSON.parse(row.payload_json) as {
+            node_key?: unknown;
+            ai_slot_id?: unknown;
+          };
+          nodeKey = typeof payload.node_key === "string" ? payload.node_key : null;
+          aiSlotId = typeof payload.ai_slot_id === "string" ? payload.ai_slot_id : null;
+        } catch {
+          nodeKey = null;
+          aiSlotId = null;
+        }
+      }
+
+      return {
+        task_id: row.task_id,
+        task_status: row.task_status,
+        task_biz_type: row.task_biz_type,
+        error_message: row.error_message,
+        task_created_at: row.task_created_at,
+        task_completed_at: row.task_completed_at,
+        node_key: nodeKey,
+        ai_slot_id: aiSlotId,
+        node_status: row.node_status,
+        instance: row.instance_id
+          ? {
+              id: row.instance_id,
+              instance_no: row.instance_no,
+              status: row.instance_status,
+              biz_type: row.biz_type,
+              biz_summary: row.biz_summary,
+              initiator_userid: row.initiator_userid,
+              current_round: row.current_round,
+              current_node_key: row.current_node_key
+            }
+          : null
+      };
+    });
+
+    return c.json({
+      success: true,
+      data,
+      pagination: {
+        page,
+        pageSize,
+        total: count?.total ?? 0
+      }
+    });
+  }
+);
+
+adminRoutes.post(
+  "/approval-ai-gate/tasks/:taskId/handle",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const taskId = Number(c.req.param("taskId"));
+    const body = (await c.req.json().catch(() => ({}))) as {
+      action?: "approve" | "reject" | "comment";
+      comment?: string;
+    };
+    const action = body.action;
+    const comment = typeof body.comment === "string" ? body.comment.trim() : "";
+    if (action !== "approve" && action !== "reject" && action !== "comment") {
+      return c.json(
+        {
+          success: false,
+          error: { message: "action must be one of: approve/reject/comment" }
+        },
+        400
+      );
+    }
+
+    const task = await c.env.DB.prepare(
+      "SELECT * FROM task_queue WHERE id = ? AND task_type = 'approval_ai_gate'"
+    )
+      .bind(taskId)
+      .first<{
+        id: number;
+        status: string;
+        biz_id: number;
+        payload_json: string | null;
+        result_json: string | null;
+      }>();
+
+    if (!task) {
+      return c.json({ success: false, error: { message: "AI关卡任务不存在" } }, 404);
+    }
+
+    let nodeKey: string | null = null;
+    if (task.payload_json) {
+      try {
+        const payload = JSON.parse(task.payload_json) as { node_key?: unknown };
+        nodeKey = typeof payload.node_key === "string" ? payload.node_key : null;
+      } catch {
+        nodeKey = null;
+      }
+    }
+
+    const node = nodeKey
+      ? await c.env.DB.prepare(
+          `SELECT *
+           FROM approval_node_instance
+           WHERE instance_id = ?
+             AND node_type = 'ai_gate'
+             AND node_key = ?
+             AND status = 'in_progress'
+           ORDER BY id DESC
+           LIMIT 1`
+        )
+          .bind(task.biz_id, nodeKey)
+          .first<{ id: number; round: number }>()
+      : await c.env.DB.prepare(
+          `SELECT *
+           FROM approval_node_instance
+           WHERE instance_id = ?
+             AND node_type = 'ai_gate'
+             AND status = 'in_progress'
+           ORDER BY id DESC
+           LIMIT 1`
+        )
+          .bind(task.biz_id)
+          .first<{ id: number; round: number }>();
+
+    if (!node) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "当前实例没有可处理的进行中AI关卡节点" }
+        },
+        400
+      );
+    }
+
+    const now = nowIso();
+
+    if (action === "comment") {
+      await c.env.DB.prepare(
+        `INSERT INTO approval_task
+          (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(node.id, task.biz_id, "AI_GATE", null, comment || "超级管理员补充AI节点意见", node.round, "completed", now, now, now)
+        .run();
+
+      return c.json({ success: true, data: { task_id: task.id, handled: "comment" } });
+    }
+
+    let resultPayload: Record<string, unknown> = {};
+    if (task.result_json) {
+      try {
+        const parsed = JSON.parse(task.result_json) as Record<string, unknown>;
+        resultPayload = parsed;
+      } catch {
+        resultPayload = {};
+      }
+    }
+
+    const metadata =
+      resultPayload.metadata && typeof resultPayload.metadata === "object"
+        ? (resultPayload.metadata as Record<string, unknown>)
+        : {};
+
+    const mergedResult = {
+      ...resultPayload,
+      output:
+        typeof resultPayload.output === "string" && resultPayload.output
+          ? resultPayload.output
+          : comment || "超级管理员手动处理AI关卡",
+      metadata: {
+        ...metadata,
+        outcome: action,
+        comment: comment || "超级管理员手动处理AI关卡",
+        summary:
+          typeof metadata.summary === "string" && metadata.summary
+            ? metadata.summary
+            : comment || "超级管理员手动处理AI关卡"
+      }
+    };
+
+    await c.env.DB.prepare(
+      `UPDATE task_queue
+       SET status = 'completed',
+           result_json = ?,
+           error_message = NULL,
+           completed_at = ?,
+           updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(JSON.stringify(mergedResult), now, now, task.id)
+      .run();
+
+    await c.env.DB.prepare(
+      "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(now, now, node.id)
+      .run();
+
+    await c.env.DB.prepare(
+      `INSERT INTO approval_task
+        (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(node.id, task.biz_id, "AI_GATE", action, comment || "超级管理员手动处理AI关卡", node.round, "completed", now, now, now)
+      .run();
+
+    await advanceWorkflow(c.env, task.biz_id, createAiGateHandler());
+
+    return c.json({ success: true, data: { task_id: task.id, handled: action } });
   }
 );
 

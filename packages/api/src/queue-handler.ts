@@ -185,6 +185,18 @@ const summarizeAiGateResult = (resultJson: string | null): string => {
   }
 };
 
+const parseAiGateOutcome = (resultJson: string | null): "approve" | "reject" => {
+  if (!resultJson) return "approve";
+  try {
+    const parsed = JSON.parse(resultJson) as {
+      metadata?: { outcome?: string };
+    };
+    return parsed.metadata?.outcome === "reject" ? "reject" : "approve";
+  } catch {
+    return "approve";
+  }
+};
+
 const handleAiGateTaskCompleted = async (
   env: Env,
   taskId: number
@@ -240,27 +252,20 @@ const handleAiGateTaskCompleted = async (
 
   const now = nowIso();
   const comment = summarizeAiGateResult(task.result_json);
+  const outcome = parseAiGateOutcome(task.result_json);
   await env.DB.prepare(
     "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
   )
     .bind(now, now, node.id)
     .run();
 
-  const existing = await env.DB.prepare(
-    "SELECT id FROM approval_task WHERE node_instance_id = ? AND assignee_userid = 'AI_GATE' LIMIT 1"
+  await env.DB.prepare(
+    `INSERT INTO approval_task
+      (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   )
-    .bind(node.id)
-    .first<{ id: number }>();
-
-  if (!existing) {
-    await env.DB.prepare(
-      `INSERT INTO approval_task
-        (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-      .bind(node.id, task.biz_id, "AI_GATE", "approve", comment, node.round, "completed", now, now, now)
-      .run();
-  }
+    .bind(node.id, task.biz_id, "AI_GATE", outcome, comment, node.round, "completed", now, now, now)
+    .run();
 
   await advanceWorkflow(env, task.biz_id, createAiGateHandler());
 };

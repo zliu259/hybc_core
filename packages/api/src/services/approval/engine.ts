@@ -446,8 +446,12 @@ export const advanceWorkflow = async (
 export const handleRoundReset = async (
   env: Env,
   instanceId: number,
-  targetNodeKey: string
+  targetNodeKey: string,
+  aiGateHandler?: AiGateHandler
 ): Promise<void> => {
+  if (aiGateHandler) {
+    setAiGateHandler(aiGateHandler);
+  }
   const now = nowIso();
 
   // Cancel all pending tasks in the instance for current round
@@ -545,8 +549,12 @@ export const handleRoundReset = async (
 export const handleResubmit = async (
   env: Env,
   instanceId: number,
-  newSummary?: string
+  newSummary?: string,
+  aiGateHandler?: AiGateHandler
 ): Promise<void> => {
+  if (aiGateHandler) {
+    setAiGateHandler(aiGateHandler);
+  }
   const now = nowIso();
 
   const instance = await env.DB.prepare(

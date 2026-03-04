@@ -7,6 +7,7 @@ import type {
 import { advanceWorkflow, handleRoundReset, handleResubmit } from "./engine";
 import { executorFactory } from "./executors";
 import { publishEvent } from "../event-bus";
+import { createAiGateHandler } from "../ai-slot";
 
 const nowIso = () => new Date().toISOString();
 
@@ -74,7 +75,7 @@ export const approve = async (
   );
 
   await executor.processAction(env, task, "approve", comment);
-  await advanceWorkflow(env, task.instance_id);
+  await advanceWorkflow(env, task.instance_id, createAiGateHandler());
 };
 
 // ─── 2. Reject ──────────
@@ -244,7 +245,7 @@ export const returnToPrev = async (
     .bind(now, task.node_instance_id)
     .run();
 
-  await handleRoundReset(env, task.instance_id, prevNode.node_key);
+  await handleRoundReset(env, task.instance_id, prevNode.node_key, createAiGateHandler());
 
   await publishEvent(env, "APPROVAL_RETURNED", "approval-operations", {
     instance_id: task.instance_id,
@@ -310,7 +311,7 @@ export const returnTo = async (
     .bind(now, task.node_instance_id)
     .run();
 
-  await handleRoundReset(env, task.instance_id, targetNodeKey);
+  await handleRoundReset(env, task.instance_id, targetNodeKey, createAiGateHandler());
 
   await publishEvent(env, "APPROVAL_RETURNED", "approval-operations", {
     instance_id: task.instance_id,
@@ -488,5 +489,5 @@ export const resubmit = async (
     );
   }
 
-  await handleResubmit(env, instanceId, newSummary);
+  await handleResubmit(env, instanceId, newSummary, createAiGateHandler());
 };

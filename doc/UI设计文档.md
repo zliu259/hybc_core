@@ -69,6 +69,7 @@
 - 金额阈值配置：`packages/web/src/views/approval/threshold-config.vue`
 - AI配置管理：`packages/web/src/views/ai/config.vue`
 - 计算节点监控与Runner运行参数：`packages/web/src/views/ai/nodes.vue`
+- AI关卡任务管理（超管）：`packages/web/src/views/admin/ai-gate-tasks.vue`
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 资产运维看板：`packages/web/src/views/asset/ledger.vue`
 - 资产详情：`packages/web/src/views/asset/detail.vue`
@@ -659,6 +660,12 @@
 - 审批详情页新增“AI审核结果”专栏（节点、状态、结论、建议、错误信息、完成时间）：`packages/web/src/views/approval/detail.vue`
 - 审批流程时间线新增“设定审批人”显示（每节点 assignee_userids 全量可见）：`packages/web/src/views/approval/detail.vue`
 - 审批详情响应类型扩展 AI关卡结果字段：`packages/web/src/api/approval.ts`、`packages/api/src/types/approval.ts`、`packages/api/src/services/approval/engine.ts`
+
+### 3.15 AI关卡卡点处置能力（2026-03）
+- 新增超管 AI 关卡任务管理视图（全量列表、状态筛选、关键字查询）：`packages/web/src/views/admin/ai-gate-tasks.vue`
+- 新增超管手动处置动作（放行/驳回/补充意见）：`packages/web/src/views/admin/ai-gate-tasks.vue`
+- 新增后端 AI关卡任务管理 API：`packages/api/src/routes/admin.ts`
+- 审批返回到 AI 节点后强制触发重新审核（避免复用旧结论）：`packages/api/src/services/approval/executors.ts`、`packages/api/src/services/approval/operations.ts`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

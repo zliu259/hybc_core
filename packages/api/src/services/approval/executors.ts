@@ -144,6 +144,36 @@ const summarizeAiResult = (
   }
 };
 
+const parseAiOutcome = (
+  resultJson: string | null
+): "approve" | "reject" => {
+  if (!resultJson) return "approve";
+  try {
+    const parsed = JSON.parse(resultJson) as {
+      metadata?: { outcome?: string };
+    };
+    return parsed.metadata?.outcome === "reject" ? "reject" : "approve";
+  } catch {
+    return "approve";
+  }
+};
+
+const hasAiDecisionTask = async (
+  env: Env,
+  nodeInstanceId: number
+): Promise<boolean> => {
+  const row = await env.DB.prepare(
+    `SELECT id
+     FROM approval_task
+     WHERE node_instance_id = ? AND assignee_userid = 'AI_GATE' AND status = 'completed'
+     ORDER BY id DESC
+     LIMIT 1`
+  )
+    .bind(nodeInstanceId)
+    .first<{ id: number }>();
+  return Boolean(row);
+};
+
 // ─── Sequential Executor ──────────
 
 class SequentialExecutor implements NodeExecutor {
@@ -415,9 +445,33 @@ class AiGateExecutor implements NodeExecutor {
   ): Promise<void> {
     if (_aiGateHandler) {
       const existingTask = await findAiGateTask(env, instanceId, nodeInstance.node_key);
+      const hasHistoricalDecision = await hasAiDecisionTask(env, nodeInstance.id);
+
+      if (hasHistoricalDecision) {
+        const aiSlotRoute =
+          typeof config.ai_slot_id === "string" && config.ai_slot_id.trim()
+            ? config.ai_slot_id.trim()
+            : "approval_ai_gate";
+        await _aiGateHandler.createAiTask(env, {
+          biz_type: aiSlotRoute,
+          biz_id: instanceId,
+          payload: {
+            node_key: nodeInstance.node_key,
+            ai_slot_id: config.ai_slot_id,
+            instance_id: instanceId,
+            round: nodeInstance.round,
+            node_instance_id: nodeInstance.id,
+            rerun: true,
+            rerun_at: nowIso()
+          }
+        });
+        return;
+      }
+
       if (existingTask?.status === "completed") {
         const now = nowIso();
         const comment = summarizeAiResult(existingTask.result_json, "AI关卡已完成");
+        const outcome = parseAiOutcome(existingTask.result_json);
         await env.DB.prepare(
           "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
         )
@@ -432,7 +486,7 @@ class AiGateExecutor implements NodeExecutor {
             nodeInstance.id,
             instanceId,
             "AI_GATE",
-            "approve",
+            outcome,
             comment,
             nodeInstance.round,
             "completed",
@@ -487,7 +541,9 @@ class AiGateExecutor implements NodeExecutor {
           payload: {
             node_key: nodeInstance.node_key,
             ai_slot_id: config.ai_slot_id,
-            instance_id: instanceId
+            instance_id: instanceId,
+            round: nodeInstance.round,
+            node_instance_id: nodeInstance.id
           }
         });
       } catch (err) {
@@ -521,6 +577,23 @@ class AiGateExecutor implements NodeExecutor {
     )
       .bind(nodeInstanceId)
       .first<ApprovalNodeInstance>();
+
+    const decision = await env.DB.prepare(
+      `SELECT action
+       FROM approval_task
+       WHERE node_instance_id = ?
+         AND assignee_userid = 'AI_GATE'
+         AND status = 'completed'
+         AND action IN ('approve', 'reject')
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+      .bind(nodeInstanceId)
+      .first<{ action: string }>();
+
+    if (decision?.action === "reject") {
+      return { complete: true, outcome: "rejected" };
+    }
 
     if (node && node.status === "completed") {
       return { complete: true, outcome: "approved" };
