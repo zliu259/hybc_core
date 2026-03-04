@@ -1,0 +1,620 @@
+const { request, buildUrl } = require("../../utils/request");
+const { getToken, getUserProfile } = require("../../utils/auth");
+const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
+
+Page({
+  data: {
+    id: 0,
+    loading: false,
+    acting: false,
+    detail: null,
+    bizDetail: null,
+    detailAttachments: [],
+    detailAiReviews: [],
+    detailTimelineNodes: [],
+    detailRisk: null,
+    detailAudit: null,
+    transferUsers: [],
+    userNameMap: {},
+    projectNameMap: {},
+    entityNameMap: {},
+    actionComment: "",
+    flowCollapsed: true,
+    availableActions: [],
+    hasAnyAction: false,
+    canApprove: false,
+    canReject: false,
+    canReturn: false,
+    canTransfer: false,
+    canMoreAction: false
+  },
+
+  onLoad(options) {
+    const id = Number((options && options.id) || 0);
+    this.setData({ id });
+  },
+
+  async onShow() {
+    await Promise.all([this.loadTransferUsers(), this.loadReferenceData()]);
+    await this.loadDetail();
+  },
+
+  unknownLabel() {
+    return "未匹配";
+  },
+
+  toNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : 0;
+  },
+
+  projectLabel(projectId) {
+    const id = this.toNumber(projectId);
+    if (!id) return this.unknownLabel();
+    return this.data.projectNameMap[id] || this.unknownLabel();
+  },
+
+  entityLabel(entityId) {
+    const id = this.toNumber(entityId);
+    if (!id) return this.unknownLabel();
+    return this.data.entityNameMap[id] || this.unknownLabel();
+  },
+
+  userLabel(userId) {
+    if (!userId) return this.unknownLabel();
+    return this.data.userNameMap[userId] || this.unknownLabel();
+  },
+
+  statusLabel(status) {
+    const map = {
+      pending: "待处理",
+      in_progress: "进行中",
+      approved: "已通过",
+      rejected: "已驳回",
+      cancelled: "已取消",
+      withdrawn: "已撤回",
+      completed: "已完成",
+      transferred: "已转签"
+    };
+    return map[status] || status || "-";
+  },
+
+  bizTypeLabel(value) {
+    const map = {
+      outbound_contract: "对外合同审批",
+      inbound_contract: "收款合同审批",
+      payment_request: "付款审批",
+      reimbursement_batch: "报销审批"
+    };
+    return map[value] || value || "-";
+  },
+
+  actionLabel(action) {
+    const map = {
+      approve: "通过",
+      reject: "驳回",
+      transfer: "转签",
+      return_initiator: "退回发起人",
+      return_prev: "退回上一节点",
+      return_to: "退回指定节点",
+      withdraw: "撤回",
+      cancel: "取消",
+      resubmit: "重新提交"
+    };
+    return map[action] || action || "-";
+  },
+
+  aiOutcomeLabel(outcome, comment) {
+    if (outcome === "approve") return "建议通过";
+    if (outcome === "reject") {
+      const text = comment || "";
+      return /补充|资料|证据|材料/.test(text) ? "建议补充材料" : "建议拒绝";
+    }
+    return "-";
+  },
+
+  formatBeijingTime(value) {
+    if (!value) return "-";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+    const yyyy = bj.getUTCFullYear();
+    const mm = String(bj.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(bj.getUTCDate()).padStart(2, "0");
+    const hh = String(bj.getUTCHours()).padStart(2, "0");
+    const mi = String(bj.getUTCMinutes()).padStart(2, "0");
+    const ss = String(bj.getUTCSeconds()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+  },
+
+  formatAmount(value) {
+    const num = Number(value || 0);
+    if (!Number.isFinite(num)) return "0.00";
+    const sign = num < 0 ? "-" : "";
+    const abs = Math.abs(num);
+    const fixed = abs.toFixed(2);
+    const parts = fixed.split(".");
+    const intPart = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return `${sign}${intPart}.${parts[1]}`;
+  },
+
+  toChineseAmount(value) {
+    const amount = Number(value || 0);
+    if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
+    if (amount === 0) return "零元整";
+
+    const fractionUnits = ["角", "分"];
+    const digit = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+    const intUnits = ["", "拾", "佰", "仟"];
+    const sectionUnits = ["", "万", "亿", "兆"];
+
+    let value100 = Math.round(amount * 100);
+    const fraction = value100 % 100;
+    let fractionText = "";
+    if (fraction === 0) {
+      fractionText = "整";
+    } else {
+      const jiao = Math.floor(fraction / 10);
+      const fen = fraction % 10;
+      if (jiao > 0) fractionText += `${digit[jiao]}${fractionUnits[0]}`;
+      if (fen > 0) fractionText += `${digit[fen]}${fractionUnits[1]}`;
+    }
+
+    value100 = Math.floor(value100 / 100);
+    let sectionIndex = 0;
+    let intText = "";
+    while (value100 > 0 && sectionIndex < sectionUnits.length) {
+      const sectionValue = value100 % 10000;
+      if (sectionValue !== 0) {
+        let sectionText = "";
+        let unitIndex = 0;
+        let section = sectionValue;
+        let zeroPending = false;
+        while (section > 0) {
+          const num = section % 10;
+          if (num === 0) {
+            if (!zeroPending && sectionText) {
+              zeroPending = true;
+              sectionText = `零${sectionText}`;
+            }
+          } else {
+            zeroPending = false;
+            sectionText = `${digit[num]}${intUnits[unitIndex]}${sectionText}`;
+          }
+          unitIndex += 1;
+          section = Math.floor(section / 10);
+        }
+        sectionText = sectionText.replace(/零+/g, "零").replace(/零$/g, "");
+        intText = `${sectionText}${sectionUnits[sectionIndex]}${intText}`;
+      } else if (intText && intText.charAt(0) !== "零") {
+        intText = `零${intText}`;
+      }
+      sectionIndex += 1;
+      value100 = Math.floor(value100 / 10000);
+    }
+
+    intText = intText.replace(/零+/g, "零").replace(/零([万亿兆])/g, "$1");
+    intText = intText.replace(/亿万/g, "亿").replace(/零$/g, "");
+    return `${intText || "零"}元${fractionText}`;
+  },
+
+  amountDisplay(value, amountCn) {
+    const lower = this.formatAmount(value);
+    const upper = amountCn || this.toChineseAmount(value);
+    return `${lower}（${upper}）`;
+  },
+
+  parseAttachments(raw) {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((item) => {
+          if (typeof item === "string") {
+            return { file_key: item, file_name: item, file_size: null };
+          }
+          if (item && typeof item === "object") {
+            const key = item.file_key || item.key;
+            if (!key) return null;
+            return {
+              file_key: key,
+              file_name: item.file_name || item.name || key,
+              file_size: item.file_size || item.size || null
+            };
+          }
+          return null;
+        })
+        .filter(Boolean);
+    } catch {
+      return [];
+    }
+  },
+
+  parseAiEmbeddedSummary(summary) {
+    if (!summary || typeof summary !== "string") return null;
+    const text = summary.trim();
+    if (!text.startsWith("{") || !text.endsWith("}")) return null;
+    try {
+      const parsed = JSON.parse(text);
+      return {
+        outcome: typeof parsed.outcome === "string" ? parsed.outcome : null,
+        comment: typeof parsed.comment === "string" ? parsed.comment : null
+      };
+    } catch {
+      return null;
+    }
+  },
+
+  normalizeAiReviews(rows) {
+    return (rows || []).map((row) => {
+      const embedded = this.parseAiEmbeddedSummary(row.summary);
+      const outcome = row.outcome || (embedded && embedded.outcome) || null;
+      const comment = row.comment || (embedded && embedded.comment) || row.summary || "-";
+      return {
+        ...row,
+        statusLabel: this.statusLabel(row.status),
+        outcomeLabel: this.aiOutcomeLabel(outcome, comment),
+        commentText: comment,
+        completedAtText: this.formatBeijingTime(row.completed_at)
+      };
+    });
+  },
+
+  buildTimelineNodes(detail) {
+    const nodes = Array.isArray(detail && detail.nodes) ? detail.nodes : [];
+    const tasks = Array.isArray(detail && detail.tasks) ? detail.tasks : [];
+    const aiMap = new Map();
+    this.normalizeAiReviews(detail && detail.ai_gate_reviews).forEach((item) => {
+      if (item.node_key) aiMap.set(item.node_key, item);
+    });
+
+    return nodes
+      .slice()
+      .sort((a, b) => {
+        if (a.round !== b.round) return a.round - b.round;
+        return a.sort_order - b.sort_order;
+      })
+      .map((node) => {
+        const nodeTasks = tasks
+          .filter((task) => task.node_instance_id === node.id)
+          .map((task) => {
+            const aiFallback = task.assignee_userid === "AI_GATE" ? aiMap.get(node.node_key) : null;
+            const embedded = this.parseAiEmbeddedSummary(task.comment);
+            const aiOutcome = (embedded && embedded.outcome) || task.action;
+            const aiComment =
+              (embedded && embedded.comment) || task.comment || (aiFallback && aiFallback.commentText) || "";
+            const actionLabel =
+              task.assignee_userid === "AI_GATE"
+                ? this.aiOutcomeLabel(aiOutcome, aiComment)
+                : this.actionLabel(task.action);
+            return {
+              ...task,
+              assigneeLabel: this.userLabel(task.assignee_userid),
+              actionLabel,
+              commentText: aiComment || "-",
+              actedAtText: this.formatBeijingTime(task.acted_at)
+            };
+          });
+
+        return {
+          ...node,
+          statusLabel: this.statusLabel(node.status),
+          tasks: nodeTasks,
+          startedAtText: this.formatBeijingTime(node.started_at),
+          completedAtText: this.formatBeijingTime(node.completed_at)
+        };
+      });
+  },
+
+  inferAvailableActions(detail) {
+    const explicit = Array.isArray(detail && detail.available_actions)
+      ? detail.available_actions.filter((item) => typeof item === "string")
+      : [];
+    if (explicit.length > 0) return explicit;
+
+    const profile = getUserProfile() || {};
+    const userId = (profile.username || profile.id || "").trim();
+    const tasks = Array.isArray(detail && detail.tasks) ? detail.tasks : [];
+    const pendingTasks = tasks.filter((item) => item && item.status === "pending");
+    const userPending = userId
+      ? pendingTasks.filter((item) => item.assignee_userid === userId)
+      : [];
+
+    if (userPending.length > 0) {
+      return ["approve", "reject", "return_initiator", "transfer"];
+    }
+
+    if (
+      detail &&
+      detail.instance &&
+      (detail.instance.status === "pending" || detail.instance.status === "in_progress")
+    ) {
+      return ["approve", "reject", "return_initiator", "transfer"];
+    }
+
+    if ((detail && detail.instance && detail.instance.status) === "pending" && pendingTasks.length > 0) {
+      return ["approve", "reject", "return_initiator", "transfer"];
+    }
+
+    return [];
+  },
+
+  actionFlags(actions) {
+    const list = Array.isArray(actions) ? actions : [];
+    const canApprove = list.indexOf("approve") >= 0;
+    const canReject = list.indexOf("reject") >= 0;
+    const canReturn =
+      list.indexOf("return_initiator") >= 0 ||
+      list.indexOf("return_prev") >= 0 ||
+      list.indexOf("return_to") >= 0;
+    const canTransfer = list.indexOf("transfer") >= 0;
+    return {
+      hasAnyAction: canApprove || canReject || canReturn || canTransfer,
+      canApprove,
+      canReject,
+      canReturn,
+      canTransfer,
+      canMoreAction: canReject || canTransfer
+    };
+  },
+
+  async loadTransferUsers() {
+    try {
+      const res = await request({ method: "GET", path: "/api/v1/auth/wecom/contacts" });
+      const users = (((res || {}).data || {}).users || []).filter((item) => item && item.userid);
+      const userNameMap = {};
+      users.forEach((item) => {
+        if (item && item.userid) {
+          userNameMap[item.userid] = item.name || item.userid;
+        }
+      });
+      this.setData({ transferUsers: users.slice(0, 50), userNameMap });
+    } catch {
+      this.setData({ transferUsers: [], userNameMap: {} });
+    }
+  },
+
+  async loadReferenceData() {
+    try {
+      const [projectRes, entityRes] = await Promise.all([
+        request({ method: "GET", path: "/api/v1/project?page=1&pageSize=500" }).catch(() => null),
+        request({ method: "GET", path: "/api/v1/entity?page=1&pageSize=500" }).catch(() => null)
+      ]);
+
+      const projectList = projectRes && Array.isArray(projectRes.data) ? projectRes.data : [];
+      const entityList = entityRes && Array.isArray(entityRes.data) ? entityRes.data : [];
+
+      const projectNameMap = {};
+      projectList.forEach((item) => {
+        if (!item || !item.id) return;
+        projectNameMap[item.id] = item.project_name || item.name || this.unknownLabel();
+      });
+
+      const entityNameMap = {};
+      entityList.forEach((item) => {
+        if (!item || !item.id) return;
+        entityNameMap[item.id] = item.entity_name || item.name || this.unknownLabel();
+      });
+
+      this.setData({ projectNameMap, entityNameMap });
+    } catch {
+      this.setData({ projectNameMap: {}, entityNameMap: {} });
+    }
+  },
+
+  async loadDetail() {
+    if (!this.data.id) return;
+    this.setData({ loading: true });
+    try {
+      const detailRes = await request({ method: "GET", path: `/api/v1/approval/${this.data.id}` });
+      const detail = detailRes && detailRes.data ? detailRes.data : null;
+      if (!detail || !detail.instance) throw new Error("审批详情不存在");
+
+      const bizType = detail.instance.biz_type;
+      const bizId = detail.instance.biz_id;
+      let bizDetail = null;
+      let attachments = [];
+      let risk = null;
+      let audit = null;
+
+      if (bizType === "payment_request") {
+        const bizRes = await request({ method: "GET", path: `/api/v1/payment/${bizId}` });
+        bizDetail = bizRes && bizRes.data ? bizRes.data : null;
+        if (bizDetail) {
+          bizDetail = {
+            ...bizDetail,
+            contractLabel:
+              (bizDetail.contract && bizDetail.contract.contract_no) || this.unknownLabel(),
+            projectLabel: this.projectLabel(bizDetail.project_id),
+            amountDisplay: this.amountDisplay(bizDetail.amount, bizDetail.amount_cn)
+          };
+        }
+        attachments = this.parseAttachments(bizDetail && bizDetail.attachments_json);
+        const riskRes = await request({ method: "GET", path: `/api/v1/payment/${bizId}/risk-report` }).catch(() => null);
+        risk = riskRes && riskRes.data ? riskRes.data : null;
+      } else if (bizType === "outbound_contract" || bizType === "inbound_contract") {
+        const bizRes = await request({ method: "GET", path: `/api/v1/contract/${bizId}` });
+        bizDetail = bizRes && bizRes.data ? bizRes.data : null;
+        if (bizDetail) {
+          bizDetail = {
+            ...bizDetail,
+            projectLabel: this.projectLabel(bizDetail.project_id),
+            entityLabel: this.entityLabel(bizDetail.entity_id),
+            handlerLabel: this.userLabel(bizDetail.handler_userid),
+            totalAmountDisplay: this.amountDisplay(bizDetail.total_amount, null),
+            paidAmountDisplay: this.amountDisplay(bizDetail.paid_amount, null)
+          };
+        }
+        attachments = this.parseAttachments(bizDetail && bizDetail.attachments_json);
+      } else if (bizType === "reimbursement_batch") {
+        const bizRes = await request({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}` });
+        bizDetail = bizRes && bizRes.data ? bizRes.data : null;
+        if (bizDetail) {
+          bizDetail = {
+            ...bizDetail,
+            projectLabel: this.projectLabel(bizDetail.project_id),
+            applicantLabel: this.userLabel(bizDetail.applicant_userid),
+            totalAmountDisplay: this.amountDisplay(bizDetail.total_amount, null)
+          };
+        }
+        const auditRes = await request({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}/audit-report` }).catch(() => null);
+        audit = auditRes && auditRes.data ? auditRes.data : null;
+      }
+
+      const availableActions = this.inferAvailableActions(detail);
+      const flags = this.actionFlags(availableActions);
+
+      this.setData({
+        detail: {
+          ...detail,
+          instance: {
+            ...detail.instance,
+            bizTypeLabel: this.bizTypeLabel(detail.instance.biz_type),
+            statusText: this.statusLabel(detail.instance.status),
+            initiatorLabel: this.userLabel(detail.instance.initiator_userid),
+            submittedAtText: this.formatBeijingTime(detail.instance.submitted_at),
+            completedAtText: this.formatBeijingTime(detail.instance.completed_at)
+          }
+        },
+        bizDetail,
+        detailRisk: risk,
+        detailAudit: audit,
+        detailAttachments: attachments,
+        detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
+        detailTimelineNodes: this.buildTimelineNodes(detail),
+        availableActions,
+        flowCollapsed: true,
+        ...flags
+      });
+    } catch (error) {
+      sayToast({ title: error.message || "加载失败", icon: "none", danger: true });
+    } finally {
+      this.setData({ loading: false });
+    }
+  },
+
+  onCommentInput(e) {
+    this.setData({ actionComment: e.detail.value || "" });
+  },
+
+  async runAction(action) {
+    if (this.data.acting || !this.data.id) return;
+    const comment = (this.data.actionComment || "").trim();
+    this.setData({ acting: true });
+    try {
+      if (action === "approve") {
+        await request({ method: "POST", path: `/api/v1/approval/${this.data.id}/approve`, data: { comment } });
+      } else if (action === "reject") {
+        await request({ method: "POST", path: `/api/v1/approval/${this.data.id}/reject`, data: { comment } });
+      } else if (action === "return") {
+        await request({
+          method: "POST",
+          path: `/api/v1/approval/${this.data.id}/return`,
+          data: { type: "initiator", comment }
+        });
+      } else if (action === "transfer") {
+        if (!this.data.transferUsers.length) {
+          throw new Error("暂无可转签成员");
+        }
+        const index = await new Promise((resolve, reject) => {
+          wx.showActionSheet({
+            itemList: this.data.transferUsers.map((item) => `${item.name} (${item.userid})`),
+            success: (res) => resolve(Number(res.tapIndex)),
+            fail: () => reject(new Error("已取消转签"))
+          });
+        });
+        const selected = this.data.transferUsers[index];
+        if (!selected || !selected.userid) throw new Error("未选择有效转签对象");
+        await request({
+          method: "POST",
+          path: `/api/v1/approval/${this.data.id}/transfer`,
+          data: { to_userid: selected.userid, reason: comment || "miniapp transfer" }
+        });
+      }
+      vibrateSuccess();
+      sayToast({ title: "操作成功", icon: "success" });
+      await this.loadDetail();
+    } catch (error) {
+      vibrateWarning();
+      sayToast({ title: error.message || "操作失败", icon: "none", danger: true });
+    } finally {
+      this.setData({ acting: false });
+    }
+  },
+
+  onApprove() {
+    this.runAction("approve");
+  },
+
+  onReject() {
+    this.runAction("reject");
+  },
+
+  onReturn() {
+    this.runAction("return");
+  },
+
+  onTransfer() {
+    this.runAction("transfer");
+  },
+
+  async onMoreAction() {
+    if (!this.data.canMoreAction || this.data.acting) return;
+    const menu = [];
+    if (this.data.canReject) menu.push({ label: "驳回", action: "reject" });
+    if (this.data.canTransfer) menu.push({ label: "转签", action: "transfer" });
+    if (!menu.length) {
+      sayToast({ title: "暂无可用操作", icon: "none" });
+      return;
+    }
+    try {
+      const index = await new Promise((resolve, reject) => {
+        wx.showActionSheet({
+          itemList: menu.map((item) => item.label),
+          success: (res) => resolve(Number(res.tapIndex)),
+          fail: () => reject(new Error("已取消"))
+        });
+      });
+      const picked = menu[index];
+      if (!picked) return;
+      this.runAction(picked.action);
+    } catch {
+      return;
+    }
+  },
+
+  toggleFlowCollapse() {
+    this.setData({ flowCollapsed: !this.data.flowCollapsed });
+  },
+
+  async openAttachment(e) {
+    const fileKey = e.currentTarget.dataset.key;
+    const fileName = e.currentTarget.dataset.name || "附件";
+    if (!fileKey) return;
+    const url = buildUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
+    const lower = String(fileName).toLowerCase();
+    if (
+      lower.endsWith(".png") ||
+      lower.endsWith(".jpg") ||
+      lower.endsWith(".jpeg") ||
+      lower.endsWith(".webp")
+    ) {
+      wx.previewImage({ urls: [url], current: url });
+      return;
+    }
+    const token = getToken();
+    wx.downloadFile({
+      url,
+      header: token ? { Authorization: `Bearer ${token}` } : {},
+      success: (res) => {
+        if (res.statusCode >= 200 && res.statusCode < 300) {
+          wx.openDocument({ filePath: res.tempFilePath, showMenu: true });
+          return;
+        }
+        sayToast({ title: "附件下载失败", icon: "none", danger: true });
+      },
+      fail: () => sayToast({ title: "附件下载失败", icon: "none", danger: true })
+    });
+  }
+});

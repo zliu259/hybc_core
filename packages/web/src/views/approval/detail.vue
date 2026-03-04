@@ -25,6 +25,8 @@ import {
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
 import { getContract, type ContractDetail } from "@/api/contract";
+import { listEntities, type Entity } from "@/api/entity";
+import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { resolveUploadUrl } from "@/api/upload";
 import { formatBeijingDateTime } from "@/utils/datetime";
@@ -103,6 +105,8 @@ const transferDialogVisible = ref(false);
 const transferToUserid = ref("");
 const transferReason = ref("");
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const { projects, loadProjects } = useProjectOptions();
+const entities = ref<Entity[]>([]);
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 const paymentRiskStatus = ref("none");
@@ -321,6 +325,50 @@ const contractAttachments = computed(() =>
 const fileUrl = (fileKey: string) =>
   resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
 
+const projectNameMap = computed(() => {
+  const map = new Map<number, string>();
+  for (const item of projects.value) {
+    map.set(item.id, item.project_name);
+  }
+  return map;
+});
+
+const entityNameMap = computed(() => {
+  const map = new Map<number, string>();
+  for (const item of entities.value) {
+    map.set(item.id, item.entity_name);
+  }
+  return map;
+});
+
+const userNameMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const item of wecomUsers.value) {
+    map.set(item.userid, item.name || item.userid);
+  }
+  return map;
+});
+
+const toProjectLabel = (projectId: number | null | undefined) => {
+  if (typeof projectId !== "number") return "-";
+  return projectNameMap.value.get(projectId) ?? String(projectId);
+};
+
+const toEntityLabel = (entityId: number | null | undefined) => {
+  if (typeof entityId !== "number") return "-";
+  return entityNameMap.value.get(entityId) ?? String(entityId);
+};
+
+const toUserLabel = (userid: string | null | undefined) => {
+  if (!userid) return "-";
+  return userNameMap.value.get(userid) ?? userid;
+};
+
+const loadMetaOptions = async () => {
+  const [, entityRes] = await Promise.all([loadProjects(), listEntities()]);
+  entities.value = entityRes.data;
+};
+
 const previewDrawerVisible = ref(false);
 const previewFileUrl = ref("");
 const previewFileName = ref("");
@@ -523,7 +571,7 @@ const handleResubmit = async () => {
 const goBack = () => router.push("/approval/index");
 
 onMounted(async () => {
-  await Promise.all([loadDetail(), loadWecomUsers()]);
+  await Promise.all([loadDetail(), loadWecomUsers(), loadMetaOptions()]);
 });
 </script>
 
@@ -599,8 +647,14 @@ onMounted(async () => {
               <el-divider>申请明细（付款）</el-divider>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="流水号">{{ paymentDetail.serial_no }}</el-descriptions-item>
-                <el-descriptions-item label="关联合同">{{ paymentDetail.contract_id }}</el-descriptions-item>
-                <el-descriptions-item label="所属项目">{{ paymentDetail.project_id }}</el-descriptions-item>
+                <el-descriptions-item label="关联合同">
+                  {{
+                    paymentDetail.contract
+                      ? `${paymentDetail.contract.contract_no} - ${paymentDetail.contract.counterparty}`
+                      : "无合同 / 无需合同"
+                  }}
+                </el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{ toProjectLabel(paymentDetail.project_id) }}</el-descriptions-item>
                 <el-descriptions-item label="收款方">{{ paymentDetail.payee?.name || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="收款账号" :span="2">
                   {{
@@ -644,11 +698,11 @@ onMounted(async () => {
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="合同号">{{ contractDetail.contract_no }}</el-descriptions-item>
                 <el-descriptions-item label="方向">{{ contractDetail.direction }}</el-descriptions-item>
-                <el-descriptions-item label="所属项目">{{ contractDetail.project_id }}</el-descriptions-item>
-                <el-descriptions-item label="我方主体">{{ contractDetail.entity_id }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{ toProjectLabel(contractDetail.project_id) }}</el-descriptions-item>
+                <el-descriptions-item label="我方主体">{{ toEntityLabel(contractDetail.entity_id) }}</el-descriptions-item>
                 <el-descriptions-item label="对方单位">{{ contractDetail.counterparty }}</el-descriptions-item>
                 <el-descriptions-item label="合同类型">{{ contractDetail.contract_type }}</el-descriptions-item>
-                <el-descriptions-item label="经办人">{{ contractDetail.handler_userid }}</el-descriptions-item>
+                <el-descriptions-item label="经办人">{{ toUserLabel(contractDetail.handler_userid) }}</el-descriptions-item>
                 <el-descriptions-item label="合同日期">{{ contractDetail.contract_date }}</el-descriptions-item>
                 <el-descriptions-item label="合同金额">{{ contractDetail.total_amount }}</el-descriptions-item>
                 <el-descriptions-item label="已付金额">{{ contractDetail.paid_amount }}</el-descriptions-item>
@@ -682,8 +736,8 @@ onMounted(async () => {
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="批次号">{{ reimbursementBatchDetail.batch_no }}</el-descriptions-item>
                 <el-descriptions-item label="状态">{{ reimbursementBatchDetail.status }}</el-descriptions-item>
-                <el-descriptions-item label="所属项目">{{ reimbursementBatchDetail.project_id }}</el-descriptions-item>
-                <el-descriptions-item label="申请人">{{ reimbursementBatchDetail.applicant_userid }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{ toProjectLabel(reimbursementBatchDetail.project_id) }}</el-descriptions-item>
+                <el-descriptions-item label="申请人">{{ toUserLabel(reimbursementBatchDetail.applicant_userid) }}</el-descriptions-item>
                 <el-descriptions-item label="总金额">{{ reimbursementBatchDetail.total_amount }}</el-descriptions-item>
                 <el-descriptions-item label="单据数">{{ reimbursementBatchDetail.item_count }}</el-descriptions-item>
               </el-descriptions>

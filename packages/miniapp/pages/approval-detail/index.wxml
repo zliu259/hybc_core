@@ -1,0 +1,147 @@
+<view class="page" wx:if="{{detail}}">
+  <view class="detail-content">
+    <view class="section-wrap section-summary">
+      <hy-panel-card title="{{detail.instance.instance_no}}" subtitle="{{detail.instance.biz_summary}}">
+        <view class="meta-row">
+          <t-tag theme="primary" variant="light">{{detail.instance.bizTypeLabel}}</t-tag>
+          <t-tag theme="{{detail.instance.status === 'approved' ? 'success' : detail.instance.status === 'rejected' ? 'danger' : detail.instance.status === 'pending' ? 'warning' : 'default'}}" variant="light">{{detail.instance.statusText}}</t-tag>
+        </view>
+        <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">发起人</text><text class="v">{{detail.instance.initiatorLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">提交时间</text><text class="v">{{detail.instance.submittedAtText}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成时间</text><text class="v">{{detail.instance.completedAtText}}</text></view>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-divider"></view>
+
+    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type === 'payment_request' && bizDetail}}">
+      <hy-panel-card title="申请明细（付款）">
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">流水号</text><text class="v">{{bizDetail.serial_no}}</text></view>
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">关联合同</text><text class="v">{{bizDetail.contractLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">收款方</text><text class="v">{{bizDetail.payee ? bizDetail.payee.name : '-'}}</text></view>
+        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">收款账号</text><text class="v">{{bizDetail.payee ? (bizDetail.payee.bank_name + ' / ' + bizDetail.payee.bank_account) : '-'}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">申请金额</text><text class="v v-strong">{{bizDetail.amountDisplay}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">付款类别</text><text class="v">{{bizDetail.category}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">预计付款日</text><text class="v">{{bizDetail.expected_payment_date}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">付款方式</text><text class="v">{{bizDetail.payment_method}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">付款内容</text><text class="v">{{bizDetail.content}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">备注</text><text class="v">{{bizDetail.remark || '-'}}</text></view>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type !== 'payment_request' && detail.instance.biz_type !== 'reimbursement_batch' && bizDetail}}">
+      <hy-panel-card title="申请明细（合同）">
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">合同号</text><text class="v">{{bizDetail.contract_no}}</text></view>
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">方向</text><text class="v">{{bizDetail.direction}}</text></view>
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">我方主体</text><text class="v">{{bizDetail.entityLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">对方单位</text><text class="v">{{bizDetail.counterparty}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">合同金额</text><text class="v v-strong">{{bizDetail.totalAmountDisplay}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">已付金额</text><text class="v">{{bizDetail.paidAmountDisplay}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">合同类型</text><text class="v">{{bizDetail.contract_type}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">经办人</text><text class="v">{{bizDetail.handlerLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">合同日期</text><text class="v">{{bizDetail.contract_date}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">备注</text><text class="v">{{bizDetail.remark || '-'}}</text></view>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type === 'reimbursement_batch' && bizDetail}}">
+      <hy-panel-card title="申请明细（报销批次）">
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">批次号</text><text class="v">{{bizDetail.batch_no}}</text></view>
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">申请人</text><text class="v">{{bizDetail.applicantLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">总金额</text><text class="v v-strong">{{bizDetail.totalAmountDisplay}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">单据数</text><text class="v">{{bizDetail.item_count}}</text></view>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-wrap section-attachment" wx:if="{{detailAttachments.length > 0}}">
+      <hy-panel-card title="附件">
+        <block wx:for="{{detailAttachments}}" wx:key="file_key">
+          <view class="attach-row">
+            <view class="attach-name">{{item.file_name}}</view>
+            <t-tag theme="default" variant="light" wx:if="{{item.file_size}}">{{item.file_size}}</t-tag>
+            <t-button size="small" variant="outline" data-key="{{item.file_key}}" data-name="{{item.file_name}}" bindtap="openAttachment">查看</t-button>
+          </view>
+        </block>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-wrap section-ai" wx:if="{{detailAiReviews.length > 0}}">
+      <hy-panel-card title="AI审核结果">
+    <block wx:for="{{detailAiReviews}}" wx:key="task_id" wx:for-index="idx">
+      <view class="ai-item {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}">
+        <view class="meta-row">
+          <t-tag theme="default" variant="light">{{item.node_key || '-'}}</t-tag>
+          <t-tag theme="{{item.outcomeLabel === '建议通过' ? 'success' : item.outcomeLabel === '建议补充材料' ? 'warning' : item.outcomeLabel === '建议拒绝' ? 'danger' : 'default'}}" variant="light">{{item.outcomeLabel}}</t-tag>
+            </view>
+            <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">状态</text><text class="v">{{item.statusLabel}}</text></view>
+            <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">总结</text><text class="v">{{item.commentText}}</text></view>
+            <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成时间</text><text class="v">{{item.completedAtText}}</text></view>
+          </view>
+        </block>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-wrap section-flow" wx:if="{{detailTimelineNodes.length > 0}}">
+      <hy-panel-card title="审批流程">
+        <view class="flow-toggle-row">
+          <t-tag theme="default" variant="light" bindtap="toggleFlowCollapse">
+            {{flowCollapsed ? '展开流程节点' : '收起流程节点'}}
+          </t-tag>
+        </view>
+        <block wx:if="{{!flowCollapsed}}" wx:for="{{detailTimelineNodes}}" wx:key="id" wx:for-index="nodeIdx">
+          <view class="node-item {{nodeIdx % 2 === 0 ? 'alt-even' : 'alt-odd'}}">
+        <view class="meta-row">
+          <t-tag theme="primary" variant="light">{{item.node_name}}</t-tag>
+          <t-tag theme="default" variant="light">{{item.statusLabel}}</t-tag>
+        </view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">开始</text><text class="v">{{item.startedAtText}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成</text><text class="v">{{item.completedAtText}}</text></view>
+        <block wx:for="{{item.tasks}}" wx:key="id" wx:for-index="taskIdx">
+          <view class="task-item {{taskIdx % 2 === 0 ? 'task-even' : 'task-odd'}}">
+            <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">处理人</text><text class="v">{{item.assigneeLabel}}</text></view>
+            <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">动作</text><text class="v">{{item.actionLabel}}</text></view>
+            <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">时间</text><text class="v">{{item.actedAtText}}</text></view>
+                <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">意见</text><text class="v">{{item.commentText}}</text></view>
+              </view>
+            </block>
+          </view>
+        </block>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-wrap section-op" wx:if="{{hasAnyAction}}">
+      <hy-panel-card title="审批意见">
+        <textarea class="comment-box" value="{{actionComment}}" bindinput="onCommentInput" placeholder="请输入审批意见（建议填写）" maxlength="1000" />
+      </hy-panel-card>
+    </view>
+  </view>
+
+  <view class="footer-actions" wx:if="{{hasAnyAction}}">
+    <view class="footer-row">
+      <view class="footer-col col-40">
+        <view class="footer-cell">
+          <t-button class="action-btn" theme="primary" block disabled="{{!canApprove}}" loading="{{acting}}" bindtap="onApprove">通过</t-button>
+        </view>
+      </view>
+      <view class="footer-col col-40">
+        <view class="footer-cell footer-cell-outline">
+          <t-button class="action-btn action-btn-outline" variant="outline" block disabled="{{!canReturn}}" loading="{{acting}}" bindtap="onReturn">退回</t-button>
+        </view>
+      </view>
+      <view class="footer-col col-20">
+        <view class="footer-cell footer-cell-outline">
+          <t-button class="action-btn action-btn-outline" variant="outline" block disabled="{{!canMoreAction}}" loading="{{acting}}" bindtap="onMoreAction">更多</t-button>
+        </view>
+      </view>
+    </view>
+  </view>
+</view>
+
+<view wx:if="{{!detail && !loading}}" class="empty-wrap">
+  <t-empty description="审批详情不存在或无权限" />
+</view>
+
+<view wx:if="{{loading}}" class="loading-wrap">加载中...</view>

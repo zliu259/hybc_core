@@ -47,6 +47,98 @@ type AttachmentMeta = {
   file_url: string;
 };
 
+const mergeAttachments = (...groups: AttachmentMeta[][]): AttachmentMeta[] => {
+  const merged: AttachmentMeta[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const item of group) {
+      if (seen.has(item.file_key)) continue;
+      seen.add(item.file_key);
+      merged.push(item);
+    }
+  }
+  return merged;
+};
+
+const DEFAULT_NO_CONTRACT_THRESHOLD = 50000;
+
+const getNoContractThreshold = async (env: Env): Promise<number> => {
+  const row = await env.DB.prepare(
+    `SELECT MIN(at.threshold_value) AS min_threshold
+       FROM approval_threshold at
+       JOIN approval_template ap ON ap.id = at.template_id
+      WHERE at.status = 'active'
+        AND ap.status = 'active'
+        AND ap.biz_type = 'payment_request'`
+  ).first<{ min_threshold: number | null }>();
+  const min = row?.min_threshold ?? null;
+  return typeof min === "number" && Number.isFinite(min) ? min : DEFAULT_NO_CONTRACT_THRESHOLD;
+};
+
+const enqueuePaymentRiskAssessment = async (env: Env, payment: PaymentRequest) => {
+  const now = nowIso();
+  await env.DB.prepare(
+    "UPDATE payment_request SET ai_risk_status = 'pending', updated_at = ? WHERE id = ?"
+  )
+    .bind(now, payment.id)
+    .run();
+
+  const contract =
+    payment.contract_id !== null
+      ? await env.DB.prepare(
+          "SELECT contract_no, total_amount, paid_amount, counterparty, attachments_json FROM contract WHERE id = ?"
+        )
+          .bind(payment.contract_id)
+          .first<{
+            contract_no: string;
+            total_amount: number;
+            paid_amount: number;
+            counterparty: string;
+            attachments_json: string | null;
+          }>()
+      : null;
+
+  const paymentAttachments = parseAttachmentMeta(payment.attachments_json);
+  const contractAttachments = parseAttachmentMeta(contract?.attachments_json ?? null);
+  const attachments = mergeAttachments(contractAttachments, paymentAttachments);
+
+  const recentPayments =
+    payment.contract_id !== null
+      ? await env.DB.prepare(
+          `SELECT serial_no, amount, created_at FROM payment_request
+           WHERE contract_id = ? AND id != ? AND status != 'cancelled'
+           ORDER BY created_at DESC LIMIT 10`
+        )
+          .bind(payment.contract_id, payment.id)
+          .all()
+      : await env.DB.prepare(
+          `SELECT serial_no, amount, created_at FROM payment_request
+           WHERE payee_id = ? AND id != ? AND status != 'cancelled'
+           ORDER BY created_at DESC LIMIT 10`
+        )
+          .bind(payment.payee_id, payment.id)
+          .all();
+
+  await createTask(env, {
+    task_type: "payment_risk_assessment",
+    biz_type: "payment_request",
+    biz_id: payment.id,
+    priority: 3,
+    payload: {
+      payment_request_id: payment.id,
+      serial_no: payment.serial_no,
+      amount: payment.amount,
+      contract,
+      recent_payments: recentPayments.results ?? [],
+      payee_id: payment.payee_id,
+      payment_attachments: paymentAttachments,
+      contract_attachments: contractAttachments,
+      attachments
+    },
+    timeout_seconds: 300
+  });
+};
+
 const parseAttachmentMeta = (raw: string | null): AttachmentMeta[] => {
   if (!raw) return [];
   try {
@@ -311,42 +403,60 @@ paymentRoutes.post(
     const body = (await c.req.json()) as CreatePaymentRequestBody;
     const now = nowIso();
 
-    const contract = await c.env.DB.prepare(
-      "SELECT * FROM contract WHERE id = ? AND status != 'deleted'"
-    )
-      .bind(body.contract_id)
-      .first<Contract>();
+    const contractId = typeof body.contract_id === "number" ? body.contract_id : null;
+    let contract: Contract | null = null;
 
-    if (!contract) {
-      return c.json(
-        { success: false, error: { message: "Contract not found" } },
-        404
-      );
-    }
+    if (contractId !== null) {
+      contract = await c.env.DB.prepare(
+        "SELECT * FROM contract WHERE id = ? AND status != 'deleted'"
+      )
+        .bind(contractId)
+        .first<Contract>();
 
-    if (!paymentAllowedContractStatuses.has(contract.status)) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: `Contract status ${contract.status} does not allow payment request creation`
-          }
-        },
-        400
-      );
-    }
+      if (!contract) {
+        return c.json(
+          { success: false, error: { message: "Contract not found" } },
+          404
+        );
+      }
 
-    const remaining = contract.total_amount - contract.paid_amount;
-    if (body.amount > remaining) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: `Amount (${body.amount}) exceeds contract remaining balance (${remaining}). Total: ${contract.total_amount}, Paid: ${contract.paid_amount}`
-          }
-        },
-        400
-      );
+      if (!paymentAllowedContractStatuses.has(contract.status)) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: `Contract status ${contract.status} does not allow payment request creation`
+            }
+          },
+          400
+        );
+      }
+
+      const remaining = contract.total_amount - contract.paid_amount;
+      if (body.amount > remaining) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: `Amount (${body.amount}) exceeds contract remaining balance (${remaining}). Total: ${contract.total_amount}, Paid: ${contract.paid_amount}`
+            }
+          },
+          400
+        );
+      }
+    } else {
+      const threshold = await getNoContractThreshold(c.env);
+      if (body.amount > threshold) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: `No-contract payment is only allowed at or below ${threshold}. Current amount: ${body.amount}`
+            }
+          },
+          400
+        );
+      }
     }
 
     const payee = await c.env.DB.prepare(
@@ -374,7 +484,7 @@ paymentRoutes.post(
     )
       .bind(
         serialNo,
-        body.contract_id,
+        contractId,
         body.project_id,
         auth.sub,
         body.expected_payment_date,
@@ -396,7 +506,7 @@ paymentRoutes.post(
     await publishEvent(c.env, "PAYMENT_REQUEST_CREATED", "payment_request", {
       payment_request_id: prId,
       serial_no: serialNo,
-      contract_id: body.contract_id,
+      contract_id: contractId,
       amount: body.amount,
       created_by: auth.sub
     });
@@ -531,18 +641,21 @@ paymentRoutes.post(
       }
     }
 
-    const contract = await c.env.DB.prepare(
-      "SELECT contract_no, counterparty, total_amount, paid_amount, entity_id FROM contract WHERE id = ?"
-    )
-      .bind(request.contract_id)
-      .first<
-        Pick<
-          Contract,
-          "contract_no" | "counterparty" | "total_amount" | "paid_amount" | "entity_id"
-        >
-      >();
+    const contract =
+      request.contract_id !== null
+        ? await c.env.DB.prepare(
+            "SELECT contract_no, counterparty, total_amount, paid_amount, entity_id, attachments_json FROM contract WHERE id = ?"
+          )
+            .bind(request.contract_id)
+            .first<
+              Pick<
+                Contract,
+                "contract_no" | "counterparty" | "total_amount" | "paid_amount" | "entity_id" | "attachments_json"
+              >
+            >()
+        : null;
 
-    if (!contract) {
+    if (request.contract_id !== null && !contract) {
       return c.json({ success: false, error: { message: "Contract not found" } }, 404);
     }
 
@@ -552,7 +665,9 @@ paymentRoutes.post(
       .bind(request.payee_id)
       .first<Pick<Payee, "name" | "bank_name" | "bank_account">>();
 
-    const attachments = parseAttachmentMeta(request.attachments_json);
+    const paymentAttachments = parseAttachmentMeta(request.attachments_json);
+    const contractAttachments = parseAttachmentMeta(contract?.attachments_json ?? null);
+    const attachments = mergeAttachments(contractAttachments, paymentAttachments);
 
     const instance = await submitForApproval(
       c.env,
@@ -565,17 +680,20 @@ paymentRoutes.post(
         context: {
           amount: request.amount,
           project_id: request.project_id,
-          entity_id: contract.entity_id,
+          entity_id: contract?.entity_id,
           biz_type: "payment_request",
           biz_id: id,
           serial_no: request.serial_no,
-          contract: {
-            id: request.contract_id,
-            contract_no: contract.contract_no,
-            counterparty: contract.counterparty,
-            total_amount: contract.total_amount,
-            paid_amount: contract.paid_amount
-          },
+          contract:
+            request.contract_id !== null && contract
+              ? {
+                  id: request.contract_id,
+                  contract_no: contract.contract_no,
+                  counterparty: contract.counterparty,
+                  total_amount: contract.total_amount,
+                  paid_amount: contract.paid_amount
+                }
+              : null,
           payee: {
             id: request.payee_id,
             name: payee?.name ?? null,
@@ -590,6 +708,8 @@ paymentRoutes.post(
             amount_cn: request.amount_cn,
             remark: request.remark ?? null
           },
+          payment_attachments: paymentAttachments,
+          contract_attachments: contractAttachments,
           attachments
         },
         instance_config: body.instance_config
@@ -603,6 +723,8 @@ paymentRoutes.post(
     )
       .bind(instance.id, nowIso(), id)
       .run();
+
+    await enqueuePaymentRiskAssessment(c.env, request);
 
     return c.json({
       success: true,
@@ -619,7 +741,6 @@ paymentRoutes.post(
     const auth = c.get("auth");
     const body = (await c.req.json().catch(() => ({}))) as MarkPaidBody;
     const now = nowIso();
-
     const pr = await c.env.DB.prepare(
       "SELECT * FROM payment_request WHERE id = ?"
     )
@@ -633,18 +754,6 @@ paymentRoutes.post(
     if (pr.status !== "approved") {
       return c.json(
         { success: false, error: { message: "Only approved requests can be marked as paid" } },
-        400
-      );
-    }
-
-    if (pr.contract_id === null) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: "Legacy payment request without contract cannot use mark-paid. Migrate contract linkage first."
-          }
-        },
         400
       );
     }
@@ -673,11 +782,13 @@ paymentRoutes.post(
       )
       .run();
 
-    await c.env.DB.prepare(
-      "UPDATE contract SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?"
-    )
-      .bind(pr.amount, now, pr.contract_id)
-      .run();
+    if (pr.contract_id !== null) {
+      await c.env.DB.prepare(
+        "UPDATE contract SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?"
+      )
+        .bind(pr.amount, now, pr.contract_id)
+        .run();
+    }
 
     await publishEvent(c.env, "PAYMENT_COMPLETED", "payment_request", {
       payment_request_id: id,
@@ -695,7 +806,6 @@ paymentRoutes.post(
   requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
-    const now = nowIso();
 
     const pr = await c.env.DB.prepare(
       "SELECT * FROM payment_request WHERE id = ?"
@@ -707,41 +817,7 @@ paymentRoutes.post(
       return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
     }
 
-    await c.env.DB.prepare(
-      "UPDATE payment_request SET ai_risk_status = 'pending', updated_at = ? WHERE id = ?"
-    )
-      .bind(now, id)
-      .run();
-
-    const contract = await c.env.DB.prepare(
-      "SELECT contract_no, total_amount, paid_amount, counterparty FROM contract WHERE id = ?"
-    )
-      .bind(pr.contract_id)
-      .first();
-
-    const recentPayments = await c.env.DB.prepare(
-      `SELECT serial_no, amount, created_at FROM payment_request
-       WHERE contract_id = ? AND id != ? AND status != 'cancelled'
-       ORDER BY created_at DESC LIMIT 10`
-    )
-      .bind(pr.contract_id, id)
-      .all();
-
-    await createTask(c.env, {
-      task_type: "payment_risk_assessment",
-      biz_type: "payment_request",
-      biz_id: id,
-      priority: 3,
-      payload: {
-        payment_request_id: id,
-        serial_no: pr.serial_no,
-        amount: pr.amount,
-        contract: contract,
-        recent_payments: recentPayments.results ?? [],
-        payee_id: pr.payee_id
-      },
-      timeout_seconds: 300
-    });
+    await enqueuePaymentRiskAssessment(c.env, pr);
 
     return c.json({ success: true });
   }

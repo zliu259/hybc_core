@@ -76,6 +76,19 @@ const asNumber = (value: unknown): number | null => {
   return null;
 };
 
+const mergeAttachments = (...groups: AttachmentMeta[][]): AttachmentMeta[] => {
+  const merged: AttachmentMeta[] = [];
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const item of group) {
+      if (seen.has(item.file_key)) continue;
+      seen.add(item.file_key);
+      merged.push(item);
+    }
+  }
+  return merged;
+};
+
 const loadBizContextFromInstance = async (
   env: Env,
   instanceId: number
@@ -126,7 +139,7 @@ const loadBizContextFromInstance = async (
       .first<{
         id: number;
         serial_no: string;
-        contract_id: number;
+        contract_id: number | null;
         project_id: number;
         payee_id: number;
         amount: number;
@@ -139,11 +152,41 @@ const loadBizContextFromInstance = async (
         remark: string | null;
       }>();
     if (payment) {
+      const contract =
+        payment.contract_id !== null
+          ? await env.DB.prepare(
+              `SELECT contract_no, counterparty, total_amount, paid_amount, entity_id, attachments_json
+               FROM contract WHERE id = ?`
+            )
+              .bind(payment.contract_id)
+              .first<{
+                contract_no: string;
+                counterparty: string;
+                total_amount: number;
+                paid_amount: number;
+                entity_id: number;
+                attachments_json: string | null;
+              }>()
+          : null;
+      const paymentAttachments = parseAttachmentMeta(payment.attachments_json);
+      const contractAttachments = parseAttachmentMeta(contract?.attachments_json ?? null);
+      const mergedAttachments = mergeAttachments(contractAttachments, paymentAttachments);
       context = {
         ...context,
         amount: payment.amount,
         project_id: payment.project_id,
+        entity_id: contract?.entity_id,
         serial_no: payment.serial_no,
+        contract:
+          payment.contract_id !== null && contract
+            ? {
+                id: payment.contract_id,
+                contract_no: contract.contract_no,
+                counterparty: contract.counterparty,
+                total_amount: contract.total_amount,
+                paid_amount: contract.paid_amount
+              }
+            : null,
         payment: {
           expected_payment_date: payment.expected_payment_date,
           category: payment.category,
@@ -152,7 +195,9 @@ const loadBizContextFromInstance = async (
           amount_cn: payment.amount_cn,
           remark: payment.remark
         },
-        attachments: parseAttachmentMeta(payment.attachments_json)
+        payment_attachments: paymentAttachments,
+        contract_attachments: contractAttachments,
+        attachments: mergedAttachments
       };
     }
   }
@@ -231,8 +276,28 @@ const enrichAiGatePayload = async (
   const loadedAttachments = Array.isArray(loadedContext.attachments)
     ? loadedContext.attachments
     : [];
-  if (currentAttachments.length === 0 && loadedAttachments.length > 0) {
-    mergedContext.attachments = loadedAttachments;
+  if (currentAttachments.length > 0 || loadedAttachments.length > 0) {
+    const currentList = currentAttachments
+      .filter((item): item is AttachmentMeta => {
+        return !!item && typeof item === "object" && typeof (item as AttachmentMeta).file_key === "string";
+      })
+      .map((item) => ({
+        file_key: item.file_key,
+        file_name: item.file_name,
+        file_size: item.file_size,
+        file_url: item.file_url
+      }));
+    const loadedList = loadedAttachments
+      .filter((item): item is AttachmentMeta => {
+        return !!item && typeof item === "object" && typeof (item as AttachmentMeta).file_key === "string";
+      })
+      .map((item) => ({
+        file_key: item.file_key,
+        file_name: item.file_name,
+        file_size: item.file_size,
+        file_url: item.file_url
+      }));
+    mergedContext.attachments = mergeAttachments(loadedList, currentList);
   }
 
   enriched.context = mergedContext;

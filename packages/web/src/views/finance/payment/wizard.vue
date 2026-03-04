@@ -42,7 +42,7 @@ const amountInput = ref<number | undefined>(undefined);
 const withFirstPayment = ref(false);
 
 const directForm = ref({
-  contract_id: undefined as number | undefined,
+  contract_id: null as number | null,
   project_id: undefined as number | undefined,
   payee_id: undefined as number | undefined,
   category: "其他费用",
@@ -264,13 +264,21 @@ const checkAmount = () => {
 };
 
 const submitDirectPayment = async () => {
+  const amount = Number(amountInput.value ?? 0);
+  if (amount > thresholdLimit.value) {
+    exceedsThreshold.value = true;
+    step.value = 1;
+    message(`金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`, {
+      type: "warning"
+    });
+    return;
+  }
   if (
     !amountInput.value ||
-    !directForm.value.contract_id ||
     !directForm.value.project_id ||
     !directForm.value.payee_id
   ) {
-    message("请先填写金额、合同、项目、收款人", { type: "warning" });
+    message("请先填写金额、项目、收款人", { type: "warning" });
     return;
   }
   if (!directPaymentAttachments.value.length) {
@@ -456,7 +464,14 @@ onMounted(async () => {
       <template v-if="!exceedsThreshold">
         <el-form label-width="140px">
           <el-form-item label="合同">
-            <el-select v-model="directForm.contract_id" filterable style="width: 360px">
+            <el-select
+              v-model="directForm.contract_id"
+              filterable
+              clearable
+              placeholder="可选：无合同/无需合同，或选择已有关联合同"
+              style="width: 360px"
+            >
+              <el-option label="无合同 / 无需合同" :value="null" />
               <el-option
                 v-for="item in contracts"
                 :key="item.id"

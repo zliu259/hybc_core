@@ -722,6 +722,36 @@
 - 审批中心相关页面时间统一格式为北京时间 `YYYY-MM-DD HH:mm:ss`：`packages/web/src/views/approval/detail.vue`、`packages/web/src/views/approval/index.vue`、`packages/web/src/views/approval/unified-tasklist.vue`、`packages/web/src/utils/datetime.ts`
 - AI审核结果新增 `summary` JSON 兼容解析（回填 outcome/comment），避免历史数据顶层字段为空导致“结论/总结”空白：`packages/web/src/views/approval/detail.vue`
 
+### 3.24 Web付款无合同阈值放行与审批明细名称化（2026-03）
+- 智能发单台（阈值内）支持“无合同/无需合同”选项，仍可按需关联已有合同，且提交时强校验超阈值必须走合同流：`packages/web/src/views/finance/payment/wizard.vue`
+- 付款申请后端支持 `contract_id` 可空，并在无合同时按 `payment_request` 阈值规则校验金额上限：`packages/api/src/routes/payment.ts`、`packages/api/src/types/contract.ts`
+- 付款提审自动触发风险评估（无需手工点击），并统一风险任务载荷结构：`packages/api/src/routes/payment.ts`
+- AI关卡上下文补齐合同信息与合同附件，合并 `payment_attachments + contract_attachments` 进入统一 `attachments`，避免仅凭付款附件做片面判断：`packages/api/src/routes/payment.ts`、`packages/api/src/services/ai-slot.ts`
+- 审批详情“申请明细”中的合同/项目/主体/人员改为展示名称（或合同号+对方单位），不再直接显示 ID：`packages/web/src/views/approval/detail.vue`
+- Web 付款 API 类型同步支持可空合同：`packages/web/src/api/payment.ts`
+
+### 4.5 小程序审批端与Web审批台信息对齐（2026-03）
+- 小程序审批中心从“仅列表+动作”升级为“可展开审批详情”，补齐与 Web 一致的决策关键信息：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`、`packages/miniapp/pages/approval/index.wxss`
+- 详情弹层补齐业务摘要与流程信息：审批编号、业务类型、发起人、状态、提交流转时间、节点意见与动作：`packages/miniapp/pages/approval/index.wxml`
+- 按业务类型展示申请明细：付款/合同/报销批次字段对齐 Web 审批详情，降低跨端歧义：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`
+- 附件处理补齐：小程序端支持附件查看（图片预览，文档下载后打开），与 Web 审批决策链一致：`packages/miniapp/pages/approval/index.js`
+- AI审核结果补齐：显示状态、建议结论（通过/拒绝/补充材料）与 comment，总结结构兼容 `summary` JSON：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`
+- 时间统一：小程序审批页时间统一转换并显示为北京时间 `YYYY-MM-DD HH:mm:ss`：`packages/miniapp/pages/approval/index.js`
+
+### 4.6 小程序审批中心重构（去快速审批，详情页闭环）（2026-03）
+- 审批中心列表页重构为“轻量卡片导航”，移除列表内快速审批动作，减少文字堆叠与误触：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`、`packages/miniapp/pages/approval/index.wxss`
+- 新增独立审批详情页，所有审批动作（通过/驳回/退回/转签）在详情页完成，形成直觉闭环：`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
+- 路由补齐：新增小程序审批详情页面注册：`packages/miniapp/app.json`
+- 首页入口文案同步更新为“进入审批中心查看详情”，与新交互一致：`packages/miniapp/pages/index/index.js`
+
+### 4.7 小程序审批详情视觉减负优化（2026-03）
+- 审批详情页面按信息域分色分区（摘要/业务明细/附件/AI结果/流程/操作意见），并增加板块分界线，降低视觉疲劳：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
+- 信息点改为 dot + key/value 结构，并对关键值使用 tag（如业务类型、状态、AI结论）做颜色提示：`packages/miniapp/pages/approval-detail/index.wxml`
+- 底部补齐固定操作栏，提供清晰、持续可见的审批动作按钮，避免长页滚动后找不到操作入口：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
+- 审批流程默认折叠，支持一键展开/收起节点，降低初始阅读负担：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.js`
+- 操作按钮显示增加兜底策略（当接口未回传 `available_actions` 时按待办任务推断），避免底部操作区缺失：`packages/miniapp/pages/approval-detail/index.js`
+- 底部操作布局优化为单排 40/40/20（通过/退回/更多），其余动作收纳到“更多”弹层，减少主操作区噪音：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxss`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

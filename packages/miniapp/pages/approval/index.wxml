@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="✅ 审批中心" subtitle="待办/已处理/抄送状态全量可见">
+  <hy-panel-card title="审批中心" subtitle="先看列表，再进入详情完成审批">
     <view class="tab-row">
       <view class="tab-pill {{activeTab === 'pending' ? 'active' : ''}}" data-tab="pending" bindtap="switchTab">
         待我审批 {{pendingCount}}
@@ -11,8 +11,11 @@
         抄送我 {{ccCount}}
       </view>
     </view>
+
     <view class="row">
-      <t-button class="btn btn-primary" theme="primary" block bindtap="loadAll" loading="{{loading}}" disabled="{{loading || acting}}">刷新列表</t-button>
+      <t-button class="btn btn-primary" theme="primary" block bindtap="loadAll" loading="{{loading}}" disabled="{{loading}}">
+        刷新列表
+      </t-button>
     </view>
   </hy-panel-card>
 
@@ -21,46 +24,34 @@
   <t-empty wx:if="{{!loading && activeTab === 'cc' && cc.length === 0}}" description="当前没有抄送事项" />
 
   <block wx:if="{{activeTab === 'pending'}}" wx:for="{{pending}}" wx:key="id">
-    <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
-      <view class="risk-summary">
-        <view class="risk-row traffic-red">🔴 高风险：金额/合规请重点复核</view>
-        <view class="risk-row traffic-yellow">🟡 提醒：历史记录存在波动</view>
-        <view class="risk-row traffic-green">🟢 基础字段已齐全</view>
-      </view>
-      <view class="sub">类型：{{item.biz_type}}</view>
-      <view class="sub">节点：{{item.current_node_name || '-'}}</view>
-      <view class="sub">状态：{{statusLabel(item.status)}}</view>
-      <view class="label">意见</view>
-      <input class="input" value="{{commentMap[item.id] || ''}}" data-id="{{item.id}}" bindinput="onComment" disabled="{{acting}}" />
-      <view class="row">
-        <view class="slide-approve" data-id="{{item.id}}" bindlongpress="markSliderReady" bindtouchend="clearSliderReady" bindtap="handleApproveUnlock">
-          👉 滑动解锁通过（先长按）
-        </view>
-        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="reject" bindtap="handleAction" disabled="{{acting}}">拒绝</t-button>
-      </view>
-      <view class="row">
-        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="return" bindtap="handleAction" disabled="{{acting}}">退回</t-button>
-        <t-button class="btn" variant="outline" data-id="{{item.id}}" data-action="transfer" bindtap="handleAction" disabled="{{acting}}">转签成员</t-button>
-      </view>
-    </hy-panel-card>
+    <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
+      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+        <view class="sub">类型：{{item.bizTypeLabel}}</view>
+        <view class="sub">节点：{{item.current_node_name || '-'}}</view>
+        <view class="sub">状态：{{item.statusText}}</view>
+        <view class="sub">提交时间：{{item.submittedAtText}}</view>
+      </hy-panel-card>
+    </view>
   </block>
 
   <block wx:if="{{activeTab === 'processed'}}" wx:for="{{processed}}" wx:key="id">
-    <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
-      <view class="sub">类型：{{item.biz_type}}</view>
-      <view class="sub">实例状态：{{statusLabel(item.status)}}</view>
-      <view class="sub">处理动作：{{statusLabel(item.action)}}</view>
-      <view class="sub">处理时间：{{item.acted_at || '-'}}</view>
-      <view class="sub">意见：{{item.comment || '-'}}</view>
-    </hy-panel-card>
+    <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
+      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+        <view class="sub">类型：{{item.bizTypeLabel}}</view>
+        <view class="sub">状态：{{item.statusText}}</view>
+        <view class="sub">处理时间：{{item.actedAtText}}</view>
+      </hy-panel-card>
+    </view>
   </block>
 
   <block wx:if="{{activeTab === 'cc'}}" wx:for="{{cc}}" wx:key="id">
-    <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
-      <view class="sub">类型：{{item.biz_type}}</view>
-      <view class="sub">发起人：{{item.initiator_userid}}</view>
-      <view class="sub">状态：{{statusLabel(item.status)}}</view>
-      <view class="sub">提交时间：{{item.submitted_at}}</view>
-    </hy-panel-card>
+    <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
+      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+        <view class="sub">类型：{{item.bizTypeLabel}}</view>
+        <view class="sub">发起人：{{item.initiator_userid}}</view>
+        <view class="sub">状态：{{item.statusText}}</view>
+        <view class="sub">提交时间：{{item.submittedAtText}}</view>
+      </hy-panel-card>
+    </view>
   </block>
 </view>

@@ -1,5 +1,5 @@
 const { request } = require("../../utils/request");
-const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
+const { sayToast } = require("../../utils/interaction");
 
 Page({
   data: {
@@ -7,19 +7,19 @@ Page({
     pending: [],
     processed: [],
     cc: [],
-    commentMap: {},
     loading: false,
-    acting: false,
-    sliderReadyMap: {},
-    transferUsers: [],
     pendingCount: 0,
     processedCount: 0,
     ccCount: 0
   },
 
   onShow() {
-    this.loadTransferUsers();
     this.loadAll();
+  },
+
+  switchTab(e) {
+    const tab = e.currentTarget.dataset.tab;
+    this.setData({ activeTab: tab });
   },
 
   statusLabel(status) {
@@ -30,54 +30,74 @@ Page({
       rejected: "已驳回",
       cancelled: "已取消",
       withdrawn: "已撤回",
-      completed: "已处理",
+      completed: "已完成",
       transferred: "已转签"
     };
-    return map[status] || status;
+    return map[status] || status || "-";
   },
 
-  async loadTransferUsers() {
-    try {
-      const res = await request({
-        method: "GET",
-        path: "/api/v1/auth/wecom/contacts"
-      });
-      const users = (((res || {}).data || {}).users || []).filter((item) => item && item.userid);
-      this.setData({ transferUsers: users.slice(0, 20) });
-    } catch {
-      this.setData({ transferUsers: [] });
-    }
+  bizTypeLabel(value) {
+    const map = {
+      outbound_contract: "对外合同审批",
+      inbound_contract: "收款合同审批",
+      payment_request: "付款审批",
+      reimbursement_batch: "报销审批"
+    };
+    return map[value] || value || "-";
   },
 
-  switchTab(e) {
-    const tab = e.currentTarget.dataset.tab;
-    this.setData({ activeTab: tab });
+  cardClassByType(bizType) {
+    const map = {
+      payment_request: "card-payment",
+      outbound_contract: "card-contract-out",
+      inbound_contract: "card-contract-in",
+      reimbursement_batch: "card-reimburse"
+    };
+    return map[bizType] || "card-default";
+  },
+
+  formatBeijingTime(value) {
+    if (!value) return "-";
+    const d = new Date(value);
+    if (Number.isNaN(d.getTime())) return value;
+    const bj = new Date(d.getTime() + 8 * 60 * 60 * 1000);
+    const yyyy = bj.getUTCFullYear();
+    const mm = String(bj.getUTCMonth() + 1).padStart(2, "0");
+    const dd = String(bj.getUTCDate()).padStart(2, "0");
+    const hh = String(bj.getUTCHours()).padStart(2, "0");
+    const mi = String(bj.getUTCMinutes()).padStart(2, "0");
+    const ss = String(bj.getUTCSeconds()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd} ${hh}:${mi}:${ss}`;
+  },
+
+  mapListItem(item) {
+    return {
+      ...item,
+      bizTypeLabel: this.bizTypeLabel(item.biz_type),
+      cardClass: this.cardClassByType(item.biz_type),
+      statusText: this.statusLabel(item.status),
+      submittedAtText: this.formatBeijingTime(item.submitted_at),
+      actedAtText: this.formatBeijingTime(item.acted_at)
+    };
   },
 
   async loadAll() {
     this.setData({ loading: true });
     try {
       const [pendingRes, processedRes, ccRes] = await Promise.all([
-        request({
-          method: "GET",
-          path: "/api/v1/approval/pending?page=1&pageSize=50"
-        }),
-        request({
-          method: "GET",
-          path: "/api/v1/approval/processed?page=1&pageSize=50"
-        }),
-        request({
-          method: "GET",
-          path: "/api/v1/approval/cc?page=1&pageSize=50"
-        })
+        request({ method: "GET", path: "/api/v1/approval/pending?page=1&pageSize=50" }),
+        request({ method: "GET", path: "/api/v1/approval/processed?page=1&pageSize=50" }),
+        request({ method: "GET", path: "/api/v1/approval/cc?page=1&pageSize=50" })
       ]);
+
       const pending = Array.isArray(pendingRes.data) ? pendingRes.data : [];
       const processed = Array.isArray(processedRes.data) ? processedRes.data : [];
       const cc = Array.isArray(ccRes.data) ? ccRes.data : [];
+
       this.setData({
-        pending,
-        processed,
-        cc,
+        pending: pending.map((item) => this.mapListItem(item)),
+        processed: processed.map((item) => this.mapListItem(item)),
+        cc: cc.map((item) => this.mapListItem(item)),
         pendingCount: pending.length,
         processedCount: processed.length,
         ccCount: cc.length
@@ -89,92 +109,9 @@ Page({
     }
   },
 
-  markSliderReady(e) {
-    const id = e.currentTarget.dataset.id;
-    this.setData({ [`sliderReadyMap.${id}`]: true });
-  },
-
-  clearSliderReady(e) {
-    const id = e.currentTarget.dataset.id;
-    this.setData({ [`sliderReadyMap.${id}`]: false });
-  },
-
-  handleApproveUnlock(e) {
-    const id = e.currentTarget.dataset.id;
-    if (!this.data.sliderReadyMap[id]) {
-      sayToast({ title: "请长按后再滑动确认", icon: "none" });
-      return;
-    }
-    this.handleAction({ currentTarget: { dataset: { id, action: "approve" } } });
-    this.setData({ [`sliderReadyMap.${id}`]: false });
-  },
-
-  onComment(e) {
-    const id = e.currentTarget.dataset.id;
-    this.setData({ [`commentMap.${id}`]: e.detail.value });
-  },
-
-  async handleAction(e) {
-    if (this.data.acting) return;
-    const id = e.currentTarget.dataset.id;
-    const action = e.currentTarget.dataset.action;
-    const comment = this.data.commentMap[id] || "";
-    const actionName =
-      action === "approve"
-        ? "通过"
-        : action === "reject"
-          ? "拒绝"
-          : action === "return"
-            ? "退回"
-            : "转签";
-
-    const confirm = await new Promise((resolve) => {
-      wx.showModal({
-        title: `确认${actionName}`,
-        content: `${actionName}后将立即生效，是否继续？`,
-        success: (res) => resolve(Boolean(res.confirm)),
-        fail: () => resolve(false)
-      });
-    });
-    if (!confirm) return;
-
-    this.setData({ acting: true });
-    try {
-      if (action === "approve") {
-        await request({ method: "POST", path: `/api/v1/approval/${id}/approve`, data: { comment } });
-      } else if (action === "reject") {
-        await request({ method: "POST", path: `/api/v1/approval/${id}/reject`, data: { comment } });
-      } else if (action === "return") {
-        await request({ method: "POST", path: `/api/v1/approval/${id}/return`, data: { type: "initiator", comment } });
-      } else {
-        if (!this.data.transferUsers.length) {
-          throw new Error("暂无可转签成员，请先同步企业微信通讯录");
-        }
-        const pickIndex = await new Promise((resolve, reject) => {
-          wx.showActionSheet({
-            itemList: this.data.transferUsers.map((item) => `${item.name} (${item.userid})`),
-            success: (res) => resolve(Number(res.tapIndex)),
-            fail: () => reject(new Error("已取消转签"))
-          });
-        });
-        const selected = this.data.transferUsers[pickIndex];
-        if (!selected || !selected.userid) {
-          throw new Error("未选择有效转签对象");
-        }
-        await request({
-          method: "POST",
-          path: `/api/v1/approval/${id}/transfer`,
-          data: { to_userid: selected.userid, reason: comment || "miniapp transfer" }
-        });
-      }
-      vibrateSuccess();
-      sayToast({ title: "已处理", icon: "success" });
-      await this.loadAll();
-    } catch (error) {
-      vibrateWarning();
-      sayToast({ title: error.message || "操作失败", icon: "none", danger: true });
-    } finally {
-      this.setData({ acting: false });
-    }
+  openDetail(e) {
+    const id = Number(e.currentTarget.dataset.id || 0);
+    if (!id) return;
+    wx.navigateTo({ url: `/pages/approval-detail/index?id=${id}` });
   }
 });

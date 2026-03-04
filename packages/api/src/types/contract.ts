@@ -161,7 +161,7 @@ export interface PaymentRequest {
 }
 
 export interface CreatePaymentRequestBody {
-  contract_id: number;
+  contract_id?: number | null;
   project_id: number;
   expected_payment_date: string;
   category: string;
