@@ -715,6 +715,12 @@
 - 流转台新增附件抽屉预览能力，支持 PDF/图片/TXT 快速内嵌预览，其他格式保留下载打开：`packages/web/src/views/approval/detail.vue`
 - AI关卡 context 兜底增强：当业务侧未显式提供 context 时，后端自动补齐最小上下文（biz_type/biz_id/biz_summary），避免空 context 导致模型拒绝：`packages/api/src/services/approval/engine.ts`、`packages/api/src/services/approval/executors.ts`
 
+### 3.23 AI审批台结果展示优化与北京时间统一（2026-03）
+- AI审核结果表格精简为核心信息：节点、状态（中文）、结论（建议通过/建议拒绝/建议补充材料）、总结（comment）、完成时间：`packages/web/src/views/approval/detail.vue`
+- 审批流程线中 AI 节点动作改为建议性结论文案，并在同一行追加 comment：`packages/web/src/views/approval/detail.vue`
+- AI关卡任务总览（超管页）状态与动作文案中文化，时间统一北京时间：`packages/web/src/views/admin/ai-gate-tasks.vue`
+- 审批中心相关页面时间统一格式为北京时间 `YYYY-MM-DD HH:mm:ss`：`packages/web/src/views/approval/detail.vue`、`packages/web/src/views/approval/index.vue`、`packages/web/src/views/approval/unified-tasklist.vue`、`packages/web/src/utils/datetime.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

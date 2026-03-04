@@ -12,6 +12,7 @@ import {
 } from "@/api/approval";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { toBizTypeLabel, toStatusLabel } from "./labels";
+import { formatBeijingDateTime } from "@/utils/datetime";
 
 defineOptions({ name: "ApprovalUnifiedTasklist" });
 
@@ -153,7 +154,9 @@ onMounted(async () => {
           >
             <div class="task-item__biz">{{ toBizTypeLabel(row.biz_type) }}</div>
             <div class="task-item__summary">{{ row.biz_summary }}</div>
-            <div class="task-item__meta">{{ row.initiator_userid }} · {{ row.submitted_at }}</div>
+            <div class="task-item__meta">
+              {{ row.initiator_userid }} · {{ formatBeijingDateTime(row.submitted_at) }}
+            </div>
           </div>
         </div>
       </div>
@@ -169,7 +172,9 @@ onMounted(async () => {
             <el-descriptions-item label="业务类型">{{ toBizTypeLabel(activePending.biz_type) }}</el-descriptions-item>
             <el-descriptions-item label="发起人">{{ activePending.initiator_userid }}</el-descriptions-item>
             <el-descriptions-item label="实例编号">{{ activePending.instance_no }}</el-descriptions-item>
-            <el-descriptions-item label="提交时间">{{ activePending.submitted_at }}</el-descriptions-item>
+            <el-descriptions-item label="提交时间">{{
+              formatBeijingDateTime(activePending.submitted_at)
+            }}</el-descriptions-item>
           </el-descriptions>
 
           <el-divider />
@@ -180,7 +185,7 @@ onMounted(async () => {
                 <el-timeline-item
                   v-for="node in detail?.nodes || []"
                   :key="node.id"
-                  :timestamp="node.completed_at || node.started_at || node.created_at"
+                  :timestamp="formatBeijingDateTime(node.completed_at || node.started_at || node.created_at)"
                 >
                   {{ node.node_name }} · {{ toStatusLabel(node.status) }}
                 </el-timeline-item>

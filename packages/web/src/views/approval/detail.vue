@@ -27,6 +27,7 @@ import {
 import { getContract, type ContractDetail } from "@/api/contract";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { resolveUploadUrl } from "@/api/upload";
+import { formatBeijingDateTime } from "@/utils/datetime";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalDetail" });
@@ -127,6 +128,22 @@ const aiGateTagType: Record<string, TagType> = {
   completed: "success",
   failed: "danger",
   timeout: "danger"
+};
+
+const toAiOutcomeLabel = (outcome: string | null | undefined, comment: string | null | undefined) => {
+  if (outcome === "approve") return "建议通过";
+  if (outcome === "reject") {
+    const text = comment ?? "";
+    return /补充|资料|证据|材料/.test(text) ? "建议补充材料" : "建议拒绝";
+  }
+  return "-";
+};
+
+const formatAiNodeDecision = (task: ApprovalTask) => {
+  if (task.assignee_userid !== "AI_GATE") {
+    return toActionLabel(task.action);
+  }
+  return toAiOutcomeLabel(task.action, task.comment);
 };
 
 type AttachmentItem = {
@@ -413,10 +430,12 @@ onMounted(async () => {
                 <el-tag size="small">{{ toStatusLabel(detail.instance.status) }}</el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="提交时间">{{
-                detail.instance.submitted_at
+                formatBeijingDateTime(detail.instance.submitted_at)
               }}</el-descriptions-item>
               <el-descriptions-item label="完成时间">{{
-                detail.instance.completed_at ?? "—"
+                detail.instance.completed_at
+                  ? formatBeijingDateTime(detail.instance.completed_at)
+                  : "—"
               }}</el-descriptions-item>
               <el-descriptions-item label="摘要" :span="2">{{
                 detail.instance.biz_summary
@@ -562,38 +581,23 @@ onMounted(async () => {
                 <el-table-column label="状态" width="110">
                   <template #default="scope">
                     <el-tag :type="aiGateTagType[scope.row.status] || 'info'" size="small">
-                      {{ scope.row.status }}
+                      {{ toStatusLabel(scope.row.status) }}
                     </el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column label="结论" width="120">
                   <template #default="scope">
-                    {{ scope.row.outcome || "-" }}
+                    {{ toAiOutcomeLabel(scope.row.outcome, scope.row.comment) }}
                   </template>
                 </el-table-column>
                 <el-table-column label="总结" min-width="220">
                   <template #default="scope">
-                    {{ scope.row.summary || scope.row.comment || "-" }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="建议" min-width="240">
-                  <template #default="scope">
-                    {{
-                      Array.isArray(scope.row.recommendations) &&
-                      scope.row.recommendations.length > 0
-                        ? scope.row.recommendations.join("；")
-                        : "-"
-                    }}
-                  </template>
-                </el-table-column>
-                <el-table-column label="错误信息" min-width="180">
-                  <template #default="scope">
-                    {{ scope.row.error_message || "-" }}
+                    {{ scope.row.comment || "-" }}
                   </template>
                 </el-table-column>
                 <el-table-column label="完成时间" width="170">
                   <template #default="scope">
-                    {{ scope.row.completed_at || "-" }}
+                    {{ formatBeijingDateTime(scope.row.completed_at) }}
                   </template>
                 </el-table-column>
               </el-table>
@@ -683,15 +687,21 @@ onMounted(async () => {
                       v-if="task.action"
                       size="small"
                       style="margin-left: 6px"
-                      >{{ toActionLabel(task.action) }}</el-tag
+                      >{{ formatAiNodeDecision(task) }}</el-tag
                     >
+                    <span
+                      v-if="task.assignee_userid === 'AI_GATE' && task.comment"
+                      style="margin-left: 6px; color: #666"
+                    >
+                      ：{{ task.comment }}
+                    </span>
                     <span
                       v-if="task.acted_at"
                       style="margin-left: 6px; color: #999"
-                      >{{ task.acted_at }}</span
+                      >{{ formatBeijingDateTime(task.acted_at) }}</span
                     >
                     <div
-                      v-if="task.comment"
+                      v-if="task.comment && task.assignee_userid !== 'AI_GATE'"
                       style="margin-top: 2px; color: #888; font-style: italic"
                     >
                       {{ task.comment }}

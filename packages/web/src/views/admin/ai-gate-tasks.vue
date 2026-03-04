@@ -7,6 +7,8 @@ import {
   listApprovalAiGateTasks,
   type ApprovalAiGateTaskItem
 } from "@/api/admin";
+import { toStatusLabel } from "@/views/approval/labels";
+import { formatBeijingDateTime } from "@/utils/datetime";
 
 defineOptions({ name: "AdminAiGateTasks" });
 
@@ -127,7 +129,7 @@ onMounted(loadRows);
       <el-table-column label="任务状态" width="110">
         <template #default="scope">
           <el-tag size="small" :type="statusTagType(scope.row.task_status)">
-            {{ scope.row.task_status }}
+            {{ toStatusLabel(scope.row.task_status) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -141,7 +143,7 @@ onMounted(loadRows);
         <template #default="scope">{{ scope.row.instance?.instance_no || "-" }}</template>
       </el-table-column>
       <el-table-column label="审批状态" width="110">
-        <template #default="scope">{{ scope.row.instance?.status || "-" }}</template>
+        <template #default="scope">{{ toStatusLabel(scope.row.instance?.status || "-") }}</template>
       </el-table-column>
       <el-table-column label="当前节点" min-width="120">
         <template #default="scope">{{ scope.row.instance?.current_node_key || "-" }}</template>
@@ -152,8 +154,12 @@ onMounted(loadRows);
       <el-table-column label="错误信息" min-width="180" show-overflow-tooltip>
         <template #default="scope">{{ scope.row.error_message || "-" }}</template>
       </el-table-column>
-      <el-table-column prop="task_created_at" label="创建时间" width="170" />
-      <el-table-column prop="task_completed_at" label="完成时间" width="170" />
+      <el-table-column label="创建时间" width="170">
+        <template #default="scope">{{ formatBeijingDateTime(scope.row.task_created_at) }}</template>
+      </el-table-column>
+      <el-table-column label="完成时间" width="170">
+        <template #default="scope">{{ formatBeijingDateTime(scope.row.task_completed_at) }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="300" fixed="right">
         <template #default="scope">
           <el-space>
@@ -182,7 +188,7 @@ onMounted(loadRows);
     <el-form label-width="110px">
       <el-form-item label="处理动作">
         <el-tag :type="actionType === 'approve' ? 'success' : actionType === 'reject' ? 'danger' : 'warning'">
-          {{ actionType }}
+          {{ actionType === "approve" ? "建议通过" : actionType === "reject" ? "建议拒绝" : "建议补充材料" }}
         </el-tag>
       </el-form-item>
       <el-form-item label="处理说明">

@@ -10,6 +10,7 @@ import {
   type ApprovalInstance
 } from "@/api/approval";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
+import { formatBeijingDateTime } from "@/utils/datetime";
 
 defineOptions({ name: "ApprovalCenter" });
 
@@ -179,7 +180,9 @@ onMounted(loadPending);
             label="当前节点"
             width="140"
           />
-          <el-table-column prop="submitted_at" label="提交时间" width="180" />
+          <el-table-column label="提交时间" width="180">
+            <template #default="{ row }">{{ formatBeijingDateTime(row.submitted_at) }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
               <el-tag
@@ -243,7 +246,9 @@ onMounted(loadPending);
               >
             </template>
           </el-table-column>
-          <el-table-column prop="acted_at" label="操作时间" width="180" />
+          <el-table-column label="操作时间" width="180">
+            <template #default="{ row }">{{ formatBeijingDateTime(row.acted_at) }}</template>
+          </el-table-column>
           <el-table-column
             prop="comment"
             label="意见"
@@ -293,7 +298,9 @@ onMounted(loadPending);
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="submitted_at" label="提交时间" width="180" />
+          <el-table-column label="提交时间" width="180">
+            <template #default="{ row }">{{ formatBeijingDateTime(row.submitted_at) }}</template>
+          </el-table-column>
         </el-table>
         <el-pagination
           style="margin-top: 12px; justify-content: flex-end"
