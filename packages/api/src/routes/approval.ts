@@ -13,6 +13,7 @@ import {
   submitForApproval,
   getInstanceDetail
 } from "../services/approval/engine";
+import { createAiGateHandler } from "../services/ai-slot";
 import {
   approve as approveOp,
   reject as rejectOp,
@@ -267,7 +268,7 @@ approvalRoutes.post("/submit", async (c) => {
   const body = (await c.req.json()) as SubmitApprovalRequest;
 
   try {
-    const instance = await submitForApproval(c.env, body, auth.sub);
+    const instance = await submitForApproval(c.env, body, auth.sub, createAiGateHandler());
     return c.json({ success: true, data: instance }, 201);
   } catch (err) {
     const message = err instanceof Error ? err.message : "Submit failed";

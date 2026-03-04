@@ -256,7 +256,22 @@ export interface ApprovalDetailResponse {
   tasks: ApprovalTask[];
   transfers: ApprovalTransfer[];
   initiator_actions: ApprovalInitiatorAction[];
+  ai_gate_reviews: AiGateReview[];
   available_actions: ApprovalAction[];
+}
+
+export interface AiGateReview {
+  task_id: number;
+  node_key: string | null;
+  ai_slot_id: string | null;
+  status: string;
+  summary: string | null;
+  recommendations: string[];
+  outcome: "approve" | "reject" | null;
+  comment: string | null;
+  error_message: string | null;
+  created_at: string;
+  completed_at: string | null;
 }
 
 // ─── AI Gate Placeholder Interface ──────────

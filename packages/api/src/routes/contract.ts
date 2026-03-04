@@ -13,7 +13,7 @@ import type {
 import type { InstanceConfig } from "../types/approval";
 import { generateSerial } from "../services/serial";
 import { publishEvent } from "../services/event-bus";
-import { createTask } from "../services/ai-slot";
+import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 
 const nowIso = () => new Date().toISOString();
@@ -228,6 +228,34 @@ contractRoutes.put(
       return c.json({ success: false, error: { message: "Contract not found" } }, 404);
     }
 
+    const hasDetailMutation =
+      body.counterparty !== undefined ||
+      body.contract_type !== undefined ||
+      body.handler_userid !== undefined ||
+      body.contract_date !== undefined ||
+      body.total_amount !== undefined ||
+      body.attachments_json !== undefined ||
+      body.remark !== undefined;
+
+    if (hasDetailMutation && existing.approval_instance_id) {
+      const approval = await c.env.DB.prepare(
+        "SELECT status FROM approval_instance WHERE id = ?"
+      )
+        .bind(existing.approval_instance_id)
+        .first<{ status: string }>();
+      if (approval && (approval.status === "pending" || approval.status === "in_progress")) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: "Contract details are locked while approval is in progress"
+            }
+          },
+          400
+        );
+      }
+    }
+
     if (existing.status !== "draft" && body.total_amount !== undefined) {
       return c.json(
         {
@@ -350,7 +378,8 @@ contractRoutes.post(
         },
         instance_config: body.instance_config
       },
-      auth.sub
+      auth.sub,
+      createAiGateHandler()
     );
 
     await c.env.DB.prepare(
@@ -495,7 +524,8 @@ contractRoutes.post(
         },
         instance_config: body.instance_config
       },
-      auth.sub
+      auth.sub,
+      createAiGateHandler()
     );
 
     await c.env.DB.prepare(

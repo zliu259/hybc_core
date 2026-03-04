@@ -1,5 +1,7 @@
 import type { Env } from "./types/env";
 import { logEvent, type DomainEvent } from "./services/event-bus";
+import { advanceWorkflow } from "./services/approval/engine";
+import { createAiGateHandler } from "./services/ai-slot";
 
 const nowIso = () => new Date().toISOString();
 
@@ -165,6 +167,104 @@ const handleApprovalRejected = async (
   }
 };
 
+const summarizeAiGateResult = (resultJson: string | null): string => {
+  if (!resultJson) return "AI关卡已执行";
+  try {
+    const parsed = JSON.parse(resultJson) as {
+      output?: string;
+      metadata?: { comment?: string; summary?: string };
+    };
+    return (
+      parsed.metadata?.comment ||
+      parsed.metadata?.summary ||
+      parsed.output ||
+      "AI关卡已执行"
+    );
+  } catch {
+    return "AI关卡已执行";
+  }
+};
+
+const handleAiGateTaskCompleted = async (
+  env: Env,
+  taskId: number
+): Promise<void> => {
+  const task = await env.DB.prepare(
+    "SELECT * FROM task_queue WHERE id = ?"
+  )
+    .bind(taskId)
+    .first<{
+      id: number;
+      task_type: string;
+      biz_id: number;
+      payload_json: string | null;
+      result_json: string | null;
+    }>();
+
+  if (!task || task.task_type !== "approval_ai_gate") return;
+
+  let nodeKey: string | null = null;
+  if (task.payload_json) {
+    try {
+      const payload = JSON.parse(task.payload_json) as { node_key?: string };
+      nodeKey = payload.node_key ?? null;
+    } catch {
+      nodeKey = null;
+    }
+  }
+
+  const node = nodeKey
+    ? await env.DB.prepare(
+        `SELECT * FROM approval_node_instance
+         WHERE instance_id = ?
+           AND node_type = 'ai_gate'
+           AND node_key = ?
+           AND status = 'in_progress'
+         ORDER BY id DESC
+         LIMIT 1`
+      )
+        .bind(task.biz_id, nodeKey)
+        .first<{ id: number; round: number }>()
+    : await env.DB.prepare(
+        `SELECT * FROM approval_node_instance
+         WHERE instance_id = ?
+           AND node_type = 'ai_gate'
+           AND status = 'in_progress'
+         ORDER BY id DESC
+         LIMIT 1`
+      )
+        .bind(task.biz_id)
+        .first<{ id: number; round: number }>();
+
+  if (!node) return;
+
+  const now = nowIso();
+  const comment = summarizeAiGateResult(task.result_json);
+  await env.DB.prepare(
+    "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+  )
+    .bind(now, now, node.id)
+    .run();
+
+  const existing = await env.DB.prepare(
+    "SELECT id FROM approval_task WHERE node_instance_id = ? AND assignee_userid = 'AI_GATE' LIMIT 1"
+  )
+    .bind(node.id)
+    .first<{ id: number }>();
+
+  if (!existing) {
+    await env.DB.prepare(
+      `INSERT INTO approval_task
+        (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(node.id, task.biz_id, "AI_GATE", "approve", comment, node.round, "completed", now, now, now)
+      .run();
+  }
+
+  await advanceWorkflow(env, task.biz_id, createAiGateHandler());
+};
+
 export const queue = async (
   batch: MessageBatch<DomainEvent>,
   env: Env
@@ -190,6 +290,10 @@ export const queue = async (
           break;
         }
         case "TASK_COMPLETED": {
+          const taskId = Number(event.payload?.task_id ?? 0);
+          if (!Number.isNaN(taskId) && taskId > 0) {
+            await handleAiGateTaskCompleted(env, taskId);
+          }
           break;
         }
         default:

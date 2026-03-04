@@ -652,6 +652,14 @@
 - 审批 API 参数扩展（biz_type/keyword/status）：`packages/web/src/api/approval.ts`
 - 审批初始化 API 封装：`packages/web/src/api/admin.ts`
 
+### 3.14 合同详情与审批AI视图增强（2026-03）
+- 合同详情页附件录入从 JSON 文本改为“拖拽上传 + 预览/下载”文件管理：`packages/web/src/views/finance/contract/detail.vue`
+- 合同详情页在审批进行中显示锁定提示，并禁用可编辑字段与保存动作：`packages/web/src/views/finance/contract/detail.vue`
+- 合同金额输入改为普通数字输入框，输入后实时显示加粗中文大写金额：`packages/web/src/views/finance/contract/detail.vue`
+- 审批详情页新增“AI审核结果”专栏（节点、状态、结论、建议、错误信息、完成时间）：`packages/web/src/views/approval/detail.vue`
+- 审批流程时间线新增“设定审批人”显示（每节点 assignee_userids 全量可见）：`packages/web/src/views/approval/detail.vue`
+- 审批详情响应类型扩展 AI关卡结果字段：`packages/web/src/api/approval.ts`、`packages/api/src/types/approval.ts`、`packages/api/src/services/approval/engine.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

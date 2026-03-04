@@ -12,7 +12,8 @@ import type {
   RouteContext,
   TemplateNodeConfig,
   InstanceConfig,
-  NodeInstanceOverride
+  NodeInstanceOverride,
+  AiGateReview
 } from "../../types/approval";
 import { resolveTemplate } from "./router";
 import { parseTemplate, getNextNodeKey, type ParsedNode, type ParsedTemplate } from "./template-parser";
@@ -79,6 +80,60 @@ const getTimeoutHours = (
     return nodeConfig.timeout_hours;
   }
   return null;
+};
+
+type AiGateTaskResult = {
+  output?: string;
+  metadata?: {
+    summary?: string;
+    comment?: string;
+    recommendations?: unknown;
+    outcome?: unknown;
+  };
+};
+
+const parseAiGateResult = (
+  raw: string | null
+): {
+  summary: string | null;
+  recommendations: string[];
+  outcome: "approve" | "reject" | null;
+  comment: string | null;
+} => {
+  if (!raw) {
+    return {
+      summary: null,
+      recommendations: [],
+      outcome: null,
+      comment: null
+    };
+  }
+
+  try {
+    const parsed = JSON.parse(raw) as AiGateTaskResult;
+    const recommendationsRaw = parsed.metadata?.recommendations;
+    const recommendations = Array.isArray(recommendationsRaw)
+      ? recommendationsRaw.filter((item): item is string => typeof item === "string")
+      : [];
+    const outcomeRaw = parsed.metadata?.outcome;
+    const outcome =
+      outcomeRaw === "approve" || outcomeRaw === "reject"
+        ? outcomeRaw
+        : null;
+    return {
+      summary: parsed.metadata?.summary ?? parsed.output ?? null,
+      recommendations,
+      outcome,
+      comment: parsed.metadata?.comment ?? null
+    };
+  } catch {
+    return {
+      summary: null,
+      recommendations: [],
+      outcome: null,
+      comment: null
+    };
+  }
 };
 
 // ─── Submit ──────────
@@ -154,6 +209,26 @@ export const submitForApproval = async (
         assigneeUserids, timeoutHours, i, now, now
       )
       .run();
+  }
+
+  if (aiGateHandler) {
+    for (const nodeKey of parsedTemplate.nodeOrder) {
+      const node = parsedTemplate.nodes.get(nodeKey);
+      if (!node || node.type !== "ai_gate") continue;
+      const aiSlotRoute =
+        typeof node.config.ai_slot_id === "string" && node.config.ai_slot_id.trim()
+          ? node.config.ai_slot_id.trim()
+          : "approval_ai_gate";
+      await aiGateHandler.createAiTask(env, {
+        biz_type: aiSlotRoute,
+        biz_id: instanceId as number,
+        payload: {
+          node_key: nodeKey,
+          ai_slot_id: node.config.ai_slot_id,
+          instance_id: instanceId
+        }
+      });
+    }
   }
 
   // 5. Initialize first node
@@ -325,13 +400,14 @@ export const advanceWorkflow = async (
     throw new Error(`Next node instance not found for key: ${nextKey}`);
   }
 
-  // Mark next node in_progress
-  await env.DB.prepare(
-    `UPDATE approval_node_instance SET status = 'in_progress', started_at = ?, updated_at = ?
-     WHERE id = ?`
-  )
-    .bind(now, now, nextNodeInst.id)
-    .run();
+  if (nextNodeInst.status !== "completed") {
+    await env.DB.prepare(
+      `UPDATE approval_node_instance SET status = 'in_progress', started_at = ?, updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(now, now, nextNodeInst.id)
+      .run();
+  }
 
   // Update instance current_node_key
   await env.DB.prepare(
@@ -639,6 +715,56 @@ export const getInstanceDetail = async (
 
   const initiatorActions = actionRows.results ?? [];
 
+  const aiGateTaskRows = await env.DB.prepare(
+    `SELECT id, payload_json, status, result_json, error_message, created_at, completed_at
+     FROM task_queue
+     WHERE task_type = 'approval_ai_gate' AND biz_id = ?
+     ORDER BY created_at DESC`
+  )
+    .bind(instanceId)
+    .all<{
+      id: number;
+      payload_json: string | null;
+      status: string;
+      result_json: string | null;
+      error_message: string | null;
+      created_at: string;
+      completed_at: string | null;
+    }>();
+
+  const aiGateReviews: AiGateReview[] = (aiGateTaskRows.results ?? []).map((row) => {
+    let nodeKey: string | null = null;
+    let aiSlotId: string | null = null;
+    if (row.payload_json) {
+      try {
+        const payload = JSON.parse(row.payload_json) as {
+          node_key?: unknown;
+          ai_slot_id?: unknown;
+        };
+        nodeKey = typeof payload.node_key === "string" ? payload.node_key : null;
+        aiSlotId = typeof payload.ai_slot_id === "string" ? payload.ai_slot_id : null;
+      } catch {
+        nodeKey = null;
+        aiSlotId = null;
+      }
+    }
+
+    const parsedResult = parseAiGateResult(row.result_json);
+    return {
+      task_id: row.id,
+      node_key: nodeKey,
+      ai_slot_id: aiSlotId,
+      status: row.status,
+      summary: parsedResult.summary,
+      recommendations: parsedResult.recommendations,
+      outcome: parsedResult.outcome,
+      comment: parsedResult.comment,
+      error_message: row.error_message,
+      created_at: row.created_at,
+      completed_at: row.completed_at
+    };
+  });
+
   // Determine available actions
   const availableActions = determineAvailableActions(instance, tasks, userId);
 
@@ -649,6 +775,7 @@ export const getInstanceDetail = async (
     tasks,
     transfers,
     initiator_actions: initiatorActions,
+    ai_gate_reviews: aiGateReviews,
     available_actions: availableActions
   };
 };

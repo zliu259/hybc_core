@@ -2,7 +2,7 @@ import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
-import { createTask } from "../services/ai-slot";
+import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
 import type { Env } from "../types/env";
@@ -558,7 +558,8 @@ warehouseRoutes.post(
         },
         instance_config: body.instance_config
       },
-      auth.sub
+      auth.sub,
+      createAiGateHandler()
     );
 
     await c.env.DB.prepare(

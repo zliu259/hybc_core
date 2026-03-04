@@ -16,7 +16,7 @@ import type { InstanceConfig } from "../types/approval";
 import { generateSerial } from "../services/serial";
 import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
-import { createTask } from "../services/ai-slot";
+import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 
 const nowIso = () => new Date().toISOString();
@@ -499,7 +499,8 @@ paymentRoutes.post(
         },
         instance_config: body.instance_config
       },
-      auth.sub
+      auth.sub,
+      createAiGateHandler()
     );
 
     await c.env.DB.prepare(

@@ -2,7 +2,7 @@ import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
-import { createTask } from "../services/ai-slot";
+import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { publishEvent } from "../services/event-bus";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
@@ -722,7 +722,8 @@ reimbursementRoutes.post(
         },
         instance_config: body.instance_config
       },
-      auth.sub
+      auth.sub,
+      createAiGateHandler()
     );
 
     const now = nowIso();

@@ -95,6 +95,55 @@ const createTasksForAssignees = async (
   }
 };
 
+const findAiGateTask = async (
+  env: Env,
+  instanceId: number,
+  nodeKey: string
+): Promise<{
+  id: number;
+  status: string;
+  result_json: string | null;
+  error_message: string | null;
+} | null> => {
+  return await env.DB.prepare(
+    `SELECT id, status, result_json, error_message
+     FROM task_queue
+     WHERE task_type = 'approval_ai_gate'
+       AND biz_id = ?
+       AND json_extract(payload_json, '$.node_key') = ?
+     ORDER BY id DESC
+     LIMIT 1`
+  )
+    .bind(instanceId, nodeKey)
+    .first<{
+      id: number;
+      status: string;
+      result_json: string | null;
+      error_message: string | null;
+    }>();
+};
+
+const summarizeAiResult = (
+  resultJson: string | null,
+  fallback: string
+): string => {
+  if (!resultJson) return fallback;
+  try {
+    const parsed = JSON.parse(resultJson) as {
+      output?: string;
+      metadata?: { comment?: string; summary?: string };
+    };
+    return (
+      parsed.metadata?.comment ||
+      parsed.metadata?.summary ||
+      parsed.output ||
+      fallback
+    );
+  } catch {
+    return fallback;
+  }
+};
+
 // ─── Sequential Executor ──────────
 
 class SequentialExecutor implements NodeExecutor {
@@ -365,7 +414,68 @@ class AiGateExecutor implements NodeExecutor {
     instanceId: number
   ): Promise<void> {
     if (_aiGateHandler) {
-      // Create AI task via the handler
+      const existingTask = await findAiGateTask(env, instanceId, nodeInstance.node_key);
+      if (existingTask?.status === "completed") {
+        const now = nowIso();
+        const comment = summarizeAiResult(existingTask.result_json, "AI关卡已完成");
+        await env.DB.prepare(
+          "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(now, now, nodeInstance.id)
+          .run();
+        await env.DB.prepare(
+          `INSERT INTO approval_task
+            (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(
+            nodeInstance.id,
+            instanceId,
+            "AI_GATE",
+            "approve",
+            comment,
+            nodeInstance.round,
+            "completed",
+            now,
+            now,
+            now
+          )
+          .run();
+        return;
+      }
+
+      if (existingTask?.status === "failed" || existingTask?.status === "timeout") {
+        const now = nowIso();
+        await env.DB.prepare(
+          "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(now, now, nodeInstance.id)
+          .run();
+        await env.DB.prepare(
+          `INSERT INTO approval_task
+            (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(
+            nodeInstance.id,
+            instanceId,
+            "AI_GATE",
+            "approve",
+            existingTask.error_message || "AI关卡任务失败，流程继续",
+            nodeInstance.round,
+            "completed",
+            now,
+            now,
+            now
+          )
+          .run();
+        return;
+      }
+
+      if (existingTask && ["pending", "assigned", "running"].includes(existingTask.status)) {
+        return;
+      }
+
       try {
         const aiSlotRoute =
           typeof config.ai_slot_id === "string" && config.ai_slot_id.trim()
@@ -382,7 +492,6 @@ class AiGateExecutor implements NodeExecutor {
         });
       } catch (err) {
         console.error("AI Gate task creation failed, auto-approving:", err);
-        // Fallback: auto-approve
         const now = nowIso();
         await env.DB.prepare(
           "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
@@ -391,7 +500,6 @@ class AiGateExecutor implements NodeExecutor {
           .run();
       }
     } else {
-      // No handler — auto-approve fallback
       const now = nowIso();
       await env.DB.prepare(
         "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
@@ -402,7 +510,6 @@ class AiGateExecutor implements NodeExecutor {
   }
 
   async processAction(): Promise<void> {
-    // AI gate actions are handled by the AI Slot callback
   }
 
   async isNodeComplete(
@@ -419,9 +526,7 @@ class AiGateExecutor implements NodeExecutor {
       return { complete: true, outcome: "approved" };
     }
 
-    // Check if AI handler can provide result
     if (_aiGateHandler && node) {
-      // We'd need the task_id — for now check node status
       return { complete: false, outcome: null };
     }
 

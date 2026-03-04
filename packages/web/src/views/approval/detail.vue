@@ -42,9 +42,22 @@ const roundNodes = computed(() => {
     .sort((a, b) => a.sort_order - b.sort_order);
 });
 
+const aiGateReviews = computed(() => detail.value?.ai_gate_reviews ?? []);
+
 const getNodeTasks = (nodeId: number): ApprovalTask[] => {
   if (!detail.value) return [];
   return detail.value.tasks.filter(t => t.node_instance_id === nodeId);
+};
+
+const getNodeAssignees = (assigneeUserids: string | null): string[] => {
+  if (!assigneeUserids) return [];
+  try {
+    const parsed = JSON.parse(assigneeUserids) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is string => typeof item === "string");
+  } catch {
+    return [];
+  }
 };
 
 const nodeStatusColor: Record<string, string> = {
@@ -92,6 +105,15 @@ const riskTagType: Record<string, TagType> = {
   pending: "warning",
   completed: "success",
   failed: "danger"
+};
+
+const aiGateTagType: Record<string, TagType> = {
+  pending: "warning",
+  assigned: "warning",
+  running: "warning",
+  completed: "success",
+  failed: "danger",
+  timeout: "danger"
 };
 
 const loadDetail = async () => {
@@ -327,6 +349,54 @@ onMounted(async () => {
               </el-descriptions>
             </template>
 
+            <template v-if="aiGateReviews.length > 0">
+              <el-divider>AI审核结果</el-divider>
+              <el-table :data="aiGateReviews" size="small" border>
+                <el-table-column label="节点" min-width="130">
+                  <template #default="scope">
+                    {{ scope.row.node_key || "-" }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="状态" width="110">
+                  <template #default="scope">
+                    <el-tag :type="aiGateTagType[scope.row.status] || 'info'" size="small">
+                      {{ scope.row.status }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="结论" width="120">
+                  <template #default="scope">
+                    {{ scope.row.outcome || "-" }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="总结" min-width="220">
+                  <template #default="scope">
+                    {{ scope.row.summary || scope.row.comment || "-" }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="建议" min-width="240">
+                  <template #default="scope">
+                    {{
+                      Array.isArray(scope.row.recommendations) &&
+                      scope.row.recommendations.length > 0
+                        ? scope.row.recommendations.join("；")
+                        : "-"
+                    }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="错误信息" min-width="180">
+                  <template #default="scope">
+                    {{ scope.row.error_message || "-" }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="完成时间" width="170">
+                  <template #default="scope">
+                    {{ scope.row.completed_at || "-" }}
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+
             <template v-if="detail.instance.biz_type === 'reimbursement_batch'">
               <el-divider>报销批次AI审计报告</el-divider>
               <div style="margin-bottom: 8px">
@@ -393,6 +463,13 @@ onMounted(async () => {
                       :type="node.status === 'completed' ? 'success' : 'info'"
                       >{{ toStatusLabel(node.status) }}</el-tag
                     >
+                  </div>
+                  <div style="font-size: 13px; color: #666; margin-bottom: 4px">
+                    设定审批人：
+                    <template v-if="getNodeAssignees(node.assignee_userids).length > 0">
+                      {{ getNodeAssignees(node.assignee_userids).join("、") }}
+                    </template>
+                    <template v-else>-</template>
                   </div>
                   <div
                     v-for="task in getNodeTasks(node.id)"

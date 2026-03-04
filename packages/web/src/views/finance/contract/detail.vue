@@ -1,7 +1,9 @@
 <script setup lang="ts">
+import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { formatToken, getToken } from "@/utils/auth";
 import {
   createContract,
   getAiReview,
@@ -14,6 +16,7 @@ import {
   type ContractAmountChange,
   type ContractDetail
 } from "@/api/contract";
+import { createUploadSignature } from "@/api/upload";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
@@ -41,9 +44,17 @@ const form = ref({
   handler_userid: "",
   contract_date: "",
   total_amount: 0,
-  attachments_json: "[]",
   remark: ""
 });
+
+type ContractAttachmentDraft = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+};
+
+const attachmentItems = ref<ContractAttachmentDraft[]>([]);
+const uploadingAttachment = ref(false);
 
 const aiReviewData = ref<Record<string, unknown> | null>(null);
 const aiStatus = ref("none");
@@ -56,10 +67,138 @@ const aiStatusTagType: Record<string, TagType> = {
 
 const isCreate = computed(() => route.params.id === "create");
 const contractId = computed(() => Number(route.params.id));
+const inApprovalFlow = computed(
+  () => !isCreate.value && detail.value?.status === "pending_approval"
+);
+const canEdit = computed(() => isCreate.value || !inApprovalFlow.value);
 const remainingAmount = computed(() => {
   if (!detail.value) return 0;
   return detail.value.total_amount - detail.value.paid_amount;
 });
+
+const amountInput = computed({
+  get: () =>
+    Number.isFinite(form.value.total_amount) ? String(form.value.total_amount) : "",
+  set: (value: string) => {
+    const normalized = value.trim();
+    if (!normalized) {
+      form.value.total_amount = 0;
+      return;
+    }
+    const parsed = Number.parseFloat(normalized);
+    form.value.total_amount = Number.isFinite(parsed) ? parsed : 0;
+  }
+});
+
+const amountUppercase = computed(() => toChineseAmount(form.value.total_amount));
+
+const toChineseAmount = (amount: number): string => {
+  if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
+  if (amount === 0) return "零元整";
+
+  const fractionUnits = ["角", "分"];
+  const digit = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+  const intUnits = ["", "拾", "佰", "仟"];
+  const sectionUnits = ["", "万", "亿", "兆"];
+
+  let value = Math.round(amount * 100);
+  const fraction = value % 100;
+  let result = "";
+
+  if (fraction === 0) {
+    result = "整";
+  } else {
+    const jiao = Math.floor(fraction / 10);
+    const fen = fraction % 10;
+    if (jiao > 0) result += `${digit[jiao]}${fractionUnits[0]}`;
+    if (fen > 0) result += `${digit[fen]}${fractionUnits[1]}`;
+  }
+
+  value = Math.floor(value / 100);
+  let sectionIndex = 0;
+  let intResult = "";
+
+  while (value > 0 && sectionIndex < sectionUnits.length) {
+    const sectionValue = value % 10000;
+    if (sectionValue !== 0) {
+      let sectionText = "";
+      let unitIndex = 0;
+      let section = sectionValue;
+      let zeroPending = false;
+      while (section > 0) {
+        const num = section % 10;
+        if (num === 0) {
+          if (!zeroPending && sectionText) {
+            zeroPending = true;
+            sectionText = `零${sectionText}`;
+          }
+        } else {
+          zeroPending = false;
+          sectionText = `${digit[num]}${intUnits[unitIndex]}${sectionText}`;
+        }
+        unitIndex += 1;
+        section = Math.floor(section / 10);
+      }
+      sectionText = sectionText.replace(/零+/g, "零").replace(/零$/g, "");
+      intResult = `${sectionText}${sectionUnits[sectionIndex]}${intResult}`;
+    } else if (intResult && !intResult.startsWith("零")) {
+      intResult = `零${intResult}`;
+    }
+    sectionIndex += 1;
+    value = Math.floor(value / 10000);
+  }
+
+  intResult = intResult.replace(/零+/g, "零").replace(/零([万亿兆])/g, "$1");
+  intResult = intResult.replace(/亿万/g, "亿").replace(/零$/g, "");
+  return `${intResult || "零"}元${result}`;
+};
+
+const parseAttachments = (raw: string | null | undefined): ContractAttachmentDraft[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const items: Array<ContractAttachmentDraft | null> = parsed.map(item => {
+        if (typeof item === "string") {
+          return { file_key: item, file_name: item };
+        }
+        if (item && typeof item === "object") {
+          const row = item as {
+            file_key?: string;
+            key?: string;
+            file_name?: string;
+            name?: string;
+            file_size?: number;
+            size?: number;
+          };
+          const key = row.file_key ?? row.key;
+          if (!key) return null;
+          return {
+            file_key: key,
+            file_name: row.file_name ?? row.name ?? key,
+            file_size: row.file_size ?? row.size
+          };
+        }
+        return null;
+      });
+    return items.filter((item): item is ContractAttachmentDraft => item !== null);
+  } catch {
+    return [];
+  }
+};
+
+const serializeAttachments = (): string => {
+  return JSON.stringify(
+    attachmentItems.value.map(item => ({
+      file_key: item.file_key,
+      file_name: item.file_name,
+      file_size: item.file_size ?? undefined
+    }))
+  );
+};
+
+const fileUrl = (fileKey: string) =>
+  `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
 
 const approvalDialogVisible = ref(false);
 const approvalSummary = ref("");
@@ -85,9 +224,9 @@ const loadDetail = async () => {
       handler_userid: result.data.handler_userid,
       contract_date: result.data.contract_date,
       total_amount: result.data.total_amount,
-      attachments_json: result.data.attachments_json ?? "[]",
       remark: result.data.remark ?? ""
     };
+    attachmentItems.value = parseAttachments(result.data.attachments_json);
     await loadAiReview();
   } finally {
     loading.value = false;
@@ -122,7 +261,7 @@ const onSave = async () => {
         handler_userid: form.value.handler_userid,
         contract_date: form.value.contract_date,
         total_amount: form.value.total_amount,
-        attachments_json: form.value.attachments_json,
+        attachments_json: serializeAttachments(),
         remark: form.value.remark
       });
       message("合同创建成功", { type: "success" });
@@ -135,7 +274,7 @@ const onSave = async () => {
       handler_userid: form.value.handler_userid,
       contract_date: form.value.contract_date,
       total_amount: form.value.total_amount,
-      attachments_json: form.value.attachments_json,
+      attachments_json: serializeAttachments(),
       remark: form.value.remark
     });
     message("保存成功", { type: "success" });
@@ -192,6 +331,55 @@ const onTriggerAiReview = async () => {
   await loadAiReview();
 };
 
+const uploadAttachment = async (options: UploadRequestOptions) => {
+  if (!canEdit.value) {
+    message("当前状态不允许上传附件", { type: "warning" });
+    options.onError?.(new Error("upload_not_allowed") as never);
+    return;
+  }
+
+  const rawFile = options.file;
+  uploadingAttachment.value = true;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "contract"
+    });
+
+    const uploadResp = await fetch(signRes.data.uploadUrl, {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+
+    attachmentItems.value.unshift({
+      file_key: signRes.data.key,
+      file_name: rawFile.name,
+      file_size: rawFile.size
+    });
+    message("附件上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("附件上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    uploadingAttachment.value = false;
+  }
+};
+
+const removeAttachment = (index: number) => {
+  if (!canEdit.value) return;
+  attachmentItems.value.splice(index, 1);
+};
+
 const onSubmitAmountChange = async (row: ContractAmountChange) => {
   if (isCreate.value) return;
   await submitAmountChangeApproval(contractId.value, row.id);
@@ -232,7 +420,7 @@ onMounted(async () => {
         }}</span>
         <div>
           <el-button @click="goBack">返回</el-button>
-          <el-button type="primary" :loading="saving" @click="onSave"
+          <el-button type="primary" :loading="saving" :disabled="!canEdit" @click="onSave"
             >保存</el-button
           >
           <el-button
@@ -255,7 +443,7 @@ onMounted(async () => {
 
     <el-form label-width="110px" style="max-width: 900px">
       <el-form-item label="合同方向">
-        <el-radio-group v-model="form.direction">
+        <el-radio-group v-model="form.direction" :disabled="!isCreate && !canEdit">
           <el-radio label="outbound">对外付款</el-radio>
           <el-radio label="inbound">收款</el-radio>
         </el-radio-group>
@@ -266,6 +454,7 @@ onMounted(async () => {
           filterable
           clearable
           style="width: 360px"
+          :disabled="!isCreate && !canEdit"
         >
           <el-option
             v-for="item in projects"
@@ -281,6 +470,7 @@ onMounted(async () => {
           filterable
           clearable
           style="width: 360px"
+          :disabled="!isCreate && !canEdit"
         >
           <el-option
             v-for="item in entities"
@@ -291,10 +481,10 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="对方单位">
-        <el-input v-model="form.counterparty" placeholder="请输入对方单位" />
+        <el-input v-model="form.counterparty" :disabled="!canEdit" placeholder="请输入对方单位" />
       </el-form-item>
       <el-form-item label="合同类型">
-        <el-select v-model="form.contract_type" clearable style="width: 220px">
+        <el-select v-model="form.contract_type" clearable style="width: 220px" :disabled="!canEdit">
           <el-option label="人工" value="人工" />
           <el-option label="机械" value="机械" />
           <el-option label="总包" value="总包" />
@@ -309,6 +499,7 @@ onMounted(async () => {
           filterable
           placeholder="选择公司人员"
           style="width: 360px"
+          :disabled="!canEdit"
         >
           <el-option
             v-for="item in wecomUsers"
@@ -324,28 +515,83 @@ onMounted(async () => {
           type="date"
           value-format="YYYY-MM-DD"
           placeholder="选择日期"
+          :disabled="!canEdit"
         />
       </el-form-item>
       <el-form-item label="合同金额">
-        <el-input-number
-          v-model="form.total_amount"
-          :min="0"
-          :precision="2"
-          :step="1000"
-        />
+        <div style="display: flex; align-items: center; gap: 12px; width: 100%">
+          <el-input
+            v-model="amountInput"
+            type="number"
+            placeholder="请输入金额"
+            style="max-width: 260px"
+            :disabled="!canEdit"
+          />
+          <span style="font-weight: 700; color: #6b4f2a">{{ amountUppercase }}</span>
+        </div>
       </el-form-item>
-      <el-form-item label="附件JSON">
-        <el-input
-          v-model="form.attachments_json"
-          type="textarea"
-          :rows="3"
-          placeholder='例如 ["contracts/a.pdf"]'
-        />
+      <el-form-item label="合同附件">
+        <div style="width: 100%">
+          <el-upload
+            drag
+            action="#"
+            :show-file-list="false"
+            :disabled="!canEdit || uploadingAttachment"
+            :http-request="uploadAttachment"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+          >
+            <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+            <template #tip>
+              <div class="el-upload__tip">支持常见文档和图片，上传后可预览/下载</div>
+            </template>
+          </el-upload>
+
+          <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
+            <el-table-column label="文件名" min-width="260">
+              <template #default="scope">{{ scope.row.file_name }}</template>
+            </el-table-column>
+            <el-table-column label="大小" width="120">
+              <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="220" fixed="right">
+              <template #default="scope">
+                <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                  预览
+                </el-link>
+                <el-link
+                  :href="fileUrl(scope.row.file_key)"
+                  target="_blank"
+                  type="success"
+                  style="margin-left: 12px"
+                >
+                  下载
+                </el-link>
+                <el-button
+                  link
+                  type="danger"
+                  style="margin-left: 12px"
+                  :disabled="!canEdit"
+                  @click="removeAttachment(scope.$index)"
+                >
+                  移除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </el-form-item>
       <el-form-item label="备注">
-        <el-input v-model="form.remark" type="textarea" :rows="3" />
+        <el-input v-model="form.remark" type="textarea" :rows="3" :disabled="!canEdit" />
       </el-form-item>
     </el-form>
+
+    <el-alert
+      v-if="inApprovalFlow"
+      title="当前合同处于审批流程中，详情字段已锁定"
+      type="warning"
+      :closable="false"
+      style="margin-bottom: 12px"
+    />
 
     <el-divider v-if="detail">财务摘要</el-divider>
     <el-row v-if="detail" :gutter="12" style="margin-bottom: 8px">
