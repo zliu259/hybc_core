@@ -1487,18 +1487,47 @@ adminRoutes.post(
     }
 
     if (!node) {
-      return c.json(
-        {
-          success: false,
-          error: { message: "当前实例没有可处理的进行中AI关卡节点" }
-        },
-        400
-      );
+      const aiTaskRow = await c.env.DB.prepare(
+        `SELECT node_instance_id, round
+         FROM approval_task
+         WHERE instance_id = ? AND assignee_userid = 'AI_GATE'
+         ORDER BY id DESC
+         LIMIT 1`
+      )
+        .bind(task.biz_id)
+        .first<{ node_instance_id: number; round: number }>();
+
+      if (aiTaskRow?.node_instance_id) {
+        node = await c.env.DB.prepare(
+          "SELECT id, round, status FROM approval_node_instance WHERE id = ?"
+        )
+          .bind(aiTaskRow.node_instance_id)
+          .first<{ id: number; round: number; status: string }>();
+      }
     }
 
     const now = nowIso();
 
     if (action === "comment") {
+      if (!node) {
+        await c.env.DB.prepare(
+          `UPDATE task_queue
+           SET updated_at = ?
+           WHERE id = ?`
+        )
+          .bind(now, task.id)
+          .run();
+
+        return c.json({
+          success: true,
+          data: {
+            task_id: task.id,
+            handled: "comment",
+            handled_without_node: true
+          }
+        });
+      }
+
       await c.env.DB.prepare(
         `INSERT INTO approval_task
           (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
@@ -1553,6 +1582,17 @@ adminRoutes.post(
     )
       .bind(JSON.stringify(mergedResult), now, now, task.id)
       .run();
+
+    if (!node) {
+      return c.json({
+        success: true,
+        data: {
+          task_id: task.id,
+          handled: action,
+          handled_without_node: true
+        }
+      });
+    }
 
     if (node.status !== "completed") {
       await c.env.DB.prepare(

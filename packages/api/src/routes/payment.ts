@@ -21,6 +21,13 @@ import { submitForApproval } from "../services/approval/engine";
 
 const nowIso = () => new Date().toISOString();
 
+const paymentAllowedContractStatuses: ReadonlySet<Contract["status"]> = new Set([
+  "draft",
+  "pending_review",
+  "pending_approval",
+  "active"
+]);
+
 type SubmitApprovalOptions = {
   biz_summary?: string;
   instance_config?: InstanceConfig;
@@ -270,9 +277,14 @@ paymentRoutes.post(
       );
     }
 
-    if (contract.status !== "active") {
+    if (!paymentAllowedContractStatuses.has(contract.status)) {
       return c.json(
-        { success: false, error: { message: "Contract is not active" } },
+        {
+          success: false,
+          error: {
+            message: `Contract status ${contract.status} does not allow payment request creation`
+          }
+        },
         400
       );
     }

@@ -1,6 +1,9 @@
 <script setup lang="ts">
+import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { formatToken, getToken } from "@/utils/auth";
 import { listBizThresholds } from "@/api/admin";
 import {
   createContract,
@@ -14,11 +17,13 @@ import {
   submitPaymentApproval,
   type Payee
 } from "@/api/payment";
+import { createUploadSignature } from "@/api/upload";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "SmartPaymentWizard" });
 
+const router = useRouter();
 const loading = ref(false);
 const checking = ref(false);
 const submitting = ref(false);
@@ -60,6 +65,17 @@ const firstPaymentForm = ref({
   expected_payment_date: ""
 });
 
+type AttachmentDraft = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+};
+
+const contractAttachments = ref<AttachmentDraft[]>([]);
+const directPaymentAttachments = ref<AttachmentDraft[]>([]);
+const firstPaymentAttachments = ref<AttachmentDraft[]>([]);
+const uploadingAttachment = ref(false);
+
 let checkTimer: ReturnType<typeof setTimeout> | null = null;
 
 const thresholdHint = computed(() =>
@@ -72,6 +88,62 @@ const selectedContractCounterparty = computed(() => {
   const target = payees.value.find(item => item.id === contractForm.value.payee_id);
   return target ? target.name : "";
 });
+
+const serializeAttachments = (items: AttachmentDraft[]): string => {
+  return JSON.stringify(
+    items.map(item => ({
+      file_key: item.file_key,
+      file_name: item.file_name,
+      file_size: item.file_size ?? undefined
+    }))
+  );
+};
+
+const uploadAttachment = async (
+  options: UploadRequestOptions,
+  category: "contract" | "payment",
+  target: AttachmentDraft[]
+) => {
+  uploadingAttachment.value = true;
+  const rawFile = options.file;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category
+    });
+
+    const uploadResp = await fetch(signRes.data.uploadUrl, {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+
+    target.unshift({
+      file_key: signRes.data.key,
+      file_name: rawFile.name,
+      file_size: rawFile.size
+    });
+    message("附件上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("附件上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    uploadingAttachment.value = false;
+  }
+};
+
+const removeAttachment = (target: AttachmentDraft[], index: number) => {
+  target.splice(index, 1);
+};
 
 const loadMeta = async () => {
   const [thresholdRes, payeeRes, contractRes] = await Promise.all([
@@ -116,6 +188,10 @@ const submitDirectPayment = async () => {
     message("请先填写金额、合同、项目、收款人", { type: "warning" });
     return;
   }
+  if (!directPaymentAttachments.value.length) {
+    message("请先上传付款附件后再发起", { type: "warning" });
+    return;
+  }
 
   submitting.value = true;
   try {
@@ -127,13 +203,15 @@ const submitDirectPayment = async () => {
       payee_id: directForm.value.payee_id,
       amount: amountInput.value,
       content: directForm.value.content || "智能发单台创建",
-      payment_method: directForm.value.payment_method
+      payment_method: directForm.value.payment_method,
+      attachments_json: serializeAttachments(directPaymentAttachments.value)
     });
     await submitPaymentApproval(created.data.id, {
       biz_summary: "智能发单台-直接付款",
       instance_config: { note: "阈值内直接付款" }
     });
     message("付款申请已创建并提交审批", { type: "success" });
+    router.replace(`/finance/payment/detail/${created.data.id}`);
   } finally {
     submitting.value = false;
   }
@@ -149,6 +227,14 @@ const submitContractFlow = async () => {
     message("请先填写合同关键字段", { type: "warning" });
     return;
   }
+  if (!contractAttachments.value.length) {
+    message("请先上传合同附件后再发起", { type: "warning" });
+    return;
+  }
+  if (withFirstPayment.value && !firstPaymentAttachments.value.length) {
+    message("已开启首笔预付款，请先上传首笔付款附件", { type: "warning" });
+    return;
+  }
 
   submitting.value = true;
   try {
@@ -161,6 +247,7 @@ const submitContractFlow = async () => {
       handler_userid: contractForm.value.handler_userid,
       contract_date: contractForm.value.contract_date,
       total_amount: amountInput.value,
+      attachments_json: serializeAttachments(contractAttachments.value),
       remark: contractForm.value.remark
     });
 
@@ -174,7 +261,8 @@ const submitContractFlow = async () => {
         payee_id: firstPaymentForm.value.payee_id,
         amount: amountInput.value,
         content: firstPaymentForm.value.content,
-        payment_method: firstPaymentForm.value.payment_method
+        payment_method: firstPaymentForm.value.payment_method,
+        attachments_json: serializeAttachments(firstPaymentAttachments.value)
       });
       paymentId = payment.data.id;
     }
@@ -194,6 +282,7 @@ const submitContractFlow = async () => {
     message("流程已提交：合同审批" + (paymentId ? " + 首笔付款审批" : ""), {
       type: "success"
     });
+    router.replace(`/finance/contract/detail/${contract.data.id}`);
   } finally {
     submitting.value = false;
   }
@@ -295,6 +384,39 @@ onMounted(async () => {
           <el-form-item label="付款事由">
             <el-input v-model="directForm.content" />
           </el-form-item>
+          <el-form-item label="付款附件" required>
+            <div style="width: 100%">
+              <el-upload
+                drag
+                action="#"
+                :show-file-list="false"
+                :disabled="uploadingAttachment"
+                :http-request="(options: UploadRequestOptions) => uploadAttachment(options, 'payment', directPaymentAttachments)"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+              >
+                <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+              </el-upload>
+              <el-table :data="directPaymentAttachments" size="small" style="margin-top: 12px">
+                <el-table-column label="文件名" min-width="260">
+                  <template #default="scope">{{ scope.row.file_name }}</template>
+                </el-table-column>
+                <el-table-column label="大小" width="120">
+                  <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="120" fixed="right">
+                  <template #default="scope">
+                    <el-button
+                      link
+                      type="danger"
+                      @click="removeAttachment(directPaymentAttachments, scope.$index)"
+                    >
+                      移除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-form-item>
         </el-form>
         <el-button type="primary" :loading="submitting" @click="submitDirectPayment">
           创建付款并提审
@@ -364,6 +486,39 @@ onMounted(async () => {
           <el-form-item label="备注">
             <el-input v-model="contractForm.remark" type="textarea" :rows="2" />
           </el-form-item>
+          <el-form-item label="合同附件" required>
+            <div style="width: 100%">
+              <el-upload
+                drag
+                action="#"
+                :show-file-list="false"
+                :disabled="uploadingAttachment"
+                :http-request="(options: UploadRequestOptions) => uploadAttachment(options, 'contract', contractAttachments)"
+                accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+              >
+                <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+              </el-upload>
+              <el-table :data="contractAttachments" size="small" style="margin-top: 12px">
+                <el-table-column label="文件名" min-width="260">
+                  <template #default="scope">{{ scope.row.file_name }}</template>
+                </el-table-column>
+                <el-table-column label="大小" width="120">
+                  <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="120" fixed="right">
+                  <template #default="scope">
+                    <el-button
+                      link
+                      type="danger"
+                      @click="removeAttachment(contractAttachments, scope.$index)"
+                    >
+                      移除
+                    </el-button>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </div>
+          </el-form-item>
         </el-form>
 
         <el-divider />
@@ -388,6 +543,39 @@ onMounted(async () => {
                 type="date"
                 value-format="YYYY-MM-DD"
               />
+            </el-form-item>
+            <el-form-item label="首笔付款附件" required>
+              <div style="width: 100%">
+                <el-upload
+                  drag
+                  action="#"
+                  :show-file-list="false"
+                  :disabled="uploadingAttachment"
+                  :http-request="(options: UploadRequestOptions) => uploadAttachment(options, 'payment', firstPaymentAttachments)"
+                  accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+                >
+                  <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+                </el-upload>
+                <el-table :data="firstPaymentAttachments" size="small" style="margin-top: 12px">
+                  <el-table-column label="文件名" min-width="260">
+                    <template #default="scope">{{ scope.row.file_name }}</template>
+                  </el-table-column>
+                  <el-table-column label="大小" width="120">
+                    <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="120" fixed="right">
+                    <template #default="scope">
+                      <el-button
+                        link
+                        type="danger"
+                        @click="removeAttachment(firstPaymentAttachments, scope.$index)"
+                      >
+                        移除
+                      </el-button>
+                    </template>
+                  </el-table-column>
+                </el-table>
+              </div>
             </el-form-item>
           </template>
         </el-form>

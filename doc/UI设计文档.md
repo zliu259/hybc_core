@@ -669,6 +669,11 @@
 - Runner 监控页新增“手动激活节点”操作（超管）：`packages/web/src/views/ai/nodes.vue`
 - 新增 Runner 手动激活 API：`packages/api/src/routes/admin.ts`
 
+### 3.16 智能发单台附件必传与成功回跳（2026-03）
+- 智能发单台新增合同附件、付款附件上传区，支持拖拽上传并在页内展示附件清单：`packages/web/src/views/finance/payment/wizard.vue`
+- 发起校验收敛：合同流必须存在合同附件；直接付款必须存在付款附件；启用“首笔预付款”时必须存在首笔付款附件：`packages/web/src/views/finance/payment/wizard.vue`
+- 提交流程保持“创建并提审”闭环后自动跳转到刚创建的详情页（合同跳转合同详情，付款跳转付款详情）：`packages/web/src/views/finance/payment/wizard.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
