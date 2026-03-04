@@ -29,7 +29,7 @@ import {
   type EntityBankAccount
 } from "@/api/entity";
 import { listProjects, type Project } from "@/api/project";
-import { createUploadSignature } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
 
@@ -507,7 +507,7 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       category: "payment"
     });
 
-    const uploadResp = await fetch(signRes.data.uploadUrl, {
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": rawFile.type || "application/octet-stream",

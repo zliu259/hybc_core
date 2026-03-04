@@ -16,7 +16,7 @@ import {
   type ContractAmountChange,
   type ContractDetail
 } from "@/api/contract";
-import { createUploadSignature } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   listEntities,
   listEntityBankAccounts,
@@ -415,7 +415,7 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       category: "contract"
     });
 
-    const uploadResp = await fetch(signRes.data.uploadUrl, {
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": rawFile.type || "application/octet-stream",

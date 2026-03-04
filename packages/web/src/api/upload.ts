@@ -1,5 +1,17 @@
 import { http } from "@/utils/http";
 
+const toAbsoluteApiUrl = (url: string): string => {
+  if (!url) return url;
+  if (/^https?:\/\//i.test(url)) return url;
+
+  const base = import.meta.env.VITE_API_BASE_URL || "";
+  if (!base) return url;
+
+  const normalizedBase = base.replace(/\/$/, "");
+  const normalizedPath = url.startsWith("/") ? url : `/${url}`;
+  return `${normalizedBase}${normalizedPath}`;
+};
+
 export const createUploadSignature = (data: {
   fileName: string;
   contentType?: string;
@@ -17,3 +29,5 @@ export const createUploadSignature = (data: {
     };
   }>("post", "/api/v1/upload/sign", { data });
 };
+
+export const resolveUploadUrl = (url: string) => toAbsoluteApiUrl(url);

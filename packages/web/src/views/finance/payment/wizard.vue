@@ -17,7 +17,7 @@ import {
   submitPaymentApproval,
   type Payee
 } from "@/api/payment";
-import { createUploadSignature } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
@@ -196,7 +196,7 @@ const uploadAttachment = async (
       category
     });
 
-    const uploadResp = await fetch(signRes.data.uploadUrl, {
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": rawFile.type || "application/octet-stream",

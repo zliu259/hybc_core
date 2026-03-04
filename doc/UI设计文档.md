@@ -688,6 +688,10 @@
 - JSON 高级模式仅对 `super_admin` 暴露，其他角色仅可使用可视化模式：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 - 可视化模式新增“审批说明常用模板”下拉，支持一键填充审批说明文本以提升提审效率：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 
+### 3.19 对外付款附件上传链路修复（2026-03）
+- 对外付款相关页面的附件上传 URL 统一通过 API 基地址解析，避免在生产环境命中前端网关导致 `PUT` 请求 `405`：`packages/web/src/api/upload.ts`
+- 对外付款页（付款详情、智能发单台、合同详情）上传逻辑统一改为使用解析后的绝对上传地址：`packages/web/src/views/finance/payment/detail.vue`、`packages/web/src/views/finance/payment/wizard.vue`、`packages/web/src/views/finance/contract/detail.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
