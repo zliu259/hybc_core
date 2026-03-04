@@ -225,7 +225,11 @@ export const submitForApproval = async (
         payload: {
           node_key: nodeKey,
           ai_slot_id: node.config.ai_slot_id,
-          instance_id: instanceId
+          instance_id: instanceId,
+          biz_type: request.biz_type,
+          biz_id: request.biz_id,
+          biz_summary: request.biz_summary,
+          context: normalizedInstanceConfig?.route_context ?? request.context ?? {}
         }
       });
     }

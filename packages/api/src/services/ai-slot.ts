@@ -266,7 +266,19 @@ export const resolvePrompt = async (
   const renderTemplate = (tmpl: string): string => {
     return tmpl.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
       const value = variables[key];
-      return value !== undefined ? String(value) : `{{${key}}}`;
+      if (value === undefined) return `{{${key}}}`;
+      if (
+        typeof value === "string" ||
+        typeof value === "number" ||
+        typeof value === "boolean"
+      ) {
+        return String(value);
+      }
+      try {
+        return JSON.stringify(value);
+      } catch {
+        return String(value);
+      }
     });
   };
 

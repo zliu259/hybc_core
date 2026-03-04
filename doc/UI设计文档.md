@@ -692,6 +692,24 @@
 - 对外付款相关页面的附件上传 URL 统一通过 API 基地址解析，避免在生产环境命中前端网关导致 `PUT` 请求 `405`：`packages/web/src/api/upload.ts`
 - 对外付款页（付款详情、智能发单台、合同详情）上传逻辑统一改为使用解析后的绝对上传地址：`packages/web/src/views/finance/payment/detail.vue`、`packages/web/src/views/finance/payment/wizard.vue`、`packages/web/src/views/finance/contract/detail.vue`
 
+### 3.20 审批台申请详情增强与AI关卡上下文修复（2026-03）
+- 审批详情页新增按业务类型展示申请明细：
+  - 付款申请：显示付款关键字段与附件清单（可直接查看附件）
+  - 合同申请：显示合同关键字段与附件清单
+  - 报销批次：显示批次关键字段与明细项列表
+  对应文件：`packages/web/src/views/approval/detail.vue`
+- AI关卡任务载荷补齐业务上下文与申请摘要，避免模板变量 `context` 为空导致模型拒绝判断：`packages/api/src/services/approval/engine.ts`、`packages/api/src/services/approval/executors.ts`
+- 提交审批时后端补齐结构化上下文（申请内容、金额、对象信息、附件元信息）供 AI 关卡判定使用：`packages/api/src/routes/payment.ts`、`packages/api/src/routes/contract.ts`、`packages/api/src/routes/reimbursement.ts`
+
+### 3.21 AI关卡附件正文理解增强（2026-03）
+- `approval_ai_gate` 任务启用附件正文处理链路：与 `contract_review` 一致支持附件下载、正文抽取与视觉回退：`task-runner/runner/executor.py`
+- 文件处理策略：
+  - `docx`：直接提取段落文本
+  - `doc`：二进制文本片段抽取（可读内容提取）
+  - `pdf`：优先提取可选中文本，文本不足时转图片页走视觉输入
+  - 图片：直接以 data URL 作为视觉输入
+- 提示词变量渲染增强：对象变量（如 `context`）改为 JSON 字符串渲染，避免模板出现 `[object Object]`：`packages/api/src/services/ai-slot.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

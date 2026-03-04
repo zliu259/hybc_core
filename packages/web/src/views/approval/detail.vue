@@ -14,8 +14,17 @@ import {
   type ApprovalDetailResponse,
   type ApprovalTask
 } from "@/api/approval";
-import { getRiskReport } from "@/api/payment";
-import { getBatchAuditReport } from "@/api/reimbursement";
+import {
+  getRiskReport,
+  getPaymentRequest,
+  type PaymentRequestDetail
+} from "@/api/payment";
+import {
+  getBatchAuditReport,
+  getReimbursementBatch,
+  type ReimbursementBatchDetail
+} from "@/api/reimbursement";
+import { getContract, type ContractDetail } from "@/api/contract";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
@@ -100,6 +109,9 @@ const reimbursementAuditStatus = ref("none");
 const reimbursementAuditReport = ref<Record<string, unknown> | string | null>(
   null
 );
+const paymentDetail = ref<PaymentRequestDetail | null>(null);
+const contractDetail = ref<ContractDetail | null>(null);
+const reimbursementBatchDetail = ref<ReimbursementBatchDetail | null>(null);
 const riskTagType: Record<string, TagType> = {
   none: "info",
   pending: "warning",
@@ -116,21 +128,87 @@ const aiGateTagType: Record<string, TagType> = {
   timeout: "danger"
 };
 
+type AttachmentItem = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+};
+
+const parseAttachments = (raw: string | null | undefined): AttachmentItem[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const list: Array<AttachmentItem | null> = parsed.map(item => {
+      if (typeof item === "string") {
+        return { file_key: item, file_name: item };
+      }
+      if (item && typeof item === "object") {
+        const row = item as {
+          file_key?: string;
+          key?: string;
+          file_name?: string;
+          name?: string;
+          file_size?: number;
+          size?: number;
+        };
+        const key = row.file_key ?? row.key;
+        if (!key) return null;
+        return {
+          file_key: key,
+          file_name: row.file_name ?? row.name ?? key,
+          file_size: row.file_size ?? row.size
+        };
+      }
+      return null;
+    });
+    return list.filter((item): item is AttachmentItem => item !== null);
+  } catch {
+    return [];
+  }
+};
+
+const paymentAttachments = computed(() =>
+  parseAttachments(paymentDetail.value?.attachments_json)
+);
+const contractAttachments = computed(() =>
+  parseAttachments(contractDetail.value?.attachments_json)
+);
+const fileUrl = (fileKey: string) =>
+  `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
+
 const loadDetail = async () => {
   loading.value = true;
   try {
     const result = await getApprovalDetail(instanceId.value);
     detail.value = result.data;
     selectedRound.value = result.data.instance.current_round;
+    paymentDetail.value = null;
+    contractDetail.value = null;
+    reimbursementBatchDetail.value = null;
 
-    if (result.data.instance.biz_type === "payment_request") {
-      const rr = await getRiskReport(result.data.instance.biz_id);
+    const bizType = result.data.instance.biz_type;
+    const bizId = result.data.instance.biz_id;
+
+    if (bizType === "payment_request") {
+      const paymentRes = await getPaymentRequest(bizId);
+      paymentDetail.value = paymentRes.data;
+    } else if (bizType === "outbound_contract" || bizType === "inbound_contract") {
+      const contractRes = await getContract(bizId);
+      contractDetail.value = contractRes.data;
+    } else if (bizType === "reimbursement_batch") {
+      const reimbursementRes = await getReimbursementBatch(bizId);
+      reimbursementBatchDetail.value = reimbursementRes.data;
+    }
+
+    if (bizType === "payment_request") {
+      const rr = await getRiskReport(bizId);
       paymentRiskStatus.value = rr.data.status;
       paymentRiskReport.value = rr.data.result;
       reimbursementAuditStatus.value = "none";
       reimbursementAuditReport.value = null;
-    } else if (result.data.instance.biz_type === "reimbursement_batch") {
-      const rr = await getBatchAuditReport(result.data.instance.biz_id);
+    } else if (bizType === "reimbursement_batch") {
+      const rr = await getBatchAuditReport(bizId);
       reimbursementAuditStatus.value = rr.data.status;
       reimbursementAuditReport.value = rr.data.result;
       paymentRiskStatus.value = "none";
@@ -347,6 +425,95 @@ onMounted(async () => {
                   }}
                 </el-descriptions-item>
               </el-descriptions>
+            </template>
+
+            <template v-if="paymentDetail">
+              <el-divider>申请明细（付款）</el-divider>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="流水号">{{ paymentDetail.serial_no }}</el-descriptions-item>
+                <el-descriptions-item label="关联合同">{{ paymentDetail.contract_id }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{ paymentDetail.project_id }}</el-descriptions-item>
+                <el-descriptions-item label="收款方">{{ paymentDetail.payee?.name || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="收款账号" :span="2">
+                  {{
+                    paymentDetail.payee
+                      ? `${paymentDetail.payee.bank_name} / ${paymentDetail.payee.bank_account}`
+                      : '-'
+                  }}
+                </el-descriptions-item>
+                <el-descriptions-item label="申请金额">{{ paymentDetail.amount_cn }}</el-descriptions-item>
+                <el-descriptions-item label="付款类别">{{ paymentDetail.category }}</el-descriptions-item>
+                <el-descriptions-item label="预计付款日">{{ paymentDetail.expected_payment_date }}</el-descriptions-item>
+                <el-descriptions-item label="付款方式">{{ paymentDetail.payment_method }}</el-descriptions-item>
+                <el-descriptions-item label="付款内容" :span="2">{{ paymentDetail.content }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{ paymentDetail.remark || '-' }}</el-descriptions-item>
+              </el-descriptions>
+              <el-table :data="paymentAttachments" size="small" border style="margin-top: 12px">
+                <el-table-column label="附件名" min-width="240">
+                  <template #default="scope">{{ scope.row.file_name }}</template>
+                </el-table-column>
+                <el-table-column label="大小" width="120">
+                  <template #default="scope">{{ scope.row.file_size ?? '-' }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="120">
+                  <template #default="scope">
+                    <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                      查看
+                    </el-link>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+
+            <template v-if="contractDetail">
+              <el-divider>申请明细（合同）</el-divider>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="合同号">{{ contractDetail.contract_no }}</el-descriptions-item>
+                <el-descriptions-item label="方向">{{ contractDetail.direction }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{ contractDetail.project_id }}</el-descriptions-item>
+                <el-descriptions-item label="我方主体">{{ contractDetail.entity_id }}</el-descriptions-item>
+                <el-descriptions-item label="对方单位">{{ contractDetail.counterparty }}</el-descriptions-item>
+                <el-descriptions-item label="合同类型">{{ contractDetail.contract_type }}</el-descriptions-item>
+                <el-descriptions-item label="经办人">{{ contractDetail.handler_userid }}</el-descriptions-item>
+                <el-descriptions-item label="合同日期">{{ contractDetail.contract_date }}</el-descriptions-item>
+                <el-descriptions-item label="合同金额">{{ contractDetail.total_amount }}</el-descriptions-item>
+                <el-descriptions-item label="已付金额">{{ contractDetail.paid_amount }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{ contractDetail.remark || '-' }}</el-descriptions-item>
+              </el-descriptions>
+              <el-table :data="contractAttachments" size="small" border style="margin-top: 12px">
+                <el-table-column label="附件名" min-width="240">
+                  <template #default="scope">{{ scope.row.file_name }}</template>
+                </el-table-column>
+                <el-table-column label="大小" width="120">
+                  <template #default="scope">{{ scope.row.file_size ?? '-' }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="120">
+                  <template #default="scope">
+                    <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                      查看
+                    </el-link>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+
+            <template v-if="reimbursementBatchDetail">
+              <el-divider>申请明细（报销批次）</el-divider>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="批次号">{{ reimbursementBatchDetail.batch_no }}</el-descriptions-item>
+                <el-descriptions-item label="状态">{{ reimbursementBatchDetail.status }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{ reimbursementBatchDetail.project_id }}</el-descriptions-item>
+                <el-descriptions-item label="申请人">{{ reimbursementBatchDetail.applicant_userid }}</el-descriptions-item>
+                <el-descriptions-item label="总金额">{{ reimbursementBatchDetail.total_amount }}</el-descriptions-item>
+                <el-descriptions-item label="单据数">{{ reimbursementBatchDetail.item_count }}</el-descriptions-item>
+              </el-descriptions>
+              <el-table :data="reimbursementBatchDetail.items" size="small" border style="margin-top: 12px">
+                <el-table-column prop="envelope_no" label="报销单号" min-width="150" />
+                <el-table-column prop="invoice_no" label="发票号" min-width="150" />
+                <el-table-column prop="amount" label="金额" width="120" />
+                <el-table-column prop="category" label="类别" width="120" />
+                <el-table-column prop="description" label="说明" min-width="220" />
+              </el-table>
             </template>
 
             <template v-if="aiGateReviews.length > 0">

@@ -40,6 +40,53 @@ type MarkPaidBody = {
   remark?: string;
 };
 
+type AttachmentMeta = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+  file_url: string;
+};
+
+const parseAttachmentMeta = (raw: string | null): AttachmentMeta[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const items: Array<AttachmentMeta | null> = parsed.map(item => {
+      if (typeof item === "string") {
+        return {
+          file_key: item,
+          file_name: item,
+          file_size: null,
+          file_url: `/api/v1/upload/object/${encodeURIComponent(item)}`
+        };
+      }
+      if (item && typeof item === "object") {
+        const row = item as {
+          file_key?: string;
+          key?: string;
+          file_name?: string;
+          name?: string;
+          file_size?: number;
+          size?: number;
+        };
+        const key = row.file_key ?? row.key;
+        if (!key) return null;
+        return {
+          file_key: key,
+          file_name: row.file_name ?? row.name ?? key,
+          file_size: row.file_size ?? row.size ?? null,
+          file_url: `/api/v1/upload/object/${encodeURIComponent(key)}`
+        };
+      }
+      return null;
+    });
+    return items.filter((item): item is AttachmentMeta => item !== null);
+  } catch {
+    return [];
+  }
+};
+
 export const paymentRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -485,14 +532,27 @@ paymentRoutes.post(
     }
 
     const contract = await c.env.DB.prepare(
-      "SELECT total_amount, paid_amount, entity_id FROM contract WHERE id = ?"
+      "SELECT contract_no, counterparty, total_amount, paid_amount, entity_id FROM contract WHERE id = ?"
     )
       .bind(request.contract_id)
-      .first<Pick<Contract, "total_amount" | "paid_amount" | "entity_id">>();
+      .first<
+        Pick<
+          Contract,
+          "contract_no" | "counterparty" | "total_amount" | "paid_amount" | "entity_id"
+        >
+      >();
 
     if (!contract) {
       return c.json({ success: false, error: { message: "Contract not found" } }, 404);
     }
+
+    const payee = await c.env.DB.prepare(
+      "SELECT name, bank_name, bank_account FROM payee WHERE id = ?"
+    )
+      .bind(request.payee_id)
+      .first<Pick<Payee, "name" | "bank_name" | "bank_account">>();
+
+    const attachments = parseAttachmentMeta(request.attachments_json);
 
     const instance = await submitForApproval(
       c.env,
@@ -507,7 +567,30 @@ paymentRoutes.post(
           project_id: request.project_id,
           entity_id: contract.entity_id,
           biz_type: "payment_request",
-          biz_id: id
+          biz_id: id,
+          serial_no: request.serial_no,
+          contract: {
+            id: request.contract_id,
+            contract_no: contract.contract_no,
+            counterparty: contract.counterparty,
+            total_amount: contract.total_amount,
+            paid_amount: contract.paid_amount
+          },
+          payee: {
+            id: request.payee_id,
+            name: payee?.name ?? null,
+            bank_name: payee?.bank_name ?? null,
+            bank_account: payee?.bank_account ?? null
+          },
+          payment: {
+            expected_payment_date: request.expected_payment_date,
+            category: request.category,
+            payment_method: request.payment_method,
+            content: request.content,
+            amount_cn: request.amount_cn,
+            remark: request.remark ?? null
+          },
+          attachments
         },
         instance_config: body.instance_config
       },

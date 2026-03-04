@@ -23,6 +23,53 @@ type SubmitApprovalOptions = {
   instance_config?: InstanceConfig;
 };
 
+type AttachmentMeta = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+  file_url: string;
+};
+
+const parseAttachmentMeta = (raw: string | null): AttachmentMeta[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const items: Array<AttachmentMeta | null> = parsed.map(item => {
+      if (typeof item === "string") {
+        return {
+          file_key: item,
+          file_name: item,
+          file_size: null,
+          file_url: `/api/v1/upload/object/${encodeURIComponent(item)}`
+        };
+      }
+      if (item && typeof item === "object") {
+        const row = item as {
+          file_key?: string;
+          key?: string;
+          file_name?: string;
+          name?: string;
+          file_size?: number;
+          size?: number;
+        };
+        const key = row.file_key ?? row.key;
+        if (!key) return null;
+        return {
+          file_key: key,
+          file_name: row.file_name ?? row.name ?? key,
+          file_size: row.file_size ?? row.size ?? null,
+          file_url: `/api/v1/upload/object/${encodeURIComponent(key)}`
+        };
+      }
+      return null;
+    });
+    return items.filter((item): item is AttachmentMeta => item !== null);
+  } catch {
+    return [];
+  }
+};
+
 export const contractRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -361,6 +408,8 @@ contractRoutes.post(
       }
     }
 
+    const attachments = parseAttachmentMeta(contract.attachments_json);
+
     const instance = await submitForApproval(
       c.env,
       {
@@ -373,8 +422,20 @@ contractRoutes.post(
           amount: contract.total_amount,
           entity_id: contract.entity_id,
           project_id: contract.project_id,
-          biz_type: "outbound_contract",
-          biz_id: id
+          biz_type: contract.direction === "outbound" ? "outbound_contract" : "inbound_contract",
+          biz_id: id,
+          contract: {
+            contract_no: contract.contract_no,
+            direction: contract.direction,
+            counterparty: contract.counterparty,
+            contract_type: contract.contract_type,
+            handler_userid: contract.handler_userid,
+            contract_date: contract.contract_date,
+            total_amount: contract.total_amount,
+            paid_amount: contract.paid_amount,
+            remark: contract.remark ?? null
+          },
+          attachments
         },
         instance_config: body.instance_config
       },

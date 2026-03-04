@@ -1,5 +1,6 @@
 import type { Env } from "../../types/env";
 import type {
+  ApprovalInstance,
   ApprovalNodeInstance,
   ApprovalTask,
   TemplateNodeConfig,
@@ -172,6 +173,40 @@ const hasAiDecisionTask = async (
     .bind(nodeInstanceId)
     .first<{ id: number }>();
   return Boolean(row);
+};
+
+const loadAiGateContextFromInstance = async (
+  env: Env,
+  instanceId: number
+): Promise<{
+  biz_type: string;
+  biz_id: number;
+  biz_summary: string;
+  context: Record<string, unknown>;
+} | null> => {
+  const instance = await env.DB.prepare("SELECT * FROM approval_instance WHERE id = ?")
+    .bind(instanceId)
+    .first<ApprovalInstance>();
+  if (!instance) return null;
+
+  let routeContext: Record<string, unknown> = {};
+  if (instance.instance_config_json) {
+    try {
+      const parsed = JSON.parse(instance.instance_config_json) as {
+        route_context?: Record<string, unknown>;
+      };
+      routeContext = parsed.route_context ?? {};
+    } catch {
+      routeContext = {};
+    }
+  }
+
+  return {
+    biz_type: instance.biz_type,
+    biz_id: instance.biz_id,
+    biz_summary: instance.biz_summary,
+    context: routeContext
+  };
 };
 
 // ─── Sequential Executor ──────────
@@ -543,7 +578,8 @@ class AiGateExecutor implements NodeExecutor {
             ai_slot_id: config.ai_slot_id,
             instance_id: instanceId,
             round: nodeInstance.round,
-            node_instance_id: nodeInstance.id
+            node_instance_id: nodeInstance.id,
+            ...(await loadAiGateContextFromInstance(env, instanceId))
           }
         });
       } catch (err) {

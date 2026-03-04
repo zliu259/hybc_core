@@ -706,6 +706,21 @@ reimbursementRoutes.post(
       }
     }
 
+    const batchItems = await c.env.DB.prepare(
+      `SELECT e.id, e.envelope_no, e.invoice_no, e.amount, e.category, e.description
+       FROM reimbursement_batch_item bi
+       JOIN reimbursement_envelope e ON e.id = bi.envelope_id
+       WHERE bi.batch_id = ?
+       ORDER BY bi.id ASC`
+    )
+      .bind(id)
+      .all<
+        Pick<
+          ReimbursementEnvelope,
+          "id" | "envelope_no" | "invoice_no" | "amount" | "category" | "description"
+        >
+      >();
+
     const instance = await submitForApproval(
       c.env,
       {
@@ -718,7 +733,22 @@ reimbursementRoutes.post(
           amount: batch.total_amount,
           project_id: batch.project_id,
           biz_type: "reimbursement_batch",
-          biz_id: id
+          biz_id: id,
+          batch: {
+            batch_no: batch.batch_no,
+            applicant_userid: batch.applicant_userid,
+            total_amount: batch.total_amount,
+            item_count: batch.item_count,
+            status: batch.status
+          },
+          items: (batchItems.results ?? []).map(item => ({
+            envelope_id: item.id,
+            envelope_no: item.envelope_no,
+            invoice_no: item.invoice_no,
+            amount: item.amount,
+            category: item.category,
+            description: item.description
+          }))
         },
         instance_config: body.instance_config
       },
