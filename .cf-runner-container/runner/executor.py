@@ -36,7 +36,7 @@ class TaskExecutor:
             {output, tokens_input, tokens_output, latency_ms, metadata}
         """
         task_type = task.get("task_type", "")
-        payload = task.get("payload", {})
+        payload = task.get("payload", task.get("payload_json", {}))
         prompt = task.get("prompt")
         preferred_provider_key = task.get("_provider_key")
         provider_config_raw = task.get("_provider")
@@ -57,6 +57,8 @@ class TaskExecutor:
             payload = {"raw": payload}
 
         payload = self._prepare_payload_for_task(task_type, payload)
+        attachment_processing = payload.get("_attachment_processing")
+        prepared_mode = payload.get("_hy_input_mode")
 
         if not isinstance(prompt, dict):
             prompt = None
@@ -90,12 +92,17 @@ class TaskExecutor:
 
         try:
             result = provider.execute(task_type, payload, prompt)
+            metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            if isinstance(attachment_processing, dict):
+                metadata["attachment_processing"] = attachment_processing
+            if isinstance(prepared_mode, str) and prepared_mode:
+                metadata["prepared_input_mode"] = prepared_mode
             return {
                 "output": result.output,
                 "tokens_input": result.tokens_input,
                 "tokens_output": result.tokens_output,
                 "latency_ms": result.latency_ms,
-                "metadata": result.metadata,
+                "metadata": metadata,
             }
         except Exception as exc:
             logger.error("Task execution failed: %s", exc)
@@ -161,6 +168,8 @@ class TaskExecutor:
             override_mapping = {
                 "contract_review:text": "OPENAI_MODEL_CONTRACT_REVIEW_TEXT",
                 "contract_review:vision": "OPENAI_MODEL_CONTRACT_REVIEW_VISION",
+                "approval_ai_gate:text": "OPENAI_MODEL_APPROVAL_AI_GATE_TEXT",
+                "approval_ai_gate:vision": "OPENAI_MODEL_APPROVAL_AI_GATE_VISION",
                 "default:text": "OPENAI_MODEL",
                 "default:vision": "OPENAI_MODEL_VISION_FALLBACK",
             }

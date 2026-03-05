@@ -40,6 +40,19 @@ def build_executor() -> TaskExecutor:
         openai_project_id = os.getenv("OPENAI_PROJECT_ID", "")
         openai_timeout = float(os.getenv("OPENAI_TIMEOUT_SECONDS", "30"))
         openai_retries = int(os.getenv("OPENAI_MAX_RETRIES", "2"))
+        model_overrides: dict[str, str] = {}
+        override_mapping = {
+            "contract_review:text": "OPENAI_MODEL_CONTRACT_REVIEW_TEXT",
+            "contract_review:vision": "OPENAI_MODEL_CONTRACT_REVIEW_VISION",
+            "approval_ai_gate:text": "OPENAI_MODEL_APPROVAL_AI_GATE_TEXT",
+            "approval_ai_gate:vision": "OPENAI_MODEL_APPROVAL_AI_GATE_VISION",
+            "default:text": "OPENAI_MODEL",
+            "default:vision": "OPENAI_MODEL_VISION_FALLBACK",
+        }
+        for key, env_key in override_mapping.items():
+            value = os.getenv(env_key, "").strip()
+            if value:
+                model_overrides[key] = value
         providers.append(
             OpenAIProvider(
                 api_key=openai_key,
@@ -49,6 +62,7 @@ def build_executor() -> TaskExecutor:
                 project=openai_project_id or None,
                 timeout_seconds=openai_timeout,
                 max_retries=openai_retries,
+                model_overrides=model_overrides,
             )
         )
         logger.info("OpenAI provider enabled (model=%s)", openai_model)
@@ -130,7 +144,7 @@ def main() -> None:
 
     heartbeat.stop()
     poller.close()
-    logger.info("Task-runner stopped.")
+    logger.info("Task-runner stopped")
 
 
 if __name__ == "__main__":

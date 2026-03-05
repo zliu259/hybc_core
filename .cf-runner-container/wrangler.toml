@@ -22,4 +22,4 @@ tag = "v1"
 new_sqlite_classes = ["RunnerContainer"]
 
 [triggers]
-crons = ["*/2 * * * *"]
+crons = ["*/1 * * * *"]

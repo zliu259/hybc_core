@@ -151,9 +151,9 @@ const defaultAiPromptTemplates: Array<{
     template_key: "prompt-approval-ai-gate-v1",
     template_name: "审批AI关卡默认提示词",
     system_prompt:
-      "你是审批AI关卡助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为outcome(approve/reject)和comment。",
+      "你是审批AI关卡助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为outcome(approve/reject)和comment。comment必须同时包含‘附件摘要’与‘结论依据’两部分，且附件摘要必须基于附件正文/图像证据，不得只复述文件名。",
     user_prompt_template:
-      "请对审批关卡做决策。任务类型={{task_type}}，业务类型={{biz_type}}，业务ID={{biz_id}}。节点={{node_key}}，审批实例={{instance_id}}，上下文={{context}}。输入JSON={{payload_json}}。给出可执行的同意/拒绝结论与简洁理由。"
+      "请对审批关卡做决策。任务类型={{task_type}}，业务类型={{biz_type}}，业务ID={{biz_id}}。节点={{node_key}}，审批实例={{instance_id}}，上下文={{context}}。输入JSON={{payload_json}}。\n输出要求：\n1) 仅返回JSON：{\"outcome\":\"approve|reject\",\"comment\":\"...\"}\n2) comment必须使用以下结构：\"附件摘要：<从附件正文/图像提取的关键信息；若未提取到正文需明确写‘未提取到可读正文，仅基于图像版面/文件元信息判断’>；结论依据：<结合业务内容、金额、附件证据的一致性判断与通过/拒绝理由>\"\n3) 若业务描述与附件证据不一致，或证据不足，必须reject并明确缺失材料。"
   },
   {
     template_key: "prompt-log-summary-v1",
