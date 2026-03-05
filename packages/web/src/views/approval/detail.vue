@@ -125,6 +125,28 @@ const riskTagType: Record<string, TagType> = {
   failed: "danger"
 };
 
+const riskLevelLabelMap: Record<string, string> = {
+  high: "高风险",
+  medium: "中风险",
+  low: "低风险"
+};
+
+const riskLevelTagTypeMap: Record<string, TagType> = {
+  high: "danger",
+  medium: "warning",
+  low: "success"
+};
+
+const toRiskLevelLabel = (level: unknown) => {
+  if (typeof level !== "string" || !level) return "-";
+  return riskLevelLabelMap[level] ?? level;
+};
+
+const toRiskLevelTagType = (level: unknown): TagType => {
+  if (typeof level !== "string" || !level) return "info";
+  return riskLevelTagTypeMap[level] ?? "info";
+};
+
 const aiGateTagType: Record<string, TagType> = {
   pending: "warning",
   assigned: "warning",
@@ -717,7 +739,9 @@ onMounted(async () => {
               </div>
               <el-descriptions v-if="paymentRiskReport" :column="2" border>
                 <el-descriptions-item label="风险等级">
-                  {{ paymentRiskReport.overall_risk || "-" }}
+                  <el-tag :type="toRiskLevelTagType(paymentRiskReport.overall_risk)">
+                    {{ toRiskLevelLabel(paymentRiskReport.overall_risk) }}
+                  </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="风险分数">
                   {{ paymentRiskReport.score ?? "-" }}

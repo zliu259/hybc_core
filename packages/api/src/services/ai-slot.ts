@@ -397,6 +397,18 @@ export const completeTask = async (
     .bind(JSON.stringify(result), now, now, taskId)
     .run();
 
+  if (task.task_type === "payment_risk_assessment" && task.biz_type === "payment_request") {
+    const riskOutput =
+      typeof result.output === "string" && result.output.trim().length > 0
+        ? result.output
+        : JSON.stringify(result);
+    await env.DB.prepare(
+      "UPDATE payment_request SET ai_risk_status = 'completed', ai_risk_result = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(riskOutput, now, task.biz_id)
+      .run();
+  }
+
   // Write audit log
   const provider = task.provider_id
     ? await env.DB.prepare("SELECT * FROM ai_provider_config WHERE id = ?")
@@ -464,6 +476,14 @@ export const failTask = async (
   )
     .bind(newStatus, error, newRetryCount, now, taskId)
     .run();
+
+  if (task.task_type === "payment_risk_assessment" && task.biz_type === "payment_request") {
+    await env.DB.prepare(
+      "UPDATE payment_request SET ai_risk_status = 'failed', updated_at = ? WHERE id = ?"
+    )
+      .bind(now, task.biz_id)
+      .run();
+  }
 
   // Write error audit log
   const provider = task.provider_id

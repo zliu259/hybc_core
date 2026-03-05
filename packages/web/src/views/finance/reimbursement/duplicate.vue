@@ -19,6 +19,28 @@ const filters = ref({
   risk_level: ""
 });
 
+const riskLevelLabelMap: Record<string, string> = {
+  high: "高风险",
+  medium: "中风险",
+  low: "低风险"
+};
+
+const riskLevelTagTypeMap: Record<string, "success" | "warning" | "danger" | "info"> = {
+  high: "danger",
+  medium: "warning",
+  low: "success"
+};
+
+const toRiskLevelLabel = (level: unknown) => {
+  if (typeof level !== "string" || !level) return "-";
+  return riskLevelLabelMap[level] ?? level;
+};
+
+const toRiskLevelTagType = (level: unknown): "success" | "warning" | "danger" | "info" => {
+  if (typeof level !== "string" || !level) return "info";
+  return riskLevelTagTypeMap[level] ?? "info";
+};
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -68,7 +90,13 @@ onMounted(loadData);
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="envelope_no" label="信封编号" width="160" />
       <el-table-column prop="match_type" label="匹配类型" width="120" />
-      <el-table-column prop="risk_level" label="风险等级" width="100" />
+      <el-table-column prop="risk_level" label="风险等级" width="120">
+        <template #default="scope">
+          <el-tag :type="toRiskLevelTagType(scope.row.risk_level)" size="small">
+            {{ toRiskLevelLabel(scope.row.risk_level) }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column
         prop="matched_invoice_no"
         label="匹配发票号"

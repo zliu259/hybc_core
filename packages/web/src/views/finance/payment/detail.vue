@@ -194,6 +194,28 @@ const riskTagType: Record<string, TagType> = {
   failed: "danger"
 };
 
+const riskLevelLabelMap: Record<string, string> = {
+  high: "高风险",
+  medium: "中风险",
+  low: "低风险"
+};
+
+const riskLevelTagTypeMap: Record<string, TagType> = {
+  high: "danger",
+  medium: "warning",
+  low: "success"
+};
+
+const toRiskLevelLabel = (level: unknown) => {
+  if (typeof level !== "string" || !level) return "-";
+  return riskLevelLabelMap[level] ?? level;
+};
+
+const toRiskLevelTagType = (level: unknown): TagType => {
+  if (typeof level !== "string" || !level) return "info";
+  return riskLevelTagTypeMap[level] ?? "info";
+};
+
 const parseAttachments = (raw: string | null | undefined): PaymentAttachmentDraft[] => {
   if (!raw) return [];
   try {
@@ -856,9 +878,11 @@ onMounted(async () => {
       }}</el-tag>
     </div>
     <el-descriptions v-if="riskReport" :column="2" border>
-      <el-descriptions-item label="风险等级">{{
-        riskReport.overall_risk || "-"
-      }}</el-descriptions-item>
+      <el-descriptions-item label="风险等级">
+        <el-tag :type="toRiskLevelTagType(riskReport.overall_risk)">
+          {{ toRiskLevelLabel(riskReport.overall_risk) }}
+        </el-tag>
+      </el-descriptions-item>
       <el-descriptions-item label="风险分数">{{
         riskReport.score ?? "-"
       }}</el-descriptions-item>

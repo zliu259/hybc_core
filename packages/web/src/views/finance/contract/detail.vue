@@ -73,6 +73,28 @@ const aiStatusTagType: Record<string, TagType> = {
   failed: "danger"
 };
 
+const riskLevelLabelMap: Record<string, string> = {
+  high: "高风险",
+  medium: "中风险",
+  low: "低风险"
+};
+
+const riskLevelTagTypeMap: Record<string, TagType> = {
+  high: "danger",
+  medium: "warning",
+  low: "success"
+};
+
+const toRiskLevelLabel = (level: unknown) => {
+  if (typeof level !== "string" || !level) return "-";
+  return riskLevelLabelMap[level] ?? level;
+};
+
+const toRiskLevelTagType = (level: unknown): TagType => {
+  if (typeof level !== "string" || !level) return "info";
+  return riskLevelTagTypeMap[level] ?? "info";
+};
+
 const isCreate = computed(() => route.params.id === "create");
 const contractId = computed(() => Number(route.params.id));
 const inApprovalFlow = computed(
@@ -696,7 +718,9 @@ onMounted(async () => {
     <el-divider v-if="aiReviewData">AI审查报告</el-divider>
     <el-descriptions v-if="aiReviewData" :column="2" border>
       <el-descriptions-item label="风险等级">
-        {{ aiReviewData.overall_risk || "-" }}
+        <el-tag :type="toRiskLevelTagType(aiReviewData.overall_risk)">
+          {{ toRiskLevelLabel(aiReviewData.overall_risk) }}
+        </el-tag>
       </el-descriptions-item>
       <el-descriptions-item label="风险分数">
         {{ aiReviewData.score ?? "-" }}
