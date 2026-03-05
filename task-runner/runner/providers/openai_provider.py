@@ -82,7 +82,16 @@ class OpenAIProvider(AiProvider):
             text_blocks = attachment_context.get("text_blocks")
             image_data_urls = attachment_context.get("image_data_urls")
             if isinstance(text_blocks, list) or isinstance(image_data_urls, list):
-                parts: list[dict[str, Any]] = [{"type": "text", "text": user_prompt}]
+                parts: list[dict[str, Any]] = [
+                    {
+                        "type": "text",
+                        "text": (
+                            f"{user_prompt}\n\n"
+                            "以下为系统从附件中提取的正文/图像证据，请必须结合这些证据做审查判断；"
+                            "若业务描述与附件证据不一致，必须拒绝或要求补充材料。"
+                        ),
+                    }
+                ]
 
                 if isinstance(text_blocks, list):
                     for index, block in enumerate(text_blocks[:8]):

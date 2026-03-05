@@ -206,6 +206,16 @@ class TaskExecutor:
             context = payload.get("context")
             if isinstance(context, dict):
                 attachments = context.get("attachments")
+                if not attachments:
+                    payment_attachments = context.get("payment_attachments")
+                    contract_attachments = context.get("contract_attachments")
+                    merged: list[object] = []
+                    if isinstance(payment_attachments, list):
+                        merged.extend(payment_attachments)
+                    if isinstance(contract_attachments, list):
+                        merged.extend(contract_attachments)
+                    if merged:
+                        attachments = merged
 
         normalized = self._normalize_attachments(attachments)
         if not normalized:
@@ -287,22 +297,38 @@ class TaskExecutor:
         return normalized
 
     def _download_attachment(self, source: str) -> bytes | None:
-        url = source
-        if not source.startswith("http://") and not source.startswith("https://"):
-            base_url = os.getenv("API_BASE_URL", "http://127.0.0.1:8787")
+        candidate_urls: list[str] = []
+        if source.startswith("http://") or source.startswith("https://"):
+            candidate_urls.append(source)
+        else:
             normalized_key = source.lstrip("/")
-            if normalized_key.startswith("api/v1/upload/object/"):
-                url = urljoin(base_url, f"/{normalized_key}")
-            else:
-                url = urljoin(base_url, f"/api/v1/upload/object/{quote(normalized_key, safe='')}")
+            raw_fallbacks = os.getenv("API_BASE_URL_FALLBACKS", "")
+            configured_fallbacks = [v.strip() for v in raw_fallbacks.split(",") if v.strip()]
+            base_urls = [
+                os.getenv("API_BASE_URL", "http://127.0.0.1:8787"),
+                *configured_fallbacks,
+                "https://api.hybcdg.com",
+            ]
+            de_duplicated_base_urls: list[str] = []
+            for base in base_urls:
+                if base and base not in de_duplicated_base_urls:
+                    de_duplicated_base_urls.append(base)
+            for base_url in de_duplicated_base_urls:
+                if normalized_key.startswith("api/v1/upload/object/"):
+                    candidate_urls.append(urljoin(base_url, f"/{normalized_key}"))
+                else:
+                    candidate_urls.append(
+                        urljoin(base_url, f"/api/v1/upload/object/{quote(normalized_key, safe='')}")
+                    )
 
-        try:
-            response = httpx.get(url, timeout=25.0, follow_redirects=True)
-            response.raise_for_status()
-            return response.content
-        except Exception as exc:
-            logger.warning("Failed to download attachment source=%s error=%s", source, exc)
-            return None
+        for url in candidate_urls:
+            try:
+                response = httpx.get(url, timeout=25.0, follow_redirects=True)
+                response.raise_for_status()
+                return response.content
+            except Exception as exc:
+                logger.warning("Failed to download attachment source=%s url=%s error=%s", source, url, exc)
+        return None
 
     @staticmethod
     def _is_docx(source: str, content_type: str) -> bool:

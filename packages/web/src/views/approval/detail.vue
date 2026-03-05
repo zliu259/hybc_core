@@ -364,6 +364,98 @@ const toUserLabel = (userid: string | null | undefined) => {
   return userNameMap.value.get(userid) ?? userid;
 };
 
+const toChineseAmount = (amount: number): string => {
+  if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
+  if (amount === 0) return "零元整";
+
+  const fractionUnits = ["角", "分"];
+  const digit = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+  const intUnits = ["", "拾", "佰", "仟"];
+  const sectionUnits = ["", "万", "亿", "兆"];
+
+  let value = Math.round(amount * 100);
+  const fraction = value % 100;
+  let result = "";
+
+  if (fraction === 0) {
+    result = "整";
+  } else {
+    const jiao = Math.floor(fraction / 10);
+    const fen = fraction % 10;
+    if (jiao > 0) result += `${digit[jiao]}${fractionUnits[0]}`;
+    if (fen > 0) result += `${digit[fen]}${fractionUnits[1]}`;
+  }
+
+  value = Math.floor(value / 100);
+  let sectionIndex = 0;
+  let intResult = "";
+
+  while (value > 0 && sectionIndex < sectionUnits.length) {
+    const sectionValue = value % 10000;
+    if (sectionValue !== 0) {
+      let sectionText = "";
+      let unitIndex = 0;
+      let section = sectionValue;
+      let zeroPending = false;
+      while (section > 0) {
+        const num = section % 10;
+        if (num === 0) {
+          if (!zeroPending && sectionText) {
+            zeroPending = true;
+            sectionText = `零${sectionText}`;
+          }
+        } else {
+          zeroPending = false;
+          sectionText = `${digit[num]}${intUnits[unitIndex]}${sectionText}`;
+        }
+        unitIndex += 1;
+        section = Math.floor(section / 10);
+      }
+      sectionText = sectionText.replace(/零+/g, "零").replace(/零$/g, "");
+      intResult = `${sectionText}${sectionUnits[sectionIndex]}${intResult}`;
+    } else if (intResult && !intResult.startsWith("零")) {
+      intResult = `零${intResult}`;
+    }
+    sectionIndex += 1;
+    value = Math.floor(value / 10000);
+  }
+
+  intResult = intResult.replace(/零+/g, "零").replace(/零([万亿兆])/g, "$1");
+  intResult = intResult.replace(/亿万/g, "亿").replace(/零$/g, "");
+  return `${intResult || "零"}元${result}`;
+};
+
+const formatAmount = (amount: number | null | undefined) => {
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return "-";
+  return amount.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
+const formatAmountWithUpper = (amount: number | null | undefined, upper?: string | null) => {
+  if (typeof amount !== "number" || !Number.isFinite(amount)) {
+    return { lower: "-", upper: "-" };
+  }
+  const upperText = typeof upper === "string" && upper.trim() ? upper.trim() : toChineseAmount(amount);
+  return {
+    lower: formatAmount(amount),
+    upper: upperText
+  };
+};
+
+const paymentAmountDisplay = computed(() =>
+  formatAmountWithUpper(paymentDetail.value?.amount, paymentDetail.value?.amount_cn)
+);
+
+const contractAmountDisplay = computed(() =>
+  formatAmountWithUpper(contractDetail.value?.total_amount)
+);
+
+const reimbursementAmountDisplay = computed(() =>
+  formatAmountWithUpper(reimbursementBatchDetail.value?.total_amount)
+);
+
 const loadMetaOptions = async () => {
   const [, entityRes] = await Promise.all([loadProjects(), listEntities()]);
   entities.value = entityRes.data;
@@ -663,7 +755,9 @@ onMounted(async () => {
                       : '-'
                   }}
                 </el-descriptions-item>
-                <el-descriptions-item label="申请金额">{{ paymentDetail.amount_cn }}</el-descriptions-item>
+                <el-descriptions-item label="申请金额">
+                  {{ paymentAmountDisplay.lower }}（<strong>{{ paymentAmountDisplay.upper }}</strong>）
+                </el-descriptions-item>
                 <el-descriptions-item label="付款类别">{{ paymentDetail.category }}</el-descriptions-item>
                 <el-descriptions-item label="预计付款日">{{ paymentDetail.expected_payment_date }}</el-descriptions-item>
                 <el-descriptions-item label="付款方式">{{ paymentDetail.payment_method }}</el-descriptions-item>
@@ -704,7 +798,9 @@ onMounted(async () => {
                 <el-descriptions-item label="合同类型">{{ contractDetail.contract_type }}</el-descriptions-item>
                 <el-descriptions-item label="经办人">{{ toUserLabel(contractDetail.handler_userid) }}</el-descriptions-item>
                 <el-descriptions-item label="合同日期">{{ contractDetail.contract_date }}</el-descriptions-item>
-                <el-descriptions-item label="合同金额">{{ contractDetail.total_amount }}</el-descriptions-item>
+                <el-descriptions-item label="合同金额">
+                  {{ contractAmountDisplay.lower }}（<strong>{{ contractAmountDisplay.upper }}</strong>）
+                </el-descriptions-item>
                 <el-descriptions-item label="已付金额">{{ contractDetail.paid_amount }}</el-descriptions-item>
                 <el-descriptions-item label="备注" :span="2">{{ contractDetail.remark || '-' }}</el-descriptions-item>
               </el-descriptions>
@@ -738,7 +834,9 @@ onMounted(async () => {
                 <el-descriptions-item label="状态">{{ reimbursementBatchDetail.status }}</el-descriptions-item>
                 <el-descriptions-item label="所属项目">{{ toProjectLabel(reimbursementBatchDetail.project_id) }}</el-descriptions-item>
                 <el-descriptions-item label="申请人">{{ toUserLabel(reimbursementBatchDetail.applicant_userid) }}</el-descriptions-item>
-                <el-descriptions-item label="总金额">{{ reimbursementBatchDetail.total_amount }}</el-descriptions-item>
+                <el-descriptions-item label="总金额">
+                  {{ reimbursementAmountDisplay.lower }}（<strong>{{ reimbursementAmountDisplay.upper }}</strong>）
+                </el-descriptions-item>
                 <el-descriptions-item label="单据数">{{ reimbursementBatchDetail.item_count }}</el-descriptions-item>
               </el-descriptions>
               <el-table :data="reimbursementBatchDetail.items" size="small" border style="margin-top: 12px">
