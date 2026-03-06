@@ -269,6 +269,32 @@ const toContractDirectionTagType = (direction: unknown): TagType => {
   return "info";
 };
 
+const paymentCategoryLabelMap: Record<string, string> = {
+  特殊审批: "特殊审批",
+  行政费: "行政费",
+  劳务费: "劳务费",
+  机械费: "机械费",
+  材料费: "材料费",
+  其他费用: "其他费用"
+};
+
+const paymentMethodLabelMap: Record<string, string> = {
+  对公转账: "对公转账",
+  现金: "现金",
+  票据: "票据",
+  其他: "其他"
+};
+
+const toPaymentCategoryLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return paymentCategoryLabelMap[value] ?? value;
+};
+
+const toPaymentMethodLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return paymentMethodLabelMap[value] ?? value;
+};
+
 const parseJsonObject = (raw: string | null | undefined): Record<string, unknown> => {
   if (!raw) return {};
   try {
@@ -608,6 +634,12 @@ const goToLinkedContract = () => {
   router.push(`/finance/contract/detail/${contractId}`);
 };
 
+const goToPaymentContract = () => {
+  const contractId = paymentDetail.value?.contract_id;
+  if (!contractId) return;
+  router.push(`/finance/contract/detail/${contractId}`);
+};
+
 const loadDetail = async () => {
   loading.value = true;
   try {
@@ -874,11 +906,14 @@ onMounted(async () => {
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="流水号">{{ paymentDetail.serial_no }}</el-descriptions-item>
                 <el-descriptions-item label="关联合同">
-                  {{
-                    paymentDetail.contract
-                      ? `${paymentDetail.contract.contract_no} - ${paymentDetail.contract.counterparty}`
-                      : "无合同 / 无需合同"
-                  }}
+                  <el-link
+                    v-if="paymentDetail.contract && paymentDetail.contract_id"
+                    type="primary"
+                    @click="goToPaymentContract"
+                  >
+                    {{ `${paymentDetail.contract.contract_no} - ${paymentDetail.contract.counterparty}` }}
+                  </el-link>
+                  <template v-else>无合同 / 无需合同</template>
                 </el-descriptions-item>
                 <el-descriptions-item label="所属项目">{{ toProjectLabel(paymentDetail.project_id) }}</el-descriptions-item>
                 <el-descriptions-item label="收款方">{{ paymentDetail.payee?.name || '-' }}</el-descriptions-item>
@@ -892,9 +927,9 @@ onMounted(async () => {
                 <el-descriptions-item label="申请金额">
                   {{ paymentAmountDisplay.lower }}（<strong>{{ paymentAmountDisplay.upper }}</strong>）
                 </el-descriptions-item>
-                <el-descriptions-item label="付款类别">{{ paymentDetail.category }}</el-descriptions-item>
+                <el-descriptions-item label="付款类别">{{ toPaymentCategoryLabel(paymentDetail.category) }}</el-descriptions-item>
                 <el-descriptions-item label="预计付款日">{{ paymentDetail.expected_payment_date }}</el-descriptions-item>
-                <el-descriptions-item label="付款方式">{{ paymentDetail.payment_method }}</el-descriptions-item>
+                <el-descriptions-item label="付款方式">{{ toPaymentMethodLabel(paymentDetail.payment_method) }}</el-descriptions-item>
                 <el-descriptions-item label="付款内容" :span="2">{{ paymentDetail.content }}</el-descriptions-item>
                 <el-descriptions-item label="备注" :span="2">{{ paymentDetail.remark || '-' }}</el-descriptions-item>
               </el-descriptions>

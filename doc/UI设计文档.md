@@ -786,6 +786,11 @@
 - 两个详情页新增“超管编辑模式开启后将强制留痕”的显式提示，降低误操作风险：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 - 付款详情上传控件状态与文案对齐：审批中允许补传附件（仍禁止删除），避免“提示可上传但控件禁用”的冲突：`packages/web/src/views/finance/payment/detail.vue`
 
+### 4.10 审批申请明细（付款）可读性与动作防重入（2026-03）
+- 审批详情页“申请明细（付款）”中的付款类别、付款方式统一中文化显示，避免原始值直出：`packages/web/src/views/approval/detail.vue`
+- 审批详情页“申请明细（付款）”的关联合同改为可点击链接，直接跳转合同详情页：`packages/web/src/views/approval/detail.vue`
+- 合同详情与付款详情在审批进行中/审批已结束时禁用“提交审批”“触发AI审查/风险评估”按钮，防止重复提审与不必要 AI 消耗：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

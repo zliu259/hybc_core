@@ -659,13 +659,13 @@ onMounted(async () => {
           >
           <el-button
             type="warning"
-            :disabled="isCreate"
+            :disabled="isCreate || approvalFinishedLock || inApprovalFlow"
             @click="onSubmitApproval"
             >提交审批</el-button
           >
           <el-button
             type="success"
-            :disabled="isCreate"
+            :disabled="isCreate || approvalFinishedLock || inApprovalFlow"
             @click="onRiskAssessment"
             >触发风险评估</el-button
           >
