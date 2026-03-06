@@ -44,6 +44,17 @@ const parseInvoiceItems = (raw: string): Array<Record<string, unknown>> => {
   return parsed.filter((item): item is Record<string, unknown> => !!item && typeof item === "object");
 };
 
+const parseJsonObject = (raw: string | null | undefined): Record<string, unknown> => {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+};
+
 export const receiptRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -83,9 +94,11 @@ receiptRoutes.get(
       params.push(status);
     }
     if (keyword) {
-      sql += " AND (request_no LIKE ? OR customer_name LIKE ? OR customer_tax_no LIKE ? OR IFNULL(remark, '') LIKE ?)";
-      countSql += " AND (request_no LIKE ? OR customer_name LIKE ? OR customer_tax_no LIKE ? OR IFNULL(remark, '') LIKE ?)";
-      params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+      sql +=
+        " AND (request_no LIKE ? OR customer_name LIKE ? OR customer_tax_no LIKE ? OR IFNULL(payment_reference, '') LIKE ? OR IFNULL(remark, '') LIKE ?)";
+      countSql +=
+        " AND (request_no LIKE ? OR customer_name LIKE ? OR customer_tax_no LIKE ? OR IFNULL(payment_reference, '') LIKE ? OR IFNULL(remark, '') LIKE ?)";
+      params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
     }
 
     sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
@@ -130,10 +143,12 @@ receiptRoutes.post(
     if (!body.contract_id || body.contract_id <= 0) {
       return c.json({ success: false, error: { message: "contract_id is required" } }, 400);
     }
-    if (!body.customer_name?.trim() || !body.customer_tax_no?.trim()) {
-      return c.json({ success: false, error: { message: "customer_name and customer_tax_no are required" } }, 400);
+    const counterpartyName = (body.counterparty_name ?? body.customer_name ?? "").trim();
+    const counterpartyTaxNo = (body.counterparty_tax_no ?? body.customer_tax_no ?? "").trim();
+    if (!counterpartyName || !counterpartyTaxNo) {
+      return c.json({ success: false, error: { message: "counterparty_name and counterparty_tax_no are required" } }, 400);
     }
-    if (!body.invoice_type || !body.invoice_category) {
+    if (!body.invoice_type || !body.invoice_category?.trim()) {
       return c.json({ success: false, error: { message: "invoice_type and invoice_category are required" } }, 400);
     }
     if (!Number.isFinite(body.tax_rate) || body.tax_rate < 0) {
@@ -168,6 +183,17 @@ receiptRoutes.post(
       return c.json({ success: false, error: { message: "Invoice request can only bind inbound contract" } }, 400);
     }
 
+    const projectId = body.project_id && body.project_id > 0 ? body.project_id : contract.project_id;
+    const buyerRaw = parseJsonObject(body.buyer_json ?? null);
+    const buyerJson = JSON.stringify({
+      ...buyerRaw,
+      counterparty_name: counterpartyName,
+      counterparty_tax_no: counterpartyTaxNo,
+      counterparty_contact: body.counterparty_contact ?? buyerRaw.counterparty_contact ?? null,
+      seller_entity_id: body.seller_entity_id ?? buyerRaw.seller_entity_id ?? contract.entity_id,
+      seller_entity_name: body.seller_entity_name ?? buyerRaw.seller_entity_name ?? null
+    });
+
     const now = nowIso();
     const requestNo = await generateSerial(c.env.DB, "KP", "invoice_request", "request_no");
     const result = await c.env.DB.prepare(
@@ -175,19 +201,19 @@ receiptRoutes.post(
         (request_no, contract_id, project_id, customer_name, customer_tax_no, buyer_json,
          invoice_type, invoice_category, tax_rate, currency, items_json,
          amount_without_tax, tax_amount_estimated, amount_with_tax,
-         business_contract_no, delivery_reference, payment_reference,
-         applicant_userid, department, status, attachments_json, remark, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
+         business_contract_no, payment_reference,
+         applicant_userid, status, attachments_json, remark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?)`
     )
       .bind(
         requestNo,
         contract.id,
-        contract.project_id,
-        body.customer_name.trim(),
-        body.customer_tax_no.trim(),
-        body.buyer_json ?? null,
+        projectId,
+        counterpartyName,
+        counterpartyTaxNo,
+        buyerJson,
         body.invoice_type,
-        body.invoice_category,
+        body.invoice_category.trim(),
         body.tax_rate,
         body.currency ?? "CNY",
         body.items_json,
@@ -195,10 +221,8 @@ receiptRoutes.post(
         body.tax_amount_estimated,
         body.amount_with_tax,
         body.business_contract_no ?? contract.contract_no,
-        body.delivery_reference ?? null,
         body.payment_reference ?? null,
         auth.sub,
-        body.department ?? null,
         body.attachments_json ?? null,
         body.remark ?? null,
         now,
@@ -240,12 +264,27 @@ receiptRoutes.put(
       }
     }
 
+    const mergedName = (body.counterparty_name ?? body.customer_name ?? existing.customer_name).trim();
+    const mergedTaxNo = (body.counterparty_tax_no ?? body.customer_tax_no ?? existing.customer_tax_no).trim();
+    const existingBuyer = parseJsonObject(existing.buyer_json);
+    const nextBuyer = {
+      ...existingBuyer,
+      ...parseJsonObject(body.buyer_json ?? null),
+      counterparty_name: mergedName,
+      counterparty_tax_no: mergedTaxNo,
+      counterparty_contact:
+        body.counterparty_contact ?? existingBuyer.counterparty_contact ?? null,
+      seller_entity_id: body.seller_entity_id ?? existingBuyer.seller_entity_id ?? null,
+      seller_entity_name: body.seller_entity_name ?? existingBuyer.seller_entity_name ?? null
+    };
+
     const now = nowIso();
     await c.env.DB.prepare(
       `UPDATE invoice_request SET
-         customer_name = COALESCE(?, customer_name),
-         customer_tax_no = COALESCE(?, customer_tax_no),
-         buyer_json = COALESCE(?, buyer_json),
+         project_id = COALESCE(?, project_id),
+         customer_name = ?,
+         customer_tax_no = ?,
+         buyer_json = ?,
          invoice_type = COALESCE(?, invoice_type),
          invoice_category = COALESCE(?, invoice_category),
          tax_rate = COALESCE(?, tax_rate),
@@ -255,9 +294,7 @@ receiptRoutes.put(
          tax_amount_estimated = COALESCE(?, tax_amount_estimated),
          amount_with_tax = COALESCE(?, amount_with_tax),
          business_contract_no = COALESCE(?, business_contract_no),
-         delivery_reference = COALESCE(?, delivery_reference),
          payment_reference = COALESCE(?, payment_reference),
-         department = COALESCE(?, department),
          status = COALESCE(?, status),
          review_comment = COALESCE(?, review_comment),
          attachments_json = COALESCE(?, attachments_json),
@@ -266,11 +303,12 @@ receiptRoutes.put(
        WHERE id = ?`
     )
       .bind(
-        body.customer_name ?? null,
-        body.customer_tax_no ?? null,
-        body.buyer_json ?? null,
+        body.project_id ?? null,
+        mergedName,
+        mergedTaxNo,
+        JSON.stringify(nextBuyer),
         body.invoice_type ?? null,
-        body.invoice_category ?? null,
+        body.invoice_category?.trim() ?? null,
         body.tax_rate ?? null,
         body.currency ?? null,
         body.items_json ?? null,
@@ -278,9 +316,7 @@ receiptRoutes.put(
         body.tax_amount_estimated ?? null,
         body.amount_with_tax ?? null,
         body.business_contract_no ?? null,
-        body.delivery_reference ?? null,
         body.payment_reference ?? null,
-        body.department ?? null,
         body.status ?? null,
         body.review_comment ?? null,
         body.attachments_json ?? null,
@@ -300,7 +336,7 @@ receiptRoutes.post(
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
-    const body = (await c.req.json().catch(() => ({}))) as { biz_summary?: string; department?: string };
+    const body = (await c.req.json().catch(() => ({}))) as { biz_summary?: string };
 
     const request = await c.env.DB.prepare("SELECT * FROM invoice_request WHERE id = ?")
       .bind(id)
@@ -336,13 +372,15 @@ receiptRoutes.post(
           amount: request.amount_with_tax,
           project_id: request.project_id,
           contract_id: request.contract_id,
-          customer_name: request.customer_name,
-          customer_tax_no: request.customer_tax_no,
+          counterparty_name: request.customer_name,
+          counterparty_tax_no: request.customer_tax_no,
           invoice_type: request.invoice_type,
           invoice_category: request.invoice_category,
           tax_rate: request.tax_rate,
           request_no: request.request_no,
           attachments_json: request.attachments_json,
+          payment_reference: request.payment_reference,
+          buyer_json: request.buyer_json,
           contract: {
             contract_no: contract.contract_no,
             counterparty: contract.counterparty,
@@ -355,9 +393,9 @@ receiptRoutes.post(
     );
 
     await c.env.DB.prepare(
-      "UPDATE invoice_request SET status = 'pending_approval', approval_instance_id = ?, department = COALESCE(?, department), updated_at = ? WHERE id = ?"
+      "UPDATE invoice_request SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
     )
-      .bind(instance.id, body.department ?? null, nowIso(), id)
+      .bind(instance.id, nowIso(), id)
       .run();
 
     return c.json({

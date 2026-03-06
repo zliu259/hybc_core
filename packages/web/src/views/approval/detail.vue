@@ -259,6 +259,17 @@ const toContractDirectionTagType = (direction: unknown): TagType => {
   return "info";
 };
 
+const parseJsonObject = (raw: string | null | undefined): Record<string, unknown> => {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    return parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+};
+
 const normalizeAiReview = (row: AiReviewRow): AiReviewNormalized => {
   const embedded = parseEmbeddedAiSummary(row.summary);
   const outcome = row.outcome ?? embedded?.outcome ?? null;
@@ -913,21 +924,29 @@ onMounted(async () => {
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="申请单号">{{ invoiceRequestDetail.request_no }}</el-descriptions-item>
                 <el-descriptions-item label="状态">{{ toStatusLabel(invoiceRequestDetail.status) }}</el-descriptions-item>
-                <el-descriptions-item label="客户名称">{{ invoiceRequestDetail.customer_name }}</el-descriptions-item>
-                <el-descriptions-item label="客户税号">{{ invoiceRequestDetail.customer_tax_no }}</el-descriptions-item>
+                <el-descriptions-item label="对方名称">{{ invoiceRequestDetail.customer_name }}</el-descriptions-item>
+                <el-descriptions-item label="对方税号">{{ invoiceRequestDetail.customer_tax_no }}</el-descriptions-item>
+                <el-descriptions-item label="对方联系方式">
+                  {{
+                    (parseJsonObject(invoiceRequestDetail.buyer_json).counterparty_contact as string | undefined) || '-'
+                  }}
+                </el-descriptions-item>
+                <el-descriptions-item label="我方开票主体">
+                  {{
+                    (parseJsonObject(invoiceRequestDetail.buyer_json).seller_entity_name as string | undefined) || '-'
+                  }}
+                </el-descriptions-item>
                 <el-descriptions-item label="所属项目">{{ toProjectLabel(invoiceRequestDetail.project_id) }}</el-descriptions-item>
                 <el-descriptions-item label="关联合同号">{{ invoiceRequestDetail.business_contract_no || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="发票类型">{{ invoiceRequestDetail.invoice_type }}</el-descriptions-item>
                 <el-descriptions-item label="发票类目">{{ invoiceRequestDetail.invoice_category }}</el-descriptions-item>
-                <el-descriptions-item label="税率">{{ invoiceRequestDetail.tax_rate }}</el-descriptions-item>
+                <el-descriptions-item label="税率">{{ invoiceRequestDetail.tax_rate }}%</el-descriptions-item>
                 <el-descriptions-item label="币种">{{ invoiceRequestDetail.currency }}</el-descriptions-item>
                 <el-descriptions-item label="不含税金额">{{ formatAmount(invoiceRequestDetail.amount_without_tax) }}</el-descriptions-item>
                 <el-descriptions-item label="预计税额">{{ formatAmount(invoiceRequestDetail.tax_amount_estimated) }}</el-descriptions-item>
                 <el-descriptions-item label="价税合计">{{ formatAmount(invoiceRequestDetail.amount_with_tax) }}</el-descriptions-item>
                 <el-descriptions-item label="申请人">{{ toUserLabel(invoiceRequestDetail.applicant_userid) }}</el-descriptions-item>
-                <el-descriptions-item label="部门">{{ invoiceRequestDetail.department || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="发货凭证">{{ invoiceRequestDetail.delivery_reference || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="回款凭证">{{ invoiceRequestDetail.payment_reference || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="汇款凭证">{{ invoiceRequestDetail.payment_reference || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="备注" :span="2">{{ invoiceRequestDetail.remark || '-' }}</el-descriptions-item>
               </el-descriptions>
             </template>

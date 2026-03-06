@@ -85,11 +85,17 @@ export interface InvoiceRequest {
 
 export interface CreateInvoiceRequestPayload {
   contract_id: number;
-  customer_name: string;
-  customer_tax_no: string;
+  project_id?: number;
+  customer_name?: string;
+  customer_tax_no?: string;
+  counterparty_name?: string;
+  counterparty_tax_no?: string;
+  counterparty_contact?: string;
+  seller_entity_id?: number;
+  seller_entity_name?: string;
   buyer_json?: string;
   invoice_type: "special" | "normal" | "electronic";
-  invoice_category: "goods" | "service" | "construction";
+  invoice_category: string;
   tax_rate: number;
   currency?: "CNY";
   items_json: string;
@@ -97,19 +103,23 @@ export interface CreateInvoiceRequestPayload {
   tax_amount_estimated: number;
   amount_with_tax: number;
   business_contract_no?: string;
-  delivery_reference?: string;
   payment_reference?: string;
-  department?: string;
   attachments_json?: string;
   remark?: string;
 }
 
 export interface UpdateInvoiceRequestPayload {
+  project_id?: number;
   customer_name?: string;
   customer_tax_no?: string;
+  counterparty_name?: string;
+  counterparty_tax_no?: string;
+  counterparty_contact?: string;
+  seller_entity_id?: number;
+  seller_entity_name?: string;
   buyer_json?: string;
   invoice_type?: "special" | "normal" | "electronic";
-  invoice_category?: "goods" | "service" | "construction";
+  invoice_category?: string;
   tax_rate?: number;
   currency?: "CNY";
   items_json?: string;
@@ -117,9 +127,7 @@ export interface UpdateInvoiceRequestPayload {
   tax_amount_estimated?: number;
   amount_with_tax?: number;
   business_contract_no?: string;
-  delivery_reference?: string;
   payment_reference?: string;
-  department?: string;
   attachments_json?: string;
   status?: InvoiceRequestStatus;
   review_comment?: string;

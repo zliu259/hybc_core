@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import type { UploadRequestOptions } from "element-plus";
+import { computed, onMounted, ref, watch } from "vue";
 import { message } from "@/utils/message";
+import { formatToken, getToken } from "@/utils/auth";
 import { listContracts, type Contract } from "@/api/contract";
+import { listEntities, type Entity } from "@/api/entity";
+import { listPayees, createPayee, updatePayee, type Payee } from "@/api/payment";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import { useProjectOptions } from "@/composables/useProjectOptions";
 import {
   deleteInvoice,
   listInvoices,
@@ -16,12 +22,35 @@ import {
 
 defineOptions({ name: "InvoiceList" });
 
+type AttachmentDraft = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+};
+
+type InvoiceItemDraft = {
+  name: string;
+  specification: string;
+  unit: string;
+  quantity: number;
+  unit_price: number;
+};
+
+type InvoiceItemTemplate = {
+  key: string;
+  label: string;
+  items: InvoiceItemDraft[];
+};
+
 const activeTab = ref<"request" | "invoice">("request");
 const loadingRequest = ref(false);
 const loadingInvoice = ref(false);
 const contracts = ref<Contract[]>([]);
 const requestList = ref<InvoiceRequest[]>([]);
 const invoiceList = ref<Invoice[]>([]);
+const payees = ref<Payee[]>([]);
+const entities = ref<Entity[]>([]);
+const { projects, loadProjects } = useProjectOptions();
 
 const page = ref(1);
 const pageSize = ref(20);
@@ -41,25 +70,81 @@ const contractMap = computed(() => {
   return map;
 });
 
+const entityMap = computed(() => {
+  const map: Record<number, string> = {};
+  entities.value.forEach(item => {
+    map[item.id] = item.entity_name;
+  });
+  return map;
+});
+
 const requestDialogVisible = ref(false);
 const requesting = ref(false);
+const uploadingAttachment = ref(false);
+const counterpartyMode = ref<"select" | "manual">("select");
+const saveCounterparty = ref(true);
+const remittanceAttachments = ref<AttachmentDraft[]>([]);
+
 const requestForm = ref({
   contract_id: undefined as number | undefined,
-  customer_name: "",
-  customer_tax_no: "",
+  project_id: undefined as number | undefined,
+  seller_entity_id: undefined as number | undefined,
+  counterparty_payee_id: undefined as number | undefined,
+  counterparty_name: "",
+  counterparty_tax_no: "",
+  counterparty_contact: "",
   invoice_type: "electronic" as "special" | "normal" | "electronic",
-  invoice_category: "service" as "goods" | "service" | "construction",
-  tax_rate: 0.06,
-  amount_without_tax: 0,
-  tax_amount_estimated: 0,
-  amount_with_tax: 0,
-  items_json:
-    '[{"name":"服务费","specification":"","unit":"项","quantity":1,"unit_price":0,"amount":0}]',
-  delivery_reference: "",
-  payment_reference: "",
-  department: "",
-  attachments_json: "",
+  invoice_category: "服务费",
+  tax_rate_percent: 6,
   remark: ""
+});
+
+const invoiceItems = ref<InvoiceItemDraft[]>([
+  { name: "服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 }
+]);
+
+const itemTemplates: InvoiceItemTemplate[] = [
+  {
+    key: "service-basic",
+    label: "服务费模板",
+    items: [{ name: "技术服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 }]
+  },
+  {
+    key: "office-admin",
+    label: "行政办公模板",
+    items: [
+      { name: "办公耗材", specification: "", unit: "批", quantity: 1, unit_price: 0 },
+      { name: "行政服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 }
+    ]
+  },
+  {
+    key: "project-mix",
+    label: "项目混合模板",
+    items: [
+      { name: "材料费", specification: "", unit: "批", quantity: 1, unit_price: 0 },
+      { name: "人工服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 },
+      { name: "运输服务费", specification: "", unit: "次", quantity: 1, unit_price: 0 }
+    ]
+  }
+];
+
+const amountWithoutTax = computed(() => {
+  return invoiceItems.value.reduce((sum, item) => {
+    const quantity = Number.isFinite(item.quantity) ? item.quantity : 0;
+    const price = Number.isFinite(item.unit_price) ? item.unit_price : 0;
+    return sum + quantity * price;
+  }, 0);
+});
+
+const taxAmountEstimated = computed(() => {
+  const taxRate = Number.isFinite(requestForm.value.tax_rate_percent)
+    ? requestForm.value.tax_rate_percent
+    : 0;
+  return amountWithoutTax.value * (taxRate / 100);
+});
+
+const amountWithTax = computed(() => {
+  return amountWithoutTax.value + taxAmountEstimated.value;
 });
 
 const issueDialogVisible = ref(false);
@@ -80,13 +165,45 @@ const issueForm = ref({
   remark: ""
 });
 
+watch(
+  () => requestForm.value.contract_id,
+  contractId => {
+    if (!contractId) return;
+    const contract = contracts.value.find(item => item.id === contractId);
+    if (!contract) return;
+
+    requestForm.value.project_id = contract.project_id;
+    requestForm.value.seller_entity_id = contract.entity_id;
+    if (!requestForm.value.counterparty_name) {
+      requestForm.value.counterparty_name = contract.counterparty;
+    }
+  }
+);
+
+watch(
+  () => requestForm.value.counterparty_payee_id,
+  payeeId => {
+    if (counterpartyMode.value !== "select" || !payeeId) return;
+    const payee = payees.value.find(item => item.id === payeeId);
+    if (!payee) return;
+    requestForm.value.counterparty_name = payee.name;
+    requestForm.value.counterparty_contact = payee.phone ?? "";
+  }
+);
+
 const loadContracts = async () => {
-  const result = await listContracts({
-    direction: "inbound",
-    page: 1,
-    pageSize: 300
-  });
+  const result = await listContracts({ direction: "inbound", page: 1, pageSize: 300 });
   contracts.value = result.data;
+};
+
+const loadMeta = async () => {
+  const [payeeRes, entityRes] = await Promise.all([
+    listPayees({ type: "external" }),
+    listEntities({ status: "active" })
+  ]);
+  payees.value = payeeRes.data;
+  entities.value = entityRes.data;
+  await loadProjects();
 };
 
 const loadInvoiceRequests = async () => {
@@ -132,54 +249,219 @@ const loadData = async () => {
 };
 
 const openCreateRequest = () => {
+  counterpartyMode.value = "select";
+  saveCounterparty.value = true;
+  remittanceAttachments.value = [];
   requestForm.value = {
     contract_id: filters.value.contract_id,
-    customer_name: "",
-    customer_tax_no: "",
+    project_id: undefined,
+    seller_entity_id: undefined,
+    counterparty_payee_id: undefined,
+    counterparty_name: "",
+    counterparty_tax_no: "",
+    counterparty_contact: "",
     invoice_type: "electronic",
-    invoice_category: "service",
-    tax_rate: 0.06,
-    amount_without_tax: 0,
-    tax_amount_estimated: 0,
-    amount_with_tax: 0,
-    items_json:
-      '[{"name":"服务费","specification":"","unit":"项","quantity":1,"unit_price":0,"amount":0}]',
-    delivery_reference: "",
-    payment_reference: "",
-    department: "",
-    attachments_json: "",
+    invoice_category: "服务费",
+    tax_rate_percent: 6,
     remark: ""
   };
+  invoiceItems.value = [{ name: "服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 }];
   requestDialogVisible.value = true;
 };
 
-const submitCreateRequest = async () => {
-  if (!requestForm.value.contract_id || !requestForm.value.customer_name.trim() || !requestForm.value.customer_tax_no.trim()) {
-    message("请填写合同、客户名称、客户税号", { type: "warning" });
+const addInvoiceItem = () => {
+  invoiceItems.value.push({ name: "", specification: "", unit: "", quantity: 1, unit_price: 0 });
+};
+
+const cloneItem = (item: InvoiceItemDraft): InvoiceItemDraft => ({
+  name: item.name,
+  specification: item.specification,
+  unit: item.unit,
+  quantity: item.quantity,
+  unit_price: item.unit_price
+});
+
+const duplicateLastItem = () => {
+  const lastItem = invoiceItems.value[invoiceItems.value.length - 1];
+  if (!lastItem) {
+    addInvoiceItem();
     return;
   }
+  invoiceItems.value.push(cloneItem(lastItem));
+};
+
+const duplicatePreviousItem = (index: number) => {
+  if (index <= 0 || !invoiceItems.value[index - 1]) {
+    message("上一行不存在，无法复制", { type: "warning" });
+    return;
+  }
+  invoiceItems.value.splice(index, 0, cloneItem(invoiceItems.value[index - 1]));
+};
+
+const importTemplate = (templateKey: string) => {
+  const template = itemTemplates.find(item => item.key === templateKey);
+  if (!template) return;
+  invoiceItems.value = template.items.map(item => cloneItem(item));
+  message(`已导入${template.label}，可继续调整数量和单价`, { type: "success" });
+};
+
+const removeInvoiceItem = (index: number) => {
+  invoiceItems.value.splice(index, 1);
+  if (invoiceItems.value.length === 0) {
+    addInvoiceItem();
+  }
+};
+
+const serializeAttachments = (items: AttachmentDraft[]): string => {
+  return JSON.stringify(
+    items.map(item => ({
+      file_key: item.file_key,
+      file_name: item.file_name,
+      file_size: item.file_size ?? undefined
+    }))
+  );
+};
+
+const uploadAttachment = async (options: UploadRequestOptions) => {
+  uploadingAttachment.value = true;
+  const rawFile = options.file;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "payment"
+    });
+
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+
+    remittanceAttachments.value.unshift({
+      file_key: signRes.data.key,
+      file_name: rawFile.name,
+      file_size: rawFile.size
+    });
+    message("附件上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("附件上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    uploadingAttachment.value = false;
+  }
+};
+
+const removeAttachment = (index: number) => {
+  remittanceAttachments.value.splice(index, 1);
+};
+
+const saveCounterpartyIfNeeded = async () => {
+  if (!saveCounterparty.value) return;
+  if (!requestForm.value.counterparty_name.trim()) return;
+
+  if (counterpartyMode.value === "manual") {
+    const existing = payees.value.find(item => item.name === requestForm.value.counterparty_name.trim());
+    if (existing) {
+      requestForm.value.counterparty_payee_id = existing.id;
+      if (!existing.phone && requestForm.value.counterparty_contact.trim()) {
+        await updatePayee(existing.id, { phone: requestForm.value.counterparty_contact.trim() });
+      }
+      return;
+    }
+
+    const created = await createPayee({
+      name: requestForm.value.counterparty_name.trim(),
+      bank_name: "待补充",
+      bank_account: "待补充",
+      phone: requestForm.value.counterparty_contact.trim() || undefined,
+      type: "external"
+    });
+    requestForm.value.counterparty_payee_id = created.data.id;
+    const payeeRes = await listPayees({ type: "external" });
+    payees.value = payeeRes.data;
+    return;
+  }
+
+  const payeeId = requestForm.value.counterparty_payee_id;
+  if (!payeeId) return;
+  const selected = payees.value.find(item => item.id === payeeId);
+  if (!selected) return;
+  if (!selected.phone && requestForm.value.counterparty_contact.trim()) {
+    await updatePayee(payeeId, { phone: requestForm.value.counterparty_contact.trim() });
+  }
+};
+
+const submitCreateRequest = async () => {
+  if (!requestForm.value.contract_id) {
+    message("请先选择收款合同", { type: "warning" });
+    return;
+  }
+  if (!requestForm.value.counterparty_name.trim() || !requestForm.value.counterparty_tax_no.trim()) {
+    message("请填写对方名称和对方税号", { type: "warning" });
+    return;
+  }
+  if (!requestForm.value.invoice_category.trim()) {
+    message("请填写发票类目", { type: "warning" });
+    return;
+  }
+  if (!invoiceItems.value.length || invoiceItems.value.some(item => !item.name.trim())) {
+    message("请完善开票明细（至少一行且名称必填）", { type: "warning" });
+    return;
+  }
+
   requesting.value = true;
   try {
+    await saveCounterpartyIfNeeded();
+
+    const selectedEntityName = requestForm.value.seller_entity_id
+      ? entityMap.value[requestForm.value.seller_entity_id] || ""
+      : "";
+
     const result = await createInvoiceRequest({
       contract_id: requestForm.value.contract_id,
-      customer_name: requestForm.value.customer_name,
-      customer_tax_no: requestForm.value.customer_tax_no,
+      project_id: requestForm.value.project_id,
+      counterparty_name: requestForm.value.counterparty_name.trim(),
+      counterparty_tax_no: requestForm.value.counterparty_tax_no.trim(),
+      counterparty_contact: requestForm.value.counterparty_contact.trim() || undefined,
+      seller_entity_id: requestForm.value.seller_entity_id,
+      seller_entity_name: selectedEntityName || undefined,
+      buyer_json: JSON.stringify({
+        counterparty_payee_id: requestForm.value.counterparty_payee_id ?? null,
+        counterparty_contact: requestForm.value.counterparty_contact.trim() || null,
+        seller_entity_id: requestForm.value.seller_entity_id ?? null,
+        seller_entity_name: selectedEntityName || null
+      }),
       invoice_type: requestForm.value.invoice_type,
-      invoice_category: requestForm.value.invoice_category,
-      tax_rate: requestForm.value.tax_rate,
-      amount_without_tax: requestForm.value.amount_without_tax,
-      tax_amount_estimated: requestForm.value.tax_amount_estimated,
-      amount_with_tax: requestForm.value.amount_with_tax,
-      items_json: requestForm.value.items_json,
-      delivery_reference: requestForm.value.delivery_reference || undefined,
-      payment_reference: requestForm.value.payment_reference || undefined,
-      department: requestForm.value.department || undefined,
-      attachments_json: requestForm.value.attachments_json || undefined,
+      invoice_category: requestForm.value.invoice_category.trim(),
+      tax_rate: requestForm.value.tax_rate_percent,
+      amount_without_tax: Number(amountWithoutTax.value.toFixed(2)),
+      tax_amount_estimated: Number(taxAmountEstimated.value.toFixed(2)),
+      amount_with_tax: Number(amountWithTax.value.toFixed(2)),
+      items_json: JSON.stringify(
+        invoiceItems.value.map(item => ({
+          ...item,
+          amount: Number((item.quantity * item.unit_price).toFixed(2))
+        }))
+      ),
+      attachments_json: remittanceAttachments.value.length
+        ? serializeAttachments(remittanceAttachments.value)
+        : undefined,
+      payment_reference: remittanceAttachments.value.length ? "汇款凭证已上传" : undefined,
       remark: requestForm.value.remark || undefined
     });
+
     message(`开票申请创建成功：${result.data.request_no}`, { type: "success" });
     requestDialogVisible.value = false;
-    await loadData();
+    await Promise.all([loadData(), loadMeta()]);
   } finally {
     requesting.value = false;
   }
@@ -254,7 +536,7 @@ const runVerify = async (row: Invoice) => {
 };
 
 onMounted(async () => {
-  await loadContracts();
+  await Promise.all([loadContracts(), loadMeta()]);
   await loadData();
 });
 </script>
@@ -301,24 +583,19 @@ onMounted(async () => {
         <el-input
           v-model="filters.keyword"
           clearable
-          :placeholder="activeTab === 'request' ? '申请单号/客户/税号' : '发票号/抬头/税号'"
+          :placeholder="activeTab === 'request' ? '申请单号/对方名称/税号' : '发票号/抬头/税号'"
         />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
     </el-form>
 
-    <el-table
-      v-if="activeTab === 'request'"
-      :data="requestList"
-      :loading="loadingRequest"
-      style="margin-top: 12px"
-    >
+    <el-table v-if="activeTab === 'request'" :data="requestList" :loading="loadingRequest" style="margin-top: 12px">
       <el-table-column prop="request_no" label="申请单号" width="170" />
       <el-table-column label="合同号" width="170">
         <template #default="scope">{{ contractMap[scope.row.contract_id] || scope.row.contract_id }}</template>
       </el-table-column>
-      <el-table-column prop="customer_name" label="客户名称" min-width="180" />
-      <el-table-column prop="customer_tax_no" label="客户税号" min-width="180" />
+      <el-table-column prop="customer_name" label="对方名称" min-width="180" />
+      <el-table-column prop="customer_tax_no" label="对方税号" min-width="180" />
       <el-table-column prop="amount_with_tax" label="价税合计" width="120" />
       <el-table-column prop="invoice_type" label="类型" width="110" />
       <el-table-column prop="status" label="状态" width="120" />
@@ -344,12 +621,7 @@ onMounted(async () => {
       </el-table-column>
     </el-table>
 
-    <el-table
-      v-else
-      :data="invoiceList"
-      :loading="loadingInvoice"
-      style="margin-top: 12px"
-    >
+    <el-table v-else :data="invoiceList" :loading="loadingInvoice" style="margin-top: 12px">
       <el-table-column prop="invoice_no" label="系统单号" width="170" />
       <el-table-column prop="invoice_number" label="税务发票号" width="170" />
       <el-table-column label="合同号" width="170">
@@ -390,8 +662,8 @@ onMounted(async () => {
     />
   </el-card>
 
-  <el-dialog v-model="requestDialogVisible" title="新建开票申请" width="700px">
-    <el-form label-width="120px">
+  <el-dialog v-model="requestDialogVisible" title="新建开票申请" width="980px">
+    <el-form label-width="130px">
       <el-form-item label="收款合同" required>
         <el-select v-model="requestForm.contract_id" filterable style="width: 100%">
           <el-option
@@ -402,12 +674,53 @@ onMounted(async () => {
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="客户名称" required>
-        <el-input v-model="requestForm.customer_name" />
+
+      <el-form-item label="项目（统计）">
+        <el-select v-model="requestForm.project_id" clearable filterable style="width: 100%">
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="`${item.project_name} (${item.project_code})`"
+            :value="item.id"
+          />
+        </el-select>
       </el-form-item>
-      <el-form-item label="客户税号" required>
-        <el-input v-model="requestForm.customer_tax_no" />
+
+      <el-form-item label="我方开票主体">
+        <el-select v-model="requestForm.seller_entity_id" clearable filterable style="width: 100%">
+          <el-option v-for="item in entities" :key="item.id" :label="item.entity_name" :value="item.id" />
+        </el-select>
       </el-form-item>
+
+      <el-form-item label="对方信息模式">
+        <el-radio-group v-model="counterpartyMode">
+          <el-radio label="select">从对方名录选择</el-radio>
+          <el-radio label="manual">手工录入</el-radio>
+        </el-radio-group>
+      </el-form-item>
+
+      <el-form-item v-if="counterpartyMode === 'select'" label="对方名称（选择）">
+        <el-select v-model="requestForm.counterparty_payee_id" clearable filterable style="width: 100%">
+          <el-option v-for="item in payees" :key="item.id" :label="item.name" :value="item.id" />
+        </el-select>
+      </el-form-item>
+
+      <el-form-item label="对方名称" required>
+        <el-input v-model="requestForm.counterparty_name" placeholder="公司全称" />
+      </el-form-item>
+
+      <el-form-item label="对方税号" required>
+        <el-input v-model="requestForm.counterparty_tax_no" />
+      </el-form-item>
+
+      <el-form-item label="对方联系方式">
+        <el-input v-model="requestForm.counterparty_contact" placeholder="手机号/联系人" />
+      </el-form-item>
+
+      <el-form-item label="保存对方信息">
+        <el-switch v-model="saveCounterparty" />
+      </el-form-item>
+
       <el-form-item label="发票类型">
         <el-select v-model="requestForm.invoice_type" style="width: 220px">
           <el-option label="电子发票" value="electronic" />
@@ -415,40 +728,114 @@ onMounted(async () => {
           <el-option label="增值税普票" value="normal" />
         </el-select>
       </el-form-item>
+
       <el-form-item label="发票类目">
-        <el-select v-model="requestForm.invoice_category" style="width: 220px">
-          <el-option label="服务" value="service" />
-          <el-option label="商品" value="goods" />
-          <el-option label="工程" value="construction" />
-        </el-select>
+        <el-input v-model="requestForm.invoice_category" placeholder="支持自定义，如：技术服务费" />
       </el-form-item>
-      <el-form-item label="税率">
-        <el-input-number v-model="requestForm.tax_rate" :min="0" :step="0.01" :precision="2" />
+
+      <el-form-item label="税率（%）">
+        <el-input-number
+          v-model="requestForm.tax_rate_percent"
+          :min="0"
+          :max="100"
+          :precision="2"
+          :step="1"
+          style="width: 220px"
+        />
       </el-form-item>
+
+      <el-divider>开票明细</el-divider>
+      <el-table :data="invoiceItems" border>
+        <el-table-column label="名称" min-width="160">
+          <template #default="scope">
+            <el-input v-model="scope.row.name" />
+          </template>
+        </el-table-column>
+        <el-table-column label="规格" min-width="120">
+          <template #default="scope">
+            <el-input v-model="scope.row.specification" />
+          </template>
+        </el-table-column>
+        <el-table-column label="单位" width="90">
+          <template #default="scope">
+            <el-input v-model="scope.row.unit" />
+          </template>
+        </el-table-column>
+        <el-table-column label="数量" width="120">
+          <template #default="scope">
+            <el-input-number v-model="scope.row.quantity" :min="0" :precision="4" :step="1" />
+          </template>
+        </el-table-column>
+        <el-table-column label="单价" width="140">
+          <template #default="scope">
+            <el-input-number v-model="scope.row.unit_price" :min="0" :precision="2" :step="100" />
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="140">
+          <template #default="scope">
+            {{ (scope.row.quantity * scope.row.unit_price).toFixed(2) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="130" fixed="right">
+          <template #default="scope">
+            <el-button link type="primary" @click="duplicatePreviousItem(scope.$index)">复制上行</el-button>
+            <el-button link type="danger" @click="removeInvoiceItem(scope.$index)">删除</el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <div style="margin-top: 10px">
+        <el-button link type="primary" @click="addInvoiceItem">+ 新增明细行</el-button>
+        <el-button link type="primary" @click="duplicateLastItem">复制上一行</el-button>
+        <el-dropdown @command="importTemplate">
+          <el-button link type="primary">从模板导入</el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item v-for="template in itemTemplates" :key="template.key" :command="template.key">
+                {{ template.label }}
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
+
       <el-form-item label="不含税金额">
-        <el-input-number v-model="requestForm.amount_without_tax" :min="0" :precision="2" :step="100" />
+        <el-input :model-value="amountWithoutTax.toFixed(2)" readonly />
       </el-form-item>
       <el-form-item label="预计税额">
-        <el-input-number v-model="requestForm.tax_amount_estimated" :min="0" :precision="2" :step="100" />
+        <el-input :model-value="taxAmountEstimated.toFixed(2)" readonly />
       </el-form-item>
       <el-form-item label="价税合计">
-        <el-input-number v-model="requestForm.amount_with_tax" :min="0" :precision="2" :step="100" />
+        <el-input :model-value="amountWithTax.toFixed(2)" readonly />
       </el-form-item>
-      <el-form-item label="开票明细JSON">
-        <el-input v-model="requestForm.items_json" type="textarea" :rows="4" />
+
+      <el-form-item label="汇款凭证附件">
+        <div style="width: 100%">
+          <el-upload
+            drag
+            action="#"
+            :show-file-list="false"
+            :disabled="uploadingAttachment"
+            :http-request="uploadAttachment"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+          >
+            <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+          </el-upload>
+          <el-table :data="remittanceAttachments" size="small" style="margin-top: 12px">
+            <el-table-column label="文件名" min-width="260">
+              <template #default="scope">{{ scope.row.file_name }}</template>
+            </el-table-column>
+            <el-table-column label="大小" width="120">
+              <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="scope">
+                <el-button link type="danger" @click="removeAttachment(scope.$index)">移除</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
       </el-form-item>
-      <el-form-item label="发货凭证">
-        <el-input v-model="requestForm.delivery_reference" />
-      </el-form-item>
-      <el-form-item label="回款凭证">
-        <el-input v-model="requestForm.payment_reference" />
-      </el-form-item>
-      <el-form-item label="部门">
-        <el-input v-model="requestForm.department" />
-      </el-form-item>
-      <el-form-item label="附件JSON">
-        <el-input v-model="requestForm.attachments_json" type="textarea" :rows="2" />
-      </el-form-item>
+
       <el-form-item label="备注">
         <el-input v-model="requestForm.remark" type="textarea" :rows="2" />
       </el-form-item>

@@ -45,7 +45,7 @@ export type InvoiceRequest = {
   customer_tax_no: string;
   buyer_json: string | null;
   invoice_type: "special" | "normal" | "electronic";
-  invoice_category: "goods" | "service" | "construction";
+  invoice_category: string;
   tax_rate: number;
   currency: string;
   items_json: string;
@@ -53,10 +53,8 @@ export type InvoiceRequest = {
   tax_amount_estimated: number;
   amount_with_tax: number;
   business_contract_no: string | null;
-  delivery_reference: string | null;
   payment_reference: string | null;
   applicant_userid: string;
-  department: string | null;
   approval_instance_id: number | null;
   status: string;
   review_comment: string | null;
@@ -124,11 +122,17 @@ export const getInvoiceRequest = (id: number) => {
 
 export const createInvoiceRequest = (data: {
   contract_id: number;
-  customer_name: string;
-  customer_tax_no: string;
+  project_id?: number;
+  customer_name?: string;
+  customer_tax_no?: string;
+  counterparty_name?: string;
+  counterparty_tax_no?: string;
+  counterparty_contact?: string;
+  seller_entity_id?: number;
+  seller_entity_name?: string;
   buyer_json?: string;
   invoice_type: "special" | "normal" | "electronic";
-  invoice_category: "goods" | "service" | "construction";
+  invoice_category: string;
   tax_rate: number;
   currency?: "CNY";
   items_json: string;
@@ -136,9 +140,7 @@ export const createInvoiceRequest = (data: {
   tax_amount_estimated: number;
   amount_with_tax: number;
   business_contract_no?: string;
-  delivery_reference?: string;
   payment_reference?: string;
-  department?: string;
   attachments_json?: string;
   remark?: string;
 }) => {
@@ -151,11 +153,17 @@ export const createInvoiceRequest = (data: {
 export const updateInvoiceRequest = (
   id: number,
   data: {
+    project_id?: number;
     customer_name?: string;
     customer_tax_no?: string;
+    counterparty_name?: string;
+    counterparty_tax_no?: string;
+    counterparty_contact?: string;
+    seller_entity_id?: number;
+    seller_entity_name?: string;
     buyer_json?: string;
     invoice_type?: "special" | "normal" | "electronic";
-    invoice_category?: "goods" | "service" | "construction";
+    invoice_category?: string;
     tax_rate?: number;
     currency?: "CNY";
     items_json?: string;
@@ -163,9 +171,7 @@ export const updateInvoiceRequest = (
     tax_amount_estimated?: number;
     amount_with_tax?: number;
     business_contract_no?: string;
-    delivery_reference?: string;
     payment_reference?: string;
-    department?: string;
     status?: string;
     review_comment?: string;
     attachments_json?: string;
@@ -181,7 +187,7 @@ export const updateInvoiceRequest = (
 
 export const submitInvoiceRequestApproval = (
   id: number,
-  data?: { biz_summary?: string; department?: string }
+  data?: { biz_summary?: string }
 ) => {
   return http.request<{
     success: boolean;

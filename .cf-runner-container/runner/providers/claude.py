@@ -67,6 +67,7 @@ class ClaudeProvider(AiProvider):
             "consumable_estimation",
             "inventory_alert_analysis",
             "consumption_anomaly",
+            "ocr_extract",
             "approval_ai_gate",
         ]
 
