@@ -84,6 +84,7 @@ const uploadingAttachment = ref(false);
 const counterpartyMode = ref<"select" | "manual">("select");
 const saveCounterparty = ref(true);
 const remittanceAttachments = ref<AttachmentDraft[]>([]);
+const taxRateQuickValues = [0, 1, 3, 6, 9, 13];
 
 const requestForm = ref({
   contract_id: undefined as number | undefined,
@@ -94,7 +95,7 @@ const requestForm = ref({
   counterparty_tax_no: "",
   counterparty_contact: "",
   invoice_type: "electronic" as "special" | "normal" | "electronic",
-  invoice_category: "服务费",
+  invoice_category: "",
   tax_rate_percent: 6,
   remark: ""
 });
@@ -326,7 +327,7 @@ const openCreateRequest = () => {
     counterparty_tax_no: "",
     counterparty_contact: "",
     invoice_type: "electronic",
-    invoice_category: "服务费",
+    invoice_category: "",
     tax_rate_percent: 6,
     remark: ""
   };
@@ -368,6 +369,10 @@ const importTemplate = (templateKey: string) => {
   if (!template) return;
   invoiceItems.value = template.items.map(item => cloneItem(item));
   message(`已导入${template.label}，可继续调整数量和单价`, { type: "success" });
+};
+
+const setTaxRateQuick = (rate: number) => {
+  requestForm.value.tax_rate_percent = rate;
 };
 
 const removeInvoiceItem = (index: number) => {
@@ -808,6 +813,18 @@ onMounted(async () => {
           :controls="false"
           style="width: 220px"
         />
+        <div style="width: 100%; margin-top: 8px">
+          <el-space wrap>
+            <el-button
+              v-for="rate in taxRateQuickValues"
+              :key="rate"
+              size="small"
+              @click="setTaxRateQuick(rate)"
+            >
+              {{ rate }}%
+            </el-button>
+          </el-space>
+        </div>
       </el-form-item>
 
       <el-divider>开票明细</el-divider>
@@ -832,12 +849,12 @@ onMounted(async () => {
             <el-input-number v-model="scope.row.quantity" :min="0" :precision="4" :step="1" :controls="false" />
           </template>
         </el-table-column>
-        <el-table-column label="单价" width="140">
+        <el-table-column label="单价" width="150">
           <template #default="scope">
             <el-input-number v-model="scope.row.unit_price" :min="0" :precision="2" :step="100" :controls="false" />
           </template>
         </el-table-column>
-        <el-table-column label="金额" width="140">
+        <el-table-column label="金额" width="200">
           <template #default="scope">
             {{ (scope.row.quantity * scope.row.unit_price).toFixed(2) }}
           </template>
