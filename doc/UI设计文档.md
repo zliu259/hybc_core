@@ -752,6 +752,12 @@
 - 操作按钮显示增加兜底策略（当接口未回传 `available_actions` 时按待办任务推断），避免底部操作区缺失：`packages/miniapp/pages/approval-detail/index.js`
 - 底部操作布局优化为单排 40/40/20（通过/退回/更多），其余动作收纳到“更多”弹层，减少主操作区噪音：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxss`
 
+### 4.8 工作台待办入口与提醒模块优化（2026-03）
+- 工作台 `#/workspace/home` 顶部“待我审批”按钮改为带气泡未完成数，便于快速感知待办压力：`packages/web/src/views/welcome/index.vue`
+- “待我审批”按钮从原目标页收敛到统一审批台入口：`/approval/index`，避免进入信息不足页面：`packages/web/src/views/welcome/index.vue`
+- “我的待办提醒”模块由时间线改为可点击卡片列表 + 状态点样式，支持点击条目直达审批详情：`packages/web/src/views/welcome/index.vue`
+- “我的待办提醒”标题追加未完成数量（与按钮气泡一致），并保留“进入统一审批台”快捷入口：`packages/web/src/views/welcome/index.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

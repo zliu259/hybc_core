@@ -52,6 +52,7 @@ const bankForm = ref({
   account_no: ""
 });
 const pendingApprovalItems = ref<PendingApprovalItem[]>([]);
+const pendingApprovalTotal = ref(0);
 
 type PersonalCertificate = {
   id: number;
@@ -80,6 +81,8 @@ const certificates = ref<PersonalCertificate[]>([
 const pendingCount = computed(
   () => reimbursements.value.filter(item => item.status !== "paid").length
 );
+
+const pendingApprovalCount = computed(() => pendingApprovalTotal.value);
 
 const roleNameMap: Record<string, string> = {
   super_admin: "超级管理员",
@@ -157,6 +160,7 @@ const loadData = async () => {
     reimbursements.value = reimbursementResult.data;
     bankCards.value = bankAccountResult.data;
     pendingApprovalItems.value = pendingResult.data || [];
+    pendingApprovalTotal.value = pendingResult.pagination?.total || 0;
     const projectResult = await listProjects({ page: 1, pageSize: 200, status: "active" });
     projects.value = projectResult.data;
     if (!reimbursementForm.value.project_id && projects.value.length > 0) {
@@ -228,6 +232,14 @@ const submitBankCard = async () => {
 
 const todoSummaryLabel = (item: PendingApprovalItem) => {
   return `${item.instance_no} · ${item.biz_summary || item.biz_type}`;
+};
+
+const goApprovalDesk = () => {
+  router.push("/approval/index");
+};
+
+const goApprovalItem = (item: PendingApprovalItem) => {
+  router.push(`/approval/detail/${item.id}`);
 };
 
 const reimbursementStatusLabel = (status: string) => {
@@ -344,9 +356,9 @@ const submitReimbursement = async () => {
           @click="router.push('/construction/manager-log')"
           >填报项目日志</el-button
         >
-        <el-button @click="router.push('/approval/unified-tasklist')"
-          >待我审批</el-button
-        >
+        <el-badge :value="pendingApprovalCount" :hidden="pendingApprovalCount <= 0" :max="99">
+          <el-button @click="goApprovalDesk">待我审批</el-button>
+        </el-badge>
       </div>
     </el-card>
 
@@ -487,27 +499,31 @@ const submitReimbursement = async () => {
 
     <el-card shadow="never" class="todo-card">
       <template #header>
-        <div class="card-header">我的待办提醒</div>
+        <div class="card-header card-header--with-action">
+          <span>我的待办提醒（{{ pendingApprovalCount }}）</span>
+          <el-button link type="primary" @click="goApprovalDesk">进入统一审批台</el-button>
+        </div>
       </template>
       <el-empty v-if="!pendingApprovalItems.length" description="当前没有待办审批" />
-      <el-timeline v-else>
-        <el-timeline-item
+      <div v-else class="todo-cards">
+        <div
           v-for="item in pendingApprovalItems"
           :key="item.task_id"
-          :timestamp="item.submitted_at"
+          class="todo-item"
+          @click="goApprovalItem(item)"
         >
-          <div class="todo-item">
+          <div class="todo-item__title-row">
+            <span class="todo-item__dot" />
             <div class="todo-item__title">{{ todoSummaryLabel(item) }}</div>
+          </div>
+          <div class="todo-item__meta-row">
             <div class="todo-item__meta">
               当前节点：{{ item.current_node_name || item.current_node_key || "待处理" }}
             </div>
+            <el-tag size="small" type="warning">待审批</el-tag>
           </div>
-        </el-timeline-item>
-      </el-timeline>
-      <div class="todo-card__actions">
-        <el-button link type="primary" @click="router.push('/approval/unified-tasklist')"
-          >查看全部待办</el-button
-        >
+          <div class="todo-item__time">{{ item.submitted_at }}</div>
+        </div>
       </div>
     </el-card>
 
@@ -663,20 +679,61 @@ const submitReimbursement = async () => {
   gap: 8px;
 }
 
+.todo-cards {
+  display: grid;
+  gap: 10px;
+}
+
+.todo-item {
+  border: 1px solid #e4d8c8;
+  border-radius: 10px;
+  background: #fff;
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.todo-item:hover {
+  border-color: #c8b49a;
+  box-shadow: 0 2px 10px rgb(0 0 0 / 6%);
+}
+
+.todo-item__title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.todo-item__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #e6a23c;
+  flex-shrink: 0;
+}
+
 .todo-item__title {
   font-weight: 600;
   color: #2a241d;
 }
 
+.todo-item__meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 6px;
+}
+
 .todo-item__meta {
-  margin-top: 4px;
   color: #6e6458;
   font-size: 12px;
 }
 
-.todo-card__actions {
+.todo-item__time {
   margin-top: 6px;
-  text-align: right;
+  color: #9b8f82;
+  font-size: 12px;
 }
 
 @media (max-width: 980px) {
