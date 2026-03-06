@@ -107,6 +107,30 @@ export type ApprovalAiGateTaskItem = {
   } | null;
 };
 
+export type WeComPushMonitorTotals = {
+  sent_count: number;
+  failed_count: number;
+  isolation_guard_count: number;
+  summary_count: number;
+  success_rate: number;
+};
+
+export type WeComPushMonitorEvent = {
+  id: number;
+  event_type: string;
+  event_source: string;
+  created_at: string;
+  payload: Record<string, unknown> | null;
+};
+
+export type WeComPushMonitorResponse = {
+  window_hours: number;
+  since: string;
+  totals: WeComPushMonitorTotals;
+  top_errors: Array<{ message: string; count: number }>;
+  recent: WeComPushMonitorEvent[];
+};
+
 export const listApprovalTemplates = (params?: { biz_type?: string }) => {
   return http.request<{ success: boolean; data: ApprovalTemplate[] }>(
     "get",
@@ -465,4 +489,12 @@ export const handleApprovalAiGateTask = (
     success: boolean;
     data: { task_id: number; handled: "approve" | "reject" | "comment" };
   }>("post", `/api/v1/admin/approval-ai-gate/tasks/${taskId}/handle`, { data });
+};
+
+export const getWeComPushMonitor = (params?: { hours?: number; limit?: number }) => {
+  return http.request<{ success: boolean; data: WeComPushMonitorResponse }>(
+    "get",
+    "/api/v1/admin/wecom-push/monitor",
+    { params }
+  );
 };

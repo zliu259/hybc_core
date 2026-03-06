@@ -471,9 +471,127 @@ export const adminRoutes = new Hono<{
   Variables: AuthVariables;
 }>();
 
+type WeComPushMonitorEventRow = {
+  id: number;
+  event_type: string;
+  event_source: string;
+  event_payload: string;
+  created_at: string;
+};
+
+type WeComPushMonitorTotals = {
+  sent_count: number;
+  failed_count: number;
+  isolation_guard_count: number;
+  summary_count: number;
+};
+
 const runnerConfigKeyPattern = /^[A-Z0-9_]{2,64}$/;
 
 adminRoutes.use("*", authMiddleware);
+
+adminRoutes.get(
+  "/wecom-push/monitor",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const hoursRaw = Number(c.req.query("hours") ?? "24");
+    const limitRaw = Number(c.req.query("limit") ?? "100");
+    const hours = Number.isFinite(hoursRaw)
+      ? Math.max(1, Math.min(168, Math.floor(hoursRaw)))
+      : 24;
+    const limit = Number.isFinite(limitRaw)
+      ? Math.max(20, Math.min(500, Math.floor(limitRaw)))
+      : 100;
+
+    const sinceIso = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+
+    const totalsRow = await c.env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN event_type = 'wecom_template_card_sent' THEN 1 ELSE 0 END) AS sent_count,
+         SUM(CASE WHEN event_type = 'wecom_template_card_failed' THEN 1 ELSE 0 END) AS failed_count,
+         SUM(CASE WHEN event_type = 'wecom_template_card_isolation_guard' THEN 1 ELSE 0 END) AS isolation_guard_count,
+         SUM(CASE WHEN event_type = 'wecom_template_card_summary' THEN 1 ELSE 0 END) AS summary_count
+       FROM event_log
+       WHERE event_type LIKE 'wecom_template_card_%'
+         AND created_at >= ?`
+    )
+      .bind(sinceIso)
+      .first<WeComPushMonitorTotals>();
+
+    const rows = await c.env.DB.prepare(
+      `SELECT id, event_type, event_source, event_payload, created_at
+       FROM event_log
+       WHERE event_type LIKE 'wecom_template_card_%'
+         AND created_at >= ?
+       ORDER BY created_at DESC
+       LIMIT ?`
+    )
+      .bind(sinceIso, limit)
+      .all<WeComPushMonitorEventRow>();
+
+    const recent = (rows.results ?? []).map((item) => {
+      let payload: Record<string, unknown> | null = null;
+      try {
+        payload = JSON.parse(item.event_payload) as Record<string, unknown>;
+      } catch {
+        payload = { raw: item.event_payload };
+      }
+
+      return {
+        id: item.id,
+        event_type: item.event_type,
+        event_source: item.event_source,
+        created_at: item.created_at,
+        payload
+      };
+    });
+
+    const errorCounter = new Map<string, number>();
+    recent.forEach((item) => {
+      const payload = item.payload ?? {};
+      const singleError = typeof payload.error === "string" ? payload.error.trim() : "";
+      if (singleError) {
+        errorCounter.set(singleError, (errorCounter.get(singleError) ?? 0) + 1);
+      }
+
+      const errors = Array.isArray(payload.errors)
+        ? payload.errors.filter((entry): entry is string => typeof entry === "string")
+        : [];
+      errors.forEach((entry) => {
+        const message = entry.trim();
+        if (!message) return;
+        errorCounter.set(message, (errorCounter.get(message) ?? 0) + 1);
+      });
+    });
+
+    const top_errors = [...errorCounter.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([message, count]) => ({ message, count }));
+
+    const sentCount = totalsRow?.sent_count ?? 0;
+    const failedCount = totalsRow?.failed_count ?? 0;
+    const successRateBase = sentCount + failedCount;
+    const successRate = successRateBase > 0 ? Number((sentCount / successRateBase).toFixed(4)) : 0;
+
+    return c.json({
+      success: true,
+      data: {
+        window_hours: hours,
+        since: sinceIso,
+        totals: {
+          sent_count: sentCount,
+          failed_count: failedCount,
+          isolation_guard_count: totalsRow?.isolation_guard_count ?? 0,
+          summary_count: totalsRow?.summary_count ?? 0,
+          success_rate: successRate
+        },
+        top_errors,
+        recent
+      }
+    });
+  }
+);
 
 adminRoutes.get(
   "/runner-runtime-config",

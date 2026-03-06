@@ -50,11 +50,12 @@ uvicorn app.main:app --host 0.0.0.0 --port 9001
 
 - `POST /wecom/proxy`
 - Request body:
-  - `{ "url": "https://qyapi.weixin.qq.com/cgi-bin/..." }`
+  - `{ "url": "https://qyapi.weixin.qq.com/cgi-bin/...", "method": "GET|POST", "body": {...}, "headers": {...} }`
 - Header:
   - `X-Bridge-Token: <BRIDGE_PROXY_TOKEN>` (enforced when configured)
 - Behavior:
   - Only allows `https://qyapi.weixin.qq.com/cgi-bin/*`
+  - Only allows `GET` and `POST`
   - Executes outbound request from Azure bridge public IP
   - Returns upstream response body/status back to Worker
 

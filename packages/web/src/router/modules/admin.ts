@@ -66,6 +66,15 @@ export default {
       }
     },
     {
+      path: "/admin/wecom-push-monitor",
+      name: "AdminWeComPushMonitor",
+      component: () => import("@/views/admin/wecom-push-monitor.vue"),
+      meta: {
+        title: "企微推送监控",
+        roles: ["super_admin"]
+      }
+    },
+    {
       path: "/admin/system-base/entity",
       name: "AdminSystemBaseEntity",
       component: () => import("@/views/entity/index.vue"),

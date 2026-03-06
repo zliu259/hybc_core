@@ -70,6 +70,7 @@
 - AI配置管理：`packages/web/src/views/ai/config.vue`
 - 计算节点监控与Runner运行参数：`packages/web/src/views/ai/nodes.vue`
 - AI关卡任务管理（超管）：`packages/web/src/views/admin/ai-gate-tasks.vue`
+- 企微推送监控（超管）：`packages/web/src/views/admin/wecom-push-monitor.vue`
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 资产运维看板：`packages/web/src/views/asset/ledger.vue`
 - 资产详情：`packages/web/src/views/asset/detail.vue`
@@ -394,6 +395,11 @@
 - 服务监控中心（前后端健康总览）：`packages/web/src/views/admin/ops-center.vue`
   - 聚合 Worker D1/KV/R2/Queue、Bridge 服务、Runner 服务状态
   - 展示最近心跳节点与在线统计
+- 企微推送监控（超管）：`packages/web/src/views/admin/wecom-push-monitor.vue`
+  - 聚合 `wecom_template_card_*` 事件的发送成功/失败、隔离保护触发、成功率
+  - 展示高频错误 Top 10 与最近推送事件明细
+  - 提供推送跳转配置表单（`WECOM_MINIAPP_APPID`、`WECOM_APPROVAL_WEB_BASE_URL`、`WECOM_APPROVAL_MINI_PAGE_PATH`、`WECOM_APPROVAL_DEFAULT_TARGET`）
+  - API 指向：`/api/v1/admin/wecom-push/monitor`
 
 ### 3.9 UI Refactor Plan 补齐项（2026-02）
 - IA 规范路径补齐：

@@ -111,8 +111,14 @@ async def wecom_proxy(request: Request) -> Response:
 
     body = await request.json()
     target_url = str(body.get("url") or "")
+    method = str(body.get("method") or "GET").upper()
+    request_body = body.get("body")
+    request_headers = body.get("headers") if isinstance(body.get("headers"), dict) else {}
+
     if not target_url:
         raise HTTPException(status_code=400, detail="missing url")
+    if method not in {"GET", "POST"}:
+        raise HTTPException(status_code=400, detail="method not allowed")
 
     parsed = urlparse(target_url)
     if parsed.scheme != "https" or parsed.netloc != "qyapi.weixin.qq.com":
@@ -120,8 +126,26 @@ async def wecom_proxy(request: Request) -> Response:
     if not parsed.path.startswith("/cgi-bin/"):
         raise HTTPException(status_code=400, detail="target path not allowed")
 
+    outbound_headers = {"User-Agent": "HYBC-Azure-Bridge/0.1"}
+    if isinstance(request_headers, dict):
+        content_type = request_headers.get("content-type") or request_headers.get("Content-Type")
+        if isinstance(content_type, str) and content_type:
+            outbound_headers["Content-Type"] = content_type
+
+    request_kwargs: dict[str, Any] = {
+        "method": method,
+        "url": target_url,
+        "headers": outbound_headers,
+    }
+
+    if method == "POST":
+        if isinstance(request_body, str):
+            request_kwargs["content"] = request_body.encode("utf-8")
+        elif request_body is not None:
+            request_kwargs["json"] = request_body
+
     async with httpx.AsyncClient(timeout=settings.worker_timeout_seconds) as client:
-        upstream = await client.get(target_url, headers={"User-Agent": "HYBC-Azure-Bridge/0.1"})
+        upstream = await client.request(**request_kwargs)
         return Response(
             content=upstream.text,
             status_code=upstream.status_code,
