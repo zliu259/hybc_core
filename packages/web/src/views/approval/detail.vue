@@ -172,42 +172,55 @@ type AiReviewNormalized = {
   summaryText: string;
 };
 
-const parseEmbeddedAiSummary = (text: string | null | undefined) => {
+const parseAiPayload = (text: string | null | undefined) => {
   if (!text) return null;
   const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
-  try {
-    const parsed = JSON.parse(trimmed) as {
-      outcome?: unknown;
-      comment?: unknown;
-      summary?: unknown;
-    };
-    return {
-      outcome: typeof parsed.outcome === "string" ? parsed.outcome : null,
-      comment: typeof parsed.comment === "string" ? parsed.comment : null,
-      summary: typeof parsed.summary === "string" ? parsed.summary : null
-    };
-  } catch {
-    return null;
+  if (!trimmed) return null;
+
+  const candidates: string[] = [trimmed];
+  const fencedMatches = trimmed.matchAll(/```(?:json)?\s*([\s\S]*?)\s*```/gi);
+  for (const match of fencedMatches) {
+    const body = match[1]?.trim();
+    if (body) candidates.push(body);
   }
+
+  const firstBrace = trimmed.indexOf("{");
+  const lastBrace = trimmed.lastIndexOf("}");
+  if (firstBrace >= 0 && lastBrace > firstBrace) {
+    candidates.push(trimmed.slice(firstBrace, lastBrace + 1).trim());
+  }
+
+  const visited = new Set<string>();
+  for (const candidate of candidates) {
+    if (!candidate || visited.has(candidate)) continue;
+    visited.add(candidate);
+    try {
+      const parsed = JSON.parse(candidate) as Record<string, unknown>;
+      if (!parsed || Array.isArray(parsed)) continue;
+      return {
+        outcome: typeof parsed.outcome === "string" ? parsed.outcome : null,
+        comment: typeof parsed.comment === "string" ? parsed.comment : null,
+        summary: typeof parsed.summary === "string" ? parsed.summary : null
+      };
+    } catch {
+      continue;
+    }
+  }
+
+  return null;
+};
+
+const parseEmbeddedAiSummary = (text: string | null | undefined) => {
+  return parseAiPayload(text);
 };
 
 const parseAiDecisionFromText = (text: string | null | undefined) => {
-  if (!text) return null;
-  const trimmed = text.trim();
-  if (!trimmed.startsWith("{") || !trimmed.endsWith("}")) return null;
-  try {
-    const parsed = JSON.parse(trimmed) as {
-      outcome?: unknown;
-      comment?: unknown;
-    };
-    return {
-      outcome: typeof parsed.outcome === "string" ? parsed.outcome : null,
-      comment: typeof parsed.comment === "string" ? parsed.comment : null
-    };
-  } catch {
-    return null;
-  }
+  const parsed = parseAiPayload(text);
+  if (!parsed) return null;
+  return {
+    outcome: parsed.outcome,
+    comment: parsed.comment
+  };
 };
 
 const toAiOutcomeLabel = (outcome: string | null | undefined, comment: string | null | undefined) => {
@@ -228,6 +241,19 @@ const toAiOutcomeTagType = (
     const text = comment ?? "";
     return /补充|资料|证据|材料/.test(text) ? "warning" : "danger";
   }
+  return "info";
+};
+
+const toContractDirectionLabel = (direction: unknown) => {
+  if (direction === "outbound") return "对外付款";
+  if (direction === "inbound") return "收款";
+  if (typeof direction === "string" && direction) return direction;
+  return "-";
+};
+
+const toContractDirectionTagType = (direction: unknown): TagType => {
+  if (direction === "outbound") return "warning";
+  if (direction === "inbound") return "success";
   return "info";
 };
 
@@ -815,7 +841,11 @@ onMounted(async () => {
               <el-divider>申请明细（合同）</el-divider>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="合同号">{{ contractDetail.contract_no }}</el-descriptions-item>
-                <el-descriptions-item label="方向">{{ contractDetail.direction }}</el-descriptions-item>
+                <el-descriptions-item label="方向">
+                  <el-tag :type="toContractDirectionTagType(contractDetail.direction)" size="small">
+                    <strong>{{ toContractDirectionLabel(contractDetail.direction) }}</strong>
+                  </el-tag>
+                </el-descriptions-item>
                 <el-descriptions-item label="所属项目">{{ toProjectLabel(contractDetail.project_id) }}</el-descriptions-item>
                 <el-descriptions-item label="我方主体">{{ toEntityLabel(contractDetail.entity_id) }}</el-descriptions-item>
                 <el-descriptions-item label="对方单位">{{ contractDetail.counterparty }}</el-descriptions-item>
