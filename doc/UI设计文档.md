@@ -781,6 +781,11 @@
 - “我的待办提醒”模块由时间线改为可点击卡片列表 + 状态点样式，支持点击条目直达审批详情：`packages/web/src/views/welcome/index.vue`
 - “我的待办提醒”标题追加未完成数量（与按钮气泡一致），并保留“进入统一审批台”快捷入口：`packages/web/src/views/welcome/index.vue`
 
+### 4.9 审批结束锁定规则前端防回退加固（2026-03）
+- 合同详情与付款详情的审批锁定判定收敛为共享 helper，避免页面各自维护条件导致回退：`packages/web/src/views/finance/shared/approvalLock.ts`、`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
+- 两个详情页新增“超管编辑模式开启后将强制留痕”的显式提示，降低误操作风险：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
+- 付款详情上传控件状态与文案对齐：审批中允许补传附件（仍禁止删除），避免“提示可上传但控件禁用”的冲突：`packages/web/src/views/finance/payment/detail.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

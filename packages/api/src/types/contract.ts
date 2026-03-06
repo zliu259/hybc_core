@@ -106,6 +106,8 @@ export interface UpdateContractRequest {
   attachments_json?: string;
   remark?: string;
   status?: ContractStatus;
+  admin_edit_mode?: boolean;
+  edit_note?: string;
 }
 
 // ─── Contract Amount Change ──────────
@@ -183,6 +185,8 @@ export interface UpdatePaymentRequestBody {
   attachments_json?: string;
   remark?: string;
   status?: PaymentRequestStatus;
+  admin_edit_mode?: boolean;
+  edit_note?: string;
 }
 
 // ─── Payee ──────────

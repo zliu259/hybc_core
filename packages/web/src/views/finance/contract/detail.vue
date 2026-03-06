@@ -26,6 +26,7 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
+import { isApprovalFinishedLocked, isApprovalInProgress } from "../shared/approvalLock";
 
 defineOptions({ name: "ContractDetail" });
 
@@ -98,9 +99,24 @@ const toRiskLevelTagType = (level: unknown): TagType => {
 const isCreate = computed(() => route.params.id === "create");
 const contractId = computed(() => Number(route.params.id));
 const inApprovalFlow = computed(
-  () => !isCreate.value && detail.value?.status === "pending_approval"
+  () => isApprovalInProgress(detail.value?.status)
 );
-const canEdit = computed(() => isCreate.value || !inApprovalFlow.value);
+const approvalFinishedLock = computed(
+  () =>
+    isApprovalFinishedLocked({
+      isCreate: isCreate.value,
+      approvalInstanceId: detail.value?.approval_instance_id,
+      bizStatus: detail.value?.status
+    })
+);
+const superEditMode = ref(false);
+const superEditNote = ref("");
+const canEdit = computed(
+  () =>
+    isCreate.value ||
+    (!inApprovalFlow.value && !approvalFinishedLock.value) ||
+    (isSuperAdmin.value && superEditMode.value)
+);
 const remainingAmount = computed(() => {
   if (!detail.value) return 0;
   return detail.value.total_amount - detail.value.paid_amount;
@@ -297,6 +313,8 @@ const loadDetail = async () => {
       total_amount: result.data.total_amount,
       remark: result.data.remark ?? ""
     };
+    superEditMode.value = false;
+    superEditNote.value = "";
     attachmentItems.value = parseAttachments(result.data.attachments_json);
     await loadAiReview();
   } finally {
@@ -312,6 +330,11 @@ const loadAiReview = async () => {
 };
 
 const onSave = async () => {
+  if (!canEdit.value) {
+    message("审批结束后仅允许补充附件；如需修改请联系超管开启编辑模式", { type: "warning" });
+    return;
+  }
+
   if (
     !form.value.project_id ||
     !form.value.entity_id ||
@@ -320,6 +343,12 @@ const onSave = async () => {
     message("请先填写必填项", { type: "warning" });
     return;
   }
+
+  if (isSuperAdmin.value && superEditMode.value && !superEditNote.value.trim()) {
+    message("超管编辑模式下必须填写修改说明", { type: "warning" });
+    return;
+  }
+
   saving.value = true;
   try {
     if (isCreate.value) {
@@ -346,7 +375,12 @@ const onSave = async () => {
       contract_date: form.value.contract_date,
       total_amount: form.value.total_amount,
       attachments_json: serializeAttachments(),
-      remark: form.value.remark
+      remark: form.value.remark,
+      admin_edit_mode: isSuperAdmin.value && superEditMode.value ? true : undefined,
+      edit_note:
+        isSuperAdmin.value && superEditMode.value
+          ? superEditNote.value.trim() || undefined
+          : undefined
     });
     message("保存成功", { type: "success" });
     await loadDetail();
@@ -422,7 +456,7 @@ const onTriggerAiReview = async () => {
 };
 
 const uploadAttachment = async (options: UploadRequestOptions) => {
-  if (!canEdit.value) {
+  if (isCreate.value && !canEdit.value) {
     message("当前状态不允许上传附件", { type: "warning" });
     options.onError?.(new Error("upload_not_allowed") as never);
     return;
@@ -455,6 +489,13 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       file_name: rawFile.name,
       file_size: rawFile.size
     });
+
+    if (!isCreate.value && !canEdit.value) {
+      await updateContract(contractId.value, {
+        attachments_json: serializeAttachments()
+      });
+    }
+
     message("附件上传成功", { type: "success" });
     options.onSuccess?.({});
   } catch {
@@ -634,7 +675,7 @@ onMounted(async () => {
             drag
             action="#"
             :show-file-list="false"
-            :disabled="!canEdit || uploadingAttachment"
+            :disabled="uploadingAttachment || inApprovalFlow"
             :http-request="uploadAttachment"
             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
           >
@@ -686,6 +727,36 @@ onMounted(async () => {
     <el-alert
       v-if="inApprovalFlow"
       title="当前合同处于审批流程中，详情字段已锁定"
+      type="warning"
+      :closable="false"
+      style="margin-bottom: 12px"
+    />
+
+    <el-alert
+      v-if="approvalFinishedLock"
+      title="审批流程已结束：仅允许补充附件。合同金额如需调整，请发起金额变更。"
+      type="info"
+      :closable="false"
+      style="margin-bottom: 12px"
+    />
+
+    <el-form v-if="isSuperAdmin && !isCreate" inline style="margin-bottom: 10px">
+      <el-form-item label="超管编辑模式">
+        <el-switch v-model="superEditMode" />
+      </el-form-item>
+      <el-form-item label="修改说明">
+        <el-input
+          v-model="superEditNote"
+          :disabled="!superEditMode"
+          placeholder="开启后必填，将写入备注留痕"
+          style="width: 380px"
+        />
+      </el-form-item>
+    </el-form>
+
+    <el-alert
+      v-if="isSuperAdmin && superEditMode"
+      title="超管编辑模式已开启：保存业务字段时将强制要求修改说明，并把留痕写入备注。"
       type="warning"
       :closable="false"
       style="margin-bottom: 12px"

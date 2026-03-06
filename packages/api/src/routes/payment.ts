@@ -522,9 +522,11 @@ paymentRoutes.put(
   "/:id",
   requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
+    const auth = c.get("auth");
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdatePaymentRequestBody;
     const now = nowIso();
+    const isSuperAdmin = auth.roles.includes("super_admin");
 
     const existing = await c.env.DB.prepare(
       "SELECT * FROM payment_request WHERE id = ?"
@@ -536,11 +538,54 @@ paymentRoutes.put(
       return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
     }
 
-    if (existing.status !== "draft") {
-      return c.json(
-        { success: false, error: { message: "Only draft payment requests can be modified" } },
-        400
-      );
+    const hasNonAttachmentMutation =
+      body.expected_payment_date !== undefined ||
+      body.category !== undefined ||
+      body.payee_id !== undefined ||
+      body.amount !== undefined ||
+      body.content !== undefined ||
+      body.payment_method !== undefined ||
+      body.remark !== undefined ||
+      body.status !== undefined;
+
+    const approval = existing.approval_instance_id
+      ? await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+          .bind(existing.approval_instance_id)
+          .first<{ status: string }>()
+      : null;
+    const approvalInProgress = approval ? approval.status === "pending" || approval.status === "in_progress" : false;
+    const approvalFinished = approval ? !approvalInProgress : false;
+
+    if (!isSuperAdmin) {
+      if (existing.status !== "draft") {
+        if (!(approvalFinished && !hasNonAttachmentMutation)) {
+          return c.json(
+            {
+              success: false,
+              error: {
+                message:
+                  "Payment request is locked after approval lifecycle. Only attachment upload is allowed."
+              }
+            },
+            400
+          );
+        }
+      }
+    }
+
+    if (isSuperAdmin && hasNonAttachmentMutation) {
+      if (body.admin_edit_mode !== true) {
+        return c.json(
+          { success: false, error: { message: "Super admin must enable edit mode for privileged modification" } },
+          400
+        );
+      }
+      if (!body.edit_note?.trim()) {
+        return c.json(
+          { success: false, error: { message: "edit_note is required for privileged modification" } },
+          400
+        );
+      }
     }
 
     if (body.amount !== undefined) {
@@ -565,6 +610,10 @@ paymentRoutes.put(
     }
 
     const newAmountCn = body.amount !== undefined ? toAmountChinese(body.amount) : null;
+    const auditRemark =
+      isSuperAdmin && hasNonAttachmentMutation
+        ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
+        : body.remark;
 
     await c.env.DB.prepare(
       `UPDATE payment_request SET
@@ -590,7 +639,7 @@ paymentRoutes.put(
         body.content ?? null,
         body.payment_method ?? null,
         body.attachments_json ?? null,
-        body.remark ?? null,
+        auditRemark ?? null,
         body.status ?? null,
         now,
         id

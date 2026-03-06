@@ -109,6 +109,8 @@ export const updatePaymentRequest = (
     attachments_json?: string;
     remark?: string;
     status?: string;
+    admin_edit_mode?: boolean;
+    edit_note?: string;
   }
 ) => {
   return http.request<{ success: boolean }>("put", `/api/v1/payment/${id}`, {

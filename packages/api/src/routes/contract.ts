@@ -261,9 +261,11 @@ contractRoutes.put(
   "/:id",
   requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
+    const auth = c.get("auth");
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdateContractRequest;
     const now = nowIso();
+    const isSuperAdmin = auth.roles.includes("super_admin");
 
     const existing = await c.env.DB.prepare(
       "SELECT * FROM contract WHERE id = ? AND status != 'deleted'"
@@ -282,15 +284,28 @@ contractRoutes.put(
       body.contract_date !== undefined ||
       body.total_amount !== undefined ||
       body.attachments_json !== undefined ||
-      body.remark !== undefined;
+      body.remark !== undefined ||
+      body.status !== undefined;
 
-    if (hasDetailMutation && existing.approval_instance_id) {
-      const approval = await c.env.DB.prepare(
-        "SELECT status FROM approval_instance WHERE id = ?"
-      )
-        .bind(existing.approval_instance_id)
-        .first<{ status: string }>();
-      if (approval && (approval.status === "pending" || approval.status === "in_progress")) {
+    const hasNonAttachmentMutation =
+      body.counterparty !== undefined ||
+      body.contract_type !== undefined ||
+      body.handler_userid !== undefined ||
+      body.contract_date !== undefined ||
+      body.total_amount !== undefined ||
+      body.remark !== undefined ||
+      body.status !== undefined;
+
+    const approval = existing.approval_instance_id
+      ? await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+          .bind(existing.approval_instance_id)
+          .first<{ status: string }>()
+      : null;
+    const approvalInProgress = approval ? approval.status === "pending" || approval.status === "in_progress" : false;
+    const approvalFinished = approval ? !approvalInProgress : false;
+
+    if (!isSuperAdmin) {
+      if (approvalInProgress && hasDetailMutation) {
         return c.json(
           {
             success: false,
@@ -301,19 +316,52 @@ contractRoutes.put(
           400
         );
       }
+
+      if (approvalFinished && hasNonAttachmentMutation) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message:
+                "Approval is finished. Only attachment upload is allowed. To modify amount, use contract amount change flow."
+            }
+          },
+          400
+        );
+      }
+
+      if (existing.status !== "draft" && body.total_amount !== undefined) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: "Cannot modify total_amount on non-draft contract. Use amount change API instead."
+            }
+          },
+          400
+        );
+      }
     }
 
-    if (existing.status !== "draft" && body.total_amount !== undefined) {
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: "Cannot modify total_amount on non-draft contract. Use amount change API instead."
-          }
-        },
-        400
-      );
+    if (isSuperAdmin && hasNonAttachmentMutation) {
+      if (body.admin_edit_mode !== true) {
+        return c.json(
+          { success: false, error: { message: "Super admin must enable edit mode for privileged modification" } },
+          400
+        );
+      }
+      if (!body.edit_note?.trim()) {
+        return c.json(
+          { success: false, error: { message: "edit_note is required for privileged modification" } },
+          400
+        );
+      }
     }
+
+    const auditRemark =
+      isSuperAdmin && hasNonAttachmentMutation
+        ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
+        : body.remark;
 
     await c.env.DB.prepare(
       `UPDATE contract SET
@@ -335,7 +383,7 @@ contractRoutes.put(
         body.contract_date ?? null,
         body.total_amount ?? null,
         body.attachments_json ?? null,
-        body.remark ?? null,
+        auditRemark ?? null,
         body.status ?? null,
         now,
         id
