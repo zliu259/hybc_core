@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import { listContracts, type Contract } from "@/api/contract";
@@ -21,6 +22,7 @@ import {
 } from "@/api/receipt";
 
 defineOptions({ name: "InvoiceList" });
+const router = useRouter();
 
 type AttachmentDraft = {
   file_key: string;
@@ -85,6 +87,26 @@ const counterpartyMode = ref<"select" | "manual">("select");
 const saveCounterparty = ref(true);
 const remittanceAttachments = ref<AttachmentDraft[]>([]);
 const taxRateQuickValues = [0, 1, 3, 6, 9, 13];
+
+const invoiceTypeLabelMap: Record<string, string> = {
+  electronic: "电子发票",
+  special: "增值税专票",
+  normal: "增值税普票"
+};
+
+const invoiceRequestStatusLabelMap: Record<string, string> = {
+  draft: "草稿",
+  submitted: "已提交",
+  pending_approval: "审批中",
+  approved: "已通过",
+  rejected: "已驳回",
+  ready_to_issue: "待签发",
+  issued: "已签发",
+  cancelled: "已取消"
+};
+
+const toInvoiceTypeLabel = (value: string) => invoiceTypeLabelMap[value] || value;
+const toInvoiceRequestStatusLabel = (value: string) => invoiceRequestStatusLabelMap[value] || value;
 
 const requestForm = ref({
   contract_id: undefined as number | undefined,
@@ -538,9 +560,17 @@ const submitCreateRequest = async () => {
 };
 
 const submitApproval = async (row: InvoiceRequest) => {
-  await submitInvoiceRequestApproval(row.id);
-  message("已提交审批", { type: "success" });
+  const result = await submitInvoiceRequestApproval(row.id);
+  message(`已提交审批（实例号：${result.data.instance_no}）`, { type: "success" });
   await loadData();
+};
+
+const viewApprovalProgress = (row: InvoiceRequest) => {
+  if (!row.approval_instance_id) {
+    message("当前申请暂无审批实例", { type: "warning" });
+    return;
+  }
+  router.push(`/approval/detail/${row.approval_instance_id}`);
 };
 
 const openIssue = (row: InvoiceRequest) => {
@@ -667,9 +697,13 @@ onMounted(async () => {
       <el-table-column prop="customer_name" label="对方名称" min-width="180" />
       <el-table-column prop="customer_tax_no" label="对方税号" min-width="180" />
       <el-table-column prop="amount_with_tax" label="价税合计" width="120" />
-      <el-table-column prop="invoice_type" label="类型" width="110" />
-      <el-table-column prop="status" label="状态" width="120" />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="类型" width="120">
+        <template #default="scope">{{ toInvoiceTypeLabel(scope.row.invoice_type) }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="120">
+        <template #default="scope">{{ toInvoiceRequestStatusLabel(scope.row.status) }}</template>
+      </el-table-column>
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="scope">
           <el-button
             v-if="scope.row.status === 'draft' || scope.row.status === 'rejected'"
@@ -686,6 +720,14 @@ onMounted(async () => {
             @click="openIssue(scope.row)"
           >
             签发发票
+          </el-button>
+          <el-button
+            v-if="scope.row.approval_instance_id"
+            link
+            type="info"
+            @click="viewApprovalProgress(scope.row)"
+          >
+            查看进度
           </el-button>
         </template>
       </el-table-column>

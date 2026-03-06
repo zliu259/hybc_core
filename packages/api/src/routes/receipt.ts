@@ -55,6 +55,29 @@ const parseJsonObject = (raw: string | null | undefined): Record<string, unknown
   }
 };
 
+const INVOICE_REQUEST_TEMPLATE_CODE = "TPL-INVOICE-REQUEST";
+const INVOICE_REQUEST_TEMPLATE_NAME = "开票申请审批模板";
+const INVOICE_REQUEST_TEMPLATE_CONFIG =
+  '{"version":1,"start_key":"dept_review","nodes":[{"key":"dept_review","type":"sequential","name":"部门负责人审批","assignee_userids":["site_manager"],"next_key":"finance_review"},{"key":"finance_review","type":"sequential","name":"财务复核","assignee_userids":["finance_manager"],"conditions":[{"field":"amount","operator":"gt","value":500000,"next_key":"gm_approve"}],"default_next_key":"archive_cc"},{"key":"gm_approve","type":"sequential","name":"总经理审批","assignee_userids":["general_manager"],"next_key":"archive_cc"},{"key":"archive_cc","type":"cc","name":"抄送归档","assignee_userids":["manager"],"next_key":null}]}'
+;
+
+const ensureInvoiceRequestTemplate = async (env: Env) => {
+  const now = nowIso();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO approval_template
+      (template_code, template_name, biz_type, config_json, status, created_by, created_at, updated_at)
+     VALUES (?, ?, 'invoice_request', ?, 'active', 'system', ?, ?)`
+  )
+    .bind(INVOICE_REQUEST_TEMPLATE_CODE, INVOICE_REQUEST_TEMPLATE_NAME, INVOICE_REQUEST_TEMPLATE_CONFIG, now, now)
+    .run();
+
+  await env.DB.prepare(
+    "UPDATE approval_template SET status = 'active', updated_at = ? WHERE biz_type = 'invoice_request' AND status != 'deleted'"
+  )
+    .bind(now)
+    .run();
+};
+
 export const receiptRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -361,6 +384,8 @@ receiptRoutes.post(
     const summary =
       body.biz_summary?.trim() ||
       `${request.request_no} | ${request.customer_name} | ${request.amount_with_tax}`;
+
+    await ensureInvoiceRequestTemplate(c.env);
 
     const instance = await submitForApproval(
       c.env,

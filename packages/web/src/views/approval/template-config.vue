@@ -33,6 +33,7 @@ const previewConfig = ref("");
 const bizTypeOptions = [
   { label: "对外合同审批", value: "outbound_contract" },
   { label: "收款合同审批", value: "inbound_contract" },
+  { label: "开票申请审批", value: "invoice_request" },
   { label: "付款申请审批", value: "payment_request" },
   { label: "报销批次审批", value: "reimbursement_batch" },
   { label: "出入库审批", value: "stock_order" },
