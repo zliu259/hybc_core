@@ -120,6 +120,7 @@ const paymentDetail = ref<PaymentRequestDetail | null>(null);
 const contractDetail = ref<ContractDetail | null>(null);
 const reimbursementBatchDetail = ref<ReimbursementBatchDetail | null>(null);
 const invoiceRequestDetail = ref<InvoiceRequest | null>(null);
+const invoiceLinkedContract = ref<ContractDetail | null>(null);
 const riskTagType: Record<string, TagType> = {
   none: "info",
   pending: "warning",
@@ -172,6 +173,15 @@ type AiReviewNormalized = {
   outcomeLabel: string;
   outcomeTagType: TagType;
   summaryText: string;
+};
+
+type InvoiceItemRow = {
+  name: string;
+  specification: string;
+  unit: string;
+  quantity: number | null;
+  unit_price: number | null;
+  amount: number | null;
 };
 
 const parseAiPayload = (text: string | null | undefined) => {
@@ -267,6 +277,50 @@ const parseJsonObject = (raw: string | null | undefined): Record<string, unknown
     return parsed as Record<string, unknown>;
   } catch {
     return {};
+  }
+};
+
+const toInvoiceTypeLabel = (value: string | null | undefined) => {
+  if (value === "electronic") return "电子发票";
+  if (value === "special") return "增值税专票";
+  if (value === "normal") return "增值税普票";
+  return value || "-";
+};
+
+const toInvoiceCategoryLabel = (value: string | null | undefined) => {
+  return value?.trim() || "-";
+};
+
+const toNumberOrNull = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const parseInvoiceItems = (raw: string | null | undefined): InvoiceItemRow[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((item): InvoiceItemRow => {
+      const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+      const quantity = toNumberOrNull(row.quantity);
+      const unitPrice = toNumberOrNull(row.unit_price);
+      const explicitAmount = toNumberOrNull(row.amount);
+      return {
+        name: typeof row.name === "string" ? row.name : "",
+        specification: typeof row.specification === "string" ? row.specification : "",
+        unit: typeof row.unit === "string" ? row.unit : "",
+        quantity,
+        unit_price: unitPrice,
+        amount: explicitAmount ?? (quantity !== null && unitPrice !== null ? quantity * unitPrice : null)
+      };
+    });
+  } catch {
+    return [];
   }
 };
 
@@ -517,6 +571,10 @@ const reimbursementAmountDisplay = computed(() =>
   formatAmountWithUpper(reimbursementBatchDetail.value?.total_amount)
 );
 
+const invoiceRequestItems = computed(() =>
+  parseInvoiceItems(invoiceRequestDetail.value?.items_json)
+);
+
 const loadMetaOptions = async () => {
   const [, entityRes] = await Promise.all([loadProjects(), listEntities()]);
   entities.value = entityRes.data;
@@ -544,6 +602,12 @@ const openAttachmentPreview = (fileKey: string, fileName: string) => {
   previewDrawerVisible.value = true;
 };
 
+const goToLinkedContract = () => {
+  const contractId = invoiceRequestDetail.value?.contract_id;
+  if (!contractId) return;
+  router.push(`/finance/contract/detail/${contractId}`);
+};
+
 const loadDetail = async () => {
   loading.value = true;
   try {
@@ -554,6 +618,7 @@ const loadDetail = async () => {
     contractDetail.value = null;
     reimbursementBatchDetail.value = null;
     invoiceRequestDetail.value = null;
+    invoiceLinkedContract.value = null;
 
     const bizType = result.data.instance.biz_type;
     const bizId = result.data.instance.biz_id;
@@ -570,6 +635,8 @@ const loadDetail = async () => {
     } else if (bizType === "invoice_request") {
       const invoiceRequestRes = await getInvoiceRequest(bizId);
       invoiceRequestDetail.value = invoiceRequestRes.data;
+      const contractRes = await getContract(invoiceRequestRes.data.contract_id);
+      invoiceLinkedContract.value = contractRes.data;
     }
 
     if (bizType === "payment_request") {
@@ -937,9 +1004,21 @@ onMounted(async () => {
                   }}
                 </el-descriptions-item>
                 <el-descriptions-item label="所属项目">{{ toProjectLabel(invoiceRequestDetail.project_id) }}</el-descriptions-item>
-                <el-descriptions-item label="关联合同号">{{ invoiceRequestDetail.business_contract_no || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="发票类型">{{ invoiceRequestDetail.invoice_type }}</el-descriptions-item>
-                <el-descriptions-item label="发票类目">{{ invoiceRequestDetail.invoice_category }}</el-descriptions-item>
+                <el-descriptions-item label="关联合同号">
+                  <el-link type="primary" @click="goToLinkedContract">
+                    {{ invoiceRequestDetail.business_contract_no || invoiceLinkedContract?.contract_no || '-' }}
+                  </el-link>
+                  <el-tag
+                    v-if="invoiceLinkedContract"
+                    size="small"
+                    :type="toContractDirectionTagType(invoiceLinkedContract.direction)"
+                    style="margin-left: 8px"
+                  >
+                    {{ toContractDirectionLabel(invoiceLinkedContract.direction) }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item label="发票类型">{{ toInvoiceTypeLabel(invoiceRequestDetail.invoice_type) }}</el-descriptions-item>
+                <el-descriptions-item label="发票类目">{{ toInvoiceCategoryLabel(invoiceRequestDetail.invoice_category) }}</el-descriptions-item>
                 <el-descriptions-item label="税率">{{ invoiceRequestDetail.tax_rate }}%</el-descriptions-item>
                 <el-descriptions-item label="币种">{{ invoiceRequestDetail.currency }}</el-descriptions-item>
                 <el-descriptions-item label="不含税金额">{{ formatAmount(invoiceRequestDetail.amount_without_tax) }}</el-descriptions-item>
@@ -949,6 +1028,26 @@ onMounted(async () => {
                 <el-descriptions-item label="汇款凭证">{{ invoiceRequestDetail.payment_reference || '-' }}</el-descriptions-item>
                 <el-descriptions-item label="备注" :span="2">{{ invoiceRequestDetail.remark || '-' }}</el-descriptions-item>
               </el-descriptions>
+              <el-table :data="invoiceRequestItems" size="small" border style="margin-top: 12px">
+                <el-table-column label="名称" min-width="180">
+                  <template #default="scope">{{ scope.row.name || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="规格" min-width="150">
+                  <template #default="scope">{{ scope.row.specification || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="单位" width="90">
+                  <template #default="scope">{{ scope.row.unit || '-' }}</template>
+                </el-table-column>
+                <el-table-column label="数量" width="120">
+                  <template #default="scope">{{ scope.row.quantity ?? '-' }}</template>
+                </el-table-column>
+                <el-table-column label="单价" width="140">
+                  <template #default="scope">{{ formatAmount(scope.row.unit_price) }}</template>
+                </el-table-column>
+                <el-table-column label="金额" width="160">
+                  <template #default="scope">{{ formatAmount(scope.row.amount) }}</template>
+                </el-table-column>
+              </el-table>
             </template>
 
             <template v-if="aiGateReviews.length > 0">
