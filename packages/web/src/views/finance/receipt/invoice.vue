@@ -147,6 +147,71 @@ const amountWithTax = computed(() => {
   return amountWithoutTax.value + taxAmountEstimated.value;
 });
 
+const toChineseAmount = (amount: number): string => {
+  if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
+  if (amount === 0) return "零元整";
+
+  const fractionUnits = ["角", "分"];
+  const digit = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
+  const intUnits = ["", "拾", "佰", "仟"];
+  const sectionUnits = ["", "万", "亿", "兆"];
+
+  let value = Math.round(amount * 100);
+  const fraction = value % 100;
+  let result = "";
+
+  if (fraction === 0) {
+    result = "整";
+  } else {
+    const jiao = Math.floor(fraction / 10);
+    const fen = fraction % 10;
+    if (jiao > 0) result += `${digit[jiao]}${fractionUnits[0]}`;
+    if (fen > 0) result += `${digit[fen]}${fractionUnits[1]}`;
+  }
+
+  value = Math.floor(value / 100);
+  let sectionIndex = 0;
+  let intResult = "";
+
+  while (value > 0 && sectionIndex < sectionUnits.length) {
+    const sectionValue = value % 10000;
+    if (sectionValue !== 0) {
+      let sectionText = "";
+      let unitIndex = 0;
+      let section = sectionValue;
+      let zeroPending = false;
+      while (section > 0) {
+        const num = section % 10;
+        if (num === 0) {
+          if (!zeroPending && sectionText) {
+            zeroPending = true;
+            sectionText = `零${sectionText}`;
+          }
+        } else {
+          zeroPending = false;
+          sectionText = `${digit[num]}${intUnits[unitIndex]}${sectionText}`;
+        }
+        unitIndex += 1;
+        section = Math.floor(section / 10);
+      }
+      sectionText = sectionText.replace(/零+/g, "零").replace(/零$/g, "");
+      intResult = `${sectionText}${sectionUnits[sectionIndex]}${intResult}`;
+    } else if (intResult && !intResult.startsWith("零")) {
+      intResult = `零${intResult}`;
+    }
+    sectionIndex += 1;
+    value = Math.floor(value / 10000);
+  }
+
+  intResult = intResult.replace(/零+/g, "零").replace(/零([万亿兆])/g, "$1");
+  intResult = intResult.replace(/亿万/g, "亿").replace(/零$/g, "");
+  return `${intResult || "零"}元${result}`;
+};
+
+const amountWithoutTaxCn = computed(() => toChineseAmount(amountWithoutTax.value));
+const taxAmountEstimatedCn = computed(() => toChineseAmount(taxAmountEstimated.value));
+const amountWithTaxCn = computed(() => toChineseAmount(amountWithTax.value));
+
 const issueDialogVisible = ref(false);
 const issuing = ref(false);
 const selectedRequest = ref<InvoiceRequest | null>(null);
@@ -662,7 +727,7 @@ onMounted(async () => {
     />
   </el-card>
 
-  <el-dialog v-model="requestDialogVisible" title="新建开票申请" width="980px">
+  <el-dialog v-model="requestDialogVisible" title="新建开票申请" width="80%">
     <el-form label-width="130px">
       <el-form-item label="收款合同" required>
         <el-select v-model="requestForm.contract_id" filterable style="width: 100%">
@@ -740,6 +805,7 @@ onMounted(async () => {
           :max="100"
           :precision="2"
           :step="1"
+          :controls="false"
           style="width: 220px"
         />
       </el-form-item>
@@ -763,12 +829,12 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="数量" width="120">
           <template #default="scope">
-            <el-input-number v-model="scope.row.quantity" :min="0" :precision="4" :step="1" />
+            <el-input-number v-model="scope.row.quantity" :min="0" :precision="4" :step="1" :controls="false" />
           </template>
         </el-table-column>
         <el-table-column label="单价" width="140">
           <template #default="scope">
-            <el-input-number v-model="scope.row.unit_price" :min="0" :precision="2" :step="100" />
+            <el-input-number v-model="scope.row.unit_price" :min="0" :precision="2" :step="100" :controls="false" />
           </template>
         </el-table-column>
         <el-table-column label="金额" width="140">
@@ -800,12 +866,21 @@ onMounted(async () => {
 
       <el-form-item label="不含税金额">
         <el-input :model-value="amountWithoutTax.toFixed(2)" readonly />
+        <div style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00">
+          大写：{{ amountWithoutTaxCn }}
+        </div>
       </el-form-item>
       <el-form-item label="预计税额">
         <el-input :model-value="taxAmountEstimated.toFixed(2)" readonly />
+        <div style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00">
+          大写：{{ taxAmountEstimatedCn }}
+        </div>
       </el-form-item>
       <el-form-item label="价税合计">
         <el-input :model-value="amountWithTax.toFixed(2)" readonly />
+        <div style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00">
+          大写：{{ amountWithTaxCn }}
+        </div>
       </el-form-item>
 
       <el-form-item label="汇款凭证附件">
