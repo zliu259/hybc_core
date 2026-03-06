@@ -97,6 +97,15 @@ const handleApprovalApproved = async (
     )
       .bind(nowIso(), context.biz_id)
       .run();
+    return;
+  }
+
+  if (context.biz_type === "invoice_request") {
+    await env.DB.prepare(
+      "UPDATE invoice_request SET status = 'approved', approved_at = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), nowIso(), context.biz_id)
+      .run();
   }
 };
 
@@ -164,6 +173,15 @@ const handleApprovalRejected = async (
       "UPDATE stock_order SET status = 'rejected', updated_at = ? WHERE id = ?"
     )
       .bind(nowIso(), context.biz_id)
+      .run();
+    return;
+  }
+
+  if (context.biz_type === "invoice_request") {
+    await env.DB.prepare(
+      "UPDATE invoice_request SET status = 'rejected', rejected_at = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), nowIso(), context.biz_id)
       .run();
   }
 };

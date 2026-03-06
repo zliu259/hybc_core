@@ -52,6 +52,7 @@ class OpenAIProvider(AiProvider):
             "log_smart_fill",
             "log_analysis",
             "log_summary",
+            "ocr_extract",
             "approval_ai_gate",
         ]
 

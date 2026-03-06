@@ -1,6 +1,7 @@
 const bizTypeLabelMap: Record<string, string> = {
   outbound_contract: "对外合同审批",
   inbound_contract: "收款合同审批",
+  invoice_request: "开票申请审批",
   payment_request: "付款审批",
   reimbursement_batch: "报销审批",
   stock_order: "出入库审批",
@@ -21,7 +22,12 @@ const statusLabelMap: Record<string, string> = {
   active: "启用",
   inactive: "停用",
   none: "未执行",
-  failed: "失败"
+  failed: "失败",
+  draft: "草稿",
+  submitted: "已提交",
+  pending_approval: "审批中",
+  ready_to_issue: "待签发",
+  issued: "已签发"
 };
 
 const actionLabelMap: Record<string, string> = {

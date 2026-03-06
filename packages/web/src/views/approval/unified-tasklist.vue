@@ -34,6 +34,7 @@ const activePending = computed(() =>
 
 const bizTypeStyle = (bizType: string) => {
   if (bizType === "outbound_contract") return "biz-contract";
+  if (bizType === "invoice_request") return "biz-invoice";
   if (bizType === "payment_request") return "biz-payment";
   if (bizType === "reimbursement_batch") return "biz-reimbursement";
   return "biz-default";
@@ -284,6 +285,10 @@ onMounted(async () => {
 
 .biz-payment {
   border-left-color: #c4872b;
+}
+
+.biz-invoice {
+  border-left-color: #8f4bc0;
 }
 
 .biz-reimbursement {

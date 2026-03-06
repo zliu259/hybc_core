@@ -24,6 +24,7 @@ import {
   getReimbursementBatch,
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
+import { getInvoiceRequest, type InvoiceRequest } from "@/api/receipt";
 import { getContract, type ContractDetail } from "@/api/contract";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
@@ -118,6 +119,7 @@ const reimbursementAuditReport = ref<Record<string, unknown> | string | null>(
 const paymentDetail = ref<PaymentRequestDetail | null>(null);
 const contractDetail = ref<ContractDetail | null>(null);
 const reimbursementBatchDetail = ref<ReimbursementBatchDetail | null>(null);
+const invoiceRequestDetail = ref<InvoiceRequest | null>(null);
 const riskTagType: Record<string, TagType> = {
   none: "info",
   pending: "warning",
@@ -540,6 +542,7 @@ const loadDetail = async () => {
     paymentDetail.value = null;
     contractDetail.value = null;
     reimbursementBatchDetail.value = null;
+    invoiceRequestDetail.value = null;
 
     const bizType = result.data.instance.biz_type;
     const bizId = result.data.instance.biz_id;
@@ -553,6 +556,9 @@ const loadDetail = async () => {
     } else if (bizType === "reimbursement_batch") {
       const reimbursementRes = await getReimbursementBatch(bizId);
       reimbursementBatchDetail.value = reimbursementRes.data;
+    } else if (bizType === "invoice_request") {
+      const invoiceRequestRes = await getInvoiceRequest(bizId);
+      invoiceRequestDetail.value = invoiceRequestRes.data;
     }
 
     if (bizType === "payment_request") {
@@ -900,6 +906,30 @@ onMounted(async () => {
                 <el-table-column prop="category" label="类别" width="120" />
                 <el-table-column prop="description" label="说明" min-width="220" />
               </el-table>
+            </template>
+
+            <template v-if="invoiceRequestDetail">
+              <el-divider>申请明细（开票申请）</el-divider>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="申请单号">{{ invoiceRequestDetail.request_no }}</el-descriptions-item>
+                <el-descriptions-item label="状态">{{ toStatusLabel(invoiceRequestDetail.status) }}</el-descriptions-item>
+                <el-descriptions-item label="客户名称">{{ invoiceRequestDetail.customer_name }}</el-descriptions-item>
+                <el-descriptions-item label="客户税号">{{ invoiceRequestDetail.customer_tax_no }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{ toProjectLabel(invoiceRequestDetail.project_id) }}</el-descriptions-item>
+                <el-descriptions-item label="关联合同号">{{ invoiceRequestDetail.business_contract_no || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="发票类型">{{ invoiceRequestDetail.invoice_type }}</el-descriptions-item>
+                <el-descriptions-item label="发票类目">{{ invoiceRequestDetail.invoice_category }}</el-descriptions-item>
+                <el-descriptions-item label="税率">{{ invoiceRequestDetail.tax_rate }}</el-descriptions-item>
+                <el-descriptions-item label="币种">{{ invoiceRequestDetail.currency }}</el-descriptions-item>
+                <el-descriptions-item label="不含税金额">{{ formatAmount(invoiceRequestDetail.amount_without_tax) }}</el-descriptions-item>
+                <el-descriptions-item label="预计税额">{{ formatAmount(invoiceRequestDetail.tax_amount_estimated) }}</el-descriptions-item>
+                <el-descriptions-item label="价税合计">{{ formatAmount(invoiceRequestDetail.amount_with_tax) }}</el-descriptions-item>
+                <el-descriptions-item label="申请人">{{ toUserLabel(invoiceRequestDetail.applicant_userid) }}</el-descriptions-item>
+                <el-descriptions-item label="部门">{{ invoiceRequestDetail.department || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="发货凭证">{{ invoiceRequestDetail.delivery_reference || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="回款凭证">{{ invoiceRequestDetail.payment_reference || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{ invoiceRequestDetail.remark || '-' }}</el-descriptions-item>
+              </el-descriptions>
             </template>
 
             <template v-if="aiGateReviews.length > 0">

@@ -187,10 +187,16 @@
 - API 指向：`/api/v1/contract?direction=inbound`, `/api/v1/contract/:id/submit-approval`
 
 #### G-2. 发票管理 `views/finance/receipt/invoice.vue`
-- 核心列：发票单号、合同号、发票抬头、税号、开票日期、金额、状态。
-- 操作：签发发票、删除发票。
-- 校验：已开票总额 + 本次开票 ≤ 合同总额（后端强校验）。
-- API 指向：`/api/v1/receipt/invoice`
+- 双对象视图：`开票申请` + `正式发票`（Tabs）。
+- 开票申请核心列：申请单号、合同号、客户名称、客户税号、价税合计、类型、状态。
+- 开票申请动作：新建申请、提交审批（draft/rejected）、审批通过后签发正式发票（approved/ready_to_issue）。
+- 正式发票核心列：系统单号、税务发票号、合同号、抬头、开票日期、价税合计、校验状态。
+- 正式发票动作：触发 OCR/二维码校验、删除。
+- 校验与约束：
+  - 先审后签发：`invoice_request -> approval -> issue`；
+  - 已开票总额 + 本次签发不含税金额 ≤ 合同总额（后端强校验）；
+  - 签发后可上传电子票据并触发自动校验。
+- API 指向：`/api/v1/receipt/invoice-request*`、`/api/v1/receipt/invoice*`
 
 #### G-3. 收款登记列表 `views/finance/receipt/list.vue`
 - 核心列：收款单号、合同号、关联发票号、收款日期、金额、收款账户、登记人、状态。
@@ -205,12 +211,12 @@
 
 #### H. 审批中心 `views/approval/index.vue`
 - Tab：待审批、已处理、抄送我。
-- 列表列：业务类型、发起人、当前节点、超时状态。
+- 列表列：业务类型、发起人、当前节点、超时状态（新增支持 `invoice_request` 业务类型筛选与展示）。
 - API 指向：`/api/v1/approval/pending`
 
 #### I. 审批详情 `views/approval/detail.vue`
 - 上区：业务摘要（单据关键字段）。
-- 中区：流程图 + 历史操作。
+- 中区：流程图 + 历史操作 + 业务明细（新增 `开票申请` 明细区：申请单号、客户税号、类型、税率、金额拆分、凭证引用）。
 - 下区：动作区（通过/拒绝/退回/转签/撤回）。
 - API 指向：`/api/v1/approval/:id/*`
 

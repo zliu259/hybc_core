@@ -63,6 +63,9 @@ class TaskExecutor:
         if not isinstance(prompt, dict):
             prompt = None
 
+        if prompt is None:
+            prompt = self._default_prompt_for_task(task_type)
+
         if not isinstance(preferred_provider_key, str):
             preferred_provider_key = ""
 
@@ -170,6 +173,8 @@ class TaskExecutor:
                 "contract_review:vision": "OPENAI_MODEL_CONTRACT_REVIEW_VISION",
                 "approval_ai_gate:text": "OPENAI_MODEL_APPROVAL_AI_GATE_TEXT",
                 "approval_ai_gate:vision": "OPENAI_MODEL_APPROVAL_AI_GATE_VISION",
+                "ocr_extract:text": "OPENAI_MODEL_OCR_EXTRACT_TEXT",
+                "ocr_extract:vision": "OPENAI_MODEL_OCR_EXTRACT_VISION",
                 "default:text": "OPENAI_MODEL",
                 "default:vision": "OPENAI_MODEL_VISION_FALLBACK",
             }
@@ -207,10 +212,20 @@ class TaskExecutor:
         return None
 
     def _prepare_payload_for_task(self, task_type: str, payload: dict[str, object]) -> dict[str, object]:
-        if task_type not in {"contract_review", "approval_ai_gate"}:
+        if task_type not in {"contract_review", "approval_ai_gate", "ocr_extract"}:
             return payload
 
         attachments: object = payload.get("attachments")
+        if not attachments and task_type == "ocr_extract":
+            file_key = payload.get("file_key")
+            file_url = payload.get("file_url")
+            normalized: list[dict[str, str]] = []
+            if isinstance(file_key, str) and file_key.strip():
+                normalized.append({"file_key": file_key.strip()})
+            if isinstance(file_url, str) and file_url.strip():
+                normalized.append({"url": file_url.strip()})
+            if normalized:
+                attachments = normalized
         if not attachments and task_type == "approval_ai_gate":
             context = payload.get("context")
             if isinstance(context, dict):
@@ -304,6 +319,24 @@ class TaskExecutor:
                 )
 
         return normalized
+
+    def _default_prompt_for_task(self, task_type: str) -> dict[str, str] | None:
+        if task_type != "ocr_extract":
+            return None
+
+        return {
+            "system": (
+                "You are an OCR invoice extraction assistant. "
+                "Return JSON only, without markdown."
+            ),
+            "user": (
+                "Extract invoice fields from attachment evidence and output strict JSON: "
+                '{"invoice_no":string|null,"invoice_number":string|null,"issue_date":string|null,'
+                '"amount":number|null,"amount_with_tax":number|null,"seller_name":string|null,'
+                '"buyer_name":string|null,"tax_no":string|null,"raw_text_summary":string}. '
+                "Use null when unknown. amount/amount_with_tax must be numeric when available."
+            ),
+        }
 
     def _download_attachment(self, source: str) -> bytes | None:
         candidate_urls: list[str] = []
