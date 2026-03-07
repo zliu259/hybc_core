@@ -13,6 +13,7 @@ import {
   getReimbursementEnvelope,
   precheckEnvelope,
   scanReimbursementEnvelope,
+  submitReimbursementEnvelope,
   triggerEnvelopeAnomalyCheck,
   triggerEnvelopePdf,
   updateReimbursementEnvelope,
@@ -257,7 +258,7 @@ const save = async () => {
 
 const scanSubmit = async () => {
   if (!detail.value) return;
-  await scanReimbursementEnvelope({
+  const result = await scanReimbursementEnvelope({
     envelope_uuid: detail.value.envelope_uuid,
     project_id: form.value.project_id,
     invoice_no: form.value.invoice_no || undefined,
@@ -266,7 +267,18 @@ const scanSubmit = async () => {
     category: form.value.category || undefined,
     description: form.value.description || undefined
   });
-  message("扫码填报完成", { type: "success" });
+  if (result.data.registered) {
+    message(`扫码登记完成，已绑定填报人：${result.data.applicant_userid}`, { type: "success" });
+  } else {
+    message("扫码识别完成，已打开已有报销信封", { type: "info" });
+  }
+  await loadDetail();
+};
+
+const submitEnvelope = async () => {
+  if (!detail.value) return;
+  await submitReimbursementEnvelope(detail.value.id);
+  message("报销已提交，等待办公室收件与后续核查", { type: "success" });
   await loadDetail();
 };
 
@@ -472,7 +484,7 @@ watch(
               <el-tag :type="uuidLocked ? 'warning' : 'success'">{{ uuidLocked ? "已锁定" : "未锁定" }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="说明">
-              上传任一附件后，UUID 不允许再修改
+              上传任一附件后，UUID 不允许再修改；预生成信封需先扫码登记绑定填报人
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
@@ -553,7 +565,14 @@ watch(
         <el-button type="primary" :loading="saving" :disabled="!canEdit" @click="save">保存</el-button>
 
         <template v-if="!isCreate && detail">
-          <el-button @click="scanSubmit">扫码填报(模拟)</el-button>
+          <el-button @click="scanSubmit">扫码登记并绑定填报人</el-button>
+          <el-button
+            v-if="detail.channel === 'physical' && ['draft', 'submitted'].includes(detail.status)"
+            type="primary"
+            @click="submitEnvelope"
+          >
+            提交报销并寄送实物信封
+          </el-button>
           <el-input
             v-model="verifyNote"
             style="width: 220px"

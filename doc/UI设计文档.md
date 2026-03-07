@@ -150,7 +150,7 @@
 
 #### F. 报销信封列表 `views/finance/reimbursement/list.vue`
 - 展示维度：信封编号、UUID、项目、填报人、金额、状态、PDF状态。
-- 支持入口：批量生成信封、进入信封详情执行扫码填报/收件核对/PDF生成。
+- 支持入口：批量生成未登记信封、UUID快速打开信封、电子发票上传、进入信封详情执行登记/提交/收件核对/PDF生成。
 - API 指向：`/api/v1/reimbursement`
 
 #### F-2. 报销信封详情 `views/finance/reimbursement/detail.vue`
@@ -158,8 +158,8 @@
 - 表单区：项目、填报人、通道、发票号、费用日期、金额、类别、说明。
 - 附件区：拖拽上传替代 JSON 手工录入；附件列表展示类型、文件名、大小、状态。
 - UUID 规则：上传附件后 UUID 锁定，不允许修改。
-- 操作区：保存、扫码填报（模拟）、收件通过/异常、触发PDF生成、刷新PDF状态、刷新OCR状态、触发异常检测、预审动作。
-- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
+- 操作区：保存、扫码登记并绑定填报人、提交报销并寄送实物信封、收件通过/异常、触发PDF生成、刷新PDF状态、刷新OCR状态、触发异常检测、预审动作。
+- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 报销预审工作台 `views/finance/reimbursement/precheck.vue`
 - 展示维度：信封编号、项目、填报人、金额、查重线索、预审状态。
@@ -812,6 +812,13 @@
   文件：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 新增“明细追踪”表：展示业务类型、单号、项目、办公室行政、金额、状态、业务时间、最近追踪时间、追踪信息；点击单号可跳转对应业务页面：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 新增后端聚合接口 `GET /api/v1/dashboard/finance-snapshot`，统一输出 summary/charts/details/pagination，支撑前端一屏分析与钻取：`packages/api/src/routes/dashboard.ts`、`packages/web/src/api/dashboard.ts`
+
+### 4.14 报销信封生命周期重构（2026-03）
+- 预生成实物信封改为“未登记”状态，现场人员在发起报销时扫码登记并绑定填报人，避免批量生成阶段提前占用身份：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
+- 新增实物信封提交动作 `POST /api/v1/reimbursement/:id/submit`：要求已登记且至少有一个附件后才能提交，并自动触发 OCR/异常检测任务：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/detail.vue`
+- 电子发票上传改为直达“已接收”阶段，并在入池后立即触发 AI 审计链路（OCR + 异常检测）：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
+- 新增 UUID 快速定位接口 `GET /api/v1/reimbursement/resolve/by-uuid`，办公室可通过扫码/粘贴 UUID 快速打开对应报销信封：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
+- 小程序报销页流程改为“扫码登记 → 上传实物发票扫描件 → 提交寄送”；电子发票保留直传直审路径：`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/reimbursement/index.wxml`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

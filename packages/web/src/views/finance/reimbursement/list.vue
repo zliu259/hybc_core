@@ -7,6 +7,7 @@ import {
   batchGenerateReimbursementEnvelopes,
   getEnvelopeOcrStatus,
   listReimbursementEnvelopes,
+  resolveReimbursementEnvelopeByUuid,
   uploadElectronicInvoice,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
@@ -40,6 +41,7 @@ const projectMap = computed(() => {
 });
 
 const statusTagType: Record<string, TagType> = {
+  unregistered: "info",
   draft: "info",
   submitted: "warning",
   received: "success",
@@ -61,12 +63,13 @@ const generateDialogVisible = ref(false);
 const generating = ref(false);
 const batchForm = ref({
   project_id: undefined as number | undefined,
-  count: 10,
-  applicant_userid: ""
+  count: 10
 });
 
 const electronicDialogVisible = ref(false);
 const uploadingElectronic = ref(false);
+const quickScanDialogVisible = ref(false);
+const quickScanUuid = ref("");
 const electronicForm = ref({
   project_id: undefined as number | undefined,
   applicant_userid: "",
@@ -125,8 +128,7 @@ const goBatchCenter = () => {
 const openBatchGenerate = () => {
   batchForm.value = {
     project_id: filters.value.project_id,
-    count: 10,
-    applicant_userid: ""
+    count: 10
   };
   generateDialogVisible.value = true;
 };
@@ -140,8 +142,7 @@ const submitBatchGenerate = async () => {
   try {
     const result = await batchGenerateReimbursementEnvelopes({
       project_id: batchForm.value.project_id,
-      count: batchForm.value.count,
-      applicant_userid: batchForm.value.applicant_userid || undefined
+      count: batchForm.value.count
     });
     message(`已生成 ${result.data.length} 个报销信封`, { type: "success" });
     generateDialogVisible.value = false;
@@ -164,6 +165,22 @@ const openElectronicUpload = () => {
     description: ""
   };
   electronicDialogVisible.value = true;
+};
+
+const openQuickScan = () => {
+  quickScanUuid.value = "";
+  quickScanDialogVisible.value = true;
+};
+
+const submitQuickScan = async () => {
+  if (!quickScanUuid.value.trim()) {
+    message("请填写信封UUID", { type: "warning" });
+    return;
+  }
+  const result = await resolveReimbursementEnvelopeByUuid(quickScanUuid.value.trim());
+  message("已打开对应报销信封", { type: "success" });
+  quickScanDialogVisible.value = false;
+  goDetail(result.data.id);
 };
 
 const submitElectronicUpload = async () => {
@@ -226,6 +243,7 @@ onMounted(async () => {
       <el-form-item label="状态">
         <el-select v-model="filters.status" clearable style="width: 170px">
           <el-option label="草稿" value="draft" />
+          <el-option label="未登记" value="unregistered" />
           <el-option label="已填报" value="submitted" />
           <el-option label="已收件" value="received" />
           <el-option label="已成批" value="batched" />
@@ -250,7 +268,8 @@ onMounted(async () => {
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
       <el-button @click="openElectronicUpload">电子发票上传</el-button>
-      <el-button @click="openBatchGenerate">批量生成信封</el-button>
+      <el-button @click="openQuickScan">扫码/输入UUID打开信封</el-button>
+      <el-button @click="openBatchGenerate">批量生成信封（未登记）</el-button>
       <el-button @click="goPrecheckWorkbench">预审工作台</el-button>
       <el-button @click="goDuplicateCenter">查重中心</el-button>
       <el-button @click="goBatchCenter">集中审批</el-button>
@@ -327,12 +346,11 @@ onMounted(async () => {
       <el-form-item label="生成数量" required>
         <el-input-number v-model="batchForm.count" :min="1" :max="200" />
       </el-form-item>
-      <el-form-item label="填报人(可选)">
-        <el-input
-          v-model="batchForm.applicant_userid"
-          placeholder="如 zhiyuan.li"
-        />
-      </el-form-item>
+      <el-alert
+        type="info"
+        :closable="false"
+        title="批量生成后信封为“未登记”，需报销人扫码后才会注册并绑定填报人。"
+      />
     </el-form>
     <template #footer>
       <el-button @click="generateDialogVisible = false">取消</el-button>
@@ -420,6 +438,18 @@ onMounted(async () => {
       >
         上传并触发OCR
       </el-button>
+    </template>
+  </el-dialog>
+
+  <el-dialog v-model="quickScanDialogVisible" title="扫码/输入UUID打开信封" width="500px">
+    <el-form label-width="90px">
+      <el-form-item label="信封UUID" required>
+        <el-input v-model="quickScanUuid" placeholder="请粘贴或扫码录入信封UUID" />
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="quickScanDialogVisible = false">取消</el-button>
+      <el-button type="primary" @click="submitQuickScan">打开信封</el-button>
     </template>
   </el-dialog>
 </template>

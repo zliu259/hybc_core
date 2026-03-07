@@ -36,6 +36,7 @@ Page({
     },
     sharedProjectId: 0,
     latestEnvelopeId: 0,
+    latestEnvelopeStatus: "none",
     ocrStatus: "none",
     ocrStatusText: "未开始",
     pdfEnvelopeId: "",
@@ -96,8 +97,7 @@ Page({
     const { scan } = this.data;
     const errorText = firstError([
       required(scan.envelope_uuid, "信封UUID"),
-      positiveNumber(scan.project_id, "项目ID"),
-      positiveNumber(scan.amount, "金额")
+      positiveNumber(scan.project_id, "项目ID")
     ]);
     if (errorText) {
       sayToast({ title: errorText, icon: "none", danger: true });
@@ -106,7 +106,7 @@ Page({
 
     return this.runBusy(async () => {
       const { scan } = this.data;
-      await request({
+      const res = await request({
         method: "POST",
         path: "/api/v1/reimbursement/scan",
         data: {
@@ -116,8 +116,15 @@ Page({
           amount: Number(scan.amount || 0)
         }
       });
+      const envelopeId = (res && res.data && res.data.id) || 0;
+      const envelopeStatus = (res && res.data && res.data.status) || "draft";
+      const registered = !!(res && res.data && res.data.registered);
+      this.setData({ latestEnvelopeId: envelopeId, latestEnvelopeStatus: envelopeStatus });
       vibrateSuccess();
-      sayToast({ title: "扫码填报成功", icon: "success" });
+      sayToast({
+        title: registered ? "扫码登记成功，请继续上传附件并提交" : "已打开已有信封",
+        icon: "success"
+      });
     }).catch((error) => {
       vibrateWarning();
       sayToast({ title: error.message || "提交失败", icon: "none", danger: true });
@@ -157,6 +164,62 @@ Page({
     }).catch((error) => {
       vibrateWarning();
       sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+    });
+  },
+
+  async pickPhysicalInvoicePhoto() {
+    if (!this.data.latestEnvelopeId) {
+      sayToast({ title: "请先扫码登记信封", icon: "none", danger: true });
+      return;
+    }
+
+    return this.runBusy(async () => {
+      const choose = await wxChooseMediaImage();
+      const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
+      if (!filePath) return;
+
+      const file = await uploadFileToR2(filePath);
+      await request({
+        method: "PUT",
+        path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}`,
+        data: {
+          invoice_no: this.data.scan.invoice_no || undefined,
+          amount: Number(this.data.scan.amount || 0) || undefined,
+          attachments: [
+            {
+              attachment_type: "invoice",
+              file_key: file.key,
+              file_name: file.key
+            }
+          ]
+        }
+      });
+
+      vibrateSuccess();
+      sayToast({ title: "实物发票扫描件已上传", icon: "success" });
+    }).catch((error) => {
+      vibrateWarning();
+      sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+    });
+  },
+
+  async submitEnvelope() {
+    if (!this.data.latestEnvelopeId) {
+      sayToast({ title: "请先扫码登记信封", icon: "none", danger: true });
+      return;
+    }
+
+    return this.runBusy(async () => {
+      await request({
+        method: "POST",
+        path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}/submit`
+      });
+      this.setData({ latestEnvelopeStatus: "submitted" });
+      vibrateSuccess();
+      sayToast({ title: "报销已提交，请邮寄实体信封到办公室", icon: "success" });
+    }).catch((error) => {
+      vibrateWarning();
+      sayToast({ title: error.message || "提交失败", icon: "none", danger: true });
     });
   },
 
@@ -212,7 +275,13 @@ Page({
 
   openGlobalHelper() {
     wx.showActionSheet({
-      itemList: ["🎙️ 录音识别指令", "🎤 扫码填报报销", "🎤 上传电子发票", "🎤 触发PDF"],
+      itemList: [
+        "🎙️ 录音识别指令",
+        "🎤 扫码登记信封",
+        "📎 上传实物发票扫描件",
+        "📨 提交并寄送",
+        "🎤 上传电子发票"
+      ],
       success: async (res) => {
         if (res.tapIndex === 0) {
           await runVoiceAssistant({ scene: "reimbursement" }).catch(() => {});
@@ -223,6 +292,14 @@ Page({
           return;
         }
         if (res.tapIndex === 2) {
+          this.pickPhysicalInvoicePhoto();
+          return;
+        }
+        if (res.tapIndex === 3) {
+          this.submitEnvelope();
+          return;
+        }
+        if (res.tapIndex === 4) {
           this.pickInvoicePhoto();
           return;
         }

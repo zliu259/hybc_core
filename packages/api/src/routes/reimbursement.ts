@@ -24,6 +24,7 @@ import type {
 } from "../types/reimbursement";
 
 const nowIso = () => new Date().toISOString();
+const UNASSIGNED_APPLICANT = "__UNASSIGNED__";
 
 const parseTaskResult = (resultJson: string | null): Record<string, unknown> | null => {
   if (!resultJson) {
@@ -174,6 +175,64 @@ const applyDuplicateChecks = async (env: Env, envelopeId: number): Promise<numbe
     .run();
 
   return count;
+};
+
+const enqueueEnvelopeAiAudit = async (
+  env: Env,
+  envelopeId: number,
+  options?: { file_key?: string | null }
+) => {
+  const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
+    .bind(envelopeId)
+    .first<ReimbursementEnvelope>();
+
+  if (!envelope || envelope.status === "deleted") return;
+
+  const duplicateCount = await applyDuplicateChecks(env, envelopeId);
+  const now = nowIso();
+
+  await createTask(env, {
+    task_type: "reimbursement_anomaly",
+    biz_type: "reimbursement_envelope",
+    biz_id: envelopeId,
+    priority: 4,
+    payload: {
+      envelope_id: envelopeId,
+      amount: envelope.amount,
+      duplicate_count: duplicateCount,
+      project_id: envelope.project_id,
+      applicant_userid: envelope.applicant_userid
+    },
+    timeout_seconds: 300
+  });
+
+  await env.DB.prepare(
+    "UPDATE reimbursement_envelope SET precheck_status = 'pending', duplicate_check_status = 'pending', updated_at = ? WHERE id = ?"
+  )
+    .bind(now, envelopeId)
+    .run();
+
+  const fileKey = options?.file_key?.trim();
+  if (!fileKey) return;
+
+  const ocrTask = await createTask(env, {
+    task_type: "ocr_extract",
+    biz_type: "reimbursement_envelope",
+    biz_id: envelopeId,
+    priority: 4,
+    payload: {
+      envelope_id: envelopeId,
+      file_key: fileKey,
+      project_id: envelope.project_id
+    },
+    timeout_seconds: 300
+  });
+
+  await env.DB.prepare(
+    "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
+  )
+    .bind(ocrTask.id, nowIso(), envelopeId)
+    .run();
 };
 
 export const reimbursementRoutes = new Hono<{
@@ -851,8 +910,8 @@ reimbursementRoutes.post(
         (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
          invoice_no, expense_date, amount, description,
          status, precheck_status, verification_status, ocr_status,
-         duplicate_check_status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, 'submitted', 'none', 'pending', 'pending', 'pending', ?, ?)`
+         duplicate_check_status, received_at, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, 'received', 'none', 'verified', 'none', 'none', ?, ?, ?)`
     )
       .bind(
         envelopeNo,
@@ -863,6 +922,7 @@ reimbursementRoutes.post(
         body.issue_date ?? null,
         body.amount ?? 0,
         body.description ?? null,
+        now,
         now,
         now
       )
@@ -882,25 +942,13 @@ reimbursementRoutes.post(
       }
     ]);
 
-    const ocrTask = await createTask(c.env, {
-      task_type: "ocr_extract",
-      biz_type: "reimbursement_envelope",
-      biz_id: envelopeId,
-      priority: 4,
-      payload: {
-        envelope_id: envelopeId,
-        file_key: body.file_key,
-        file_name: body.file_name,
-        project_id: body.project_id
-      },
-      timeout_seconds: 300
+    await enqueueEnvelopeAiAudit(c.env, envelopeId, {
+      file_key: body.file_key
     });
 
-    await c.env.DB.prepare(
-      "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
-    )
-      .bind(ocrTask.id, nowIso(), envelopeId)
-      .run();
+    const latest = await c.env.DB.prepare("SELECT ocr_task_id FROM reimbursement_envelope WHERE id = ?")
+      .bind(envelopeId)
+      .first<{ ocr_task_id: number | null }>();
 
     return c.json(
       {
@@ -909,7 +957,7 @@ reimbursementRoutes.post(
           id: envelopeId,
           envelope_no: envelopeNo,
           envelope_uuid: envelopeUuid,
-          ocr_task_id: ocrTask.id
+          ocr_task_id: latest?.ocr_task_id ?? null
         }
       },
       201
@@ -968,17 +1016,19 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
           ? result.date
           : envelope.expense_date;
 
+    const nextStatus = envelope.status === "received" ? "received" : "submitted";
+
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          ocr_status = 'completed',
          invoice_no = COALESCE(?, invoice_no),
          amount = COALESCE(?, amount),
          expense_date = COALESCE(?, expense_date),
-         status = 'submitted',
+         status = ?,
          updated_at = ?
        WHERE id = ?`
     )
-      .bind(invoiceNo ?? null, amount ?? null, issueDate ?? null, nowIso(), id)
+      .bind(invoiceNo ?? null, amount ?? null, issueDate ?? null, nextStatus, nowIso(), id)
       .run();
 
     duplicateCount = await applyDuplicateChecks(c.env, id);
@@ -1178,6 +1228,36 @@ reimbursementRoutes.get("/:id", async (c) => {
   });
 });
 
+reimbursementRoutes.get("/resolve/by-uuid", async (c) => {
+  const envelopeUuid = c.req.query("envelope_uuid")?.trim();
+  if (!envelopeUuid) {
+    return c.json({ success: false, error: { message: "envelope_uuid is required" } }, 400);
+  }
+
+  const envelope = await c.env.DB.prepare(
+    "SELECT id, envelope_no, envelope_uuid, status, applicant_userid FROM reimbursement_envelope WHERE envelope_uuid = ? AND status != 'deleted'"
+  )
+    .bind(envelopeUuid)
+    .first<
+      Pick<
+        ReimbursementEnvelope,
+        "id" | "envelope_no" | "envelope_uuid" | "status" | "applicant_userid"
+      >
+    >();
+
+  if (!envelope) {
+    return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      ...envelope,
+      registered: envelope.applicant_userid !== UNASSIGNED_APPLICANT && envelope.status !== "unregistered"
+    }
+  });
+});
+
 reimbursementRoutes.post(
   "/",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
@@ -1343,9 +1423,9 @@ reimbursementRoutes.post(
         `INSERT INTO reimbursement_envelope
           (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
            status, precheck_status, verification_status, created_at, updated_at)
-         VALUES (?, ?, ?, ?, 'physical', 'draft', 'none', 'pending', ?, ?)`
+         VALUES (?, ?, ?, ?, 'physical', 'unregistered', 'none', 'pending', ?, ?)`
       )
-        .bind(envelopeNo, envelopeUuid, body.project_id, body.applicant_userid ?? auth.sub, now, now)
+        .bind(envelopeNo, envelopeUuid, body.project_id, UNASSIGNED_APPLICANT, now, now)
         .run();
 
       generated.push({
@@ -1385,29 +1465,48 @@ reimbursementRoutes.post("/scan", async (c) => {
 
   const now = nowIso();
 
+  if (["batched", "pending_approval", "approved", "paid", "deleted"].includes(envelope.status)) {
+    return c.json(
+      {
+        success: false,
+        error: { message: `Envelope in status ${envelope.status} cannot be scanned for registration` }
+      },
+      400
+    );
+  }
+
+  const shouldBindApplicant =
+    envelope.applicant_userid === UNASSIGNED_APPLICANT || envelope.status === "unregistered";
+  const isPrivileged = auth.roles.some((role) =>
+    ["super_admin", "manager", "site_manager", "finance"].includes(role)
+  );
+
+  if (!shouldBindApplicant && !isPrivileged && envelope.applicant_userid !== auth.sub) {
+    return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+  }
+
   await c.env.DB.prepare(
     `UPDATE reimbursement_envelope SET
        project_id = COALESCE(?, project_id),
-       applicant_userid = COALESCE(?, applicant_userid),
+       applicant_userid = CASE WHEN ? THEN ? ELSE applicant_userid END,
        invoice_no = COALESCE(?, invoice_no),
        expense_date = COALESCE(?, expense_date),
        amount = COALESCE(?, amount),
        category = COALESCE(?, category),
        description = COALESCE(?, description),
-       status = 'submitted',
-       submitted_at = ?,
+       status = CASE WHEN status = 'unregistered' THEN 'draft' ELSE status END,
        updated_at = ?
      WHERE id = ?`
   )
     .bind(
       body.project_id ?? null,
-      envelope.applicant_userid || auth.sub,
+      shouldBindApplicant ? 1 : 0,
+      auth.sub,
       body.invoice_no ?? null,
       body.expense_date ?? null,
       body.amount ?? null,
       body.category ?? null,
       body.description ?? null,
-      now,
       now,
       envelope.id
     )
@@ -1423,8 +1522,100 @@ reimbursementRoutes.post("/scan", async (c) => {
     scanned_by: auth.sub
   });
 
-  return c.json({ success: true, data: { id: envelope.id, status: "submitted" } });
+  const latest = await c.env.DB.prepare(
+    "SELECT id, status, applicant_userid FROM reimbursement_envelope WHERE id = ?"
+  )
+    .bind(envelope.id)
+    .first<{ id: number; status: string; applicant_userid: string }>();
+
+  return c.json({
+    success: true,
+    data: {
+      id: envelope.id,
+      status: latest?.status ?? envelope.status,
+      applicant_userid: latest?.applicant_userid ?? envelope.applicant_userid,
+      registered: shouldBindApplicant
+    }
+  });
 });
+
+reimbursementRoutes.post(
+  "/:id/submit",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+
+    const envelope = await c.env.DB.prepare(
+      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<ReimbursementEnvelope>();
+
+    if (!envelope) {
+      return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    const isPrivileged = auth.roles.some((role) =>
+      ["super_admin", "manager", "site_manager", "finance"].includes(role)
+    );
+    if (!isPrivileged && envelope.applicant_userid !== auth.sub) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    if (envelope.channel !== "physical") {
+      return c.json({ success: false, error: { message: "Only physical envelope needs submit step" } }, 400);
+    }
+
+    if (![
+      "draft",
+      "submitted",
+      "unregistered"
+    ].includes(envelope.status)) {
+      return c.json(
+        { success: false, error: { message: `Envelope in status ${envelope.status} cannot submit` } },
+        400
+      );
+    }
+
+    if (envelope.applicant_userid === UNASSIGNED_APPLICANT) {
+      return c.json({ success: false, error: { message: "Envelope not registered to applicant yet" } }, 400);
+    }
+
+    const attachmentRow = await c.env.DB.prepare(
+      "SELECT file_key FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
+    )
+      .bind(id)
+      .first<{ file_key: string | null }>();
+
+    if (!attachmentRow?.file_key) {
+      return c.json({ success: false, error: { message: "At least one attachment is required before submit" } }, 400);
+    }
+
+    const now = nowIso();
+    await c.env.DB.prepare(
+      `UPDATE reimbursement_envelope SET
+         status = 'submitted',
+         submitted_at = COALESCE(submitted_at, ?),
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(now, now, id)
+      .run();
+
+    await enqueueEnvelopeAiAudit(c.env, id, {
+      file_key: attachmentRow.file_key
+    });
+
+    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SCANNED", "reimbursement_envelope", {
+      envelope_id: id,
+      envelope_uuid: envelope.envelope_uuid,
+      submitted_by: auth.sub
+    });
+
+    return c.json({ success: true, data: { id, status: "submitted" } });
+  }
+);
 
 reimbursementRoutes.post(
   "/verify",

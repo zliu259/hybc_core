@@ -4,6 +4,7 @@ export const reimbursementChannels = ["physical", "electronic"] as const;
 export type ReimbursementChannel = (typeof reimbursementChannels)[number];
 
 export const reimbursementStatuses = [
+  "unregistered",
   "draft",
   "submitted",
   "received",

@@ -81,6 +81,22 @@ export const getReimbursementEnvelope = (id: number) => {
   );
 };
 
+export const resolveReimbursementEnvelopeByUuid = (envelope_uuid: string) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      id: number;
+      envelope_no: string;
+      envelope_uuid: string;
+      status: string;
+      applicant_userid: string;
+      registered: boolean;
+    };
+  }>("get", "/api/v1/reimbursement/resolve/by-uuid", {
+    params: { envelope_uuid }
+  });
+};
+
 export const createReimbursementEnvelope = (data: {
   project_id: number;
   applicant_userid?: string;
@@ -167,8 +183,15 @@ export const scanReimbursementEnvelope = (data: {
 }) => {
   return http.request<{
     success: boolean;
-    data: { id: number; status: string };
+    data: { id: number; status: string; applicant_userid: string; registered: boolean };
   }>("post", "/api/v1/reimbursement/scan", { data });
+};
+
+export const submitReimbursementEnvelope = (id: number) => {
+  return http.request<{
+    success: boolean;
+    data: { id: number; status: string };
+  }>("post", `/api/v1/reimbursement/${id}/submit`);
 };
 
 export const verifyReimbursementEnvelope = (data: {

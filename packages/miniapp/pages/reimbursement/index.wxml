@@ -1,6 +1,6 @@
 <view class="page">
-  <hy-panel-card title="🧾 报销信封与票据填报" subtitle="扫码、拍照、OCR、防重一体化">
-    <t-notice-bar content="流程：扫码信封 -> 填写金额 -> 提交，异常会红色预警" theme="warning" />
+  <hy-panel-card title="🧾 报销信封与票据填报" subtitle="扫码登记、上传票据、提交寄送、OCR/AI联动">
+    <t-notice-bar content="流程：扫码登记信封 -> 上传实物发票扫描件并保存 -> 提交并邮寄；电子发票上传后直接进入已接收并触发AI" theme="warning" />
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
     <view class="label required">🧧 信封UUID</view>
     <input class="input" value="{{scan.envelope_uuid}}" data-key="envelope_uuid" bindinput="onScanInput" disabled="{{busy}}" />
@@ -10,7 +10,15 @@
     <input class="input" type="digit" value="{{scan.amount}}" data-key="amount" bindinput="onScanInput" disabled="{{busy}}" />
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy}}">📷 扫码识别</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">✅ 提交填报</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">✅ 扫码登记</t-button>
+    </view>
+    <view class="row">
+      <hy-status-chip text="当前信封ID：{{latestEnvelopeId || '-'}}" theme="warning" variant="light" />
+      <hy-status-chip text="当前状态：{{latestEnvelopeStatus}}" theme="success" variant="light" />
+    </view>
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="pickPhysicalInvoicePhoto" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📎 上传实物发票扫描件</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📨 提交并寄送</t-button>
     </view>
   </hy-panel-card>
 
