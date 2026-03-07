@@ -142,12 +142,12 @@ Page({
   },
 
   goToReimbursement() {
-    wx.navigateTo({ url: "/pages/reimbursement/index" });
+    wx.navigateTo({ url: "/pages/reimbursement-list/index" });
   },
 
   openGlobalHelper() {
     wx.showActionSheet({
-      itemList: ["🎙️ 录音识别指令", "🎤 催办我的申请", "🎤 打开报销扫码", "🎤 打开审批待办"],
+      itemList: ["🎙️ 录音识别指令", "🎤 催办我的申请", "🎤 打开我的报销提交", "🎤 打开审批待办"],
       success: async (res) => {
         if (res.tapIndex === 0) {
           await runVoiceAssistant({ scene: "profile" }).catch(() => {});
@@ -158,7 +158,7 @@ Page({
           return;
         }
         if (res.tapIndex === 2) {
-          wx.navigateTo({ url: "/pages/reimbursement/index" });
+          wx.navigateTo({ url: "/pages/reimbursement-list/index" });
           return;
         }
         wx.navigateTo({ url: "/pages/approval/index" });

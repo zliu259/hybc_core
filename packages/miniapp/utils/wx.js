@@ -39,6 +39,16 @@ const wxChooseMediaImage = () =>
     });
   });
 
+const wxChooseMessageFile = ({ count = 1, type = "file" } = {}) =>
+  new Promise((resolve, reject) => {
+    wx.chooseMessageFile({
+      count,
+      type,
+      success: resolve,
+      fail: reject
+    });
+  });
+
 const wxGetLocation = () =>
   new Promise((resolve, reject) => {
     wx.getLocation({
@@ -95,6 +105,7 @@ module.exports = {
   wxLogin,
   wxScanCode,
   wxChooseMediaImage,
+  wxChooseMessageFile,
   wxGetLocation,
   wxRecordAudioOnce
 };

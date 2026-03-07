@@ -1,0 +1,31 @@
+<view class="page">
+  <hy-panel-card title="我的报销提交" subtitle="查看个人报销记录，继续编辑或直接提交草稿">
+    <view class="toolbar">
+      <input class="input" value="{{keyword}}" bindinput="onKeywordInput" placeholder="编号/UUID/发票号" />
+      <picker mode="selector" range="{{statusOptions}}" range-key="label" value="{{statusIndex}}" bindchange="onStatusChange">
+        <view class="picker-value">{{statusOptions[statusIndex].label}}</view>
+      </picker>
+    </view>
+
+    <view class="toolbar">
+      <t-button class="btn" variant="outline" bindtap="search" loading="{{loading}}">查询</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="goCreate">发起报销</t-button>
+    </view>
+
+    <view wx:if="{{!list.length && !loading}}" class="empty">暂无报销提交</view>
+
+    <view wx:for="{{list}}" wx:key="id" class="item-card">
+      <view class="item-row">
+        <text class="item-no">{{item.envelope_no}}</text>
+        <hy-status-chip text="{{item.statusLabel}}" theme="warning" variant="light" />
+      </view>
+      <view class="item-sub">UUID：{{item.envelope_uuid}}</view>
+      <view class="item-sub">通道：{{item.channelLabel}} · 金额：¥{{item.amountText}}</view>
+      <view class="item-sub">更新时间：{{item.updatedAtText}}</view>
+      <view class="actions">
+        <t-button class="btn" size="small" variant="outline" data-id="{{item.id}}" bindtap="goDetail">继续处理</t-button>
+        <t-button wx:if="{{item.canSubmit}}" class="btn" size="small" theme="primary" data-id="{{item.id}}" bindtap="submitFromList">提交</t-button>
+      </view>
+    </view>
+  </hy-panel-card>
+</view>

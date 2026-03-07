@@ -1,39 +1,27 @@
 <view class="page">
-  <hy-panel-card title="企业微信登录" subtitle="真机登录失败时可在此重试并查看错误详情">
-    <t-notice-bar
-      wx:if="{{errorMessage}}"
-      theme="error"
-      prefix-icon="error-circle"
-      content="{{errorMessage}}"
-    />
-
-    <view class="meta">当前 API：{{baseUrl}}</view>
-
-    <view class="warn" wx:if="{{localBaseWarning}}">
-      当前地址是本机地址（127.0.0.1/localhost），真机无法访问。
+  <view class="login-shell">
+    <view class="brand-block">
+      <image src="/assets/login/hybclogo.png" class="logo" mode="widthFix" />
+      <view class="brand-title">恒越百川</view>
+      <view class="brand-subtitle">员工平台</view>
     </view>
 
-    <view class="row" wx:if="{{localBaseWarning}}">
-      <t-button class="btn" variant="outline" bindtap="switchToRemoteBaseUrl">
-        切换到远端 API
-      </t-button>
-    </view>
+    <view class="login-card">
+      <view class="card-title">欢迎登录</view>
+      <view class="card-subtitle">请通过企业微信完成身份验证</view>
 
-    <view class="row">
-      <t-button
-        class="btn btn-primary"
-        theme="primary"
-        bindtap="retryLogin"
-        loading="{{loading}}"
-        disabled="{{loading}}"
-      >
-        重新企业微信登录
-      </t-button>
-    </view>
+      <button class="wecom-btn" bindtap="retryLogin" disabled="{{loading}}" loading="{{loading}}">
+        <image src="/assets/login/wecom-login-btn.png" mode="widthFix" class="wecom-btn-image" />
+      </button>
 
-    <view class="row" wx:if="{{errorMessage}}">
-      <t-button class="btn" variant="outline" bindtap="copyError">复制错误信息</t-button>
-      <t-button class="btn" variant="outline" bindtap="openProfile">去我的页检查配置</t-button>
+      <view wx:if="{{errorMessage}}" class="error-box">
+        <view class="error-title">登录失败</view>
+        <view class="error-text">{{errorMessage}}</view>
+        <view class="error-actions">
+          <t-button class="btn" size="small" variant="outline" bindtap="copyError">复制错误信息</t-button>
+          <t-button class="btn" size="small" variant="outline" bindtap="openProfile">前往我的页面</t-button>
+        </view>
+      </view>
     </view>
-  </hy-panel-card>
+  </view>
 </view>

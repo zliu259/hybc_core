@@ -1,0 +1,58 @@
+.toolbar {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.input,
+.picker-value {
+  flex: 1;
+  background: #fff;
+  border: 1rpx solid #d7dbe3;
+  border-radius: 12rpx;
+  padding: 16rpx 18rpx;
+  font-size: 28rpx;
+  box-sizing: border-box;
+}
+
+.btn {
+  flex: 1;
+}
+
+.empty {
+  text-align: center;
+  color: #7b8494;
+  padding: 24rpx 0;
+}
+
+.item-card {
+  background: #fff;
+  border: 1rpx solid #e7eaf0;
+  border-radius: 14rpx;
+  padding: 16rpx;
+  margin-bottom: 14rpx;
+}
+
+.item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.item-no {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.item-sub {
+  color: #5c667a;
+  font-size: 24rpx;
+  margin-top: 4rpx;
+}
+
+.actions {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}

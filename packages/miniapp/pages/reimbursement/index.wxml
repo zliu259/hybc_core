@@ -1,54 +1,97 @@
 <view class="page">
-  <hy-panel-card title="🧾 报销信封与票据填报" subtitle="扫码登记、上传票据、提交寄送、OCR/AI联动">
-    <t-notice-bar content="流程：扫码登记信封 -> 上传实物发票扫描件并保存 -> 提交并邮寄；电子发票上传后直接进入已接收并触发AI" theme="warning" />
-    <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="label required">🧧 信封UUID</view>
-    <input class="input" value="{{scan.envelope_uuid}}" data-key="envelope_uuid" bindinput="onScanInput" disabled="{{busy}}" />
-    <view class="label">🧾 发票号</view>
-    <input class="input" value="{{scan.invoice_no}}" data-key="invoice_no" bindinput="onScanInput" disabled="{{busy}}" />
-    <view class="label required">💰 金额</view>
-    <input class="input" type="digit" value="{{scan.amount}}" data-key="amount" bindinput="onScanInput" disabled="{{busy}}" />
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy}}">📷 扫码识别</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitScan" loading="{{busy}}" disabled="{{busy}}">✅ 扫码登记</t-button>
+  <hy-panel-card title="🧾 报销提交详情" subtitle="与 Web 个人报销流程对齐：保存草稿、上传附件、提交申请">
+    <view class="top-actions">
+      <t-button class="btn" variant="outline" bindtap="goMyList">返回我的提交</t-button>
+      <t-button class="btn" variant="outline" bindtap="resetDraft" disabled="{{busy}}">新建草稿</t-button>
     </view>
-    <view class="row">
-      <hy-status-chip text="当前信封ID：{{latestEnvelopeId || '-'}}" theme="warning" variant="light" />
-      <hy-status-chip text="当前状态：{{latestEnvelopeStatus}}" theme="success" variant="light" />
-    </view>
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickPhysicalInvoicePhoto" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📎 上传实物发票扫描件</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📨 提交并寄送</t-button>
-    </view>
-  </hy-panel-card>
 
-  <hy-panel-card title="📸 电子发票拍照上传 (OCR)">
+    <view class="status-grid">
+      <hy-status-chip text="报销ID：{{latestEnvelopeId || '-'}}" theme="warning" variant="light" />
+      <hy-status-chip text="识别号：{{latestEnvelopeNo || latestEnvelopeUuid || '-'}}" theme="success" variant="light" />
+      <hy-status-chip text="状态：{{latestEnvelopeStatusText}}" theme="warning" variant="light" />
+      <hy-status-chip text="附件数：{{attachmentCount}}" theme="success" variant="light" />
+      <hy-status-chip text="OCR：{{ocrStatusText}}" theme="warning" variant="light" />
+    </view>
+
+    <t-notice-bar content="建议流程：填写基础信息并保存草稿 -> 上传发票附件 -> 提交报销。若已有预打印信封，可扫码填入 UUID 后保存。" theme="warning" />
+
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" bind:change="onProjectChange" />
+
+    <view class="label">报销通道</view>
+    <picker mode="selector" range="{{channelOptions}}" range-key="label" value="{{channelIndex}}" bindchange="onChannelChange">
+      <view class="picker-value">{{channelOptions[channelIndex].label}}</view>
+    </picker>
+
+    <view class="label">绑定信封 UUID（可选）</view>
+    <input class="input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy}}" placeholder="扫码或粘贴 UUID" />
+
     <view class="label">发票号（可选）</view>
-    <input class="input" value="{{invoice.invoice_no}}" data-key="invoice_no" bindinput="onInvoiceInput" disabled="{{busy}}" />
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">拍照上传</t-button>
-      <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy}}">刷新OCR状态</t-button>
-    </view>
-    <view class="row">
-      <hy-status-chip text="OCR状态：{{ocrStatusText}}" theme="warning" variant="light" />
-    </view>
-  </hy-panel-card>
+    <input class="input" value="{{draft.invoice_no}}" data-key="invoice_no" bindinput="onDraftInput" disabled="{{busy}}" />
 
-  <hy-panel-card wx:if="{{canGeneratePdf}}" title="📄 生成报销信封 PDF">
-    <view class="label required">信封ID</view>
-    <input class="input" type="number" value="{{pdfEnvelopeId}}" bindinput="onPdfIdInput" disabled="{{busy}}" />
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="generatePdf" loading="{{busy}}" disabled="{{busy}}">触发PDF</t-button>
-      <t-button class="btn" variant="outline" bindtap="refreshPdfStatus" loading="{{busy}}" disabled="{{busy}}">刷新PDF状态</t-button>
-    </view>
-    <view class="row">
-      <hy-status-chip text="PDF状态：{{pdfStatusText}}" theme="success" variant="light" />
-    </view>
-  </hy-panel-card>
+    <view class="label">费用日期（可选）</view>
+    <picker mode="date" value="{{draft.expense_date}}" bindchange="onDraftInput" data-key="expense_date">
+      <view class="picker-value">{{draft.expense_date || '请选择日期'}}</view>
+    </picker>
 
-  <hy-panel-card wx:else title="📄 生成报销信封 PDF">
-    <view class="sub">当前角色无生成 PDF 权限（仅 super_admin/manager/site_manager 可用）</view>
+    <view class="label">金额（可选）</view>
+    <input class="input" type="digit" value="{{draft.amount}}" data-key="amount" bindinput="onDraftInput" disabled="{{busy}}" />
+
+    <view class="label">类别（可选）</view>
+    <input class="input" value="{{draft.category}}" data-key="category" bindinput="onDraftInput" disabled="{{busy}}" />
+
+    <view class="label">说明（可选）</view>
+    <textarea class="textarea" value="{{draft.description}}" data-key="description" bindinput="onDraftInput" maxlength="240" disabled="{{busy}}" />
+
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy}}">📷 扫码录入UUID</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="createOrUpdateDraft" loading="{{busy}}" disabled="{{busy}}">💾 保存草稿</t-button>
+    </view>
+
+    <view class="label">附件类型</view>
+    <picker mode="selector" range="{{attachmentTypeOptions}}" range-key="label" value="{{attachmentTypeIndex}}" bindchange="onAttachmentTypeChange">
+      <view class="picker-value">{{attachmentTypeOptions[attachmentTypeIndex].label}}</view>
+    </picker>
+
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="pickPhysicalInvoicePhoto" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📎 上传附件(图片)</t-button>
+      <t-button class="btn" variant="outline" bindtap="pickAttachmentFile" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📁 上传附件(文件)</t-button>
+    </view>
+
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">📸 上传电子发票并OCR</t-button>
+    </view>
+
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">刷新OCR状态</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📨 提交报销</t-button>
+    </view>
+
+    <view class="label">附件列表</view>
+    <view wx:if="{{attachmentItems.length === 0}}" class="attachment-empty">暂无附件</view>
+    <view wx:for="{{attachmentItems}}" wx:key="id" class="attachment-item">
+      <view class="attachment-main">
+        <view class="attachment-name">{{item.file_name}}</view>
+        <view class="attachment-meta">类型：{{item.attachment_type}}</view>
+      </view>
+      <view class="attachment-actions">
+        <t-button
+          class="btn"
+          size="small"
+          variant="outline"
+          data-url="{{item.file_url}}"
+          data-image="{{item.is_image}}"
+          bindtap="previewAttachment"
+        >查看</t-button>
+        <t-button
+          class="btn"
+          size="small"
+          theme="primary"
+          data-url="{{item.file_url}}"
+          data-name="{{item.file_name}}"
+          bindtap="downloadAttachment"
+        >下载</t-button>
+      </view>
+    </view>
   </hy-panel-card>
 
   <view class="fab-helper" bindtap="openGlobalHelper">🎤</view>

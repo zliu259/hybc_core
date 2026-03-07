@@ -29,9 +29,9 @@
         <view class="entry-top"><view class="entry-title">💸 发起对外付款</view></view>
         <view class="entry-desc">当前角色无权限</view>
       </view>
-      <view class="entry-card" data-path="/pages/reimbursement/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">🧾 发起报销</view></view>
-        <view class="entry-desc">扫码票据，自动识别防重</view>
+      <view class="entry-card" data-path="/pages/reimbursement-list/index" bindtap="goTo">
+        <view class="entry-top"><view class="entry-title">🧾 我的报销提交</view></view>
+        <view class="entry-desc">发起报销、上传票据、跟踪状态</view>
       </view>
     </view>
   </hy-panel-card>

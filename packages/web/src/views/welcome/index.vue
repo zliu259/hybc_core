@@ -86,12 +86,6 @@ const roleLabels = computed(() =>
 
 const permissionLabels = computed(() => permissions.value.filter(Boolean));
 
-const canWriteProjectLog = computed(() =>
-  roles.value.some(role =>
-    ["super_admin", "manager", "site_manager"].includes(role)
-  )
-);
-
 const canLaunchOutboundPayment = computed(() =>
   roles.value.some(role =>
     ["super_admin", "manager", "site_manager", "finance"].includes(role)
@@ -324,14 +318,7 @@ const onCertUpload = (file: UploadFile) => {
           @click="goPaymentWizard"
           >发起对外付款</el-button
         >
-        <el-button @click="router.push('/construction/operator-log/form')"
-          >填报施工日志</el-button
-        >
-        <el-button
-          :disabled="!canWriteProjectLog"
-          @click="router.push('/construction/manager-log')"
-          >填报项目日志</el-button
-        >
+        <el-button @click="router.push('/project/hub')">进入项目大厅</el-button>
         <el-badge
           :value="pendingApprovalCount"
           :hidden="pendingApprovalCount <= 0"

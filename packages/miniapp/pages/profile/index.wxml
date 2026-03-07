@@ -11,7 +11,7 @@
 
     <view class="row">
       <t-button class="btn" variant="outline">🔔 一键催办</t-button>
-      <t-button class="btn btn-primary" theme="primary" data-path="/pages/reimbursement/index" bindtap="goToReimbursement">🧾 去报销</t-button>
+      <t-button class="btn btn-primary" theme="primary" data-path="/pages/reimbursement-list/index" bindtap="goToReimbursement">🧾 我的报销提交</t-button>
     </view>
 
     <view class="section-title">📚 我的证书</view>

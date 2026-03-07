@@ -7,7 +7,7 @@ const DEFAULT_ENTRIES = [
   { title: "🚜 设备查验", desc: "扫码看设备状态", path: "/pages/asset/index" },
   { title: "👷 安全勘查", desc: "定位拍照查隐患", path: "/pages/survey/index" },
   { title: "📝 双规日志", desc: "管理日志/施工日志", path: "/pages/log/index" },
-  { title: "💰 发起报销", desc: "扫码填报信封", path: "/pages/reimbursement/index" },
+  { title: "💰 我的报销提交", desc: "发起报销并跟踪进度", path: "/pages/reimbursement-list/index" },
   { title: "✅ 待办审批", desc: "进入审批中心查看详情", path: "/pages/approval/index" },
   { title: "📈 进度看板", desc: "查看进度预警", path: "/pages/progress/index" },
   { title: "🔔 消息通知", desc: "查看催办提醒", path: "/pages/notice/index" }
@@ -111,7 +111,7 @@ Page({
           wx.navigateTo({ url: "/pages/operator-log/index" });
           return;
         }
-        wx.navigateTo({ url: "/pages/reimbursement/index" });
+        wx.navigateTo({ url: "/pages/reimbursement-list/index" });
       }
     });
   }

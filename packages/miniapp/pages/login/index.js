@@ -1,11 +1,6 @@
 const { wxLogin } = require("../../utils/wx");
 const { loginWithWeComCode } = require("../../utils/auth");
-const {
-  getBaseUrl,
-  setBaseUrl,
-  DEFAULT_REMOTE_BASE_URL,
-  isLocalOnlyBaseUrl
-} = require("../../utils/config");
+const { getBaseUrl, isLocalOnlyBaseUrl } = require("../../utils/config");
 
 const formatLoginError = (error) => {
   const rawMessage = (error && error.message) || "登录失败，请检查企业微信应用配置后重试";
@@ -21,27 +16,14 @@ const formatLoginError = (error) => {
 Page({
   data: {
     loading: false,
-    errorMessage: "",
-    baseUrl: "",
-    localBaseWarning: false
+    errorMessage: ""
   },
 
   onShow() {
     const app = getApp();
     this.setData({
-      baseUrl: getBaseUrl(),
-      errorMessage: app.globalData.authError || "",
-      localBaseWarning: isLocalOnlyBaseUrl(getBaseUrl())
+      errorMessage: app.globalData.authError || ""
     });
-  },
-
-  switchToRemoteBaseUrl() {
-    setBaseUrl(DEFAULT_REMOTE_BASE_URL);
-    this.setData({
-      baseUrl: DEFAULT_REMOTE_BASE_URL,
-      localBaseWarning: false
-    });
-    wx.showToast({ title: "已切换为可真机访问地址", icon: "success" });
   },
 
   async retryLogin() {

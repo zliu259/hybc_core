@@ -1,20 +1,113 @@
 .page {
-  padding-bottom: 24rpx;
+  min-height: 100vh;
+  padding: 48rpx 30rpx;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 10% 10%, rgb(255 255 255 / 62%), transparent 36%),
+    radial-gradient(circle at 90% 0%, rgb(220 239 255 / 72%), transparent 40%),
+    linear-gradient(160deg, #eef6ff 0%, #e6fff8 45%, #f5f8ff 100%);
 }
 
-.meta {
+.login-shell {
+  max-width: 660rpx;
+  margin: 0 auto;
+}
+
+.brand-block {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 42rpx;
+  margin-bottom: 36rpx;
+}
+
+.logo {
+  width: 140rpx;
+  margin-bottom: 16rpx;
+}
+
+.brand-title {
+  font-size: 38rpx;
+  font-weight: 700;
+  color: #11455f;
+  letter-spacing: 1rpx;
+}
+
+.brand-subtitle {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  color: #4f6478;
+}
+
+.login-card {
+  background: rgb(255 255 255 / 94%);
+  border-radius: 28rpx;
+  padding: 40rpx 30rpx 34rpx;
+  box-shadow:
+    0 10rpx 30rpx rgb(0 38 92 / 8%),
+    0 2rpx 8rpx rgb(0 72 148 / 6%);
+  border: 1rpx solid rgb(196 223 255 / 45%);
+}
+
+.card-title {
+  text-align: center;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #183250;
+}
+
+.card-subtitle {
   margin-top: 12rpx;
+  text-align: center;
+  font-size: 24rpx;
+  color: #64748b;
+}
+
+.wecom-btn {
+  margin-top: 28rpx;
+  padding: 0;
+  background: transparent;
+  border: none;
+  line-height: 1;
+}
+
+.wecom-btn::after {
+  border: 0;
+}
+
+.wecom-btn-image {
+  width: 100%;
+  display: block;
+}
+
+.error-box {
+  margin-top: 22rpx;
+  padding: 18rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #ffd3cd;
+  background: #fff7f6;
+}
+
+.error-title {
+  color: #c23d34;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.error-text {
+  margin-top: 8rpx;
+  color: #6f312c;
   font-size: 22rpx;
-  color: #5d6a7f;
+  white-space: pre-wrap;
   word-break: break-all;
 }
 
-.warn {
-  margin-top: 10rpx;
-  font-size: 22rpx;
-  color: #b54708;
-  background: #fff4e5;
-  border: 1px solid #ffd8a8;
-  border-radius: 12rpx;
-  padding: 10rpx 12rpx;
+.error-actions {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.btn {
+  flex: 1;
 }

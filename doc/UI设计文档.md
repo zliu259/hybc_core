@@ -469,9 +469,8 @@
   - `packages/web/src/views/welcome/index.vue`
   - 通过工作台隐藏路由拉起智能发单台：`/workspace/payment/wizard`
   - 发起后详情页留在 workspace 路径：`/workspace/payment/detail/:id`
-- 填报日志拆分为两类入口：
-  - 施工日志：`/construction/operator-log/form`
-  - 项目日志：`/construction/manager-log`
+- 工作台首页移除“填报施工日志/填报项目日志”双入口，统一为“进入项目大厅”：
+  - 跳转：`/project/hub`
   - 文件：`packages/web/src/views/welcome/index.vue`
 
 ### 3.12 项目工作区 Project Tab 重构（2026-02）
@@ -504,7 +503,8 @@
 - 操作员日志：`packages/miniapp/pages/operator-log/index`
 - 管理员日志：`packages/miniapp/pages/manager-log/index`
 - 审批待办：`packages/miniapp/pages/approval/index`
-- 报销扫码：`packages/miniapp/pages/reimbursement/index`
+- 我的报销提交（列表）：`packages/miniapp/pages/reimbursement-list/index`
+- 报销提交详情/新建：`packages/miniapp/pages/reimbursement/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
 - 现场勘查：`packages/miniapp/pages/survey/index`
 - 项目进度概览：`packages/miniapp/pages/progress/index`
@@ -522,12 +522,16 @@
 - 操作员日志页：支持 AI 预填 + 提交，班次使用中文选择（白班/夜班），内部存储保持 day/night。
 - 管理员日志页：支持拍照上传 + 结构化提交。
 - 审批页：移动端单手可完成通过/拒绝/退回/转签，危险动作前需确认弹窗。
-- 报销页：支持二维码识别、电子发票拍照上传(OCR)、PDF 生成状态追踪。
+- 报销页：支持个人报销草稿创建/编辑、绑定 UUID、附件上传（实物/电子）、提交与 OCR 状态追踪。
+- 报销详情页补齐附件全链路能力：
+  - 可按类型上传附件（发票/收据/合同/其他）
+  - 支持图片上传与文件上传双路径
+  - 支持已上传附件查看与下载
 - 设备页：支持扫码识别资产、状态查看与出入库事件确认。
 - 勘查页：支持 GPS 定位、拍照上传、表单提交。
 - 进度页：支持项目日志指标与预警列表查看。
 - 个人中心：支持查看用户信息、API 地址配置（开发联调）与退出登录确认。
-- 登录恢复页：当自动登录失败时承接错误展示与“企业微信重新登录”重试动作。
+- 登录恢复页：当自动登录失败时承接错误展示，并提供品牌化企业微信登录按钮（沿用 Web 登录按钮 PNG 视觉）。
 - 通用交互：所有异步提交场景需有 loading、按钮禁用、空态提示与字段校验反馈。
 - 低操作成本原则：
   - 项目选择统一使用下拉选择组件（`hy-project-picker`），避免手输项目ID。
@@ -554,7 +558,9 @@
   - 个人证书卡新增附件入口：支持“查看/下载”证书文件（无附件时显示占位并给出提示）。
 - 核心业务页视觉强化：
   - 审批：`packages/miniapp/pages/approval/index.{js,wxml,wxss}`（红黄绿摘要 + 长按后滑动解锁通过）
-  - 报销：`packages/miniapp/pages/reimbursement/index.{js,wxml}`（扫码/OCR/PDF 三段链路与语音助手）
+  - 报销：
+    - `packages/miniapp/pages/reimbursement-list/index.{js,wxml,wxss}`（我的报销提交列表）
+    - `packages/miniapp/pages/reimbursement/index.{js,wxml,wxss}`（报销详情/新建，非办公室个人操作闭环）
   - 对外付款：`packages/miniapp/pages/payment-apply/index.{js,wxml,json}`（付款草稿创建 + 提交审批）
   - 施工日志：`packages/miniapp/pages/{log,operator-log,manager-log}/index.{js,wxml,wxss}`（双轨入口与语音提示）
   - 设备/勘查：`packages/miniapp/pages/{asset,survey}/index.{js,wxml}`（图标化状态与风险提示）
@@ -562,7 +568,7 @@
   - 封装短震/长震与统一 toast，供审批/报销/勘查等关键流程复用。
 - 权限一致性补齐：
   - `packages/miniapp/pages/finance/index.{js,wxml}`：按角色显示“对外付款”入口
-  - `packages/miniapp/pages/reimbursement/index.{js,wxml}`：按角色控制 PDF 生成入口
+  - `packages/miniapp/pages/reimbursement/index.{js,wxml}`：聚焦个人报销操作（保存草稿、上传附件、提交报销）
   - `packages/miniapp/pages/approval/index.{js,wxml}`：转签改为动态成员选择（基于企业微信通讯录）
   - `packages/api/src/routes/survey.ts`：现场勘查提交支持 `operator` 角色
 
@@ -831,7 +837,7 @@
 - 新增实物信封提交动作 `POST /api/v1/reimbursement/:id/submit`：要求已登记且至少有一个附件后才能提交，并自动触发 OCR/异常检测任务：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/detail.vue`
 - 电子发票上传改为直达“已接收”阶段，并在入池后立即触发 AI 审计链路（OCR + 异常检测）：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
 - 新增 UUID 快速定位接口 `GET /api/v1/reimbursement/resolve/by-uuid`，办公室可通过扫码/粘贴 UUID 快速打开对应报销信封：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
-- 小程序报销页流程改为“扫码登记 → 上传实物发票扫描件 → 提交寄送”；电子发票保留直传直审路径：`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/reimbursement/index.wxml`
+- 小程序报销流程对齐 Web 个人报销：新增“我的报销提交”列表页，并将详情页统一为“保存草稿 → 上传附件（实物/电子）→ 提交报销”闭环：`packages/miniapp/pages/reimbursement-list/index.{js,wxml,wxss}`、`packages/miniapp/pages/reimbursement/index.{js,wxml,wxss}`
 
 ### 4.15 报销前端角色化流程重组（2026-03）
 - 报销入口页改为角色化多视图（员工/办公室/财务），降低“同页混合多角色动作”的理解成本：`packages/web/src/views/finance/reimbursement/list.vue`

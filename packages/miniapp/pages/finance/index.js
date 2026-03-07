@@ -67,7 +67,7 @@ Page({
           wx.navigateTo({ url: "/pages/approval/index" });
           return;
         }
-        wx.navigateTo({ url: "/pages/reimbursement/index" });
+        wx.navigateTo({ url: "/pages/reimbursement-list/index" });
       }
     });
   }
