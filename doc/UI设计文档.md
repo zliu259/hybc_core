@@ -81,6 +81,8 @@
 - 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
 - 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`
 - 出入库调度看板：`packages/web/src/views/warehouse/dispatch.vue`
+- 消耗品管理总览：`packages/web/src/views/warehouse/consumables.vue`
+- 公司资产盘库：`packages/web/src/views/warehouse/stocktake.vue`
 - 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
 - 项目设备视图：`packages/web/src/views/project/equipment-view.vue`
 - 操作员日志列表：`packages/web/src/views/construction/operator-log/list.vue`
@@ -306,11 +308,21 @@
 - 交互：确认时自动生成出库单并回写规划单。
 - API 指向：`/api/v1/warehouse/equipment-plan`, `/api/v1/warehouse/equipment-plan/:id/trigger-recommend`, `/api/v1/warehouse/equipment-plan/:id/recommendation`, `/api/v1/warehouse/equipment-plan/:id/confirm`
 
-#### K-6. 设备总览 `views/asset/dashboard.vue`
+#### K-6. 消耗品管理总览 `views/warehouse/consumables.vue`
+- 模块：消耗品 KPI、库存清单、消耗记录、消耗登记。
+- 交互：按仓库/消耗品类型/项目筛选，支持直接跳转出入库制单与公司盘库页面。
+- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`, `/api/v1/asset/type`
+
+#### K-7. 公司资产盘库 `views/warehouse/stocktake.vue`
+- 模块：盘点任务列表、盘点执行区、差异汇总。
+- 交互：支持全公司/单仓库创建盘点任务，录入实盘数量后自动计算差异并完成盘点。
+- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse`, `/api/v1/asset`, `/api/v1/asset/type`
+
+#### K-8. 设备总览 `views/asset/dashboard.vue`
 - 模块：按类型/状态/位置三维统计。
 - API 指向：`/api/v1/asset/dashboard/overview`
 
-#### K-7. 项目设备视图 `views/project/equipment-view.vue`
+#### K-9. 项目设备视图 `views/project/equipment-view.vue`
 - 模块：项目设备清单、项目维度物资消耗汇总。
 - 租赁提示：展示租赁模式、到期日、逾期天数，并在页头显示租赁设备与逾期设备汇总告警。
 - API 指向：`/api/v1/asset/dashboard/project/:projectId`

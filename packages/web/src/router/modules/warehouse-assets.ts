@@ -39,6 +39,24 @@ export default {
       }
     },
     {
+      path: "/warehouse-assets/consumables",
+      name: "WarehouseAssetsConsumables",
+      component: () => import("@/views/warehouse/consumables.vue"),
+      meta: {
+        title: "消耗品管理总览",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/warehouse-assets/stocktake",
+      name: "WarehouseAssetsStocktake",
+      component: () => import("@/views/warehouse/stocktake.vue"),
+      meta: {
+        title: "公司资产盘库",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
       path: "/warehouse-assets/dispatch",
       name: "WarehouseAssetsDispatch",
       component: () => import("@/views/warehouse/dispatch.vue"),
