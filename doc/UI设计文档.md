@@ -51,8 +51,8 @@
 - 资金流出智能发单台：`packages/web/src/views/finance/payment/wizard.vue`
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`
 - 收款人管理：`packages/web/src/views/finance/payee/index.vue`
-- 报销信封列表：`packages/web/src/views/finance/reimbursement/list.vue`
-- 报销信封详情：`packages/web/src/views/finance/reimbursement/detail.vue`
+- 报销处理列表：`packages/web/src/views/finance/reimbursement/list.vue`
+- 报销详情：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 报销预审工作台：`packages/web/src/views/finance/reimbursement/precheck.vue`
 - 报销查重中心：`packages/web/src/views/finance/reimbursement/duplicate.vue`
 - 报销集中审批批次列表：`packages/web/src/views/finance/reimbursement/batch.vue`
@@ -148,21 +148,26 @@
 - 操作：新增、编辑、软删除。
 - API 指向：`/api/v1/payment/payee/*`
 
-#### F. 报销信封列表 `views/finance/reimbursement/list.vue`
+#### F. 报销处理列表 `views/finance/reimbursement/list.vue`
 - 展示维度：信封编号、UUID、项目、填报人、金额、状态、PDF状态。
 - 入口改为角色化流程视图：
-  - 员工：发起报销（实物/电子）+ 我的提交
+  - 员工：发起报销（统一入口，创建页内选择实物/电子）+ 我的提交
   - 办公室：处理与审查（预审/查重/收件核查）
   - 财务与领导：集中审批与历史
-- 支持入口：批量生成未登记信封、UUID快速打开信封、电子发票上传、进入信封详情执行登记/提交/收件核对/PDF生成。
+- 支持入口：批量生成未登记信封、UUID快速打开信封（办公室）、进入详情执行登记/提交/收件核对/PDF生成。
+- 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
 - 功能融合：查重线索、异常检测、预审通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
 - API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
 
-#### F-2. 报销信封详情 `views/finance/reimbursement/detail.vue`
+#### F-2. 报销详情 `views/finance/reimbursement/detail.vue`
 - 页面分区：基础信息、信封标识、状态总览、附件（拖拽上传）、操作区。
-- 表单区：项目、填报人、通道、发票号、费用日期、金额、类别、说明。
+- 表单区：项目、填报人、通道、费用日期、金额、类别、说明。
 - 附件区：拖拽上传替代 JSON 手工录入；附件列表展示类型、文件名、大小、状态。
-- UUID 规则：上传附件后 UUID 锁定，不允许修改。
+- UUID 规则：
+  - “报销识别号”与 `envelope_uuid` 统一；
+  - 创建态支持“绑定现有信封UUID”（预打印离线信封）；
+  - 非创建态在附件已入库或非草稿时视为锁定。
+- 状态总览统一中文化显示（状态、核对状态、预审状态、PDF状态）。
 - 操作区：保存、扫码登记并绑定填报人、提交报销并寄送实物信封、收件通过/异常、触发PDF生成、刷新PDF状态、刷新OCR状态、触发异常检测、预审动作。
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 

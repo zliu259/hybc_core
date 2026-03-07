@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
+import { resolveUploadUrl } from "@/api/upload";
 import {
   createReimbursementEnvelope,
   getEnvelopeAnomalyStatus,
@@ -41,12 +42,65 @@ const form = ref({
   project_id: undefined as number | undefined,
   applicant_userid: "",
   channel: "physical" as "physical" | "electronic",
-  invoice_no: "",
+  bind_envelope_uuid: "",
   expense_date: "",
   amount: 0,
   category: "",
   description: ""
 });
+
+const statusLabelMap: Record<string, string> = {
+  unregistered: "未登记",
+  draft: "草稿",
+  submitted: "已提交",
+  received: "已收件",
+  batched: "已成批",
+  pending_approval: "待审批",
+  approved: "已审批",
+  paid: "已打款",
+  rejected: "已驳回"
+};
+
+const verificationStatusLabelMap: Record<string, string> = {
+  pending: "待核对",
+  verified: "核对通过",
+  mismatch: "核对异常"
+};
+
+const precheckStatusLabelMap: Record<string, string> = {
+  none: "未预审",
+  pending: "待预审",
+  approved: "预审通过",
+  supplement: "待补充",
+  rejected: "预审驳回"
+};
+
+const taskStatusLabelMap: Record<string, string> = {
+  none: "未触发",
+  pending: "处理中",
+  completed: "已完成",
+  failed: "失败"
+};
+
+const toStatusLabel = (status?: string | null) => {
+  if (!status) return "草稿";
+  return statusLabelMap[status] ?? status;
+};
+
+const toVerificationStatusLabel = (status?: string | null) => {
+  if (!status) return "待核对";
+  return verificationStatusLabelMap[status] ?? status;
+};
+
+const toPrecheckStatusLabel = (status?: string | null) => {
+  if (!status) return "未预审";
+  return precheckStatusLabelMap[status] ?? status;
+};
+
+const toTaskStatusLabel = (status?: string | null) => {
+  if (!status) return "未触发";
+  return taskStatusLabelMap[status] ?? status;
+};
 
 type EnvelopeAttachmentDraft = {
   id?: number;
@@ -88,7 +142,10 @@ const riskLevelLabelMap: Record<string, string> = {
   low: "低风险"
 };
 
-const riskLevelTagTypeMap: Record<string, "success" | "warning" | "danger" | "info"> = {
+const riskLevelTagTypeMap: Record<
+  string,
+  "success" | "warning" | "danger" | "info"
+> = {
   high: "danger",
   medium: "warning",
   low: "success"
@@ -99,7 +156,9 @@ const toRiskLevelLabel = (level: unknown) => {
   return riskLevelLabelMap[level] ?? level;
 };
 
-const toRiskLevelTagType = (level: unknown): "success" | "warning" | "danger" | "info" => {
+const toRiskLevelTagType = (
+  level: unknown
+): "success" | "warning" | "danger" | "info" => {
   if (typeof level !== "string" || !level) return "info";
   return riskLevelTagTypeMap[level] ?? "info";
 };
@@ -131,7 +190,7 @@ const loadDetail = async () => {
       project_id: result.data.project_id,
       applicant_userid: result.data.applicant_userid,
       channel: result.data.channel,
-      invoice_no: result.data.invoice_no || "",
+      bind_envelope_uuid: "",
       expense_date: result.data.expense_date || "",
       amount: result.data.amount,
       category: result.data.category || "",
@@ -171,7 +230,7 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       category: "reimbursement"
     });
 
-    const uploadResp = await fetch(signRes.data.uploadUrl, {
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": rawFile.type || "application/octet-stream",
@@ -227,7 +286,7 @@ const save = async () => {
         project_id: form.value.project_id,
         applicant_userid: form.value.applicant_userid || undefined,
         channel: form.value.channel,
-        invoice_no: form.value.invoice_no || undefined,
+        preferred_envelope_uuid: form.value.bind_envelope_uuid || undefined,
         expense_date: form.value.expense_date || undefined,
         amount: form.value.amount,
         category: form.value.category || undefined,
@@ -235,13 +294,16 @@ const save = async () => {
         attachments: attachments.length > 0 ? attachments : undefined
       });
       message("创建成功", { type: "success" });
-      router.replace(`/finance/reimbursement/detail/${result.data.id}`);
+      if (route.path.startsWith("/workspace/")) {
+        router.replace(`/workspace/my-reimbursement/detail/${result.data.id}`);
+      } else {
+        router.replace(`/finance/reimbursement/detail/${result.data.id}`);
+      }
     } else {
       await updateReimbursementEnvelope(envelopeId.value, {
         project_id: form.value.project_id,
         applicant_userid: form.value.applicant_userid || undefined,
         channel: form.value.channel,
-        invoice_no: form.value.invoice_no || undefined,
         expense_date: form.value.expense_date || undefined,
         amount: form.value.amount,
         category: form.value.category || undefined,
@@ -261,14 +323,15 @@ const scanSubmit = async () => {
   const result = await scanReimbursementEnvelope({
     envelope_uuid: detail.value.envelope_uuid,
     project_id: form.value.project_id,
-    invoice_no: form.value.invoice_no || undefined,
     expense_date: form.value.expense_date || undefined,
     amount: form.value.amount,
     category: form.value.category || undefined,
     description: form.value.description || undefined
   });
   if (result.data.registered) {
-    message(`扫码登记完成，已绑定填报人：${result.data.applicant_userid}`, { type: "success" });
+    message(`扫码登记完成，已绑定填报人：${result.data.applicant_userid}`, {
+      type: "success"
+    });
   } else {
     message("扫码识别完成，已打开已有报销信封", { type: "info" });
   }
@@ -379,9 +442,16 @@ watch(
         "
       >
         <span>{{
-          isCreate ? "新建报销信封" : `信封详情 - ${detail?.envelope_no || ""}`
+          isCreate ? "新建报销" : `报销详情 - ${detail?.envelope_no || ""}`
         }}</span>
-        <el-button @click="router.push('/finance/reimbursement')"
+        <el-button
+          @click="
+            router.push(
+              route.path.startsWith('/workspace/')
+                ? '/workspace/my-reimbursement'
+                : '/finance/reimbursement'
+            )
+          "
           >返回</el-button
         >
       </div>
@@ -427,14 +497,14 @@ watch(
             </el-form-item>
 
             <el-form-item label="通道">
-              <el-select v-model="form.channel" style="width: 200px" :disabled="!canEdit">
+              <el-select
+                v-model="form.channel"
+                style="width: 200px"
+                :disabled="!canEdit"
+              >
                 <el-option label="实物信封" value="physical" />
                 <el-option label="电子发票" value="electronic" />
               </el-select>
-            </el-form-item>
-
-            <el-form-item label="发票号">
-              <el-input v-model="form.invoice_no" style="width: 320px" :disabled="!canEdit" />
             </el-form-item>
 
             <el-form-item label="费用日期">
@@ -459,7 +529,11 @@ watch(
             </el-form-item>
 
             <el-form-item label="费用类别">
-              <el-input v-model="form.category" style="width: 320px" :disabled="!canEdit" />
+              <el-input
+                v-model="form.category"
+                style="width: 320px"
+                :disabled="!canEdit"
+              />
             </el-form-item>
 
             <el-form-item label="说明">
@@ -478,23 +552,44 @@ watch(
       <el-col :xs="24" :md="8">
         <el-card shadow="never" header="信封标识">
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="信封编号">{{ detail?.envelope_no || "保存后生成" }}</el-descriptions-item>
-            <el-descriptions-item label="信封UUID">{{ detail?.envelope_uuid || "保存后生成" }}</el-descriptions-item>
+            <el-descriptions-item label="报销识别号">{{
+              detail?.envelope_no || "保存后生成"
+            }}</el-descriptions-item>
+            <el-descriptions-item label="信封UUID">{{
+              detail?.envelope_uuid || "保存后生成"
+            }}</el-descriptions-item>
+            <el-descriptions-item v-if="isCreate" label="绑定现有信封UUID">
+              <el-input
+                v-model="form.bind_envelope_uuid"
+                placeholder="可选：若已持有预打印信封，可直接填UUID绑定"
+                style="width: 100%"
+              />
+            </el-descriptions-item>
             <el-descriptions-item label="UUID状态">
-              <el-tag :type="uuidLocked ? 'warning' : 'success'">{{ uuidLocked ? "已锁定" : "未锁定" }}</el-tag>
+              <el-tag :type="uuidLocked ? 'warning' : 'success'">{{
+                uuidLocked ? "已锁定" : "未锁定"
+              }}</el-tag>
             </el-descriptions-item>
             <el-descriptions-item label="说明">
-              上传任一附件后，UUID 不允许再修改；预生成信封需先扫码登记绑定填报人
+              报销识别号与信封UUID统一；可直接使用预打印离线UUID作为报销识别号
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
 
         <el-card shadow="never" header="状态总览" class="mt-3">
           <el-descriptions :column="1" border>
-            <el-descriptions-item label="状态">{{ detail?.status || "draft" }}</el-descriptions-item>
-            <el-descriptions-item label="核对状态">{{ detail?.verification_status || "pending" }}</el-descriptions-item>
-            <el-descriptions-item label="预审状态">{{ detail?.precheck_status || "none" }}</el-descriptions-item>
-            <el-descriptions-item label="PDF状态">{{ detail?.pdf_status || "none" }}</el-descriptions-item>
+            <el-descriptions-item label="状态">{{
+              toStatusLabel(detail?.status)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="核对状态">{{
+              toVerificationStatusLabel(detail?.verification_status)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="预审状态">{{
+              toPrecheckStatusLabel(detail?.precheck_status)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="PDF状态">{{
+              toTaskStatusLabel(detail?.pdf_status)
+            }}</el-descriptions-item>
           </el-descriptions>
         </el-card>
       </el-col>
@@ -502,7 +597,11 @@ watch(
 
     <el-card shadow="never" header="附件（拖拽上传）" class="mt-3">
       <el-space wrap class="mb-3">
-        <el-select v-model="attachmentType" style="width: 180px" :disabled="!canEdit || uploadingAttachment">
+        <el-select
+          v-model="attachmentType"
+          style="width: 180px"
+          :disabled="!canEdit || uploadingAttachment"
+        >
           <el-option
             v-for="item in attachmentTypeOptions"
             :key="item.value"
@@ -523,7 +622,9 @@ watch(
       >
         <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
         <template #tip>
-          <div class="el-upload__tip">支持 PDF / 图片，上传后将进入附件列表</div>
+          <div class="el-upload__tip">
+            支持 PDF / 图片，上传后将进入附件列表
+          </div>
         </template>
       </el-upload>
 
@@ -535,7 +636,11 @@ watch(
         </el-table-column>
         <el-table-column label="文件名" min-width="260">
           <template #default="scope">
-            <el-link :href="attachmentUrl(scope.row.file_key)" target="_blank" type="primary">
+            <el-link
+              :href="attachmentUrl(scope.row.file_key)"
+              target="_blank"
+              type="primary"
+            >
               {{ scope.row.file_name }}
             </el-link>
           </template>
@@ -552,7 +657,12 @@ watch(
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="scope">
-            <el-button link type="danger" :disabled="!scope.row.is_new" @click="removeStagedAttachment(scope.$index)">
+            <el-button
+              link
+              type="danger"
+              :disabled="!scope.row.is_new"
+              @click="removeStagedAttachment(scope.$index)"
+            >
               移除
             </el-button>
           </template>
@@ -562,12 +672,21 @@ watch(
 
     <el-card shadow="never" header="操作区" class="mt-3">
       <el-space wrap>
-        <el-button type="primary" :loading="saving" :disabled="!canEdit" @click="save">保存</el-button>
+        <el-button
+          type="primary"
+          :loading="saving"
+          :disabled="!canEdit"
+          @click="save"
+          >保存</el-button
+        >
 
         <template v-if="!isCreate && detail">
           <el-button @click="scanSubmit">扫码登记并绑定填报人</el-button>
           <el-button
-            v-if="detail.channel === 'physical' && ['draft', 'submitted'].includes(detail.status)"
+            v-if="
+              detail.channel === 'physical' &&
+              ['draft', 'submitted'].includes(detail.status)
+            "
             type="primary"
             @click="submitEnvelope"
           >
@@ -578,32 +697,42 @@ watch(
             style="width: 220px"
             placeholder="核对备注(可选)"
           />
-          <el-button type="success" @click="verify('verified')">收件通过</el-button>
-          <el-button type="warning" @click="verify('mismatch')">收件异常</el-button>
+          <el-button type="success" @click="verify('verified')"
+            >收件通过</el-button
+          >
+          <el-button type="warning" @click="verify('mismatch')"
+            >收件异常</el-button
+          >
           <el-button @click="generatePdf">生成PDF</el-button>
           <el-button @click="refreshPdfStatus">刷新PDF状态</el-button>
           <el-button @click="refreshOcrStatus">刷新OCR状态</el-button>
           <el-button @click="triggerAnomaly">触发异常检测</el-button>
           <el-button @click="refreshAnomalyStatus">刷新异常状态</el-button>
-          <el-button type="success" @click="submitPrecheck('approved')">预审通过</el-button>
-          <el-button type="warning" @click="submitPrecheck('supplement')">补充材料</el-button>
-          <el-button type="danger" @click="submitPrecheck('rejected')">预审驳回</el-button>
+          <el-button type="success" @click="submitPrecheck('approved')"
+            >预审通过</el-button
+          >
+          <el-button type="warning" @click="submitPrecheck('supplement')"
+            >补充材料</el-button
+          >
+          <el-button type="danger" @click="submitPrecheck('rejected')"
+            >预审驳回</el-button
+          >
         </template>
       </el-space>
     </el-card>
 
     <el-descriptions v-if="detail" :column="2" border style="margin-top: 16px">
       <el-descriptions-item label="状态">{{
-        detail.status
+        toStatusLabel(detail.status)
       }}</el-descriptions-item>
       <el-descriptions-item label="核对状态">{{
-        detail.verification_status
+        toVerificationStatusLabel(detail.verification_status)
       }}</el-descriptions-item>
       <el-descriptions-item label="预审状态">{{
-        detail.precheck_status
+        toPrecheckStatusLabel(detail.precheck_status)
       }}</el-descriptions-item>
       <el-descriptions-item label="PDF状态">{{
-        detail.pdf_status
+        toTaskStatusLabel(detail.pdf_status)
       }}</el-descriptions-item>
       <el-descriptions-item label="PDF文件">{{
         detail.pdf_file_key || "-"

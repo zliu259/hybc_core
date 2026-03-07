@@ -7,12 +7,10 @@ import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
 import {
   batchGenerateReimbursementEnvelopes,
-  getEnvelopeOcrStatus,
   listReimbursementEnvelopes,
   precheckEnvelope,
   resolveReimbursementEnvelopeByUuid,
   triggerEnvelopeAnomalyCheck,
-  uploadElectronicInvoice,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
 
@@ -43,10 +41,14 @@ const filters = ref({
 const roleSet = computed(() => new Set(userStore.roles ?? []));
 const currentUserid = computed(() => userStore.username || "");
 const canOfficeOps = computed(() =>
-  ["super_admin", "manager", "site_manager", "finance"].some(role => roleSet.value.has(role))
+  ["super_admin", "manager", "site_manager", "finance"].some(role =>
+    roleSet.value.has(role)
+  )
 );
 const canFinanceCenter = computed(() =>
-  ["super_admin", "manager", "site_manager", "finance"].some(role => roleSet.value.has(role))
+  ["super_admin", "manager", "site_manager", "finance"].some(role =>
+    roleSet.value.has(role)
+  )
 );
 const isWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
@@ -88,21 +90,8 @@ const batchForm = ref({
   count: 10
 });
 
-const electronicDialogVisible = ref(false);
-const uploadingElectronic = ref(false);
 const quickScanDialogVisible = ref(false);
 const quickScanUuid = ref("");
-const electronicForm = ref({
-  project_id: undefined as number | undefined,
-  applicant_userid: "",
-  file_key: "",
-  file_name: "",
-  file_size: undefined as number | undefined,
-  invoice_no: "",
-  amount: undefined as number | undefined,
-  issue_date: "",
-  description: ""
-});
 
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
@@ -179,21 +168,6 @@ const submitBatchGenerate = async () => {
   }
 };
 
-const openElectronicUpload = () => {
-  electronicForm.value = {
-    project_id: filters.value.project_id,
-    applicant_userid: "",
-    file_key: "",
-    file_name: "",
-    file_size: undefined,
-    invoice_no: "",
-    amount: undefined,
-    issue_date: "",
-    description: ""
-  };
-  electronicDialogVisible.value = true;
-};
-
 const openQuickScan = () => {
   quickScanUuid.value = "";
   quickScanDialogVisible.value = true;
@@ -204,43 +178,12 @@ const submitQuickScan = async () => {
     message("请填写信封UUID", { type: "warning" });
     return;
   }
-  const result = await resolveReimbursementEnvelopeByUuid(quickScanUuid.value.trim());
+  const result = await resolveReimbursementEnvelopeByUuid(
+    quickScanUuid.value.trim()
+  );
   message("已打开对应报销信封", { type: "success" });
   quickScanDialogVisible.value = false;
   goDetail(result.data.id);
-};
-
-const submitElectronicUpload = async () => {
-  if (!electronicForm.value.project_id) {
-    message("请选择项目", { type: "warning" });
-    return;
-  }
-  if (!electronicForm.value.file_key.trim()) {
-    message("请填写 file_key", { type: "warning" });
-    return;
-  }
-
-  uploadingElectronic.value = true;
-  try {
-    const result = await uploadElectronicInvoice({
-      project_id: electronicForm.value.project_id,
-      applicant_userid: electronicForm.value.applicant_userid || undefined,
-      file_key: electronicForm.value.file_key,
-      file_name: electronicForm.value.file_name || undefined,
-      file_size: electronicForm.value.file_size,
-      invoice_no: electronicForm.value.invoice_no || undefined,
-      amount: electronicForm.value.amount,
-      issue_date: electronicForm.value.issue_date || undefined,
-      description: electronicForm.value.description || undefined
-    });
-
-    const ocr = await getEnvelopeOcrStatus(result.data.id);
-    message(`电子发票已入池，OCR状态：${ocr.data.status}`, { type: "success" });
-    electronicDialogVisible.value = false;
-    await loadData();
-  } finally {
-    uploadingElectronic.value = false;
-  }
 };
 
 const onTriggerAnomaly = async (id: number) => {
@@ -254,7 +197,9 @@ const onPrecheck = async (
   action: "approved" | "supplement" | "rejected"
 ) => {
   await precheckEnvelope(id, { action });
-  message(`预审已处理：${action}`, { type: action === "approved" ? "success" : "warning" });
+  message(`预审已处理：${action}`, {
+    type: action === "approved" ? "success" : "warning"
+  });
   await loadData();
 };
 
@@ -406,14 +351,11 @@ watch(workflowView, mode => {
         />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button v-if="workflowView === 'employee'" @click="openElectronicUpload"
-        >上传电子发票</el-button
-      >
-      <el-button v-if="workflowView === 'employee'" @click="openQuickScan"
-        >扫码/输入UUID打开信封</el-button
-      >
-      <el-button v-if="workflowView === 'employee'" type="success" @click="goCreate"
-        >发起报销（实物信封）</el-button
+      <el-button
+        v-if="workflowView === 'employee'"
+        type="success"
+        @click="goCreate"
+        >发起报销</el-button
       >
 
       <el-button v-if="workflowView === 'office'" @click="openQuickScan"
@@ -464,7 +406,9 @@ watch(workflowView, mode => {
             >详情</el-button
           >
           <template v-if="workflowView !== 'employee' && canOfficeOps">
-            <el-button link @click="onTriggerAnomaly(scope.row.id)">异常检测</el-button>
+            <el-button link @click="onTriggerAnomaly(scope.row.id)"
+              >异常检测</el-button
+            >
             <el-button
               v-if="scope.row.status === 'received'"
               link
@@ -545,87 +489,16 @@ watch(workflowView, mode => {
   </el-dialog>
 
   <el-dialog
-    v-model="electronicDialogVisible"
-    title="电子发票上传"
-    width="600px"
+    v-model="quickScanDialogVisible"
+    title="扫码/输入UUID打开信封"
+    width="500px"
   >
-    <el-form label-width="120px">
-      <el-form-item label="所属项目" required>
-        <el-select
-          v-model="electronicForm.project_id"
-          filterable
-          placeholder="请选择项目"
-          style="width: 100%"
-        >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="填报人(可选)">
-        <el-input
-          v-model="electronicForm.applicant_userid"
-          placeholder="如 zhiyuan.li"
-        />
-      </el-form-item>
-      <el-form-item label="文件Key" required>
-        <el-input
-          v-model="electronicForm.file_key"
-          placeholder="例如 reimbursement/e-invoice-001.jpg"
-        />
-      </el-form-item>
-      <el-form-item label="文件名">
-        <el-input
-          v-model="electronicForm.file_name"
-          placeholder="例如 发票001.jpg"
-        />
-      </el-form-item>
-      <el-form-item label="发票号(可选)">
-        <el-input v-model="electronicForm.invoice_no" />
-      </el-form-item>
-      <el-form-item label="金额(可选)">
-        <el-input-number
-          v-model="electronicForm.amount"
-          :min="0"
-          :precision="2"
-          :step="100"
-        />
-      </el-form-item>
-      <el-form-item label="开票日期(可选)">
-        <el-date-picker
-          v-model="electronicForm.issue_date"
-          type="date"
-          value-format="YYYY-MM-DD"
-          style="width: 220px"
-        />
-      </el-form-item>
-      <el-form-item label="备注">
-        <el-input
-          v-model="electronicForm.description"
-          type="textarea"
-          :rows="2"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="electronicDialogVisible = false">取消</el-button>
-      <el-button
-        type="primary"
-        :loading="uploadingElectronic"
-        @click="submitElectronicUpload"
-      >
-        上传并触发OCR
-      </el-button>
-    </template>
-  </el-dialog>
-
-  <el-dialog v-model="quickScanDialogVisible" title="扫码/输入UUID打开信封" width="500px">
     <el-form label-width="90px">
       <el-form-item label="信封UUID" required>
-        <el-input v-model="quickScanUuid" placeholder="请粘贴或扫码录入信封UUID" />
+        <el-input
+          v-model="quickScanUuid"
+          placeholder="请粘贴或扫码录入信封UUID"
+        />
       </el-form-item>
     </el-form>
     <template #footer>

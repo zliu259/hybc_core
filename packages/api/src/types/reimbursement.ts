@@ -112,6 +112,7 @@ export interface AttachmentInput {
 export interface CreateEnvelopeRequest {
   project_id: number;
   applicant_userid?: string;
+  preferred_envelope_uuid?: string;
   channel?: ReimbursementChannel;
   invoice_no?: string;
   expense_date?: string;

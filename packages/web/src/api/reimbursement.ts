@@ -102,6 +102,7 @@ export const resolveReimbursementEnvelopeByUuid = (envelope_uuid: string) => {
 export const createReimbursementEnvelope = (data: {
   project_id: number;
   applicant_userid?: string;
+  preferred_envelope_uuid?: string;
   channel?: "physical" | "electronic";
   invoice_no?: string;
   expense_date?: string;
@@ -185,7 +186,12 @@ export const scanReimbursementEnvelope = (data: {
 }) => {
   return http.request<{
     success: boolean;
-    data: { id: number; status: string; applicant_userid: string; registered: boolean };
+    data: {
+      id: number;
+      status: string;
+      applicant_userid: string;
+      registered: boolean;
+    };
   }>("post", "/api/v1/reimbursement/scan", { data });
 };
 
