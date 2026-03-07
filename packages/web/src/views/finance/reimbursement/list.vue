@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { listProjects, type Project } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 import {
   batchGenerateReimbursementEnvelopes,
   getEnvelopeOcrStatus,
@@ -17,9 +19,11 @@ defineOptions({ name: "ReimbursementList" });
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
 const router = useRouter();
+const userStore = useUserStoreHook();
 const loading = ref(false);
 const list = ref<ReimbursementEnvelope[]>([]);
 const projects = ref<Project[]>([]);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const page = ref(1);
 const pageSize = ref(20);
@@ -27,10 +31,24 @@ const total = ref(0);
 
 const filters = ref({
   project_id: undefined as number | undefined,
+  applicant_userid: "",
   status: "",
   channel: "",
   keyword: ""
 });
+
+const roleSet = computed(() => new Set(userStore.roles ?? []));
+const currentUserid = computed(() => userStore.username || "");
+const canOfficeOps = computed(() =>
+  ["super_admin", "manager", "site_manager", "finance"].some(role => roleSet.value.has(role))
+);
+const canFinanceCenter = computed(() =>
+  ["super_admin", "manager", "site_manager", "finance"].some(role => roleSet.value.has(role))
+);
+
+type WorkflowView = "employee" | "office" | "finance";
+const workflowView = ref<WorkflowView>("employee");
+const workflowReady = ref(false);
 
 const projectMap = computed(() => {
   const map: Record<number, string> = {};
@@ -94,6 +112,7 @@ const loadData = async () => {
       page: page.value,
       pageSize: pageSize.value,
       project_id: filters.value.project_id,
+      applicant_userid: filters.value.applicant_userid || undefined,
       status: filters.value.status || undefined,
       channel: filters.value.channel || undefined,
       keyword: filters.value.keyword || undefined
@@ -123,6 +142,10 @@ const goDuplicateCenter = () => {
 
 const goBatchCenter = () => {
   router.push("/finance/reimbursement/batch");
+};
+
+const goPayoutCenter = () => {
+  router.push("/finance/reimbursement/payout");
 };
 
 const openBatchGenerate = () => {
@@ -216,14 +239,84 @@ const submitElectronicUpload = async () => {
   }
 };
 
-onMounted(async () => {
-  await loadProjects();
+const applyWorkflowPreset = (mode: WorkflowView) => {
+  if (mode === "employee") {
+    filters.value.applicant_userid = currentUserid.value;
+    filters.value.status = "";
+    filters.value.channel = "";
+    return;
+  }
+
+  if (mode === "office") {
+    filters.value.applicant_userid = "";
+    filters.value.status = "submitted";
+    filters.value.channel = "";
+    return;
+  }
+
+  filters.value.applicant_userid = "";
+  filters.value.status = "";
+  filters.value.channel = "";
+};
+
+const onWorkflowChange = async (mode: WorkflowView) => {
+  applyWorkflowPreset(mode);
+  page.value = 1;
   await loadData();
+};
+
+onMounted(async () => {
+  if (canFinanceCenter.value) {
+    workflowView.value = "finance";
+  } else if (canOfficeOps.value) {
+    workflowView.value = "office";
+  } else {
+    workflowView.value = "employee";
+  }
+
+  applyWorkflowPreset(workflowView.value);
+
+  await Promise.all([loadProjects(), loadWecomUsers()]);
+  await loadData();
+  workflowReady.value = true;
+});
+
+watch(workflowView, mode => {
+  if (!workflowReady.value) return;
+  onWorkflowChange(mode);
 });
 </script>
 
 <template>
   <el-card shadow="never" style="background: #fffaf2">
+    <el-tabs v-model="workflowView">
+      <el-tab-pane label="员工发起与我的提交" name="employee" />
+      <el-tab-pane v-if="canOfficeOps" label="办公室处理与审查" name="office" />
+      <el-tab-pane v-if="canFinanceCenter" label="财务集中审批与历史" name="finance" />
+    </el-tabs>
+
+    <el-alert
+      v-if="workflowView === 'employee'"
+      type="info"
+      :closable="false"
+      title="在这里发起报销（实物信封/电子发票），并查看“我的提交”全流程状态。"
+      style="margin-bottom: 12px"
+    />
+    <el-alert
+      v-if="workflowView === 'office'"
+      type="warning"
+      :closable="false"
+      title="办公室处理台：重点处理 submitted/received 单据，执行收件核查、异常审查和预审动作。"
+      style="margin-bottom: 12px"
+    />
+    <el-alert
+      v-if="workflowView === 'finance'"
+      type="success"
+      :closable="false"
+      title="财务集中审批台：按项目+申请人进入集中送审与打款，并查看历史完成批次。"
+      style="margin-bottom: 12px"
+    />
+
     <el-form inline>
       <el-form-item label="所属项目">
         <el-select
@@ -259,6 +352,23 @@ onMounted(async () => {
           <el-option label="电子发票" value="electronic" />
         </el-select>
       </el-form-item>
+      <el-form-item label="申请人">
+        <el-select
+          v-model="filters.applicant_userid"
+          clearable
+          filterable
+          style="width: 220px"
+          :disabled="workflowView === 'employee'"
+          :placeholder="workflowView === 'employee' ? '我的提交' : '全部申请人'"
+        >
+          <el-option
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="`${item.name} (${item.userid})`"
+            :value="item.userid"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="关键字">
         <el-input
           v-model="filters.keyword"
@@ -267,13 +377,35 @@ onMounted(async () => {
         />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button @click="openElectronicUpload">电子发票上传</el-button>
-      <el-button @click="openQuickScan">扫码/输入UUID打开信封</el-button>
-      <el-button @click="openBatchGenerate">批量生成信封（未登记）</el-button>
-      <el-button @click="goPrecheckWorkbench">预审工作台</el-button>
-      <el-button @click="goDuplicateCenter">查重中心</el-button>
-      <el-button @click="goBatchCenter">集中审批</el-button>
-      <el-button type="success" @click="goCreate">新建信封</el-button>
+      <el-button v-if="workflowView === 'employee'" @click="openElectronicUpload"
+        >上传电子发票</el-button
+      >
+      <el-button v-if="workflowView === 'employee'" @click="openQuickScan"
+        >扫码/输入UUID打开信封</el-button
+      >
+      <el-button v-if="workflowView === 'employee'" type="success" @click="goCreate"
+        >发起报销（实物信封）</el-button
+      >
+
+      <el-button v-if="workflowView === 'office'" @click="goPrecheckWorkbench"
+        >进入预审工作台</el-button
+      >
+      <el-button v-if="workflowView === 'office'" @click="goDuplicateCenter"
+        >进入查重中心</el-button
+      >
+      <el-button v-if="workflowView === 'office'" @click="openQuickScan"
+        >扫码/输入UUID打开信封</el-button
+      >
+
+      <el-button v-if="workflowView === 'finance'" @click="goBatchCenter"
+        >进入集中审批台</el-button
+      >
+      <el-button v-if="workflowView === 'finance'" @click="goPayoutCenter"
+        >进入集中打款台</el-button
+      >
+      <el-button v-if="workflowView === 'finance'" @click="openBatchGenerate"
+        >批量生成未登记信封</el-button
+      >
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">

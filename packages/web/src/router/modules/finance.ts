@@ -63,7 +63,7 @@ export default {
           component: () => import("@/views/finance/reimbursement/batch.vue"),
           meta: {
             title: "报销集中审批",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+            roles: ["super_admin", "manager", "site_manager", "finance"]
           }
         },
         {

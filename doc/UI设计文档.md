@@ -150,6 +150,10 @@
 
 #### F. 报销信封列表 `views/finance/reimbursement/list.vue`
 - 展示维度：信封编号、UUID、项目、填报人、金额、状态、PDF状态。
+- 入口改为角色化流程视图：
+  - 员工：发起报销（实物/电子）+ 我的提交
+  - 办公室：处理与审查（预审/查重/收件核查）
+  - 财务与领导：集中审批与历史
 - 支持入口：批量生成未登记信封、UUID快速打开信封、电子发票上传、进入信封详情执行登记/提交/收件核对/PDF生成。
 - API 指向：`/api/v1/reimbursement`
 
@@ -172,8 +176,9 @@
 - API 指向：`/api/v1/reimbursement/duplicate-center`
 
 #### F-5. 报销集中审批批次列表 `views/finance/reimbursement/batch.vue`
+- 新增“候选报销条目”工作区：按项目 + 申请人自动列出未完成报销，可一键自动勾选“已收件+预审通过”并创建后立即送审。
 - 展示维度：批次号、项目、申报人、信封数、总金额、AI审计状态、审批状态。
-- 操作区：新建审批批次（可自动按项目+申报人汇总或手动指定信封ID）、进入批次详情。
+- 新增“历史完成（财务/领导）”区域：展示已付款/已拒绝等过往批次，支持进入批次详情追踪。
 - API 指向：`/api/v1/reimbursement/batch`
 
 #### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
@@ -819,6 +824,13 @@
 - 电子发票上传改为直达“已接收”阶段，并在入池后立即触发 AI 审计链路（OCR + 异常检测）：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
 - 新增 UUID 快速定位接口 `GET /api/v1/reimbursement/resolve/by-uuid`，办公室可通过扫码/粘贴 UUID 快速打开对应报销信封：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
 - 小程序报销页流程改为“扫码登记 → 上传实物发票扫描件 → 提交寄送”；电子发票保留直传直审路径：`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/reimbursement/index.wxml`
+
+### 4.15 报销前端角色化流程重组（2026-03）
+- 报销入口页改为角色化多视图（员工/办公室/财务），降低“同页混合多角色动作”的理解成本：`packages/web/src/views/finance/reimbursement/list.vue`
+- 员工视图默认锁定“我的提交”（按当前用户过滤），并提供发起报销入口（实物信封/电子发票）与 UUID 快速打开：`packages/web/src/views/finance/reimbursement/list.vue`
+- 办公室视图聚焦 submitted/received 阶段处理，直达预审工作台与查重中心：`packages/web/src/views/finance/reimbursement/list.vue`
+- 财务集中审批页新增“候选条目自动汇总 + 一键创建并送审 + 历史完成批次”三段布局，满足发起、送审、复盘一体化：`packages/web/src/views/finance/reimbursement/batch.vue`
+- 路由权限收敛：报销集中审批入口移除 operator，仅保留 super_admin/manager/site_manager/finance：`packages/web/src/router/modules/finance.ts`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

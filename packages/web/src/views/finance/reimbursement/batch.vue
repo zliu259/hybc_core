@@ -1,11 +1,15 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { listProjects, type Project } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
   createReimbursementBatch,
+  listReimbursementEnvelopes,
   listReimbursementBatches,
+  submitBatchApproval,
+  type ReimbursementEnvelope,
   type ReimbursementBatch
 } from "@/api/reimbursement";
 
@@ -15,6 +19,12 @@ const router = useRouter();
 const loading = ref(false);
 const list = ref<ReimbursementBatch[]>([]);
 const projects = ref<Project[]>([]);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const candidateLoading = ref(false);
+const historyLoading = ref(false);
+const candidates = ref<ReimbursementEnvelope[]>([]);
+const candidateSelectedIds = ref<number[]>([]);
+const historyRows = ref<ReimbursementBatch[]>([]);
 
 const page = ref(1);
 const pageSize = ref(20);
@@ -34,13 +44,7 @@ const projectMap = computed(() => {
   return map;
 });
 
-const createDialog = ref(false);
-const creating = ref(false);
-const createForm = ref({
-  project_id: undefined as number | undefined,
-  applicant_userid: "",
-  envelope_ids_text: ""
-});
+const creatingAndSubmitting = ref(false);
 
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
@@ -64,43 +68,75 @@ const loadData = async () => {
   }
 };
 
-const openCreate = () => {
-  createForm.value = {
-    project_id: filters.value.project_id,
-    applicant_userid: filters.value.applicant_userid,
-    envelope_ids_text: ""
-  };
-  createDialog.value = true;
+const loadHistory = async () => {
+  historyLoading.value = true;
+  try {
+    const [paid, rejected] = await Promise.all([
+      listReimbursementBatches({ status: "paid", page: 1, pageSize: 200 }),
+      listReimbursementBatches({ status: "rejected", page: 1, pageSize: 200 })
+    ]);
+    historyRows.value = [...paid.data, ...rejected.data].sort((a, b) => b.id - a.id);
+  } finally {
+    historyLoading.value = false;
+  }
 };
 
-const submitCreate = async () => {
-  if (
-    !createForm.value.project_id ||
-    !createForm.value.applicant_userid.trim()
-  ) {
+const loadCandidates = async () => {
+  if (!filters.value.project_id || !filters.value.applicant_userid.trim()) {
+    candidates.value = [];
+    candidateSelectedIds.value = [];
+    return;
+  }
+
+  candidateLoading.value = true;
+  try {
+    const result = await listReimbursementEnvelopes({
+      page: 1,
+      pageSize: 500,
+      project_id: filters.value.project_id,
+      applicant_userid: filters.value.applicant_userid.trim()
+    });
+    candidates.value = result.data.filter(
+      item => !["paid", "rejected", "deleted"].includes(item.status)
+    );
+    candidateSelectedIds.value = [];
+  } finally {
+    candidateLoading.value = false;
+  }
+};
+
+const autoSelectSubmittable = () => {
+  candidateSelectedIds.value = candidates.value
+    .filter(item => item.status === "received" && item.precheck_status === "approved" && !item.batch_id)
+    .map(item => item.id);
+};
+
+const submitCreateAndApproval = async () => {
+  if (!filters.value.project_id || !filters.value.applicant_userid.trim()) {
     message("请填写项目和申报人", { type: "warning" });
     return;
   }
 
-  const rawIds = createForm.value.envelope_ids_text
-    .split(",")
-    .map(item => item.trim())
-    .filter(Boolean);
-  const envelopeIds = rawIds.map(Number).filter(n => !Number.isNaN(n) && n > 0);
-
-  creating.value = true;
+  creatingAndSubmitting.value = true;
   try {
     const result = await createReimbursementBatch({
-      project_id: createForm.value.project_id,
-      applicant_userid: createForm.value.applicant_userid.trim(),
-      envelope_ids: envelopeIds.length > 0 ? envelopeIds : undefined
+      project_id: filters.value.project_id,
+      applicant_userid: filters.value.applicant_userid.trim(),
+      envelope_ids: candidateSelectedIds.value.length > 0 ? candidateSelectedIds.value : undefined
     });
-    message(`批次创建成功：${result.data.batch_no}`, { type: "success" });
-    createDialog.value = false;
+
+    await submitBatchApproval(result.data.id);
+    message(`批次已创建并送审：${result.data.batch_no}`, { type: "success" });
+
+    await Promise.all([loadData(), loadCandidates(), loadHistory()]);
     router.push(`/finance/reimbursement/batch/${result.data.id}`);
   } finally {
-    creating.value = false;
+    creatingAndSubmitting.value = false;
   }
+};
+
+const onCandidateSelectionChange = (selection: ReimbursementEnvelope[]) => {
+  candidateSelectedIds.value = selection.map(item => item.id);
 };
 
 const openDetail = (id: number) => {
@@ -108,50 +144,62 @@ const openDetail = (id: number) => {
 };
 
 onMounted(async () => {
-  await loadProjects();
-  await loadData();
+  await Promise.all([loadProjects(), loadWecomUsers()]);
+  await Promise.all([loadData(), loadHistory()]);
 });
+
+watch(
+  () => [filters.value.project_id, filters.value.applicant_userid],
+  () => {
+    loadCandidates();
+  }
+);
 </script>
 
 <template>
   <el-card shadow="never" style="background: #fffaf2">
     <template #header>
-      <div
-        style="
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        "
-      >
-        <span>报销集中审批批次</span>
-        <el-button type="primary" @click="openCreate">新建审批批次</el-button>
+      <div style="display: flex; justify-content: space-between; align-items: center">
+        <span>报销集中审批与历史中心</span>
+        <el-space>
+          <el-button @click="loadCandidates">刷新候选条目</el-button>
+          <el-button type="primary" :loading="creatingAndSubmitting" @click="submitCreateAndApproval"
+            >创建并送审</el-button
+          >
+        </el-space>
       </div>
     </template>
 
+    <el-alert
+      type="info"
+      :closable="false"
+      title="按“项目 + 申请人”筛选后，系统自动列出未完成报销条目；勾选可送审条目后可一键创建并集中送审。"
+      style="margin-bottom: 12px"
+    />
+
     <el-form inline>
       <el-form-item label="所属项目">
+        <el-select v-model="filters.project_id" clearable filterable style="width: 220px">
+          <el-option v-for="item in projects" :key="item.id" :label="item.project_name" :value="item.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="申请人">
         <el-select
-          v-model="filters.project_id"
+          v-model="filters.applicant_userid"
           clearable
           filterable
-          style="width: 220px"
+          style="width: 240px"
+          placeholder="请选择申请人"
         >
           <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="`${item.name} (${item.userid})`"
+            :value="item.userid"
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="申报人">
-        <el-input
-          v-model="filters.applicant_userid"
-          placeholder="userid"
-          clearable
-        />
-      </el-form-item>
-      <el-form-item label="状态">
+      <el-form-item label="批次状态">
         <el-select v-model="filters.status" clearable style="width: 160px">
           <el-option label="草稿" value="draft" />
           <el-option label="待审批" value="pending_approval" />
@@ -160,15 +208,43 @@ onMounted(async () => {
           <el-option label="已付款" value="paid" />
         </el-select>
       </el-form-item>
-      <el-button type="primary" @click="loadData">查询</el-button>
+      <el-button type="primary" @click="loadData">查询批次</el-button>
+      <el-button @click="loadCandidates">查询候选报销</el-button>
+      <el-button @click="autoSelectSubmittable"
+        >自动勾选可送审（已收件+预审通过）</el-button
+      >
     </el-form>
+
+    <el-table
+      :data="candidates"
+      :loading="candidateLoading"
+      stripe
+      style="margin-top: 12px"
+      @selection-change="onCandidateSelectionChange"
+    >
+      <el-table-column type="selection" width="52" />
+      <el-table-column prop="envelope_no" label="信封编号" width="160" />
+      <el-table-column prop="status" label="状态" width="130" />
+      <el-table-column prop="precheck_status" label="预审状态" width="130" />
+      <el-table-column prop="channel" label="通道" width="110" />
+      <el-table-column prop="invoice_no" label="发票号" min-width="180" />
+      <el-table-column prop="amount" label="金额" width="120" />
+      <el-table-column prop="updated_at" label="最近更新时间" width="180" />
+      <el-table-column label="操作" width="120" fixed="right">
+        <template #default="scope">
+          <el-button link type="primary" @click="router.push(`/finance/reimbursement/detail/${scope.row.id}`)"
+            >查看</el-button
+          >
+        </template>
+      </el-table-column>
+    </el-table>
+
+    <el-divider content-position="left">审批批次（进行中）</el-divider>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="batch_no" label="批次号" width="160" />
       <el-table-column label="项目" width="180">
-        <template #default="scope">{{
-          projectMap[scope.row.project_id] || scope.row.project_id
-        }}</template>
+        <template #default="scope">{{ projectMap[scope.row.project_id] || scope.row.project_id }}</template>
       </el-table-column>
       <el-table-column prop="applicant_userid" label="申报人" width="140" />
       <el-table-column prop="item_count" label="信封数" width="100" />
@@ -178,9 +254,7 @@ onMounted(async () => {
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row.id)"
-            >详情</el-button
-          >
+          <el-button link type="primary" @click="openDetail(scope.row.id)">详情</el-button>
         </template>
       </el-table-column>
     </el-table>
@@ -199,42 +273,24 @@ onMounted(async () => {
         }
       "
     />
-  </el-card>
 
-  <el-dialog v-model="createDialog" title="新建报销审批批次" width="580px">
-    <el-form label-width="120px">
-      <el-form-item label="所属项目" required>
-        <el-select
-          v-model="createForm.project_id"
-          filterable
-          style="width: 100%"
-        >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="申报人" required>
-        <el-input
-          v-model="createForm.applicant_userid"
-          placeholder="例如 operator"
-        />
-      </el-form-item>
-      <el-form-item label="指定信封ID">
-        <el-input
-          v-model="createForm.envelope_ids_text"
-          placeholder="可选，英文逗号分隔；留空自动汇总可用信封"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="createDialog = false">取消</el-button>
-      <el-button type="primary" :loading="creating" @click="submitCreate"
-        >创建</el-button
-      >
-    </template>
-  </el-dialog>
+    <el-divider content-position="left">历史完成（财务/领导）</el-divider>
+
+    <el-table :data="historyRows" :loading="historyLoading" stripe>
+      <el-table-column prop="batch_no" label="批次号" width="170" />
+      <el-table-column label="项目" width="180">
+        <template #default="scope">{{ projectMap[scope.row.project_id] || scope.row.project_id }}</template>
+      </el-table-column>
+      <el-table-column prop="applicant_userid" label="申报人" width="140" />
+      <el-table-column prop="item_count" label="信封数" width="100" />
+      <el-table-column prop="total_amount" label="总金额" width="120" />
+      <el-table-column prop="status" label="结果状态" width="120" />
+      <el-table-column prop="updated_at" label="最近更新时间" width="180" />
+      <el-table-column label="操作" width="120" fixed="right">
+        <template #default="scope">
+          <el-button link type="primary" @click="openDetail(scope.row.id)">详情</el-button>
+        </template>
+      </el-table-column>
+    </el-table>
+  </el-card>
 </template>
