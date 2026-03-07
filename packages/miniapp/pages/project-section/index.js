@@ -21,6 +21,11 @@ const reportStatusText = {
   rejected: "已驳回"
 };
 
+const shiftText = {
+  day: "白班",
+  night: "夜班"
+};
+
 Page({
   data: {
     loading: false,
@@ -57,11 +62,11 @@ Page({
   },
 
   toSectionStatus(status) {
-    return sectionStatusText[status] || status || "-";
+    return sectionStatusText[status] || "未知";
   },
 
   toReportStatus(status) {
-    return reportStatusText[status] || status || "-";
+    return reportStatusText[status] || "未知";
   },
 
   async loadData() {
@@ -80,7 +85,11 @@ Page({
 
       const operatorLogs = (Array.isArray(operatorRes.data) ? operatorRes.data : [])
         .slice()
-        .sort((a, b) => String(b.log_date || "").localeCompare(String(a.log_date || "")));
+        .sort((a, b) => String(b.log_date || "").localeCompare(String(a.log_date || "")))
+        .map((item) => ({
+          ...item,
+          shiftText: shiftText[item.shift] || item.shift || "-"
+        }));
 
       const breakthroughReports = (Array.isArray(breakthroughRes.data) ? breakthroughRes.data : [])
         .slice()

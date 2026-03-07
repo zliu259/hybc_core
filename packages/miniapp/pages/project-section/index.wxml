@@ -14,7 +14,7 @@
     </view>
     <view wx:if="{{operatorLogs.length === 0}}" class="empty-tip">暂无施工日志</view>
     <view wx:for="{{operatorLogs}}" wx:key="id" class="log-row">
-      <view class="log-title">{{item.log_date}} · {{item.shift}}</view>
+      <view class="log-title">{{item.log_date}} · {{item.shiftText}}</view>
       <view class="log-sub">完成管节 {{item.completed_pipe_count}} · 累计管节 {{item.cumulative_pipe_count}}</view>
       <view class="log-sub">当日顶进 {{item.footage_m || 0}}m · 填报人 {{item.operator_userid || '-'}}</view>
       <view wx:if="{{item.issue_summary}}" class="log-sub">问题：{{item.issue_summary}}</view>

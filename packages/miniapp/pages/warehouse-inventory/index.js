@@ -2,6 +2,14 @@ const { request } = require("../../utils/request");
 
 const today = () => new Date().toISOString().slice(0, 10);
 
+const inventoryStatusText = {
+  normal: "正常",
+  low: "库存不足",
+  warning: "预警",
+  critical: "紧急",
+  disabled: "停用"
+};
+
 Page({
   data: {
     busy: false,
@@ -32,7 +40,10 @@ Page({
       this.setData({
         warehouses,
         warehouseNames: warehouses.map((item) => `${item.warehouse_code} · ${item.warehouse_name}`),
-        inventory: Array.isArray(inventoryRes.data) ? inventoryRes.data : [],
+        inventory: (Array.isArray(inventoryRes.data) ? inventoryRes.data : []).map((item) => ({
+          ...item,
+          statusText: inventoryStatusText[item.status] || "未知"
+        })),
         alerts: Array.isArray(alertRes.data) ? alertRes.data : []
       });
     } catch (error) {

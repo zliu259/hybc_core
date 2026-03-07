@@ -871,6 +871,18 @@
 - 企微模板卡推送服务新增催办模式（标题/文案区分）与去重可控参数；催办场景关闭重复检查以确保二次消息可达：`packages/api/src/services/wecom-approval-push.ts`
 - 催办推送结果写入事件日志（`wecom_template_card_urge_sent` / `wecom_template_card_urge_failed`），便于后续运营与审计追踪：`packages/api/src/routes/approval.ts`
 
+### 4.20 Miniapp 图标字体网络依赖收敛（2026-03）
+- 个人中心与业务卡片组件移除直接 `t-icon` 依赖，改为本地图标字符展示，避免渲染层外网字体请求：`packages/miniapp/pages/profile/index.{wxml,wxss}`、`packages/miniapp/components/business/panel-card/index.{wxml,wxss,json}`
+- 全局组件注册移除 `t-icon` 显式挂载，减少页面级无必要 icon 组件装载：`packages/miniapp/app.json`
+- TDesign icon 样式中的远程字体源替换为本地 fallback，避免 `tdesign.gtimg.com` 字体拉取失败报错：`packages/miniapp/tdesign-miniprogram/icon/icon.wxss`、`packages/miniapp/miniprogram_npm/tdesign-miniprogram/icon/icon.wxss`
+
+### 4.21 Miniapp 四大板块汉化补齐（2026-03）
+- 资金流出与审批详情补齐枚举汉化：付款类别、付款方式、合同方向、合同类型统一展示中文标签，不再直出后端英文枚举：`packages/miniapp/pages/approval-detail/index.{js,wxml}`
+- 库房板块补齐状态汉化：调度看板与库存列表改为中文状态文案（草稿/待审批/已执行/预警等），避免展示原始状态码：`packages/miniapp/pages/warehouse-dispatch/index.{js,wxml}`、`packages/miniapp/pages/warehouse-inventory/index.{js,wxml}`
+- 工作台下项目链路补齐班次/状态汉化：标段详情日志中的班次显示改为白班/夜班，项目与标段状态未知兜底统一中文：`packages/miniapp/pages/project-section/index.{js,wxml}`、`packages/miniapp/pages/project-detail/index.js`、`packages/miniapp/pages/project-list/index.js`
+- 个人中心补齐角色与认证方式汉化：角色从英文 role id 改为中文角色名，认证方式与动态状态文案统一中文展示：`packages/miniapp/pages/profile/index.{js,wxml}`
+- 资产板块补齐候选设备状态汉化：设备候选列表状态不再显示英文枚举值：`packages/miniapp/pages/asset/index.{js,wxml}`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

@@ -15,7 +15,7 @@
     <view wx:for="{{inventory}}" wx:key="id" class="inventory-item">
       <view class="inventory-title">{{item.warehouse_name || ('仓库#' + item.warehouse_id)}}</view>
       <view class="inventory-sub">{{item.type_name || ('资产类型#' + item.asset_type_id)}} · 数量 {{item.quantity}} {{item.unit || ''}}</view>
-      <view class="inventory-sub">最小库存 {{item.min_stock || 0}} · 状态 {{item.status}}</view>
+      <view class="inventory-sub">最小库存 {{item.min_stock || 0}} · 状态 {{item.statusText}}</view>
     </view>
   </hy-panel-card>
 </view>

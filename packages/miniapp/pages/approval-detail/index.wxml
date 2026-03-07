@@ -22,9 +22,9 @@
         <view class="kv-row"><text class="dot dot-green">•</text><text class="k">收款方</text><text class="v">{{bizDetail.payee ? bizDetail.payee.name : '-'}}</text></view>
         <view class="kv-row"><text class="dot dot-green">•</text><text class="k">收款账号</text><text class="v">{{bizDetail.payee ? (bizDetail.payee.bank_name + ' / ' + bizDetail.payee.bank_account) : '-'}}</text></view>
         <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">申请金额</text><text class="v v-strong">{{bizDetail.amountDisplay}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">付款类别</text><text class="v">{{bizDetail.category}}</text></view>
+          <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">付款类别</text><text class="v">{{bizDetail.categoryLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">预计付款日</text><text class="v">{{bizDetail.expected_payment_date}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">付款方式</text><text class="v">{{bizDetail.payment_method}}</text></view>
+          <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">付款方式</text><text class="v">{{bizDetail.paymentMethodLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">付款内容</text><text class="v">{{bizDetail.content}}</text></view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">备注</text><text class="v">{{bizDetail.remark || '-'}}</text></view>
       </hy-panel-card>
@@ -33,13 +33,13 @@
     <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type !== 'payment_request' && detail.instance.biz_type !== 'reimbursement_batch' && bizDetail}}">
       <hy-panel-card title="申请明细（合同）">
         <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">合同号</text><text class="v">{{bizDetail.contract_no}}</text></view>
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">方向</text><text class="v">{{bizDetail.direction}}</text></view>
+          <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">方向</text><text class="v">{{bizDetail.directionLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-green">•</text><text class="k">我方主体</text><text class="v">{{bizDetail.entityLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-green">•</text><text class="k">对方单位</text><text class="v">{{bizDetail.counterparty}}</text></view>
         <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">合同金额</text><text class="v v-strong">{{bizDetail.totalAmountDisplay}}</text></view>
         <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">已付金额</text><text class="v">{{bizDetail.paidAmountDisplay}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">合同类型</text><text class="v">{{bizDetail.contract_type}}</text></view>
+          <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">合同类型</text><text class="v">{{bizDetail.contractTypeLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">经办人</text><text class="v">{{bizDetail.handlerLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">合同日期</text><text class="v">{{bizDetail.contract_date}}</text></view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">备注</text><text class="v">{{bizDetail.remark || '-'}}</text></view>

@@ -25,7 +25,7 @@
     <view wx:for="{{executing}}" wx:key="id" class="dispatch-item">
       <view class="dispatch-title">{{item.order_no}} · {{item.orderTypeText}}</view>
       <view class="dispatch-sub">来源仓库ID：{{item.from_warehouse_id || '-'}} · 目标仓库ID：{{item.to_warehouse_id || '-'}}</view>
-      <view class="dispatch-sub">状态：{{item.status}} · 更新时间：{{item.updated_at}}</view>
+      <view class="dispatch-sub">状态：{{item.statusText}} · 更新时间：{{item.updated_at}}</view>
       <view class="row">
         <t-button size="small" theme="primary" data-id="{{item.id}}" bindtap="executeOrder" loading="{{busy}}" disabled="{{busy}}">执行单据</t-button>
       </view>

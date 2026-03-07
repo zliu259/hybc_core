@@ -40,11 +40,11 @@
       </view>
     </view>
 
-    <view class="profile-item"><t-icon name="user" size="28rpx" color="#5c667a" /><view class="sub">用户ID: {{profile.id || profile.username || '-'}}</view></view>
-    <view class="profile-item"><t-icon name="user-avatar" size="28rpx" color="#5c667a" /><view class="sub">昵称: {{profile.nickname || '-'}}</view></view>
-    <view class="profile-item"><t-icon name="secured" size="28rpx" color="#5c667a" /><view class="sub">角色: {{profile.roles && profile.roles.length ? profile.roles.join(',') : '-'}}</view></view>
-    <view class="profile-item"><t-icon name="verify" size="28rpx" color="#5c667a" /><view class="sub">认证方式: {{profile.auth_method || '-'}}</view></view>
-    <view class="profile-item"><t-icon name="time" size="28rpx" color="#5c667a" /><view class="sub">企微验证: {{profile.wecom_verified_at || '-'}}</view></view>
+    <view class="profile-item"><view class="profile-icon">👤</view><view class="sub">用户ID：{{profile.id || profile.username || '-'}}</view></view>
+    <view class="profile-item"><view class="profile-icon">🪪</view><view class="sub">昵称：{{profile.nickname || '-'}}</view></view>
+    <view class="profile-item"><view class="profile-icon">🛡️</view><view class="sub">角色：{{profileRoleText}}</view></view>
+    <view class="profile-item"><view class="profile-icon">✅</view><view class="sub">认证方式：{{profileAuthMethodText}}</view></view>
+    <view class="profile-item"><view class="profile-icon">🕒</view><view class="sub">企微验证：{{profile.wecom_verified_at || '-'}}</view></view>
     <view class="row">
       <t-button class="btn btn-primary" theme="primary" bindtap="reloadProfile" loading="{{busy}}" disabled="{{busy}}">刷新资料</t-button>
       <t-button class="btn btn-warn" theme="danger" bindtap="logout">退出登录</t-button>

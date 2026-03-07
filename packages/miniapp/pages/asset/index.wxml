@@ -12,7 +12,7 @@
       <view class="candidate-title">关键字匹配结果（点击查看状态）</view>
       <view wx:for="{{assetCandidates}}" wx:key="id" class="candidate-item" data-id="{{item.id}}" bindtap="onSelectCandidate">
         <view class="sub">{{item.asset_code}} · {{item.asset_name}}</view>
-        <view class="sub">状态：{{item.status}} · 位置：{{item.current_location || '-'}}</view>
+        <view class="sub">状态：{{item.statusText}} · 位置：{{item.current_location || '-'}}</view>
       </view>
     </view>
   </hy-panel-card>

@@ -2,7 +2,14 @@
   "libVersion": "3.14.2",
   "projectname": "hybc-core",
   "setting": {
-    "urlCheck": false,
+    "urlCheck": true,
+    "packNpmManually": true,
+    "packNpmRelationList": [
+      {
+        "packageJsonPath": "./package.json",
+        "miniprogramNpmDistDir": "./miniprogram_npm"
+      }
+    ],
     "coverView": false,
     "lazyloadPlaceholderEnable": false,
     "skylineRenderEnable": false,

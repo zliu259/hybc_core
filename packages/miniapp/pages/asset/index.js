@@ -39,7 +39,7 @@ Page({
     if (status === "using") return "使用中";
     if (status === "repair") return "待维修";
     if (status === "scrapped") return "已报废";
-    return status || "未知";
+    return "未知";
   },
 
   statusIndexByValue(status) {
@@ -165,7 +165,10 @@ Page({
       asset: {},
       assetDocuments: [],
       assetEvents: [],
-      assetCandidates: list
+      assetCandidates: list.map((item) => ({
+        ...item,
+        statusText: this.toStatusText(item.status)
+      }))
     });
   },
 

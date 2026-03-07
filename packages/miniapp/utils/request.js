@@ -20,6 +20,20 @@ const isNetworkLayerFailure = (error) => {
   return msg.includes("request:fail");
 };
 
+const normalizeMiniappNetworkErrorMessage = (rawMessage) => {
+  const msg = rawMessage || "";
+  if (msg.includes("url not in domain list")) {
+    return "请求域名未加入小程序合法域名，请在企业微信后台补充 request 合法域名（如 https://api.hybcdg.com）";
+  }
+  if (msg.includes("SSL") || msg.includes("certificate") || msg.includes("cert")) {
+    return "HTTPS 证书校验失败，请检查服务端证书链、证书有效期与域名匹配";
+  }
+  if (msg.includes("TLS") || msg.includes("tls")) {
+    return "TLS 握手失败，请确认服务端 TLS 版本符合企业微信小程序要求";
+  }
+  return msg;
+};
+
 const buildUrlWithBase = (baseUrl, path) => {
   if (!path) return baseUrl;
   if (/^https?:\/\//.test(path)) return path;
@@ -128,7 +142,8 @@ const loginRequest = ({
         fail(err) {
           const errorMessage =
             (err && err.errMsg) || (err && err.message) || "Login request failed";
-          const networkError = new Error(`${errorMessage} (${url})`);
+          const friendlyMessage = normalizeMiniappNetworkErrorMessage(errorMessage) || errorMessage;
+          const networkError = new Error(`${friendlyMessage} (${url})`);
           networkError.__networkFail = true;
           networkError.__rawErrMsg = (err && err.errMsg) || "";
           reject(networkError);

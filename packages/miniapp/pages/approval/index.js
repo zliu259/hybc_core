@@ -33,7 +33,7 @@ Page({
       completed: "已完成",
       transferred: "已转签"
     };
-    return map[status] || status || "-";
+    return map[status] || "未知";
   },
 
   bizTypeLabel(value) {
@@ -43,7 +43,7 @@ Page({
       payment_request: "付款审批",
       reimbursement_batch: "报销审批"
     };
-    return map[value] || value || "-";
+    return map[value] || "未知类型";
   },
 
   cardClassByType(bizType) {

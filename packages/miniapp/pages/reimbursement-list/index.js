@@ -12,7 +12,7 @@ const statusText = (status) => {
     paid: "已打款",
     rejected: "已拒绝"
   };
-  return map[status] || status || "未知";
+  return map[status] || "未知";
 };
 
 const channelText = (channel) => {

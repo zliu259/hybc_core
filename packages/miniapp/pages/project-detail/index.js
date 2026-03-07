@@ -55,11 +55,11 @@ Page({
   },
 
   toSectionStatus(status) {
-    return sectionStatusText[status] || status || "-";
+    return sectionStatusText[status] || "未知";
   },
 
   toLogStatus(status) {
-    return logStatusText[status] || status || "-";
+    return logStatusText[status] || "未知";
   },
 
   buildSectionCards(sections, operatorLogs, breakthroughReports) {

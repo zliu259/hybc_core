@@ -7,7 +7,22 @@ Page({
     profile: {},
     busy: false,
     timeline: [],
-    certificates: []
+    certificates: [],
+    profileRoleText: "-",
+    profileAuthMethodText: "-"
+  },
+
+  normalizeStatusText(value) {
+    const map = {
+      pending: "待处理",
+      in_progress: "进行中",
+      approved: "已通过",
+      rejected: "已驳回",
+      completed: "已完成",
+      draft: "草稿",
+      submitted: "已提交"
+    };
+    return map[value] || "未知";
   },
 
   normalizeTimeline(profile) {
@@ -16,7 +31,7 @@ Page({
     return list.map((item, index) => ({
       icon: item.icon || "📝",
       text: item.text || item.title || `动态${index + 1}`,
-      status: item.status || item.status_text || "-"
+      status: this.normalizeStatusText(item.status || item.status_text || "-")
     }));
   },
 
@@ -41,6 +56,28 @@ Page({
     });
   },
 
+  roleText(roles) {
+    const map = {
+      super_admin: "超级管理员",
+      manager: "经理",
+      site_manager: "现场管理员",
+      operator: "现场操作员",
+      finance: "财务"
+    };
+    const list = Array.isArray(roles) ? roles : [];
+    if (!list.length) return "-";
+    return list.map((item) => map[item] || "未知角色").join("、");
+  },
+
+  authMethodText(value) {
+    const map = {
+      wecom_oauth: "企业微信登录",
+      passkey: "Passkey",
+      wecom: "企业微信登录"
+    };
+    return map[value] || "未知";
+  },
+
   onShow() {
     this.reloadProfile();
   },
@@ -56,14 +93,18 @@ Page({
       this.setData({
         profile,
         timeline,
-        certificates
+        certificates,
+        profileRoleText: this.roleText(profile.roles),
+        profileAuthMethodText: this.authMethodText(profile.auth_method)
       });
     } catch {
       const profile = getUserProfile() || {};
       this.setData({
         profile,
         timeline: this.normalizeTimeline(profile),
-        certificates: this.normalizeCertificates(profile)
+        certificates: this.normalizeCertificates(profile),
+        profileRoleText: this.roleText(profile.roles),
+        profileAuthMethodText: this.authMethodText(profile.auth_method)
       });
     } finally {
       this.setData({ busy: false });
@@ -150,7 +191,7 @@ Page({
       stock_order: "出库审批",
       invoice_request: "发票审批"
     };
-    return map[value] || value || "审批";
+    return map[value] || "审批";
   },
 
   async urgeApprovalFlow() {

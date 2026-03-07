@@ -76,7 +76,7 @@ Page({
       completed: "已完成",
       transferred: "已转签"
     };
-    return map[status] || status || "-";
+    return map[status] || "未知";
   },
 
   bizTypeLabel(value) {
@@ -86,7 +86,53 @@ Page({
       payment_request: "付款审批",
       reimbursement_batch: "报销审批"
     };
-    return map[value] || value || "-";
+    return map[value] || "未知";
+  },
+
+  paymentCategoryLabel(value) {
+    const map = {
+      prepayment: "预付款",
+      progress: "进度款",
+      settlement: "结算款",
+      special_approval: "特殊审批",
+      administrative_fee: "行政费",
+      labor_fee: "劳务费",
+      machinery_fee: "机械费",
+      material_fee: "材料费",
+      other: "其他费用"
+    };
+    return map[value] || "未知";
+  },
+
+  paymentMethodLabel(value) {
+    const map = {
+      bank_transfer: "对公转账",
+      transfer: "对公转账",
+      cash: "现金",
+      bill: "票据",
+      other: "其他"
+    };
+    return map[value] || "未知";
+  },
+
+  contractDirectionLabel(value) {
+    const map = {
+      outbound: "对外",
+      inbound: "对内"
+    };
+    return map[value] || "未知";
+  },
+
+  contractTypeLabel(value) {
+    const map = {
+      labor: "人工",
+      machine: "机械",
+      machinery: "机械",
+      general: "总包",
+      material: "材料",
+      other: "其他"
+    };
+    return map[value] || "未知";
   },
 
   actionLabel(action) {
@@ -427,7 +473,9 @@ Page({
             contractLabel:
               (bizDetail.contract && bizDetail.contract.contract_no) || this.unknownLabel(),
             projectLabel: this.projectLabel(bizDetail.project_id),
-            amountDisplay: this.amountDisplay(bizDetail.amount, bizDetail.amount_cn)
+            amountDisplay: this.amountDisplay(bizDetail.amount, bizDetail.amount_cn),
+            categoryLabel: this.paymentCategoryLabel(bizDetail.category),
+            paymentMethodLabel: this.paymentMethodLabel(bizDetail.payment_method)
           };
         }
         attachments = this.parseAttachments(bizDetail && bizDetail.attachments_json);
@@ -443,7 +491,9 @@ Page({
             entityLabel: this.entityLabel(bizDetail.entity_id),
             handlerLabel: this.userLabel(bizDetail.handler_userid),
             totalAmountDisplay: this.amountDisplay(bizDetail.total_amount, null),
-            paidAmountDisplay: this.amountDisplay(bizDetail.paid_amount, null)
+            paidAmountDisplay: this.amountDisplay(bizDetail.paid_amount, null),
+            directionLabel: this.contractDirectionLabel(bizDetail.direction),
+            contractTypeLabel: this.contractTypeLabel(bizDetail.contract_type)
           };
         }
         attachments = this.parseAttachments(bizDetail && bizDetail.attachments_json);

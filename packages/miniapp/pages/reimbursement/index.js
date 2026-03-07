@@ -20,7 +20,7 @@ const statusText = (status) => {
     completed: "已完成",
     failed: "失败"
   };
-  return map[status] || status || "未知";
+  return map[status] || "未知";
 };
 
 const verificationStatusText = (status) => {
@@ -29,7 +29,7 @@ const verificationStatusText = (status) => {
     verified: "已核验",
     mismatch: "核验异常"
   };
-  return map[status] || status || "未知";
+  return map[status] || "未知";
 };
 
 const precheckStatusText = (status) => {
@@ -40,7 +40,7 @@ const precheckStatusText = (status) => {
     supplement: "待补充",
     rejected: "预审驳回"
   };
-  return map[status] || status || "未知";
+  return map[status] || "未知";
 };
 
 const taskStatusText = (status) => {
@@ -50,7 +50,7 @@ const taskStatusText = (status) => {
     completed: "已完成",
     failed: "失败"
   };
-  return map[status] || status || "未知";
+  return map[status] || "未知";
 };
 
 const riskText = (risk) => {

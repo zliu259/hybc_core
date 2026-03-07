@@ -40,7 +40,7 @@ Page({
   },
 
   toStatusText(status) {
-    return statusText[status] || status || "-";
+    return statusText[status] || "未知";
   },
 
   async loadProjects() {

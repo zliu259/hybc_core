@@ -19,6 +19,18 @@ Page({
     return "调拨";
   },
 
+  toStatusLabel(value) {
+    const map = {
+      draft: "草稿",
+      pending_approval: "待审批",
+      approved: "已通过",
+      executed: "已执行",
+      cancelled: "已取消",
+      rejected: "已驳回"
+    };
+    return map[value] || "未知";
+  },
+
   buildBuckets(rows) {
     const inboundPending = [];
     const outboundPending = [];
@@ -28,7 +40,8 @@ Page({
     (rows || []).forEach((item) => {
       const row = {
         ...item,
-        orderTypeText: this.toOrderTypeLabel(item.order_type)
+        orderTypeText: this.toOrderTypeLabel(item.order_type),
+        statusText: this.toStatusLabel(item.status)
       };
       if (["executed", "cancelled", "rejected"].includes(item.status)) {
         done.push(row);

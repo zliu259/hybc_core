@@ -3,7 +3,7 @@
   "miniprogramRoot": "./",
   "compileType": "miniprogram",
   "setting": {
-    "urlCheck": false,
+    "urlCheck": true,
     "es6": true,
     "enhance": true,
     "postcss": true,
@@ -11,14 +11,24 @@
     "compileWorklet": false,
     "uglifyFileName": false,
     "uploadWithSourceMap": false,
-    "packNpmManually": false,
-    "packNpmRelationList": [],
+    "packNpmManually": true,
+    "packNpmRelationList": [
+      {
+        "packageJsonPath": "./package.json",
+        "miniprogramNpmDistDir": "./miniprogram_npm"
+      }
+    ],
     "minifyWXSS": true,
     "minifyWXML": true,
     "localPlugins": false,
     "disableUseStrict": false,
     "useCompilerPlugins": false,
-    "condition": false,
+    "condition": {
+      "search": [],
+      "conversation": [],
+      "plugin": [],
+      "game": []
+    },
     "swc": false,
     "disableSWC": true,
     "ignoreDevUnusedFiles": true,
@@ -35,12 +45,7 @@
     "qywx_simulator_plugin": "2.27.3"
   },
   "packOptions": {
-    "ignore": [
-      {
-        "type": "folder",
-        "value": "tdesign-miniprogram"
-      }
-    ],
+    "ignore": [],
     "include": []
   },
   "editorSetting": {},
