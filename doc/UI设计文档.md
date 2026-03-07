@@ -791,6 +791,11 @@
 - 审批详情页“申请明细（付款）”的关联合同改为可点击链接，直接跳转合同详情页：`packages/web/src/views/approval/detail.vue`
 - 合同详情与付款详情在审批进行中/审批已结束时禁用“提交审批”“触发AI审查/风险评估”按钮，防止重复提审与不必要 AI 消耗：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 
+### 4.11 超管审批流程强制改派（2026-03）
+- 审批详情流程线为 `super_admin` 增加“强制改派”入口，仅对待处理人工任务显示，支持直接替换当前审批人：`packages/web/src/views/approval/detail.vue`
+- 审批详情新增“强制改派审批人（超管）”弹窗，要求填写改派原因并选择目标审批人，提交后即时刷新流程：`packages/web/src/views/approval/detail.vue`
+- 新增超管专用后端接口 `POST /api/v1/approval/:id/force-transfer`，强制改派会写入 `approval_transfer` 留痕并标记来源：`packages/api/src/routes/approval.ts`、`packages/api/src/services/approval/operations.ts`、`packages/api/src/types/approval.ts`、`packages/web/src/api/approval.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

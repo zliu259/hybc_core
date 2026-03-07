@@ -6,6 +6,7 @@ import type {
   SubmitApprovalRequest,
   ReturnRequest,
   TransferRequest,
+  ForceTransferRequest,
   ApprovalInstance,
   ApprovalTask
 } from "../types/approval";
@@ -21,6 +22,7 @@ import {
   returnToPrev,
   returnTo,
   transfer as transferOp,
+  forceTransferBySuperAdmin,
   withdraw as withdrawOp,
   cancel as cancelOp,
   resubmit as resubmitOp
@@ -363,6 +365,43 @@ approvalRoutes.post("/:id/transfer", async (c) => {
     return c.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Transfer failed";
+    return c.json({ success: false, error: { message } }, 400);
+  }
+});
+
+approvalRoutes.post("/:id/force-transfer", async (c) => {
+  const instanceId = Number(c.req.param("id"));
+  const auth = c.get("auth");
+  if (!auth.roles.includes("super_admin")) {
+    return c.json(
+      { success: false, error: { message: "Only super_admin can force change approver" } },
+      403
+    );
+  }
+
+  const body = (await c.req.json()) as ForceTransferRequest;
+  if (!Number.isFinite(body.task_id) || body.task_id <= 0) {
+    return c.json({ success: false, error: { message: "task_id is required" } }, 400);
+  }
+  if (!body.to_userid?.trim()) {
+    return c.json({ success: false, error: { message: "to_userid is required" } }, 400);
+  }
+  if (!body.reason?.trim()) {
+    return c.json({ success: false, error: { message: "reason is required" } }, 400);
+  }
+
+  try {
+    await forceTransferBySuperAdmin(
+      c.env,
+      instanceId,
+      Number(body.task_id),
+      auth.sub,
+      body.to_userid.trim(),
+      body.reason.trim()
+    );
+    return c.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Force transfer failed";
     return c.json({ success: false, error: { message } }, 400);
   }
 });

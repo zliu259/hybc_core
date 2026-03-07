@@ -218,6 +218,12 @@ export interface TransferRequest {
   reason: string;
 }
 
+export interface ForceTransferRequest {
+  task_id: number;
+  to_userid: string;
+  reason: string;
+}
+
 export interface CreateTemplateRequest {
   template_code: string;
   template_name: string;

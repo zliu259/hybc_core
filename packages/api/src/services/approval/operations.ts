@@ -367,6 +367,74 @@ export const transfer = async (
   });
 };
 
+export const forceTransferBySuperAdmin = async (
+  env: Env,
+  instanceId: number,
+  taskId: number,
+  adminUserId: string,
+  toUserId: string,
+  reason: string
+): Promise<void> => {
+  const now = nowIso();
+  const task = await env.DB.prepare("SELECT * FROM approval_task WHERE id = ?")
+    .bind(taskId)
+    .first<ApprovalTask>();
+
+  if (!task) {
+    throw new Error(`Task ${taskId} not found`);
+  }
+  if (task.instance_id !== instanceId) {
+    throw new Error(`Task ${taskId} does not belong to instance ${instanceId}`);
+  }
+  if (task.status !== "pending") {
+    throw new Error(`Task ${taskId} is not pending (current: ${task.status})`);
+  }
+  if (task.assignee_userid === "AI_GATE") {
+    throw new Error("AI_GATE task cannot be force reassigned");
+  }
+  if (task.assignee_userid === toUserId) {
+    throw new Error("Target approver is same as current approver");
+  }
+
+  await env.DB.prepare(
+    `UPDATE approval_task SET status = 'transferred', updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(now, task.id)
+    .run();
+
+  await env.DB.prepare(
+    `INSERT INTO approval_task
+      (node_instance_id, instance_id, assignee_userid, round, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'pending', ?, ?)`
+  )
+    .bind(task.node_instance_id, task.instance_id, toUserId, task.round, now, now)
+    .run();
+
+  await env.DB.prepare(
+    `INSERT INTO approval_transfer
+      (task_id, instance_id, from_userid, to_userid, reason, created_at)
+      VALUES (?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      task.id,
+      task.instance_id,
+      task.assignee_userid,
+      toUserId,
+      `[SUPER_ADMIN_FORCE ${adminUserId}] ${reason}`,
+      now
+    )
+    .run();
+
+  await publishEvent(env, "APPROVAL_TRANSFERRED", "approval-operations", {
+    instance_id: task.instance_id,
+    from_userid: task.assignee_userid,
+    to_userid: toUserId,
+    task_id: task.id,
+    force_by_super_admin: adminUserId
+  });
+};
+
 // ─── 7. Withdraw ──────────
 
 export const withdraw = async (

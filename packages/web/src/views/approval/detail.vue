@@ -8,6 +8,7 @@ import {
   rejectApproval,
   returnApproval,
   transferApproval,
+  forceTransferApproval,
   withdrawApproval,
   cancelApproval,
   resubmitApproval,
@@ -29,6 +30,7 @@ import { getContract, type ContractDetail } from "@/api/contract";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 import { resolveUploadUrl } from "@/api/upload";
 import { formatBeijingDateTime } from "@/utils/datetime";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
@@ -37,9 +39,11 @@ defineOptions({ name: "ApprovalDetail" });
 
 const route = useRoute();
 const router = useRouter();
+const userStore = useUserStoreHook();
 const loading = ref(false);
 const detail = ref<ApprovalDetailResponse | null>(null);
 const selectedRound = ref(1);
+const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
 
 const instanceId = computed(() => Number(route.params.id));
 
@@ -105,6 +109,11 @@ const returnComment = ref("");
 const transferDialogVisible = ref(false);
 const transferToUserid = ref("");
 const transferReason = ref("");
+const forceTransferDialogVisible = ref(false);
+const forceTransferTaskId = ref<number | null>(null);
+const forceTransferFromUserid = ref("");
+const forceTransferToUserid = ref("");
+const forceTransferReason = ref("");
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const { projects, loadProjects } = useProjectOptions();
 const entities = ref<Entity[]>([]);
@@ -764,6 +773,14 @@ const openTransferDialog = () => {
   transferDialogVisible.value = true;
 };
 
+const openForceTransferDialog = (task: ApprovalTask) => {
+  forceTransferTaskId.value = task.id;
+  forceTransferFromUserid.value = task.assignee_userid;
+  forceTransferToUserid.value = "";
+  forceTransferReason.value = "";
+  forceTransferDialogVisible.value = true;
+};
+
 const handleTransfer = async () => {
   if (!transferToUserid.value.trim() || !transferReason.value.trim()) {
     message("请填写转办人和原因", { type: "warning" });
@@ -780,6 +797,37 @@ const handleTransfer = async () => {
     await loadDetail();
   } catch {
     message("操作失败", { type: "error" });
+  } finally {
+    actionLoading.value = false;
+  }
+};
+
+const handleForceTransfer = async () => {
+  if (!forceTransferTaskId.value) {
+    message("未选择待改派任务", { type: "warning" });
+    return;
+  }
+  if (!forceTransferToUserid.value.trim() || !forceTransferReason.value.trim()) {
+    message("请填写改派目标审批人与原因", { type: "warning" });
+    return;
+  }
+  if (forceTransferToUserid.value.trim() === forceTransferFromUserid.value) {
+    message("目标审批人与当前审批人相同", { type: "warning" });
+    return;
+  }
+
+  actionLoading.value = true;
+  try {
+    await forceTransferApproval(instanceId.value, {
+      task_id: forceTransferTaskId.value,
+      to_userid: forceTransferToUserid.value.trim(),
+      reason: forceTransferReason.value.trim()
+    });
+    message("已强制改派审批人", { type: "success" });
+    forceTransferDialogVisible.value = false;
+    await loadDetail();
+  } catch {
+    message("强制改派失败", { type: "error" });
   } finally {
     actionLoading.value = false;
   }
@@ -1200,6 +1248,15 @@ onMounted(async () => {
                     style="font-size: 13px; color: #666; margin-top: 4px"
                   >
                     <span>{{ task.assignee_userid }}</span>
+                    <el-button
+                      v-if="isSuperAdmin && task.status === 'pending' && task.assignee_userid !== 'AI_GATE'"
+                      link
+                      type="warning"
+                      style="margin-left: 8px"
+                      @click="openForceTransferDialog(task)"
+                    >
+                      强制改派
+                    </el-button>
                     <el-tag
                       v-if="task.action"
                       :type="formatAiNodeDecisionTagType(task)"
@@ -1386,6 +1443,45 @@ onMounted(async () => {
           :loading="actionLoading"
           @click="handleTransfer"
           >确定转办</el-button
+        >
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="forceTransferDialogVisible" title="强制改派审批人（超管）" width="520px">
+      <el-alert
+        type="warning"
+        :closable="false"
+        title="该操作将直接替换当前待审批任务的审批人，并记录 super_admin 强制改派痕迹。"
+        style="margin-bottom: 12px"
+      />
+      <el-form label-width="110px">
+        <el-form-item label="当前审批人">
+          <el-input :model-value="forceTransferFromUserid || '-'" disabled />
+        </el-form-item>
+        <el-form-item label="改派给">
+          <el-select
+            v-model="forceTransferToUserid"
+            clearable
+            filterable
+            placeholder="选择公司人员"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in wecomUsers"
+              :key="item.userid"
+              :label="`${item.name} (${item.userid})`"
+              :value="item.userid"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="改派原因">
+          <el-input v-model="forceTransferReason" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="forceTransferDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="actionLoading" @click="handleForceTransfer"
+          >确认强制改派</el-button
         >
       </template>
     </el-dialog>

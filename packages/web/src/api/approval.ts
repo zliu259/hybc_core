@@ -254,6 +254,17 @@ export const transferApproval = (
   );
 };
 
+export const forceTransferApproval = (
+  id: number,
+  data: { task_id: number; to_userid: string; reason: string }
+) => {
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/approval/${id}/force-transfer`,
+    { data }
+  );
+};
+
 export const withdrawApproval = (id: number, data?: { comment?: string }) => {
   return http.request<{ success: boolean }>(
     "post",
