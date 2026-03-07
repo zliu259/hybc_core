@@ -35,7 +35,13 @@ export default {
       component: () => import("@/views/finance/reimbursement/detail.vue"),
       meta: {
         title: "我的报销详情",
-        roles: ["super_admin", "manager", "site_manager", "finance"],
+        roles: [
+          "super_admin",
+          "manager",
+          "site_manager",
+          "finance",
+          "operator"
+        ],
         showLink: false
       }
     },
@@ -45,6 +51,22 @@ export default {
       component: () => import("@/views/finance/payment/wizard.vue"),
       meta: {
         title: "发起对外付款",
+        roles: [
+          "super_admin",
+          "manager",
+          "site_manager",
+          "finance",
+          "operator"
+        ],
+        showLink: false
+      }
+    },
+    {
+      path: "/workspace/payment/detail/:id",
+      name: "WorkspacePaymentDetail",
+      component: () => import("@/views/finance/payment/detail.vue"),
+      meta: {
+        title: "付款申请详情",
         roles: [
           "super_admin",
           "manager",

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import { listBizThresholds } from "@/api/admin";
@@ -25,6 +25,7 @@ import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 defineOptions({ name: "SmartPaymentWizard" });
 
 const router = useRouter();
+const route = useRoute();
 const loading = ref(false);
 const checking = ref(false);
 const submitting = ref(false);
@@ -89,6 +90,8 @@ const thresholdHint = computed(() =>
     ? `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`
     : `金额未超过阈值 ${thresholdLimit.value.toLocaleString()}，可直接走付款申请`
 );
+
+const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
 const toChineseAmount = (amount: number): string => {
   if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
@@ -168,7 +171,9 @@ const firstPaymentAmountDisplay = computed(() => {
 });
 
 const selectedContractCounterparty = computed(() => {
-  const target = payees.value.find(item => item.id === contractForm.value.payee_id);
+  const target = payees.value.find(
+    item => item.id === contractForm.value.payee_id
+  );
   return target ? target.name : "";
 });
 
@@ -268,9 +273,12 @@ const submitDirectPayment = async () => {
   if (amount > thresholdLimit.value) {
     exceedsThreshold.value = true;
     step.value = 1;
-    message(`金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`, {
-      type: "warning"
-    });
+    message(
+      `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`,
+      {
+        type: "warning"
+      }
+    );
     return;
   }
   if (
@@ -316,7 +324,11 @@ const submitDirectPayment = async () => {
       instance_config: { note: "阈值内直接付款" }
     });
     message("付款申请已创建并提交审批", { type: "success" });
-    router.replace(`/finance/payment/detail/${created.data.id}`);
+    router.replace(
+      inWorkspaceRoute.value
+        ? `/workspace/payment/detail/${created.data.id}`
+        : `/finance/payment/detail/${created.data.id}`
+    );
   } finally {
     submitting.value = false;
   }
@@ -332,9 +344,12 @@ const submitContractFlow = async () => {
     !contractForm.value.contract_type ||
     !contractForm.value.contract_date
   ) {
-    message("合同流程需完整填写合同审查字段（类型/经办人/日期/项目/主体/对方单位/金额）", {
-      type: "warning"
-    });
+    message(
+      "合同流程需完整填写合同审查字段（类型/经办人/日期/项目/主体/对方单位/金额）",
+      {
+        type: "warning"
+      }
+    );
     return;
   }
   if (!contractAttachments.value.length) {
@@ -353,7 +368,9 @@ const submitContractFlow = async () => {
       !firstPaymentForm.value.content.trim() ||
       !firstPaymentForm.value.payment_method)
   ) {
-    message("首笔付款需填写额外付款字段（金额/类别/日期/方式/内容）", { type: "warning" });
+    message("首笔付款需填写额外付款字段（金额/类别/日期/方式/内容）", {
+      type: "warning"
+    });
     return;
   }
 
@@ -421,7 +438,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="wizard-wrap" v-loading="loading">
+  <div v-loading="loading" class="wizard-wrap">
     <el-card class="wizard-card" shadow="never">
       <template #header>
         <div class="wizard-title">资金流出智能发单台</div>
@@ -446,13 +463,28 @@ onMounted(async () => {
         </el-form-item>
       </el-form>
 
-      <el-steps :active="step" finish-status="success" align-center class="mb-4">
+      <el-steps
+        :active="step"
+        finish-status="success"
+        align-center
+        class="mb-4"
+      >
         <el-step title="金额识别" />
-        <el-step title="合同流程" :description="exceedsThreshold ? '必经' : '跳过'" />
-        <el-step title="首笔预付款" :description="withFirstPayment ? '启用' : '可选'" />
+        <el-step
+          title="合同流程"
+          :description="exceedsThreshold ? '必经' : '跳过'"
+        />
+        <el-step
+          title="首笔预付款"
+          :description="withFirstPayment ? '启用' : '可选'"
+        />
       </el-steps>
 
-      <el-alert :type="exceedsThreshold ? 'warning' : 'info'" :closable="false" show-icon>
+      <el-alert
+        :type="exceedsThreshold ? 'warning' : 'info'"
+        :closable="false"
+        show-icon
+      >
         <template #default>
           <span v-if="checking">阈值校验中...</span>
           <span v-else>{{ thresholdHint }}</span>
@@ -497,7 +529,11 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="收款人">
-            <el-select v-model="directForm.payee_id" filterable style="width: 360px">
+            <el-select
+              v-model="directForm.payee_id"
+              filterable
+              style="width: 360px"
+            >
               <el-option
                 v-for="item in payees"
                 :key="item.id"
@@ -514,7 +550,11 @@ onMounted(async () => {
             />
           </el-form-item>
           <el-form-item label="付款类别">
-            <el-select v-model="directForm.category" clearable style="width: 220px">
+            <el-select
+              v-model="directForm.category"
+              clearable
+              style="width: 220px"
+            >
               <el-option label="特殊审批" value="特殊审批" />
               <el-option label="行政费" value="行政费" />
               <el-option label="劳务费" value="劳务费" />
@@ -524,7 +564,11 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="付款方式">
-            <el-select v-model="directForm.payment_method" clearable style="width: 220px">
+            <el-select
+              v-model="directForm.payment_method"
+              clearable
+              style="width: 220px"
+            >
               <el-option label="对公转账" value="对公转账" />
               <el-option label="现金" value="现金" />
               <el-option label="票据" value="票据" />
@@ -544,24 +588,43 @@ onMounted(async () => {
                 action="#"
                 :show-file-list="false"
                 :disabled="uploadingAttachment"
-                :http-request="(options: UploadRequestOptions) => uploadAttachment(options, 'payment', directPaymentAttachments)"
+                :http-request="
+                  (options: UploadRequestOptions) =>
+                    uploadAttachment(
+                      options,
+                      'payment',
+                      directPaymentAttachments
+                    )
+                "
                 accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
               >
-                <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+                <div class="el-upload__text">
+                  拖拽文件到这里，或 <em>点击上传</em>
+                </div>
               </el-upload>
-              <el-table :data="directPaymentAttachments" size="small" style="margin-top: 12px">
+              <el-table
+                :data="directPaymentAttachments"
+                size="small"
+                style="margin-top: 12px"
+              >
                 <el-table-column label="文件名" min-width="260">
-                  <template #default="scope">{{ scope.row.file_name }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_name
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="大小" width="120">
-                  <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_size ?? "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="操作" width="120" fixed="right">
                   <template #default="scope">
                     <el-button
                       link
                       type="danger"
-                      @click="removeAttachment(directPaymentAttachments, scope.$index)"
+                      @click="
+                        removeAttachment(directPaymentAttachments, scope.$index)
+                      "
                     >
                       移除
                     </el-button>
@@ -571,7 +634,11 @@ onMounted(async () => {
             </div>
           </el-form-item>
         </el-form>
-        <el-button type="primary" :loading="submitting" @click="submitDirectPayment">
+        <el-button
+          type="primary"
+          :loading="submitting"
+          @click="submitDirectPayment"
+        >
           创建付款并提审
         </el-button>
       </template>
@@ -649,7 +716,11 @@ onMounted(async () => {
             />
           </el-form-item>
           <el-form-item label="合同类型">
-            <el-select v-model="contractForm.contract_type" clearable style="width: 220px">
+            <el-select
+              v-model="contractForm.contract_type"
+              clearable
+              style="width: 220px"
+            >
               <el-option label="人工" value="人工" />
               <el-option label="机械" value="机械" />
               <el-option label="总包" value="总包" />
@@ -667,24 +738,39 @@ onMounted(async () => {
                 action="#"
                 :show-file-list="false"
                 :disabled="uploadingAttachment"
-                :http-request="(options: UploadRequestOptions) => uploadAttachment(options, 'contract', contractAttachments)"
+                :http-request="
+                  (options: UploadRequestOptions) =>
+                    uploadAttachment(options, 'contract', contractAttachments)
+                "
                 accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
               >
-                <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+                <div class="el-upload__text">
+                  拖拽文件到这里，或 <em>点击上传</em>
+                </div>
               </el-upload>
-              <el-table :data="contractAttachments" size="small" style="margin-top: 12px">
+              <el-table
+                :data="contractAttachments"
+                size="small"
+                style="margin-top: 12px"
+              >
                 <el-table-column label="文件名" min-width="260">
-                  <template #default="scope">{{ scope.row.file_name }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_name
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="大小" width="120">
-                  <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_size ?? "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="操作" width="120" fixed="right">
                   <template #default="scope">
                     <el-button
                       link
                       type="danger"
-                      @click="removeAttachment(contractAttachments, scope.$index)"
+                      @click="
+                        removeAttachment(contractAttachments, scope.$index)
+                      "
                     >
                       移除
                     </el-button>
@@ -714,7 +800,11 @@ onMounted(async () => {
               </span>
             </el-form-item>
             <el-form-item label="首笔付款类别">
-              <el-select v-model="firstPaymentForm.category" clearable style="width: 220px">
+              <el-select
+                v-model="firstPaymentForm.category"
+                clearable
+                style="width: 220px"
+              >
                 <el-option label="预付款" value="prepayment" />
                 <el-option label="进度款" value="progress" />
                 <el-option label="结算款" value="settlement" />
@@ -744,7 +834,11 @@ onMounted(async () => {
               <el-input v-model="firstPaymentForm.content" />
             </el-form-item>
             <el-form-item label="首笔备注">
-              <el-input v-model="firstPaymentForm.remark" type="textarea" :rows="2" />
+              <el-input
+                v-model="firstPaymentForm.remark"
+                type="textarea"
+                :rows="2"
+              />
             </el-form-item>
             <el-form-item label="首笔付款附件" required>
               <div style="width: 100%">
@@ -753,24 +847,46 @@ onMounted(async () => {
                   action="#"
                   :show-file-list="false"
                   :disabled="uploadingAttachment"
-                  :http-request="(options: UploadRequestOptions) => uploadAttachment(options, 'payment', firstPaymentAttachments)"
+                  :http-request="
+                    (options: UploadRequestOptions) =>
+                      uploadAttachment(
+                        options,
+                        'payment',
+                        firstPaymentAttachments
+                      )
+                  "
                   accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
                 >
-                  <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+                  <div class="el-upload__text">
+                    拖拽文件到这里，或 <em>点击上传</em>
+                  </div>
                 </el-upload>
-                <el-table :data="firstPaymentAttachments" size="small" style="margin-top: 12px">
+                <el-table
+                  :data="firstPaymentAttachments"
+                  size="small"
+                  style="margin-top: 12px"
+                >
                   <el-table-column label="文件名" min-width="260">
-                    <template #default="scope">{{ scope.row.file_name }}</template>
+                    <template #default="scope">{{
+                      scope.row.file_name
+                    }}</template>
                   </el-table-column>
                   <el-table-column label="大小" width="120">
-                    <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+                    <template #default="scope">{{
+                      scope.row.file_size ?? "-"
+                    }}</template>
                   </el-table-column>
                   <el-table-column label="操作" width="120" fixed="right">
                     <template #default="scope">
                       <el-button
                         link
                         type="danger"
-                        @click="removeAttachment(firstPaymentAttachments, scope.$index)"
+                        @click="
+                          removeAttachment(
+                            firstPaymentAttachments,
+                            scope.$index
+                          )
+                        "
                       >
                         移除
                       </el-button>
@@ -781,7 +897,11 @@ onMounted(async () => {
             </el-form-item>
           </template>
         </el-form>
-        <el-button type="primary" :loading="submitting" @click="submitContractFlow">
+        <el-button
+          type="primary"
+          :loading="submitting"
+          @click="submitContractFlow"
+        >
           创建合同并提审
         </el-button>
       </template>

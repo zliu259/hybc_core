@@ -83,7 +83,7 @@ const loadData = async () => {
 };
 
 const goCreate = () => {
-  router.push("/workspace/home");
+  router.push("/workspace/my-reimbursement/detail/create");
 };
 
 const goDetail = (id: number) => {
@@ -118,7 +118,7 @@ onMounted(async () => {
     <el-alert
       type="info"
       :closable="false"
-      title="这里只展示你的报销申请记录；如需新建，请使用工作台首页“发起报销”按钮。"
+      title="这里只展示你的报销申请记录；点击右上角“发起报销”将打开标准报销创建页面。"
       style="margin-bottom: 12px"
     />
 

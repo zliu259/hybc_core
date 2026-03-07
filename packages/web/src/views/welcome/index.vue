@@ -11,9 +11,7 @@ import {
   type MyBankAccount
 } from "@/api/user";
 import { listPendingApprovals, type PendingApprovalItem } from "@/api/approval";
-import { listProjects, type Project } from "@/api/project";
 import {
-  createReimbursementEnvelope,
   listReimbursementEnvelopes,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
@@ -30,16 +28,6 @@ const fullName = ref("");
 const roles = ref<string[]>([]);
 const permissions = ref<string[]>([]);
 const reimbursements = ref<ReimbursementEnvelope[]>([]);
-const projects = ref<Project[]>([]);
-const reimbursementDialogVisible = ref(false);
-const reimbursementSubmitting = ref(false);
-
-const reimbursementForm = ref({
-  project_id: undefined as number | undefined,
-  amount: undefined as number | undefined,
-  category: "办公费用",
-  description: ""
-});
 
 const bankCards = ref<MyBankAccount[]>([]);
 const bankEditVisible = ref(false);
@@ -170,15 +158,6 @@ const loadData = async () => {
     bankCards.value = bankAccountResult.data;
     pendingApprovalItems.value = pendingResult.data || [];
     pendingApprovalTotal.value = pendingResult.pagination?.total || 0;
-    const projectResult = await listProjects({
-      page: 1,
-      pageSize: 200,
-      status: "active"
-    });
-    projects.value = projectResult.data;
-    if (!reimbursementForm.value.project_id && projects.value.length > 0) {
-      reimbursementForm.value.project_id = projects.value[0].id;
-    }
     if (!bankCards.value.length) {
       bankCards.value = [
         {
@@ -255,6 +234,10 @@ const goPaymentWizard = () => {
   router.push("/workspace/payment/wizard");
 };
 
+const goCreateReimbursement = () => {
+  router.push("/workspace/my-reimbursement/detail/create");
+};
+
 const goApprovalItem = (item: PendingApprovalItem) => {
   router.push(`/approval/detail/${item.id}`);
 };
@@ -296,39 +279,6 @@ const onCertUpload = (file: UploadFile) => {
     fileName: file.name
   });
 };
-
-const openReimbursementDialog = () => {
-  reimbursementForm.value = {
-    project_id: projects.value[0]?.id,
-    amount: undefined,
-    category: "办公费用",
-    description: ""
-  };
-  reimbursementDialogVisible.value = true;
-};
-
-const submitReimbursement = async () => {
-  if (!reimbursementForm.value.project_id) {
-    message("请选择项目", { type: "warning" });
-    return;
-  }
-  reimbursementSubmitting.value = true;
-  try {
-    const result = await createReimbursementEnvelope({
-      project_id: reimbursementForm.value.project_id,
-      amount: reimbursementForm.value.amount,
-      category: reimbursementForm.value.category,
-      description: reimbursementForm.value.description || undefined,
-      channel: "physical"
-    });
-    message(`已创建报销信封 ${result.data.envelope_no}`, { type: "success" });
-    reimbursementDialogVisible.value = false;
-    await loadData();
-    router.push("/workspace/my-reimbursement");
-  } finally {
-    reimbursementSubmitting.value = false;
-  }
-};
 </script>
 
 <template>
@@ -363,7 +313,7 @@ const submitReimbursement = async () => {
       </div>
       <div class="welcome-card__sub">今天待处理事项 {{ pendingCount }} 条</div>
       <div class="welcome-card__actions">
-        <el-button type="primary" @click="openReimbursementDialog"
+        <el-button type="primary" @click="goCreateReimbursement"
           >发起报销</el-button
         >
         <el-button @click="router.push('/workspace/my-reimbursement')"
@@ -391,59 +341,6 @@ const submitReimbursement = async () => {
         </el-badge>
       </div>
     </el-card>
-
-    <el-dialog
-      v-model="reimbursementDialogVisible"
-      title="发起报销"
-      width="520px"
-      destroy-on-close
-    >
-      <el-form label-width="100px">
-        <el-form-item label="所属项目" required>
-          <el-select
-            v-model="reimbursementForm.project_id"
-            filterable
-            placeholder="请选择项目"
-            style="width: 100%"
-          >
-            <el-option
-              v-for="project in projects"
-              :key="project.id"
-              :label="`${project.project_name} (${project.project_code})`"
-              :value="project.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="报销金额">
-          <el-input-number
-            v-model="reimbursementForm.amount"
-            :min="0"
-            :precision="2"
-            :step="100"
-            style="width: 220px"
-          />
-        </el-form-item>
-        <el-form-item label="类别">
-          <el-input v-model="reimbursementForm.category" />
-        </el-form-item>
-        <el-form-item label="说明">
-          <el-input
-            v-model="reimbursementForm.description"
-            type="textarea"
-            :rows="3"
-          />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="reimbursementDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="reimbursementSubmitting"
-          @click="submitReimbursement"
-          >创建信封</el-button
-        >
-      </template>
-    </el-dialog>
 
     <div class="workspace__row">
       <el-card shadow="never" class="bank-card-block">

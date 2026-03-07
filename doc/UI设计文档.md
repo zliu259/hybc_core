@@ -462,12 +462,13 @@
 ### 3.11 个人工作台交互调整（2026-02）
 - 个人身份信息增强（全名 + 角色 + 权限）：
   - `packages/web/src/views/welcome/index.vue`
-- 发起报销改为弹窗发起，不再先跳转审批台：
+- 发起报销改为直接进入标准报销创建页（不再使用首页旧弹窗）：
   - `packages/web/src/views/welcome/index.vue`
-  - 弹窗内直接创建报销信封并跳转“我的报销提交”专属页
+  - 统一跳转 `/workspace/my-reimbursement/detail/create`
 - 个人工作台新增“发起对外付款”按钮：
   - `packages/web/src/views/welcome/index.vue`
   - 通过工作台隐藏路由拉起智能发单台：`/workspace/payment/wizard`
+  - 发起后详情页留在 workspace 路径：`/workspace/payment/detail/:id`
 - 填报日志拆分为两类入口：
   - 施工日志：`/construction/operator-log/form`
   - 项目日志：`/construction/manager-log`

@@ -32,7 +32,10 @@ import { listProjects, type Project } from "@/api/project";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
-import { isApprovalFinishedLocked, isApprovalInProgress } from "../shared/approvalLock";
+import {
+  isApprovalFinishedLocked,
+  isApprovalInProgress
+} from "../shared/approvalLock";
 
 defineOptions({ name: "PaymentDetail" });
 
@@ -47,17 +50,25 @@ const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const isCreate = computed(() => route.params.id === "create");
 const requestId = computed(() => Number(route.params.id));
-const inApprovalFlow = computed(
-  () => isApprovalInProgress(detail.value?.status)
+const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
+const paymentDetailBasePath = computed(() =>
+  inWorkspaceRoute.value
+    ? "/workspace/payment/detail"
+    : "/finance/payment/detail"
 );
-const approvalFinishedLock = computed(
-  () =>
-    isApprovalFinishedLocked({
-      isCreate: isCreate.value,
-      approvalInstanceId: detail.value?.approval_instance_id,
-      bizStatus: detail.value?.status,
-      unlockedStatuses: ["draft"]
-    })
+const paymentListPath = computed(() =>
+  inWorkspaceRoute.value ? "/workspace/payment/wizard" : "/finance/payment"
+);
+const inApprovalFlow = computed(() =>
+  isApprovalInProgress(detail.value?.status)
+);
+const approvalFinishedLock = computed(() =>
+  isApprovalFinishedLocked({
+    isCreate: isCreate.value,
+    approvalInstanceId: detail.value?.approval_instance_id,
+    bizStatus: detail.value?.status,
+    unlockedStatuses: ["draft"]
+  })
 );
 const superEditMode = ref(false);
 const superEditNote = ref("");
@@ -233,7 +244,9 @@ const toRiskLevelTagType = (level: unknown): TagType => {
   return riskLevelTagTypeMap[level] ?? "info";
 };
 
-const parseAttachments = (raw: string | null | undefined): PaymentAttachmentDraft[] => {
+const parseAttachments = (
+  raw: string | null | undefined
+): PaymentAttachmentDraft[] => {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
@@ -261,7 +274,9 @@ const parseAttachments = (raw: string | null | undefined): PaymentAttachmentDraf
       }
       return null;
     });
-    return items.filter((item): item is PaymentAttachmentDraft => item !== null);
+    return items.filter(
+      (item): item is PaymentAttachmentDraft => item !== null
+    );
   } catch {
     return [];
   }
@@ -289,10 +304,14 @@ const roundNodes = computed(() => {
 
 const getNodeTasks = (nodeId: number) => {
   if (!approvalDetail.value) return [];
-  return approvalDetail.value.tasks.filter(item => item.node_instance_id === nodeId);
+  return approvalDetail.value.tasks.filter(
+    item => item.node_instance_id === nodeId
+  );
 };
 
-const aiGateReviews = computed(() => approvalDetail.value?.ai_gate_reviews ?? []);
+const aiGateReviews = computed(
+  () => approvalDetail.value?.ai_gate_reviews ?? []
+);
 
 const toActionLabel = (action: string | null) => {
   if (!action) return "待处理";
@@ -320,7 +339,9 @@ const approvalNoteTemplates = [
   "请关注付款时效，审批完成后将立即执行打款。"
 ];
 const selectedApprovalNoteTemplate = ref("");
-const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
+const isSuperAdmin = computed(() =>
+  (userStore.roles ?? []).includes("super_admin")
+);
 
 const applyApprovalNoteTemplate = (value: string) => {
   if (!value) return;
@@ -349,7 +370,9 @@ const loadRefs = async () => {
   entities.value = entityRes.data;
   const entries = await Promise.all(
     entityRes.data.map(async item => {
-      const accountRes = await listEntityBankAccounts(item.id).catch(() => ({ data: [] }));
+      const accountRes = await listEntityBankAccounts(item.id).catch(() => ({
+        data: []
+      }));
       return [item.id, accountRes.data] as const;
     })
   );
@@ -406,11 +429,17 @@ const loadDetail = async () => {
 
 const onSave = async () => {
   if (!canEditFields.value) {
-    message("审批结束后仅允许补充附件；如需修改请联系超管开启编辑模式", { type: "warning" });
+    message("审批结束后仅允许补充附件；如需修改请联系超管开启编辑模式", {
+      type: "warning"
+    });
     return;
   }
 
-  if (isSuperAdmin.value && superEditMode.value && !superEditNote.value.trim()) {
+  if (
+    isSuperAdmin.value &&
+    superEditMode.value &&
+    !superEditNote.value.trim()
+  ) {
     message("超管编辑模式下必须填写修改说明", { type: "warning" });
     return;
   }
@@ -449,7 +478,7 @@ const onSave = async () => {
       message(`创建成功，金额大写：${result.data.amount_cn}`, {
         type: "success"
       });
-      router.replace(`/finance/payment/detail/${result.data.id}`);
+      router.replace(`${paymentDetailBasePath.value}/${result.data.id}`);
       return;
     }
 
@@ -462,7 +491,8 @@ const onSave = async () => {
       payment_method: form.value.payment_method,
       attachments_json: serializeAttachments(),
       remark: form.value.remark,
-      admin_edit_mode: isSuperAdmin.value && superEditMode.value ? true : undefined,
+      admin_edit_mode:
+        isSuperAdmin.value && superEditMode.value ? true : undefined,
       edit_note:
         isSuperAdmin.value && superEditMode.value
           ? superEditNote.value.trim() || undefined
@@ -510,7 +540,8 @@ const confirmSubmitApproval = async () => {
       }
     }
   } else {
-    const pickedUserIds = approvalFormConfig.value.default_assignee_userids.filter(Boolean);
+    const pickedUserIds =
+      approvalFormConfig.value.default_assignee_userids.filter(Boolean);
     const note = approvalFormConfig.value.note.trim();
     if (pickedUserIds.length > 0 || note) {
       instanceConfig = {
@@ -592,7 +623,10 @@ const removeAttachment = async (index: number) => {
     message("审批中仅允许新增附件，不允许删除", { type: "warning" });
     return;
   }
-  if (approvalFinishedLock.value && !(isSuperAdmin.value && superEditMode.value)) {
+  if (
+    approvalFinishedLock.value &&
+    !(isSuperAdmin.value && superEditMode.value)
+  ) {
     message("审批结束后仅允许新增附件，不允许删除", { type: "warning" });
     return;
   }
@@ -653,8 +687,12 @@ onMounted(async () => {
           isCreate ? "新建付款申请" : `付款详情 - ${detail?.serial_no || ""}`
         }}</span>
         <div>
-          <el-button @click="router.push('/finance/payment')">返回</el-button>
-          <el-button type="primary" :loading="saving" :disabled="!canEditFields" @click="onSave"
+          <el-button @click="router.push(paymentListPath)">返回</el-button>
+          <el-button
+            type="primary"
+            :loading="saving"
+            :disabled="!canEditFields"
+            @click="onSave"
             >保存</el-button
           >
           <el-button
@@ -697,7 +735,11 @@ onMounted(async () => {
       style="margin-bottom: 12px"
     />
 
-    <el-form v-if="isSuperAdmin && !isCreate" inline style="margin-bottom: 10px">
+    <el-form
+      v-if="isSuperAdmin && !isCreate"
+      inline
+      style="margin-bottom: 10px"
+    >
       <el-form-item label="超管编辑模式">
         <el-switch v-model="superEditMode" />
       </el-form-item>
@@ -739,7 +781,11 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="所属项目">
-        <el-input :model-value="projectName || '-'" disabled style="width: 360px" />
+        <el-input
+          :model-value="projectName || '-'"
+          disabled
+          style="width: 360px"
+        />
       </el-form-item>
 
       <el-form-item label="剩余额度">
@@ -747,7 +793,12 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="付款类别">
-        <el-select v-model="form.category" clearable style="width: 220px" :disabled="!canEditFields">
+        <el-select
+          v-model="form.category"
+          clearable
+          style="width: 220px"
+          :disabled="!canEditFields"
+        >
           <el-option label="特殊审批" value="特殊审批" />
           <el-option label="行政费" value="行政费" />
           <el-option label="劳务费" value="劳务费" />
@@ -783,7 +834,9 @@ onMounted(async () => {
             :step="1000"
             :disabled="!canEditFields"
           />
-          <span style="font-weight: 700; color: #6b4f2a">{{ amountDisplay }}</span>
+          <span style="font-weight: 700; color: #6b4f2a">{{
+            amountDisplay
+          }}</span>
         </div>
       </el-form-item>
 
@@ -811,11 +864,21 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="付款内容">
-        <el-input v-model="form.content" type="textarea" :rows="3" :disabled="!canEditFields" />
+        <el-input
+          v-model="form.content"
+          type="textarea"
+          :rows="3"
+          :disabled="!canEditFields"
+        />
       </el-form-item>
 
       <el-form-item label="备注">
-        <el-input v-model="form.remark" type="textarea" :rows="2" :disabled="!canEditFields" />
+        <el-input
+          v-model="form.remark"
+          type="textarea"
+          :rows="2"
+          :disabled="!canEditFields"
+        />
       </el-form-item>
       <el-form-item label="我方付款主体">
         <el-input
@@ -826,17 +889,29 @@ onMounted(async () => {
       </el-form-item>
       <el-form-item label="我方付款账号">
         <el-input
-          :model-value="selectedEntityAccount ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}` : '-'"
+          :model-value="
+            selectedEntityAccount
+              ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
+              : '-'
+          "
           disabled
           style="width: 520px"
         />
       </el-form-item>
       <el-form-item label="对方主体">
-        <el-input :model-value="selectedPayee ? selectedPayee.name : '-'" disabled style="width: 360px" />
+        <el-input
+          :model-value="selectedPayee ? selectedPayee.name : '-'"
+          disabled
+          style="width: 360px"
+        />
       </el-form-item>
       <el-form-item label="对方收款账号">
         <el-input
-          :model-value="selectedPayee ? `${selectedPayee.bank_name} / ${selectedPayee.bank_account}` : '-'"
+          :model-value="
+            selectedPayee
+              ? `${selectedPayee.bank_name} / ${selectedPayee.bank_account}`
+              : '-'
+          "
           disabled
           style="width: 520px"
         />
@@ -851,22 +926,36 @@ onMounted(async () => {
             :http-request="uploadAttachment"
             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
           >
-            <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+            <div class="el-upload__text">
+              拖拽文件到这里，或 <em>点击上传</em>
+            </div>
             <template #tip>
-              <div class="el-upload__tip">审批结束后支持补传凭证附件；审批中及已结束默认不允许删除附件</div>
+              <div class="el-upload__tip">
+                审批结束后支持补传凭证附件；审批中及已结束默认不允许删除附件
+              </div>
             </template>
           </el-upload>
 
-          <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
+          <el-table
+            :data="attachmentItems"
+            size="small"
+            style="margin-top: 12px"
+          >
             <el-table-column label="文件名" min-width="260">
               <template #default="scope">{{ scope.row.file_name }}</template>
             </el-table-column>
             <el-table-column label="大小" width="120">
-              <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+              <template #default="scope">{{
+                scope.row.file_size ?? "-"
+              }}</template>
             </el-table-column>
             <el-table-column label="操作" width="220" fixed="right">
               <template #default="scope">
-                <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                <el-link
+                  :href="fileUrl(scope.row.file_key)"
+                  target="_blank"
+                  type="primary"
+                >
                   查看
                 </el-link>
                 <el-link
@@ -977,14 +1066,23 @@ onMounted(async () => {
       </el-descriptions-item>
     </el-descriptions>
 
-    <el-table v-if="approvalDetail" :data="roundNodes" size="small" style="margin-top: 12px">
+    <el-table
+      v-if="approvalDetail"
+      :data="roundNodes"
+      size="small"
+      style="margin-top: 12px"
+    >
       <el-table-column prop="node_name" label="节点" min-width="140" />
       <el-table-column prop="node_type" label="类型" width="120" />
       <el-table-column prop="status" label="状态" width="110" />
       <el-table-column label="审批意见" min-width="260">
         <template #default="scope">
           <template v-if="getNodeTasks(scope.row.id).length">
-            <div v-for="task in getNodeTasks(scope.row.id)" :key="task.id" style="margin-bottom: 4px">
+            <div
+              v-for="task in getNodeTasks(scope.row.id)"
+              :key="task.id"
+              style="margin-bottom: 4px"
+            >
               {{ task.assignee_userid }}：{{ toActionLabel(task.action) }}
               <span v-if="task.comment">（{{ task.comment }}）</span>
             </div>
@@ -995,17 +1093,24 @@ onMounted(async () => {
     </el-table>
 
     <el-divider v-if="aiGateReviews.length > 0">AI审核意见</el-divider>
-    <el-table v-if="aiGateReviews.length > 0" :data="aiGateReviews" size="small">
+    <el-table
+      v-if="aiGateReviews.length > 0"
+      :data="aiGateReviews"
+      size="small"
+    >
       <el-table-column prop="node_key" label="节点" width="160" />
       <el-table-column prop="status" label="状态" width="100" />
       <el-table-column prop="outcome" label="结论" width="100" />
       <el-table-column label="总结/意见" min-width="260">
-        <template #default="scope">{{ scope.row.summary || scope.row.comment || "-" }}</template>
+        <template #default="scope">{{
+          scope.row.summary || scope.row.comment || "-"
+        }}</template>
       </el-table-column>
       <el-table-column label="建议" min-width="260">
         <template #default="scope">
           {{
-            Array.isArray(scope.row.recommendations) && scope.row.recommendations.length > 0
+            Array.isArray(scope.row.recommendations) &&
+            scope.row.recommendations.length > 0
               ? scope.row.recommendations.join("；")
               : "-"
           }}
@@ -1031,7 +1136,7 @@ onMounted(async () => {
             placeholder="可选：补充本次提交重点，例如 付款节点加急"
           />
         </el-form-item>
-        <el-form-item label="设置模式" v-if="isSuperAdmin">
+        <el-form-item v-if="isSuperAdmin" label="设置模式">
           <el-radio-group v-model="approvalConfigMode">
             <el-radio-button value="form">可视化</el-radio-button>
             <el-radio-button value="json">JSON(高级)</el-radio-button>
@@ -1080,7 +1185,7 @@ onMounted(async () => {
             />
           </el-form-item>
         </template>
-        <el-form-item label="实例配置(JSON)" v-else-if="isSuperAdmin">
+        <el-form-item v-else-if="isSuperAdmin" label="实例配置(JSON)">
           <el-input
             v-model="approvalConfigText"
             type="textarea"

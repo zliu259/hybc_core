@@ -397,7 +397,7 @@ paymentRoutes.get("/:id", async (c) => {
 
 paymentRoutes.post(
   "/",
-  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreatePaymentRequestBody;
@@ -652,7 +652,7 @@ paymentRoutes.put(
 
 paymentRoutes.post(
   "/:id/submit-approval",
-  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
