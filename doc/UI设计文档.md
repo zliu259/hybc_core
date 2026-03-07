@@ -191,6 +191,7 @@
 - 开票申请核心列：申请单号、合同号、客户名称、客户税号、价税合计、类型、状态。
 - 开票申请列表文案：类型与状态均中文化展示；提交审批后显示“查看进度”入口，直达审批详情。
 - 开票申请动作：新建申请、提交审批（draft/rejected）、审批通过后签发正式发票（approved/ready_to_issue）。
+- 正式发票签发改为“附件优先”模式：签发时仅上传发票附件，发票代码/号码/校验码/日期/金额等字段由二维码/OCR自动回填，不再要求人工逐项录入：`packages/web/src/views/finance/receipt/invoice.vue`、`packages/api/src/routes/receipt.ts`
 - 新建开票申请（行政友好模式）：
   - 对方信息支持“名录选择/手工录入”双模式，字段改为“对方名称/对方税号/对方联系方式”；
   - 勾选“保存对方信息”时，手工录入可沉淀到对方名录（缺失联系方式可回填）；
@@ -795,6 +796,12 @@
 - 审批详情流程线为 `super_admin` 增加“强制改派”入口，仅对待处理人工任务显示，支持直接替换当前审批人：`packages/web/src/views/approval/detail.vue`
 - 审批详情新增“强制改派审批人（超管）”弹窗，要求填写改派原因并选择目标审批人，提交后即时刷新流程：`packages/web/src/views/approval/detail.vue`
 - 新增超管专用后端接口 `POST /api/v1/approval/:id/force-transfer`，强制改派会写入 `approval_transfer` 留痕并标记来源：`packages/api/src/routes/approval.ts`、`packages/api/src/services/approval/operations.ts`、`packages/api/src/types/approval.ts`、`packages/web/src/api/approval.ts`
+
+### 4.12 正式发票签发附件化与自动回填（2026-03）
+- 发票签发弹窗收敛为“上传发票附件 + 备注”，去除开票日期、发票代码、号码、校验码、金额等人工输入项：`packages/web/src/views/finance/receipt/invoice.vue`
+- 签发接口改为仅要求 `file_key`，签发后自动触发 `ocr_extract` 任务进行二维码/OCR解析并回填发票字段：`packages/api/src/routes/receipt.ts`、`packages/web/src/api/receipt.ts`
+- 发票校验状态接口在任务完成后会同步回填 `invoice_code/invoice_number/check_code/issue_date/amount_with_tax/title/tax_no/qr_code`，并保留匹配结果：`packages/api/src/routes/receipt.ts`
+- OCR 默认抽取 schema 补充 `invoice_code/check_code/qr_code_text`，提升回填完整度：`task-runner/runner/executor.py`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

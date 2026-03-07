@@ -135,17 +135,10 @@ export interface UpdateInvoiceRequestPayload {
 }
 
 export interface IssueInvoiceFromRequestPayload {
-  invoice_code?: string;
-  invoice_number?: string;
-  check_code?: string;
-  issue_date: string;
-  tax_amount?: number;
-  amount_with_tax: number;
-  file_key?: string;
+  file_key: string;
   pdf_file_key?: string;
   ofd_file_key?: string;
   xml_file_key?: string;
-  qr_code?: string;
   remark?: string;
 }
 

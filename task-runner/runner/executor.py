@@ -331,9 +331,10 @@ class TaskExecutor:
             ),
             "user": (
                 "Extract invoice fields from attachment evidence and output strict JSON: "
-                '{"invoice_no":string|null,"invoice_number":string|null,"issue_date":string|null,'
-                '"amount":number|null,"amount_with_tax":number|null,"seller_name":string|null,'
-                '"buyer_name":string|null,"tax_no":string|null,"raw_text_summary":string}. '
+                '{"invoice_no":string|null,"invoice_code":string|null,"invoice_number":string|null,'
+                '"check_code":string|null,"issue_date":string|null,"amount":number|null,'
+                '"amount_with_tax":number|null,"seller_name":string|null,"buyer_name":string|null,'
+                '"tax_no":string|null,"qr_code_text":string|null,"raw_text_summary":string}. '
                 "Use null when unknown. amount/amount_with_tax must be numeric when available."
             ),
         }

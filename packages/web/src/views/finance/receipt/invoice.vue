@@ -237,19 +237,11 @@ const amountWithTaxCn = computed(() => toChineseAmount(amountWithTax.value));
 
 const issueDialogVisible = ref(false);
 const issuing = ref(false);
+const issueUploading = ref(false);
 const selectedRequest = ref<InvoiceRequest | null>(null);
 const issueForm = ref({
-  issue_date: "",
-  invoice_code: "",
-  invoice_number: "",
-  check_code: "",
-  tax_amount: 0,
-  amount_with_tax: 0,
   file_key: "",
-  pdf_file_key: "",
-  ofd_file_key: "",
-  xml_file_key: "",
-  qr_code: "",
+  file_name: "",
   remark: ""
 });
 
@@ -576,45 +568,61 @@ const viewApprovalProgress = (row: InvoiceRequest) => {
 const openIssue = (row: InvoiceRequest) => {
   selectedRequest.value = row;
   issueForm.value = {
-    issue_date: "",
-    invoice_code: "",
-    invoice_number: "",
-    check_code: "",
-    tax_amount: row.tax_amount_estimated,
-    amount_with_tax: row.amount_with_tax,
     file_key: "",
-    pdf_file_key: "",
-    ofd_file_key: "",
-    xml_file_key: "",
-    qr_code: "",
+    file_name: "",
     remark: row.remark || ""
   };
   issueDialogVisible.value = true;
 };
 
+const uploadIssueAttachment = async (options: UploadRequestOptions) => {
+  issueUploading.value = true;
+  const rawFile = options.file;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "receipt"
+    });
+
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+
+    issueForm.value.file_key = signRes.data.key;
+    issueForm.value.file_name = rawFile.name;
+    message("发票附件上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("发票附件上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    issueUploading.value = false;
+  }
+};
+
 const submitIssue = async () => {
   if (!selectedRequest.value) return;
-  if (!issueForm.value.issue_date) {
-    message("请填写开票日期", { type: "warning" });
+  if (!issueForm.value.file_key) {
+    message("请先上传发票附件", { type: "warning" });
     return;
   }
   issuing.value = true;
   try {
     const result = await issueInvoiceFromRequest(selectedRequest.value.id, {
-      issue_date: issueForm.value.issue_date,
-      invoice_code: issueForm.value.invoice_code || undefined,
-      invoice_number: issueForm.value.invoice_number || undefined,
-      check_code: issueForm.value.check_code || undefined,
-      tax_amount: issueForm.value.tax_amount,
-      amount_with_tax: issueForm.value.amount_with_tax,
-      file_key: issueForm.value.file_key || undefined,
-      pdf_file_key: issueForm.value.pdf_file_key || undefined,
-      ofd_file_key: issueForm.value.ofd_file_key || undefined,
-      xml_file_key: issueForm.value.xml_file_key || undefined,
-      qr_code: issueForm.value.qr_code || undefined,
+      file_key: issueForm.value.file_key,
       remark: issueForm.value.remark || undefined
     });
-    message(`签发成功：${result.data.invoice_no}`, { type: "success" });
+    message(`签发成功：${result.data.invoice_no}，已自动触发二维码/OCR解析`, { type: "success" });
     issueDialogVisible.value = false;
     activeTab.value = "invoice";
     await loadData();
@@ -982,38 +990,28 @@ onMounted(async () => {
 
   <el-dialog v-model="issueDialogVisible" title="签发正式发票" width="620px">
     <el-form label-width="120px">
-      <el-form-item label="开票日期" required>
-        <el-date-picker v-model="issueForm.issue_date" type="date" value-format="YYYY-MM-DD" style="width: 220px" />
-      </el-form-item>
-      <el-form-item label="发票代码">
-        <el-input v-model="issueForm.invoice_code" />
-      </el-form-item>
-      <el-form-item label="发票号码">
-        <el-input v-model="issueForm.invoice_number" />
-      </el-form-item>
-      <el-form-item label="校验码">
-        <el-input v-model="issueForm.check_code" />
-      </el-form-item>
-      <el-form-item label="税额">
-        <el-input-number v-model="issueForm.tax_amount" :min="0" :precision="2" :step="100" />
-      </el-form-item>
-      <el-form-item label="价税合计">
-        <el-input-number v-model="issueForm.amount_with_tax" :min="0" :precision="2" :step="100" />
-      </el-form-item>
-      <el-form-item label="原始文件Key">
-        <el-input v-model="issueForm.file_key" />
-      </el-form-item>
-      <el-form-item label="PDF文件Key">
-        <el-input v-model="issueForm.pdf_file_key" />
-      </el-form-item>
-      <el-form-item label="OFD文件Key">
-        <el-input v-model="issueForm.ofd_file_key" />
-      </el-form-item>
-      <el-form-item label="XML文件Key">
-        <el-input v-model="issueForm.xml_file_key" />
-      </el-form-item>
-      <el-form-item label="二维码串">
-        <el-input v-model="issueForm.qr_code" type="textarea" :rows="2" />
+      <el-alert
+        type="info"
+        :closable="false"
+        title="签发时仅需上传发票附件。发票代码、号码、日期、金额等信息将通过二维码/OCR自动识别回填。"
+        style="margin-bottom: 12px"
+      />
+      <el-form-item label="发票附件" required>
+        <div style="width: 100%">
+          <el-upload
+            drag
+            action="#"
+            :show-file-list="false"
+            :disabled="issueUploading"
+            :http-request="uploadIssueAttachment"
+            accept=".pdf,.jpg,.jpeg,.png,.webp"
+          >
+            <div class="el-upload__text">拖拽发票到这里，或 <em>点击上传</em></div>
+          </el-upload>
+          <div style="margin-top: 8px; color: #666">
+            {{ issueForm.file_name ? `已上传：${issueForm.file_name}` : "未上传附件" }}
+          </div>
+        </div>
       </el-form-item>
       <el-form-item label="备注">
         <el-input v-model="issueForm.remark" type="textarea" :rows="2" />

@@ -438,11 +438,8 @@ receiptRoutes.post(
     const auth = c.get("auth");
     const body = (await c.req.json()) as IssueInvoiceFromRequestPayload;
 
-    if (!body.issue_date?.trim()) {
-      return c.json({ success: false, error: { message: "issue_date is required" } }, 400);
-    }
-    if (!Number.isFinite(body.amount_with_tax) || body.amount_with_tax <= 0) {
-      return c.json({ success: false, error: { message: "amount_with_tax must be > 0" } }, 400);
+    if (!body.file_key?.trim()) {
+      return c.json({ success: false, error: { message: "file_key is required" } }, 400);
     }
 
     const request = await c.env.DB.prepare("SELECT * FROM invoice_request WHERE id = ?")
@@ -475,12 +472,12 @@ receiptRoutes.post(
       .first<{ total: number }>();
     const existingTotal = sumRow?.total ?? 0;
 
-    if (existingTotal + body.amount_with_tax > contract.total_amount) {
+    if (existingTotal + request.amount_with_tax > contract.total_amount) {
       return c.json(
         {
           success: false,
           error: {
-            message: `Invoiced overflow: existing ${existingTotal} + current ${body.amount_with_tax} > contract ${contract.total_amount}`
+            message: `Invoiced overflow: existing ${existingTotal} + current ${request.amount_with_tax} > contract ${contract.total_amount}`
           }
         },
         400
@@ -488,6 +485,7 @@ receiptRoutes.post(
     }
 
     const now = nowIso();
+    const fallbackIssueDate = now.slice(0, 10);
     const invoiceNo = await generateSerial(c.env.DB, "FP", "invoice", "invoice_no");
     const result = await c.env.DB.prepare(
       `INSERT INTO invoice
@@ -503,30 +501,52 @@ receiptRoutes.post(
         request.contract_id,
         request.project_id,
         auth.sub,
-        body.issue_date,
+        fallbackIssueDate,
         request.amount_without_tax,
         request.customer_name,
         request.customer_tax_no,
-        body.file_key ?? null,
-        body.invoice_code ?? null,
-        body.invoice_number ?? null,
-        body.check_code ?? null,
-        body.tax_amount ?? request.tax_amount_estimated,
-        body.amount_with_tax,
+        body.file_key.trim(),
+        null,
+        null,
+        null,
+        request.tax_amount_estimated,
+        request.amount_with_tax,
         body.pdf_file_key ?? null,
         body.ofd_file_key ?? null,
         body.xml_file_key ?? null,
-        body.qr_code ?? null,
+        null,
         body.remark ?? request.remark ?? null,
         now,
         now
       )
       .run();
 
+    const invoiceId = Number(result.meta.last_row_id);
+    const verifyTask = await createTask(c.env, {
+      task_type: "ocr_extract",
+      biz_type: "receipt_invoice",
+      biz_id: invoiceId,
+      priority: 4,
+      payload: {
+        invoice_id: invoiceId,
+        file_key: body.file_key.trim(),
+        expected_invoice_no: null,
+        expected_issue_date: null,
+        expected_amount: request.amount_with_tax
+      },
+      timeout_seconds: 300
+    });
+
+    await c.env.DB.prepare(
+      "UPDATE invoice SET verification_status = 'pending', verification_task_id = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(verifyTask.id, now, invoiceId)
+      .run();
+
     await c.env.DB.prepare(
       "UPDATE invoice_request SET status = 'issued', issued_invoice_id = ?, updated_at = ? WHERE id = ?"
     )
-      .bind(result.meta.last_row_id, now, request.id)
+      .bind(invoiceId, now, request.id)
       .run();
 
     await c.env.DB.prepare(
@@ -538,7 +558,7 @@ receiptRoutes.post(
     return c.json(
       {
         success: true,
-        data: { id: result.meta.last_row_id, invoice_no: invoiceNo }
+        data: { id: invoiceId, invoice_no: invoiceNo, verification_task_id: verifyTask.id }
       },
       201
     );
@@ -819,8 +839,8 @@ receiptRoutes.post(
       payload: {
         invoice_id: id,
         file_key: fileKey,
-        expected_invoice_no: invoice.invoice_number ?? invoice.invoice_no,
-        expected_issue_date: invoice.issue_date,
+        expected_invoice_no: invoice.invoice_number ?? null,
+        expected_issue_date: invoice.invoice_number ? invoice.issue_date : null,
         expected_amount: invoice.amount_with_tax ?? invoice.amount
       },
       timeout_seconds: 300
@@ -871,6 +891,14 @@ receiptRoutes.get(
           : typeof result?.invoice_number === "string"
             ? result.invoice_number
             : null;
+      const extractedInvoiceCode = typeof result?.invoice_code === "string" ? result.invoice_code : null;
+      const extractedCheckCode = typeof result?.check_code === "string" ? result.check_code : null;
+      const extractedQrCode =
+        typeof result?.qr_code === "string"
+          ? result.qr_code
+          : typeof result?.qr_code_text === "string"
+            ? result.qr_code_text
+            : null;
       const extractedDate = typeof result?.issue_date === "string" ? result.issue_date : null;
       const extractedAmount =
         typeof result?.amount_with_tax === "number"
@@ -878,11 +906,14 @@ receiptRoutes.get(
           : typeof result?.amount === "number"
             ? result.amount
             : null;
+      const extractedTitle = typeof result?.buyer_name === "string" ? result.buyer_name : null;
+      const extractedTaxNo = typeof result?.tax_no === "string" ? result.tax_no : null;
 
-      const expectedInvoiceNo = invoice.invoice_number ?? invoice.invoice_no;
+      const expectedInvoiceNo = invoice.invoice_number ?? null;
+      const expectedIssueDate = invoice.invoice_number ? invoice.issue_date : null;
       const expectedAmount = invoice.amount_with_tax ?? invoice.amount;
       const invoiceNoMatched = !extractedInvoiceNo || extractedInvoiceNo === expectedInvoiceNo;
-      const dateMatched = !extractedDate || extractedDate === invoice.issue_date;
+      const dateMatched = !expectedIssueDate || !extractedDate || extractedDate === expectedIssueDate;
       const amountMatched = extractedAmount === null || Math.abs(extractedAmount - expectedAmount) < 0.01;
       const passed = invoiceNoMatched && dateMatched && amountMatched;
 
@@ -890,7 +921,7 @@ receiptRoutes.get(
         extracted: result,
         compare: {
           expected_invoice_no: expectedInvoiceNo,
-          expected_issue_date: invoice.issue_date,
+          expected_issue_date: expectedIssueDate,
           expected_amount: expectedAmount,
           invoice_no_matched: invoiceNoMatched,
           issue_date_matched: dateMatched,
@@ -899,9 +930,34 @@ receiptRoutes.get(
       };
 
       await c.env.DB.prepare(
-        "UPDATE invoice SET verification_status = ?, verification_result = ?, updated_at = ? WHERE id = ?"
+        `UPDATE invoice SET
+          verification_status = ?,
+          verification_result = ?,
+          invoice_code = COALESCE(?, invoice_code),
+          invoice_number = COALESCE(?, invoice_number),
+          check_code = COALESCE(?, check_code),
+          issue_date = COALESCE(?, issue_date),
+          amount_with_tax = COALESCE(?, amount_with_tax),
+          title = COALESCE(?, title),
+          tax_no = COALESCE(?, tax_no),
+          qr_code = COALESCE(?, qr_code),
+          updated_at = ?
+         WHERE id = ?`
       )
-        .bind(passed ? "passed" : "failed", JSON.stringify(verifyResult), nowIso(), id)
+        .bind(
+          passed ? "passed" : "failed",
+          JSON.stringify(verifyResult),
+          extractedInvoiceCode,
+          extractedInvoiceNo,
+          extractedCheckCode,
+          extractedDate,
+          extractedAmount,
+          extractedTitle,
+          extractedTaxNo,
+          extractedQrCode,
+          nowIso(),
+          id
+        )
         .run();
     }
 

@@ -198,23 +198,16 @@ export const submitInvoiceRequestApproval = (
 export const issueInvoiceFromRequest = (
   id: number,
   data: {
-    invoice_code?: string;
-    invoice_number?: string;
-    check_code?: string;
-    issue_date: string;
-    tax_amount?: number;
-    amount_with_tax: number;
-    file_key?: string;
+    file_key: string;
     pdf_file_key?: string;
     ofd_file_key?: string;
     xml_file_key?: string;
-    qr_code?: string;
     remark?: string;
   }
 ) => {
   return http.request<{
     success: boolean;
-    data: { id: number; invoice_no: string };
+    data: { id: number; invoice_no: string; verification_task_id: number | null };
   }>("post", `/api/v1/receipt/invoice-request/${id}/issue`, { data });
 };
 
