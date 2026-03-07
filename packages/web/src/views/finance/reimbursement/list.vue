@@ -52,8 +52,8 @@ const canFinanceCenter = computed(() =>
 );
 const isWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
-type WorkflowView = "employee" | "office" | "finance";
-const workflowView = ref<WorkflowView>("employee");
+type WorkflowView = "submission" | "office" | "finance";
+const workflowView = ref<WorkflowView>("submission");
 const workflowReady = ref(false);
 
 const projectMap = computed(() => {
@@ -204,8 +204,10 @@ const onPrecheck = async (
 };
 
 const applyWorkflowPreset = (mode: WorkflowView) => {
-  if (mode === "employee") {
-    filters.value.applicant_userid = currentUserid.value;
+  if (mode === "submission") {
+    filters.value.applicant_userid = isWorkspaceRoute.value
+      ? currentUserid.value
+      : "";
     filters.value.status = "";
     filters.value.channel = "";
     return;
@@ -230,15 +232,7 @@ const onWorkflowChange = async (mode: WorkflowView) => {
 };
 
 onMounted(async () => {
-  if (isWorkspaceRoute.value) {
-    workflowView.value = "employee";
-  } else if (canFinanceCenter.value) {
-    workflowView.value = "finance";
-  } else if (canOfficeOps.value) {
-    workflowView.value = "office";
-  } else {
-    workflowView.value = "employee";
-  }
+  workflowView.value = "submission";
 
   applyWorkflowPreset(workflowView.value);
 
@@ -256,7 +250,7 @@ watch(workflowView, mode => {
 <template>
   <el-card shadow="never" style="background: #fffaf2">
     <el-tabs v-model="workflowView">
-      <el-tab-pane label="员工发起与我的提交" name="employee" />
+      <el-tab-pane label="报销提交" name="submission" />
       <el-tab-pane
         v-if="canOfficeOps && !isWorkspaceRoute"
         label="办公室处理与审查"
@@ -270,10 +264,14 @@ watch(workflowView, mode => {
     </el-tabs>
 
     <el-alert
-      v-if="workflowView === 'employee'"
+      v-if="workflowView === 'submission'"
       type="info"
       :closable="false"
-      title="在这里发起报销（实物信封/电子发票），并查看“我的提交”全流程状态。"
+      :title="
+        isWorkspaceRoute
+          ? '在这里查看我的报销提交，并可继续发起报销。'
+          : '在这里查看全部报销提交；办公室/领导可在此代员工发起报销。'
+      "
       style="margin-bottom: 12px"
     />
     <el-alert
@@ -332,8 +330,12 @@ watch(workflowView, mode => {
           clearable
           filterable
           style="width: 220px"
-          :disabled="workflowView === 'employee'"
-          :placeholder="workflowView === 'employee' ? '我的提交' : '全部申请人'"
+          :disabled="isWorkspaceRoute && workflowView === 'submission'"
+          :placeholder="
+            isWorkspaceRoute && workflowView === 'submission'
+              ? '我的提交'
+              : '全部申请人'
+          "
         >
           <el-option
             v-for="item in wecomUsers"
@@ -352,11 +354,12 @@ watch(workflowView, mode => {
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
       <el-button
-        v-if="workflowView === 'employee'"
+        v-if="workflowView === 'submission'"
         type="success"
         @click="goCreate"
-        >发起报销</el-button
       >
+        {{ !isWorkspaceRoute && canOfficeOps ? "代员工发起报销" : "发起报销" }}
+      </el-button>
 
       <el-button v-if="workflowView === 'office'" @click="openQuickScan"
         >扫码/输入UUID打开信封</el-button
@@ -405,7 +408,7 @@ watch(workflowView, mode => {
           <el-button link type="primary" @click="goDetail(scope.row.id)"
             >详情</el-button
           >
-          <template v-if="workflowView !== 'employee' && canOfficeOps">
+          <template v-if="workflowView !== 'submission' && canOfficeOps">
             <el-button link @click="onTriggerAnomaly(scope.row.id)"
               >异常检测</el-button
             >

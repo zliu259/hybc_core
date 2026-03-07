@@ -99,7 +99,15 @@ const roleLabels = computed(() =>
 const permissionLabels = computed(() => permissions.value.filter(Boolean));
 
 const canWriteProjectLog = computed(() =>
-  roles.value.some(role => ["super_admin", "manager", "site_manager"].includes(role))
+  roles.value.some(role =>
+    ["super_admin", "manager", "site_manager"].includes(role)
+  )
+);
+
+const canLaunchOutboundPayment = computed(() =>
+  roles.value.some(role =>
+    ["super_admin", "manager", "site_manager", "finance"].includes(role)
+  )
 );
 
 const certStatus = (expireDate: string) => {
@@ -148,20 +156,25 @@ const loadData = async () => {
     fullName.value = me.data.nickname || me.data.username;
     roles.value = me.data.roles || [];
     permissions.value = me.data.permissions || [];
-    const [reimbursementResult, bankAccountResult, pendingResult] = await Promise.all([
-      listReimbursementEnvelopes({
-        creator_id: "me",
-        page: 1,
-        pageSize: 8
-      }),
-      listMyBankAccounts(),
-      listPendingApprovals({ page: 1, pageSize: 6 })
-    ]);
+    const [reimbursementResult, bankAccountResult, pendingResult] =
+      await Promise.all([
+        listReimbursementEnvelopes({
+          creator_id: "me",
+          page: 1,
+          pageSize: 8
+        }),
+        listMyBankAccounts(),
+        listPendingApprovals({ page: 1, pageSize: 6 })
+      ]);
     reimbursements.value = reimbursementResult.data;
     bankCards.value = bankAccountResult.data;
     pendingApprovalItems.value = pendingResult.data || [];
     pendingApprovalTotal.value = pendingResult.pagination?.total || 0;
-    const projectResult = await listProjects({ page: 1, pageSize: 200, status: "active" });
+    const projectResult = await listProjects({
+      page: 1,
+      pageSize: 200,
+      status: "active"
+    });
     projects.value = projectResult.data;
     if (!reimbursementForm.value.project_id && projects.value.length > 0) {
       reimbursementForm.value.project_id = projects.value[0].id;
@@ -238,6 +251,10 @@ const goApprovalDesk = () => {
   router.push("/approval/index");
 };
 
+const goPaymentWizard = () => {
+  router.push("/workspace/payment/wizard");
+};
+
 const goApprovalItem = (item: PendingApprovalItem) => {
   router.push(`/approval/detail/${item.id}`);
 };
@@ -307,18 +324,19 @@ const submitReimbursement = async () => {
     message(`已创建报销信封 ${result.data.envelope_no}`, { type: "success" });
     reimbursementDialogVisible.value = false;
     await loadData();
-    router.push(`/workspace/my-reimbursement/detail/${result.data.id}`);
+    router.push("/workspace/my-reimbursement");
   } finally {
     reimbursementSubmitting.value = false;
   }
 };
-
 </script>
 
 <template>
-  <div class="workspace" v-loading="loading">
+  <div v-loading="loading" class="workspace">
     <el-card shadow="never" class="welcome-card">
-      <div class="welcome-card__title">你好，{{ fullName || username || "同事" }}</div>
+      <div class="welcome-card__title">
+        你好，{{ fullName || username || "同事" }}
+      </div>
       <div class="welcome-card__identity">
         <el-tag size="small" type="info">账号：{{ username || "-" }}</el-tag>
         <el-tag
@@ -348,7 +366,14 @@ const submitReimbursement = async () => {
         <el-button type="primary" @click="openReimbursementDialog"
           >发起报销</el-button
         >
-        <el-button @click="router.push('/workspace/my-reimbursement')">我的提交</el-button>
+        <el-button @click="router.push('/workspace/my-reimbursement')"
+          >我的报销提交</el-button
+        >
+        <el-button
+          :disabled="!canLaunchOutboundPayment"
+          @click="goPaymentWizard"
+          >发起对外付款</el-button
+        >
         <el-button @click="router.push('/construction/operator-log/form')"
           >填报施工日志</el-button
         >
@@ -357,7 +382,11 @@ const submitReimbursement = async () => {
           @click="router.push('/construction/manager-log')"
           >填报项目日志</el-button
         >
-        <el-badge :value="pendingApprovalCount" :hidden="pendingApprovalCount <= 0" :max="99">
+        <el-badge
+          :value="pendingApprovalCount"
+          :hidden="pendingApprovalCount <= 0"
+          :max="99"
+        >
           <el-button @click="goApprovalDesk">待我审批</el-button>
         </el-badge>
       </div>
@@ -421,7 +450,9 @@ const submitReimbursement = async () => {
         <template #header>
           <div class="card-header card-header--with-action">
             <span>我的收款卡</span>
-            <el-button link type="primary" @click="openCreateBankCard">新增</el-button>
+            <el-button link type="primary" @click="openCreateBankCard"
+              >新增</el-button
+            >
           </div>
         </template>
         <div v-for="card in bankCards" :key="card.id" class="bank-card">
@@ -429,7 +460,9 @@ const submitReimbursement = async () => {
           <div class="bank-card__no">{{ maskCardNo(card.account_no) }}</div>
           <div class="bank-card__holder">持卡人：{{ card.account_name }}</div>
           <div class="bank-card__actions">
-            <el-button link type="primary" @click="openEditBankCard(card)">编辑</el-button>
+            <el-button link type="primary" @click="openEditBankCard(card)"
+              >编辑</el-button
+            >
           </div>
         </div>
       </el-card>
@@ -446,7 +479,9 @@ const submitReimbursement = async () => {
             :timestamp="item.updated_at"
           >
             <div class="timeline-item">
-              <span>{{ item.envelope_no }} · ¥{{ formatAmount(item.amount) }}</span>
+              <span
+                >{{ item.envelope_no }} · ¥{{ formatAmount(item.amount) }}</span
+              >
               <el-tag :type="reimbursementTagType(item.status)">
                 {{ reimbursementStatusLabel(item.status) }}
               </el-tag>
@@ -461,12 +496,22 @@ const submitReimbursement = async () => {
         <div class="card-header">个人资质与证书</div>
       </template>
 
-      <el-upload drag :auto-upload="false" :show-file-list="false" :on-change="onCertUpload">
+      <el-upload
+        drag
+        :auto-upload="false"
+        :show-file-list="false"
+        :on-change="onCertUpload"
+      >
         <div>拖拽证书文件到此处，或点击上传（PDF/图片）</div>
       </el-upload>
 
       <div class="cert-grid">
-        <el-card v-for="cert in certificates" :key="cert.id" shadow="never" class="cert-item">
+        <el-card
+          v-for="cert in certificates"
+          :key="cert.id"
+          shadow="never"
+          class="cert-item"
+        >
           <div class="cert-item__name">{{ cert.name }}</div>
           <div class="cert-item__meta">颁发：{{ cert.issueDate }}</div>
           <div class="cert-item__meta">有效期：{{ cert.expireDate }}</div>
@@ -502,10 +547,15 @@ const submitReimbursement = async () => {
       <template #header>
         <div class="card-header card-header--with-action">
           <span>我的待办提醒（{{ pendingApprovalCount }}）</span>
-          <el-button link type="primary" @click="goApprovalDesk">进入统一审批台</el-button>
+          <el-button link type="primary" @click="goApprovalDesk"
+            >进入统一审批台</el-button
+          >
         </div>
       </template>
-      <el-empty v-if="!pendingApprovalItems.length" description="当前没有待办审批" />
+      <el-empty
+        v-if="!pendingApprovalItems.length"
+        description="当前没有待办审批"
+      />
       <div v-else class="todo-cards">
         <div
           v-for="item in pendingApprovalItems"
@@ -519,7 +569,9 @@ const submitReimbursement = async () => {
           </div>
           <div class="todo-item__meta-row">
             <div class="todo-item__meta">
-              当前节点：{{ item.current_node_name || item.current_node_key || "待处理" }}
+              当前节点：{{
+                item.current_node_name || item.current_node_key || "待处理"
+              }}
             </div>
             <el-tag size="small" type="warning">待审批</el-tag>
           </div>
@@ -547,7 +599,11 @@ const submitReimbursement = async () => {
       </el-form>
       <template #footer>
         <el-button @click="bankEditVisible = false">取消</el-button>
-        <el-button type="primary" :loading="bankSubmitting" @click="submitBankCard">
+        <el-button
+          type="primary"
+          :loading="bankSubmitting"
+          @click="submitBankCard"
+        >
           保存
         </el-button>
       </template>

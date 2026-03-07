@@ -23,7 +23,7 @@ export default {
     {
       path: "/workspace/my-reimbursement",
       name: "WorkspaceMyReimbursement",
-      component: () => import("@/views/finance/reimbursement/list.vue"),
+      component: () => import("@/views/workspace/reimbursement/list.vue"),
       meta: {
         title: "我的报销",
         roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
@@ -35,7 +35,23 @@ export default {
       component: () => import("@/views/finance/reimbursement/detail.vue"),
       meta: {
         title: "我的报销详情",
-        roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+        roles: ["super_admin", "manager", "site_manager", "finance"],
+        showLink: false
+      }
+    },
+    {
+      path: "/workspace/payment/wizard",
+      name: "WorkspacePaymentWizard",
+      component: () => import("@/views/finance/payment/wizard.vue"),
+      meta: {
+        title: "发起对外付款",
+        roles: [
+          "super_admin",
+          "manager",
+          "site_manager",
+          "finance",
+          "operator"
+        ],
         showLink: false
       }
     }

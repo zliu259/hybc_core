@@ -34,6 +34,7 @@
 
 ### 3.1 页面总索引（必须有明确文件指向）
 - 个人工作台首页：`packages/web/src/views/welcome/index.vue`
+- 工作台我的报销提交：`packages/web/src/views/workspace/reimbursement/list.vue`
 - 仪表盘：`packages/web/src/views/dashboard/index.vue`
 - 实体管理：`packages/web/src/views/entity/index.vue`
 - 数据字典管理：`packages/web/src/views/dict/index.vue`
@@ -150,8 +151,11 @@
 
 #### F. 报销处理列表 `views/finance/reimbursement/list.vue`
 - 展示维度：信封编号、UUID、项目、填报人、金额、状态、PDF状态。
-- 入口改为角色化流程视图：
-  - 员工：发起报销（统一入口，创建页内选择实物/电子）+ 我的提交
+- 默认打开首个标签“报销提交”，并区分入口语义：
+  - 工作台入口：展示“我的提交”；
+  - 财务中心入口：展示全部报销提交（办公室/领导可查看全量并代员工发起）。
+- 角色化流程视图：
+  - 报销提交：统一提交视图（含代员工发起入口）
   - 办公室：处理与审查（预审/查重/收件核查）
   - 财务与领导：集中审批与历史
 - 支持入口：批量生成未登记信封、UUID快速打开信封（办公室）、进入详情执行登记/提交/收件核对/PDF生成。
@@ -460,7 +464,10 @@
   - `packages/web/src/views/welcome/index.vue`
 - 发起报销改为弹窗发起，不再先跳转审批台：
   - `packages/web/src/views/welcome/index.vue`
-  - 弹窗内直接创建报销信封并跳转详情页
+  - 弹窗内直接创建报销信封并跳转“我的报销提交”专属页
+- 个人工作台新增“发起对外付款”按钮：
+  - `packages/web/src/views/welcome/index.vue`
+  - 通过工作台隐藏路由拉起智能发单台：`/workspace/payment/wizard`
 - 填报日志拆分为两类入口：
   - 施工日志：`/construction/operator-log/form`
   - 项目日志：`/construction/manager-log`
