@@ -1,0 +1,51 @@
+.task-item,
+.line-item {
+  margin-top: 12rpx;
+  padding: 12rpx;
+  border-radius: 12rpx;
+  border: 1px solid #dbe8f7;
+  background: #fff;
+}
+
+.task-title,
+.line-title {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.task-sub,
+.line-sub {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #5c667a;
+}
+
+.form-row {
+  margin-top: 12rpx;
+}
+
+.row-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12rpx;
+}
+
+.input,
+.picker {
+  width: 100%;
+  min-height: 72rpx;
+  border: 1px solid #dbe8f7;
+  border-radius: 10rpx;
+  background: #fff;
+  color: #1f2d3d;
+  font-size: 24rpx;
+  padding: 18rpx 20rpx;
+  box-sizing: border-box;
+}
+
+.radio-item {
+  margin-right: 24rpx;
+  color: #1f2d3d;
+  font-size: 24rpx;
+}

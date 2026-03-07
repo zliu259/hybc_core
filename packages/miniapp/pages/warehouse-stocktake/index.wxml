@@ -1,0 +1,92 @@
+<view class="page">
+  <hy-panel-card title="🧮 公司资产盘库" icon="view-list" subtitle="与 Web 对齐：创建盘点任务、盘中新增物品、录入数量与状态">
+    <view class="form-row">
+      <input class="input" placeholder="盘点任务名称（例如 2026Q1 全公司盘点）" value="{{createTitle}}" bindinput="onCreateTitleInput" />
+    </view>
+    <view class="form-row">
+      <radio-group bindchange="onScopeChange">
+        <label class="radio-item"><radio value="company" checked="{{createScope==='company'}}" />全公司</label>
+        <label class="radio-item"><radio value="warehouse" checked="{{createScope==='warehouse'}}" />单仓库</label>
+      </radio-group>
+    </view>
+    <view class="form-row" wx:if="{{createScope==='warehouse'}}">
+      <picker mode="selector" range="{{warehouseNames}}" value="{{createWarehouseIndex}}" bindchange="onCreateWarehouseChange">
+        <view class="picker">{{createWarehouseIndex>=0?warehouseNames[createWarehouseIndex]:'请选择仓库'}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <picker mode="date" value="{{createPlannedDate}}" bindchange="onCreateDateChange">
+        <view class="picker">盘点日期：{{createPlannedDate}}</view>
+      </picker>
+    </view>
+    <t-button theme="primary" block loading="{{busy}}" disabled="{{busy}}" bindtap="createTask">创建盘点任务</t-button>
+  </hy-panel-card>
+
+  <hy-panel-card title="📋 盘点任务" icon="time" subtitle="点击任务查看并执行盘点">
+    <view wx:if="{{tasks.length===0}}" class="empty-state">暂无盘点任务</view>
+    <view wx:for="{{tasks}}" wx:key="id" class="task-item" data-id="{{item.id}}" bindtap="onTapTask">
+      <view class="task-title">{{item.task_no}} · {{item.task_title}}</view>
+      <view class="task-sub">范围：{{item.warehouse_name || '全公司'}} · 状态：{{item.statusText}}</view>
+      <view class="task-sub">盘点日期：{{item.planned_date}}</view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="📝 盘中新增发现物品" icon="add" subtitle="无需跳页，可直接加入当前盘库任务" wx:if="{{activeTask}}">
+    <view class="form-row">
+      <radio-group bindchange="onAddKindChange">
+        <label class="radio-item"><radio value="consumable" checked="{{addKind==='consumable'}}" />消耗品</label>
+        <label class="radio-item"><radio value="asset" checked="{{addKind==='asset'}}" />设备资产</label>
+      </radio-group>
+    </view>
+    <view class="form-row">
+      <picker mode="selector" range="{{warehouseNames}}" value="{{addWarehouseIndex}}" bindchange="onAddWarehouseChange">
+        <view class="picker">{{addWarehouseIndex>=0?warehouseNames[addWarehouseIndex]:'请选择归属仓库'}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <picker mode="selector" range="{{assetTypeNames}}" value="{{addAssetTypeIndex}}" bindchange="onAddAssetTypeChange">
+        <view class="picker">{{addAssetTypeIndex>=0?assetTypeNames[addAssetTypeIndex]:'选择资产类型（可选）'}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <input class="input" placeholder="新物品名称（可选）" value="{{addCustomName}}" bindinput="onAddCustomNameInput" />
+    </view>
+    <view class="form-row row-2">
+      <input class="input" type="digit" placeholder="盘点数量" value="{{addQuantity}}" bindinput="onAddQuantityInput" />
+      <input class="input" placeholder="单位" value="{{addUnit}}" bindinput="onAddUnitInput" />
+    </view>
+    <view class="form-row">
+      <picker mode="selector" range="{{['正常','新增','破损','盘亏']}}" value="{{addLineStatusIndex}}" bindchange="onAddStatusChange">
+        <view class="picker">状态：{{['正常','新增','破损','盘亏'][addLineStatusIndex]}}</view>
+      </picker>
+    </view>
+    <view class="form-row">
+      <input class="input" placeholder="备注（可选）" value="{{addNote}}" bindinput="onAddNoteInput" />
+    </view>
+    <t-button theme="primary" block loading="{{addBusy}}" disabled="{{addBusy}}" bindtap="addNewLine">加入当前盘库</t-button>
+  </hy-panel-card>
+
+  <hy-panel-card title="🧾 盘点执行明细" icon="chart" subtitle="逐条录入实盘数量并保存" wx:if="{{activeTask}}">
+    <view class="task-title">{{activeTask.task_no}} · {{activeTask.task_title}}</view>
+    <view class="task-sub">状态：{{activeTask.statusText}} · 日期：{{activeTask.planned_date}}</view>
+    <view wx:if="{{!activeTask.lines || activeTask.lines.length===0}}" class="empty-state">暂无盘点明细</view>
+    <view wx:for="{{activeTask.lines}}" wx:key="id" class="line-item">
+      <view class="line-title">{{item.kindText}} · {{item.item_name}}</view>
+      <view class="line-sub">仓库：{{item.warehouse_name || ('仓库#'+item.warehouse_id)}} · 账面：{{item.expected_qty}} {{item.unit || ''}}</view>
+      <view class="form-row row-2">
+        <input class="input" type="digit" data-index="{{index}}" value="{{item.counted_qty}}" placeholder="实盘数量" bindinput="onLineQtyInput" />
+        <picker mode="selector" range="{{['正常','新增','破损','盘亏']}}" value="{{item.lineStatusIndex}}" data-index="{{index}}" bindchange="onLineStatusChange">
+          <view class="picker">{{item.lineStatusText}}</view>
+        </picker>
+      </view>
+      <view class="form-row">
+        <input class="input" data-index="{{index}}" value="{{item.note}}" placeholder="备注" bindinput="onLineNoteInput" />
+      </view>
+      <view class="line-sub">差异：{{item.diff_qty}}</view>
+      <t-button size="small" variant="outline" data-index="{{index}}" bindtap="saveLine" loading="{{lineBusy}}" disabled="{{lineBusy}}">保存本条</t-button>
+    </view>
+    <view class="form-row">
+      <t-button theme="primary" block bindtap="completeTask" loading="{{busy}}" disabled="{{busy}}">完成本次盘点</t-button>
+    </view>
+  </hy-panel-card>
+</view>

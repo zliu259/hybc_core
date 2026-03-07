@@ -65,6 +65,41 @@ export type EquipmentPlan = {
   updated_at: string;
 };
 
+export type StocktakeTask = {
+  id: number;
+  task_no: string;
+  task_title: string;
+  scope: "company" | "warehouse";
+  warehouse_id: number | null;
+  warehouse_name?: string | null;
+  planned_date: string;
+  status: "draft" | "counting" | "completed";
+  creator_userid: string;
+  completed_at: string | null;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type StocktakeLine = {
+  id: number;
+  stocktake_task_id: number;
+  warehouse_id: number;
+  warehouse_name?: string | null;
+  item_kind: "asset" | "consumable";
+  asset_type_id: number | null;
+  tracked_asset_id: number | null;
+  item_name: string;
+  unit: string | null;
+  expected_qty: number;
+  counted_qty: number | null;
+  diff_qty: number;
+  line_status: "normal" | "new" | "damaged" | "lost";
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export const listWarehouses = (params?: { keyword?: string }) =>
   http.request<{ success: boolean; data: Warehouse[] }>(
     "get",
@@ -251,3 +286,72 @@ export const confirmEquipmentPlan = (
     success: boolean;
     data: { stock_order_id: number; order_no: string };
   }>("post", `/api/v1/warehouse/equipment-plan/${id}/confirm`, { data });
+
+export const listStocktakeTasks = (params?: { status?: string; warehouse_id?: number }) =>
+  http.request<{ success: boolean; data: StocktakeTask[] }>("get", "/api/v1/warehouse/stocktake", {
+    params
+  });
+
+export const getStocktakeTask = (id: number) =>
+  http.request<{ success: boolean; data: StocktakeTask & { lines: StocktakeLine[] } }>(
+    "get",
+    `/api/v1/warehouse/stocktake/${id}`
+  );
+
+export const createStocktakeTask = (data: {
+  task_title: string;
+  scope: "company" | "warehouse";
+  warehouse_id?: number;
+  planned_date: string;
+  remark?: string;
+}) =>
+  http.request<{ success: boolean; data: { id: number; task_no: string } }>(
+    "post",
+    "/api/v1/warehouse/stocktake",
+    { data }
+  );
+
+export const addStocktakeLine = (
+  id: number,
+  data: {
+    warehouse_id: number;
+    item_kind: "asset" | "consumable";
+    asset_type_id?: number;
+    tracked_asset_id?: number;
+    item_name?: string;
+    unit?: string;
+    counted_qty: number;
+    line_status?: "normal" | "new" | "damaged" | "lost";
+    note?: string;
+  }
+) =>
+  http.request<{ success: boolean; data: { id: number } }>(
+    "post",
+    `/api/v1/warehouse/stocktake/${id}/line`,
+    { data }
+  );
+
+export const updateStocktakeLine = (
+  id: number,
+  lineId: number,
+  data: {
+    counted_qty?: number | null;
+    line_status?: "normal" | "new" | "damaged" | "lost";
+    note?: string;
+  }
+) =>
+  http.request<{ success: boolean }>("put", `/api/v1/warehouse/stocktake/${id}/line/${lineId}`, {
+    data
+  });
+
+export const completeStocktakeTask = (id: number) =>
+  http.request<{
+    success: boolean;
+    data: {
+      status: "completed";
+      completed_at: string;
+      total: number;
+      diff_count: number;
+      diff_total: number;
+    };
+  }>("post", `/api/v1/warehouse/stocktake/${id}/complete`);

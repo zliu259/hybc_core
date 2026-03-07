@@ -11,6 +11,7 @@
     "pages/warehouse-stock-order/index",
     "pages/warehouse-inventory/index",
     "pages/warehouse-dispatch/index",
+    "pages/warehouse-stocktake/index",
     "pages/profile/index",
     "pages/log/index",
     "pages/operator-log/index",

@@ -128,3 +128,62 @@ export interface ConfirmEquipmentPlanRequest {
   from_warehouse_id: number;
   note?: string;
 }
+
+export interface StocktakeTask {
+  id: number;
+  task_no: string;
+  task_title: string;
+  scope: "company" | "warehouse";
+  warehouse_id: number | null;
+  planned_date: string;
+  status: "draft" | "counting" | "completed";
+  creator_userid: string;
+  completed_at: string | null;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StocktakeLine {
+  id: number;
+  stocktake_task_id: number;
+  warehouse_id: number;
+  item_kind: "asset" | "consumable";
+  asset_type_id: number | null;
+  tracked_asset_id: number | null;
+  item_name: string;
+  unit: string | null;
+  expected_qty: number;
+  counted_qty: number | null;
+  diff_qty: number;
+  line_status: "normal" | "new" | "damaged" | "lost";
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CreateStocktakeTaskRequest {
+  task_title: string;
+  scope: "company" | "warehouse";
+  warehouse_id?: number;
+  planned_date: string;
+  remark?: string;
+}
+
+export interface AddStocktakeLineRequest {
+  warehouse_id: number;
+  item_kind: "asset" | "consumable";
+  asset_type_id?: number;
+  tracked_asset_id?: number;
+  item_name?: string;
+  unit?: string;
+  counted_qty: number;
+  line_status?: "normal" | "new" | "damaged" | "lost";
+  note?: string;
+}
+
+export interface UpdateStocktakeLineRequest {
+  counted_qty?: number;
+  line_status?: "normal" | "new" | "damaged" | "lost";
+  note?: string;
+}

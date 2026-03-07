@@ -8,14 +8,19 @@ import { generateSerial } from "../services/serial";
 import type { Env } from "../types/env";
 import type { TrackedAsset } from "../types/asset";
 import type {
+  AddStocktakeLineRequest,
+  CreateStocktakeTaskRequest,
   ConfirmEquipmentPlanRequest,
   CreateEquipmentPlanRequest,
   CreateStockOrderRequest,
   CreateWarehouseRequest,
   InventoryRow,
   ProjectEquipmentPlan,
+  StocktakeLine,
+  StocktakeTask,
   StockOrder,
   SubmitStockOrderApprovalRequest,
+  UpdateStocktakeLineRequest,
   UpdateWarehouseRequest,
   Warehouse
 } from "../types/warehouse";
@@ -37,6 +42,113 @@ const parseTaskResult = (resultJson: string | null): Record<string, unknown> | n
   } catch {
     return null;
   }
+};
+
+const STOCKTAKE_LINE_STATUS = new Set(["normal", "new", "damaged", "lost"]);
+
+const ensureStocktakeLineStatus = (value?: string): "normal" | "new" | "damaged" | "lost" => {
+  if (!value) return "normal";
+  if (!STOCKTAKE_LINE_STATUS.has(value)) {
+    throw new Error("line_status must be one of normal/new/damaged/lost");
+  }
+  return value as "normal" | "new" | "damaged" | "lost";
+};
+
+const buildInitialStocktakeLines = async (
+  env: Env,
+  scope: "company" | "warehouse",
+  warehouseId?: number
+): Promise<
+  Array<{
+    warehouse_id: number;
+    item_kind: "asset" | "consumable";
+    asset_type_id: number;
+    tracked_asset_id: number | null;
+    item_name: string;
+    unit: string;
+    expected_qty: number;
+    counted_qty: number | null;
+    diff_qty: number;
+    line_status: "normal" | "new" | "damaged" | "lost";
+    note: string | null;
+  }>
+> => {
+  const params: number[] = [];
+  const warehouseFilter = scope === "warehouse" && warehouseId ? " AND i.warehouse_id = ?" : "";
+  if (scope === "warehouse" && warehouseId) params.push(warehouseId);
+
+  const consumableRows = await env.DB.prepare(
+    `SELECT i.warehouse_id, i.asset_type_id, at.type_name, at.unit, i.quantity
+     FROM inventory i
+     JOIN asset_type at ON at.id = i.asset_type_id
+     WHERE i.status = 'active' AND at.status != 'deleted' AND at.tracked_flag = 0${warehouseFilter}`
+  )
+    .bind(...params)
+    .all<{
+      warehouse_id: number;
+      asset_type_id: number;
+      type_name: string;
+      unit: string | null;
+      quantity: number;
+    }>();
+
+  const trackedParams: number[] = [];
+  const trackedFilter = scope === "warehouse" && warehouseId ? " AND ta.current_warehouse_id = ?" : "";
+  if (scope === "warehouse" && warehouseId) trackedParams.push(warehouseId);
+
+  const trackedRows = await env.DB.prepare(
+    `SELECT ta.current_warehouse_id as warehouse_id,
+            ta.asset_type_id,
+            at.type_name,
+            at.unit,
+            COUNT(*) as asset_count
+     FROM tracked_asset ta
+     JOIN asset_type at ON at.id = ta.asset_type_id
+     WHERE ta.current_warehouse_id IS NOT NULL
+       AND ta.status != 'scrapped'
+       AND at.status != 'deleted'
+       AND at.tracked_flag = 1${trackedFilter}
+     GROUP BY ta.current_warehouse_id, ta.asset_type_id`
+  )
+    .bind(...trackedParams)
+    .all<{
+      warehouse_id: number;
+      asset_type_id: number;
+      type_name: string;
+      unit: string | null;
+      asset_count: number;
+    }>();
+
+  const lines = [
+    ...(consumableRows.results ?? []).map(row => ({
+      warehouse_id: row.warehouse_id,
+      item_kind: "consumable" as const,
+      asset_type_id: row.asset_type_id,
+      tracked_asset_id: null,
+      item_name: row.type_name,
+      unit: row.unit ?? "件",
+      expected_qty: Number(row.quantity ?? 0),
+      counted_qty: null,
+      diff_qty: 0,
+      line_status: "normal" as const,
+      note: null
+    })),
+    ...(trackedRows.results ?? []).map(row => ({
+      warehouse_id: row.warehouse_id,
+      item_kind: "asset" as const,
+      asset_type_id: row.asset_type_id,
+      tracked_asset_id: null,
+      item_name: row.type_name,
+      unit: row.unit ?? "件",
+      expected_qty: Number(row.asset_count ?? 0),
+      counted_qty: null,
+      diff_qty: 0,
+      line_status: "normal" as const,
+      note: null
+    }))
+  ];
+
+  return lines;
 };
 
 const upsertInventory = async (
@@ -605,6 +717,331 @@ warehouseRoutes.post(
       .bind(nowIso(), id)
       .run();
     return c.json({ success: true });
+  }
+);
+
+warehouseRoutes.get(
+  "/stocktake",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async c => {
+    const status = c.req.query("status");
+    const warehouseId = c.req.query("warehouse_id");
+    let sql =
+      "SELECT st.*, w.warehouse_name FROM stocktake_task st LEFT JOIN warehouse w ON w.id = st.warehouse_id WHERE 1=1";
+    const params: Array<string | number> = [];
+    if (status) {
+      sql += " AND st.status = ?";
+      params.push(status);
+    }
+    if (warehouseId) {
+      sql += " AND st.warehouse_id = ?";
+      params.push(Number(warehouseId));
+    }
+    sql += " ORDER BY st.id DESC";
+    const rows = await c.env.DB.prepare(sql).bind(...params).all<StocktakeTask & { warehouse_name: string | null }>();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+warehouseRoutes.get(
+  "/stocktake/:id",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async c => {
+    const id = Number(c.req.param("id"));
+    const task = await c.env.DB.prepare(
+      "SELECT st.*, w.warehouse_name FROM stocktake_task st LEFT JOIN warehouse w ON w.id = st.warehouse_id WHERE st.id = ?"
+    )
+      .bind(id)
+      .first<StocktakeTask & { warehouse_name: string | null }>();
+    if (!task) return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
+
+    const lines = await c.env.DB.prepare(
+      `SELECT sl.*, w.warehouse_name
+       FROM stocktake_line sl
+       LEFT JOIN warehouse w ON w.id = sl.warehouse_id
+       WHERE sl.stocktake_task_id = ?
+       ORDER BY sl.id DESC`
+    )
+      .bind(id)
+      .all<StocktakeLine & { warehouse_name: string | null }>();
+
+    return c.json({ success: true, data: { ...task, lines: lines.results ?? [] } });
+  }
+);
+
+warehouseRoutes.post(
+  "/stocktake",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async c => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as CreateStocktakeTaskRequest;
+
+    if (!body.task_title?.trim() || !body.planned_date) {
+      return c.json({ success: false, error: { message: "task_title and planned_date are required" } }, 400);
+    }
+    if (body.scope !== "company" && body.scope !== "warehouse") {
+      return c.json({ success: false, error: { message: "scope must be company or warehouse" } }, 400);
+    }
+    if (body.scope === "warehouse" && !body.warehouse_id) {
+      return c.json({ success: false, error: { message: "warehouse scope requires warehouse_id" } }, 400);
+    }
+
+    const taskNo = await generateSerial(c.env.DB, "PK", "stocktake_task", "task_no");
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO stocktake_task
+       (task_no, task_title, scope, warehouse_id, planned_date, status, creator_userid, completed_at, remark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'counting', ?, NULL, ?, ?, ?)`
+    )
+      .bind(
+        taskNo,
+        body.task_title.trim(),
+        body.scope,
+        body.scope === "warehouse" ? body.warehouse_id ?? null : null,
+        body.planned_date,
+        auth.sub,
+        body.remark ?? null,
+        now,
+        now
+      )
+      .run();
+
+    const taskId = result.meta.last_row_id as number;
+    const initialLines = await buildInitialStocktakeLines(
+      c.env,
+      body.scope,
+      body.scope === "warehouse" ? body.warehouse_id : undefined
+    );
+
+    for (const line of initialLines) {
+      await c.env.DB.prepare(
+        `INSERT INTO stocktake_line
+         (stocktake_task_id, warehouse_id, item_kind, asset_type_id, tracked_asset_id, item_name, unit,
+          expected_qty, counted_qty, diff_qty, line_status, note, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(
+          taskId,
+          line.warehouse_id,
+          line.item_kind,
+          line.asset_type_id,
+          line.tracked_asset_id,
+          line.item_name,
+          line.unit,
+          line.expected_qty,
+          line.counted_qty,
+          line.diff_qty,
+          line.line_status,
+          line.note,
+          now,
+          now
+        )
+        .run();
+    }
+
+    return c.json({ success: true, data: { id: taskId, task_no: taskNo } }, 201);
+  }
+);
+
+warehouseRoutes.post(
+  "/stocktake/:id/line",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async c => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json()) as AddStocktakeLineRequest;
+    const task = await c.env.DB.prepare("SELECT * FROM stocktake_task WHERE id = ?")
+      .bind(id)
+      .first<StocktakeTask>();
+    if (!task) return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
+    if (task.status === "completed") {
+      return c.json({ success: false, error: { message: "Completed stocktake cannot add new lines" } }, 400);
+    }
+    if (!body.warehouse_id || !body.item_kind || Number(body.counted_qty) <= 0) {
+      return c.json(
+        { success: false, error: { message: "warehouse_id, item_kind, counted_qty are required" } },
+        400
+      );
+    }
+    if (body.item_kind !== "asset" && body.item_kind !== "consumable") {
+      return c.json({ success: false, error: { message: "item_kind must be asset or consumable" } }, 400);
+    }
+
+    let lineStatus: "normal" | "new" | "damaged" | "lost";
+    try {
+      lineStatus = ensureStocktakeLineStatus(body.line_status ?? "new");
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    let itemName = body.item_name?.trim() ?? "";
+    let unit = body.unit?.trim() || "件";
+    let assetTypeId: number | null = null;
+    let trackedAssetId: number | null = null;
+
+    if (body.asset_type_id) {
+      const type = await c.env.DB.prepare("SELECT * FROM asset_type WHERE id = ? AND status != 'deleted'")
+        .bind(body.asset_type_id)
+        .first<{ id: number; type_name: string; unit: string | null; tracked_flag: number }>();
+      if (!type) return c.json({ success: false, error: { message: "asset_type_id not found" } }, 404);
+      if (body.item_kind === "asset" && type.tracked_flag !== 1) {
+        return c.json({ success: false, error: { message: "asset lines require tracked asset type" } }, 400);
+      }
+      if (body.item_kind === "consumable" && type.tracked_flag !== 0) {
+        return c.json({ success: false, error: { message: "consumable lines require untracked asset type" } }, 400);
+      }
+      assetTypeId = type.id;
+      if (!itemName) itemName = type.type_name;
+      if (type.unit) unit = type.unit;
+    }
+
+    if (body.tracked_asset_id) {
+      const asset = await c.env.DB.prepare("SELECT id, asset_name FROM tracked_asset WHERE id = ?")
+        .bind(body.tracked_asset_id)
+        .first<{ id: number; asset_name: string }>();
+      if (!asset) return c.json({ success: false, error: { message: "tracked_asset_id not found" } }, 404);
+      trackedAssetId = asset.id;
+      if (!itemName) itemName = asset.asset_name;
+    }
+
+    if (!itemName) {
+      return c.json({ success: false, error: { message: "item_name or asset_type_id is required" } }, 400);
+    }
+
+    const countedQty = Number(body.counted_qty);
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO stocktake_line
+       (stocktake_task_id, warehouse_id, item_kind, asset_type_id, tracked_asset_id, item_name, unit,
+        expected_qty, counted_qty, diff_qty, line_status, note, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        id,
+        body.warehouse_id,
+        body.item_kind,
+        assetTypeId,
+        trackedAssetId,
+        itemName,
+        unit,
+        countedQty,
+        countedQty,
+        lineStatus,
+        body.note ?? null,
+        now,
+        now
+      )
+      .run();
+
+    await c.env.DB.prepare("UPDATE stocktake_task SET updated_at = ? WHERE id = ?")
+      .bind(now, id)
+      .run();
+
+    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  }
+);
+
+warehouseRoutes.put(
+  "/stocktake/:id/line/:lineId",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async c => {
+    const id = Number(c.req.param("id"));
+    const lineId = Number(c.req.param("lineId"));
+    const body = (await c.req.json()) as UpdateStocktakeLineRequest;
+
+    const line = await c.env.DB.prepare("SELECT * FROM stocktake_line WHERE id = ? AND stocktake_task_id = ?")
+      .bind(lineId, id)
+      .first<StocktakeLine>();
+    if (!line) return c.json({ success: false, error: { message: "Stocktake line not found" } }, 404);
+
+    let lineStatus: "normal" | "new" | "damaged" | "lost";
+    try {
+      lineStatus = ensureStocktakeLineStatus(body.line_status ?? line.line_status);
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    const countedQty =
+      body.counted_qty === undefined
+        ? line.counted_qty
+        : body.counted_qty === null
+          ? null
+          : Number(body.counted_qty);
+
+    if (countedQty !== null && countedQty < 0) {
+      return c.json({ success: false, error: { message: "counted_qty must be >= 0" } }, 400);
+    }
+
+    const diffQty = countedQty === null ? 0 : Number((countedQty - line.expected_qty).toFixed(2));
+    const now = nowIso();
+
+    await c.env.DB.prepare(
+      `UPDATE stocktake_line SET
+         counted_qty = ?,
+         diff_qty = ?,
+         line_status = ?,
+         note = COALESCE(?, note),
+         updated_at = ?
+       WHERE id = ? AND stocktake_task_id = ?`
+    )
+      .bind(countedQty, diffQty, lineStatus, body.note ?? null, now, lineId, id)
+      .run();
+
+    await c.env.DB.prepare("UPDATE stocktake_task SET updated_at = ? WHERE id = ?")
+      .bind(now, id)
+      .run();
+
+    return c.json({ success: true });
+  }
+);
+
+warehouseRoutes.post(
+  "/stocktake/:id/complete",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async c => {
+    const id = Number(c.req.param("id"));
+    const task = await c.env.DB.prepare("SELECT * FROM stocktake_task WHERE id = ?")
+      .bind(id)
+      .first<StocktakeTask>();
+    if (!task) return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
+    if (task.status === "completed") {
+      return c.json({ success: false, error: { message: "Stocktake task already completed" } }, 400);
+    }
+
+    const pending = await c.env.DB.prepare(
+      "SELECT COUNT(*) as cnt FROM stocktake_line WHERE stocktake_task_id = ? AND counted_qty IS NULL"
+    )
+      .bind(id)
+      .first<{ cnt: number }>();
+    if ((pending?.cnt ?? 0) > 0) {
+      return c.json({ success: false, error: { message: "All stocktake lines must have counted_qty" } }, 400);
+    }
+
+    const now = nowIso();
+    await c.env.DB.prepare(
+      "UPDATE stocktake_task SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(now, now, id)
+      .run();
+
+    const summary = await c.env.DB.prepare(
+      `SELECT COUNT(*) as total,
+              SUM(CASE WHEN diff_qty != 0 THEN 1 ELSE 0 END) as diff_count,
+              SUM(diff_qty) as diff_total
+       FROM stocktake_line WHERE stocktake_task_id = ?`
+    )
+      .bind(id)
+      .first<{ total: number; diff_count: number; diff_total: number }>();
+
+    return c.json({
+      success: true,
+      data: {
+        status: "completed",
+        completed_at: now,
+        total: summary?.total ?? 0,
+        diff_count: summary?.diff_count ?? 0,
+        diff_total: Number(summary?.diff_total ?? 0)
+      }
+    });
   }
 );
 

@@ -17,6 +17,10 @@
         <view class="kpi-label traffic-green">库存条目</view>
         <view class="kpi-value traffic-green">{{kpis.inventoryCount}}</view>
       </view>
+      <view class="kpi-item yellow">
+        <view class="kpi-label traffic-yellow">盘点进行中</view>
+        <view class="kpi-value traffic-yellow">{{kpis.stocktakeCounting}}</view>
+      </view>
     </view>
 
     <view class="entry-grid">
@@ -35,6 +39,10 @@
       <view class="entry-card" data-path="/pages/asset/index" bindtap="goTo">
         <view class="entry-top"><view class="entry-title">📦 资产设备查验</view></view>
         <view class="entry-desc">扫码查询设备状态并记录出入库事件</view>
+      </view>
+      <view class="entry-card" data-path="/pages/warehouse-stocktake/index" bindtap="goTo">
+        <view class="entry-top"><view class="entry-title">🧮 公司资产盘库</view></view>
+        <view class="entry-desc">创建盘点任务、录入数量状态、页内新增发现物品</view>
       </view>
     </view>
   </hy-panel-card>

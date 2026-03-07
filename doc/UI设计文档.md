@@ -315,8 +315,8 @@
 
 #### K-7. 公司资产盘库 `views/warehouse/stocktake.vue`
 - 模块：盘点任务列表、盘点执行区、差异汇总。
-- 交互：支持全公司/单仓库创建盘点任务，录入实盘数量后自动计算差异并完成盘点。
-- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse`, `/api/v1/asset`, `/api/v1/asset/type`
+- 交互：支持全公司/单仓库创建盘点任务；盘库过程中支持页内直接新增设备/消耗品并填写数量与状态（正常/新增/破损/盘亏），录入后自动计算差异并完成盘点。
+- API 指向：`/api/v1/warehouse/stocktake`, `/api/v1/warehouse/stocktake/:id`, `/api/v1/warehouse/stocktake/:id/line`, `/api/v1/warehouse/stocktake/:id/line/:lineId`, `/api/v1/warehouse/stocktake/:id/complete`
 
 #### K-8. 设备总览 `views/asset/dashboard.vue`
 - 模块：按类型/状态/位置三维统计。
@@ -508,6 +508,7 @@
 ### 4.1 页面总索引
 - 工作台（Tab1）：`packages/miniapp/pages/index/index`
 - 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
+- 公司资产盘库：`packages/miniapp/pages/warehouse-stocktake/index`
 - 审批与申请（Tab3）：`packages/miniapp/pages/finance/index`
 - 我的（Tab4）：`packages/miniapp/pages/profile/index`
 - 登录恢复页：`packages/miniapp/pages/login/index`
@@ -525,7 +526,7 @@
 
 ### 4.2 页面要求
 - 工作台Tab：首页展示红黄绿 KPI、九宫格高频入口，并支持角色化“创建项目”入口。
-- 库房Tab：聚合库房与资产管理入口（出入库制单、调度看板、库存预警、资产查验），不承载项目/现场内容。
+- 库房Tab：聚合库房与资产管理入口（出入库制单、调度看板、库存预警、资产查验、公司资产盘库），不承载项目/现场内容。
 - 出入库制单（miniapp）对齐 Web：支持多条目购物车（设备+耗材同单提审），不再限制单据仅单一设备类型。
 - 出入库制单（miniapp）选型加速：支持“扫码匹配资产类型”与“关键字检索资产类型”双通道。
 - 出入库制单（miniapp）模板加速：支持预制模板一键套用并继续逐项修改数量/删除后提交。
