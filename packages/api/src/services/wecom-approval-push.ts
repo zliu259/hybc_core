@@ -20,6 +20,14 @@ type ApprovalPushPayload = {
   assigneeUserId: string;
 };
 
+type ApprovalPushMode = "todo" | "urge";
+
+type ApprovalPushOptions = {
+  mode?: ApprovalPushMode;
+  urgeReason?: string;
+  disableDuplicateCheck?: boolean;
+};
+
 type WeComPushRouteConfig = {
   webBaseUrl: string | null;
   miniAppId: string | null;
@@ -190,7 +198,12 @@ const resolveRouteConfig = async (env: Env): Promise<WeComPushRouteConfig> => {
   }
 };
 
-const buildTemplateCard = async (env: Env, payload: ApprovalPushPayload) => {
+const buildTemplateCard = async (
+  env: Env,
+  payload: ApprovalPushPayload,
+  options?: ApprovalPushOptions
+) => {
+  const mode = options?.mode || "todo";
   const routeConfig = await resolveRouteConfig(env);
   const webUrl = resolveWebDetailUrl(env, payload.instanceId, routeConfig);
   const miniAppId = routeConfig.miniAppId ?? "";
@@ -234,14 +247,19 @@ const buildTemplateCard = async (env: Env, payload: ApprovalPushPayload) => {
       desc_color: 0
     },
     main_title: {
-      title: "审批待办提醒",
+      title: mode === "urge" ? "审批催办提醒" : "审批待办提醒",
       desc: payload.bizSummary
     },
     emphasis_content: {
       title: payload.instanceNo,
       desc: "审批单号"
     },
-    sub_title_text: `${payload.bizType} / ${payload.currentNodeName}有新的待办，请及时处理。`,
+    sub_title_text:
+      mode === "urge"
+        ? `${payload.bizType} / ${payload.currentNodeName} 有催办提醒，请优先处理。${
+            options?.urgeReason ? ` 原因：${options.urgeReason}` : ""
+          }`
+        : `${payload.bizType} / ${payload.currentNodeName}有新的待办，请及时处理。`,
     jump_list: jumpList,
     card_action: cardAction
   };
@@ -249,7 +267,8 @@ const buildTemplateCard = async (env: Env, payload: ApprovalPushPayload) => {
 
 export const sendApprovalTodoTemplateCard = async (
   env: Env,
-  payload: ApprovalPushPayload
+  payload: ApprovalPushPayload,
+  options?: ApprovalPushOptions
 ): Promise<{
   msgid: string | null;
   invaliduser: string | null;
@@ -260,13 +279,14 @@ export const sendApprovalTodoTemplateCard = async (
   }
 
   const accessToken = await fetchWeComAccessToken(env);
-  const templateCard = await buildTemplateCard(env, payload);
+  const templateCard = await buildTemplateCard(env, payload, options);
+  const disableDuplicateCheck = Boolean(options?.disableDuplicateCheck);
   const requestBody = {
     touser: payload.assigneeUserId,
     msgtype: "template_card",
     agentid: Number(env.WECHAT_AGENT_ID),
     template_card: templateCard,
-    enable_duplicate_check: 1,
+    enable_duplicate_check: disableDuplicateCheck ? 0 : 1,
     duplicate_check_interval: 600
   };
 

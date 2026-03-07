@@ -224,6 +224,11 @@ export interface ForceTransferRequest {
   reason: string;
 }
 
+export interface UrgeRequest {
+  task_id: number;
+  reason?: string;
+}
+
 export interface CreateTemplateRequest {
   template_code: string;
   template_name: string;

@@ -23,6 +23,45 @@ const statusText = (status) => {
   return map[status] || status || "未知";
 };
 
+const verificationStatusText = (status) => {
+  const map = {
+    pending: "待核验",
+    verified: "已核验",
+    mismatch: "核验异常"
+  };
+  return map[status] || status || "未知";
+};
+
+const precheckStatusText = (status) => {
+  const map = {
+    none: "未预审",
+    pending: "待预审",
+    approved: "预审通过",
+    supplement: "待补充",
+    rejected: "预审驳回"
+  };
+  return map[status] || status || "未知";
+};
+
+const taskStatusText = (status) => {
+  const map = {
+    none: "未触发",
+    pending: "处理中",
+    completed: "已完成",
+    failed: "失败"
+  };
+  return map[status] || status || "未知";
+};
+
+const riskText = (risk) => {
+  const map = {
+    high: "高风险",
+    medium: "中风险",
+    low: "低风险"
+  };
+  return map[risk] || risk || "未知";
+};
+
 const toDateInputValue = (value) => {
   if (!value) return "";
   return String(value).slice(0, 10);
@@ -66,8 +105,13 @@ Page({
     latestEnvelopeUuid: "",
     latestEnvelopeStatus: "none",
     latestEnvelopeStatusText: "未创建",
+    verificationStatusText: "待核验",
+    precheckStatusText: "未预审",
+    pdfStatusText: "未触发",
+    batchInfoText: "未入批次",
     attachmentCount: 0,
     attachmentItems: [],
+    duplicateChecks: [],
     ocrStatus: "none",
     ocrStatusText: "未开始",
     busy: false
@@ -110,8 +154,13 @@ Page({
       latestEnvelopeUuid: "",
       latestEnvelopeStatus: "none",
       latestEnvelopeStatusText: "未创建",
+      verificationStatusText: "待核验",
+      precheckStatusText: "未预审",
+      pdfStatusText: "未触发",
+      batchInfoText: "未入批次",
       attachmentCount: 0,
       attachmentItems: [],
+      duplicateChecks: [],
       ocrStatus: "none",
       ocrStatusText: "未开始"
     });
@@ -387,6 +436,16 @@ Page({
       const channel = detail.channel === "electronic" ? "electronic" : "physical";
       const channelIndex = channel === "electronic" ? 1 : 0;
       const attachments = Array.isArray(detail.attachments) ? detail.attachments : [];
+      const duplicateChecks = Array.isArray(detail.duplicate_checks)
+        ? detail.duplicate_checks.map((item) => ({
+            id: item.id,
+            summary: item.summary || item.match_type || "查重结果",
+            risk: riskText(item.risk_level)
+          }))
+        : [];
+      const batchInfoText = detail.batch && detail.batch.batch_no
+        ? `${detail.batch.batch_no}（${detail.batch.status || "处理中"}）`
+        : "未入批次";
       const attachmentItems = attachments.map((item) => {
         const fileKey = item.file_key || "";
         const fileName = item.file_name || fileKey || "未命名附件";
@@ -419,10 +478,15 @@ Page({
         latestEnvelopeUuid: detail.envelope_uuid || "",
         latestEnvelopeStatus: detail.status || "none",
         latestEnvelopeStatusText: statusText(detail.status),
+        verificationStatusText: verificationStatusText(detail.verification_status),
+        precheckStatusText: precheckStatusText(detail.precheck_status),
+        pdfStatusText: taskStatusText(detail.pdf_status),
+        batchInfoText,
         attachmentCount: attachmentItems.length,
         attachmentItems,
+        duplicateChecks,
         ocrStatus: detail.ocr_status || "none",
-        ocrStatusText: statusText(detail.ocr_status || "none")
+        ocrStatusText: taskStatusText(detail.ocr_status || "none")
       });
     } catch (error) {
       sayToast({ title: error.message || "加载详情失败", icon: "none", danger: true });

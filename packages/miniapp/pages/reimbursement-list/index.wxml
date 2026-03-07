@@ -1,5 +1,20 @@
 <view class="page">
-  <hy-panel-card title="我的报销提交" subtitle="查看个人报销记录，继续编辑或直接提交草稿">
+  <hy-panel-card title="我的报销提交" subtitle="与 Web 个人报销对齐：列表筛选、继续编辑、草稿快捷提交">
+    <view class="summary-row">
+      <view class="summary-card">
+        <view class="summary-value">{{summary.draft}}</view>
+        <view class="summary-label">草稿</view>
+      </view>
+      <view class="summary-card">
+        <view class="summary-value">{{summary.processing}}</view>
+        <view class="summary-label">处理中</view>
+      </view>
+      <view class="summary-card">
+        <view class="summary-value">{{summary.done}}</view>
+        <view class="summary-label">已完结</view>
+      </view>
+    </view>
+
     <view class="toolbar">
       <input class="input" value="{{keyword}}" bindinput="onKeywordInput" placeholder="编号/UUID/发票号" />
       <picker mode="selector" range="{{statusOptions}}" range-key="label" value="{{statusIndex}}" bindchange="onStatusChange">
@@ -20,7 +35,8 @@
         <hy-status-chip text="{{item.statusLabel}}" theme="warning" variant="light" />
       </view>
       <view class="item-sub">UUID：{{item.envelope_uuid}}</view>
-      <view class="item-sub">通道：{{item.channelLabel}} · 金额：¥{{item.amountText}}</view>
+      <view class="item-sub">通道：{{item.channelLabel}}</view>
+      <view class="item-amount">¥{{item.amountText}}</view>
       <view class="item-sub">更新时间：{{item.updatedAtText}}</view>
       <view class="actions">
         <t-button class="btn" size="small" variant="outline" data-id="{{item.id}}" bindtap="goDetail">继续处理</t-button>

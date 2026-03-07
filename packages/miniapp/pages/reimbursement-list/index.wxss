@@ -1,3 +1,30 @@
+.summary-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12rpx;
+  margin-bottom: 16rpx;
+}
+
+.summary-card {
+  background: #f7fbff;
+  border: 1rpx solid #dbe8f7;
+  border-radius: 14rpx;
+  padding: 14rpx;
+  text-align: center;
+}
+
+.summary-value {
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #174ea6;
+}
+
+.summary-label {
+  font-size: 22rpx;
+  color: #5c667a;
+  margin-top: 6rpx;
+}
+
 .toolbar {
   display: flex;
   gap: 16rpx;
@@ -49,6 +76,13 @@
   color: #5c667a;
   font-size: 24rpx;
   margin-top: 4rpx;
+}
+
+.item-amount {
+  margin-top: 6rpx;
+  color: #174ea6;
+  font-size: 30rpx;
+  font-weight: 700;
 }
 
 .actions {

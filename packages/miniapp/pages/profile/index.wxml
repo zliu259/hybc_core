@@ -1,6 +1,7 @@
 <view class="page">
   <hy-panel-card title="👤 我的中心" icon="user-circle" subtitle="个人申请追踪、报销与证书预警">
     <view class="section-title">📌 我的申请时间线</view>
+    <view wx:if="{{!timeline.length}}" class="sub">暂无申请动态</view>
     <view wx:for="{{timeline}}" wx:key="text" class="timeline-item">
       <view class="timeline-left">{{item.icon}}</view>
       <view class="timeline-main">
@@ -10,11 +11,12 @@
     </view>
 
     <view class="row">
-      <t-button class="btn" variant="outline">🔔 一键催办</t-button>
+      <t-button class="btn" variant="outline" bindtap="urgeApprovalFlow" loading="{{busy}}" disabled="{{busy}}">🔔 一键催办</t-button>
       <t-button class="btn btn-primary" theme="primary" data-path="/pages/reimbursement-list/index" bindtap="goToReimbursement">🧾 我的报销提交</t-button>
     </view>
 
     <view class="section-title">📚 我的证书</view>
+    <view wx:if="{{!certificates.length}}" class="sub">暂无证书数据</view>
     <view class="cert-grid">
       <view wx:for="{{certificates}}" wx:key="id" class="cert-card {{item.level}}">
         <view class="cert-name">{{item.level === 'warn' ? '⚠️' : '✅'}} {{item.name}}</view>

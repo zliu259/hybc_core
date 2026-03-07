@@ -7,7 +7,7 @@
   </picker>
   <view class="row">
     <t-button class="btn" variant="outline" bindtap="loadProjects" loading="{{loading}}" disabled="{{loading}}">刷新项目</t-button>
-    <t-button class="btn" variant="outline" bindtap="autoSelectByGps" loading="{{loading}}" disabled="{{loading}}">定位匹配</t-button>
+    <t-button wx:if="{{enableGps}}" class="btn" variant="outline" bindtap="autoSelectByGps" loading="{{loading}}" disabled="{{loading}}">定位匹配</t-button>
   </view>
   <view class="sub" wx:if="{{autoHint}}">{{autoHint}}</view>
 </view>

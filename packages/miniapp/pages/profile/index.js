@@ -6,36 +6,25 @@ Page({
   data: {
     profile: {},
     busy: false,
-    timeline: [
-      { icon: "💸", text: "付款申请 #P20260224-01", status: "👨‍💼 王总审批中" },
-      { icon: "🧾", text: "报销信封 #R20260223-03", status: "⏳ 排队中" },
-      { icon: "📝", text: "合同申请 #C20260222-02", status: "🟢 已通过" }
-    ],
-    certificates: [
-      {
-        id: "cert-1",
-        name: "特种作业证",
-        statusText: "7天后到期",
-        level: "warn",
-        fileName: "未上传附件",
-        fileUrl: ""
-      },
-      {
-        id: "cert-2",
-        name: "安全员证",
-        statusText: "正常",
-        level: "ok",
-        fileName: "未上传附件",
-        fileUrl: ""
-      }
-    ]
+    timeline: [],
+    certificates: []
+  },
+
+  normalizeTimeline(profile) {
+    const list = Array.isArray(profile && profile.timeline) ? profile.timeline : [];
+    if (!list.length) return [];
+    return list.map((item, index) => ({
+      icon: item.icon || "📝",
+      text: item.text || item.title || `动态${index + 1}`,
+      status: item.status || item.status_text || "-"
+    }));
   },
 
   normalizeCertificates(profile) {
     const list = Array.isArray(profile && profile.certificates)
       ? profile.certificates
       : [];
-    if (!list.length) return null;
+    if (!list.length) return [];
     return list.map((item, index) => {
       const certName = item.name || item.certificate_name || `证书${index + 1}`;
       const rawUrl = item.file_url || item.fileUrl || "";
@@ -61,14 +50,21 @@ Page({
     try {
       const res = await request({ method: "GET", path: "/api/v1/user/me" });
       const profile = res.data || getUserProfile() || {};
+      const timeline = this.normalizeTimeline(profile);
       const certificates = this.normalizeCertificates(profile);
       setUserProfile(profile);
       this.setData({
         profile,
-        certificates: certificates || this.data.certificates
+        timeline,
+        certificates
       });
     } catch {
-      this.setData({ profile: getUserProfile() || {} });
+      const profile = getUserProfile() || {};
+      this.setData({
+        profile,
+        timeline: this.normalizeTimeline(profile),
+        certificates: this.normalizeCertificates(profile)
+      });
     } finally {
       this.setData({ busy: false });
     }
@@ -145,6 +141,91 @@ Page({
     wx.navigateTo({ url: "/pages/reimbursement-list/index" });
   },
 
+  bizTypeLabel(value) {
+    const map = {
+      outbound_contract: "对外合同审批",
+      inbound_contract: "收款合同审批",
+      payment_request: "付款审批",
+      reimbursement_batch: "报销审批",
+      stock_order: "出库审批",
+      invoice_request: "发票审批"
+    };
+    return map[value] || value || "审批";
+  },
+
+  async urgeApprovalFlow() {
+    if (this.data.busy) return;
+    this.setData({ busy: true });
+    try {
+      const listRes = await request({
+        method: "GET",
+        path: "/api/v1/approval/remindable?page=1&pageSize=100"
+      });
+      const instances = Array.isArray(listRes.data) ? listRes.data : [];
+      if (!instances.length) {
+        wx.showToast({ title: "暂无可催办审批", icon: "none" });
+        return;
+      }
+
+      const instanceLabels = instances.map((item) => {
+        const typeLabel = this.bizTypeLabel(item.biz_type);
+        const count = Array.isArray(item.pending_tasks) ? item.pending_tasks.length : 0;
+        return `${item.instance_no}｜${typeLabel}｜待处理${count}人`;
+      });
+
+      const instancePick = await new Promise((resolve, reject) => {
+        wx.showActionSheet({
+          itemList: instanceLabels,
+          success: resolve,
+          fail: reject
+        });
+      }).catch(() => null);
+      if (!instancePick || typeof instancePick.tapIndex !== "number") return;
+
+      const selectedInstance = instances[instancePick.tapIndex];
+      const tasks = Array.isArray(selectedInstance.pending_tasks) ? selectedInstance.pending_tasks : [];
+      if (!tasks.length) {
+        wx.showToast({ title: "该审批暂无待催办人", icon: "none" });
+        return;
+      }
+
+      const assigneeLabels = tasks.map((task) => `${task.assignee_userid}（待审批）`);
+      const taskPick = await new Promise((resolve, reject) => {
+        wx.showActionSheet({
+          itemList: assigneeLabels,
+          success: resolve,
+          fail: reject
+        });
+      }).catch(() => null);
+      if (!taskPick || typeof taskPick.tapIndex !== "number") return;
+
+      const targetTask = tasks[taskPick.tapIndex];
+      const confirmed = await new Promise((resolve) => {
+        wx.showModal({
+          title: "确认催办",
+          content: `将向 ${targetTask.assignee_userid} 发送二次企业微信催办消息，是否继续？`,
+          success: (res) => resolve(Boolean(res.confirm)),
+          fail: () => resolve(false)
+        });
+      });
+      if (!confirmed) return;
+
+      await request({
+        method: "POST",
+        path: `/api/v1/approval/${Number(selectedInstance.id)}/urge`,
+        data: {
+          task_id: Number(targetTask.task_id),
+          reason: "申请人发起催办"
+        }
+      });
+      wx.showToast({ title: "催办已发送", icon: "success" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "催办失败", icon: "none" });
+    } finally {
+      this.setData({ busy: false });
+    }
+  },
+
   openGlobalHelper() {
     wx.showActionSheet({
       itemList: ["🎙️ 录音识别指令", "🎤 催办我的申请", "🎤 打开我的报销提交", "🎤 打开审批待办"],
@@ -154,7 +235,7 @@ Page({
           return;
         }
         if (res.tapIndex === 1) {
-          wx.showToast({ title: "已推送催办卡片", icon: "success" });
+          await this.urgeApprovalFlow();
           return;
         }
         if (res.tapIndex === 2) {

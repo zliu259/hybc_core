@@ -41,6 +41,10 @@ Component({
     label: {
       type: String,
       value: "所属项目"
+    },
+    enableGps: {
+      type: Boolean,
+      value: true
     }
   },
 

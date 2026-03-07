@@ -1,37 +1,183 @@
 <view class="page">
-  <hy-panel-card title="💸 发起对外付款" subtitle="创建付款单并提交审批">
-    <view class="label required">关联合同ID</view>
-    <input class="input" type="number" value="{{form.contract_id}}" data-key="contract_id" bindinput="onInput" disabled="{{busy}}" />
+  <hy-panel-card title="💸 资金流出智能发单台" subtitle="与 Web 智能发单台对齐：阈值识别、直付或合同流程、附件与审批联动">
+    <view class="amount-wrap">
+      <view class="label required">预计付款总额</view>
+      <input
+        class="input amount-input"
+        type="digit"
+        value="{{amountInput}}"
+        bindinput="onAmountInput"
+        placeholder="请输入金额"
+        disabled="{{busy || submitting}}"
+      />
+      <view class="amount-display">{{amountDisplay}}</view>
+      <view class="threshold-hint {{exceedsThreshold ? 'warn' : 'ok'}}">
+        {{checking ? '阈值校验中...' : (exceedsThreshold ? ('金额超过阈值 ' + thresholdLimit + '，请走合同流程') : ('金额未超过阈值 ' + thresholdLimit + '，可直接走付款申请'))}}
+      </view>
+    </view>
 
-    <view class="label required">项目ID</view>
-    <input class="input" type="number" value="{{form.project_id}}" data-key="project_id" bindinput="onInput" disabled="{{busy}}" />
+    <view wx:if="{{!exceedsThreshold}}" class="section-block">
+      <view class="section-title">直付流程（阈值内）</view>
 
-    <view class="label required">收款方ID（payee）</view>
-    <input class="input" type="number" value="{{form.payee_id}}" data-key="payee_id" bindinput="onInput" disabled="{{busy}}" />
+      <view class="label">合同（可选）</view>
+      <picker
+        mode="selector"
+        range="{{contractLabels}}"
+        value="{{directContractIndex}}"
+        bindchange="onDirectContractChange"
+      >
+        <view class="picker-value">{{contractLabels[directContractIndex]}}</view>
+      </picker>
 
-    <view class="label required">预计付款日期</view>
-    <picker mode="date" value="{{form.expected_payment_date}}" bindchange="onDateChange" disabled="{{busy}}">
-      <view class="input">{{form.expected_payment_date}}</view>
-    </picker>
+      <hy-project-picker
+        value="{{directProjectValue}}"
+        label="所属项目"
+        enableGps="{{false}}"
+        bind:change="onDirectProjectChange"
+      />
 
-    <view class="label required">付款类别</view>
-    <input class="input" value="{{form.category}}" data-key="category" bindinput="onInput" disabled="{{busy}}" />
+      <view class="label required">收款方</view>
+      <picker mode="selector" range="{{payeeLabels}}" value="{{directPayeeIndex}}" bindchange="onDirectPayeeChange">
+        <view class="picker-value">{{payeeLabels[directPayeeIndex]}}</view>
+      </picker>
 
-    <view class="label required">付款方式</view>
-    <input class="input" value="{{form.payment_method}}" data-key="payment_method" bindinput="onInput" disabled="{{busy}}" />
+      <view class="label required">付款日期</view>
+      <picker mode="date" value="{{directForm.expected_payment_date}}" bindchange="onDirectDateChange">
+        <view class="picker-value">{{directForm.expected_payment_date || '请选择日期'}}</view>
+      </picker>
 
-    <view class="label required">付款金额</view>
-    <input class="input" type="digit" value="{{form.amount}}" data-key="amount" bindinput="onInput" disabled="{{busy}}" />
+      <view class="label required">付款类别</view>
+      <picker mode="selector" range="{{directCategoryOptions}}" value="{{directCategoryIndex}}" bindchange="onDirectCategoryChange">
+        <view class="picker-value">{{directCategoryOptions[directCategoryIndex]}}</view>
+      </picker>
 
-    <view class="label required">付款内容</view>
-    <textarea class="input" value="{{form.content}}" data-key="content" bindinput="onInput" disabled="{{busy}}" />
+      <view class="label required">付款方式</view>
+      <picker mode="selector" range="{{paymentMethodOptions}}" value="{{directPaymentMethodIndex}}" bindchange="onDirectPaymentMethodChange">
+        <view class="picker-value">{{paymentMethodOptions[directPaymentMethodIndex]}}</view>
+      </picker>
 
-    <view class="label">备注</view>
-    <textarea class="input" value="{{form.remark}}" data-key="remark" bindinput="onInput" disabled="{{busy}}" />
+      <view class="label required">付款事由</view>
+      <textarea class="textarea" value="{{directForm.content}}" data-key="content" bindinput="onDirectInput" maxlength="200" disabled="{{busy || submitting}}" />
 
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="submitDraft" loading="{{busy}}" disabled="{{busy}}">仅保存草稿</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitAndApproval" loading="{{busy}}" disabled="{{busy}}">提交审批</t-button>
+      <view class="label">备注</view>
+      <textarea class="textarea" value="{{directForm.remark}}" data-key="remark" bindinput="onDirectInput" maxlength="200" disabled="{{busy || submitting}}" />
+
+      <view class="label required">付款附件</view>
+      <view class="row">
+        <t-button class="btn" variant="outline" data-group="direct" bindtap="chooseImageAttachment" disabled="{{busy || submitting}}">上传图片</t-button>
+        <t-button class="btn" variant="outline" data-group="direct" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传文件</t-button>
+      </view>
+
+      <view wx:if="{{directPaymentAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
+      <view wx:for="{{directPaymentAttachments}}" wx:key="file_key" class="attachment-item">
+        <view class="attachment-name">{{item.file_name}}</view>
+        <view class="attachment-meta">{{item.file_size || '-'}} bytes</view>
+        <t-button class="mini-btn" size="small" variant="outline" data-group="direct" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
+      </view>
+
+      <view class="row">
+        <t-button class="btn btn-primary" theme="primary" loading="{{submitting}}" disabled="{{busy || submitting}}" bindtap="submitDirect">创建付款并提审</t-button>
+      </view>
+    </view>
+
+    <view wx:else class="section-block">
+      <view class="section-title">合同流程（超阈值）</view>
+
+      <hy-project-picker
+        value="{{contractProjectValue}}"
+        label="所属项目"
+        enableGps="{{false}}"
+        bind:change="onContractProjectChange"
+      />
+
+      <view class="label required">我方主体</view>
+      <picker mode="selector" range="{{entityLabels}}" value="{{contractEntityIndex}}" bindchange="onContractEntityChange">
+        <view class="picker-value">{{entityLabels[contractEntityIndex]}}</view>
+      </picker>
+
+      <view class="label required">对方单位</view>
+      <picker mode="selector" range="{{payeeLabels}}" value="{{contractPayeeIndex}}" bindchange="onContractPayeeChange">
+        <view class="picker-value">{{payeeLabels[contractPayeeIndex]}}</view>
+      </picker>
+
+      <view class="label required">经办人</view>
+      <picker mode="selector" range="{{wecomUserLabels}}" value="{{contractHandlerIndex}}" bindchange="onContractHandlerChange">
+        <view class="picker-value">{{wecomUserLabels[contractHandlerIndex]}}</view>
+      </picker>
+
+      <view class="label required">合同日期</view>
+      <picker mode="date" value="{{contractForm.contract_date}}" bindchange="onContractDateChange">
+        <view class="picker-value">{{contractForm.contract_date || '请选择日期'}}</view>
+      </picker>
+
+      <view class="label required">合同类型</view>
+      <picker mode="selector" range="{{contractTypeOptions}}" value="{{contractTypeIndex}}" bindchange="onContractTypeChange">
+        <view class="picker-value">{{contractTypeOptions[contractTypeIndex]}}</view>
+      </picker>
+
+      <view class="label">备注</view>
+      <textarea class="textarea" value="{{contractForm.remark}}" data-key="remark" bindinput="onContractInput" maxlength="200" disabled="{{busy || submitting}}" />
+
+      <view class="label required">合同附件</view>
+      <view class="row">
+        <t-button class="btn" variant="outline" data-group="contract" bindtap="chooseImageAttachment" disabled="{{busy || submitting}}">上传图片</t-button>
+        <t-button class="btn" variant="outline" data-group="contract" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传文件</t-button>
+      </view>
+
+      <view wx:if="{{contractAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
+      <view wx:for="{{contractAttachments}}" wx:key="file_key" class="attachment-item">
+        <view class="attachment-name">{{item.file_name}}</view>
+        <view class="attachment-meta">{{item.file_size || '-'}} bytes</view>
+        <t-button class="mini-btn" size="small" variant="outline" data-group="contract" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
+      </view>
+
+      <view class="switch-row">
+        <view>同时发起首笔预付款</view>
+        <switch checked="{{withFirstPayment}}" bindchange="onFirstPaymentToggle" color="#1677ff" />
+      </view>
+
+      <view wx:if="{{withFirstPayment}}" class="first-payment-box">
+        <view class="label required">首笔金额</view>
+        <input class="input" type="digit" value="{{firstPaymentForm.amount}}" data-key="amount" bindinput="onFirstPaymentInput" disabled="{{busy || submitting}}" />
+
+        <view class="label required">首笔付款类别</view>
+        <picker mode="selector" range="{{firstPaymentCategoryOptions}}" value="{{firstPaymentCategoryIndex}}" bindchange="onFirstPaymentCategoryChange">
+          <view class="picker-value">{{firstPaymentCategoryOptions[firstPaymentCategoryIndex]}}</view>
+        </picker>
+
+        <view class="label required">首笔付款日期</view>
+        <picker mode="date" value="{{firstPaymentForm.expected_payment_date}}" bindchange="onFirstPaymentDateChange">
+          <view class="picker-value">{{firstPaymentForm.expected_payment_date || '请选择日期'}}</view>
+        </picker>
+
+        <view class="label required">首笔付款方式</view>
+        <picker mode="selector" range="{{paymentMethodOptions}}" value="{{firstPaymentMethodIndex}}" bindchange="onFirstPaymentMethodChange">
+          <view class="picker-value">{{paymentMethodOptions[firstPaymentMethodIndex]}}</view>
+        </picker>
+
+        <view class="label required">首笔付款事由</view>
+        <textarea class="textarea" value="{{firstPaymentForm.content}}" data-key="content" bindinput="onFirstPaymentInput" maxlength="200" disabled="{{busy || submitting}}" />
+
+        <view class="label">首笔备注</view>
+        <textarea class="textarea" value="{{firstPaymentForm.remark}}" data-key="remark" bindinput="onFirstPaymentInput" maxlength="200" disabled="{{busy || submitting}}" />
+
+        <view class="label required">首笔付款附件</view>
+        <view class="row">
+          <t-button class="btn" variant="outline" data-group="first" bindtap="chooseImageAttachment" disabled="{{busy || submitting}}">上传图片</t-button>
+          <t-button class="btn" variant="outline" data-group="first" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传文件</t-button>
+        </view>
+
+        <view wx:if="{{firstPaymentAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
+        <view wx:for="{{firstPaymentAttachments}}" wx:key="file_key" class="attachment-item">
+          <view class="attachment-name">{{item.file_name}}</view>
+          <view class="attachment-meta">{{item.file_size || '-'}} bytes</view>
+          <t-button class="mini-btn" size="small" variant="outline" data-group="first" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
+        </view>
+      </view>
+
+      <view class="row">
+        <t-button class="btn btn-primary" theme="primary" loading="{{submitting}}" disabled="{{busy || submitting}}" bindtap="submitContractFlow">创建合同并提审</t-button>
+      </view>
     </view>
   </hy-panel-card>
 </view>

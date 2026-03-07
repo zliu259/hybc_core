@@ -52,6 +52,11 @@ Page({
       { label: "已拒绝", value: "rejected" }
     ],
     statusIndex: 0,
+    summary: {
+      draft: 0,
+      processing: 0,
+      done: 0
+    },
     list: []
   },
 
@@ -106,8 +111,19 @@ Page({
         canSubmit: item.status === "draft"
       }));
 
+      const summary = mapped.reduce(
+        (acc, item) => {
+          if (item.status === "draft") acc.draft += 1;
+          else if (["paid", "approved", "rejected"].includes(item.status)) acc.done += 1;
+          else acc.processing += 1;
+          return acc;
+        },
+        { draft: 0, processing: 0, done: 0 }
+      );
+
       this.setData({
         list: mapped,
+        summary,
         total: (res.pagination && res.pagination.total) || mapped.length
       });
     } catch (error) {

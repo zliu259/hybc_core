@@ -503,6 +503,7 @@
 - 操作员日志：`packages/miniapp/pages/operator-log/index`
 - 管理员日志：`packages/miniapp/pages/manager-log/index`
 - 审批待办：`packages/miniapp/pages/approval/index`
+- 发起对外付款（智能发单台）：`packages/miniapp/pages/payment-apply/index`
 - 我的报销提交（列表）：`packages/miniapp/pages/reimbursement-list/index`
 - 报销提交详情/新建：`packages/miniapp/pages/reimbursement/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
@@ -536,6 +537,7 @@
 - 低操作成本原则：
   - 项目选择统一使用下拉选择组件（`hy-project-picker`），避免手输项目ID。
   - 支持“定位匹配项目”快捷动作；若项目未配置坐标，则保留手动选择。
+  - 业务例外：`智能发单台` 与 `我的报销提交` 流程禁用 GPS 自动匹配，项目仅允许人工显式选择，避免地理偏差导致错绑。
   - 日期统一使用 `picker mode=date`，避免手输日期格式。
   - 班次统一使用中文选项（白班/夜班），内部存储使用英文值（day/night）。
 
@@ -850,6 +852,24 @@
 - 员工报销入口迁移至个人工作台，新增“我的报销”路由与详情路由：`packages/web/src/router/modules/workspace.ts`、`packages/web/src/views/welcome/index.vue`
 - 对内付款主路由限定为办公室/领导/财务页面，移除 operator 在该主路由下的入口角色：`packages/web/src/router/modules/finance.ts`
 - 对内付款路由下移除“预审工作台”“查重中心”独立页面入口，改为业务页内联处理：`packages/web/src/router/modules/finance.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
+
+### 4.17 Miniapp 智能发单台全面对齐（2026-03）
+- miniapp 对外付款页重构为“阈值识别 + 双流程（直付/合同）”的一体化页面，阈值内直接创建付款并提审，超阈值自动转合同流程：`packages/miniapp/pages/payment-apply/index.{js,wxml,wxss,json}`
+- 直付流程字段与 Web 对齐：合同（可选）、项目、收款方、付款日期、付款类别、付款方式、付款事由、备注、附件（图片/文件）与提交审批动作：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
+- 合同流程字段与 Web 对齐：项目、我方主体、对方单位、经办人、合同日期、合同类型、合同附件，并支持“同时发起首笔预付款”子流程（金额/类别/日期/方式/事由/附件）：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
+- 项目选择组件绑定改为纯 data 数值字段（`directProjectValue/contractProjectValue`），避免模板表达式计算导致的绑定不稳定：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
+- 首笔预付款类别在 UI 使用中文标签（预付款/进度款/结算款），提交值保留后端枚举（`prepayment/progress/settlement`），兼顾可读性与接口契约：`packages/miniapp/pages/payment-apply/index.js`
+
+### 4.18 Miniapp 项目选择去 GPS 化（指定流程）（2026-03）
+- `智能发单台` 与 `我的报销提交` 两个流程中的项目选择禁用 GPS 定位匹配按钮，仅保留人工选择与刷新：`packages/miniapp/pages/payment-apply/index.wxml`、`packages/miniapp/pages/reimbursement/index.wxml`
+- `hy-project-picker` 新增 `enableGps` 配置项（默认开启）；业务页可按流程关闭 GPS 匹配而不影响其他页面：`packages/miniapp/components/business/project-picker/index.{js,wxml}`
+
+### 4.19 Miniapp 一键催办（审批人可选 + 二次企微推送）（2026-03）
+- 个人中心“一键催办”由静态按钮改为真实催办流程：先选择审批单，再选择待审批人，最后确认发送催办：`packages/miniapp/pages/profile/index.{js,wxml}`
+- 新增审批可催办列表接口 `GET /api/v1/approval/remindable`（发起人视角，仅返回仍在处理中的审批及其待审批任务）：`packages/api/src/routes/approval.ts`
+- 新增催办动作接口 `POST /api/v1/approval/:id/urge`，允许发起人（及管理角色）对指定 pending task 发起二次提醒：`packages/api/src/routes/approval.ts`、`packages/api/src/types/approval.ts`
+- 企微模板卡推送服务新增催办模式（标题/文案区分）与去重可控参数；催办场景关闭重复检查以确保二次消息可达：`packages/api/src/services/wecom-approval-push.ts`
+- 催办推送结果写入事件日志（`wecom_template_card_urge_sent` / `wecom_template_card_urge_failed`），便于后续运营与审计追踪：`packages/api/src/routes/approval.ts`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

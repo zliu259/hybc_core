@@ -22,11 +22,11 @@
 
     <view wx:if="{{segment === 'apply'}}" class="entry-grid">
       <view wx:if="{{canPaymentApply}}" class="entry-card" data-path="/pages/payment-apply/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">💸 发起对外付款</view></view>
-        <view class="entry-desc">金额阈值校验 + 合同联动</view>
+        <view class="entry-top"><view class="entry-title">💸 智能发单台</view></view>
+        <view class="entry-desc">金额阈值识别 + 直付/合同双流程</view>
       </view>
       <view wx:else class="entry-card">
-        <view class="entry-top"><view class="entry-title">💸 发起对外付款</view></view>
+        <view class="entry-top"><view class="entry-title">💸 智能发单台</view></view>
         <view class="entry-desc">当前角色无权限</view>
       </view>
       <view class="entry-card" data-path="/pages/reimbursement-list/index" bindtap="goTo">

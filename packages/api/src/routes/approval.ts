@@ -7,6 +7,7 @@ import type {
   ReturnRequest,
   TransferRequest,
   ForceTransferRequest,
+  UrgeRequest,
   ApprovalInstance,
   ApprovalTask
 } from "../types/approval";
@@ -27,6 +28,7 @@ import {
   cancel as cancelOp,
   resubmit as resubmitOp
 } from "../services/approval/operations";
+import { sendApprovalTodoTemplateCard } from "../services/wecom-approval-push";
 
 export const approvalRoutes = new Hono<{
   Bindings: Env;
@@ -248,6 +250,101 @@ approvalRoutes.get("/cc", async (c) => {
   });
 });
 
+approvalRoutes.get("/remindable", async (c) => {
+  const auth = c.get("auth");
+  const page = Number(c.req.query("page") ?? "1");
+  const pageSize = Number(c.req.query("pageSize") ?? "20");
+  const offset = (page - 1) * pageSize;
+
+  const countResult = await c.env.DB.prepare(
+    `SELECT COUNT(DISTINCT ai.id) as total
+     FROM approval_instance ai
+     JOIN approval_task at2 ON at2.instance_id = ai.id
+     WHERE ai.initiator_userid = ?
+       AND ai.status IN ('pending', 'in_progress')
+       AND at2.status = 'pending'
+       AND at2.assignee_userid IS NOT NULL
+       AND at2.assignee_userid != ''`
+  )
+    .bind(auth.sub)
+    .first<{ total: number }>();
+
+  const rows = await c.env.DB.prepare(
+    `SELECT ai.id as instance_id,
+            ai.instance_no,
+            ai.biz_type,
+            ai.biz_summary,
+            ai.submitted_at,
+            COALESCE(ani.node_name, ai.current_node_key, '当前节点') as current_node_name,
+            at2.id as task_id,
+            at2.assignee_userid,
+            at2.created_at as task_created_at
+     FROM approval_instance ai
+     JOIN approval_task at2 ON at2.instance_id = ai.id
+     LEFT JOIN approval_node_instance ani
+       ON ani.instance_id = ai.id
+      AND ani.node_key = ai.current_node_key
+      AND ani.round = ai.current_round
+     WHERE ai.initiator_userid = ?
+       AND ai.status IN ('pending', 'in_progress')
+       AND at2.status = 'pending'
+       AND at2.assignee_userid IS NOT NULL
+       AND at2.assignee_userid != ''
+     ORDER BY ai.submitted_at DESC, at2.created_at ASC
+     LIMIT ? OFFSET ?`
+  )
+    .bind(auth.sub, pageSize, offset)
+    .all<{
+      instance_id: number;
+      instance_no: string;
+      biz_type: string;
+      biz_summary: string;
+      submitted_at: string;
+      current_node_name: string;
+      task_id: number;
+      assignee_userid: string;
+      task_created_at: string;
+    }>();
+
+  const grouped = new Map<
+    number,
+    {
+      id: number;
+      instance_no: string;
+      biz_type: string;
+      biz_summary: string;
+      submitted_at: string;
+      current_node_name: string;
+      pending_tasks: Array<{ task_id: number; assignee_userid: string; task_created_at: string }>;
+    }
+  >();
+
+  for (const row of rows.results ?? []) {
+    if (!grouped.has(row.instance_id)) {
+      grouped.set(row.instance_id, {
+        id: row.instance_id,
+        instance_no: row.instance_no,
+        biz_type: row.biz_type,
+        biz_summary: row.biz_summary,
+        submitted_at: row.submitted_at,
+        current_node_name: row.current_node_name,
+        pending_tasks: []
+      });
+    }
+    grouped.get(row.instance_id)?.pending_tasks.push({
+      task_id: row.task_id,
+      assignee_userid: row.assignee_userid,
+      task_created_at: row.task_created_at
+    });
+  }
+
+  return c.json({
+    success: true,
+    data: Array.from(grouped.values()),
+    pagination: { page, pageSize, total: countResult?.total ?? 0 }
+  });
+});
+
 // ─── GET /:id — Full instance detail ──────────
 
 approvalRoutes.get("/:id", async (c) => {
@@ -450,6 +547,124 @@ approvalRoutes.post("/:id/resubmit", async (c) => {
     return c.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Resubmit failed";
+    return c.json({ success: false, error: { message } }, 400);
+  }
+});
+
+approvalRoutes.post("/:id/urge", async (c) => {
+  const instanceId = Number(c.req.param("id"));
+  const auth = c.get("auth");
+  const body = (await c.req.json().catch(() => ({}))) as UrgeRequest;
+  if (!Number.isFinite(body.task_id) || body.task_id <= 0) {
+    return c.json({ success: false, error: { message: "task_id is required" } }, 400);
+  }
+
+  const instance = await c.env.DB.prepare(
+    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary, ai.initiator_userid,
+            COALESCE(ani.node_name, ai.current_node_key, '当前节点') as current_node_name
+     FROM approval_instance ai
+     LEFT JOIN approval_node_instance ani
+       ON ani.instance_id = ai.id
+      AND ani.node_key = ai.current_node_key
+      AND ani.round = ai.current_round
+     WHERE ai.id = ?
+     LIMIT 1`
+  )
+    .bind(instanceId)
+    .first<{
+      id: number;
+      instance_no: string;
+      biz_type: string;
+      biz_summary: string;
+      initiator_userid: string;
+      current_node_name: string;
+    }>();
+  if (!instance) {
+    return c.json({ success: false, error: { message: "Approval instance not found" } }, 404);
+  }
+
+  const canUrge =
+    auth.sub === instance.initiator_userid ||
+    auth.roles.includes("super_admin") ||
+    auth.roles.includes("manager") ||
+    auth.roles.includes("site_manager") ||
+    auth.roles.includes("finance");
+  if (!canUrge) {
+    return c.json({ success: false, error: { message: "No permission to urge this approval" } }, 403);
+  }
+
+  const task = await c.env.DB.prepare(
+    `SELECT id, assignee_userid, status
+     FROM approval_task
+     WHERE id = ?
+       AND instance_id = ?
+     LIMIT 1`
+  )
+    .bind(Number(body.task_id), instanceId)
+    .first<{ id: number; assignee_userid: string; status: string }>();
+  if (!task || task.status !== "pending" || !task.assignee_userid) {
+    return c.json({ success: false, error: { message: "Pending assignee task not found" } }, 400);
+  }
+
+  const reason = body.reason?.trim() || "";
+  try {
+    const pushResult = await sendApprovalTodoTemplateCard(
+      c.env,
+      {
+        instanceId,
+        instanceNo: instance.instance_no,
+        bizType: instance.biz_type,
+        bizSummary: instance.biz_summary,
+        currentNodeName: instance.current_node_name,
+        assigneeUserId: task.assignee_userid
+      },
+      {
+        mode: "urge",
+        urgeReason: reason || undefined,
+        disableDuplicateCheck: true
+      }
+    );
+
+    await c.env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "wecom_template_card_urge_sent",
+        "approval-route",
+        JSON.stringify({
+          instance_id: instanceId,
+          task_id: task.id,
+          assignee_userid: task.assignee_userid,
+          urged_by: auth.sub,
+          reason: reason || null,
+          msgid: pushResult.msgid,
+          invaliduser: pushResult.invaliduser,
+          unlicenseduser: pushResult.unlicenseduser
+        }),
+        new Date().toISOString()
+      )
+      .run();
+
+    return c.json({ success: true, data: { assignee_userid: task.assignee_userid } });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Urge push failed";
+    await c.env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "wecom_template_card_urge_failed",
+        "approval-route",
+        JSON.stringify({
+          instance_id: instanceId,
+          task_id: Number(body.task_id),
+          assignee_userid: task.assignee_userid,
+          urged_by: auth.sub,
+          reason: reason || null,
+          error: message
+        }),
+        new Date().toISOString()
+      )
+      .run();
     return c.json({ success: false, error: { message } }, 400);
   }
 });

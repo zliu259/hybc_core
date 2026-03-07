@@ -82,3 +82,22 @@
   display: flex;
   gap: 12rpx;
 }
+
+.duplicate-item {
+  margin-top: 10rpx;
+  padding: 12rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #f0d9ad;
+  background: #fff9f1;
+}
+
+.duplicate-summary {
+  font-size: 25rpx;
+  color: #6c4c1f;
+}
+
+.duplicate-risk {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #ad6500;
+}

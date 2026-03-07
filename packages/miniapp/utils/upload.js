@@ -44,10 +44,12 @@ const signUpload = (fileName, contentType = "image/jpeg", category = "miniapp") 
   }).then((res) => res.data || res);
 };
 
-const uploadFileToR2 = async (filePath) => {
+const uploadFileToR2 = async (filePath, options = {}) => {
   const ext = (filePath.split(".").pop() || "bin").toLowerCase();
-  const contentType = detectContentType(filePath);
-  const sign = await signUpload(`miniapp-${Date.now()}.${ext}`, contentType);
+  const contentType = options.contentType || detectContentType(options.fileName || filePath);
+  const category = options.category || "miniapp";
+  const uploadName = options.fileName || `miniapp-${Date.now()}.${ext}`;
+  const sign = await signUpload(uploadName, contentType, category);
   const buffer = await readFileAsArrayBuffer(filePath);
 
   await uploadBinary({
