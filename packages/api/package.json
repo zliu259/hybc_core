@@ -13,6 +13,7 @@
     "legacy:fin:apply:local:base": "python3 scripts/legacy_fin_import.py --mode apply --tables payee,entity",
     "legacy:fin:apply:local": "python3 scripts/legacy_fin_import.py --mode apply",
     "phase3:e2e": "node scripts/phase3-e2e.mjs",
+    "test": "vitest run",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --ext .ts",
     "format": "prettier --check \"src/**/*.ts\" --ignore-unknown"
@@ -28,6 +29,7 @@
     "eslint": "^9.39.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",
+    "vitest": "^3.2.4",
     "typescript": "^5.7.3",
     "wrangler": "^4.0.0"
   }

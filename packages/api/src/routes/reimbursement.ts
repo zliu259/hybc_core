@@ -6,6 +6,7 @@ import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { publishEvent } from "../services/event-bus";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
+import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import type { Env } from "../types/env";
 import type {
   BatchGenerateEnvelopeRequest,
@@ -1268,105 +1269,96 @@ reimbursementRoutes.post(
     const requestedApplicant = body.applicant_userid ?? auth.sub;
     const requestedChannel = body.channel ?? "physical";
     const preferredEnvelopeUuid = body.preferred_envelope_uuid?.trim();
+    const generatedEnvelopeUuid = crypto.randomUUID();
     const isPrivileged = auth.roles.some((role) =>
       ["super_admin", "manager", "site_manager", "finance"].includes(role)
     );
 
-    if (!isPrivileged && requestedApplicant !== auth.sub) {
-      return c.json(
-        { success: false, error: { message: "Only privileged roles can assign another applicant" } },
-        403
-      );
-    }
+    let existingEnvelope: Pick<
+      ReimbursementEnvelope,
+      "id" | "status" | "applicant_userid" | "channel" | "envelope_uuid"
+    > | null = null;
 
     if (preferredEnvelopeUuid) {
-      const existing = await c.env.DB.prepare(
+      existingEnvelope = await c.env.DB.prepare(
         "SELECT * FROM reimbursement_envelope WHERE envelope_uuid = ? AND status != 'deleted'"
       )
         .bind(preferredEnvelopeUuid)
         .first<ReimbursementEnvelope>();
-
-      if (existing) {
-        if (!["unregistered", "draft", "submitted"].includes(existing.status)) {
-          return c.json(
-            {
-              success: false,
-              error: {
-                message: `Envelope in status ${existing.status} cannot be bound during create`
-              }
-            },
-            400
-          );
-        }
-
-        const canBindApplicant =
-          existing.applicant_userid === UNASSIGNED_APPLICANT || existing.status === "unregistered";
-
-        if (!canBindApplicant && !isPrivileged && existing.applicant_userid !== auth.sub) {
-          return c.json({ success: false, error: { message: "Forbidden" } }, 403);
-        }
-
-        const nextStatus = existing.status === "unregistered" ? "draft" : existing.status;
-        const applicantToPersist = canBindApplicant ? requestedApplicant : existing.applicant_userid;
-        const channelToPersist = existing.status === "unregistered" ? requestedChannel : existing.channel;
-
-        await c.env.DB.prepare(
-          `UPDATE reimbursement_envelope SET
-             envelope_no = ?,
-             project_id = COALESCE(?, project_id),
-             applicant_userid = ?,
-             channel = ?,
-             invoice_no = COALESCE(?, invoice_no),
-             expense_date = COALESCE(?, expense_date),
-             amount = COALESCE(?, amount),
-             category = COALESCE(?, category),
-             description = COALESCE(?, description),
-             status = ?,
-             updated_at = ?
-           WHERE id = ?`
-        )
-          .bind(
-            existing.envelope_uuid,
-            body.project_id ?? null,
-            applicantToPersist,
-            channelToPersist,
-            body.invoice_no ?? null,
-            body.expense_date ?? null,
-            body.amount ?? null,
-            body.category ?? null,
-            body.description ?? null,
-            nextStatus,
-            now,
-            existing.id
-          )
-          .run();
-
-        await insertAttachments(c.env.DB, existing.id, body.attachments);
-
-        await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
-          envelope_id: existing.id,
-          envelope_no: existing.envelope_uuid,
-          envelope_uuid: existing.envelope_uuid,
-          created_by: auth.sub,
-          bound_existing: true
-        });
-
-        return c.json(
-          {
-            success: true,
-            data: {
-              id: existing.id,
-              envelope_no: existing.envelope_uuid,
-              envelope_uuid: existing.envelope_uuid
-            }
-          },
-          201
-        );
-      }
     }
 
-    const envelopeUuid = preferredEnvelopeUuid || crypto.randomUUID();
-    const envelopeNo = envelopeUuid;
+    const decision = decideCreateRouteBranch({
+      authSub: auth.sub,
+      isPrivileged,
+      requestedApplicant,
+      requestedChannel,
+      preferredEnvelopeUuid,
+      generatedEnvelopeUuid,
+      unassignedApplicant: UNASSIGNED_APPLICANT,
+      existingEnvelope: existingEnvelope ?? undefined
+    });
+
+    if (decision.kind === "error") {
+      return c.json({ success: false, error: { message: decision.message } }, decision.status);
+    }
+
+    if (decision.kind === "bind-existing") {
+      await c.env.DB.prepare(
+        `UPDATE reimbursement_envelope SET
+           envelope_no = ?,
+           project_id = COALESCE(?, project_id),
+           applicant_userid = ?,
+           channel = ?,
+           invoice_no = COALESCE(?, invoice_no),
+           expense_date = COALESCE(?, expense_date),
+           amount = COALESCE(?, amount),
+           category = COALESCE(?, category),
+           description = COALESCE(?, description),
+           status = ?,
+           updated_at = ?
+         WHERE id = ?`
+      )
+        .bind(
+          decision.envelopeNo,
+          body.project_id ?? null,
+          decision.applicantToPersist,
+          decision.channelToPersist,
+          body.invoice_no ?? null,
+          body.expense_date ?? null,
+          body.amount ?? null,
+          body.category ?? null,
+          body.description ?? null,
+          decision.nextStatus,
+          now,
+          decision.envelopeId
+        )
+        .run();
+
+      await insertAttachments(c.env.DB, decision.envelopeId, body.attachments);
+
+      await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
+        envelope_id: decision.envelopeId,
+        envelope_no: decision.envelopeNo,
+        envelope_uuid: decision.envelopeUuid,
+        created_by: auth.sub,
+        bound_existing: true
+      });
+
+      return c.json(
+        {
+          success: true,
+          data: {
+            id: decision.envelopeId,
+            envelope_no: decision.envelopeNo,
+            envelope_uuid: decision.envelopeUuid
+          }
+        },
+        201
+      );
+    }
+
+    const envelopeUuid = decision.envelopeUuid;
+    const envelopeNo = decision.envelopeNo;
 
     const result = await c.env.DB.prepare(
       `INSERT INTO reimbursement_envelope
