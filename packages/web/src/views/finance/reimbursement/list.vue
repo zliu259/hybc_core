@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
@@ -9,7 +9,9 @@ import {
   batchGenerateReimbursementEnvelopes,
   getEnvelopeOcrStatus,
   listReimbursementEnvelopes,
+  precheckEnvelope,
   resolveReimbursementEnvelopeByUuid,
+  triggerEnvelopeAnomalyCheck,
   uploadElectronicInvoice,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
@@ -19,6 +21,7 @@ defineOptions({ name: "ReimbursementList" });
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
 const router = useRouter();
+const route = useRoute();
 const userStore = useUserStoreHook();
 const loading = ref(false);
 const list = ref<ReimbursementEnvelope[]>([]);
@@ -45,6 +48,7 @@ const canOfficeOps = computed(() =>
 const canFinanceCenter = computed(() =>
   ["super_admin", "manager", "site_manager", "finance"].some(role => roleSet.value.has(role))
 );
+const isWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
 type WorkflowView = "employee" | "office" | "finance";
 const workflowView = ref<WorkflowView>("employee");
@@ -125,19 +129,19 @@ const loadData = async () => {
 };
 
 const goCreate = () => {
+  if (isWorkspaceRoute.value) {
+    router.push("/workspace/my-reimbursement/detail/create");
+    return;
+  }
   router.push("/finance/reimbursement/detail/create");
 };
 
 const goDetail = (id: number) => {
+  if (isWorkspaceRoute.value) {
+    router.push(`/workspace/my-reimbursement/detail/${id}`);
+    return;
+  }
   router.push(`/finance/reimbursement/detail/${id}`);
-};
-
-const goPrecheckWorkbench = () => {
-  router.push("/finance/reimbursement/precheck");
-};
-
-const goDuplicateCenter = () => {
-  router.push("/finance/reimbursement/duplicate");
 };
 
 const goBatchCenter = () => {
@@ -239,6 +243,21 @@ const submitElectronicUpload = async () => {
   }
 };
 
+const onTriggerAnomaly = async (id: number) => {
+  await triggerEnvelopeAnomalyCheck(id);
+  message("已触发异常检测", { type: "success" });
+  await loadData();
+};
+
+const onPrecheck = async (
+  id: number,
+  action: "approved" | "supplement" | "rejected"
+) => {
+  await precheckEnvelope(id, { action });
+  message(`预审已处理：${action}`, { type: action === "approved" ? "success" : "warning" });
+  await loadData();
+};
+
 const applyWorkflowPreset = (mode: WorkflowView) => {
   if (mode === "employee") {
     filters.value.applicant_userid = currentUserid.value;
@@ -266,7 +285,9 @@ const onWorkflowChange = async (mode: WorkflowView) => {
 };
 
 onMounted(async () => {
-  if (canFinanceCenter.value) {
+  if (isWorkspaceRoute.value) {
+    workflowView.value = "employee";
+  } else if (canFinanceCenter.value) {
     workflowView.value = "finance";
   } else if (canOfficeOps.value) {
     workflowView.value = "office";
@@ -291,8 +312,16 @@ watch(workflowView, mode => {
   <el-card shadow="never" style="background: #fffaf2">
     <el-tabs v-model="workflowView">
       <el-tab-pane label="员工发起与我的提交" name="employee" />
-      <el-tab-pane v-if="canOfficeOps" label="办公室处理与审查" name="office" />
-      <el-tab-pane v-if="canFinanceCenter" label="财务集中审批与历史" name="finance" />
+      <el-tab-pane
+        v-if="canOfficeOps && !isWorkspaceRoute"
+        label="办公室处理与审查"
+        name="office"
+      />
+      <el-tab-pane
+        v-if="canFinanceCenter && !isWorkspaceRoute"
+        label="财务集中审批与历史"
+        name="finance"
+      />
     </el-tabs>
 
     <el-alert
@@ -387,12 +416,6 @@ watch(workflowView, mode => {
         >发起报销（实物信封）</el-button
       >
 
-      <el-button v-if="workflowView === 'office'" @click="goPrecheckWorkbench"
-        >进入预审工作台</el-button
-      >
-      <el-button v-if="workflowView === 'office'" @click="goDuplicateCenter"
-        >进入查重中心</el-button
-      >
       <el-button v-if="workflowView === 'office'" @click="openQuickScan"
         >扫码/输入UUID打开信封</el-button
       >
@@ -418,6 +441,8 @@ watch(workflowView, mode => {
       </el-table-column>
       <el-table-column prop="applicant_userid" label="填报人" width="140" />
       <el-table-column prop="amount" label="金额" width="100" />
+      <el-table-column prop="duplicate_count" label="查重线索" width="100" />
+      <el-table-column prop="precheck_status" label="预审" width="100" />
       <el-table-column label="状态" width="110">
         <template #default="scope">
           <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
@@ -433,11 +458,35 @@ watch(workflowView, mode => {
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" width="320" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="goDetail(scope.row.id)"
             >详情</el-button
           >
+          <template v-if="workflowView !== 'employee' && canOfficeOps">
+            <el-button link @click="onTriggerAnomaly(scope.row.id)">异常检测</el-button>
+            <el-button
+              v-if="scope.row.status === 'received'"
+              link
+              type="success"
+              @click="onPrecheck(scope.row.id, 'approved')"
+              >预审通过</el-button
+            >
+            <el-button
+              v-if="scope.row.status === 'received'"
+              link
+              type="warning"
+              @click="onPrecheck(scope.row.id, 'supplement')"
+              >补充材料</el-button
+            >
+            <el-button
+              v-if="scope.row.status === 'received'"
+              link
+              type="danger"
+              @click="onPrecheck(scope.row.id, 'rejected')"
+              >预审驳回</el-button
+            >
+          </template>
         </template>
       </el-table-column>
     </el-table>

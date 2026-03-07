@@ -18,7 +18,7 @@ export default {
       redirect: "/finance/reimbursement",
       meta: {
         title: "对内付款",
-        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+        roles: ["super_admin", "manager", "site_manager", "finance"]
       },
       children: [
         {
@@ -26,8 +26,8 @@ export default {
           name: "ReimbursementList",
           component: () => import("@/views/finance/reimbursement/list.vue"),
           meta: {
-            title: "报销信封",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+            title: "报销处理",
+            roles: ["super_admin", "manager", "site_manager", "finance"]
           }
         },
         {
@@ -36,25 +36,8 @@ export default {
           component: () => import("@/views/finance/reimbursement/detail.vue"),
           meta: {
             title: "信封详情",
+            roles: ["super_admin", "manager", "site_manager", "finance"],
             showLink: false
-          }
-        },
-        {
-          path: "/finance/reimbursement/precheck",
-          name: "ReimbursementPrecheck",
-          component: () => import("@/views/finance/reimbursement/precheck.vue"),
-          meta: {
-            title: "预审工作台",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
-          }
-        },
-        {
-          path: "/finance/reimbursement/duplicate",
-          name: "ReimbursementDuplicate",
-          component: () => import("@/views/finance/reimbursement/duplicate.vue"),
-          meta: {
-            title: "查重中心",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
           }
         },
         {

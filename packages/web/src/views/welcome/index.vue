@@ -307,7 +307,7 @@ const submitReimbursement = async () => {
     message(`已创建报销信封 ${result.data.envelope_no}`, { type: "success" });
     reimbursementDialogVisible.value = false;
     await loadData();
-    router.push(`/finance/reimbursement/detail/${result.data.id}`);
+    router.push(`/workspace/my-reimbursement/detail/${result.data.id}`);
   } finally {
     reimbursementSubmitting.value = false;
   }
@@ -348,6 +348,7 @@ const submitReimbursement = async () => {
         <el-button type="primary" @click="openReimbursementDialog"
           >发起报销</el-button
         >
+        <el-button @click="router.push('/workspace/my-reimbursement')">我的提交</el-button>
         <el-button @click="router.push('/construction/operator-log/form')"
           >填报施工日志</el-button
         >

@@ -17,7 +17,26 @@ export default {
       component: () => import("@/views/welcome/index.vue"),
       meta: {
         title: "个人工作台",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+      }
+    },
+    {
+      path: "/workspace/my-reimbursement",
+      name: "WorkspaceMyReimbursement",
+      component: () => import("@/views/finance/reimbursement/list.vue"),
+      meta: {
+        title: "我的报销",
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+      }
+    },
+    {
+      path: "/workspace/my-reimbursement/detail/:id",
+      name: "WorkspaceMyReimbursementDetail",
+      component: () => import("@/views/finance/reimbursement/detail.vue"),
+      meta: {
+        title: "我的报销详情",
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+        showLink: false
       }
     }
   ]

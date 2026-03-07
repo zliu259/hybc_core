@@ -155,7 +155,8 @@
   - 办公室：处理与审查（预审/查重/收件核查）
   - 财务与领导：集中审批与历史
 - 支持入口：批量生成未登记信封、UUID快速打开信封、电子发票上传、进入信封详情执行登记/提交/收件核对/PDF生成。
-- API 指向：`/api/v1/reimbursement`
+- 功能融合：查重线索、异常检测、预审通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
+- API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
 
 #### F-2. 报销信封详情 `views/finance/reimbursement/detail.vue`
 - 页面分区：基础信息、信封标识、状态总览、附件（拖拽上传）、操作区。
@@ -165,15 +166,9 @@
 - 操作区：保存、扫码登记并绑定填报人、提交报销并寄送实物信封、收件通过/异常、触发PDF生成、刷新PDF状态、刷新OCR状态、触发异常检测、预审动作。
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
-#### F-3. 报销预审工作台 `views/finance/reimbursement/precheck.vue`
-- 展示维度：信封编号、项目、填报人、金额、查重线索、预审状态。
-- 操作区：触发异常检测、预审通过/补充/驳回、跳转信封详情。
-- API 指向：`/api/v1/reimbursement/precheck/pending`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
-
-#### F-4. 报销查重中心 `views/finance/reimbursement/duplicate.vue`
-- 展示维度：信封编号、匹配类型、风险等级、匹配发票号、金额、说明。
-- 支持按风险等级筛选并跳转到对应信封详情。
-- API 指向：`/api/v1/reimbursement/duplicate-center`
+#### F-3. 功能页融合说明（预审/查重）
+- 原“预审工作台”“查重中心”已从对内付款主路由下线，功能融合进报销业务页（列表/详情/批次）以减少页面切换与理解成本。
+- 预审与异常检测在报销列表直接可操作，批次详情继续承载 AI 审计与审批联动。
 
 #### F-5. 报销集中审批批次列表 `views/finance/reimbursement/batch.vue`
 - 新增“候选报销条目”工作区：按项目 + 申请人自动列出未完成报销，可一键自动勾选“已收件+预审通过”并创建后立即送审。
@@ -831,6 +826,11 @@
 - 办公室视图聚焦 submitted/received 阶段处理，直达预审工作台与查重中心：`packages/web/src/views/finance/reimbursement/list.vue`
 - 财务集中审批页新增“候选条目自动汇总 + 一键创建并送审 + 历史完成批次”三段布局，满足发起、送审、复盘一体化：`packages/web/src/views/finance/reimbursement/batch.vue`
 - 路由权限收敛：报销集中审批入口移除 operator，仅保留 super_admin/manager/site_manager/finance：`packages/web/src/router/modules/finance.ts`
+
+### 4.16 对内付款路由精简与工作台入口迁移（2026-03）
+- 员工报销入口迁移至个人工作台，新增“我的报销”路由与详情路由：`packages/web/src/router/modules/workspace.ts`、`packages/web/src/views/welcome/index.vue`
+- 对内付款主路由限定为办公室/领导/财务页面，移除 operator 在该主路由下的入口角色：`packages/web/src/router/modules/finance.ts`
+- 对内付款路由下移除“预审工作台”“查重中心”独立页面入口，改为业务页内联处理：`packages/web/src/router/modules/finance.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
