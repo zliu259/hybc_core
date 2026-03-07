@@ -803,6 +803,16 @@
 - 发票校验状态接口在任务完成后会同步回填 `invoice_code/invoice_number/check_code/issue_date/amount_with_tax/title/tax_no/qr_code`，并保留匹配结果：`packages/api/src/routes/receipt.ts`
 - OCR 默认抽取 schema 补充 `invoice_code/check_code/qr_code_text`，提升回填完整度：`task-runner/runner/executor.py`
 
+### 4.13 财务快照看板多维升级（2026-03）
+- 快照看板升级为多维分析视图，支持按时间（按月/按年）、项目、办公室行政、业务类型筛选：`packages/web/src/views/finance/receipt/dashboard.vue`
+- 新增管理分析指标：对外付款/对内付款/收款三类金额、完成量、待处理量，以及全口径资金总额：`packages/web/src/views/finance/receipt/dashboard.vue`
+- 新增图表：
+  - 趋势图（时间维度堆叠柱 + 合计折线）
+  - 结构图（业务占比环形图）
+  文件：`packages/web/src/views/finance/receipt/dashboard.vue`
+- 新增“明细追踪”表：展示业务类型、单号、项目、办公室行政、金额、状态、业务时间、最近追踪时间、追踪信息；点击单号可跳转对应业务页面：`packages/web/src/views/finance/receipt/dashboard.vue`
+- 新增后端聚合接口 `GET /api/v1/dashboard/finance-snapshot`，统一输出 summary/charts/details/pagination，支撑前端一屏分析与钻取：`packages/api/src/routes/dashboard.ts`、`packages/web/src/api/dashboard.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
