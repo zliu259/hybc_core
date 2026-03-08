@@ -11,6 +11,7 @@ import {
   submitContractApproval,
   type Contract
 } from "@/api/contract";
+import type { Project } from "@/api/project";
 import {
   createPaymentRequest,
   listPayees,
@@ -38,6 +39,25 @@ const payees = ref<Payee[]>([]);
 const entities = ref<Entity[]>([]);
 const { projects, loadProjects } = useProjectOptions();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+
+const projectPriority = ["办公室", "仓库"] as const;
+const prioritizedProjects = computed(() => {
+  const used = new Set<number>();
+  const top: Project[] = [];
+
+  for (const key of projectPriority) {
+    const matched = projects.value.find(
+      item => item.project_name === key || item.project_code === key
+    );
+    if (matched && !used.has(matched.id)) {
+      used.add(matched.id);
+      top.push(matched);
+    }
+  }
+
+  const rest = projects.value.filter(item => !used.has(item.id));
+  return [...top, ...rest];
+});
 
 const amountInput = ref<number | undefined>(undefined);
 const withFirstPayment = ref(false);
@@ -521,7 +541,7 @@ onMounted(async () => {
               style="width: 360px"
             >
               <el-option
-                v-for="item in projects"
+                v-for="item in prioritizedProjects"
                 :key="item.id"
                 :label="`${item.project_name} (${item.project_code})`"
                 :value="item.id"
@@ -654,7 +674,7 @@ onMounted(async () => {
               style="width: 360px"
             >
               <el-option
-                v-for="item in projects"
+                v-for="item in prioritizedProjects"
                 :key="item.id"
                 :label="`${item.project_name} (${item.project_code})`"
                 :value="item.id"
