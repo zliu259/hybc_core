@@ -244,9 +244,16 @@ export const reimbursementRoutes = new Hono<{
 reimbursementRoutes.use("*", authMiddleware);
 
 reimbursementRoutes.get("/", async (c) => {
+  const auth = c.get("auth");
   const status = c.req.query("status");
   const projectId = c.req.query("project_id");
+  const creatorId = c.req.query("creator_id");
   const applicantUserid = c.req.query("applicant_userid");
+  const applicantFilter = creatorId
+    ? creatorId === "me"
+      ? auth.sub
+      : creatorId
+    : applicantUserid;
   const channel = c.req.query("channel");
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
@@ -268,10 +275,10 @@ reimbursementRoutes.get("/", async (c) => {
     countSql += " AND project_id = ?";
     params.push(Number(projectId));
   }
-  if (applicantUserid) {
+  if (applicantFilter) {
     sql += " AND applicant_userid = ?";
     countSql += " AND applicant_userid = ?";
-    params.push(applicantUserid);
+    params.push(applicantFilter);
   }
   if (channel) {
     sql += " AND channel = ?";
