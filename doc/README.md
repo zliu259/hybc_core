@@ -7,6 +7,15 @@
 - 本地开发指南：`doc/local-dev-setup.md`
 - UI 页面级设计：`doc/UI设计文档.md`
 - 统一开发记录：`doc/开发记录.md`
+- 岗位培训手册目录：`doc/guide/`
+- 培训总览：`doc/guide/00-总览与快速开始.md`
+- 超级管理员手册：`doc/guide/01-超级管理员手册.md`
+- 经理手册：`doc/guide/02-经理手册.md`
+- 现场管理员手册：`doc/guide/03-现场管理员手册.md`
+- 现场操作员手册：`doc/guide/04-现场操作员手册.md`
+- 财务手册：`doc/guide/05-财务手册.md`
+- 运维与部署手册：`doc/guide/06-运维与部署手册.md`
+- 附录（命令与参考）：`doc/guide/07-附录-命令与参考.md`
 - 旧数据迁移兼容计划（测试阶段）：`doc/legacy_data/迁移兼容计划.md`
 - 财务旧数据结构映射（fin_data）：`doc/legacy_data/SCHEMA_MAP.md`
 - 财务旧数据迁移检查清单（fin_data）：`doc/legacy_data/MIGRATION_CHECKLIST.md`
