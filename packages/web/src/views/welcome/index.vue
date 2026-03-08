@@ -51,20 +51,7 @@ type PersonalCertificate = {
   fileName?: string;
 };
 
-const certificates = ref<PersonalCertificate[]>([
-  {
-    id: 1,
-    name: "特种设备操作证",
-    issueDate: "2024-07-01",
-    expireDate: "2026-07-01"
-  },
-  {
-    id: 2,
-    name: "安全培训证书",
-    issueDate: "2023-09-10",
-    expireDate: "2026-03-15"
-  }
-]);
+const certificates = ref<PersonalCertificate[]>([]);
 
 const pendingCount = computed(
   () => reimbursements.value.filter(item => item.status !== "paid").length
