@@ -25,7 +25,8 @@ const paymentAllowedContractStatuses: ReadonlySet<Contract["status"]> = new Set(
   "draft",
   "pending_review",
   "pending_approval",
-  "active"
+  "active",
+  "completed"
 ]);
 
 type SubmitApprovalOptions = {

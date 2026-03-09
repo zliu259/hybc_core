@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
@@ -109,6 +109,18 @@ const thresholdHint = computed(() =>
   exceedsThreshold.value
     ? `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`
     : `金额未超过阈值 ${thresholdLimit.value.toLocaleString()}，可直接走付款申请`
+);
+
+const shouldUseContractFlow = computed(
+  () => exceedsThreshold.value && !directForm.value.contract_id
+);
+
+watch(
+  shouldUseContractFlow,
+  value => {
+    step.value = value ? 1 : 0;
+  },
+  { immediate: true }
 );
 
 const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
@@ -283,18 +295,17 @@ const checkAmount = () => {
     checking.value = true;
     const value = Number(amountInput.value ?? 0);
     exceedsThreshold.value = value > thresholdLimit.value;
-    step.value = exceedsThreshold.value ? 1 : 0;
     checking.value = false;
   }, 350);
 };
 
 const submitDirectPayment = async () => {
   const amount = Number(amountInput.value ?? 0);
-  if (amount > thresholdLimit.value) {
+  if (amount > thresholdLimit.value && !directForm.value.contract_id) {
     exceedsThreshold.value = true;
     step.value = 1;
     message(
-      `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`,
+      `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请先关联已审批合同，或改走新建合同流程`,
       {
         type: "warning"
       }
@@ -513,7 +524,7 @@ onMounted(async () => {
 
       <el-divider />
 
-      <template v-if="!exceedsThreshold">
+      <template v-if="!shouldUseContractFlow">
         <el-form label-width="140px">
           <el-form-item label="合同">
             <el-select
@@ -665,6 +676,22 @@ onMounted(async () => {
 
       <template v-else>
         <el-form label-width="140px">
+          <el-form-item label="已有关联合同（可选）">
+            <el-select
+              v-model="directForm.contract_id"
+              filterable
+              clearable
+              placeholder="若本笔付款属于已审批合同，请先选择合同"
+              style="width: 360px"
+            >
+              <el-option
+                v-for="item in contracts"
+                :key="item.id"
+                :label="`${item.contract_no} - ${item.counterparty}`"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
           <el-form-item label="所属项目">
             <el-select
               v-model="contractForm.project_id"

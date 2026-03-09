@@ -7,6 +7,31 @@ import { hydrateLegacyProject, hydrateLegacySection } from "../utils/legacy-comp
 
 const nowIso = () => new Date().toISOString();
 
+const fixedNonProjectOptions = [
+  { project_code: "办公室", project_name: "办公室" },
+  { project_code: "仓库", project_name: "仓库" }
+] as const;
+
+const ensureFixedNonProjectOptions = async (env: Env) => {
+  const now = nowIso();
+  for (const item of fixedNonProjectOptions) {
+    await env.DB.prepare(
+      `INSERT INTO project (
+        project_code, project_name, entity_id, manager_userid, status,
+        start_date, end_date, location_text, project_briefing, project_start_at,
+        project_kind, external_party_name, created_at, updated_at
+      )
+      VALUES (?, ?, NULL, NULL, 'active', NULL, NULL, NULL, '用于非项目支出', NULL, 'internal', NULL, ?, ?)
+      ON CONFLICT(project_code) DO UPDATE SET
+        project_name = excluded.project_name,
+        status = 'active',
+        updated_at = excluded.updated_at`
+    )
+      .bind(item.project_code, item.project_name, now, now)
+      .run();
+  }
+};
+
 const allowedStatus = [
   "planning",
   "preparing",
@@ -25,6 +50,8 @@ export const projectRoutes = new Hono<{
 projectRoutes.use("*", authMiddleware);
 
 projectRoutes.get("/", async (c) => {
+  await ensureFixedNonProjectOptions(c.env);
+
   const status = c.req.query("status");
   const projectKind = c.req.query("project_kind");
   const keyword = c.req.query("keyword");
@@ -59,7 +86,7 @@ projectRoutes.get("/", async (c) => {
   }
 
   sql +=
-    " ORDER BY CASE status WHEN 'active' THEN 1 WHEN 'preparing' THEN 2 WHEN 'planning' THEN 3 WHEN 'completing' THEN 4 WHEN 'archived' THEN 5 ELSE 9 END, COALESCE(project_start_at, start_date, created_at) DESC, id DESC LIMIT ? OFFSET ?";
+    " ORDER BY CASE WHEN project_name = '办公室' OR project_code = '办公室' THEN 0 WHEN project_name = '仓库' OR project_code = '仓库' THEN 1 ELSE 9 END, CASE status WHEN 'active' THEN 1 WHEN 'preparing' THEN 2 WHEN 'planning' THEN 3 WHEN 'completing' THEN 4 WHEN 'archived' THEN 5 ELSE 9 END, COALESCE(project_start_at, start_date, created_at) DESC, id DESC LIMIT ? OFFSET ?";
 
   const listResult = await c.env.DB.prepare(sql)
     .bind(...params, pageSize, offset)
