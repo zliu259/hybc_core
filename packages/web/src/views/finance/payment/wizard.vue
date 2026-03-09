@@ -209,6 +209,17 @@ const selectedContractCounterparty = computed(() => {
   return target ? target.name : "";
 });
 
+const selectedDirectContract = computed(() => {
+  if (!directForm.value.contract_id) return null;
+  return contracts.value.find(item => item.id === directForm.value.contract_id) ?? null;
+});
+
+const selectedDirectContractRemaining = computed(() => {
+  const target = selectedDirectContract.value;
+  if (!target) return null;
+  return Number((target.total_amount - target.paid_amount).toFixed(2));
+});
+
 const serializeAttachments = (items: AttachmentDraft[]): string => {
   return JSON.stringify(
     items.map(item => ({
@@ -318,6 +329,16 @@ const submitDirectPayment = async () => {
     !directForm.value.payee_id
   ) {
     message("请先填写金额、项目、收款人", { type: "warning" });
+    return;
+  }
+  if (
+    selectedDirectContractRemaining.value !== null &&
+    amount > selectedDirectContractRemaining.value
+  ) {
+    message(
+      `当前合同可用额度为 ${selectedDirectContractRemaining.value}，申请金额不能超过可用额度`,
+      { type: "warning" }
+    );
     return;
   }
   if (!directPaymentAttachments.value.length) {
@@ -542,6 +563,13 @@ onMounted(async () => {
                 :value="item.id"
               />
             </el-select>
+            <el-text
+              v-if="selectedDirectContractRemaining !== null"
+              type="warning"
+              style="margin-left: 12px"
+            >
+              当前合同可用额度：{{ selectedDirectContractRemaining }}
+            </el-text>
           </el-form-item>
           <el-form-item label="所属项目">
             <el-select
@@ -691,6 +719,13 @@ onMounted(async () => {
                 :value="item.id"
               />
             </el-select>
+            <el-text
+              v-if="selectedDirectContractRemaining !== null"
+              type="warning"
+              style="margin-left: 12px"
+            >
+              当前合同可用额度：{{ selectedDirectContractRemaining }}
+            </el-text>
           </el-form-item>
           <el-form-item label="所属项目">
             <el-select

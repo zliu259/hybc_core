@@ -2,6 +2,12 @@ import { http } from "@/utils/http";
 
 type Pagination = { page: number; pageSize: number; total: number };
 
+export type AttachmentDraft = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+};
+
 export type Invoice = {
   id: number;
   invoice_no: string;
@@ -110,6 +116,7 @@ export type ReceiptRefund = {
   approval_instance_id: number | null;
   requires_red_invoice: number;
   red_invoice_status: string;
+  bank_slips_json: string | null;
   reason: string | null;
   remark: string | null;
   created_at: string;
@@ -129,6 +136,22 @@ export type ReceiptRefundDetail = ReceiptRefund & {
     status: string;
   };
   invoice: Invoice | null;
+};
+
+export type ReceiptDetail = {
+  receipt: Receipt;
+  contract: {
+    id: number;
+    contract_no: string;
+    direction: string;
+    counterparty: string;
+    total_amount: number;
+    received_amount: number;
+    invoiced_amount: number;
+    status: string;
+  };
+  invoice: Invoice | null;
+  refunds: ReceiptRefund[];
 };
 
 export const listInvoices = (params?: {
@@ -340,6 +363,13 @@ export const listReceiptAccounts = () => {
   );
 };
 
+export const getReceipt = (id: number) => {
+  return http.request<{ success: boolean; data: ReceiptDetail }>(
+    "get",
+    `/api/v1/receipt/${id}`
+  );
+};
+
 export const createReceipt = (data: {
   contract_id: number;
   invoice_id?: number;
@@ -427,4 +457,15 @@ export const submitReceiptRefundApproval = (
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
   }>("post", `/api/v1/receipt/refund/${id}/submit-approval`, { data });
+};
+
+export const updateReceiptRefundBankSlips = (
+  id: number,
+  data: { bank_slips_json: string; append?: boolean }
+) => {
+  return http.request<{ success: boolean; data: { id: number; bank_slips_json: string } }>(
+    "patch",
+    `/api/v1/receipt/refund/${id}/bank-slips`,
+    { data }
+  );
 };

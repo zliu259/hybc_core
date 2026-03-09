@@ -191,6 +191,16 @@ export default {
           }
         },
         {
+          path: "/finance/receipt/detail/:id",
+          name: "ReceiptDetail",
+          component: () => import("@/views/finance/receipt/detail.vue"),
+          meta: {
+            title: "收款登记详情",
+            roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+            showLink: false
+          }
+        },
+        {
           path: "/finance/snapshot",
           name: "FinanceSnapshot",
           component: () => import("@/views/finance/receipt/dashboard.vue"),

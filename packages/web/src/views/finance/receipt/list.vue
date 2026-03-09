@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import { listContracts, type Contract } from "@/api/contract";
@@ -19,6 +20,8 @@ import {
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 
 defineOptions({ name: "ReceiptList" });
+
+const router = useRouter();
 
 const loading = ref(false);
 const list = ref<Receipt[]>([]);
@@ -234,6 +237,10 @@ const onDelete = async (row: Receipt) => {
   await loadData();
 };
 
+const goDetail = (row: Receipt) => {
+  router.push(`/finance/receipt/detail/${row.id}`);
+};
+
 onMounted(async () => {
   await loadContracts();
   await loadInvoices();
@@ -317,8 +324,9 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="receiver_userid" label="登记人" width="140" />
       <el-table-column prop="status" label="状态" width="100" />
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="240" fixed="right">
         <template #default="scope">
+          <el-button link type="primary" @click="goDetail(scope.row)">详情</el-button>
           <el-button
             v-if="scope.row.status === 'recorded'"
             link

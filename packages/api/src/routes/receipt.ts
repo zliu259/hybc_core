@@ -19,6 +19,7 @@ import type {
   Invoice,
   Receipt,
   ReceiptAccountOption,
+  ReceiptDetail,
   ReceiptRefund,
   ReceiptRefundDetail,
   UpdateInvoiceRequest,
@@ -57,6 +58,53 @@ const parseJsonObject = (raw: string | null | undefined): Record<string, unknown
   } catch {
     return {};
   }
+};
+
+type FileAttachment = {
+  file_key: string;
+  file_name: string;
+  file_size?: number | null;
+};
+
+const parseAttachmentDrafts = (raw: string | null | undefined): FileAttachment[] => {
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const rows: FileAttachment[] = [];
+    for (const item of parsed) {
+      if (!item || typeof item !== "object") continue;
+      const row = item as {
+        file_key?: string;
+        key?: string;
+        file_name?: string;
+        name?: string;
+        file_size?: number;
+        size?: number;
+      };
+      const key = row.file_key ?? row.key;
+      if (!key || typeof key !== "string") continue;
+      rows.push({
+        file_key: key,
+        file_name: row.file_name ?? row.name ?? key,
+        file_size: row.file_size ?? row.size ?? null
+      });
+    }
+    return rows;
+  } catch {
+    return [];
+  }
+};
+
+const mergeAttachmentDrafts = (origin: FileAttachment[], incoming: FileAttachment[]): FileAttachment[] => {
+  const merged: FileAttachment[] = [];
+  const seen = new Set<string>();
+  for (const item of [...origin, ...incoming]) {
+    if (seen.has(item.file_key)) continue;
+    seen.add(item.file_key);
+    merged.push(item);
+  }
+  return merged;
 };
 
 const INVOICE_REQUEST_TEMPLATE_CODE = "TPL-INVOICE-REQUEST";
@@ -956,6 +1004,49 @@ receiptRoutes.get(
   }
 );
 
+receiptRoutes.patch(
+  "/refund/:id/bank-slips",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as {
+      bank_slips_json?: string;
+      append?: boolean;
+    };
+
+    if (!body.bank_slips_json?.trim()) {
+      return c.json({ success: false, error: { message: "bank_slips_json is required" } }, 400);
+    }
+
+    const refund = await c.env.DB.prepare("SELECT * FROM receipt_refund WHERE id = ?")
+      .bind(id)
+      .first<ReceiptRefund>();
+    if (!refund) {
+      return c.json({ success: false, error: { message: "Receipt refund not found" } }, 404);
+    }
+
+    if (refund.status === "cancelled") {
+      return c.json({ success: false, error: { message: "Cancelled refund cannot upload bank slips" } }, 400);
+    }
+
+    const incoming = parseAttachmentDrafts(body.bank_slips_json);
+    if (!incoming.length) {
+      return c.json({ success: false, error: { message: "bank_slips_json must be a non-empty attachment array" } }, 400);
+    }
+
+    const next = body.append
+      ? mergeAttachmentDrafts(parseAttachmentDrafts(refund.bank_slips_json), incoming)
+      : incoming;
+    const now = nowIso();
+
+    await c.env.DB.prepare("UPDATE receipt_refund SET bank_slips_json = ?, updated_at = ? WHERE id = ?")
+      .bind(JSON.stringify(next), now, id)
+      .run();
+
+    return c.json({ success: true, data: { id, bank_slips_json: JSON.stringify(next) } });
+  }
+);
+
 receiptRoutes.post(
   "/refund",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
@@ -1416,6 +1507,48 @@ receiptRoutes.get(
       data: rows.results ?? [],
       pagination: { page, pageSize, total: totalRow?.total ?? 0 }
     });
+  }
+);
+
+receiptRoutes.get(
+  "/:id",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const receipt = await c.env.DB.prepare("SELECT * FROM receipt WHERE id = ? AND status != 'deleted'")
+      .bind(id)
+      .first<Receipt>();
+
+    if (!receipt) {
+      return c.json({ success: false, error: { message: "Receipt not found" } }, 404);
+    }
+
+    const contract = await c.env.DB.prepare("SELECT * FROM contract WHERE id = ? AND status != 'deleted'")
+      .bind(receipt.contract_id)
+      .first<Contract>();
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    const invoice =
+      receipt.invoice_id !== null
+        ? await c.env.DB.prepare("SELECT * FROM invoice WHERE id = ? AND status != 'deleted'")
+            .bind(receipt.invoice_id)
+            .first<Invoice>()
+        : null;
+
+    const refundsRows = await c.env.DB.prepare("SELECT * FROM receipt_refund WHERE receipt_id = ? ORDER BY id DESC")
+      .bind(receipt.id)
+      .all<ReceiptRefund>();
+
+    const detail: ReceiptDetail = {
+      receipt,
+      contract,
+      invoice,
+      refunds: refundsRows.results ?? []
+    };
+
+    return c.json({ success: true, data: detail });
   }
 );
 

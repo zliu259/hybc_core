@@ -187,6 +187,7 @@ export interface ReceiptRefund {
   approval_instance_id: number | null;
   requires_red_invoice: number;
   red_invoice_status: string;
+  bank_slips_json: string | null;
   reason: string | null;
   remark: string | null;
   created_at: string;
@@ -197,6 +198,13 @@ export interface ReceiptRefundDetail extends ReceiptRefund {
   receipt: Receipt;
   contract: Contract;
   invoice: Invoice | null;
+}
+
+export interface ReceiptDetail {
+  receipt: Receipt;
+  contract: Contract;
+  invoice: Invoice | null;
+  refunds: ReceiptRefund[];
 }
 
 export interface ReceiptAccountOption {

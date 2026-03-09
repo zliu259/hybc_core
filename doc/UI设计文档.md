@@ -232,6 +232,12 @@
 - 校验：合同收款总额与发票收款总额上限联动（后端强校验）；退款金额不得超过可退余额。
 - API 指向：`/api/v1/receipt`、`/api/v1/receipt/receipt-accounts`、`/api/v1/receipt/refund*`
 
+#### G-3-1. 收款登记详情 `views/finance/receipt/detail.vue`
+- 展示维度：收款登记主信息、合同信息、关联发票信息、收款凭证附件列表、退款记录列表。
+- 附件能力：收款凭证支持明细查看；退款记录支持在详情页上传并维护“银行汇款单”附件。
+- 退款操作：可在详情页发起全额/部分退款并立即提审，形成“查看-操作”闭环。
+- API 指向：`/api/v1/receipt/:id`、`/api/v1/receipt/refund`、`/api/v1/receipt/refund/:id/submit-approval`、`/api/v1/receipt/refund/:id/bank-slips`
+
 #### G-4. 收款统计仪表盘 `views/finance/receipt/dashboard.vue`
 - 指标：收款合同已开票、收款合同已到账、收款登记笔数、对外付款已支付、报销累计。
 - 支持按项目切换统计。
@@ -788,6 +794,7 @@
 
 ### 3.24 Web付款无合同阈值放行与审批明细名称化（2026-03）
 - 智能发单台（阈值内）支持“无合同/无需合同”选项，仍可按需关联已有合同，且提交时强校验超阈值必须走合同流：`packages/web/src/views/finance/payment/wizard.vue`
+- 智能发单台在选择已有关联合同时，实时显示合同可用额度（`total_amount - paid_amount`），并在提交前前端拦截“申请金额超过合同可用额度”的场景：`packages/web/src/views/finance/payment/wizard.vue`
 - 付款申请后端支持 `contract_id` 可空，并在无合同时按 `payment_request` 阈值规则校验金额上限：`packages/api/src/routes/payment.ts`、`packages/api/src/types/contract.ts`
 - 付款提审自动触发风险评估（无需手工点击），并统一风险任务载荷结构：`packages/api/src/routes/payment.ts`
 - AI关卡上下文补齐合同信息与合同附件，合并 `payment_attachments + contract_attachments` 进入统一 `attachments`，避免仅凭付款附件做片面判断：`packages/api/src/routes/payment.ts`、`packages/api/src/services/ai-slot.ts`
