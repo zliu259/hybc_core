@@ -1,3 +1,5 @@
+import type { Contract } from "./contract";
+
 export const invoiceRequestStatuses = [
   "draft",
   "submitted",
@@ -15,6 +17,16 @@ export type InvoiceStatus = (typeof invoiceStatuses)[number];
 
 export const receiptStatuses = ["recorded", "reversed", "deleted"] as const;
 export type ReceiptStatus = (typeof receiptStatuses)[number];
+
+export const receiptRefundStatuses = [
+  "draft",
+  "pending_approval",
+  "approved",
+  "rejected",
+  "cancelled",
+  "completed"
+] as const;
+export type ReceiptRefundStatus = (typeof receiptRefundStatuses)[number];
 
 export interface Invoice {
   id: number;
@@ -152,10 +164,49 @@ export interface Receipt {
   received_date: string;
   amount: number;
   payment_account: string | null;
+  receiver_entity_id: number | null;
+  receiver_account_id: number | null;
+  vouchers_json: string | null;
   status: ReceiptStatus;
   remark: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export interface ReceiptRefund {
+  id: number;
+  refund_no: string;
+  receipt_id: number;
+  contract_id: number;
+  project_id: number;
+  invoice_id: number | null;
+  applicant_userid: string;
+  refund_mode: "full" | "partial";
+  amount: number;
+  status: ReceiptRefundStatus;
+  approval_instance_id: number | null;
+  requires_red_invoice: number;
+  red_invoice_status: string;
+  reason: string | null;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ReceiptRefundDetail extends ReceiptRefund {
+  receipt: Receipt;
+  contract: Contract;
+  invoice: Invoice | null;
+}
+
+export interface ReceiptAccountOption {
+  entity_id: number;
+  entity_name: string;
+  account_id: number;
+  bank_name: string;
+  account_name: string;
+  account_no: string;
+  label: string;
 }
 
 export interface CreateInvoiceRequest {
@@ -188,6 +239,9 @@ export interface CreateReceiptRequest {
   received_date: string;
   amount: number;
   payment_account?: string;
+  receiver_entity_id?: number;
+  receiver_account_id?: number;
+  vouchers_json?: string;
   remark?: string;
 }
 
@@ -196,6 +250,17 @@ export interface UpdateReceiptRequest {
   received_date?: string;
   amount?: number;
   payment_account?: string;
+  receiver_entity_id?: number;
+  receiver_account_id?: number;
+  vouchers_json?: string;
   status?: ReceiptStatus;
+  remark?: string;
+}
+
+export interface CreateReceiptRefundRequest {
+  receipt_id: number;
+  refund_mode: "full" | "partial";
+  amount?: number;
+  reason?: string;
   remark?: string;
 }

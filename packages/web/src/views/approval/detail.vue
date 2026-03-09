@@ -25,7 +25,12 @@ import {
   getReimbursementBatch,
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
-import { getInvoiceRequest, type InvoiceRequest } from "@/api/receipt";
+import {
+  getInvoiceRequest,
+  getReceiptRefund,
+  type InvoiceRequest,
+  type ReceiptRefundDetail
+} from "@/api/receipt";
 import { getContract, type ContractDetail } from "@/api/contract";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
@@ -130,6 +135,7 @@ const contractDetail = ref<ContractDetail | null>(null);
 const reimbursementBatchDetail = ref<ReimbursementBatchDetail | null>(null);
 const invoiceRequestDetail = ref<InvoiceRequest | null>(null);
 const invoiceLinkedContract = ref<ContractDetail | null>(null);
+const receiptRefundDetail = ref<ReceiptRefundDetail | null>(null);
 const riskTagType: Record<string, TagType> = {
   none: "info",
   pending: "warning",
@@ -660,6 +666,7 @@ const loadDetail = async () => {
     reimbursementBatchDetail.value = null;
     invoiceRequestDetail.value = null;
     invoiceLinkedContract.value = null;
+    receiptRefundDetail.value = null;
 
     const bizType = result.data.instance.biz_type;
     const bizId = result.data.instance.biz_id;
@@ -678,6 +685,9 @@ const loadDetail = async () => {
       invoiceRequestDetail.value = invoiceRequestRes.data;
       const contractRes = await getContract(invoiceRequestRes.data.contract_id);
       invoiceLinkedContract.value = contractRes.data;
+    } else if (bizType === "receipt_refund") {
+      const refundRes = await getReceiptRefund(bizId);
+      receiptRefundDetail.value = refundRes.data;
     }
 
     if (bizType === "payment_request") {
@@ -1131,6 +1141,36 @@ onMounted(async () => {
                   <template #default="scope">{{ formatAmount(scope.row.amount) }}</template>
                 </el-table-column>
               </el-table>
+            </template>
+
+            <template v-if="receiptRefundDetail">
+              <el-divider>申请明细（收款退款）</el-divider>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="退款单号">{{ receiptRefundDetail.refund_no }}</el-descriptions-item>
+                <el-descriptions-item label="退款方式">
+                  {{ receiptRefundDetail.refund_mode === 'full' ? '全部退款' : '部分退款' }}
+                </el-descriptions-item>
+                <el-descriptions-item label="退款金额">{{ formatAmount(receiptRefundDetail.amount) }}</el-descriptions-item>
+                <el-descriptions-item label="收款单号">{{ receiptRefundDetail.receipt.receipt_no }}</el-descriptions-item>
+                <el-descriptions-item label="收款日期">{{ receiptRefundDetail.receipt.received_date }}</el-descriptions-item>
+                <el-descriptions-item label="收款金额">{{ formatAmount(receiptRefundDetail.receipt.amount) }}</el-descriptions-item>
+                <el-descriptions-item label="收款账户" :span="2">{{ receiptRefundDetail.receipt.payment_account || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="合同号">{{ receiptRefundDetail.contract.contract_no }}</el-descriptions-item>
+                <el-descriptions-item label="合同对方">{{ receiptRefundDetail.contract.counterparty }}</el-descriptions-item>
+                <el-descriptions-item label="合同金额">{{ formatAmount(receiptRefundDetail.contract.total_amount) }}</el-descriptions-item>
+                <el-descriptions-item label="合同已收">{{ formatAmount(receiptRefundDetail.contract.received_amount) }}</el-descriptions-item>
+                <el-descriptions-item label="是否含发票" :span="2">
+                  {{ receiptRefundDetail.invoice ? '是（流程含红冲发票签发）' : '否' }}
+                </el-descriptions-item>
+                <el-descriptions-item v-if="receiptRefundDetail.invoice" label="发票号">
+                  {{ receiptRefundDetail.invoice?.invoice_no || '-' }}
+                </el-descriptions-item>
+                <el-descriptions-item v-if="receiptRefundDetail.invoice" label="发票金额">
+                  {{ formatAmount(receiptRefundDetail.invoice?.amount_with_tax ?? receiptRefundDetail.invoice?.amount ?? null) }}
+                </el-descriptions-item>
+                <el-descriptions-item label="退款原因" :span="2">{{ receiptRefundDetail.reason || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{ receiptRefundDetail.remark || '-' }}</el-descriptions-item>
+              </el-descriptions>
             </template>
 
             <template v-if="aiGateReviews.length > 0">

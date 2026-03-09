@@ -77,10 +77,58 @@ export type Receipt = {
   received_date: string;
   amount: number;
   payment_account: string | null;
+  receiver_entity_id: number | null;
+  receiver_account_id: number | null;
+  vouchers_json: string | null;
   status: string;
   remark: string | null;
   created_at: string;
   updated_at: string;
+};
+
+export type ReceiptAccountOption = {
+  entity_id: number;
+  entity_name: string;
+  account_id: number;
+  bank_name: string;
+  account_name: string;
+  account_no: string;
+  label: string;
+};
+
+export type ReceiptRefund = {
+  id: number;
+  refund_no: string;
+  receipt_id: number;
+  contract_id: number;
+  project_id: number;
+  invoice_id: number | null;
+  applicant_userid: string;
+  refund_mode: "full" | "partial";
+  amount: number;
+  status: string;
+  approval_instance_id: number | null;
+  requires_red_invoice: number;
+  red_invoice_status: string;
+  reason: string | null;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ReceiptRefundDetail = ReceiptRefund & {
+  receipt: Receipt;
+  contract: {
+    id: number;
+    contract_no: string;
+    direction: string;
+    counterparty: string;
+    total_amount: number;
+    received_amount: number;
+    invoiced_amount: number;
+    status: string;
+  };
+  invoice: Invoice | null;
 };
 
 export const listInvoices = (params?: {
@@ -285,12 +333,22 @@ export const listReceipts = (params?: {
   }>("get", "/api/v1/receipt", { params });
 };
 
+export const listReceiptAccounts = () => {
+  return http.request<{ success: boolean; data: ReceiptAccountOption[] }>(
+    "get",
+    "/api/v1/receipt/receipt-accounts"
+  );
+};
+
 export const createReceipt = (data: {
   contract_id: number;
   invoice_id?: number;
   received_date: string;
   amount: number;
   payment_account?: string;
+  receiver_entity_id?: number;
+  receiver_account_id?: number;
+  vouchers_json?: string;
   remark?: string;
 }) => {
   return http.request<{
@@ -306,6 +364,9 @@ export const updateReceipt = (
     received_date?: string;
     amount?: number;
     payment_account?: string;
+    receiver_entity_id?: number;
+    receiver_account_id?: number;
+    vouchers_json?: string;
     status?: string;
     remark?: string;
   }
@@ -317,4 +378,53 @@ export const updateReceipt = (
 
 export const deleteReceipt = (id: number) => {
   return http.request<{ success: boolean }>("delete", `/api/v1/receipt/${id}`);
+};
+
+export const listReceiptRefunds = (params?: {
+  receipt_id?: number;
+  status?: string;
+  page?: number;
+  pageSize?: number;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: ReceiptRefund[];
+    pagination: Pagination;
+  }>("get", "/api/v1/receipt/refund", { params });
+};
+
+export const getReceiptRefund = (id: number) => {
+  return http.request<{ success: boolean; data: ReceiptRefundDetail }>(
+    "get",
+    `/api/v1/receipt/refund/${id}`
+  );
+};
+
+export const createReceiptRefund = (data: {
+  receipt_id: number;
+  refund_mode: "full" | "partial";
+  amount?: number;
+  reason?: string;
+  remark?: string;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      id: number;
+      refund_no: string;
+      amount: number;
+      requires_red_invoice: number;
+      refundable_remaining: number;
+    };
+  }>("post", "/api/v1/receipt/refund", { data });
+};
+
+export const submitReceiptRefundApproval = (
+  id: number,
+  data?: { biz_summary?: string }
+) => {
+  return http.request<{
+    success: boolean;
+    data: { approval_instance_id: number; instance_no: string };
+  }>("post", `/api/v1/receipt/refund/${id}/submit-approval`, { data });
 };

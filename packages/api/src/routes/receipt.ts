@@ -15,8 +15,12 @@ import type {
   TriggerInvoiceVerifyPayload,
   UpdateInvoiceRequestPayload,
   CreateReceiptRequest,
+  CreateReceiptRefundRequest,
   Invoice,
   Receipt,
+  ReceiptAccountOption,
+  ReceiptRefund,
+  ReceiptRefundDetail,
   UpdateInvoiceRequest,
   UpdateReceiptRequest
 } from "../types/receipt";
@@ -76,6 +80,61 @@ const ensureInvoiceRequestTemplate = async (env: Env) => {
   )
     .bind(now)
     .run();
+};
+
+const RECEIPT_REFUND_TEMPLATE_CODE = "TPL-RECEIPT-REFUND";
+const RECEIPT_REFUND_TEMPLATE_NAME = "收款退款审批模板";
+const RECEIPT_REFUND_TEMPLATE_CONFIG =
+  '{"version":1,"start_key":"dept_review","nodes":[{"key":"dept_review","type":"sequential","name":"部门负责人审批","assignee_userids":["site_manager"],"next_key":"finance_review"},{"key":"finance_review","type":"sequential","name":"财务复核","assignee_userids":["finance_manager"],"conditions":[{"field":"has_invoice","operator":"eq","value":1,"next_key":"red_invoice_issue"}],"default_next_key":"archive_cc"},{"key":"red_invoice_issue","type":"sequential","name":"红冲发票签发","assignee_userids":["finance_manager"],"next_key":"archive_cc"},{"key":"archive_cc","type":"cc","name":"抄送归档","assignee_userids":["manager"],"next_key":null}]}'
+;
+
+const ensureReceiptRefundTemplate = async (env: Env) => {
+  const now = nowIso();
+  await env.DB.prepare(
+    `INSERT OR IGNORE INTO approval_template
+      (template_code, template_name, biz_type, config_json, status, created_by, created_at, updated_at)
+     VALUES (?, ?, 'receipt_refund', ?, 'active', 'system', ?, ?)`
+  )
+    .bind(RECEIPT_REFUND_TEMPLATE_CODE, RECEIPT_REFUND_TEMPLATE_NAME, RECEIPT_REFUND_TEMPLATE_CONFIG, now, now)
+    .run();
+
+  await env.DB.prepare(
+    "UPDATE approval_template SET status = 'active', updated_at = ? WHERE biz_type = 'receipt_refund' AND status != 'deleted'"
+  )
+    .bind(now)
+    .run();
+};
+
+const resolveReceiptAccount = async (
+  env: Env,
+  receiverAccountId: number,
+  receiverEntityId?: number
+): Promise<ReceiptAccountOption | null> => {
+  const row = await env.DB.prepare(
+    `SELECT
+       e.id AS entity_id,
+       e.entity_name,
+       a.id AS account_id,
+       a.bank_name,
+       a.account_name,
+       a.account_no
+     FROM entity_bank_account a
+     JOIN entity e ON e.id = a.entity_id
+     WHERE a.id = ?
+       AND a.status = 'active'
+       AND e.status = 'active'`
+  )
+    .bind(receiverAccountId)
+    .first<ReceiptAccountOption>();
+
+  if (!row) return null;
+  if (typeof receiverEntityId === "number" && row.entity_id !== receiverEntityId) {
+    return null;
+  }
+  return {
+    ...row,
+    label: `${row.entity_name} | ${row.bank_name} | ${row.account_name} | ${row.account_no}`
+  };
 };
 
 export const receiptRoutes = new Hono<{
@@ -812,6 +871,310 @@ receiptRoutes.delete(
   }
 );
 
+receiptRoutes.get(
+  "/refund",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const receiptId = c.req.query("receipt_id");
+    const status = c.req.query("status");
+    const page = Number(c.req.query("page") ?? "1");
+    const pageSize = Number(c.req.query("pageSize") ?? "20");
+    const offset = (page - 1) * pageSize;
+
+    let sql = "SELECT * FROM receipt_refund WHERE 1=1";
+    let countSql = "SELECT COUNT(*) as total FROM receipt_refund WHERE 1=1";
+    const params: Array<number | string> = [];
+
+    if (receiptId) {
+      sql += " AND receipt_id = ?";
+      countSql += " AND receipt_id = ?";
+      params.push(Number(receiptId));
+    }
+    if (status) {
+      sql += " AND status = ?";
+      countSql += " AND status = ?";
+      params.push(status);
+    }
+
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
+    const countRow = await c.env.DB.prepare(countSql)
+      .bind(...params)
+      .first<{ total: number }>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params, pageSize, offset)
+      .all<ReceiptRefund>();
+
+    return c.json({
+      success: true,
+      data: rows.results ?? [],
+      pagination: { page, pageSize, total: countRow?.total ?? 0 }
+    });
+  }
+);
+
+receiptRoutes.get(
+  "/refund/:id",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const refund = await c.env.DB.prepare("SELECT * FROM receipt_refund WHERE id = ?")
+      .bind(id)
+      .first<ReceiptRefund>();
+    if (!refund) {
+      return c.json({ success: false, error: { message: "Receipt refund not found" } }, 404);
+    }
+
+    const receipt = await c.env.DB.prepare("SELECT * FROM receipt WHERE id = ? AND status != 'deleted'")
+      .bind(refund.receipt_id)
+      .first<Receipt>();
+    if (!receipt) {
+      return c.json({ success: false, error: { message: "Receipt not found" } }, 404);
+    }
+
+    const contract = await c.env.DB.prepare("SELECT * FROM contract WHERE id = ? AND status != 'deleted'")
+      .bind(refund.contract_id)
+      .first<Contract>();
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    const invoice =
+      refund.invoice_id !== null
+        ? await c.env.DB.prepare("SELECT * FROM invoice WHERE id = ? AND status != 'deleted'")
+            .bind(refund.invoice_id)
+            .first<Invoice>()
+        : null;
+
+    const detail: ReceiptRefundDetail = {
+      ...refund,
+      receipt,
+      contract,
+      invoice
+    };
+
+    return c.json({ success: true, data: detail });
+  }
+);
+
+receiptRoutes.post(
+  "/refund",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as CreateReceiptRefundRequest;
+
+    if (!body.receipt_id || body.receipt_id <= 0) {
+      return c.json({ success: false, error: { message: "receipt_id is required" } }, 400);
+    }
+    if (body.refund_mode !== "full" && body.refund_mode !== "partial") {
+      return c.json({ success: false, error: { message: "refund_mode must be full or partial" } }, 400);
+    }
+
+    const receipt = await c.env.DB.prepare("SELECT * FROM receipt WHERE id = ? AND status = 'recorded'")
+      .bind(body.receipt_id)
+      .first<Receipt>();
+    if (!receipt) {
+      return c.json({ success: false, error: { message: "Only recorded receipt can initiate refund" } }, 400);
+    }
+
+    const contract = await c.env.DB.prepare("SELECT * FROM contract WHERE id = ? AND status != 'deleted'")
+      .bind(receipt.contract_id)
+      .first<Contract>();
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    const refundedRow = await c.env.DB.prepare(
+      `SELECT IFNULL(SUM(amount), 0) AS total
+       FROM receipt_refund
+       WHERE receipt_id = ?
+         AND status IN ('pending_approval', 'approved', 'completed')`
+    )
+      .bind(receipt.id)
+      .first<{ total: number }>();
+
+    const refunded = refundedRow?.total ?? 0;
+    const remaining = receipt.amount - refunded;
+    if (remaining <= 0) {
+      return c.json({ success: false, error: { message: "No refundable amount remaining" } }, 400);
+    }
+
+    const refundAmount =
+      body.refund_mode === "full"
+        ? remaining
+        : typeof body.amount === "number"
+          ? body.amount
+          : NaN;
+
+    if (!Number.isFinite(refundAmount) || refundAmount <= 0) {
+      return c.json({ success: false, error: { message: "amount must be > 0 for partial refund" } }, 400);
+    }
+    if (refundAmount > remaining) {
+      return c.json(
+        {
+          success: false,
+          error: { message: `Refund overflow: remaining ${remaining}, requested ${refundAmount}` }
+        },
+        400
+      );
+    }
+
+    const now = nowIso();
+    const refundNo = await generateSerial(c.env.DB, "TK", "receipt_refund", "refund_no");
+    const requiresRedInvoice = receipt.invoice_id ? 1 : 0;
+
+    const result = await c.env.DB.prepare(
+      `INSERT INTO receipt_refund
+        (refund_no, receipt_id, contract_id, project_id, invoice_id, applicant_userid,
+         refund_mode, amount, status, approval_instance_id, requires_red_invoice,
+         red_invoice_status, reason, remark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, ?, 'none', ?, ?, ?, ?)`
+    )
+      .bind(
+        refundNo,
+        receipt.id,
+        receipt.contract_id,
+        receipt.project_id,
+        receipt.invoice_id,
+        auth.sub,
+        body.refund_mode,
+        refundAmount,
+        requiresRedInvoice,
+        body.reason?.trim() || null,
+        body.remark?.trim() || null,
+        now,
+        now
+      )
+      .run();
+
+    return c.json(
+      {
+        success: true,
+        data: {
+          id: result.meta.last_row_id,
+          refund_no: refundNo,
+          amount: refundAmount,
+          requires_red_invoice: requiresRedInvoice,
+          refundable_remaining: remaining - refundAmount
+        }
+      },
+      201
+    );
+  }
+);
+
+receiptRoutes.post(
+  "/refund/:id/submit-approval",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as { biz_summary?: string };
+
+    const refund = await c.env.DB.prepare("SELECT * FROM receipt_refund WHERE id = ?")
+      .bind(id)
+      .first<ReceiptRefund>();
+    if (!refund) {
+      return c.json({ success: false, error: { message: "Receipt refund not found" } }, 404);
+    }
+    if (![
+      "draft",
+      "rejected"
+    ].includes(refund.status)) {
+      return c.json(
+        { success: false, error: { message: `Only draft/rejected refund can submit, current=${refund.status}` } },
+        400
+      );
+    }
+
+    const receipt = await c.env.DB.prepare("SELECT * FROM receipt WHERE id = ? AND status != 'deleted'")
+      .bind(refund.receipt_id)
+      .first<Receipt>();
+    if (!receipt) {
+      return c.json({ success: false, error: { message: "Receipt not found" } }, 404);
+    }
+
+    const contract = await c.env.DB.prepare("SELECT * FROM contract WHERE id = ? AND status != 'deleted'")
+      .bind(refund.contract_id)
+      .first<Contract>();
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    const invoice =
+      refund.invoice_id !== null
+        ? await c.env.DB.prepare("SELECT * FROM invoice WHERE id = ? AND status != 'deleted'")
+            .bind(refund.invoice_id)
+            .first<Invoice>()
+        : null;
+
+    await ensureReceiptRefundTemplate(c.env);
+
+    const summary =
+      body.biz_summary?.trim() ||
+      `${refund.refund_no} | ${receipt.receipt_no} | ${refund.amount}`;
+
+    const instance = await submitForApproval(
+      c.env,
+      {
+        biz_type: "receipt_refund",
+        biz_id: id,
+        biz_summary: summary,
+        context: {
+          amount: refund.amount,
+          project_id: refund.project_id,
+          contract_id: refund.contract_id,
+          receipt_id: refund.receipt_id,
+          invoice_id: refund.invoice_id,
+          has_invoice: refund.invoice_id ? 1 : 0,
+          requires_red_invoice: refund.requires_red_invoice,
+          refund_mode: refund.refund_mode,
+          refund_no: refund.refund_no,
+          receipt: {
+            receipt_no: receipt.receipt_no,
+            received_date: receipt.received_date,
+            amount: receipt.amount,
+            payment_account: receipt.payment_account,
+            remark: receipt.remark
+          },
+          contract: {
+            contract_no: contract.contract_no,
+            direction: contract.direction,
+            counterparty: contract.counterparty,
+            total_amount: contract.total_amount,
+            received_amount: contract.received_amount,
+            invoiced_amount: contract.invoiced_amount
+          },
+          invoice: invoice
+            ? {
+                invoice_no: invoice.invoice_no,
+                issue_date: invoice.issue_date,
+                amount: invoice.amount,
+                amount_with_tax: invoice.amount_with_tax,
+                title: invoice.title,
+                tax_no: invoice.tax_no,
+                status: invoice.status
+              }
+            : null
+        }
+      },
+      auth.sub,
+      createAiGateHandler()
+    );
+
+    await c.env.DB.prepare(
+      "UPDATE receipt_refund SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(instance.id, nowIso(), id)
+      .run();
+
+    return c.json({
+      success: true,
+      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+    });
+  }
+);
+
 receiptRoutes.post(
   "/invoice/:id/trigger-verify",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
@@ -986,6 +1349,29 @@ receiptRoutes.get(
 );
 
 receiptRoutes.get(
+  "/receipt-accounts",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const rows = await c.env.DB.prepare(
+      `SELECT
+         e.id AS entity_id,
+         e.entity_name,
+         a.id AS account_id,
+         a.bank_name,
+         a.account_name,
+         a.account_no,
+         (e.entity_name || ' | ' || a.bank_name || ' | ' || a.account_name || ' | ' || a.account_no) AS label
+       FROM entity_bank_account a
+       JOIN entity e ON e.id = a.entity_id
+       WHERE a.status = 'active' AND e.status = 'active'
+       ORDER BY e.id DESC, a.id DESC`
+    ).all<ReceiptAccountOption>();
+
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+receiptRoutes.get(
   "/",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
@@ -1050,6 +1436,31 @@ receiptRoutes.post(
       return c.json({ success: false, error: { message: "amount must be > 0" } }, 400);
     }
 
+    let paymentAccount = body.payment_account?.trim() ?? null;
+    let receiverEntityId: number | null = null;
+    let receiverAccountId: number | null = null;
+    if (typeof body.receiver_account_id === "number") {
+      const option = await resolveReceiptAccount(c.env, body.receiver_account_id, body.receiver_entity_id);
+      if (!option) {
+        return c.json(
+          { success: false, error: { message: "receiver_account_id is invalid or not active" } },
+          400
+        );
+      }
+      receiverEntityId = option.entity_id;
+      receiverAccountId = option.account_id;
+      paymentAccount = option.label;
+    }
+    if (!paymentAccount) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Please select an active controlled receipt account" }
+        },
+        400
+      );
+    }
+
     const contract = await c.env.DB.prepare("SELECT * FROM contract WHERE id = ? AND status != 'deleted'")
       .bind(body.contract_id)
       .first<Contract>();
@@ -1105,8 +1516,8 @@ receiptRoutes.post(
     const result = await c.env.DB.prepare(
       `INSERT INTO receipt
         (receipt_no, contract_id, project_id, invoice_id, receiver_userid, received_date,
-         amount, payment_account, status, remark, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'recorded', ?, ?, ?)`
+         amount, payment_account, receiver_entity_id, receiver_account_id, vouchers_json, status, remark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'recorded', ?, ?, ?)`
     )
       .bind(
         receiptNo,
@@ -1116,7 +1527,10 @@ receiptRoutes.post(
         auth.sub,
         body.received_date,
         body.amount,
-        body.payment_account ?? null,
+        paymentAccount,
+        receiverEntityId,
+        receiverAccountId,
+        body.vouchers_json ?? null,
         body.remark ?? null,
         now,
         now
@@ -1156,6 +1570,38 @@ receiptRoutes.put(
 
     const nextAmount = body.amount ?? oldReceipt.amount;
     const nextInvoiceId = body.invoice_id === undefined ? oldReceipt.invoice_id : body.invoice_id;
+    let nextPaymentAccount = body.payment_account ?? oldReceipt.payment_account;
+    let nextReceiverEntityId =
+      body.receiver_entity_id === undefined
+        ? oldReceipt.receiver_entity_id
+        : (body.receiver_entity_id ?? null);
+    let nextReceiverAccountId =
+      body.receiver_account_id === undefined
+        ? oldReceipt.receiver_account_id
+        : (body.receiver_account_id ?? null);
+
+    if (typeof body.receiver_account_id === "number") {
+      const option = await resolveReceiptAccount(c.env, body.receiver_account_id, body.receiver_entity_id);
+      if (!option) {
+        return c.json(
+          { success: false, error: { message: "receiver_account_id is invalid or not active" } },
+          400
+        );
+      }
+      nextReceiverEntityId = option.entity_id;
+      nextReceiverAccountId = option.account_id;
+      nextPaymentAccount = option.label;
+    }
+
+    if (!nextPaymentAccount) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Please select an active controlled receipt account" }
+        },
+        400
+      );
+    }
 
     const othersTotal = await c.env.DB.prepare(
       "SELECT IFNULL(SUM(amount), 0) as total FROM receipt WHERE contract_id = ? AND status != 'deleted' AND id != ?"
@@ -1210,7 +1656,10 @@ receiptRoutes.put(
          invoice_id = ?,
          received_date = COALESCE(?, received_date),
          amount = COALESCE(?, amount),
-         payment_account = COALESCE(?, payment_account),
+         payment_account = ?,
+         receiver_entity_id = ?,
+         receiver_account_id = ?,
+         vouchers_json = COALESCE(?, vouchers_json),
          status = COALESCE(?, status),
          remark = COALESCE(?, remark),
          updated_at = ?
@@ -1220,7 +1669,10 @@ receiptRoutes.put(
         nextInvoiceId ?? null,
         body.received_date ?? null,
         body.amount ?? null,
-        body.payment_account ?? null,
+        nextPaymentAccount,
+        nextReceiverEntityId,
+        nextReceiverAccountId,
+        body.vouchers_json ?? null,
         body.status ?? null,
         body.remark ?? null,
         now,
