@@ -46,6 +46,15 @@ export default {
       }
     },
     {
+      path: "/workspace/my-applications",
+      name: "WorkspaceMyApplications",
+      component: () => import("@/views/workspace/my-applications/index.vue"),
+      meta: {
+        title: "我的申请",
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+      }
+    },
+    {
       path: "/workspace/payment/wizard",
       name: "WorkspacePaymentWizard",
       component: () => import("@/views/finance/payment/wizard.vue"),
@@ -67,6 +76,22 @@ export default {
       component: () => import("@/views/finance/payment/detail.vue"),
       meta: {
         title: "付款申请详情",
+        roles: [
+          "super_admin",
+          "manager",
+          "site_manager",
+          "finance",
+          "operator"
+        ],
+        showLink: false
+      }
+    },
+    {
+      path: "/workspace/fuel-application",
+      name: "WorkspaceFuelApplication",
+      component: () => import("@/views/finance/fleet/application.vue"),
+      meta: {
+        title: "油卡额度申请",
         roles: [
           "super_admin",
           "manager",

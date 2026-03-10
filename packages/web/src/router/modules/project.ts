@@ -45,7 +45,7 @@ export default {
       meta: {
         title: "项目详情(旧路径)",
         showLink: false,
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -73,7 +73,7 @@ export default {
       meta: {
         title: "项目工作区(旧路径)",
         showLink: false,
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     }
   ]

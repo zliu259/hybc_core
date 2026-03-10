@@ -45,7 +45,7 @@ export default {
       meta: {
         title: "资产详情(旧路径)",
         showLink: false,
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {

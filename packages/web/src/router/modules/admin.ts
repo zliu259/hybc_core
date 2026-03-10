@@ -62,7 +62,7 @@ export default {
       component: () => import("@/views/admin/ops-center.vue"),
       meta: {
         title: "服务监控中心",
-        roles: ["super_admin", "manager"]
+        roles: ["super_admin"]
       }
     },
     {

@@ -17,7 +17,7 @@ export default {
       component: () => import("@/views/asset/ledger.vue"),
       meta: {
         title: "资产设备台账",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -26,7 +26,7 @@ export default {
       component: () => import("@/views/warehouse/stock-order.vue"),
       meta: {
         title: "出入库制单工作台",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -35,7 +35,7 @@ export default {
       component: () => import("@/views/warehouse/templates.vue"),
       meta: {
         title: "搭配模板管理",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -44,7 +44,7 @@ export default {
       component: () => import("@/views/warehouse/consumables.vue"),
       meta: {
         title: "消耗品管理总览",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -53,7 +53,7 @@ export default {
       component: () => import("@/views/warehouse/stocktake.vue"),
       meta: {
         title: "公司资产盘库",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -62,7 +62,7 @@ export default {
       component: () => import("@/views/warehouse/dispatch.vue"),
       meta: {
         title: "双向对冲调度看板",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -72,7 +72,7 @@ export default {
       meta: {
         title: "设备管理",
         showLink: false,
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     }
   ]

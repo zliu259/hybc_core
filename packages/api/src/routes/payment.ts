@@ -306,11 +306,14 @@ paymentRoutes.delete(
 );
 
 paymentRoutes.get("/", async (c) => {
+  const auth = c.get("auth");
   const contractId = c.req.query("contract_id");
   const projectId = c.req.query("project_id");
   const status = c.req.query("status");
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
+  const applicantUserid = c.req.query("applicant_userid");
+  const mine = c.req.query("mine") === "true";
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
@@ -343,6 +346,15 @@ paymentRoutes.get("/", async (c) => {
     sql += " AND legacy_data_id = ?";
     countSql += " AND legacy_data_id = ?";
     params.push(legacyDataId);
+  }
+  if (mine) {
+    sql += " AND applicant_userid = ?";
+    countSql += " AND applicant_userid = ?";
+    params.push(auth.sub);
+  } else if (applicantUserid) {
+    sql += " AND applicant_userid = ?";
+    countSql += " AND applicant_userid = ?";
+    params.push(applicantUserid);
   }
 
   sql += " ORDER BY id DESC LIMIT ? OFFSET ?";

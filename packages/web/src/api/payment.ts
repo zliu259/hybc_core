@@ -62,6 +62,8 @@ export const listPaymentRequests = (params?: {
   project_id?: number;
   status?: string;
   keyword?: string;
+  applicant_userid?: string;
+  mine?: boolean;
   page?: number;
   pageSize?: number;
 }) => {

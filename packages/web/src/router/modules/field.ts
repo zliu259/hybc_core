@@ -17,7 +17,7 @@ export default {
       component: () => import("@/views/project/hub.vue"),
       meta: {
         title: "项目选择大厅",
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     },
     {
@@ -36,7 +36,7 @@ export default {
       meta: {
         title: "项目工作区",
         showLink: false,
-        roles: ["super_admin", "manager", "site_manager", "operator"]
+        roles: ["super_admin", "manager", "site_manager"]
       }
     }
   ]

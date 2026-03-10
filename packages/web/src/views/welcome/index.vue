@@ -75,7 +75,7 @@ const permissionLabels = computed(() => permissions.value.filter(Boolean));
 
 const canLaunchOutboundPayment = computed(() =>
   roles.value.some(role =>
-    ["super_admin", "manager", "site_manager", "finance"].includes(role)
+    ["super_admin", "manager", "site_manager", "finance", "operator"].includes(role)
   )
 );
 
@@ -219,6 +219,14 @@ const goCreateReimbursement = () => {
   router.push("/workspace/my-reimbursement/detail/create");
 };
 
+const goFuelApplication = () => {
+  router.push("/workspace/fuel-application");
+};
+
+const goMyApplications = () => {
+  router.push("/workspace/my-applications");
+};
+
 const goApprovalItem = (item: PendingApprovalItem) => {
   router.push(`/approval/detail/${item.id}`);
 };
@@ -305,6 +313,8 @@ const onCertUpload = (file: UploadFile) => {
           @click="goPaymentWizard"
           >发起对外付款</el-button
         >
+        <el-button @click="goFuelApplication">油卡额度申请</el-button>
+        <el-button @click="goMyApplications">我的申请</el-button>
         <el-button @click="router.push('/project/hub')">进入项目大厅</el-button>
         <el-badge
           :value="pendingApprovalCount"

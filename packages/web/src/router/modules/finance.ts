@@ -18,7 +18,7 @@ export default {
       redirect: "/finance/reimbursement",
       meta: {
         title: "对内付款",
-        roles: ["super_admin", "manager", "site_manager", "finance"]
+        roles: ["super_admin", "manager", "finance"]
       },
       children: [
         {
@@ -27,7 +27,7 @@ export default {
           component: () => import("@/views/finance/reimbursement/list.vue"),
           meta: {
             title: "报销处理",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -36,7 +36,7 @@ export default {
           component: () => import("@/views/finance/reimbursement/detail.vue"),
           meta: {
             title: "信封详情",
-            roles: ["super_admin", "manager", "site_manager", "finance"],
+            roles: ["super_admin", "manager", "finance"],
             showLink: false
           }
         },
@@ -46,7 +46,7 @@ export default {
           component: () => import("@/views/finance/reimbursement/batch.vue"),
           meta: {
             title: "报销集中审批",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -55,7 +55,7 @@ export default {
           component: () => import("@/views/finance/reimbursement/payout.vue"),
           meta: {
             title: "报销集中打款",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -76,7 +76,7 @@ export default {
       redirect: "/finance/contract",
       meta: {
         title: "对外付款",
-        roles: ["super_admin", "manager", "site_manager", "finance"]
+        roles: ["super_admin", "manager", "finance"]
       },
       children: [
         {
@@ -85,7 +85,7 @@ export default {
           component: () => import("@/views/finance/contract/index.vue"),
           meta: {
             title: "合同管理",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -103,7 +103,7 @@ export default {
           component: () => import("@/views/finance/contract/monitor.vue"),
           meta: {
             title: "合同执行监控",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -121,7 +121,7 @@ export default {
           component: () => import("@/views/finance/payment/index.vue"),
           meta: {
             title: "付款管理",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -130,7 +130,7 @@ export default {
           component: () => import("@/views/finance/payment/wizard.vue"),
           meta: {
             title: "智能发单台",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -148,7 +148,7 @@ export default {
           component: () => import("@/views/finance/payee/index.vue"),
           meta: {
             title: "收款人管理",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         }
       ]
@@ -160,7 +160,7 @@ export default {
       redirect: "/finance/receipt/contract",
       meta: {
         title: "收款",
-        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+        roles: ["super_admin", "manager", "finance"]
       },
       children: [
         {
@@ -169,7 +169,7 @@ export default {
           component: () => import("@/views/finance/receipt/contract.vue"),
           meta: {
             title: "收款合同",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -178,7 +178,7 @@ export default {
           component: () => import("@/views/finance/receipt/invoice.vue"),
           meta: {
             title: "发票管理",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -187,7 +187,7 @@ export default {
           component: () => import("@/views/finance/receipt/list.vue"),
           meta: {
             title: "收款登记",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -196,7 +196,7 @@ export default {
           component: () => import("@/views/finance/receipt/detail.vue"),
           meta: {
             title: "收款登记详情",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+            roles: ["super_admin", "manager", "finance"],
             showLink: false
           }
         },
@@ -206,7 +206,7 @@ export default {
           component: () => import("@/views/finance/receipt/dashboard.vue"),
           meta: {
             title: "财务报表快照",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -227,7 +227,7 @@ export default {
       redirect: "/finance/entity/profile",
       meta: {
         title: "实体公司资料",
-        roles: ["super_admin", "manager", "site_manager", "finance"]
+        roles: ["super_admin", "manager", "finance"]
       },
       children: [
         {
@@ -236,7 +236,7 @@ export default {
           component: () => import("@/views/entity/index.vue"),
           meta: {
             title: "实体资料管理",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         }
       ]
@@ -248,7 +248,7 @@ export default {
       redirect: "/finance/fleet/application",
       meta: {
         title: "车辆油卡",
-        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+        roles: ["super_admin", "manager", "finance"]
       },
       children: [
         {
@@ -257,7 +257,7 @@ export default {
           component: () => import("@/views/finance/fleet/application.vue"),
           meta: {
             title: "油卡额度申请",
-            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -266,7 +266,7 @@ export default {
           component: () => import("@/views/finance/fleet/vehicles.vue"),
           meta: {
             title: "车辆与办公室处理",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
@@ -275,7 +275,7 @@ export default {
           component: () => import("@/views/finance/fleet/dashboard.vue"),
           meta: {
             title: "车辆用油总览",
-            roles: ["super_admin", "manager", "site_manager", "finance"]
+            roles: ["super_admin", "manager", "finance"]
           }
         }
       ]

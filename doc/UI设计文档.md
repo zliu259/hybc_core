@@ -34,6 +34,7 @@
 
 ### 3.1 页面总索引（必须有明确文件指向）
 - 个人工作台首页：`packages/web/src/views/welcome/index.vue`
+- 个人工作台-我的申请：`packages/web/src/views/workspace/my-applications/index.vue`
 - 工作台我的报销提交：`packages/web/src/views/workspace/reimbursement/list.vue`
 - 仪表盘：`packages/web/src/views/dashboard/index.vue`
 - 实体管理：`packages/web/src/views/entity/index.vue`
@@ -949,6 +950,21 @@
 - 办公室处理申请：`/api/v1/fleet/fuel-applications/:id/process`
 - 领导总览：`/api/v1/dashboard/vehicle-fuel-overview`
 - 实体附件管理动作：上传/下载/删除（下载通过 `/api/v1/upload/object/:key`）
+
+### 8.3 个人工作台员工闭环（2026-03）
+- 个人工作台首页增加入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
+- 新增“我的申请”页面，聚合展示员工本人发起的对外付款申请、报销申请、油卡额度申请：`packages/web/src/views/workspace/my-applications/index.vue`
+- 个人工作台路由新增：`/workspace/my-applications`：`packages/web/src/router/modules/workspace.ts`
+- 对外付款列表接口新增 `mine/applicant_userid` 过滤，支持员工仅查看本人申请：`packages/api/src/routes/payment.ts`、`packages/web/src/api/payment.ts`
+
+### 8.4 路由可见性规则收敛（2026-03）
+- 系统底层与引擎：仅 `super_admin` 可见（含服务监控中心）：`packages/web/src/router/modules/admin.ts`
+- 个人工作台：全部角色可见（`super_admin/manager/site_manager/finance/operator`）：`packages/web/src/router/modules/workspace.ts`
+- 项目与现场指挥：至少项目经理可见（`super_admin/manager/site_manager`）：`packages/web/src/router/modules/field.ts`、`packages/web/src/router/modules/project.ts`
+- 财务中心：仅 `super_admin/manager/finance` 可见：`packages/web/src/router/modules/finance.ts`
+- 库房管理（库房与资产）：至少经理可见（`super_admin/manager/site_manager`）：`packages/web/src/router/modules/warehouse-assets.ts`、`packages/web/src/router/modules/asset.ts`
+- 统一审批台：全部角色可见：`packages/web/src/router/modules/approval.ts`
+- 为保持员工在个人工作台可完成油卡申请，新增工作台隐式路由 `/workspace/fuel-application`（不在菜单展示）：`packages/web/src/router/modules/workspace.ts`
 - 每个高风险操作都有确认与结果反馈。
 - 桌面端与移动端关键动作路径均可完成。
 - 样式 token 与状态语义一致，不出现颜色语义冲突。
