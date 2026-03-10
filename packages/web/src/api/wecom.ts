@@ -15,6 +15,10 @@ export type WeComUser = {
   email?: string;
   avatar?: string;
   status?: number;
+  system_role?: "super_admin" | "finance" | "manager" | "site_manager" | "operator";
+  role_source?: "wecom_tag" | "username_fallback";
+  permissions?: string[];
+  permission_status?: "configured";
 };
 
 export const getWeComScanUrl = (
@@ -59,6 +63,11 @@ export const getWeComContacts = () => {
       syncedAt: string;
       departments: WeComDepartment[];
       users: WeComUser[];
+      permission_sync?: {
+        enriched: boolean;
+        mode: "wecom_tag+fallback" | "username_fallback";
+        error?: string;
+      };
     };
   }>("get", "/api/v1/auth/wecom/contacts");
 };

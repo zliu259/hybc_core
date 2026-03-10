@@ -6,7 +6,7 @@ import type { Env } from "../types/env";
 const ACCESS_TOKEN_TTL_SECONDS = 2 * 60 * 60;
 const REFRESH_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 
-const defaultPermissionsByRole: Record<UserRole, string[]> = {
+export const defaultPermissionsByRole: Record<UserRole, string[]> = {
   super_admin: ["*:*:*"],
   finance: [
     "contract:read",
@@ -40,7 +40,7 @@ const defaultPermissionsByRole: Record<UserRole, string[]> = {
   operator: ["entity:read", "dict:read", "project:read", "upload:write"]
 };
 
-const roleFromUsername = (username: string): UserRole => {
+export const roleFromUsername = (username: string): UserRole => {
   if (username === "super_admin" || username === "admin") {
     return "super_admin";
   }

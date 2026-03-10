@@ -3,8 +3,10 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import {
   createSessionPayload,
+  defaultPermissionsByRole,
   getRefreshSession,
   issueTokens,
+  roleFromUsername,
   toFrontendLoginResponse,
   verifyToken
 } from "../services/auth";
@@ -41,6 +43,20 @@ type WeComTagGetResponse = {
   errcode?: number;
   errmsg?: string;
   userlist?: Array<{ userid?: string }>;
+};
+
+type WeComContactUserWithPermission = {
+  userid: string;
+  name?: string;
+  department?: number[];
+  mobile?: string;
+  email?: string;
+  avatar?: string;
+  status?: number;
+  system_role: UserRole;
+  role_source: "wecom_tag" | "username_fallback";
+  permissions: string[];
+  permission_status: "configured";
 };
 
 type WeComMiniProgramSessionResponse = {
@@ -493,6 +509,86 @@ const isUserInTag = async (
   return (json.userlist ?? []).some((user) => user.userid === userId);
 };
 
+const listUsersInTag = async (
+  env: Env,
+  accessToken: string,
+  tagId: number
+): Promise<Set<string>> => {
+  const json = await fetchWeComJson<WeComTagGetResponse>(
+    env,
+    `https://qyapi.weixin.qq.com/cgi-bin/tag/get?access_token=${encodeURIComponent(accessToken)}&tagid=${tagId}`
+  );
+  if (json.errcode !== 0) {
+    throw new Error(
+      weComErrorMessage(json.errmsg, `Failed to get members by WeCom tag ${tagId}`)
+    );
+  }
+  const members = new Set<string>();
+  (json.userlist ?? []).forEach((item) => {
+    if (item.userid) members.add(item.userid);
+  });
+  return members;
+};
+
+const enrichPermissionStatusByWeComTags = async (
+  env: Env,
+  users: Array<{
+    userid: string;
+    name?: string;
+    department?: number[];
+    mobile?: string;
+    email?: string;
+    avatar?: string;
+    status?: number;
+  }>
+): Promise<WeComContactUserWithPermission[]> => {
+  const accessToken = await fetchWeComAccessToken(env);
+  const tagList = await fetchWeComTags(env, accessToken);
+  const tagIdByName = new Map<string, number>();
+  tagList.forEach((item) => {
+    tagIdByName.set(item.tagname, item.tagid);
+  });
+
+  const mapping = parseRoleTagMapping(env.WECHAT_ROLE_TAG_MAPPING);
+  const roleMemberSet: Record<UserRole, Set<string>> = {
+    super_admin: new Set<string>(),
+    finance: new Set<string>(),
+    manager: new Set<string>(),
+    site_manager: new Set<string>(),
+    operator: new Set<string>()
+  };
+
+  for (const role of rolePriority) {
+    const tagNames = mapping[role] || [];
+    for (const tagName of tagNames) {
+      const tagId = tagIdByName.get(tagName);
+      if (!tagId) continue;
+      const members = await listUsersInTag(env, accessToken, tagId);
+      members.forEach((userid) => roleMemberSet[role].add(userid));
+    }
+  }
+
+  const resolveRoleByTagFirst = (userid: string): { role: UserRole; source: "wecom_tag" | "username_fallback" } => {
+    for (const role of rolePriority) {
+      if (roleMemberSet[role].has(userid)) {
+        return { role, source: "wecom_tag" };
+      }
+    }
+    return { role: roleFromUsername(userid), source: "username_fallback" };
+  };
+
+  return users.map((item) => {
+    const resolved = resolveRoleByTagFirst(item.userid);
+    return {
+      ...item,
+      system_role: resolved.role,
+      role_source: resolved.source,
+      permissions: defaultPermissionsByRole[resolved.role],
+      permission_status: "configured"
+    };
+  });
+};
+
 const resolveRoleByWeComTags = async (
   env: Env,
   accessToken: string,
@@ -883,9 +979,47 @@ authRoutes.get(
       allowStaleOnRefreshError: true
     });
 
+    let users: WeComContactUserWithPermission[] = [];
+    let permissionSync: {
+      enriched: boolean;
+      mode: "wecom_tag+fallback" | "username_fallback";
+      error?: string;
+    } = {
+      enriched: false,
+      mode: "username_fallback"
+    };
+
+    try {
+      users = await enrichPermissionStatusByWeComTags(c.env, parsed.users ?? []);
+      permissionSync = {
+        enriched: true,
+        mode: "wecom_tag+fallback"
+      };
+    } catch (error) {
+      users = (parsed.users ?? []).map((item) => {
+        const role = roleFromUsername(item.userid);
+        return {
+          ...item,
+          system_role: role,
+          role_source: "username_fallback" as const,
+          permissions: defaultPermissionsByRole[role],
+          permission_status: "configured" as const
+        };
+      });
+      permissionSync = {
+        enriched: false,
+        mode: "username_fallback",
+        error: error instanceof Error ? error.message : "permission sync failed"
+      };
+    }
+
     return c.json({
       success: true,
-      data: parsed
+      data: {
+        ...parsed,
+        users,
+        permission_sync: permissionSync
+      }
     });
   }
 );

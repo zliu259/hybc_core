@@ -965,6 +965,11 @@
 - 库房管理（库房与资产）：至少经理可见（`super_admin/manager/site_manager`）：`packages/web/src/router/modules/warehouse-assets.ts`、`packages/web/src/router/modules/asset.ts`
 - 统一审批台：全部角色可见：`packages/web/src/router/modules/approval.ts`
 - 为保持员工在个人工作台可完成油卡申请，新增工作台隐式路由 `/workspace/fuel-application`（不在菜单展示）：`packages/web/src/router/modules/workspace.ts`
+
+### 8.5 企业微信成员权限可视化（2026-03）
+- 企业微信集成页新增“每个成员权限状况”可视化：系统角色、角色识别来源、权限清单：`packages/web/src/views/wecom/member-admin.vue`
+- 企业微信联系人接口返回成员权限状态增强字段：`system_role`、`role_source`、`permissions`、`permission_status`：`packages/api/src/routes/auth.ts`
+- 页面顶部新增权限识别模式提示（企业微信标签增强成功/失败回退账号兜底）：`packages/web/src/views/wecom/member-admin.vue`
 - 每个高风险操作都有确认与结果反馈。
 - 桌面端与移动端关键动作路径均可完成。
 - 样式 token 与状态语义一致，不出现颜色语义冲突。

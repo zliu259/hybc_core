@@ -20,6 +20,11 @@ const users = ref<WeComUser[]>([]);
 
 const keyword = ref("");
 const departmentId = ref<number | null>(null);
+const permissionSync = ref<{
+  enriched: boolean;
+  mode: "wecom_tag+fallback" | "username_fallback";
+  error?: string;
+} | null>(null);
 
 const departmentMap = computed(() => {
   const map = new Map<number, string>();
@@ -54,10 +59,12 @@ const loadContacts = async () => {
     syncedAt.value = result.data.syncedAt;
     departments.value = result.data.departments ?? [];
     users.value = result.data.users ?? [];
+    permissionSync.value = result.data.permission_sync ?? null;
   } catch (error: unknown) {
     syncedAt.value = "";
     departments.value = [];
     users.value = [];
+    permissionSync.value = null;
     const backendMsg =
       (error as { response?: { data?: { error?: { message?: string } } } })
         ?.response?.data?.error?.message ?? "获取企业成员失败";
@@ -65,6 +72,21 @@ const loadContacts = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const roleLabel = (role?: string) => {
+  if (role === "super_admin") return "超级管理员";
+  if (role === "finance") return "财务";
+  if (role === "manager") return "经理";
+  if (role === "site_manager") return "现场经理";
+  if (role === "operator") return "员工";
+  return "未识别";
+};
+
+const roleSourceLabel = (source?: string) => {
+  if (source === "wecom_tag") return "企业微信标签";
+  if (source === "username_fallback") return "账号兜底";
+  return "-";
 };
 
 const syncContacts = async () => {
@@ -108,6 +130,20 @@ onMounted(() => {
       class="mb-3"
     />
 
+    <el-alert
+      v-if="permissionSync"
+      :title="
+        permissionSync.enriched
+          ? '权限识别来源：企业微信标签 + 账号兜底'
+          : '权限识别来源：账号兜底（企业微信标签读取失败）'
+      "
+      :description="permissionSync.error || ''"
+      :type="permissionSync.enriched ? 'success' : 'warning'"
+      :closable="false"
+      show-icon
+      class="mb-3"
+    />
+
     <div class="toolbar mb-3">
       <el-button type="primary" :loading="syncing" @click="syncContacts">
         从企业微信拉取成员
@@ -140,9 +176,32 @@ onMounted(() => {
     <el-table :data="filteredUsers" :loading="loading" stripe height="560">
       <el-table-column prop="userid" label="userid" min-width="180" />
       <el-table-column prop="name" label="姓名" width="120" />
+      <el-table-column label="系统角色" width="120">
+        <template #default="scope">
+          <el-tag size="small" type="primary">{{ roleLabel(scope.row.system_role) }}</el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="识别来源" width="120">
+        <template #default="scope">
+          {{ roleSourceLabel(scope.row.role_source) }}
+        </template>
+      </el-table-column>
       <el-table-column label="部门" min-width="220">
         <template #default="scope">
           {{ formatDepartmentNames(scope.row.department || []) }}
+        </template>
+      </el-table-column>
+      <el-table-column label="权限状况" min-width="260">
+        <template #default="scope">
+          <el-tag
+            v-for="perm in scope.row.permissions || []"
+            :key="perm"
+            size="small"
+            class="mr-1 mb-1"
+            effect="plain"
+          >
+            {{ perm }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="mobile" label="手机号" width="140" />
