@@ -45,7 +45,7 @@ class RelayRuntimeStats:
         self._trim(now)
         if now < self.cooldown_until:
             return True, "cooldown"
-        if self.inflight >= max(settings.relay_max_inflight, 1):
+        if self.inflight >= _safe_positive_int(settings.relay_max_inflight, 120):
             return True, "inflight_limit"
         total = len(self.window_total)
         timeout_rate = (len(self.window_timeout) / total) if total > 0 else 0.0
@@ -70,7 +70,7 @@ class RelayRuntimeStats:
                     "overloaded": overloaded,
                     "reason": reason,
                     "inflight_requests": self.inflight,
-                    "max_inflight": max(settings.relay_max_inflight, 1),
+                    "max_inflight": _safe_positive_int(settings.relay_max_inflight, 120),
                     "window_seconds": max(settings.relay_error_window_seconds, 1),
                     "sample_size": total,
                     "timeout_rate": round(timeout_rate, 4),
@@ -83,7 +83,7 @@ class RelayRuntimeStats:
                 "overloaded": False,
                 "reason": "status_error",
                 "inflight_requests": 0,
-                "max_inflight": max(settings.relay_max_inflight, 1),
+                "max_inflight": _safe_positive_int(settings.relay_max_inflight, 120),
                 "window_seconds": max(settings.relay_error_window_seconds, 1),
                 "sample_size": 0,
                 "timeout_rate": 0.0,
@@ -123,6 +123,16 @@ class RelayRuntimeStats:
 
 
 relay_stats = RelayRuntimeStats()
+
+
+def _safe_positive_int(value: Any, fallback: int) -> int:
+    try:
+        ivalue = int(value)
+        if ivalue > 0:
+            return ivalue
+    except Exception:
+        pass
+    return fallback
 
 
 async def reject_when_overloaded() -> None:
@@ -383,4 +393,4 @@ async def wecom_proxy(request: Request) -> Response:
         timeout_error = True
         raise HTTPException(status_code=504, detail="wecom proxy timeout")
     finally:
-        await relay_stats.finish_request(timeout=timeout_error, upstream_error=upstream_error)
+        relay_stats.finish_request(timeout=timeout_error, upstream_error=upstream_error)
