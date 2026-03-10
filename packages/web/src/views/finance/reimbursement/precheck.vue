@@ -66,11 +66,24 @@ const doPrecheck = async (
   id: number,
   action: "approved" | "supplement" | "rejected"
 ) => {
-  await precheckEnvelope(id, { action });
-  message(`预审完成：${action}`, {
-    type: action === "approved" ? "success" : "warning"
-  });
-  await loadData();
+  try {
+    await precheckEnvelope(id, { action });
+    message(`预审完成：${action}`, {
+      type: action === "approved" ? "success" : "warning"
+    });
+    await loadData();
+  } catch (error) {
+    const err = error as {
+      response?: { status?: number; data?: { data?: { wait_for_audit?: boolean } } };
+    };
+    const waitForAudit =
+      err.response?.status === 409 && err.response?.data?.data?.wait_for_audit === true;
+    if (!waitForAudit) throw error;
+    message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
+      type: "warning"
+    });
+    await loadData();
+  }
 };
 
 onMounted(async () => {

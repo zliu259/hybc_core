@@ -1318,12 +1318,42 @@ reimbursementRoutes.post(
 
     if (body.action === "approved") {
       if (envelope.duplicate_check_status !== "completed") {
+        const latestAuditTask = await c.env.DB.prepare(
+          `SELECT id, status FROM task_queue
+           WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
+           ORDER BY id DESC LIMIT 1`
+        )
+          .bind(id)
+          .first<{ id: number; status: string }>();
+
+        const runningStatuses = new Set(["pending", "assigned", "running"]);
+        const hasRunningAudit =
+          latestAuditTask?.status && runningStatuses.has(latestAuditTask.status);
+
+        if (!hasRunningAudit) {
+          const latestAttachment = await c.env.DB.prepare(
+            `SELECT file_key FROM envelope_attachment
+             WHERE envelope_id = ? AND status = 'active'
+             ORDER BY id DESC LIMIT 1`
+          )
+            .bind(id)
+            .first<{ file_key: string | null }>();
+          await enqueueEnvelopeAiAudit(c.env, id, {
+            file_key: latestAttachment?.file_key ?? null
+          });
+        }
+
         return c.json(
           {
             success: false,
-            error: { message: "Duplicate audit is mandatory before precheck approval" }
+            error: { message: "Duplicate audit is mandatory before precheck approval" },
+            data: {
+              wait_for_audit: true,
+              audit_triggered: !hasRunningAudit,
+              task_id: latestAuditTask?.id ?? null
+            }
           },
-          400
+          409
         );
       }
       const duplicateRow = await c.env.DB.prepare(

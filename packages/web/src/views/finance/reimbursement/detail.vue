@@ -411,14 +411,27 @@ const submitPrecheck = async (
   action: "approved" | "supplement" | "rejected"
 ) => {
   if (!detail.value) return;
-  await precheckEnvelope(detail.value.id, {
-    action,
-    comment: verifyNote.value || undefined
-  });
-  message(`预审已更新：${action}`, {
-    type: action === "approved" ? "success" : "warning"
-  });
-  await loadDetail();
+  try {
+    await precheckEnvelope(detail.value.id, {
+      action,
+      comment: verifyNote.value || undefined
+    });
+    message(`预审已更新：${action}`, {
+      type: action === "approved" ? "success" : "warning"
+    });
+    await loadDetail();
+  } catch (error) {
+    const err = error as {
+      response?: { status?: number; data?: { data?: { wait_for_audit?: boolean } } };
+    };
+    const waitForAudit =
+      err.response?.status === 409 && err.response?.data?.data?.wait_for_audit === true;
+    if (!waitForAudit) throw error;
+    message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
+      type: "warning"
+    });
+    await loadDetail();
+  }
 };
 
 onMounted(async () => {
