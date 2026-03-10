@@ -111,6 +111,16 @@ export default {
         roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
         showLink: false
       }
+    },
+    {
+      path: "/workspace/payee-external",
+      name: "WorkspacePayeeExternal",
+      component: () => import("@/views/finance/payee/index.vue"),
+      meta: {
+        title: "添加外部收款人",
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+        showLink: false
+      }
     }
   ]
 } satisfies RouteConfigsTable;

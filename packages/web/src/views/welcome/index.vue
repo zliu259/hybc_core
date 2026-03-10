@@ -244,6 +244,10 @@ const goExternalPayee = () => {
   router.push("/workspace/payee");
 };
 
+const goExternalPayeeCreate = () => {
+  router.push("/workspace/payee-external");
+};
+
 const goFuelOfficeDesk = () => {
   router.push("/finance/fleet/vehicles");
 };
@@ -336,6 +340,7 @@ const onCertUpload = (file: UploadFile) => {
         >
         <el-button @click="goFuelApplication">油卡额度申请</el-button>
         <el-button @click="goExternalPayee">我的内部收款信息</el-button>
+        <el-button @click="goExternalPayeeCreate">添加外部收款人</el-button>
         <el-button @click="goMyApplications">我的申请</el-button>
         <el-badge
           v-if="canHandleFuelOffice"
@@ -569,6 +574,7 @@ const onCertUpload = (file: UploadFile) => {
 
 .welcome-card__actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 12px;
 }

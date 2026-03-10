@@ -15,7 +15,9 @@ import {
 defineOptions({ name: "PayeeList" });
 
 const route = useRoute();
-const isWorkspaceMode = computed(() => route.path.startsWith("/workspace/payee"));
+const isWorkspaceInternalMode = computed(() => route.path === "/workspace/payee");
+const isWorkspaceExternalMode = computed(() => route.path === "/workspace/payee-external");
+const isWorkspaceMode = computed(() => isWorkspaceInternalMode.value || isWorkspaceExternalMode.value);
 
 const activeTab = ref<"external" | "internal">("external");
 const loading = ref(false);
@@ -37,9 +39,13 @@ const loadData = async () => {
   loading.value = true;
   try {
     const result = await listPayees({
-      type: isWorkspaceMode.value ? "internal" : activeTab.value,
+      type: isWorkspaceInternalMode.value
+        ? "internal"
+        : isWorkspaceExternalMode.value
+          ? "external"
+          : activeTab.value,
       keyword: isWorkspaceMode.value ? undefined : keyword.value || undefined,
-      mine: isWorkspaceMode.value ? true : undefined
+      mine: isWorkspaceInternalMode.value ? true : undefined
     });
     list.value = result.data;
   } finally {
@@ -110,8 +116,10 @@ const onDelete = async (row: Payee) => {
 };
 
 onMounted(async () => {
-  if (isWorkspaceMode.value) {
+  if (isWorkspaceInternalMode.value) {
     activeTab.value = "internal";
+  } else if (isWorkspaceExternalMode.value) {
+    activeTab.value = "external";
   }
   await loadData();
 });
@@ -125,9 +133,17 @@ onMounted(async () => {
     </el-tabs>
 
     <el-alert
-      v-if="isWorkspaceMode"
+      v-if="isWorkspaceInternalMode"
       title="仅展示与当前账号姓名匹配的内部收款信息"
       type="info"
+      :closable="false"
+      style="margin-bottom: 12px"
+    />
+
+    <el-alert
+      v-if="isWorkspaceExternalMode"
+      title="你可以在这里维护外部收款人"
+      type="success"
       :closable="false"
       style="margin-bottom: 12px"
     />
@@ -137,7 +153,7 @@ onMounted(async () => {
         <el-input v-model="keyword" placeholder="名称/账号" clearable />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button v-if="!isWorkspaceMode" @click="openCreate">新增收款人</el-button>
+      <el-button v-if="!isWorkspaceInternalMode" @click="openCreate">新增收款人</el-button>
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
@@ -146,7 +162,7 @@ onMounted(async () => {
       <el-table-column prop="bank_account" label="账号" min-width="220" />
       <el-table-column prop="phone" label="电话" width="130" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column v-if="!isWorkspaceMode" label="操作" width="160" fixed="right">
+      <el-table-column v-if="!isWorkspaceInternalMode" label="操作" width="160" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="openEdit(scope.row)"
             >编辑</el-button
