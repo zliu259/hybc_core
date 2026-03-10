@@ -190,7 +190,9 @@ const syncPayoutSelection = async () => {
   await updatePaymentRequest(paymentDetail.value.id, {
     payment_entity_id: payoutForm.value.payment_entity_id,
     payment_entity_bank_account_id: payoutForm.value.payment_entity_bank_account_id,
-    payment_account: payoutForm.value.payment_account || null
+    payment_account: payoutForm.value.payment_account || null,
+    admin_edit_mode: isSuperAdmin.value ? true : undefined,
+    edit_note: isSuperAdmin.value ? "approval workbench payout selection update" : undefined
   });
 };
 

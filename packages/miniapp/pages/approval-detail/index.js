@@ -579,6 +579,9 @@ Page({
     const { paymentEntity, paymentAccount, paymentMethod } = this.getCurrentPaymentSelection();
     if (!paymentEntity) throw new Error("请选择付款主体");
     if (!paymentAccount) throw new Error("请选择付款账户");
+    const profile = getUserProfile() || {};
+    const roles = Array.isArray(profile.roles) ? profile.roles : [];
+    const isSuperAdmin = roles.includes("super_admin");
 
     await request({
       method: "PUT",
@@ -587,7 +590,9 @@ Page({
         payment_entity_id: Number(paymentEntity.id),
         payment_entity_bank_account_id: Number(paymentAccount.id),
         payment_account: `${paymentAccount.bank_name} / ${paymentAccount.account_no}`,
-        payment_method: paymentMethod
+        payment_method: paymentMethod,
+        admin_edit_mode: isSuperAdmin ? true : undefined,
+        edit_note: isSuperAdmin ? "miniapp approval payout selection update" : undefined
       }
     });
 
