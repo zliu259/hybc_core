@@ -32,6 +32,37 @@ const distanceMeters = (aLat, aLng, bLat, bLng) => {
   return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 };
 
+const projectStatusWeight = (status) => {
+  if (status === "active") return 1;
+  if (status === "preparing") return 2;
+  if (status === "planning") return 3;
+  if (status === "completing") return 4;
+  if (status === "archived") return 9;
+  return 8;
+};
+
+const byProjectPriority = (a, b) => {
+  const special = (item) => {
+    if (item.project_name === "办公室" || item.project_code === "办公室") return 0;
+    if (item.project_name === "仓库" || item.project_code === "仓库") return 1;
+    return 9;
+  };
+
+  const specialA = special(a);
+  const specialB = special(b);
+  if (specialA !== specialB) return specialA - specialB;
+
+  const statusA = projectStatusWeight(a.status);
+  const statusB = projectStatusWeight(b.status);
+  if (statusA !== statusB) return statusA - statusB;
+
+  const aTime = Date.parse(a.updated_at || a.created_at || "") || 0;
+  const bTime = Date.parse(b.updated_at || b.created_at || "") || 0;
+  if (bTime !== aTime) return bTime - aTime;
+
+  return Number(b.id || 0) - Number(a.id || 0);
+};
+
 Component({
   properties: {
     value: {
@@ -53,7 +84,10 @@ Component({
     projects: [],
     projectNames: [],
     selectedIndex: 0,
-    autoHint: ""
+    autoHint: "",
+    hasSelection: false,
+    selectedProjectStatus: "",
+    selectedProjectCode: ""
   },
 
   lifetimes: {
@@ -74,8 +108,26 @@ Component({
       const list = this.data.projects || [];
       const index = list.findIndex((item) => Number(item.id) === id);
       if (index >= 0) {
+        const selected = list[index];
         this.setData({ selectedIndex: index });
+        this.updateSelectedMeta(selected);
       }
+    },
+
+    updateSelectedMeta(project) {
+      if (!project) {
+        this.setData({
+          hasSelection: false,
+          selectedProjectStatus: "",
+          selectedProjectCode: ""
+        });
+        return;
+      }
+      this.setData({
+        hasSelection: true,
+        selectedProjectStatus: String(project.status || "").trim(),
+        selectedProjectCode: String(project.project_code || "").trim()
+      });
     },
 
     emitChange(project) {
@@ -89,9 +141,12 @@ Component({
     loadProjects() {
       if (this.data.loading) return;
       this.setData({ loading: true, autoHint: "" });
-      request({ method: "GET", path: "/api/v1/project?page=1&pageSize=200&status=active" })
+      request({ method: "GET", path: "/api/v1/project?page=1&pageSize=500" })
         .then((res) => {
-          const projects = (res && res.data) || [];
+          const rawList = (res && res.data) || [];
+          const projects = rawList
+            .filter((item) => item && item.id)
+            .sort(byProjectPriority);
           const names = projects.map((item) => item.project_name || `项目#${item.id}`);
           this.setData({
             projects,
@@ -108,6 +163,7 @@ Component({
             return;
           }
 
+          this.updateSelectedMeta(projects[0]);
           this.emitChange(projects[0]);
         })
         .catch((error) => {
@@ -123,6 +179,7 @@ Component({
       const project = this.data.projects[index];
       if (!project) return;
       this.setData({ selectedIndex: index, autoHint: "" });
+      this.updateSelectedMeta(project);
       this.emitChange(project);
     },
 

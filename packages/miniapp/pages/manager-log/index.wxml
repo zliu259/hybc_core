@@ -1,7 +1,6 @@
 <view class="page">
-  <hy-panel-card title="📸 写现场概况（管理日志）" icon="file-image" subtitle="按住说话 + 拍照必传，系统自动摘要">
+  <hy-panel-card title="📸 写现场概况（管理日志）" icon="file-image" subtitle="拍照必传，系统自动摘要">
     <hy-project-picker value="{{projectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="voice-box">🎤 按住说话：白班阵雨，2台设备进场，1处安全隐患已处理</view>
     <view class="label required">日期</view>
     <picker mode="date" value="{{form.log_date}}" bindchange="onDateChange" disabled="{{busy}}">
       <view class="input">{{form.log_date}}</view>

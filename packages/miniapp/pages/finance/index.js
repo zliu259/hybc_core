@@ -1,6 +1,5 @@
 const { request } = require("../../utils/request");
 const { getUserProfile } = require("../../utils/auth");
-const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 const canLaunchPayment = (roles) => {
   return (
@@ -50,7 +49,6 @@ Page({
   openGlobalHelper() {
     wx.showActionSheet({
       itemList: [
-        "🎙️ 录音识别指令",
         "🎤 我要发起对外付款",
         "🎤 我要审批单据",
         "🎤 我要发起报销",
@@ -59,10 +57,6 @@ Page({
       ],
       success: async (res) => {
         if (res.tapIndex === 0) {
-          await runVoiceAssistant({ scene: "finance" }).catch(() => {});
-          return;
-        }
-        if (res.tapIndex === 1) {
           if (!this.data.canPaymentApply) {
             wx.showToast({ title: "当前角色无对外付款权限", icon: "none" });
             return;
@@ -70,15 +64,15 @@ Page({
           wx.navigateTo({ url: "/pages/payment-apply/index" });
           return;
         }
-        if (res.tapIndex === 2) {
+        if (res.tapIndex === 1) {
           wx.navigateTo({ url: "/pages/approval/index" });
           return;
         }
-        if (res.tapIndex === 3) {
+        if (res.tapIndex === 2) {
           wx.navigateTo({ url: "/pages/reimbursement-list/index" });
           return;
         }
-        if (res.tapIndex === 4) {
+        if (res.tapIndex === 3) {
           wx.navigateTo({ url: "/pages/reimbursement-archive/index" });
           return;
         }

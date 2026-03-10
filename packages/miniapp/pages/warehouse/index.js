@@ -1,5 +1,4 @@
 const { request } = require("../../utils/request");
-const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 Page({
   data: {
@@ -68,21 +67,17 @@ Page({
 
   openGlobalHelper() {
     wx.showActionSheet({
-      itemList: ["🎙️ 录音识别指令", "📦 出入库制单", "📊 库存概览", "🚚 调度看板", "🧮 公司盘库"],
+      itemList: ["📦 出入库制单", "📊 库存概览", "🚚 调度看板", "🧮 公司盘库"],
       success: async (res) => {
         if (res.tapIndex === 0) {
-          await runVoiceAssistant({ scene: "warehouse" }).catch(() => {});
-          return;
-        }
-        if (res.tapIndex === 1) {
           wx.navigateTo({ url: "/pages/warehouse-stock-order/index" });
           return;
         }
-        if (res.tapIndex === 2) {
+        if (res.tapIndex === 1) {
           wx.navigateTo({ url: "/pages/warehouse-inventory/index" });
           return;
         }
-        if (res.tapIndex === 3) {
+        if (res.tapIndex === 2) {
           wx.navigateTo({ url: "/pages/warehouse-dispatch/index" });
           return;
         }

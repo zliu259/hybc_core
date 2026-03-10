@@ -1,6 +1,5 @@
 const { request, buildUrl } = require("../../utils/request");
 const { clearToken, getUserProfile, setUserProfile } = require("../../utils/auth");
-const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 const canLaunchPayment = (roles) => {
   const list = Array.isArray(roles) ? roles : [];
@@ -294,7 +293,6 @@ Page({
   openGlobalHelper() {
     wx.showActionSheet({
       itemList: [
-        "🎙️ 录音识别指令",
         "🎤 催办我的申请",
         "🎤 打开我的报销提交",
         "🎤 打开智能发单台",
@@ -303,22 +301,18 @@ Page({
       ],
       success: async (res) => {
         if (res.tapIndex === 0) {
-          await runVoiceAssistant({ scene: "profile" }).catch(() => {});
-          return;
-        }
-        if (res.tapIndex === 1) {
           await this.urgeApprovalFlow();
           return;
         }
-        if (res.tapIndex === 2) {
+        if (res.tapIndex === 1) {
           wx.navigateTo({ url: "/pages/reimbursement-list/index" });
           return;
         }
-        if (res.tapIndex === 3) {
+        if (res.tapIndex === 2) {
           this.goToPaymentApply();
           return;
         }
-        if (res.tapIndex === 4) {
+        if (res.tapIndex === 3) {
           wx.navigateTo({ url: "/pages/fuel-apply/index" });
           return;
         }

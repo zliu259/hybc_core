@@ -3,7 +3,6 @@ const { uploadFileToR2 } = require("../../utils/upload");
 const { wxScanCode, wxChooseMediaImage, wxChooseMessageFile } = require("../../utils/wx");
 const { positiveNumber, firstError } = require("../../utils/validation");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
-const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 const statusText = (status) => {
   const map = {
@@ -567,7 +566,6 @@ Page({
   openGlobalHelper() {
     wx.showActionSheet({
       itemList: [
-        "🎙️ 录音识别指令",
         "🎤 扫码录入UUID",
         "💾 保存草稿",
         "📎 上传附件(图片)",
@@ -577,26 +575,22 @@ Page({
       ],
       success: async (res) => {
         if (res.tapIndex === 0) {
-          await runVoiceAssistant({ scene: "reimbursement" }).catch(() => {});
-          return;
-        }
-        if (res.tapIndex === 1) {
           this.scanQr();
           return;
         }
-        if (res.tapIndex === 2) {
+        if (res.tapIndex === 1) {
           this.createOrUpdateDraft();
           return;
         }
-        if (res.tapIndex === 3) {
+        if (res.tapIndex === 2) {
           this.pickPhysicalInvoicePhoto();
           return;
         }
-        if (res.tapIndex === 4) {
+        if (res.tapIndex === 3) {
           this.pickAttachmentFile();
           return;
         }
-        if (res.tapIndex === 5) {
+        if (res.tapIndex === 4) {
           this.pickInvoicePhoto();
           return;
         }

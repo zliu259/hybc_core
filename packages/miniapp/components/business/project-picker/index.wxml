@@ -1,10 +1,14 @@
 <view class="project-picker">
   <view class="label required">{{label}}</view>
   <picker mode="selector" range="{{projectNames}}" value="{{selectedIndex}}" bindchange="onPickerChange" disabled="{{loading || !projectNames.length}}">
-    <view class="input">
+    <view class="input {{hasSelection ? 'input-selected' : ''}}">
       {{projectNames[selectedIndex] || "请选择项目"}}
     </view>
   </picker>
+  <view wx:if="{{hasSelection}}" class="selected-meta">
+    <view class="meta-chip">{{selectedProjectCode || "未设置编号"}}</view>
+    <view class="meta-chip meta-status">状态：{{selectedProjectStatus || "unknown"}}</view>
+  </view>
   <view class="row">
     <t-button class="btn" variant="outline" bindtap="loadProjects" loading="{{loading}}" disabled="{{loading}}">刷新项目</t-button>
     <t-button wx:if="{{enableGps}}" class="btn" variant="outline" bindtap="autoSelectByGps" loading="{{loading}}" disabled="{{loading}}">定位匹配</t-button>

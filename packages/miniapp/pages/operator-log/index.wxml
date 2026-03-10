@@ -7,7 +7,6 @@
       <view class="input">{{sectionIndex >= 0 ? sectionNames[sectionIndex] : (sectionNames.length ? '请选择标段' : '当前项目暂无标段')}}</view>
     </picker>
 
-    <view class="voice-box">🎤 按住说话：今天顶了3.5米，最大推力120吨，注浆量5方</view>
 
     <view class="label required">日期</view>
     <picker mode="date" value="{{form.log_date}}" bindchange="onDateChange" disabled="{{busy}}">

@@ -1,6 +1,5 @@
 const { request } = require("../../utils/request");
 const { getUserProfile } = require("../../utils/auth");
-const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
 const canLaunchPayment = (roles) => {
   return (
@@ -117,21 +116,16 @@ Page({
   openGlobalHelper() {
     wx.showActionSheet({
       itemList: [
-        "🎙️ 录音识别指令",
         "🎤 我要发起对外付款",
         "🎤 我要上报顶进数据",
         "🎤 我要发起报销"
       ],
       success: async (res) => {
         if (res.tapIndex === 0) {
-          await runVoiceAssistant({ scene: "index" }).catch(() => {});
-          return;
-        }
-        if (res.tapIndex === 1) {
           wx.switchTab({ url: "/pages/finance/index" });
           return;
         }
-        if (res.tapIndex === 2) {
+        if (res.tapIndex === 1) {
           wx.navigateTo({ url: "/pages/operator-log/index" });
           return;
         }

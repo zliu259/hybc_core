@@ -34,6 +34,14 @@
     "navigationBarTextStyle": "black",
     "backgroundColor": "#f3f5f8"
   },
+  "requiredPrivateInfos": [
+    "getLocation"
+  ],
+  "permission": {
+    "scope.userLocation": {
+      "desc": "用于按定位匹配所属项目，提高现场填报效率"
+    }
+  },
   "usingComponents": {
     "t-button": "tdesign-miniprogram/button/button",
     "t-tag": "tdesign-miniprogram/tag/tag",

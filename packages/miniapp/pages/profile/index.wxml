@@ -55,5 +55,4 @@
     </view>
   </hy-panel-card>
 
-  <view class="fab-helper" bindtap="openGlobalHelper">🎤</view>
 </view>
