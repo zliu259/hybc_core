@@ -48,6 +48,37 @@ const loading = ref(false);
 const saving = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
+const userNameMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const item of wecomUsers.value) {
+    map.set(item.userid, item.name || item.userid);
+  }
+  return map;
+});
+
+const toUserLabel = (userid: string | null | undefined) => {
+  if (!userid) return "-";
+  return userNameMap.value.get(userid) ?? userid;
+};
+
+const formatBeijingDateTime = (value: string | null | undefined) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date
+    .toLocaleString("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    })
+    .replace(/\//g, "-");
+};
+
 const isCreate = computed(() => route.params.id === "create");
 const requestId = computed(() => Number(route.params.id));
 const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
@@ -221,6 +252,94 @@ const riskTagType: Record<string, TagType> = {
   completed: "success",
   failed: "danger"
 };
+const riskStatusLabelMap: Record<string, string> = {
+  none: "未触发",
+  pending: "评估中",
+  completed: "已完成",
+  failed: "评估失败"
+};
+
+const paymentStatusLabelMap: Record<string, string> = {
+  draft: "草稿",
+  pending_approval: "待审批",
+  approved: "已审批",
+  paid: "已付款",
+  rejected: "已拒绝",
+  cancelled: "已取消"
+};
+
+const approvalStatusLabelMap: Record<string, string> = {
+  pending: "待处理",
+  in_progress: "审批中",
+  approved: "已通过",
+  rejected: "已驳回",
+  cancelled: "已取消",
+  withdrawn: "已撤回",
+  completed: "已完成"
+};
+
+const nodeTypeLabelMap: Record<string, string> = {
+  start: "发起",
+  approval: "审批",
+  ai_gate: "AI审核",
+  cc: "抄送",
+  condition: "条件",
+  parallel: "并行",
+  end: "结束"
+};
+
+const nodeStatusLabelMap: Record<string, string> = {
+  pending: "待处理",
+  in_progress: "进行中",
+  completed: "已完成",
+  rejected: "已驳回",
+  skipped: "已跳过",
+  cancelled: "已取消"
+};
+
+const aiReviewStatusLabelMap: Record<string, string> = {
+  pending: "待处理",
+  in_progress: "进行中",
+  completed: "已完成",
+  failed: "失败"
+};
+
+const aiOutcomeLabelMap: Record<string, string> = {
+  approve: "通过",
+  reject: "驳回"
+};
+
+const paymentCategoryLabelMap: Record<string, string> = {
+  special_approval: "特殊审批",
+  admin_fee: "行政费",
+  labor_fee: "劳务费",
+  machinery_fee: "机械费",
+  material_fee: "材料费",
+  other_fee: "其他费用",
+  specialApproval: "特殊审批",
+  adminFee: "行政费",
+  laborFee: "劳务费",
+  machineryFee: "机械费",
+  materialFee: "材料费",
+  otherFee: "其他费用",
+  特殊审批: "特殊审批",
+  行政费: "行政费",
+  劳务费: "劳务费",
+  机械费: "机械费",
+  材料费: "材料费",
+  其他费用: "其他费用"
+};
+
+const paymentMethodLabelMap: Record<string, string> = {
+  bank_transfer: "对公转账",
+  cash: "现金",
+  bill: "票据",
+  other: "其他",
+  对公转账: "对公转账",
+  现金: "现金",
+  票据: "票据",
+  其他: "其他"
+};
 
 const riskLevelLabelMap: Record<string, string> = {
   high: "高风险",
@@ -238,6 +357,58 @@ const toRiskLevelLabel = (level: unknown) => {
   if (typeof level !== "string" || !level) return "-";
   return riskLevelLabelMap[level] ?? level;
 };
+
+const toRiskStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "-";
+  return riskStatusLabelMap[status] ?? status;
+};
+
+const toPaymentStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "-";
+  return paymentStatusLabelMap[status] ?? status;
+};
+
+const toApprovalStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "-";
+  return approvalStatusLabelMap[status] ?? status;
+};
+
+const toNodeTypeLabel = (type: string | null | undefined) => {
+  if (!type) return "-";
+  return nodeTypeLabelMap[type] ?? type;
+};
+
+const toNodeStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "-";
+  return nodeStatusLabelMap[status] ?? status;
+};
+
+const toAiReviewStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "-";
+  return aiReviewStatusLabelMap[status] ?? status;
+};
+
+const toAiOutcomeLabel = (outcome: string | null | undefined) => {
+  if (!outcome) return "-";
+  return aiOutcomeLabelMap[outcome] ?? outcome;
+};
+
+const toPaymentCategoryLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return paymentCategoryLabelMap[value] ?? value;
+};
+
+const toPaymentMethodLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return paymentMethodLabelMap[value] ?? value;
+};
+
+const currentNodeLabel = computed(() => {
+  const key = approvalDetail.value?.instance.current_node_key;
+  if (!key) return "-";
+  const node = approvalDetail.value?.nodes.find(item => item.node_key === key);
+  return node?.node_name ?? key;
+});
 
 const toRiskLevelTagType = (level: unknown): TagType => {
   if (typeof level !== "string" || !level) return "info";
@@ -988,7 +1159,13 @@ onMounted(async () => {
         detail.serial_no
       }}</el-descriptions-item>
       <el-descriptions-item label="状态">{{
-        detail.status
+        toPaymentStatusLabel(detail.status)
+      }}</el-descriptions-item>
+      <el-descriptions-item label="付款类别">{{
+        toPaymentCategoryLabel(detail.category)
+      }}</el-descriptions-item>
+      <el-descriptions-item label="付款方式">{{
+        toPaymentMethodLabel(detail.payment_method)
       }}</el-descriptions-item>
       <el-descriptions-item label="所属项目">{{
         projectName || detail.project_id
@@ -1013,7 +1190,7 @@ onMounted(async () => {
         amountDisplay
       }}</el-descriptions-item>
       <el-descriptions-item label="支付时间">
-        {{ detail.paid_at || "-" }}
+        {{ formatBeijingDateTime(detail.paid_at) }}
       </el-descriptions-item>
       <el-descriptions-item label="支付流水号">
         {{ detail.payment_reference || "-" }}
@@ -1026,7 +1203,7 @@ onMounted(async () => {
     <el-divider v-if="detail">AI风险评估</el-divider>
     <div v-if="detail" style="margin-bottom: 8px">
       <el-tag :type="riskTagType[riskStatus] || 'info'">{{
-        riskStatus
+        toRiskStatusLabel(riskStatus)
       }}</el-tag>
     </div>
     <el-descriptions v-if="riskReport" :column="2" border>
@@ -1056,13 +1233,13 @@ onMounted(async () => {
         {{ approvalDetail.instance.instance_no }}
       </el-descriptions-item>
       <el-descriptions-item label="审批状态">
-        {{ approvalDetail.instance.status }}
+        {{ toApprovalStatusLabel(approvalDetail.instance.status) }}
       </el-descriptions-item>
       <el-descriptions-item label="当前节点">
-        {{ approvalDetail.instance.current_node_key || "-" }}
+        {{ currentNodeLabel }}
       </el-descriptions-item>
       <el-descriptions-item label="发起人">
-        {{ approvalDetail.instance.initiator_userid }}
+        {{ toUserLabel(approvalDetail.instance.initiator_userid) }}
       </el-descriptions-item>
     </el-descriptions>
 
@@ -1073,8 +1250,12 @@ onMounted(async () => {
       style="margin-top: 12px"
     >
       <el-table-column prop="node_name" label="节点" min-width="140" />
-      <el-table-column prop="node_type" label="类型" width="120" />
-      <el-table-column prop="status" label="状态" width="110" />
+      <el-table-column label="类型" width="120">
+        <template #default="scope">{{ toNodeTypeLabel(scope.row.node_type) }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="110">
+        <template #default="scope">{{ toNodeStatusLabel(scope.row.status) }}</template>
+      </el-table-column>
       <el-table-column label="审批意见" min-width="260">
         <template #default="scope">
           <template v-if="getNodeTasks(scope.row.id).length">
@@ -1083,7 +1264,7 @@ onMounted(async () => {
               :key="task.id"
               style="margin-bottom: 4px"
             >
-              {{ task.assignee_userid }}：{{ toActionLabel(task.action) }}
+              {{ toUserLabel(task.assignee_userid) }}：{{ toActionLabel(task.action) }}
               <span v-if="task.comment">（{{ task.comment }}）</span>
             </div>
           </template>
@@ -1099,8 +1280,12 @@ onMounted(async () => {
       size="small"
     >
       <el-table-column prop="node_key" label="节点" width="160" />
-      <el-table-column prop="status" label="状态" width="100" />
-      <el-table-column prop="outcome" label="结论" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{ toAiReviewStatusLabel(scope.row.status) }}</template>
+      </el-table-column>
+      <el-table-column label="结论" width="100">
+        <template #default="scope">{{ toAiOutcomeLabel(scope.row.outcome) }}</template>
+      </el-table-column>
       <el-table-column label="总结/意见" min-width="260">
         <template #default="scope">{{
           scope.row.summary || scope.row.comment || "-"

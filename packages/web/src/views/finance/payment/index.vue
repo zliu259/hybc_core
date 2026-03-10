@@ -47,6 +47,50 @@ const aiTagType: Record<string, TagType> = {
   failed: "danger"
 };
 
+const statusLabelMap: Record<string, string> = {
+  draft: "草稿",
+  pending_approval: "待审批",
+  approved: "已审批",
+  paid: "已付款",
+  rejected: "已拒绝",
+  cancelled: "已取消"
+};
+
+const aiRiskLabelMap: Record<string, string> = {
+  none: "未触发",
+  pending: "评估中",
+  completed: "已完成",
+  failed: "评估失败"
+};
+
+const toStatusLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return statusLabelMap[value] ?? value;
+};
+
+const toAiRiskLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return aiRiskLabelMap[value] ?? value;
+};
+
+const formatBeijingDateTime = (value: string | null | undefined) => {
+  if (!value) return "-";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return value;
+  return date
+    .toLocaleString("zh-CN", {
+      timeZone: "Asia/Shanghai",
+      hour12: false,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit"
+    })
+    .replace(/\//g, "-");
+};
+
 const projectMap = computed(() => {
   const map: Record<number, string> = {};
   projects.value.forEach(item => {
@@ -182,19 +226,23 @@ onMounted(async () => {
       <el-table-column label="状态" width="110">
         <template #default="scope">
           <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
-            scope.row.status
+            toStatusLabel(scope.row.status)
           }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="AI风险" width="110">
         <template #default="scope">
           <el-tag :type="aiTagType[scope.row.ai_risk_status] || 'info'">{{
-            scope.row.ai_risk_status
+            toAiRiskLabel(scope.row.ai_risk_status)
           }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="created_at" label="申请时间" width="180" />
-      <el-table-column prop="paid_at" label="支付时间" width="180" />
+      <el-table-column label="申请时间" width="180">
+        <template #default="scope">{{ formatBeijingDateTime(scope.row.created_at) }}</template>
+      </el-table-column>
+      <el-table-column label="支付时间" width="180">
+        <template #default="scope">{{ formatBeijingDateTime(scope.row.paid_at) }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="goDetail(scope.row.id)"
