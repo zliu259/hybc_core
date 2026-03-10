@@ -99,7 +99,7 @@ const defaultThresholdSeeds: Array<{
     template_code: "TPL-PAYMENT-REQUEST",
     condition_field: "amount",
     operator: "lte",
-    threshold_value: 100000,
+    threshold_value: 10000,
     threshold_value_upper: null,
     target_branch: "default",
     priority: 1
@@ -108,7 +108,7 @@ const defaultThresholdSeeds: Array<{
     template_code: "TPL-PAYMENT-REQUEST",
     condition_field: "amount",
     operator: "between",
-    threshold_value: 100000,
+    threshold_value: 10000,
     threshold_value_upper: 500000,
     target_branch: "mid_amount",
     priority: 2
