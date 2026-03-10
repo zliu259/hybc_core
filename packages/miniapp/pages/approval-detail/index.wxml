@@ -27,6 +27,23 @@
           <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">付款方式</text><text class="v">{{bizDetail.paymentMethodLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">付款内容</text><text class="v">{{bizDetail.content}}</text></view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">备注</text><text class="v">{{bizDetail.remark || '-'}}</text></view>
+
+        <view wx:if="{{canApprove}}" class="section-divider"></view>
+        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款主体</text></view>
+        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentEntityLabels}}" value="{{paymentEntityIndex}}" bindchange="onPaymentEntityChange">
+          <view class="picker-value">{{paymentEntityLabels[paymentEntityIndex]}}</view>
+        </picker>
+        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款账户</text></view>
+        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentAccountLabels}}" value="{{paymentAccountIndex}}" bindchange="onPaymentAccountChange">
+          <view class="picker-value">{{paymentAccountLabels[paymentAccountIndex]}}</view>
+        </picker>
+        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">支付方式</text></view>
+        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentMethodLabelOptions}}" value="{{paymentMethodIndex}}" bindchange="onPaymentMethodChange">
+          <view class="picker-value">{{paymentMethodLabelOptions[paymentMethodIndex]}}</view>
+        </picker>
+        <view wx:if="{{canApprove}}" class="kv-row" style="margin-top: 8px">
+          <t-button size="small" variant="outline" loading="{{acting}}" bindtap="onSavePaymentSelection">保存付款设置</t-button>
+        </view>
       </hy-panel-card>
     </view>
 

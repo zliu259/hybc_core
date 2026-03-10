@@ -14,6 +14,10 @@
       <t-button class="btn" variant="outline" bindtap="urgeApprovalFlow" loading="{{busy}}" disabled="{{busy}}">🔔 一键催办</t-button>
       <t-button class="btn btn-primary" theme="primary" data-path="/pages/reimbursement-list/index" bindtap="goToReimbursement">🧾 我的报销提交</t-button>
     </view>
+    <view class="row" style="margin-top: 8px">
+      <t-button class="btn" variant="outline" bindtap="goToPaymentApply">💸 智能发单台</t-button>
+      <t-button class="btn" variant="outline" bindtap="goToFuelApply">⛽ 油卡额度申请</t-button>
+    </view>
 
     <view class="section-title">📚 我的证书</view>
     <view wx:if="{{!certificates.length}}" class="sub">暂无证书数据</view>

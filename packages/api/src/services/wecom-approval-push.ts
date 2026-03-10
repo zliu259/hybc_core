@@ -1,5 +1,6 @@
 import type { Env } from "../types/env";
 import { loadRunnerRuntimeMap } from "./runner-runtime";
+import { getWeComContactBook } from "./wecom-contact-book";
 
 type WeComSendResponse = {
   errcode?: number;
@@ -15,9 +16,13 @@ type ApprovalPushPayload = {
   instanceId: number;
   instanceNo: string;
   bizType: string;
+  bizId: number;
   bizSummary: string;
   currentNodeName: string;
   assigneeUserId: string;
+  applicantName: string;
+  requestTitle?: string;
+  amountText?: string;
 };
 
 type ApprovalPushMode = "todo" | "urge";
@@ -198,6 +203,76 @@ const resolveRouteConfig = async (env: Env): Promise<WeComPushRouteConfig> => {
   }
 };
 
+const formatAmountCny = (amount: number | null | undefined): string | null => {
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return null;
+  return amount.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
+export const resolveApprovalPushMeta = async (
+  env: Env,
+  bizType: string,
+  bizId: number,
+  bizSummary: string
+): Promise<{ requestTitle: string; amountText: string | null }> => {
+  if (bizType === "payment_request") {
+    const row = await env.DB.prepare("SELECT amount, content FROM payment_request WHERE id = ?")
+      .bind(bizId)
+      .first<{ amount: number | null; content: string | null }>();
+    return {
+      requestTitle: row?.content?.trim() || bizSummary,
+      amountText: formatAmountCny(row?.amount)
+    };
+  }
+
+  if (bizType === "reimbursement_batch") {
+    const row = await env.DB.prepare("SELECT total_amount, batch_no FROM reimbursement_batch WHERE id = ?")
+      .bind(bizId)
+      .first<{ total_amount: number | null; batch_no: string | null }>();
+    return {
+      requestTitle: row?.batch_no?.trim() ? `报销批次 ${row.batch_no}` : bizSummary,
+      amountText: formatAmountCny(row?.total_amount)
+    };
+  }
+
+  if (bizType === "invoice_request") {
+    const row = await env.DB.prepare("SELECT amount_with_tax, request_no FROM invoice_request WHERE id = ?")
+      .bind(bizId)
+      .first<{ amount_with_tax: number | null; request_no: string | null }>();
+    return {
+      requestTitle: row?.request_no?.trim() ? `开票申请 ${row.request_no}` : bizSummary,
+      amountText: formatAmountCny(row?.amount_with_tax)
+    };
+  }
+
+  return {
+    requestTitle: bizSummary,
+    amountText: null
+  };
+};
+
+export const resolveApplicantDisplayName = async (
+  env: Env,
+  applicantUserId: string
+): Promise<string> => {
+  const normalized = applicantUserId.trim();
+  if (!normalized) return "未知申请人";
+  try {
+    const book = await getWeComContactBook(env, {
+      forceRefresh: false,
+      allowStaleOnRefreshError: true
+    });
+    const matched = book.users.find(user => user.userid === normalized);
+    if (matched?.name?.trim()) {
+      return matched.name.trim();
+    }
+  } catch {
+  }
+  return normalized;
+};
+
 const buildTemplateCard = async (
   env: Env,
   payload: ApprovalPushPayload,
@@ -248,11 +323,11 @@ const buildTemplateCard = async (
     },
     main_title: {
       title: mode === "urge" ? "审批催办提醒" : "审批待办提醒",
-      desc: payload.bizSummary
+      desc: `${payload.applicantName} 申请：${payload.requestTitle || payload.bizSummary}`
     },
     emphasis_content: {
-      title: payload.instanceNo,
-      desc: "审批单号"
+      title: payload.amountText || "待补充",
+      desc: "申请金额"
     },
     sub_title_text:
       mode === "urge"

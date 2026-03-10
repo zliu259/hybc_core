@@ -23,7 +23,7 @@ export default {
     {
       path: "/workspace/my-reimbursement",
       name: "WorkspaceMyReimbursement",
-      component: () => import("@/views/workspace/reimbursement/list.vue"),
+      component: () => import("@/views/finance/reimbursement/list.vue"),
       meta: {
         title: "我的报销",
         roles: ["super_admin", "manager", "site_manager", "finance", "operator"]

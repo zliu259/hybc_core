@@ -18,6 +18,7 @@ import {
 import {
   getRiskReport,
   getPaymentRequest,
+  updatePaymentRequest,
   type PaymentRequestDetail
 } from "@/api/payment";
 import {
@@ -32,7 +33,12 @@ import {
   type ReceiptRefundDetail
 } from "@/api/receipt";
 import { getContract, type ContractDetail } from "@/api/contract";
-import { listEntities, type Entity } from "@/api/entity";
+import {
+  listEntities,
+  listEntityBankAccounts,
+  type Entity,
+  type EntityBankAccount
+} from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
@@ -126,6 +132,80 @@ const forceTransferReason = ref("");
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const { projects, loadProjects } = useProjectOptions();
 const entities = ref<Entity[]>([]);
+const entityBankAccountMap = ref<Record<number, EntityBankAccount[]>>({});
+
+const payoutForm = ref({
+  payment_entity_id: undefined as number | undefined,
+  payment_entity_bank_account_id: undefined as number | undefined,
+  payment_account: ""
+});
+
+const canAdjustPayoutInApprovalWorkbench = computed(() => {
+  if (!detail.value || !paymentDetail.value) return false;
+  if (detail.value.instance.biz_type !== "payment_request") return false;
+  return hasAction("approve") || hasAction("reject") || hasAction("return_prev");
+});
+
+const payoutEntityAccounts = computed(() => {
+  if (!payoutForm.value.payment_entity_id) return [];
+  return (entityBankAccountMap.value[payoutForm.value.payment_entity_id] ?? []).filter(
+    item => item.status === "active"
+  );
+});
+
+const onPayoutEntityChange = (entityId: number | undefined) => {
+  if (!entityId) {
+    payoutForm.value.payment_entity_bank_account_id = undefined;
+    payoutForm.value.payment_account = "";
+    return;
+  }
+  const accounts = (entityBankAccountMap.value[entityId] ?? []).filter(
+    item => item.status === "active"
+  );
+  if (accounts.length > 0) {
+    payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
+    payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
+  } else {
+    payoutForm.value.payment_entity_bank_account_id = undefined;
+    payoutForm.value.payment_account = "";
+  }
+};
+
+const onPayoutAccountChange = (accountId: number | undefined) => {
+  if (!accountId) {
+    payoutForm.value.payment_account = "";
+    return;
+  }
+  const target = payoutEntityAccounts.value.find(item => item.id === accountId);
+  payoutForm.value.payment_account = target ? `${target.bank_name} / ${target.account_no}` : "";
+};
+
+const syncPayoutSelection = async () => {
+  if (!paymentDetail.value) return;
+  if (!canAdjustPayoutInApprovalWorkbench.value) return;
+  if (!payoutForm.value.payment_entity_id || !payoutForm.value.payment_entity_bank_account_id) {
+    message("请先选择付款主体和付款账户", { type: "warning" });
+    throw new Error("payout selection required");
+  }
+  await updatePaymentRequest(paymentDetail.value.id, {
+    payment_entity_id: payoutForm.value.payment_entity_id,
+    payment_entity_bank_account_id: payoutForm.value.payment_entity_bank_account_id,
+    payment_account: payoutForm.value.payment_account || null
+  });
+};
+
+const savePayoutSelection = async () => {
+  actionLoading.value = true;
+  try {
+    await syncPayoutSelection();
+    message("付款主体与账户已保存", { type: "success" });
+    await loadDetail();
+  } catch {
+    message("保存付款主体与账户失败", { type: "error" });
+  } finally {
+    actionLoading.value = false;
+  }
+};
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 const paymentRiskStatus = ref("none");
@@ -635,6 +715,21 @@ const invoiceRequestItems = computed(() =>
 const loadMetaOptions = async () => {
   const [, entityRes] = await Promise.all([loadProjects(), listEntities()]);
   entities.value = entityRes.data;
+  const grouped: Record<number, EntityBankAccount[]> = {};
+  const accountResults = await Promise.all(
+    entityRes.data.map(async item => {
+      try {
+        const res = await listEntityBankAccounts(item.id);
+        return { entityId: item.id, accounts: res.data };
+      } catch {
+        return { entityId: item.id, accounts: [] as EntityBankAccount[] };
+      }
+    })
+  );
+  for (const item of accountResults) {
+    grouped[item.entityId] = item.accounts.filter(account => account.status === "active");
+  }
+  entityBankAccountMap.value = grouped;
 };
 
 const previewDrawerVisible = ref(false);
@@ -690,6 +785,24 @@ const loadDetail = async () => {
     if (bizType === "payment_request") {
       const paymentRes = await getPaymentRequest(bizId);
       paymentDetail.value = paymentRes.data;
+      payoutForm.value = {
+        payment_entity_id: paymentRes.data.payment_entity_id ?? undefined,
+        payment_entity_bank_account_id: paymentRes.data.payment_entity_bank_account_id ?? undefined,
+        payment_account: paymentRes.data.payment_account ?? ""
+      };
+      if (
+        payoutForm.value.payment_entity_id &&
+        !payoutForm.value.payment_entity_bank_account_id
+      ) {
+        const accounts =
+          entityBankAccountMap.value[payoutForm.value.payment_entity_id]?.filter(
+            item => item.status === "active"
+          ) ?? [];
+        if (accounts.length > 0) {
+          payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
+          payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
+        }
+      }
     } else if (bizType === "outbound_contract" || bizType === "inbound_contract") {
       const contractRes = await getContract(bizId);
       contractDetail.value = contractRes.data;
@@ -738,6 +851,7 @@ const handleApprove = async () => {
   }
   actionLoading.value = true;
   try {
+    await syncPayoutSelection();
     await approveApproval(instanceId.value, { comment: commentInput.value });
     message("审批通过", { type: "success" });
     commentInput.value = "";
@@ -901,7 +1015,8 @@ const handleResubmit = async () => {
 const goBack = () => router.push("/approval/index");
 
 onMounted(async () => {
-  await Promise.all([loadDetail(), loadWecomUsers(), loadMetaOptions()]);
+  await Promise.all([loadWecomUsers(), loadMetaOptions()]);
+  await loadDetail();
 });
 </script>
 
@@ -1345,6 +1460,57 @@ onMounted(async () => {
         header="操作区"
         style="margin-top: 16px"
       >
+        <el-card
+          v-if="canAdjustPayoutInApprovalWorkbench"
+          shadow="never"
+          style="margin-bottom: 12px; background: #f8fafc"
+        >
+          <template #header>
+            <span>审批台付款主体与账户</span>
+          </template>
+          <el-form inline>
+            <el-form-item label="付款主体">
+              <el-select
+                v-model="payoutForm.payment_entity_id"
+                filterable
+                clearable
+                style="min-width: 220px"
+                placeholder="选择付款主体"
+                @change="onPayoutEntityChange"
+              >
+                <el-option
+                  v-for="item in entities"
+                  :key="item.id"
+                  :label="item.entity_name"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="付款账户">
+              <el-select
+                v-model="payoutForm.payment_entity_bank_account_id"
+                filterable
+                clearable
+                style="min-width: 300px"
+                placeholder="选择付款账户"
+                @change="onPayoutAccountChange"
+              >
+                <el-option
+                  v-for="item in payoutEntityAccounts"
+                  :key="item.id"
+                  :label="`${item.bank_name} / ${item.account_no}`"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button :loading="actionLoading" @click="savePayoutSelection"
+                >保存付款选择</el-button
+              >
+            </el-form-item>
+          </el-form>
+        </el-card>
+
         <el-input
           v-if="hasAction('approve') || hasAction('reject')"
           v-model="commentInput"

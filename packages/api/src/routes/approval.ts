@@ -28,7 +28,11 @@ import {
   cancel as cancelOp,
   resubmit as resubmitOp
 } from "../services/approval/operations";
-import { sendApprovalTodoTemplateCard } from "../services/wecom-approval-push";
+import {
+  resolveApplicantDisplayName,
+  resolveApprovalPushMeta,
+  sendApprovalTodoTemplateCard
+} from "../services/wecom-approval-push";
 
 export const approvalRoutes = new Hono<{
   Bindings: Env;
@@ -560,7 +564,7 @@ approvalRoutes.post("/:id/urge", async (c) => {
   }
 
   const instance = await c.env.DB.prepare(
-    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary, ai.initiator_userid,
+    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_id, ai.biz_summary, ai.initiator_userid,
             COALESCE(ani.node_name, ai.current_node_key, '当前节点') as current_node_name
      FROM approval_instance ai
      LEFT JOIN approval_node_instance ani
@@ -575,6 +579,7 @@ approvalRoutes.post("/:id/urge", async (c) => {
       id: number;
       instance_no: string;
       biz_type: string;
+      biz_id: number;
       biz_summary: string;
       initiator_userid: string;
       current_node_name: string;
@@ -608,15 +613,26 @@ approvalRoutes.post("/:id/urge", async (c) => {
 
   const reason = body.reason?.trim() || "";
   try {
+    const applicantName = await resolveApplicantDisplayName(c.env, instance.initiator_userid);
+    const pushMeta = await resolveApprovalPushMeta(
+      c.env,
+      instance.biz_type,
+      instance.biz_id,
+      instance.biz_summary
+    );
     const pushResult = await sendApprovalTodoTemplateCard(
       c.env,
       {
         instanceId,
         instanceNo: instance.instance_no,
         bizType: instance.biz_type,
+        bizId: instance.biz_id,
         bizSummary: instance.biz_summary,
         currentNodeName: instance.current_node_name,
-        assigneeUserId: task.assignee_userid
+        assigneeUserId: task.assignee_userid,
+        applicantName,
+        requestTitle: pushMeta.requestTitle,
+        amountText: pushMeta.amountText ?? undefined
       },
       {
         mode: "urge",

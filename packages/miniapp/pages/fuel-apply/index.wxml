@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="⛽ 员工加油申请" subtitle="与 Web 对齐：额度、车辆、里程、照片、申请记录">
+  <hy-panel-card title="⛽ 油卡额度申请" subtitle="与 Web 油卡额度申请对齐：额度、车辆、里程、照片、申请记录">
     <view class="label required">所用车辆</view>
     <picker mode="selector" range="{{vehicleLabels}}" value="{{vehicleIndex}}" bindchange="onVehicleChange">
       <view class="picker-value">{{vehicleLabels[vehicleIndex]}}</view>

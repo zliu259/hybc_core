@@ -2,6 +2,17 @@ const { request, buildUrl } = require("../../utils/request");
 const { clearToken, getUserProfile, setUserProfile } = require("../../utils/auth");
 const { runVoiceAssistant } = require("../../utils/voice-assistant");
 
+const canLaunchPayment = (roles) => {
+  const list = Array.isArray(roles) ? roles : [];
+  return (
+    list.includes("super_admin") ||
+    list.includes("manager") ||
+    list.includes("site_manager") ||
+    list.includes("operator") ||
+    list.includes("finance")
+  );
+};
+
 Page({
   data: {
     profile: {},
@@ -182,6 +193,19 @@ Page({
     wx.navigateTo({ url: "/pages/reimbursement-list/index" });
   },
 
+  goToPaymentApply() {
+    const roles = (this.data.profile && this.data.profile.roles) || [];
+    if (!canLaunchPayment(roles)) {
+      wx.showToast({ title: "当前角色无对外付款权限", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: "/pages/payment-apply/index" });
+  },
+
+  goToFuelApply() {
+    wx.navigateTo({ url: "/pages/fuel-apply/index" });
+  },
+
   bizTypeLabel(value) {
     const map = {
       outbound_contract: "对外合同审批",
@@ -269,7 +293,14 @@ Page({
 
   openGlobalHelper() {
     wx.showActionSheet({
-      itemList: ["🎙️ 录音识别指令", "🎤 催办我的申请", "🎤 打开我的报销提交", "🎤 打开审批待办"],
+      itemList: [
+        "🎙️ 录音识别指令",
+        "🎤 催办我的申请",
+        "🎤 打开我的报销提交",
+        "🎤 打开智能发单台",
+        "🎤 打开油卡额度申请",
+        "🎤 打开审批待办"
+      ],
       success: async (res) => {
         if (res.tapIndex === 0) {
           await runVoiceAssistant({ scene: "profile" }).catch(() => {});
@@ -281,6 +312,14 @@ Page({
         }
         if (res.tapIndex === 2) {
           wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+          return;
+        }
+        if (res.tapIndex === 3) {
+          this.goToPaymentApply();
+          return;
+        }
+        if (res.tapIndex === 4) {
+          wx.navigateTo({ url: "/pages/fuel-apply/index" });
           return;
         }
         wx.navigateTo({ url: "/pages/approval/index" });

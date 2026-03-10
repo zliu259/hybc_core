@@ -18,6 +18,15 @@ Page({
     userNameMap: {},
     projectNameMap: {},
     entityNameMap: {},
+    paymentEntityList: [],
+    paymentEntityLabels: ["请选择付款主体"],
+    paymentEntityIndex: 0,
+    paymentAccountList: [],
+    paymentAccountLabels: ["请选择付款账户"],
+    paymentAccountIndex: 0,
+    paymentMethodValueOptions: ["transfer", "cash", "bill", "other"],
+    paymentMethodLabelOptions: ["对公转账", "现金", "票据", "其他"],
+    paymentMethodIndex: 0,
     actionComment: "",
     flowCollapsed: true,
     availableActions: [],
@@ -113,6 +122,23 @@ Page({
       other: "其他"
     };
     return map[value] || "未知";
+  },
+
+  normalizePaymentMethodValue(value) {
+    if (!value) return "transfer";
+    const raw = String(value).trim();
+    const map = {
+      bank_transfer: "transfer",
+      transfer: "transfer",
+      "对公转账": "transfer",
+      cash: "cash",
+      "现金": "cash",
+      bill: "bill",
+      "票据": "bill",
+      other: "other",
+      "其他": "other"
+    };
+    return map[raw] || "transfer";
   },
 
   contractDirectionLabel(value) {
@@ -438,14 +464,148 @@ Page({
       });
 
       const entityNameMap = {};
+      const paymentEntityList = [];
       entityList.forEach((item) => {
         if (!item || !item.id) return;
         entityNameMap[item.id] = item.entity_name || item.name || this.unknownLabel();
+        if ((item.status || "active") === "active") {
+          paymentEntityList.push(item);
+        }
       });
 
-      this.setData({ projectNameMap, entityNameMap });
+      const paymentEntityLabels = ["请选择付款主体"].concat(
+        paymentEntityList.map((item) => item.entity_name || item.name || `实体${item.id}`)
+      );
+
+      this.setData({ projectNameMap, entityNameMap, paymentEntityList, paymentEntityLabels });
     } catch {
-      this.setData({ projectNameMap: {}, entityNameMap: {} });
+      this.setData({
+        projectNameMap: {},
+        entityNameMap: {},
+        paymentEntityList: [],
+        paymentEntityLabels: ["请选择付款主体"]
+      });
+    }
+  },
+
+  async loadPaymentAccounts(entityId, preferredAccountId) {
+    const targetEntityId = Number(entityId || 0);
+    if (!targetEntityId) {
+      this.setData({
+        paymentAccountList: [],
+        paymentAccountLabels: ["请选择付款账户"],
+        paymentAccountIndex: 0
+      });
+      return;
+    }
+    const res = await request({ method: "GET", path: `/api/v1/entity/${targetEntityId}/bank-accounts` }).catch(
+      () => null
+    );
+    const rows = res && Array.isArray(res.data) ? res.data : [];
+    const paymentAccountList = rows.filter((item) => (item.status || "active") === "active");
+    const paymentAccountLabels = ["请选择付款账户"].concat(
+      paymentAccountList.map((item) => `${item.bank_name} / ${item.account_no}`)
+    );
+    let paymentAccountIndex = 0;
+    if (preferredAccountId) {
+      const idx = paymentAccountList.findIndex((item) => Number(item.id) === Number(preferredAccountId));
+      paymentAccountIndex = idx >= 0 ? idx + 1 : 0;
+    }
+    this.setData({ paymentAccountList, paymentAccountLabels, paymentAccountIndex });
+  },
+
+  async syncPaymentSelectorsFromBizDetail() {
+    const detail = this.data.detail;
+    const bizDetail = this.data.bizDetail;
+    if (!detail || !detail.instance || detail.instance.biz_type !== "payment_request" || !bizDetail) return;
+
+    const entityId = Number(bizDetail.payment_entity_id || 0);
+    const accountId = Number(bizDetail.payment_entity_bank_account_id || 0);
+    const paymentEntityList = this.data.paymentEntityList || [];
+    const entityIndex = entityId
+      ? Math.max(
+          0,
+          paymentEntityList.findIndex((item) => Number(item.id) === entityId) + 1
+        )
+      : 0;
+    const normalizedMethod = this.normalizePaymentMethodValue(bizDetail.payment_method);
+    const paymentMethodIndex = Math.max(
+      0,
+      (this.data.paymentMethodValueOptions || []).indexOf(normalizedMethod)
+    );
+
+    this.setData({ paymentEntityIndex: entityIndex, paymentMethodIndex });
+    await this.loadPaymentAccounts(entityId, accountId);
+  },
+
+  onPaymentEntityChange(e) {
+    const index = Number(e.detail.value || 0);
+    const selected = index > 0 ? this.data.paymentEntityList[index - 1] : null;
+    this.setData({ paymentEntityIndex: index, paymentAccountIndex: 0 });
+    this.loadPaymentAccounts(selected ? selected.id : 0, 0);
+  },
+
+  onPaymentAccountChange(e) {
+    const index = Number(e.detail.value || 0);
+    this.setData({ paymentAccountIndex: index });
+  },
+
+  onPaymentMethodChange(e) {
+    const index = Number(e.detail.value || 0);
+    this.setData({ paymentMethodIndex: index });
+  },
+
+  getCurrentPaymentSelection() {
+    const paymentEntity =
+      this.data.paymentEntityIndex > 0
+        ? this.data.paymentEntityList[this.data.paymentEntityIndex - 1]
+        : null;
+    const paymentAccount =
+      this.data.paymentAccountIndex > 0
+        ? this.data.paymentAccountList[this.data.paymentAccountIndex - 1]
+        : null;
+    const paymentMethod =
+      this.data.paymentMethodValueOptions[this.data.paymentMethodIndex] ||
+      this.data.paymentMethodValueOptions[0] ||
+      "transfer";
+    return { paymentEntity, paymentAccount, paymentMethod };
+  },
+
+  async savePaymentSelection(options = {}) {
+    const detail = this.data.detail;
+    const bizDetail = this.data.bizDetail;
+    if (!detail || !detail.instance || detail.instance.biz_type !== "payment_request" || !bizDetail) return;
+
+    const { paymentEntity, paymentAccount, paymentMethod } = this.getCurrentPaymentSelection();
+    if (!paymentEntity) throw new Error("请选择付款主体");
+    if (!paymentAccount) throw new Error("请选择付款账户");
+
+    await request({
+      method: "PUT",
+      path: `/api/v1/payment/${bizDetail.id}`,
+      data: {
+        payment_entity_id: Number(paymentEntity.id),
+        payment_entity_bank_account_id: Number(paymentAccount.id),
+        payment_account: `${paymentAccount.bank_name} / ${paymentAccount.account_no}`,
+        payment_method: paymentMethod
+      }
+    });
+
+    if (!options.silent) {
+      sayToast({ title: "付款主体与方式已保存", icon: "success" });
+      await this.loadDetail();
+    }
+  },
+
+  async onSavePaymentSelection() {
+    if (this.data.acting) return;
+    this.setData({ acting: true });
+    try {
+      await this.savePaymentSelection();
+    } catch (error) {
+      sayToast({ title: error.message || "保存失败", icon: "none", danger: true });
+    } finally {
+      this.setData({ acting: false });
     }
   },
 
@@ -537,6 +697,7 @@ Page({
         flowCollapsed: true,
         ...flags
       });
+      await this.syncPaymentSelectorsFromBizDetail();
     } catch (error) {
       sayToast({ title: error.message || "加载失败", icon: "none", danger: true });
     } finally {
@@ -554,6 +715,13 @@ Page({
     this.setData({ acting: true });
     try {
       if (action === "approve") {
+        if (
+          this.data.detail &&
+          this.data.detail.instance &&
+          this.data.detail.instance.biz_type === "payment_request"
+        ) {
+          await this.savePaymentSelection({ silent: true });
+        }
         await request({ method: "POST", path: `/api/v1/approval/${this.data.id}/approve`, data: { comment } });
       } else if (action === "reject") {
         await request({ method: "POST", path: `/api/v1/approval/${this.data.id}/reject`, data: { comment } });

@@ -34,8 +34,8 @@
         <view class="entry-desc">发起报销、上传票据、跟踪状态</view>
       </view>
       <view class="entry-card" data-path="/pages/fuel-apply/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">⛽ 员工加油申请</view></view>
-        <view class="entry-desc">填写额度/车辆/里程并上传照片</view>
+        <view class="entry-top"><view class="entry-title">⛽ 油卡额度申请</view></view>
+        <view class="entry-desc">填写油卡额度、车辆里程并上传现场照片</view>
       </view>
     </view>
   </hy-panel-card>

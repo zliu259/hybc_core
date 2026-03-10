@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="我的报销提交" subtitle="与 Web 个人报销对齐：列表筛选、继续编辑、草稿快捷提交">
+  <hy-panel-card title="我的报销提交" subtitle="与 Web 个人报销对齐：列表筛选、继续编辑、状态追踪">
     <view class="summary-row">
       <view class="summary-card">
         <view class="summary-value">{{summary.draft}}</view>
@@ -40,7 +40,6 @@
       <view class="item-sub">更新时间：{{item.updatedAtText}}</view>
       <view class="actions">
         <t-button class="btn" size="small" variant="outline" data-id="{{item.id}}" bindtap="goDetail">继续处理</t-button>
-        <t-button wx:if="{{item.canSubmit}}" class="btn" size="small" theme="primary" data-id="{{item.id}}" bindtap="submitFromList">提交</t-button>
       </view>
     </view>
   </hy-panel-card>

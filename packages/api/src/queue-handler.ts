@@ -2,7 +2,11 @@ import type { Env } from "./types/env";
 import { logEvent, type DomainEvent } from "./services/event-bus";
 import { advanceWorkflow } from "./services/approval/engine";
 import { createAiGateHandler } from "./services/ai-slot";
-import { sendApprovalTodoTemplateCard } from "./services/wecom-approval-push";
+import {
+  resolveApplicantDisplayName,
+  resolveApprovalPushMeta,
+  sendApprovalTodoTemplateCard
+} from "./services/wecom-approval-push";
 
 const nowIso = () => new Date().toISOString();
 
@@ -294,7 +298,7 @@ const handleApprovalSubmitted = async (
   instanceId: number
 ): Promise<void> => {
   const instance = await env.DB.prepare(
-    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
+    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_id, ai.biz_summary, ai.initiator_userid,
             COALESCE(ani.node_name, ai.current_node_key, '当前节点') AS current_node_name
      FROM approval_instance ai
      LEFT JOIN approval_node_instance ani
@@ -308,7 +312,9 @@ const handleApprovalSubmitted = async (
       id: number;
       instance_no: string;
       biz_type: string;
+      biz_id: number;
       biz_summary: string;
+      initiator_userid: string;
       current_node_name: string;
     }>();
 
@@ -334,15 +340,26 @@ const handleApprovalSubmitted = async (
 
   let successCount = 0;
   const errors: string[] = [];
+  const applicantName = await resolveApplicantDisplayName(env, instance.initiator_userid);
   for (const assignee of assignees) {
     try {
+      const pushMeta = await resolveApprovalPushMeta(
+        env,
+        instance.biz_type,
+        instance.biz_id,
+        instance.biz_summary
+      );
       const result = await sendApprovalTodoTemplateCard(env, {
         instanceId,
         instanceNo: instance.instance_no,
         bizType: instance.biz_type,
+        bizId: instance.biz_id,
         bizSummary: instance.biz_summary,
         currentNodeName: instance.current_node_name,
-        assigneeUserId: assignee
+        assigneeUserId: assignee,
+        applicantName,
+        requestTitle: pushMeta.requestTitle,
+        amountText: pushMeta.amountText ?? undefined
       });
       successCount += 1;
 

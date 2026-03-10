@@ -107,8 +107,7 @@ Page({
         status: item.status,
         statusLabel: statusText(item.status),
         channelLabel: channelText(item.channel),
-        updatedAtText: formatTime(item.updated_at),
-        canSubmit: item.status === "draft"
+        updatedAtText: formatTime(item.updated_at)
       }));
 
       const summary = mapped.reduce(
@@ -142,17 +141,5 @@ Page({
     const id = Number(e.currentTarget.dataset.id || 0);
     if (!id) return;
     wx.navigateTo({ url: `/pages/reimbursement/index?id=${id}` });
-  },
-
-  async submitFromList(e) {
-    const id = Number(e.currentTarget.dataset.id || 0);
-    if (!id) return;
-    try {
-      await request({ method: "POST", path: `/api/v1/reimbursement/${id}/submit` });
-      wx.showToast({ title: "已提交报销", icon: "success" });
-      this.loadList();
-    } catch (error) {
-      wx.showToast({ title: error.message || "提交失败", icon: "none" });
-    }
   }
 });

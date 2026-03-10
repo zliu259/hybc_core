@@ -26,8 +26,8 @@
       <view class="picker-value">{{channelOptions[channelIndex].label}}</view>
     </picker>
 
-    <view class="label">绑定信封 UUID（可选）</view>
-    <input class="input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy}}" placeholder="扫码或粘贴 UUID" />
+    <view class="label">绑定信封 UUID（实物信封必填）</view>
+    <input class="input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy}}" placeholder="实物信封需扫码或粘贴 UUID" />
 
     <view class="label">发票号（可选）</view>
     <input class="input" value="{{draft.invoice_no}}" data-key="invoice_no" bindinput="onDraftInput" disabled="{{busy}}" />
