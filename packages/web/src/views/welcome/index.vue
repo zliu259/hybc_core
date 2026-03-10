@@ -240,6 +240,10 @@ const goMyApplications = () => {
   router.push("/workspace/my-applications");
 };
 
+const goExternalPayee = () => {
+  router.push("/workspace/payee");
+};
+
 const goFuelOfficeDesk = () => {
   router.push("/finance/fleet/vehicles");
 };
@@ -331,6 +335,7 @@ const onCertUpload = (file: UploadFile) => {
           >发起对外付款</el-button
         >
         <el-button @click="goFuelApplication">油卡额度申请</el-button>
+        <el-button @click="goExternalPayee">添加外部收款人</el-button>
         <el-button @click="goMyApplications">我的申请</el-button>
         <el-badge
           v-if="canHandleFuelOffice"

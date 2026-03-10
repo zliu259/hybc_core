@@ -64,7 +64,7 @@ uploadRoutes.post("/sign", authMiddleware, async (c) => {
   });
 });
 
-uploadRoutes.put("/object/:key{.+}", authMiddleware, async (c) => {
+uploadRoutes.put("/object/:key{.+}", async (c) => {
   const rawKey = c.req.param("key");
   const expires = Number(c.req.query("expires") ?? "0");
   const signature = c.req.query("signature") ?? "";

@@ -979,10 +979,12 @@
 
 ### 8.3 个人工作台员工闭环（2026-03）
 - 个人工作台首页增加入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
+- 个人工作台首页新增“添加外部收款人”入口，允许全角色快速维护外部收款人：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页新增“油卡办公室待办”数字提醒入口（财务/经理/超管可见）：`packages/web/src/views/welcome/index.vue`
 - 新增“我的申请”页面，聚合展示员工本人发起的对外付款申请、报销申请、油卡额度申请：`packages/web/src/views/workspace/my-applications/index.vue`
 - “我的申请-油卡额度申请”新增处理结果展示（处理备注、处理时间、处理人、处理后余额）：`packages/web/src/views/workspace/my-applications/index.vue`
 - 个人工作台路由新增：`/workspace/my-applications`：`packages/web/src/router/modules/workspace.ts`
+- 个人工作台路由新增：`/workspace/payee`（外部收款人维护入口）：`packages/web/src/router/modules/workspace.ts`
 - 对外付款列表接口新增 `mine/applicant_userid` 过滤，支持员工仅查看本人申请：`packages/api/src/routes/payment.ts`、`packages/web/src/api/payment.ts`
 
 ### 8.4 路由可见性规则收敛（2026-03）
@@ -993,6 +995,7 @@
 - 库房管理（库房与资产）：至少经理可见（`super_admin/manager/site_manager`）：`packages/web/src/router/modules/warehouse-assets.ts`、`packages/web/src/router/modules/asset.ts`
 - 统一审批台：全部角色可见：`packages/web/src/router/modules/approval.ts`
 - 为保持员工在个人工作台可完成油卡申请，新增工作台隐式路由 `/workspace/fuel-application`（不在菜单展示）：`packages/web/src/router/modules/workspace.ts`
+- 为保持全角色可新增外部收款人，后端 `POST /api/v1/payment/payee` 放开 `operator` 角色创建 `type=external`，`type=internal` 仍限制财务/管理角色：`packages/api/src/routes/payment.ts`
 
 ### 8.5 企业微信成员权限可视化（2026-03）
 - 企业微信集成页新增“每个成员权限状况”可视化：系统角色、角色识别来源、权限清单：`packages/web/src/views/wecom/member-admin.vue`

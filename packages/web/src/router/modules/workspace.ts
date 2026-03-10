@@ -101,6 +101,16 @@ export default {
         ],
         showLink: false
       }
+    },
+    {
+      path: "/workspace/payee",
+      name: "WorkspacePayeeList",
+      component: () => import("@/views/finance/payee/index.vue"),
+      meta: {
+        title: "外部收款人",
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+        showLink: false
+      }
     }
   ]
 } satisfies RouteConfigsTable;

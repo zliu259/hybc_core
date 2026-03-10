@@ -241,11 +241,24 @@ paymentRoutes.get("/payee/:id", async (c) => {
 
 paymentRoutes.post(
   "/payee",
-  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreatePayeeRequest;
     const now = nowIso();
+
+    const canManageInternalPayee = auth.roles.some(role =>
+      ["super_admin", "manager", "site_manager", "finance"].includes(role)
+    );
+    if (body.type === "internal" && !canManageInternalPayee) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Only finance/manager roles can create internal payees" }
+        },
+        403
+      );
+    }
 
     const result = await c.env.DB.prepare(
       `INSERT INTO payee (name, bank_name, bank_account, phone, type, status, created_by_userid, created_at, updated_at)
