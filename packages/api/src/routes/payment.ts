@@ -197,9 +197,11 @@ export const paymentRoutes = new Hono<{
 paymentRoutes.use("*", authMiddleware);
 
 paymentRoutes.get("/payee/list", async (c) => {
+  const auth = c.get("auth");
   const type = c.req.query("type");
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
+  const mine = c.req.query("mine") === "true";
 
   let sql = "SELECT * FROM payee WHERE status = 'active'";
   const params: string[] = [];
@@ -216,6 +218,21 @@ paymentRoutes.get("/payee/list", async (c) => {
     sql += " AND legacy_data_id = ?";
     params.push(legacyDataId);
   }
+
+  if (mine) {
+    sql += " AND type = 'internal'";
+    const nameCandidates = [auth.nickname, auth.username]
+      .map(item => (typeof item === "string" ? item.trim() : ""))
+      .filter(Boolean);
+
+    if (nameCandidates.length === 0) {
+      return c.json({ success: true, data: [] });
+    }
+
+    sql += ` AND TRIM(name) IN (${nameCandidates.map(() => "?").join(",")})`;
+    params.push(...nameCandidates);
+  }
+
   sql += " ORDER BY id DESC";
 
   const rows = await c.env.DB.prepare(sql)

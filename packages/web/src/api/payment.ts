@@ -165,7 +165,7 @@ export const getRiskReport = (id: number) => {
   }>("get", `/api/v1/payment/${id}/risk-report`);
 };
 
-export const listPayees = (params?: { type?: string; keyword?: string }) => {
+export const listPayees = (params?: { type?: string; keyword?: string; mine?: boolean }) => {
   return http.request<{ success: boolean; data: Payee[] }>(
     "get",
     "/api/v1/payment/payee/list",

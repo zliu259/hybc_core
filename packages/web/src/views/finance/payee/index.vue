@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { computed } from "vue";
+import { useRoute } from "vue-router";
 import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
 import {
@@ -11,6 +13,9 @@ import {
 } from "@/api/payment";
 
 defineOptions({ name: "PayeeList" });
+
+const route = useRoute();
+const isWorkspaceMode = computed(() => route.path.startsWith("/workspace/payee"));
 
 const activeTab = ref<"external" | "internal">("external");
 const loading = ref(false);
@@ -32,8 +37,9 @@ const loadData = async () => {
   loading.value = true;
   try {
     const result = await listPayees({
-      type: activeTab.value,
-      keyword: keyword.value || undefined
+      type: isWorkspaceMode.value ? "internal" : activeTab.value,
+      keyword: isWorkspaceMode.value ? undefined : keyword.value || undefined,
+      mine: isWorkspaceMode.value ? true : undefined
     });
     list.value = result.data;
   } finally {
@@ -103,22 +109,35 @@ const onDelete = async (row: Payee) => {
   }
 };
 
-onMounted(loadData);
+onMounted(async () => {
+  if (isWorkspaceMode.value) {
+    activeTab.value = "internal";
+  }
+  await loadData();
+});
 </script>
 
 <template>
   <el-card shadow="never" style="background: #fffaf2">
-    <el-tabs v-model="activeTab" @tab-change="() => loadData()">
+    <el-tabs v-if="!isWorkspaceMode" v-model="activeTab" @tab-change="() => loadData()">
       <el-tab-pane label="外部收款人" name="external" />
       <el-tab-pane label="内部收款人" name="internal" />
     </el-tabs>
 
+    <el-alert
+      v-if="isWorkspaceMode"
+      title="仅展示与当前账号姓名匹配的内部收款信息"
+      type="info"
+      :closable="false"
+      style="margin-bottom: 12px"
+    />
+
     <el-form inline>
-      <el-form-item label="关键字">
+      <el-form-item v-if="!isWorkspaceMode" label="关键字">
         <el-input v-model="keyword" placeholder="名称/账号" clearable />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button @click="openCreate">新增收款人</el-button>
+      <el-button v-if="!isWorkspaceMode" @click="openCreate">新增收款人</el-button>
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
@@ -127,7 +146,7 @@ onMounted(loadData);
       <el-table-column prop="bank_account" label="账号" min-width="220" />
       <el-table-column prop="phone" label="电话" width="130" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="160" fixed="right">
+      <el-table-column v-if="!isWorkspaceMode" label="操作" width="160" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="openEdit(scope.row)"
             >编辑</el-button

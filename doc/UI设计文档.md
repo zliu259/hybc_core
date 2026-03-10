@@ -54,6 +54,7 @@
 - 资金流出智能发单台：`packages/web/src/views/finance/payment/wizard.vue`
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`
 - 收款人管理：`packages/web/src/views/finance/payee/index.vue`
+  - 个人工作台路径 `/workspace/payee` 下仅显示“与当前账号姓名匹配”的内部收款人记录（服务端按 `nickname/username` 与收款人姓名匹配过滤）。
 - 报销处理列表：`packages/web/src/views/finance/reimbursement/list.vue`
 - 报销详情：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 报销预审工作台：`packages/web/src/views/finance/reimbursement/precheck.vue`
@@ -980,6 +981,7 @@
 ### 8.3 个人工作台员工闭环（2026-03）
 - 个人工作台首页增加入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页新增“添加外部收款人”入口，允许全角色快速维护外部收款人：`packages/web/src/views/welcome/index.vue`
+- 个人工作台首页“我的内部收款信息”入口跳转 `/workspace/payee`，仅展示本人内部收款信息：`packages/web/src/views/welcome/index.vue`、`packages/web/src/views/finance/payee/index.vue`
 - 个人工作台首页新增“油卡办公室待办”数字提醒入口（财务/经理/超管可见）：`packages/web/src/views/welcome/index.vue`
 - 新增“我的申请”页面，聚合展示员工本人发起的对外付款申请、报销申请、油卡额度申请：`packages/web/src/views/workspace/my-applications/index.vue`
 - “我的申请-油卡额度申请”新增处理结果展示（处理备注、处理时间、处理人、处理后余额）：`packages/web/src/views/workspace/my-applications/index.vue`
