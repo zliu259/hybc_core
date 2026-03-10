@@ -5,6 +5,7 @@ import asyncio
 import time
 import uuid
 from collections import deque
+from threading import Lock
 from typing import Any
 from urllib.parse import urlparse
 
@@ -27,7 +28,7 @@ class RelayRuntimeStats:
         self.window_timeout: deque[float] = deque()
         self.window_upstream_error: deque[float] = deque()
         self.window_local_reject: deque[float] = deque()
-        self.lock = asyncio.Lock()
+        self.lock = Lock()
 
     def _trim(self, now: float) -> None:
         cutoff = now - max(settings.relay_error_window_seconds, 1)
@@ -56,9 +57,9 @@ class RelayRuntimeStats:
                 return True, "error_rate"
         return False, "ok"
 
-    async def status(self) -> dict[str, Any]:
+    def status(self) -> dict[str, Any]:
         try:
-            async with self.lock:
+            with self.lock:
                 now = time.time()
                 overloaded, reason = self._is_overloaded_no_lock(now)
                 total = len(self.window_total)
@@ -91,9 +92,9 @@ class RelayRuntimeStats:
                 "admission_state": "accepting",
             }
 
-    async def reject_if_overloaded(self) -> tuple[bool, str]:
+    def reject_if_overloaded(self) -> tuple[bool, str]:
         try:
-            async with self.lock:
+            with self.lock:
                 now = time.time()
                 overloaded, reason = self._is_overloaded_no_lock(now)
                 if overloaded:
@@ -104,9 +105,9 @@ class RelayRuntimeStats:
         except Exception:
             return False, "status_error"
 
-    async def finish_request(self, *, timeout: bool, upstream_error: bool) -> None:
+    def finish_request(self, *, timeout: bool, upstream_error: bool) -> None:
         try:
-            async with self.lock:
+            with self.lock:
                 now = time.time()
                 self.inflight = max(0, self.inflight - 1)
                 self.window_total.append(now)
@@ -125,7 +126,7 @@ relay_stats = RelayRuntimeStats()
 
 
 async def reject_when_overloaded() -> None:
-    overloaded, reason = await relay_stats.reject_if_overloaded()
+    overloaded, reason = relay_stats.reject_if_overloaded()
     if overloaded:
         retry_after = str(max(settings.relay_cooldown_seconds, 1))
         payload = {
@@ -146,7 +147,7 @@ async def reject_when_overloaded() -> None:
 
 @app.get("/health")
 async def health() -> dict[str, Any]:
-    relay = await relay_stats.status()
+    relay = relay_stats.status()
     return {
         "ok": True,
         "service": "azure-wecom-bridge",
@@ -158,7 +159,7 @@ async def health() -> dict[str, Any]:
 @app.get("/relay/status")
 @app.get("/relay/status/")
 async def relay_status() -> dict[str, Any]:
-    relay = await relay_stats.status()
+    relay = relay_stats.status()
     return {
         "ok": True,
         "service": "azure-wecom-bridge",
@@ -248,7 +249,7 @@ async def wecom_callback(request: Request) -> dict[str, Any]:
 
         raise HTTPException(status_code=502, detail=f"forward failed: {last_error}")
     finally:
-        await relay_stats.finish_request(timeout=timeout_error, upstream_error=upstream_error)
+        relay_stats.finish_request(timeout=timeout_error, upstream_error=upstream_error)
 
 
 def _build_target_url(base_url: str, full_path: str, query: str) -> str:
@@ -313,7 +314,7 @@ async def _relay_api_request(request: Request, full_path: str) -> Response:
         upstream_error = True
         raise HTTPException(status_code=502, detail=f"relay proxy failed: {exc}")
     finally:
-        await relay_stats.finish_request(timeout=timeout_error, upstream_error=upstream_error)
+        relay_stats.finish_request(timeout=timeout_error, upstream_error=upstream_error)
 
 
 @app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
