@@ -1,17 +1,13 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import echarts from "@/plugins/echarts";
-import { listEntities, type Entity } from "@/api/entity";
 import { getVehicleFuelOverview, type VehicleFuelOverviewPeriodType } from "@/api/dashboard";
-import { message } from "@/utils/message";
 
 defineOptions({ name: "FleetFuelDashboard" });
 
 const loading = ref(false);
-const entities = ref<Entity[]>([]);
-const periodType = ref<VehicleFuelOverviewPeriodType>("month");
-const period = ref(new Date().toISOString().slice(0, 7));
-const entityId = ref<number | undefined>(undefined);
+const periodType = ref<VehicleFuelOverviewPeriodType>("year");
+const period = ref(String(new Date().getFullYear()));
 
 const summary = ref({
   vehicle_total: 0,
@@ -98,18 +94,8 @@ const loadData = async () => {
   try {
     const overviewResult = await getVehicleFuelOverview({
       period_type: periodType.value,
-      period: period.value,
-      entity_id: entityId.value
+      period: period.value
     });
-
-    try {
-      const entityResult = await listEntities({ status: "active" });
-      entities.value = entityResult.data;
-    } catch (err) {
-      entities.value = [];
-      const errMsg = err instanceof Error ? err.message : "实体列表加载失败";
-      message(errMsg, { type: "warning" });
-    }
 
     summary.value = overviewResult.data.summary;
     trend.value = overviewResult.data.charts.fuel_apply_trend;
@@ -158,11 +144,6 @@ onUnmounted(() => {
       <el-form-item label="时间">
         <el-date-picker v-if="periodType === 'month'" v-model="period" type="month" value-format="YYYY-MM" style="width: 160px" />
         <el-date-picker v-else v-model="period" type="year" value-format="YYYY" style="width: 160px" />
-      </el-form-item>
-      <el-form-item label="公司实体">
-        <el-select v-model="entityId" clearable filterable style="width: 220px">
-          <el-option v-for="item in entities" :key="item.id" :label="item.entity_name" :value="item.id" />
-        </el-select>
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
     </el-form>

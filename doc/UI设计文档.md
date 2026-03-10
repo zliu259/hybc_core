@@ -966,6 +966,7 @@
 - 油卡额度全量处理页：`/finance/fleet/applications-all` → `packages/web/src/views/finance/fleet/applications-list.vue`
 - 车辆档案与办公室处理：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
 - 车辆用油领导总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
+  - 该总览固定按全公司口径统计，不提供“公司实体”筛选控件，避免统计范围误解与空数据误判。
 
 ### 8.2 API 指向
 - 公司实体增强：`/api/v1/entity`、`/api/v1/entity/:id/attachments`、`/api/v1/entity/:id/storage-summary`

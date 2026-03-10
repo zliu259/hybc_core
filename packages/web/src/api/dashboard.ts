@@ -98,7 +98,6 @@ export type VehicleFuelOverviewPeriodType = "month" | "year";
 export const getVehicleFuelOverview = (params: {
   period_type: VehicleFuelOverviewPeriodType;
   period?: string;
-  entity_id?: number;
 }) => {
   return http.request<{
     success: boolean;
@@ -108,7 +107,6 @@ export const getVehicleFuelOverview = (params: {
         period: string;
         start_date: string;
         end_date: string;
-        entity_id: number | null;
       };
       summary: {
         vehicle_total: number;

@@ -362,12 +362,7 @@ dashboardRoutes.get(
     const periodTypeRaw = c.req.query("period_type");
     const periodType: PeriodType = periodTypeRaw === "year" ? "year" : "month";
     const period = c.req.query("period");
-    const entityIdRaw = c.req.query("entity_id");
     const range = parsePeriodRange(periodType, period);
-    const entityId = entityIdRaw ? Number(entityIdRaw) : null;
-
-    const vehicleFilter = entityId && Number.isFinite(entityId) ? " WHERE entity_id = ?" : "";
-    const vehicleFilterParams = entityId && Number.isFinite(entityId) ? [entityId] : [];
 
     const vehicleCountRow = await c.env.DB.prepare(
       `SELECT
@@ -375,9 +370,8 @@ dashboardRoutes.get(
         SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_total,
         SUM(CASE WHEN ownership_type = 'company_owned' THEN 1 ELSE 0 END) as company_owned_total,
         SUM(CASE WHEN ownership_type = 'employee_owned' THEN 1 ELSE 0 END) as employee_owned_total
-       FROM company_vehicle${vehicleFilter}`
+       FROM company_vehicle`
     )
-      .bind(...vehicleFilterParams)
       .first<{
         total: number;
         active_total: number;
@@ -391,11 +385,9 @@ dashboardRoutes.get(
         IFNULL(SUM(mileage_km), 0) as mileage_total
        FROM company_vehicle_mileage_log m
        JOIN company_vehicle v ON v.id = m.vehicle_id
-       WHERE m.recorded_at >= ? AND m.recorded_at < ?${
-         entityId && Number.isFinite(entityId) ? " AND v.entity_id = ?" : ""
-       }`
+       WHERE m.recorded_at >= ? AND m.recorded_at < ?`
     )
-      .bind(range.start, range.end, ...vehicleFilterParams)
+      .bind(range.start, range.end)
       .first<{ log_count: number; mileage_total: number }>();
 
     const fuelRows = await c.env.DB.prepare(
@@ -404,14 +396,12 @@ dashboardRoutes.get(
         IFNULL(SUM(requested_amount), 0) as requested_amount_total,
         SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) as processed_count,
         SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count,
-        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count
+       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count
        FROM fuel_quota_application a
        JOIN company_vehicle v ON v.id = a.vehicle_id
-       WHERE a.requested_at >= ? AND a.requested_at < ?${
-         entityId && Number.isFinite(entityId) ? " AND v.entity_id = ?" : ""
-       }`
+       WHERE a.requested_at >= ? AND a.requested_at < ?`
     )
-      .bind(range.start, range.end, ...vehicleFilterParams)
+      .bind(range.start, range.end)
       .first<{
         apply_count: number;
         requested_amount_total: number;
@@ -428,13 +418,11 @@ dashboardRoutes.get(
         IFNULL(SUM(a.requested_amount), 0) as requested_amount_total
        FROM fuel_quota_application a
        JOIN company_vehicle v ON v.id = a.vehicle_id
-       WHERE a.requested_at >= ? AND a.requested_at < ?${
-         entityId && Number.isFinite(entityId) ? " AND v.entity_id = ?" : ""
-       }
+       WHERE a.requested_at >= ? AND a.requested_at < ?
        GROUP BY bucket
        ORDER BY bucket ASC`
     )
-      .bind(range.start, range.end, ...vehicleFilterParams)
+      .bind(range.start, range.end)
       .all<{ bucket: string; apply_count: number; requested_amount_total: number }>();
 
     const topVehicles = await c.env.DB.prepare(
@@ -447,12 +435,11 @@ dashboardRoutes.get(
         IFNULL(SUM(a.requested_amount), 0) as requested_amount_total
        FROM company_vehicle v
        LEFT JOIN fuel_quota_application a ON a.vehicle_id = v.id AND a.requested_at >= ? AND a.requested_at < ?
-       ${entityId && Number.isFinite(entityId) ? "WHERE v.entity_id = ?" : ""}
        GROUP BY v.id, v.vehicle_uuid, v.current_plate_no, v.ownership_type
        ORDER BY requested_amount_total DESC, apply_count DESC
        LIMIT 10`
     )
-      .bind(range.start, range.end, ...vehicleFilterParams)
+      .bind(range.start, range.end)
       .all<{
         id: number;
         vehicle_uuid: string;
@@ -473,8 +460,7 @@ dashboardRoutes.get(
           period_type: periodType,
           period: range.periodLabel,
           start_date: range.start,
-          end_date: range.end,
-          entity_id: entityId
+          end_date: range.end
         },
         summary: {
           vehicle_total: vehicleCountRow?.total ?? 0,
