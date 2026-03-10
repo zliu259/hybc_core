@@ -928,6 +928,12 @@
 - 新增“员工加油申请”页面，字段与 Web 保持一致：所用车辆、申请额度、车辆里程、现场照片，提交后展示我的申请记录：`packages/miniapp/pages/fuel-apply/index.{js,wxml,wxss,json}`
 - 小程序路由注册补齐：`packages/miniapp/app.json`
 
+### 4.23 Miniapp 办公室报销扫码核查页（2026-03）
+- 新增办公室专用页面“信封扫码核查”，支持扫码信封 UUID 二维码后快速打开对应报销电子档案（自动定位并跳转详情）：`packages/miniapp/pages/reimbursement-archive/index.{js,wxml,wxss,json}`
+- 页面同时支持手动输入/粘贴 UUID（含扫码链接自动提取 `envelope_uuid`），并维护最近核查记录列表，方便连续核查：`packages/miniapp/pages/reimbursement-archive/index.js`
+- 流程入口补齐：审批与申请页（发起申请分段）新增“信封扫码核查”卡片，并在语音助手菜单新增快捷动作：`packages/miniapp/pages/finance/index.{js,wxml}`
+- 小程序路由注册补齐：`packages/miniapp/app.json`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

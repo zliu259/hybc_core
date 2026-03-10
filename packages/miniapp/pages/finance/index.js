@@ -54,6 +54,7 @@ Page({
         "🎤 我要发起对外付款",
         "🎤 我要审批单据",
         "🎤 我要发起报销",
+        "🎤 我要扫码核查报销信封",
         "🎤 我要发起油卡额度申请"
       ],
       success: async (res) => {
@@ -75,6 +76,10 @@ Page({
         }
         if (res.tapIndex === 3) {
           wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+          return;
+        }
+        if (res.tapIndex === 4) {
+          wx.navigateTo({ url: "/pages/reimbursement-archive/index" });
           return;
         }
         wx.navigateTo({ url: "/pages/fuel-apply/index" });

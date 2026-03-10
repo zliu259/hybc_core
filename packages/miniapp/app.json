@@ -22,6 +22,7 @@
     "pages/fuel-apply/index",
     "pages/reimbursement-list/index",
     "pages/reimbursement/index",
+    "pages/reimbursement-archive/index",
     "pages/asset/index",
     "pages/survey/index",
     "pages/progress/index",

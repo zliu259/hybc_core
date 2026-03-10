@@ -1176,6 +1176,7 @@ reimbursementRoutes.post(
   "/:id/precheck",
   requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
+    const auth = c.get("auth");
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as PrecheckEnvelopeRequest;
 
@@ -1187,7 +1188,7 @@ reimbursementRoutes.post(
     }
 
     const envelope = await c.env.DB.prepare(
-      `SELECT id, status, duplicate_check_status, duplicate_override_requested
+      `SELECT id, status, duplicate_check_status, duplicate_override_requested, applicant_userid
          FROM reimbursement_envelope
         WHERE id = ? AND status != 'deleted'`
     )
@@ -1197,10 +1198,19 @@ reimbursementRoutes.post(
         status: string;
         duplicate_check_status: string;
         duplicate_override_requested: number;
+        applicant_userid: string;
       }>();
 
     if (!envelope) {
       return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    const canSelfAudit = auth.roles.includes("super_admin") || auth.roles.includes("finance");
+    if (envelope.applicant_userid === auth.sub && !canSelfAudit) {
+      return c.json(
+        { success: false, error: { message: "Applicant cannot precheck their own reimbursement envelope" } },
+        403
+      );
     }
 
     if (body.action === "approved") {
@@ -1811,6 +1821,7 @@ reimbursementRoutes.post(
   "/verify",
   requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
+    const auth = c.get("auth");
     const body = (await c.req.json()) as VerifyEnvelopeRequest;
 
     if (!body.envelope_id && !body.envelope_uuid) {
@@ -1835,6 +1846,24 @@ reimbursementRoutes.post(
 
     if (!envelope) {
       return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    const canSelfAudit = auth.roles.includes("super_admin") || auth.roles.includes("finance");
+    if (envelope.applicant_userid === auth.sub && !canSelfAudit) {
+      return c.json(
+        { success: false, error: { message: "Applicant cannot verify their own reimbursement envelope" } },
+        403
+      );
+    }
+
+    if (!["submitted", "received"].includes(envelope.status)) {
+      return c.json(
+        {
+          success: false,
+          error: { message: `Envelope in status ${envelope.status} cannot be verified` }
+        },
+        400
+      );
     }
 
     const now = nowIso();

@@ -123,7 +123,14 @@ const canEdit = computed(() => {
 
 const canOfficeAudit = computed(() => {
   const roles = new Set(userStore.roles ?? []);
-  return ["super_admin", "manager", "site_manager", "finance"].some(role => roles.has(role));
+  const hasOfficeRole = ["super_admin", "manager", "site_manager", "finance"].some(role =>
+    roles.has(role)
+  );
+  const canSelfAudit = roles.has("super_admin") || roles.has("finance");
+  const currentUserId = String(userStore.username || "").trim();
+  const applicantId = String(detail.value?.applicant_userid || form.value.applicant_userid || "").trim();
+  const isApplicant = Boolean(currentUserId && applicantId && currentUserId === applicantId);
+  return hasOfficeRole && (!isApplicant || canSelfAudit);
 });
 
 const hasDuplicateRisks = computed(() => {
