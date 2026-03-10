@@ -31,7 +31,7 @@ const loading = ref(false);
 const checking = ref(false);
 const submitting = ref(false);
 const step = ref(0);
-const thresholdLimit = ref(50000);
+const thresholdLimit = ref(10000);
 const exceedsThreshold = ref(false);
 
 const contracts = ref<Contract[]>([]);

@@ -145,6 +145,7 @@
 - 右侧：审批轨迹、风险评估报告。
 - 付款执行：`已审批`状态下登记支付日期、支付流水号、付款账户、付款备注并标记付款。
 - 底部动作：通过/拒绝/退回/转签（必须填写意见）、标记付款。
+- 审批中显示“付款主体与账户调整”操作区（随审批流展示，不再依赖 `available_actions` 才可见），避免审批人看不到付款实体/账户选择控件。
 - API 指向：`/api/v1/payment/:id`, `/api/v1/payment/:id/mark-paid`, `/api/v1/approval/:id/*`
 
 #### H. 收款人管理 `views/finance/payee/index.vue`
@@ -162,7 +163,8 @@
   - 报销提交：统一提交视图（含代员工发起入口）
   - 办公室：处理与审查（预审/查重/收件核查）
   - 财务与领导：集中审批与历史
-- 支持入口：批量生成未登记信封、UUID快速打开信封（办公室）、进入详情执行登记/提交/收件核对/PDF生成。
+- 支持入口：UUID快速打开信封（办公室）、进入详情执行登记/提交/收件核查/预审动作。
+- 页面收敛：移除“批量生成未登记信封”入口，实体信封由办公室线下发放并通过 UUID 入流。
 - 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
 - 功能融合：查重线索、异常检测、预审通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
 - API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
@@ -174,9 +176,17 @@
 - UUID 规则：
   - “报销识别号”与 `envelope_uuid` 统一；
   - 创建态支持“绑定现有信封UUID”（预打印离线信封）；
+  - 实物信封创建强制提供 UUID（输入或扫码），无 UUID 不允许建单；
   - 非创建态在附件已入库或非草稿时视为锁定。
 - 状态总览统一中文化显示（状态、核对状态、预审状态、PDF状态）。
-- 操作区：保存、扫码登记并绑定填报人、提交报销并寄送实物信封、收件通过/异常、触发PDF生成、刷新PDF状态、刷新OCR状态、触发异常检测、预审动作。
+- 审计与签收：
+  - 上传附件后直接触发审计/OCR/查重；
+  - 电子发票上传后进入办公室核查流，核查通过后才签收（`received`）；
+  - 实物信封需办公室收到并核查后签收。
+- 查重强制：
+  - 存在查重风险时，申请人需“坚持提交”后才允许进入办公室预审通过；
+  - 页面显示审计提示，办公室侧可见坚持提交标记并执行复核。
+- 操作区收敛：保存、实物扫码登记、实物提交、电子 OCR 刷新、办公室核查签收/异常、预审动作。
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）

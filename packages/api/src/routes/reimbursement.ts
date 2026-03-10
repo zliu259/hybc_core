@@ -19,6 +19,7 @@ import type {
   ReimbursementDuplicateCheck,
   ReimbursementEnvelope,
   ScanEnvelopeRequest,
+  SubmitEnvelopeRequest,
   SubmitReimbursementBatchApprovalRequest,
   UpdateEnvelopeRequest,
   VerifyEnvelopeRequest
@@ -45,6 +46,18 @@ const parseTaskResult = (resultJson: string | null): Record<string, unknown> | n
   } catch {
     return null;
   }
+};
+
+const extractInvoiceUniqueNo = (payload: Record<string, unknown> | null): string | null => {
+  if (!payload) return null;
+  const candidates = [payload.invoice_unique_no, payload.invoice_number, payload.fphm, payload.invoice_no];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string") {
+      const normalized = candidate.trim();
+      if (normalized) return normalized;
+    }
+  }
+  return null;
 };
 
 const insertAttachments = async (
@@ -95,13 +108,22 @@ const applyDuplicateChecks = async (env: Env, envelopeId: number): Promise<numbe
   const now = nowIso();
   let count = 0;
 
-  if (envelope.invoice_no?.trim()) {
-    const rows = await env.DB.prepare(
-      `SELECT id, project_id, invoice_no FROM reimbursement_envelope
-       WHERE id != ? AND status != 'deleted' AND invoice_no = ?`
-    )
-      .bind(envelopeId, envelope.invoice_no.trim())
-      .all<{ id: number; project_id: number; invoice_no: string }>();
+  const invoiceUniqueNo = envelope.invoice_unique_no?.trim();
+  const invoiceNo = envelope.invoice_no?.trim();
+  if (invoiceUniqueNo || invoiceNo) {
+    const rows = invoiceUniqueNo
+      ? await env.DB.prepare(
+          `SELECT id, project_id, invoice_no, invoice_unique_no FROM reimbursement_envelope
+           WHERE id != ? AND status != 'deleted' AND invoice_unique_no = ?`
+        )
+          .bind(envelopeId, invoiceUniqueNo)
+          .all<{ id: number; project_id: number; invoice_no: string | null; invoice_unique_no: string | null }>()
+      : await env.DB.prepare(
+          `SELECT id, project_id, invoice_no, invoice_unique_no FROM reimbursement_envelope
+           WHERE id != ? AND status != 'deleted' AND invoice_no = ?`
+        )
+          .bind(envelopeId, invoiceNo ?? "")
+          .all<{ id: number; project_id: number; invoice_no: string | null; invoice_unique_no: string | null }>();
 
     for (const row of rows.results ?? []) {
       const matchType = row.project_id === envelope.project_id ? "exact" : "cross_project";
@@ -113,11 +135,15 @@ const applyDuplicateChecks = async (env: Env, envelopeId: number): Promise<numbe
         .bind(
           envelopeId,
           row.id,
-          row.invoice_no,
+          row.invoice_unique_no ?? row.invoice_no,
           matchType,
           1,
-          matchType === "exact" ? "发票号完全重复" : "发票号跨项目重复",
-          JSON.stringify({ matched_envelope_id: row.id, invoice_no: row.invoice_no }),
+          matchType === "exact" ? "发票唯一编号完全重复" : "发票唯一编号跨项目重复",
+          JSON.stringify({
+            matched_envelope_id: row.id,
+            invoice_unique_no: row.invoice_unique_no,
+            invoice_no: row.invoice_no
+          }),
           now
         )
         .run();
@@ -911,10 +937,10 @@ reimbursementRoutes.post(
     const insertResult = await c.env.DB.prepare(
       `INSERT INTO reimbursement_envelope
         (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
-         invoice_no, expense_date, amount, description,
+         invoice_unique_no, invoice_no, expense_date, amount, description,
          status, precheck_status, verification_status, ocr_status,
          duplicate_check_status, received_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, 'received', 'none', 'verified', 'none', 'none', ?, ?, ?)`
+       VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, ?, 'submitted', 'pending', 'pending', 'none', 'none', NULL, ?, ?)`
     )
       .bind(
         envelopeNo,
@@ -922,10 +948,10 @@ reimbursementRoutes.post(
         body.project_id,
         body.applicant_userid ?? auth.sub,
         body.invoice_no ?? null,
+        body.invoice_no ?? null,
         body.issue_date ?? null,
         body.amount ?? 0,
         body.description ?? null,
-        now,
         now,
         now
       )
@@ -1000,6 +1026,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
   let duplicateCount = 0;
 
   if (task?.status === "completed" && envelope.ocr_status !== "completed") {
+    const invoiceUniqueNo = extractInvoiceUniqueNo(result);
     const invoiceNo =
       typeof result?.invoice_no === "string"
         ? result.invoice_no
@@ -1024,6 +1051,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          ocr_status = 'completed',
+         invoice_unique_no = COALESCE(?, invoice_unique_no),
          invoice_no = COALESCE(?, invoice_no),
          amount = COALESCE(?, amount),
          expense_date = COALESCE(?, expense_date),
@@ -1031,7 +1059,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
          updated_at = ?
        WHERE id = ?`
     )
-      .bind(invoiceNo ?? null, amount ?? null, issueDate ?? null, nextStatus, nowIso(), id)
+      .bind(invoiceUniqueNo, invoiceNo ?? null, amount ?? null, issueDate ?? null, nextStatus, nowIso(), id)
       .run();
 
     duplicateCount = await applyDuplicateChecks(c.env, id);
@@ -1159,13 +1187,49 @@ reimbursementRoutes.post(
     }
 
     const envelope = await c.env.DB.prepare(
-      "SELECT id, status FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+      `SELECT id, status, duplicate_check_status, duplicate_override_requested
+         FROM reimbursement_envelope
+        WHERE id = ? AND status != 'deleted'`
     )
       .bind(id)
-      .first<{ id: number; status: string }>();
+      .first<{
+        id: number;
+        status: string;
+        duplicate_check_status: string;
+        duplicate_override_requested: number;
+      }>();
 
     if (!envelope) {
       return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    if (body.action === "approved") {
+      if (envelope.duplicate_check_status !== "completed") {
+        return c.json(
+          {
+            success: false,
+            error: { message: "Duplicate audit is mandatory before precheck approval" }
+          },
+          400
+        );
+      }
+      const duplicateRow = await c.env.DB.prepare(
+        "SELECT COUNT(*) as cnt FROM reimbursement_duplicate_check WHERE envelope_id = ?"
+      )
+        .bind(id)
+        .first<{ cnt: number }>();
+      const duplicateCount = duplicateRow?.cnt ?? 0;
+      if (duplicateCount > 0 && envelope.duplicate_override_requested !== 1) {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: "Duplicate risk exists. Applicant insist-submit is required before office can approve precheck"
+            }
+          },
+          400
+        );
+      }
     }
 
     const nextStatus = body.action === "approved" ? "received" : "submitted";
@@ -1277,6 +1341,15 @@ reimbursementRoutes.post(
     const requestedChannel = body.channel ?? "physical";
     const preferredEnvelopeUuid = body.preferred_envelope_uuid?.trim();
     const generatedEnvelopeUuid = crypto.randomUUID();
+    if (requestedChannel === "physical" && !preferredEnvelopeUuid) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Physical reimbursement requires envelope UUID input or scan before create" }
+        },
+        400
+      );
+    }
     const isPrivileged = auth.roles.some((role) =>
       ["super_admin", "manager", "site_manager", "finance"].includes(role)
     );
@@ -1316,6 +1389,7 @@ reimbursementRoutes.post(
            project_id = COALESCE(?, project_id),
            applicant_userid = ?,
            channel = ?,
+           invoice_unique_no = COALESCE(?, invoice_unique_no),
            invoice_no = COALESCE(?, invoice_no),
            expense_date = COALESCE(?, expense_date),
            amount = COALESCE(?, amount),
@@ -1330,6 +1404,7 @@ reimbursementRoutes.post(
           body.project_id ?? null,
           decision.applicantToPersist,
           decision.channelToPersist,
+          body.invoice_no ?? null,
           body.invoice_no ?? null,
           body.expense_date ?? null,
           body.amount ?? null,
@@ -1370,10 +1445,10 @@ reimbursementRoutes.post(
     const result = await c.env.DB.prepare(
       `INSERT INTO reimbursement_envelope
         (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
-         invoice_no, expense_date, amount, category, description,
+         invoice_unique_no, invoice_no, expense_date, amount, category, description,
          status, precheck_status, verification_status,
          created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', 'pending', ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', 'pending', ?, ?)`
     )
       .bind(
         envelopeNo,
@@ -1381,6 +1456,7 @@ reimbursementRoutes.post(
         body.project_id,
         requestedApplicant,
         requestedChannel,
+        body.invoice_no ?? null,
         body.invoice_no ?? null,
         body.expense_date ?? null,
         body.amount ?? 0,
@@ -1450,6 +1526,7 @@ reimbursementRoutes.put(
          project_id = COALESCE(?, project_id),
          applicant_userid = COALESCE(?, applicant_userid),
          channel = COALESCE(?, channel),
+         invoice_unique_no = COALESCE(?, invoice_unique_no),
          invoice_no = COALESCE(?, invoice_no),
          expense_date = COALESCE(?, expense_date),
          amount = COALESCE(?, amount),
@@ -1464,6 +1541,7 @@ reimbursementRoutes.put(
         body.applicant_userid ?? null,
         body.channel ?? null,
         body.invoice_no ?? null,
+        body.invoice_no ?? null,
         body.expense_date ?? null,
         body.amount ?? null,
         body.category ?? null,
@@ -1476,6 +1554,8 @@ reimbursementRoutes.put(
 
     if (body.attachments && body.attachments.length > 0) {
       await insertAttachments(c.env.DB, id, body.attachments);
+      const latestFileKey = body.attachments.find(item => item.file_key?.trim())?.file_key ?? null;
+      await enqueueEnvelopeAiAudit(c.env, id, { file_key: latestFileKey });
     }
 
     return c.json({ success: true });
@@ -1573,6 +1653,7 @@ reimbursementRoutes.post("/scan", async (c) => {
     `UPDATE reimbursement_envelope SET
        project_id = COALESCE(?, project_id),
        applicant_userid = CASE WHEN ? THEN ? ELSE applicant_userid END,
+       invoice_unique_no = COALESCE(?, invoice_unique_no),
        invoice_no = COALESCE(?, invoice_no),
        expense_date = COALESCE(?, expense_date),
        amount = COALESCE(?, amount),
@@ -1586,6 +1667,7 @@ reimbursementRoutes.post("/scan", async (c) => {
       body.project_id ?? null,
       shouldBindApplicant ? 1 : 0,
       auth.sub,
+      body.invoice_no ?? null,
       body.invoice_no ?? null,
       body.expense_date ?? null,
       body.amount ?? null,
@@ -1629,6 +1711,7 @@ reimbursementRoutes.post(
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as SubmitEnvelopeRequest;
 
     const envelope = await c.env.DB.prepare(
       "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
@@ -1676,15 +1759,38 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "At least one attachment is required before submit" } }, 400);
     }
 
+    const duplicateCount = await applyDuplicateChecks(c.env, id);
+    if (duplicateCount > 0 && body.force_submit !== true) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message:
+              "Duplicate audit found risks. Applicant must explicitly insist submit before office can continue precheck"
+          },
+          data: { duplicate_count: duplicateCount, require_force_submit: true }
+        },
+        409
+      );
+    }
+
     const now = nowIso();
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          status = 'submitted',
+         duplicate_override_requested = ?,
+         duplicate_override_reason = ?,
          submitted_at = COALESCE(submitted_at, ?),
          updated_at = ?
        WHERE id = ?`
     )
-      .bind(now, now, id)
+      .bind(
+        body.force_submit === true ? 1 : 0,
+        body.force_submit === true ? body.force_submit_reason?.trim() ?? null : null,
+        now,
+        now,
+        id
+      )
       .run();
 
     await enqueueEnvelopeAiAudit(c.env, id, {

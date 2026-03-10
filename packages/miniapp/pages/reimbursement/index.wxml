@@ -17,7 +17,7 @@
       <hy-status-chip text="批次：{{batchInfoText}}" theme="warning" variant="light" />
     </view>
 
-    <t-notice-bar content="建议流程：填写基础信息并保存草稿 -> 上传发票附件 -> 提交报销。若已有预打印信封，可扫码填入 UUID 后保存。" theme="warning" />
+    <t-notice-bar content="建议流程：实物信封需先扫码/输入UUID再保存草稿；上传附件会立即进入审计。电子发票上传后自动进入办公室核查流程。" theme="warning" />
 
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" enableGps="{{false}}" bind:change="onProjectChange" />
 
@@ -67,7 +67,7 @@
 
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">刷新OCR状态</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📨 提交报销</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId || draft.channel === 'electronic'}}">📨 提交报销</t-button>
     </view>
 
     <view class="label">附件列表</view>

@@ -33,6 +33,7 @@ export interface ReimbursementEnvelope {
   project_id: number;
   applicant_userid: string;
   channel: ReimbursementChannel;
+  invoice_unique_no: string | null;
   invoice_no: string | null;
   expense_date: string | null;
   amount: number;
@@ -51,6 +52,8 @@ export interface ReimbursementEnvelope {
   ocr_task_id: number | null;
   ocr_status: TaskStatus;
   duplicate_check_status: TaskStatus;
+  duplicate_override_requested: number;
+  duplicate_override_reason: string | null;
   submitted_at: string | null;
   received_at: string | null;
   created_at: string;
@@ -157,6 +160,11 @@ export interface VerifyEnvelopeRequest {
   envelope_uuid?: string;
   result: "verified" | "mismatch";
   note?: string;
+}
+
+export interface SubmitEnvelopeRequest {
+  force_submit?: boolean;
+  force_submit_reason?: string;
 }
 
 export interface ElectronicUploadRequest {

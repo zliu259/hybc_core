@@ -107,7 +107,7 @@ Page({
     busy: false,
     checking: false,
     submitting: false,
-    thresholdLimit: 50000,
+    thresholdLimit: 10000,
     exceedsThreshold: false,
     amountInput: "",
     amountDisplay: formatAmountDisplay(0),
@@ -206,8 +206,8 @@ Page({
             if (!Number.isFinite(value) || value <= 0) return min;
             if (!min) return value;
             return value < min ? value : min;
-          }, 0) || 50000
-        : 50000;
+          }, 0) || 10000
+        : 10000;
 
       const payees = payeeRes && Array.isArray(payeeRes.data) ? payeeRes.data : [];
       const contracts = contractRes && Array.isArray(contractRes.data) ? contractRes.data : [];

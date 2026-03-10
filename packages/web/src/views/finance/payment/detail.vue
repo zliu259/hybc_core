@@ -548,9 +548,8 @@ const payoutEntityAccounts = computed(() => {
 });
 
 const canAdjustPayoutInApproval = computed(() => {
-  if (isCreate.value || !inApprovalFlow.value || !approvalDetail.value) return false;
-  const actions = approvalDetail.value.available_actions ?? [];
-  return actions.includes("approve") || actions.includes("reject") || actions.includes("return_prev");
+  if (isCreate.value || !inApprovalFlow.value) return false;
+  return Boolean(approvalDetail.value);
 });
 
 const onPayoutEntityChange = (entityId: number | undefined) => {

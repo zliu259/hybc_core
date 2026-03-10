@@ -70,7 +70,7 @@ const mergeAttachments = (...groups: AttachmentMeta[][]): AttachmentMeta[] => {
   return merged;
 };
 
-const DEFAULT_NO_CONTRACT_THRESHOLD = 50000;
+const DEFAULT_NO_CONTRACT_THRESHOLD = 10000;
 
 const getNoContractThreshold = async (env: Env): Promise<number> => {
   const row = await env.DB.prepare(

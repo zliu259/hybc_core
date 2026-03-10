@@ -7,6 +7,7 @@ export type ReimbursementEnvelope = {
   project_id: number;
   applicant_userid: string;
   channel: "physical" | "electronic";
+  invoice_unique_no: string | null;
   invoice_no: string | null;
   expense_date: string | null;
   amount: number;
@@ -19,6 +20,8 @@ export type ReimbursementEnvelope = {
   approval_instance_id?: number | null;
   ocr_status: string;
   duplicate_check_status: string;
+  duplicate_override_requested?: number;
+  duplicate_override_reason?: string | null;
   pdf_status: string;
   pdf_task_id: number | null;
   pdf_file_key: string | null;
@@ -195,11 +198,14 @@ export const scanReimbursementEnvelope = (data: {
   }>("post", "/api/v1/reimbursement/scan", { data });
 };
 
-export const submitReimbursementEnvelope = (id: number) => {
+export const submitReimbursementEnvelope = (
+  id: number,
+  data?: { force_submit?: boolean; force_submit_reason?: string }
+) => {
   return http.request<{
     success: boolean;
     data: { id: number; status: string };
-  }>("post", `/api/v1/reimbursement/${id}/submit`);
+  }>("post", `/api/v1/reimbursement/${id}/submit`, { data });
 };
 
 export const verifyReimbursementEnvelope = (data: {

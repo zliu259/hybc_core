@@ -254,6 +254,10 @@ Page({
       sayToast({ title: errorText, icon: "none", danger: true });
       return;
     }
+    if (draft.channel === "physical" && !String(draft.preferred_envelope_uuid || "").trim()) {
+      sayToast({ title: "实物信封必须先录入UUID", icon: "none", danger: true });
+      return;
+    }
 
     return this.runBusy(async () => {
       if (latestEnvelopeId) {
@@ -392,6 +396,10 @@ Page({
   async submitEnvelope() {
     if (!this.data.latestEnvelopeId) {
       sayToast({ title: "请先保存草稿", icon: "none", danger: true });
+      return;
+    }
+    if (this.data.draft.channel === "electronic") {
+      sayToast({ title: "电子发票上传后自动进入审计，无需手动提交", icon: "none" });
       return;
     }
 

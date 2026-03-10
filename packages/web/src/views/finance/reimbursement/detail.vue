@@ -8,26 +8,24 @@ import { createUploadSignature } from "@/api/upload";
 import { resolveUploadUrl } from "@/api/upload";
 import {
   createReimbursementEnvelope,
-  getEnvelopeAnomalyStatus,
   getEnvelopeOcrStatus,
-  getEnvelopePdfStatus,
   getReimbursementEnvelope,
   precheckEnvelope,
   scanReimbursementEnvelope,
   submitReimbursementEnvelope,
-  triggerEnvelopeAnomalyCheck,
-  triggerEnvelopePdf,
   updateReimbursementEnvelope,
   verifyReimbursementEnvelope,
   type ReimbursementEnvelopeDetail
 } from "@/api/reimbursement";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "ReimbursementDetail" });
 
 const route = useRoute();
 const router = useRouter();
+const userStore = useUserStoreHook();
 
 const envelopeId = computed(() => Number(route.params.id));
 const isCreate = computed(() => route.params.id === "create");
@@ -121,6 +119,16 @@ const canEdit = computed(() => {
   if (isCreate.value) return true;
   if (!detail.value) return false;
   return editableStatuses.has(detail.value.status);
+});
+
+const canOfficeAudit = computed(() => {
+  const roles = new Set(userStore.roles ?? []);
+  return ["super_admin", "manager", "site_manager", "finance"].some(role => roles.has(role));
+});
+
+const hasDuplicateRisks = computed(() => {
+  const checks = detail.value?.duplicate_checks ?? [];
+  return checks.length > 0;
 });
 
 const uuidLocked = computed(() => {
@@ -272,6 +280,10 @@ const removeStagedAttachment = (index: number) => {
 };
 
 const save = async () => {
+  if (isCreate.value && form.value.channel === "physical" && !form.value.bind_envelope_uuid.trim()) {
+    message("实物信封报销必须先输入或扫描信封UUID", { type: "warning" });
+    return;
+  }
   if (!form.value.project_id) {
     message("请选择项目", { type: "warning" });
     return;
@@ -340,9 +352,26 @@ const scanSubmit = async () => {
 
 const submitEnvelope = async () => {
   if (!detail.value) return;
-  await submitReimbursementEnvelope(detail.value.id);
-  message("报销已提交，等待办公室收件与后续核查", { type: "success" });
-  await loadDetail();
+  try {
+    await submitReimbursementEnvelope(detail.value.id);
+    message("报销已提交，等待办公室收件与后续核查", { type: "success" });
+    await loadDetail();
+  } catch (error) {
+    const err = error as {
+      response?: { status?: number; data?: { data?: { require_force_submit?: boolean } } };
+    };
+    const requireForce =
+      err.response?.status === 409 && err.response?.data?.data?.require_force_submit === true;
+    if (!requireForce) {
+      throw error;
+    }
+    await submitReimbursementEnvelope(detail.value.id, {
+      force_submit: true,
+      force_submit_reason: verifyNote.value || "申请人确认继续提交，办公室复核"
+    });
+    message("已按申请人坚持提交并附带审计提示，等待办公室核查", { type: "warning" });
+    await loadDetail();
+  }
 };
 
 const verify = async (result: "verified" | "mismatch") => {
@@ -358,45 +387,12 @@ const verify = async (result: "verified" | "mismatch") => {
   await loadDetail();
 };
 
-const generatePdf = async () => {
-  if (!detail.value) return;
-  await triggerEnvelopePdf(detail.value.id);
-  message("已触发 PDF 生成任务", { type: "success" });
-  await loadDetail();
-};
-
-const refreshPdfStatus = async () => {
-  if (!detail.value) return;
-  const result = await getEnvelopePdfStatus(detail.value.id);
-  message(`PDF状态：${result.data.status}`, { type: "info" });
-  await loadDetail();
-};
-
 const refreshOcrStatus = async () => {
   if (!detail.value) return;
   const result = await getEnvelopeOcrStatus(detail.value.id);
   ocrStatusText.value = result.data.status;
   message(
     `OCR状态：${result.data.status}，查重线索：${result.data.duplicate_count}`,
-    {
-      type: "info"
-    }
-  );
-  await loadDetail();
-};
-
-const triggerAnomaly = async () => {
-  if (!detail.value) return;
-  await triggerEnvelopeAnomalyCheck(detail.value.id);
-  message("已触发异常检测任务", { type: "success" });
-};
-
-const refreshAnomalyStatus = async () => {
-  if (!detail.value) return;
-  const result = await getEnvelopeAnomalyStatus(detail.value.id);
-  anomalyStatusText.value = result.data.status;
-  message(
-    `异常检测状态：${result.data.status}（预审状态：${result.data.precheck_status}）`,
     {
       type: "info"
     }
@@ -681,7 +677,11 @@ watch(
         >
 
         <template v-if="!isCreate && detail">
-          <el-button @click="scanSubmit">扫码登记并绑定填报人</el-button>
+          <el-button
+            v-if="detail.channel === 'physical' && ['draft', 'submitted'].includes(detail.status)"
+            @click="scanSubmit"
+            >扫码登记并绑定填报人</el-button
+          >
           <el-button
             v-if="
               detail.channel === 'physical' &&
@@ -692,33 +692,49 @@ watch(
           >
             提交报销并寄送实物信封
           </el-button>
-          <el-input
-            v-model="verifyNote"
-            style="width: 220px"
-            placeholder="核对备注(可选)"
-          />
-          <el-button type="success" @click="verify('verified')"
-            >收件通过</el-button
+          <el-button v-if="detail.channel === 'electronic'" @click="refreshOcrStatus"
+            >刷新OCR状态</el-button
           >
-          <el-button type="warning" @click="verify('mismatch')"
-            >收件异常</el-button
-          >
-          <el-button @click="generatePdf">生成PDF</el-button>
-          <el-button @click="refreshPdfStatus">刷新PDF状态</el-button>
-          <el-button @click="refreshOcrStatus">刷新OCR状态</el-button>
-          <el-button @click="triggerAnomaly">触发异常检测</el-button>
-          <el-button @click="refreshAnomalyStatus">刷新异常状态</el-button>
-          <el-button type="success" @click="submitPrecheck('approved')"
-            >预审通过</el-button
-          >
-          <el-button type="warning" @click="submitPrecheck('supplement')"
-            >补充材料</el-button
-          >
-          <el-button type="danger" @click="submitPrecheck('rejected')"
-            >预审驳回</el-button
-          >
+          <template v-if="canOfficeAudit && ['submitted', 'received'].includes(detail.status)">
+            <el-input
+              v-model="verifyNote"
+              style="width: 240px"
+              placeholder="办公室核查备注"
+            />
+            <el-button type="success" @click="verify('verified')"
+              >核查签收</el-button
+            >
+            <el-button type="warning" @click="verify('mismatch')"
+              >核查异常</el-button
+            >
+            <el-button
+              v-if="detail.status === 'received'"
+              type="success"
+              @click="submitPrecheck('approved')"
+              >预审通过</el-button
+            >
+            <el-button
+              v-if="detail.status === 'received'"
+              type="warning"
+              @click="submitPrecheck('supplement')"
+              >补充材料</el-button
+            >
+            <el-button
+              v-if="detail.status === 'received'"
+              type="danger"
+              @click="submitPrecheck('rejected')"
+              >预审驳回</el-button
+            >
+          </template>
         </template>
       </el-space>
+      <el-alert
+        v-if="hasDuplicateRisks"
+        type="warning"
+        :closable="false"
+        style="margin-top: 10px"
+        title="检测到疑似重复报销。若申请人坚持提交，系统会记录坚持提交标记并要求办公室复核。"
+      />
     </el-card>
 
     <el-descriptions v-if="detail" :column="2" border style="margin-top: 16px">

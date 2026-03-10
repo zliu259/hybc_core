@@ -6,7 +6,6 @@ import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
 import {
-  batchGenerateReimbursementEnvelopes,
   listReimbursementEnvelopes,
   precheckEnvelope,
   resolveReimbursementEnvelopeByUuid,
@@ -83,13 +82,6 @@ const pdfTagType: Record<string, TagType> = {
   failed: "danger"
 };
 
-const generateDialogVisible = ref(false);
-const generating = ref(false);
-const batchForm = ref({
-  project_id: undefined as number | undefined,
-  count: 10
-});
-
 const quickScanDialogVisible = ref(false);
 const quickScanUuid = ref("");
 
@@ -139,33 +131,6 @@ const goBatchCenter = () => {
 
 const goPayoutCenter = () => {
   router.push("/finance/reimbursement/payout");
-};
-
-const openBatchGenerate = () => {
-  batchForm.value = {
-    project_id: filters.value.project_id,
-    count: 10
-  };
-  generateDialogVisible.value = true;
-};
-
-const submitBatchGenerate = async () => {
-  if (!batchForm.value.project_id) {
-    message("请选择项目", { type: "warning" });
-    return;
-  }
-  generating.value = true;
-  try {
-    const result = await batchGenerateReimbursementEnvelopes({
-      project_id: batchForm.value.project_id,
-      count: batchForm.value.count
-    });
-    message(`已生成 ${result.data.length} 个报销信封`, { type: "success" });
-    generateDialogVisible.value = false;
-    await loadData();
-  } finally {
-    generating.value = false;
-  }
 };
 
 const openQuickScan = () => {
@@ -371,9 +336,6 @@ watch(workflowView, mode => {
       <el-button v-if="workflowView === 'finance'" @click="goPayoutCenter"
         >进入集中打款台</el-button
       >
-      <el-button v-if="workflowView === 'finance'" @click="openBatchGenerate"
-        >批量生成未登记信封</el-button
-      >
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
@@ -453,43 +415,6 @@ watch(workflowView, mode => {
       "
     />
   </el-card>
-
-  <el-dialog v-model="generateDialogVisible" title="批量生成信封" width="520px">
-    <el-form label-width="110px">
-      <el-form-item label="所属项目" required>
-        <el-select
-          v-model="batchForm.project_id"
-          filterable
-          placeholder="请选择项目"
-          style="width: 100%"
-        >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="生成数量" required>
-        <el-input-number v-model="batchForm.count" :min="1" :max="200" />
-      </el-form-item>
-      <el-alert
-        type="info"
-        :closable="false"
-        title="批量生成后信封为“未登记”，需报销人扫码后才会注册并绑定填报人。"
-      />
-    </el-form>
-    <template #footer>
-      <el-button @click="generateDialogVisible = false">取消</el-button>
-      <el-button
-        type="primary"
-        :loading="generating"
-        @click="submitBatchGenerate"
-        >确认生成</el-button
-      >
-    </template>
-  </el-dialog>
 
   <el-dialog
     v-model="quickScanDialogVisible"
