@@ -201,8 +201,14 @@
 
 #### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
 - 展示维度：批次信息、AI审计报告、批次信封明细、查重风险汇总。
-- 操作区：触发AI审计、提交集中审批、标记批次付款、跳转审批详情。
+- 操作区：触发AI审计、提交集中审批、跳转“集中打款登记台”、跳转审批详情。
 - API 指向：`/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/trigger-audit`, `/api/v1/reimbursement/batch/:id/audit-report`, `/api/v1/reimbursement/batch/:id/submit-approval`, `/api/v1/reimbursement/batch/:id/mark-paid`
+
+#### F-7. 报销集中打款登记台 `views/finance/reimbursement/payout.vue`
+- 面向已审批报销批次的财务打款登记页面，支持单批次/多批次操作。
+- 打款登记字段：打款日期、支付流水号、支付实体、支付账号、付款账户显示文本。
+- 新增支付凭证上传区：支持上传打款截图/回单等附件，并在提交时一起保存。
+- API 指向：`/api/v1/reimbursement/batch`, `/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/mark-paid`, `/api/v1/entity`, `/api/v1/entity/:id/bank-accounts`, `/api/v1/upload/sign`
 
 #### G. 收款合同管理 `views/finance/receipt/contract.vue`
 - 核心列：合同号、项目、对方单位、合同总额、已开票、已收款、状态。

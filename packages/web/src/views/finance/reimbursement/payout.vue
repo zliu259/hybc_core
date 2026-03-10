@@ -1,6 +1,12 @@
 <script setup lang="ts">
+import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
+import { createUploadSignature } from "@/api/upload";
+import { resolveUploadUrl } from "@/api/upload";
+import { formatToken, getToken } from "@/utils/auth";
+import { listEntities, listEntityBankAccounts, type Entity, type EntityBankAccount } from "@/api/entity";
 import {
   getReimbursementBatch,
   listReimbursementBatches,
@@ -10,6 +16,7 @@ import {
 } from "@/api/reimbursement";
 
 defineOptions({ name: "ReimbursementPayout" });
+const route = useRoute();
 
 const loading = ref(false);
 const actionLoading = ref(false);
@@ -19,11 +26,20 @@ const detailsMap = ref<Record<number, ReimbursementBatchDetail>>({});
 
 const payDialogVisible = ref(false);
 const payTargetIds = ref<number[]>([]);
+const entities = ref<Entity[]>([]);
+const bankAccounts = ref<EntityBankAccount[]>([]);
+const voucherItems = ref<Array<{ file_key: string; file_name: string; file_size?: number; is_new: boolean }>>([]);
+const uploadingVoucher = ref(false);
 const payForm = ref({
   paid_at: "",
   payment_reference: "",
-  payment_account: ""
+  payment_account: "",
+  payment_entity_id: undefined as number | undefined,
+  payment_entity_bank_account_id: undefined as number | undefined
 });
+
+const activeEntities = computed(() => entities.value.filter(item => item.status === "active"));
+const activeBankAccounts = computed(() => bankAccounts.value.filter(item => item.status === "active"));
 
 const selectedAmount = computed(() => {
   return rows.value
@@ -54,14 +70,88 @@ const openPayDialog = (ids: number[]) => {
   payForm.value = {
     paid_at: "",
     payment_reference: "",
-    payment_account: ""
+    payment_account: "",
+    payment_entity_id: undefined,
+    payment_entity_bank_account_id: undefined
   };
+  bankAccounts.value = [];
+  voucherItems.value = [];
   payDialogVisible.value = true;
+};
+
+const onEntityChange = async () => {
+  payForm.value.payment_entity_bank_account_id = undefined;
+  payForm.value.payment_account = "";
+  const entityId = payForm.value.payment_entity_id;
+  if (!entityId) {
+    bankAccounts.value = [];
+    return;
+  }
+  const res = await listEntityBankAccounts(entityId);
+  bankAccounts.value = res.data;
+};
+
+const onBankAccountChange = () => {
+  const accountId = payForm.value.payment_entity_bank_account_id;
+  if (!accountId) {
+    payForm.value.payment_account = "";
+    return;
+  }
+  const account = activeBankAccounts.value.find(item => item.id === accountId);
+  if (!account) {
+    payForm.value.payment_account = "";
+    return;
+  }
+  payForm.value.payment_account = `${account.bank_name} / ${account.account_no}`;
+};
+
+const uploadVoucher = async (options: UploadRequestOptions) => {
+  const rawFile = options.file;
+  uploadingVoucher.value = true;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "reimbursement"
+    });
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+    voucherItems.value.unshift({
+      file_key: signRes.data.key,
+      file_name: rawFile.name,
+      file_size: rawFile.size,
+      is_new: true
+    });
+    message("支付凭证上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("支付凭证上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    uploadingVoucher.value = false;
+  }
+};
+
+const removeVoucher = (index: number) => {
+  voucherItems.value.splice(index, 1);
 };
 
 const submitMarkPaid = async () => {
   if (!payForm.value.paid_at || !payForm.value.payment_reference || !payForm.value.payment_account) {
     message("请补全打款信息", { type: "warning" });
+    return;
+  }
+  if (!payForm.value.payment_entity_id || !payForm.value.payment_entity_bank_account_id) {
+    message("请选择支付实体和支付账号", { type: "warning" });
     return;
   }
 
@@ -72,7 +162,14 @@ const submitMarkPaid = async () => {
         markBatchPaid(id, {
           paid_at: payForm.value.paid_at,
           payment_reference: payForm.value.payment_reference,
-          payment_account: payForm.value.payment_account
+          payment_account: payForm.value.payment_account,
+          payment_entity_id: payForm.value.payment_entity_id,
+          payment_entity_bank_account_id: payForm.value.payment_entity_bank_account_id,
+          payment_vouchers: voucherItems.value.map(item => ({
+            file_key: item.file_key,
+            file_name: item.file_name,
+            file_size: item.file_size
+          }))
         })
       )
     );
@@ -95,7 +192,18 @@ const onSelectionChange = (selection: ReimbursementBatch[]) => {
   selectedIds.value = selection.map(item => item.id);
 };
 
-onMounted(loadData);
+onMounted(async () => {
+  await Promise.all([
+    loadData(),
+    listEntities().then(result => {
+      entities.value = result.data;
+    })
+  ]);
+  const batchIdFromQuery = Number(route.query.batch_id || 0);
+  if (batchIdFromQuery > 0 && rows.value.some(item => item.id === batchIdFromQuery)) {
+    openPayDialog([batchIdFromQuery]);
+  }
+});
 </script>
 
 <template>
@@ -167,8 +275,61 @@ onMounted(loadData);
       <el-form-item label="支付流水号" required>
         <el-input v-model="payForm.payment_reference" />
       </el-form-item>
+      <el-form-item label="支付实体" required>
+        <el-select
+          v-model="payForm.payment_entity_id"
+          filterable
+          placeholder="请选择支付实体"
+          style="width: 100%"
+          @change="onEntityChange"
+        >
+          <el-option
+            v-for="item in activeEntities"
+            :key="item.id"
+            :label="item.entity_name"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="支付账号" required>
+        <el-select
+          v-model="payForm.payment_entity_bank_account_id"
+          filterable
+          placeholder="请选择支付账号"
+          style="width: 100%"
+          @change="onBankAccountChange"
+        >
+          <el-option
+            v-for="item in activeBankAccounts"
+            :key="item.id"
+            :label="`${item.bank_name} / ${item.account_no}`"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="付款账户" required>
         <el-input v-model="payForm.payment_account" placeholder="例如 建行尾号8888" />
+      </el-form-item>
+      <el-form-item label="支付凭证">
+        <el-upload
+          drag
+          :show-file-list="false"
+          :multiple="true"
+          :disabled="uploadingVoucher"
+          :http-request="uploadVoucher"
+        >
+          <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+          <div class="el-upload__tip">支持上传打款截图、回单等凭证</div>
+        </el-upload>
+        <el-table v-if="voucherItems.length > 0" :data="voucherItems" size="small" style="margin-top: 8px">
+          <el-table-column prop="file_name" label="文件名" min-width="220" />
+          <el-table-column prop="file_size" label="大小" width="120" />
+          <el-table-column label="操作" width="90">
+            <template #default="{ $index }">
+              <el-button link type="danger" @click="removeVoucher($index)">移除</el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </el-form-item>
     </el-form>
     <template #footer>

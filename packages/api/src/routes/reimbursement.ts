@@ -14,10 +14,12 @@ import type {
   CreateEnvelopeRequest,
   ElectronicUploadRequest,
   EnvelopeAttachment,
+  MarkBatchPaidRequest,
   PrecheckEnvelopeRequest,
   ReimbursementBatch,
   ReimbursementDuplicateCheck,
   ReimbursementEnvelope,
+  ReimbursementPaymentVoucherInput,
   ScanEnvelopeRequest,
   SubmitEnvelopeRequest,
   SubmitReimbursementBatchApprovalRequest,
@@ -1069,7 +1071,66 @@ reimbursementRoutes.post(
   "/batch/:id/mark-paid",
   requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
+    const auth = c.get("auth");
     const id = Number(c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as MarkBatchPaidRequest;
+
+    if (!body.paid_at?.trim()) {
+      return c.json({ success: false, error: { message: "paid_at is required" } }, 400);
+    }
+    if (!body.payment_reference?.trim()) {
+      return c.json({ success: false, error: { message: "payment_reference is required" } }, 400);
+    }
+    if (typeof body.payment_entity_id !== "number" || body.payment_entity_id <= 0) {
+      return c.json({ success: false, error: { message: "payment_entity_id is required" } }, 400);
+    }
+    if (
+      typeof body.payment_entity_bank_account_id !== "number" ||
+      body.payment_entity_bank_account_id <= 0
+    ) {
+      return c.json(
+        { success: false, error: { message: "payment_entity_bank_account_id is required" } },
+        400
+      );
+    }
+
+    const entity = await c.env.DB.prepare("SELECT id, entity_name FROM entity WHERE id = ? AND status = 'active'")
+      .bind(body.payment_entity_id)
+      .first<{ id: number; entity_name: string }>();
+    if (!entity) {
+      return c.json({ success: false, error: { message: "payment entity not found or inactive" } }, 400);
+    }
+
+    const bankAccount = await c.env.DB.prepare(
+      "SELECT id, entity_id, bank_name, account_no FROM entity_bank_account WHERE id = ? AND status = 'active'"
+    )
+      .bind(body.payment_entity_bank_account_id)
+      .first<{ id: number; entity_id: number; bank_name: string; account_no: string }>();
+    if (!bankAccount) {
+      return c.json(
+        { success: false, error: { message: "payment bank account not found or inactive" } },
+        400
+      );
+    }
+    if (bankAccount.entity_id !== body.payment_entity_id) {
+      return c.json(
+        { success: false, error: { message: "payment bank account does not belong to payment entity" } },
+        400
+      );
+    }
+
+    const vouchers = Array.isArray(body.payment_vouchers)
+      ? body.payment_vouchers
+          .map((item): ReimbursementPaymentVoucherInput | null => {
+            if (!item || typeof item.file_key !== "string" || !item.file_key.trim()) return null;
+            return {
+              file_key: item.file_key.trim(),
+              file_name: item.file_name?.trim() || undefined,
+              file_size: item.file_size
+            };
+          })
+          .filter((item): item is ReimbursementPaymentVoucherInput => Boolean(item))
+      : [];
 
     const batch = await c.env.DB.prepare("SELECT * FROM reimbursement_batch WHERE id = ?")
       .bind(id)
@@ -1084,8 +1145,29 @@ reimbursementRoutes.post(
     }
 
     const now = nowIso();
-    await c.env.DB.prepare("UPDATE reimbursement_batch SET status = 'paid', updated_at = ? WHERE id = ?")
-      .bind(now, id)
+    const paymentAccountText = `${entity.entity_name} / ${bankAccount.bank_name} / ${bankAccount.account_no}`;
+    await c.env.DB.prepare(
+      `UPDATE reimbursement_batch SET
+         status = 'paid',
+         paid_at = ?,
+         payment_reference = ?,
+         payment_account = ?,
+         payment_entity_id = ?,
+         payment_entity_bank_account_id = ?,
+         payment_vouchers_json = ?,
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(
+        body.paid_at.trim(),
+        body.payment_reference.trim(),
+        body.payment_account?.trim() || paymentAccountText,
+        body.payment_entity_id,
+        body.payment_entity_bank_account_id,
+        vouchers.length > 0 ? JSON.stringify(vouchers) : null,
+        now,
+        id
+      )
       .run();
 
     await c.env.DB.prepare(
@@ -1097,7 +1179,12 @@ reimbursementRoutes.post(
     await publishEvent(c.env, "REIMBURSEMENT_BATCH_PAID", "reimbursement_batch", {
       batch_id: id,
       batch_no: batch.batch_no,
-      total_amount: batch.total_amount
+      total_amount: batch.total_amount,
+      paid_at: body.paid_at.trim(),
+      payment_reference: body.payment_reference.trim(),
+      payment_entity_id: body.payment_entity_id,
+      payment_entity_bank_account_id: body.payment_entity_bank_account_id,
+      paid_by_userid: auth.sub
     });
 
     return c.json({ success: true });

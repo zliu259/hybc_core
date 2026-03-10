@@ -5,7 +5,6 @@ import { message } from "@/utils/message";
 import {
   getBatchAuditReport,
   getReimbursementBatch,
-  markBatchPaid,
   submitBatchApproval,
   triggerBatchAudit,
   type ReimbursementBatchDetail
@@ -67,14 +66,7 @@ const submitApproval = async () => {
 };
 
 const doMarkPaid = async () => {
-  actionLoading.value = true;
-  try {
-    await markBatchPaid(batchId.value);
-    message("已标记付款", { type: "success" });
-    await loadDetail();
-  } finally {
-    actionLoading.value = false;
-  }
+  router.push(`/finance/reimbursement/payout?batch_id=${batchId.value}`);
 };
 
 onMounted(loadDetail);
@@ -139,7 +131,7 @@ onMounted(loadDetail);
           >提交集中审批</el-button
         >
         <el-button type="warning" :loading="actionLoading" @click="doMarkPaid"
-          >标记批次付款</el-button
+          >去集中打款登记</el-button
         >
         <el-button
           v-if="detail?.approval_instance_id"

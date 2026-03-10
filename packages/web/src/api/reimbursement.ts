@@ -354,6 +354,12 @@ export type ReimbursementBatch = {
   ai_audit_status: string;
   ai_audit_result: string | null;
   approval_instance_id: number | null;
+  paid_at: string | null;
+  payment_reference: string | null;
+  payment_account: string | null;
+  payment_entity_id: number | null;
+  payment_entity_bank_account_id: number | null;
+  payment_vouchers_json: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -439,6 +445,9 @@ export const markBatchPaid = (
     paid_at?: string;
     payment_reference?: string;
     payment_account?: string;
+    payment_entity_id?: number;
+    payment_entity_bank_account_id?: number;
+    payment_vouchers?: { file_key: string; file_name?: string; file_size?: number }[];
   }
 ) => {
   return http.request<{ success: boolean }>(
