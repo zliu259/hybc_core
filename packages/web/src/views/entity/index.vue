@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import type { UploadRequestOptions } from "element-plus";
+import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
 import {
   createEntity,
+  deleteEntity,
   createEntityAttachment,
   createEntityBankAccount,
   createEntityInvoiceProfile,
@@ -44,7 +46,6 @@ const entityForm = ref({
   legal_person: "",
   tax_id: "",
   company_attribute: "self_owned" as "self_owned" | "external" | "shareholder_personal",
-  storage_quota_mb: 1024,
   primary_bank_name: "",
   primary_bank_branch_no: "",
   primary_bank_account_no: ""
@@ -115,7 +116,6 @@ const createEntityRow = async () => {
     legal_person: "",
     tax_id: "",
     company_attribute: "self_owned",
-    storage_quota_mb: 1024,
     primary_bank_name: "",
     primary_bank_branch_no: "",
     primary_bank_account_no: ""
@@ -130,15 +130,49 @@ const saveSelectedEntity = async () => {
     return;
   }
   await updateEntity(selectedEntity.value.id, {
+    entity_name: selectedEntity.value.entity_name,
+    legal_person: selectedEntity.value.legal_person,
     tax_id: selectedEntity.value.tax_id,
     company_attribute: selectedEntity.value.company_attribute,
-    storage_quota_mb: selectedEntity.value.storage_quota_mb,
+    status: selectedEntity.value.status,
     primary_bank_name: selectedEntity.value.primary_bank_name,
     primary_bank_branch_no: selectedEntity.value.primary_bank_branch_no,
     primary_bank_account_no: selectedEntity.value.primary_bank_account_no
   });
   await loadEntities();
   message("实体信息已更新", { type: "success" });
+};
+
+const onSelectEntity = async (row: Entity | null) => {
+  selectedEntityId.value = row?.id ?? null;
+  if (selectedEntityId.value) {
+    await loadSubResources(selectedEntityId.value);
+  } else {
+    bankAccounts.value = [];
+    invoiceProfiles.value = [];
+    attachments.value = [];
+  }
+};
+
+const removeSelectedEntity = async () => {
+  if (!selectedEntity.value) {
+    message("请先选择实体", { type: "warning" });
+    return;
+  }
+  await ElMessageBox.confirm(
+    `确定删除实体【${selectedEntity.value.entity_name}】吗？`,
+    "删除确认",
+    {
+      confirmButtonText: "删除",
+      cancelButtonText: "取消",
+      type: "warning"
+    }
+  );
+
+  await deleteEntity(selectedEntity.value.id);
+  message("实体已删除", { type: "success" });
+  selectedEntityId.value = null;
+  await loadEntities();
 };
 
 const createBankAccountRow = async () => {
@@ -252,9 +286,6 @@ onMounted(loadEntities);
               <el-option label="股东个人" value="shareholder_personal" />
             </el-select>
           </el-form-item>
-          <el-form-item label="存储额度(MB)">
-            <el-input-number v-model="entityForm.storage_quota_mb" :min="1" :max="102400" />
-          </el-form-item>
           <el-form-item label="主开户行"><el-input v-model="entityForm.primary_bank_name" /></el-form-item>
           <el-form-item label="主行号"><el-input v-model="entityForm.primary_bank_branch_no" /></el-form-item>
           <el-form-item label="主账号"><el-input v-model="entityForm.primary_bank_account_no" /></el-form-item>
@@ -265,7 +296,7 @@ onMounted(loadEntities);
           :data="entities"
           highlight-current-row
           style="margin-top: 16px"
-          @current-change="(row: Entity) => row && (selectedEntityId = row.id)"
+          @current-change="onSelectEntity"
         >
           <el-table-column prop="entity_code" label="编码" width="120" />
           <el-table-column prop="entity_name" label="名称" />
@@ -273,6 +304,16 @@ onMounted(loadEntities);
             <template #default="scope">{{ companyAttributeLabel(scope.row.company_attribute) }}</template>
           </el-table-column>
           <el-table-column prop="status" label="状态" width="90" />
+          <el-table-column label="操作" width="100" fixed="right">
+            <template #default="scope">
+              <el-button
+                link
+                type="danger"
+                @click.stop="selectedEntityId = scope.row.id; removeSelectedEntity()"
+                >删除</el-button
+              >
+            </template>
+          </el-table-column>
         </el-table>
       </el-card>
     </el-col>
@@ -291,6 +332,8 @@ onMounted(loadEntities);
         </el-descriptions>
 
         <el-form v-if="selectedEntity" label-width="90px" style="margin-top: 12px">
+          <el-form-item label="实体名称"><el-input v-model="selectedEntity.entity_name" /></el-form-item>
+          <el-form-item label="法人"><el-input v-model="selectedEntity.legal_person" /></el-form-item>
           <el-form-item label="税号"><el-input v-model="selectedEntity.tax_id" /></el-form-item>
           <el-form-item label="公司属性">
             <el-select v-model="selectedEntity.company_attribute" style="width: 100%">
@@ -299,13 +342,17 @@ onMounted(loadEntities);
               <el-option label="股东个人" value="shareholder_personal" />
             </el-select>
           </el-form-item>
-          <el-form-item label="空间配额(MB)">
-            <el-input-number v-model="selectedEntity.storage_quota_mb" :min="1" :max="102400" />
+          <el-form-item label="状态">
+            <el-select v-model="selectedEntity.status" style="width: 100%">
+              <el-option label="启用" value="active" />
+              <el-option label="停用" value="inactive" />
+            </el-select>
           </el-form-item>
           <el-form-item label="主开户行"><el-input v-model="selectedEntity.primary_bank_name" /></el-form-item>
           <el-form-item label="主行号"><el-input v-model="selectedEntity.primary_bank_branch_no" /></el-form-item>
           <el-form-item label="主账号"><el-input v-model="selectedEntity.primary_bank_account_no" /></el-form-item>
           <el-button type="primary" @click="saveSelectedEntity">保存实体详情</el-button>
+          <el-button type="danger" plain @click="removeSelectedEntity">删除实体</el-button>
         </el-form>
 
         <el-tabs style="margin-top: 12px">

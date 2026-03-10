@@ -101,6 +101,10 @@ export const updateEntity = (
   });
 };
 
+export const deleteEntity = (id: number) => {
+  return http.request<{ success: boolean }>("delete", `/api/v1/entity/${id}`);
+};
+
 export const listEntityBankAccounts = (entityId: number) => {
   return http.request<{ success: boolean; data: EntityBankAccount[] }>(
     "get",
