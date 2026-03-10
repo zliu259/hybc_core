@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
@@ -8,6 +8,7 @@ import { createUploadSignature } from "@/api/upload";
 import { resolveUploadUrl } from "@/api/upload";
 import {
   createReimbursementEnvelope,
+  getEnvelopeAnomalyStatus,
   getEnvelopeOcrStatus,
   getReimbursementEnvelope,
   precheckEnvelope,
@@ -194,6 +195,69 @@ const stagedAttachmentsForSubmit = () =>
 const verifyNote = ref("");
 const ocrStatusText = ref("none");
 const anomalyStatusText = ref("none");
+const auditPollingTimer = ref<number | null>(null);
+const auditPollingTicks = ref(0);
+const AUDIT_POLL_INTERVAL_MS = 3000;
+const AUDIT_POLL_MAX_TICKS = 20;
+
+const clearAuditPolling = () => {
+  if (auditPollingTimer.value) {
+    window.clearInterval(auditPollingTimer.value);
+    auditPollingTimer.value = null;
+  }
+  auditPollingTicks.value = 0;
+};
+
+const shouldPollAudit = () => {
+  if (!detail.value) return false;
+  const pendingStatuses = new Set(["pending", "assigned", "running"]);
+  return pendingStatuses.has(ocrStatusText.value) || pendingStatuses.has(anomalyStatusText.value);
+};
+
+const refreshAuditStatuses = async (silent = false) => {
+  if (!detail.value) return;
+  const [ocrResult, anomalyResult] = await Promise.all([
+    getEnvelopeOcrStatus(detail.value.id),
+    getEnvelopeAnomalyStatus(detail.value.id)
+  ]);
+  ocrStatusText.value = ocrResult.data.status || "none";
+  anomalyStatusText.value = anomalyResult.data.status || "none";
+  if (!silent) {
+    message(
+      `审计进度：OCR ${toTaskStatusLabel(ocrStatusText.value)} / 异常审计 ${toTaskStatusLabel(anomalyStatusText.value)}`,
+      { type: "info" }
+    );
+  }
+  await loadDetail();
+};
+
+const ensureAuditPolling = (reason?: string) => {
+  if (!shouldPollAudit()) {
+    clearAuditPolling();
+    return;
+  }
+  if (auditPollingTimer.value) return;
+  if (reason) {
+    message(reason, { type: "info" });
+  }
+  auditPollingTicks.value = 0;
+  auditPollingTimer.value = window.setInterval(async () => {
+    if (!shouldPollAudit()) {
+      clearAuditPolling();
+      return;
+    }
+    auditPollingTicks.value += 1;
+    try {
+      await refreshAuditStatuses(true);
+    } catch {
+      clearAuditPolling();
+      return;
+    }
+    if (auditPollingTicks.value >= AUDIT_POLL_MAX_TICKS) {
+      clearAuditPolling();
+    }
+  }, AUDIT_POLL_INTERVAL_MS);
+};
 
 const loadDetail = async () => {
   if (isCreate.value) return;
@@ -224,6 +288,7 @@ const loadDetail = async () => {
 
     ocrStatusText.value = result.data.ocr_status || "none";
     anomalyStatusText.value = result.data.duplicate_check_status || "none";
+    ensureAuditPolling();
   } finally {
     loading.value = false;
   }
@@ -363,6 +428,7 @@ const submitEnvelope = async () => {
     await submitReimbursementEnvelope(detail.value.id);
     message("报销已提交，等待办公室收件与后续核查", { type: "success" });
     await loadDetail();
+    ensureAuditPolling("已触发后台审计，系统将自动刷新进度");
   } catch (error) {
     const err = error as {
       response?: { status?: number; data?: { data?: { require_force_submit?: boolean } } };
@@ -378,6 +444,7 @@ const submitEnvelope = async () => {
     });
     message("已按申请人坚持提交并附带审计提示，等待办公室核查", { type: "warning" });
     await loadDetail();
+    ensureAuditPolling("已触发后台审计，系统将自动刷新进度");
   }
 };
 
@@ -396,15 +463,8 @@ const verify = async (result: "verified" | "mismatch") => {
 
 const refreshOcrStatus = async () => {
   if (!detail.value) return;
-  const result = await getEnvelopeOcrStatus(detail.value.id);
-  ocrStatusText.value = result.data.status;
-  message(
-    `OCR状态：${result.data.status}，查重线索：${result.data.duplicate_count}`,
-    {
-      type: "info"
-    }
-  );
-  await loadDetail();
+  await refreshAuditStatuses();
+  ensureAuditPolling();
 };
 
 const submitPrecheck = async (
@@ -431,6 +491,7 @@ const submitPrecheck = async (
       type: "warning"
     });
     await loadDetail();
+    ensureAuditPolling("审计任务处理中，系统将自动刷新状态");
   }
 };
 
@@ -439,9 +500,14 @@ onMounted(async () => {
   await loadDetail();
 });
 
+onBeforeUnmount(() => {
+  clearAuditPolling();
+});
+
 watch(
   () => route.params.id,
   async () => {
+    clearAuditPolling();
     await loadDetail();
   }
 );

@@ -365,6 +365,91 @@ const enqueueEnvelopeAiAudit = async (
     .run();
 };
 
+const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<void> => {
+  const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'")
+    .bind(envelopeId)
+    .first<ReimbursementEnvelope>();
+  if (!envelope) return;
+
+  if (envelope.ocr_task_id) {
+    const ocrTask = await env.DB.prepare("SELECT status, result_json FROM task_queue WHERE id = ?")
+      .bind(envelope.ocr_task_id)
+      .first<{ status: string; result_json: string | null }>();
+    const ocrResult = parseTaskResult(ocrTask?.result_json ?? null);
+
+    if (ocrTask?.status === "completed" && envelope.ocr_status !== "completed") {
+      const invoiceUniqueNo = extractInvoiceUniqueNo(ocrResult);
+      const invoiceNo =
+        typeof ocrResult?.invoice_no === "string"
+          ? ocrResult.invoice_no
+          : typeof ocrResult?.invoice_number === "string"
+            ? ocrResult.invoice_number
+            : envelope.invoice_no;
+      const amount =
+        typeof ocrResult?.amount === "number"
+          ? ocrResult.amount
+          : typeof ocrResult?.total_amount === "number"
+            ? ocrResult.total_amount
+            : envelope.amount;
+      const issueDate =
+        typeof ocrResult?.issue_date === "string"
+          ? ocrResult.issue_date
+          : typeof ocrResult?.date === "string"
+            ? ocrResult.date
+            : envelope.expense_date;
+      const nextStatus = envelope.status === "received" ? "received" : "submitted";
+
+      await env.DB.prepare(
+        `UPDATE reimbursement_envelope SET
+           ocr_status = 'completed',
+           invoice_unique_no = COALESCE(?, invoice_unique_no),
+           invoice_no = COALESCE(?, invoice_no),
+           amount = COALESCE(?, amount),
+           expense_date = COALESCE(?, expense_date),
+           status = ?,
+           updated_at = ?
+         WHERE id = ?`
+      )
+        .bind(invoiceUniqueNo, invoiceNo ?? null, amount ?? null, issueDate ?? null, nextStatus, nowIso(), envelopeId)
+        .run();
+
+      await applyDuplicateChecks(env, envelopeId);
+    }
+
+    if ((ocrTask?.status === "failed" || ocrTask?.status === "timeout") && envelope.ocr_status !== "failed") {
+      await env.DB.prepare(
+        "UPDATE reimbursement_envelope SET ocr_status = 'failed', duplicate_check_status = 'failed', updated_at = ? WHERE id = ?"
+      )
+        .bind(nowIso(), envelopeId)
+        .run();
+    }
+  }
+
+  const anomalyTask = await env.DB.prepare(
+    `SELECT status FROM task_queue
+     WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
+     ORDER BY id DESC LIMIT 1`
+  )
+    .bind(envelopeId)
+    .first<{ status: string }>();
+
+  if (anomalyTask?.status === "completed") {
+    await env.DB.prepare(
+      "UPDATE reimbursement_envelope SET duplicate_check_status = 'completed', precheck_status = CASE WHEN precheck_status = 'none' THEN 'pending' ELSE precheck_status END, updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), envelopeId)
+      .run();
+  }
+
+  if (anomalyTask?.status === "failed" || anomalyTask?.status === "timeout") {
+    await env.DB.prepare(
+      "UPDATE reimbursement_envelope SET duplicate_check_status = 'failed', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), envelopeId)
+      .run();
+  }
+};
+
 export const reimbursementRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -1397,6 +1482,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));
+  await syncEnvelopeAuditState(c.env, id);
   const envelope = await c.env.DB.prepare(
     "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
   )
