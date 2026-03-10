@@ -69,6 +69,7 @@ jobs:
               cat /tmp/bridge_proxy_check.json
               exit 1
             fi
+            sudo journalctl -u hybc-bridge -n 80 --no-pager || true
             if command -v caddy >/dev/null 2>&1; then
               sudo systemctl status caddy --no-pager
             fi
