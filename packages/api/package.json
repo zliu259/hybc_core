@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "wrangler dev src/index.ts --local --persist-to .wrangler/state",
     "deploy": "wrangler deploy",
-    "db:migrate:local": "wrangler d1 migrations apply hengyue-db --local",
+    "db:migrate:local": "wrangler d1 migrations apply hybcdg-prod-db --local",
     "db:seed:mock:local": "wrangler d1 execute hengyue-db --local --file ./scripts/mock-data.sql",
     "legacy:fin:gen-mapping": "python3 scripts/legacy_fin_generate_mapping.py",
     "legacy:fin:dry-run": "python3 scripts/legacy_fin_import.py --mode dry-run",
