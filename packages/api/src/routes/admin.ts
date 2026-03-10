@@ -152,7 +152,7 @@ const defaultAiPromptTemplates: Array<{
     system_prompt:
       "你是企业报销审计助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为risk_level、summary、anomalies、recommendation。",
     user_prompt_template:
-      "请检测报销异常。任务类型={{task_type}}，业务ID={{biz_id}}。报销单ID={{envelope_id}}，总金额={{total_amount}}，明细={{items}}。输入JSON={{payload_json}}。重点检查：重复票据、金额异常、类别异常、时间冲突、供应商异常。"
+      "请检测报销异常。任务类型={{task_type}}，业务ID={{biz_id}}。报销单ID={{envelope_id}}，总金额={{total_amount}}，明细={{items}}。输入JSON={{payload_json}}。重点检查：重复票据（含附件重复）、金额异常、报销合理性、附件分类是否正确、时间冲突、供应商异常。"
   },
   {
     template_key: "prompt-approval-ai-gate-v1",

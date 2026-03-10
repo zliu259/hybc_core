@@ -195,6 +195,53 @@ const applyDuplicateChecks = async (env: Env, envelopeId: number): Promise<numbe
     }
   }
 
+  const attachmentRows = await env.DB.prepare(
+    "SELECT file_key FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' AND file_key IS NOT NULL"
+  )
+    .bind(envelopeId)
+    .all<{ file_key: string }>();
+  const fileKeys = Array.from(
+    new Set(
+      (attachmentRows.results ?? [])
+        .map(row => row.file_key?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+
+  for (const fileKey of fileKeys) {
+    const matched = await env.DB.prepare(
+      `SELECT ea.envelope_id
+         FROM envelope_attachment ea
+         JOIN reimbursement_envelope re ON re.id = ea.envelope_id
+        WHERE ea.file_key = ?
+          AND ea.status = 'active'
+          AND ea.envelope_id != ?
+          AND re.status != 'deleted'
+        ORDER BY ea.id DESC
+        LIMIT 10`
+    )
+      .bind(fileKey, envelopeId)
+      .all<{ envelope_id: number }>();
+
+    for (const row of matched.results ?? []) {
+      await env.DB.prepare(
+        `INSERT INTO reimbursement_duplicate_check
+          (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
+         VALUES (?, ?, NULL, 'attachment_file_key', ?, 'high', ?, ?, ?)`
+      )
+        .bind(
+          envelopeId,
+          row.envelope_id,
+          0.95,
+          "附件文件疑似重复提交（file_key 一致）",
+          JSON.stringify({ matched_envelope_id: row.envelope_id, file_key: fileKey }),
+          now
+        )
+        .run();
+      count += 1;
+    }
+  }
+
   await env.DB.prepare(
     "UPDATE reimbursement_envelope SET duplicate_check_status = 'completed', updated_at = ? WHERE id = ?"
   )
@@ -218,6 +265,41 @@ const enqueueEnvelopeAiAudit = async (
   const duplicateCount = await applyDuplicateChecks(env, envelopeId);
   const now = nowIso();
 
+  const attachments = await env.DB.prepare(
+    `SELECT id, attachment_type, file_key, file_name, file_size, invoice_no, amount, issue_date
+       FROM envelope_attachment
+      WHERE envelope_id = ? AND status = 'active'
+      ORDER BY id ASC`
+  )
+    .bind(envelopeId)
+    .all<{
+      id: number;
+      attachment_type: string;
+      file_key: string;
+      file_name: string | null;
+      file_size: number | null;
+      invoice_no: string | null;
+      amount: number | null;
+      issue_date: string | null;
+    }>();
+
+  const duplicateChecks = await env.DB.prepare(
+    `SELECT matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json
+       FROM reimbursement_duplicate_check
+      WHERE envelope_id = ?
+      ORDER BY id DESC`
+  )
+    .bind(envelopeId)
+    .all<{
+      matched_envelope_id: number | null;
+      matched_invoice_no: string | null;
+      match_type: string;
+      match_score: number | null;
+      risk_level: string;
+      summary: string | null;
+      evidence_json: string | null;
+    }>();
+
   await createTask(env, {
     task_type: "reimbursement_anomaly",
     biz_type: "reimbursement_envelope",
@@ -228,7 +310,20 @@ const enqueueEnvelopeAiAudit = async (
       amount: envelope.amount,
       duplicate_count: duplicateCount,
       project_id: envelope.project_id,
-      applicant_userid: envelope.applicant_userid
+      applicant_userid: envelope.applicant_userid,
+      category: envelope.category,
+      description: envelope.description,
+      channel: envelope.channel,
+      attachments: (attachments.results ?? []).map(item => ({
+        attachment_type: item.attachment_type,
+        file_key: item.file_key,
+        file_name: item.file_name,
+        file_size: item.file_size,
+        invoice_no: item.invoice_no,
+        amount: item.amount,
+        issue_date: item.issue_date
+      })),
+      duplicate_checks: duplicateChecks.results ?? []
     },
     timeout_seconds: 300
   });
@@ -240,7 +335,15 @@ const enqueueEnvelopeAiAudit = async (
     .run();
 
   const fileKey = options?.file_key?.trim();
-  if (!fileKey) return;
+  const allAttachmentKeys = Array.from(
+    new Set(
+      (attachments.results ?? [])
+        .map(item => item.file_key?.trim())
+        .filter((value): value is string => Boolean(value))
+    )
+  );
+  const preferredKey = fileKey || allAttachmentKeys[allAttachmentKeys.length - 1];
+  if (!preferredKey) return;
 
   const ocrTask = await createTask(env, {
     task_type: "ocr_extract",
@@ -249,7 +352,7 @@ const enqueueEnvelopeAiAudit = async (
     priority: 4,
     payload: {
       envelope_id: envelopeId,
-      file_key: fileKey,
+      file_key: preferredKey,
       project_id: envelope.project_id
     },
     timeout_seconds: 300
