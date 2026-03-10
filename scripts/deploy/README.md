@@ -28,6 +28,7 @@ What it does:
 Default TLS endpoint:
 
 - `BRIDGE_PUBLIC_DOMAIN` (default: `bridge.hybcdg.com`)
+- `BRIDGE_EXTRA_DOMAINS` (optional, comma-separated, e.g. `api-hk-1.hybcdg.com,api-hk-2.hybcdg.com`)
 - Caddy reverse-proxies `:443` to `127.0.0.1:9001`
 
 Auto update script on VM:

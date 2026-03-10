@@ -64,6 +64,28 @@ uvicorn app.main:app --host 0.0.0.0 --port 9001
 - `GET /health`
 - Returns service heartbeat JSON
 
+### 4) Relay status (load-aware)
+
+- `GET /relay/status`
+- Returns relay admission status for fallback selection:
+  - `overloaded`
+  - `reason`
+  - `inflight_requests`
+  - `max_inflight`
+  - `timeout_rate`
+  - `upstream_error_rate`
+  - `cooldown_seconds_left`
+  - `admission_state`
+
+### 5) Generic API relay proxy
+
+- `GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD /api/{path}`
+- Behavior:
+  - Forwards request to `${WORKER_API_BASE_URL}/api/{path}` with query string preserved
+  - Keeps auth and request headers (except hop-by-hop unsafe headers)
+  - Rejects early with `503` when relay is overloaded (`Retry-After` included)
+  - Intended for Worker primary -> relay fallback path, without changing business API logic
+
 ## Bridge -> Worker Signing Contract
 
 Bridge sends JSON body to `WORKER_INGEST_URL` with headers:
@@ -90,6 +112,14 @@ Optional:
 - `BRIDGE_SOURCE`
 - `WORKER_TIMEOUT_SECONDS`
 - `WORKER_MAX_RETRIES`
+- `WORKER_API_BASE_URL`
+- `RELAY_MAX_INFLIGHT`
+- `RELAY_ERROR_WINDOW_SECONDS`
+- `RELAY_MIN_SAMPLES`
+- `RELAY_TIMEOUT_RATE_THRESHOLD`
+- `RELAY_ERROR_RATE_THRESHOLD`
+- `RELAY_COOLDOWN_SECONDS`
+- `BRIDGE_EXTRA_DOMAINS`
 
 ## Azure deployment notes
 
@@ -100,3 +130,10 @@ Service file assumes deployment path:
 - code: `/opt/hybc_core/bridge`
 - venv: `/opt/hybc_core/bridge/.venv`
 - env file: `/opt/hybc_core/bridge/.env`
+
+If you use additional relay subdomains (for example `api-hk-1.hybcdg.com`, `api-hk-2.hybcdg.com`), set:
+
+- `BRIDGE_PUBLIC_DOMAIN`: primary HTTPS hostname
+- `BRIDGE_EXTRA_DOMAINS`: comma-separated extra hostnames
+
+The deployment script writes a Caddy config for all listed hosts and auto-manages TLS certificates.
