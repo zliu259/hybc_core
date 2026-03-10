@@ -221,16 +221,8 @@ paymentRoutes.get("/payee/list", async (c) => {
 
   if (mine) {
     sql += " AND type = 'internal'";
-    const nameCandidates = [auth.nickname, auth.username]
-      .map(item => (typeof item === "string" ? item.trim() : ""))
-      .filter(Boolean);
-
-    if (nameCandidates.length === 0) {
-      return c.json({ success: true, data: [] });
-    }
-
-    sql += ` AND TRIM(name) IN (${nameCandidates.map(() => "?").join(",")})`;
-    params.push(...nameCandidates);
+    sql += " AND created_by_userid = ?";
+    params.push(auth.sub);
   }
 
   sql += " ORDER BY id DESC";

@@ -8,6 +8,7 @@ import { checkApprovalTimeouts } from "../services/approval/engine";
 import { checkTimeouts } from "../services/ai-slot";
 import { createTask } from "../services/ai-slot";
 import { checkNodeHeartbeat, detectMissingLogs, requeueTimedOutTasks } from "../services/cron-jobs";
+import { getWeComContactBook } from "../services/wecom-contact-book";
 
 export const systemRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -472,6 +473,67 @@ systemRoutes.get("/automation/contact-sync", apiKeyMiddleware, async (c) => {
   const now = new Date().toISOString();
   await c.env.KV.put("wecom:contacts:last_sync_at", now);
   return c.json({ success: true, data: { synced_at: now, mode: "placeholder" } });
+});
+
+systemRoutes.post("/automation/payee-internal-bind", apiKeyMiddleware, async (c) => {
+  const contactBook = await getWeComContactBook(c.env, { forceRefresh: true });
+
+  const useridsByName = new Map<string, string[]>();
+  for (const user of contactBook.users) {
+    const name = `${user.name || ""}`.trim();
+    const userid = `${user.userid || ""}`.trim();
+    if (!name || !userid) continue;
+    const list = useridsByName.get(name) ?? [];
+    if (!list.includes(userid)) list.push(userid);
+    useridsByName.set(name, list);
+  }
+
+  const payees = await c.env.DB.prepare(
+    "SELECT id, name, created_by_userid FROM payee WHERE type = 'internal' AND status = 'active' ORDER BY id ASC"
+  ).all<{ id: number; name: string; created_by_userid: string }>();
+
+  const now = new Date().toISOString();
+  let matched = 0;
+  let updated = 0;
+  const unmatched: string[] = [];
+  const ambiguous: string[] = [];
+
+  for (const row of payees.results ?? []) {
+    const name = `${row.name || ""}`.trim();
+    if (!name) continue;
+    const candidates = useridsByName.get(name) ?? [];
+    if (candidates.length === 0) {
+      unmatched.push(name);
+      continue;
+    }
+    if (candidates.length > 1) {
+      ambiguous.push(name);
+      continue;
+    }
+
+    matched += 1;
+    const targetUserid = candidates[0];
+    if (row.created_by_userid !== targetUserid) {
+      await c.env.DB.prepare("UPDATE payee SET created_by_userid = ?, updated_at = ? WHERE id = ?")
+        .bind(targetUserid, now, row.id)
+        .run();
+      updated += 1;
+    }
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      wecom_users: contactBook.users.length,
+      internal_payees: (payees.results ?? []).length,
+      matched,
+      updated,
+      unmatched_count: unmatched.length,
+      ambiguous_count: ambiguous.length,
+      unmatched_names: [...new Set(unmatched)].slice(0, 20),
+      ambiguous_names: [...new Set(ambiguous)].slice(0, 20)
+    }
+  });
 });
 
 systemRoutes.post("/automation/project-init", apiKeyMiddleware, async (c) => {
