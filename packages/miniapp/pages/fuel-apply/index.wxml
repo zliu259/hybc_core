@@ -1,0 +1,54 @@
+<view class="page">
+  <hy-panel-card title="⛽ 员工加油申请" subtitle="与 Web 对齐：额度、车辆、里程、照片、申请记录">
+    <view class="label required">所用车辆</view>
+    <picker mode="selector" range="{{vehicleLabels}}" value="{{vehicleIndex}}" bindchange="onVehicleChange">
+      <view class="picker-value">{{vehicleLabels[vehicleIndex]}}</view>
+    </picker>
+
+    <view class="label required">申请额度</view>
+    <input
+      class="input"
+      type="digit"
+      value="{{form.requested_amount}}"
+      data-key="requested_amount"
+      bindinput="onInput"
+      placeholder="请输入申请额度"
+      disabled="{{submitting}}"
+    />
+
+    <view class="label required">车辆里程 (km)</view>
+    <input
+      class="input"
+      type="digit"
+      value="{{form.vehicle_mileage_km}}"
+      data-key="vehicle_mileage_km"
+      bindinput="onInput"
+      placeholder="请输入当前里程"
+      disabled="{{submitting}}"
+    />
+
+    <view class="label required">现场照片</view>
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="choosePhotos" disabled="{{submitting}}">上传照片</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">提交申请</t-button>
+    </view>
+
+    <view wx:if="{{photoList.length === 0}}" class="empty-tip">暂无照片</view>
+    <view wx:for="{{photoList}}" wx:key="file_key" class="photo-item">
+      <view class="photo-name">{{item.file_name}}</view>
+      <view class="photo-size">{{item.file_size || 0}} bytes</view>
+      <t-button class="mini-btn" size="small" variant="outline" data-index="{{index}}" bindtap="removePhoto" disabled="{{submitting}}">移除</t-button>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="🧾 我的申请记录" subtitle="展示申请时间、状态、处理结果与卡余额">
+    <view wx:if="{{myApplications.length === 0}}" class="empty-tip">暂无申请记录</view>
+    <view wx:for="{{myApplications}}" wx:key="id" class="record-item">
+      <view class="record-title">{{item.application_no}}</view>
+      <view class="record-line">车辆：{{item.current_plate_no || '-'}} ｜ 里程：{{item.vehicle_mileage_km}}</view>
+      <view class="record-line">额度：{{item.requested_amount}} ｜ 状态：{{item.status}}</view>
+      <view class="record-line">申请时间：{{item.requested_at}}</view>
+      <view class="record-line">处理人：{{item.processed_by_userid || '-'}} ｜ 卡余额：{{item.latest_card_balance || '-'}}</view>
+    </view>
+  </hy-panel-card>
+</view>

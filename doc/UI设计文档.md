@@ -529,6 +529,7 @@
 - 管理员日志：`packages/miniapp/pages/manager-log/index`
 - 审批待办：`packages/miniapp/pages/approval/index`
 - 发起对外付款（智能发单台）：`packages/miniapp/pages/payment-apply/index`
+- 员工加油申请：`packages/miniapp/pages/fuel-apply/index`
 - 我的报销提交（列表）：`packages/miniapp/pages/reimbursement-list/index`
 - 报销提交详情/新建：`packages/miniapp/pages/reimbursement/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
@@ -909,6 +910,12 @@
 - 个人中心补齐角色与认证方式汉化：角色从英文 role id 改为中文角色名，认证方式与动态状态文案统一中文展示：`packages/miniapp/pages/profile/index.{js,wxml}`
 - 资产板块补齐候选设备状态汉化：设备候选列表状态不再显示英文枚举值：`packages/miniapp/pages/asset/index.{js,wxml}`
 
+### 4.22 Miniapp 员工加油申请入口与 Web 对齐（2026-03）
+- 审批与申请页（发起申请分段）新增“员工加油申请”入口卡片，形成与 Web `油卡额度申请` 等价入口：`packages/miniapp/pages/finance/index.wxml`
+- 审批与申请页语音助手菜单新增“我要发起加油申请”快捷动作：`packages/miniapp/pages/finance/index.js`
+- 新增“员工加油申请”页面，字段与 Web 保持一致：所用车辆、申请额度、车辆里程、现场照片，提交后展示我的申请记录：`packages/miniapp/pages/fuel-apply/index.{js,wxml,wxss,json}`
+- 小程序路由注册补齐：`packages/miniapp/app.json`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
@@ -925,6 +932,20 @@
 
 ## 7. 验收清单（页面级）
 - 每个页面都有对应路由、视图文件、接口指向。
+
+## 8. 车辆油卡与公司实体增强（2026-03）
+
+### 8.1 页面与路由映射
+- 公司实体管理（增强版）：`/admin/system-base/entity` → `packages/web/src/views/entity/index.vue`
+- 油卡额度申请（员工入口）：`/finance/fleet/application` → `packages/web/src/views/finance/fleet/application.vue`
+- 车辆档案与办公室处理：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
+- 车辆用油领导总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
+
+### 8.2 API 指向
+- 公司实体增强：`/api/v1/entity`、`/api/v1/entity/:id/attachments`、`/api/v1/entity/:id/storage-summary`
+- 车辆与油卡：`/api/v1/fleet/vehicles`、`/api/v1/fleet/fuel-cards`、`/api/v1/fleet/fuel-applications`
+- 办公室处理申请：`/api/v1/fleet/fuel-applications/:id/process`
+- 领导总览：`/api/v1/dashboard/vehicle-fuel-overview`
 - 每个高风险操作都有确认与结果反馈。
 - 桌面端与移动端关键动作路径均可完成。
 - 样式 token 与状态语义一致，不出现颜色语义冲突。

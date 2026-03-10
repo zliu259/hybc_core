@@ -354,3 +354,148 @@ dashboardRoutes.get(
     });
   }
 );
+
+dashboardRoutes.get(
+  "/vehicle-fuel-overview",
+  requireRoles(["super_admin", "manager", "finance", "site_manager"]),
+  async (c) => {
+    const periodTypeRaw = c.req.query("period_type");
+    const periodType: PeriodType = periodTypeRaw === "year" ? "year" : "month";
+    const period = c.req.query("period");
+    const entityIdRaw = c.req.query("entity_id");
+    const range = parsePeriodRange(periodType, period);
+    const entityId = entityIdRaw ? Number(entityIdRaw) : null;
+
+    const vehicleFilter = entityId && Number.isFinite(entityId) ? " WHERE entity_id = ?" : "";
+    const vehicleFilterParams = entityId && Number.isFinite(entityId) ? [entityId] : [];
+
+    const vehicleCountRow = await c.env.DB.prepare(
+      `SELECT
+        COUNT(*) as total,
+        SUM(CASE WHEN status = 'active' THEN 1 ELSE 0 END) as active_total,
+        SUM(CASE WHEN ownership_type = 'company_owned' THEN 1 ELSE 0 END) as company_owned_total,
+        SUM(CASE WHEN ownership_type = 'employee_owned' THEN 1 ELSE 0 END) as employee_owned_total
+       FROM company_vehicle${vehicleFilter}`
+    )
+      .bind(...vehicleFilterParams)
+      .first<{
+        total: number;
+        active_total: number;
+        company_owned_total: number;
+        employee_owned_total: number;
+      }>();
+
+    const mileageRows = await c.env.DB.prepare(
+      `SELECT
+        COUNT(*) as log_count,
+        IFNULL(SUM(mileage_km), 0) as mileage_total
+       FROM company_vehicle_mileage_log m
+       JOIN company_vehicle v ON v.id = m.vehicle_id
+       WHERE m.recorded_at >= ? AND m.recorded_at < ?${
+         entityId && Number.isFinite(entityId) ? " AND v.entity_id = ?" : ""
+       }`
+    )
+      .bind(range.start, range.end, ...vehicleFilterParams)
+      .first<{ log_count: number; mileage_total: number }>();
+
+    const fuelRows = await c.env.DB.prepare(
+      `SELECT
+        COUNT(*) as apply_count,
+        IFNULL(SUM(requested_amount), 0) as requested_amount_total,
+        SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) as processed_count,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count,
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count
+       FROM fuel_quota_application a
+       JOIN company_vehicle v ON v.id = a.vehicle_id
+       WHERE a.requested_at >= ? AND a.requested_at < ?${
+         entityId && Number.isFinite(entityId) ? " AND v.entity_id = ?" : ""
+       }`
+    )
+      .bind(range.start, range.end, ...vehicleFilterParams)
+      .first<{
+        apply_count: number;
+        requested_amount_total: number;
+        processed_count: number;
+        rejected_count: number;
+        pending_count: number;
+      }>();
+
+    const trendBucket = periodType === "year" ? "substr(a.requested_at, 1, 7)" : "substr(a.requested_at, 1, 10)";
+    const trendRows = await c.env.DB.prepare(
+      `SELECT
+        ${trendBucket} as bucket,
+        COUNT(*) as apply_count,
+        IFNULL(SUM(a.requested_amount), 0) as requested_amount_total
+       FROM fuel_quota_application a
+       JOIN company_vehicle v ON v.id = a.vehicle_id
+       WHERE a.requested_at >= ? AND a.requested_at < ?${
+         entityId && Number.isFinite(entityId) ? " AND v.entity_id = ?" : ""
+       }
+       GROUP BY bucket
+       ORDER BY bucket ASC`
+    )
+      .bind(range.start, range.end, ...vehicleFilterParams)
+      .all<{ bucket: string; apply_count: number; requested_amount_total: number }>();
+
+    const topVehicles = await c.env.DB.prepare(
+      `SELECT
+        v.id,
+        v.vehicle_uuid,
+        v.current_plate_no,
+        v.ownership_type,
+        COUNT(a.id) as apply_count,
+        IFNULL(SUM(a.requested_amount), 0) as requested_amount_total
+       FROM company_vehicle v
+       LEFT JOIN fuel_quota_application a ON a.vehicle_id = v.id AND a.requested_at >= ? AND a.requested_at < ?
+       ${entityId && Number.isFinite(entityId) ? "WHERE v.entity_id = ?" : ""}
+       GROUP BY v.id, v.vehicle_uuid, v.current_plate_no, v.ownership_type
+       ORDER BY requested_amount_total DESC, apply_count DESC
+       LIMIT 10`
+    )
+      .bind(range.start, range.end, ...vehicleFilterParams)
+      .all<{
+        id: number;
+        vehicle_uuid: string;
+        current_plate_no: string;
+        ownership_type: string;
+        apply_count: number;
+        requested_amount_total: number;
+      }>();
+
+    const cardBalanceRows = await c.env.DB.prepare(
+      "SELECT COUNT(*) as card_count, IFNULL(SUM(latest_balance), 0) as card_balance_total FROM fuel_card WHERE status = 'active'"
+    ).first<{ card_count: number; card_balance_total: number }>();
+
+    return c.json({
+      success: true,
+      data: {
+        filters: {
+          period_type: periodType,
+          period: range.periodLabel,
+          start_date: range.start,
+          end_date: range.end,
+          entity_id: entityId
+        },
+        summary: {
+          vehicle_total: vehicleCountRow?.total ?? 0,
+          active_vehicle_total: vehicleCountRow?.active_total ?? 0,
+          company_owned_vehicle_total: vehicleCountRow?.company_owned_total ?? 0,
+          employee_owned_vehicle_total: vehicleCountRow?.employee_owned_total ?? 0,
+          mileage_log_count: mileageRows?.log_count ?? 0,
+          mileage_km_total: mileageRows?.mileage_total ?? 0,
+          fuel_apply_count: fuelRows?.apply_count ?? 0,
+          fuel_requested_amount_total: fuelRows?.requested_amount_total ?? 0,
+          fuel_processed_count: fuelRows?.processed_count ?? 0,
+          fuel_rejected_count: fuelRows?.rejected_count ?? 0,
+          fuel_pending_count: fuelRows?.pending_count ?? 0,
+          active_card_count: cardBalanceRows?.card_count ?? 0,
+          active_card_balance_total: cardBalanceRows?.card_balance_total ?? 0
+        },
+        charts: {
+          fuel_apply_trend: trendRows.results ?? [],
+          top_vehicles: topVehicles.results ?? []
+        }
+      }
+    });
+  }
+);

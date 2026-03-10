@@ -5,6 +5,13 @@ export type Entity = {
   entity_code: string;
   entity_name: string;
   legal_person: string | null;
+  tax_id: string | null;
+  company_attribute: "self_owned" | "external" | "shareholder_personal";
+  storage_quota_mb: number;
+  storage_used_mb: number;
+  primary_bank_name: string | null;
+  primary_bank_branch_no: string | null;
+  primary_bank_account_no: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -16,7 +23,22 @@ export type EntityBankAccount = {
   bank_name: string;
   account_name: string;
   account_no: string;
+  bank_branch_no: string | null;
+  bank_line_no: string | null;
   status: string;
+};
+
+export type EntityAttachment = {
+  id: number;
+  entity_id: number;
+  file_key: string;
+  file_name: string;
+  file_size: number | null;
+  file_category: string;
+  status: string;
+  uploaded_by_userid: string;
+  created_at: string;
+  updated_at: string;
 };
 
 export type EntityInvoiceProfile = {
@@ -45,6 +67,12 @@ export const createEntity = (data: {
   entity_code: string;
   entity_name: string;
   legal_person?: string;
+  tax_id?: string;
+  company_attribute?: "self_owned" | "external" | "shareholder_personal";
+  storage_quota_mb?: number;
+  primary_bank_name?: string;
+  primary_bank_branch_no?: string;
+  primary_bank_account_no?: string;
 }) => {
   return http.request<{ success: boolean; data: { id: number } }>(
     "post",
@@ -55,7 +83,18 @@ export const createEntity = (data: {
 
 export const updateEntity = (
   id: number,
-  data: { entity_name?: string; legal_person?: string | null; status?: string }
+  data: {
+    entity_name?: string;
+    legal_person?: string | null;
+    tax_id?: string | null;
+    company_attribute?: "self_owned" | "external" | "shareholder_personal";
+    storage_quota_mb?: number;
+    storage_used_mb?: number;
+    primary_bank_name?: string | null;
+    primary_bank_branch_no?: string | null;
+    primary_bank_account_no?: string | null;
+    status?: string;
+  }
 ) => {
   return http.request<{ success: boolean }>("put", `/api/v1/entity/${id}`, {
     data
@@ -75,6 +114,8 @@ export const createEntityBankAccount = (
     bank_name: string;
     account_name: string;
     account_no: string;
+    bank_branch_no?: string;
+    bank_line_no?: string;
     status?: string;
   }
 ) => {
@@ -108,4 +149,46 @@ export const createEntityInvoiceProfile = (
     `/api/v1/entity/${entityId}/invoice-profiles`,
     { data }
   );
+};
+
+export const listEntityAttachments = (entityId: number) => {
+  return http.request<{ success: boolean; data: EntityAttachment[] }>(
+    "get",
+    `/api/v1/entity/${entityId}/attachments`
+  );
+};
+
+export const createEntityAttachment = (
+  entityId: number,
+  data: {
+    file_key: string;
+    file_name: string;
+    file_size?: number;
+    file_category?: string;
+  }
+) => {
+  return http.request<{ success: boolean; data: { id: number } }>(
+    "post",
+    `/api/v1/entity/${entityId}/attachments`,
+    { data }
+  );
+};
+
+export const deleteEntityAttachment = (entityId: number, attachmentId: number) => {
+  return http.request<{ success: boolean }>(
+    "delete",
+    `/api/v1/entity/${entityId}/attachments/${attachmentId}`
+  );
+};
+
+export const getEntityStorageSummary = (entityId: number) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      storage_quota_mb: number;
+      storage_used_mb: number;
+      storage_remaining_mb: number;
+      active_attachment_count: number;
+    };
+  }>("get", `/api/v1/entity/${entityId}/storage-summary`);
 };

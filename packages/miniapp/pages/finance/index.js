@@ -49,7 +49,13 @@ Page({
 
   openGlobalHelper() {
     wx.showActionSheet({
-      itemList: ["🎙️ 录音识别指令", "🎤 我要发起对外付款", "🎤 我要审批单据", "🎤 我要发起报销"],
+      itemList: [
+        "🎙️ 录音识别指令",
+        "🎤 我要发起对外付款",
+        "🎤 我要审批单据",
+        "🎤 我要发起报销",
+        "🎤 我要发起加油申请"
+      ],
       success: async (res) => {
         if (res.tapIndex === 0) {
           await runVoiceAssistant({ scene: "finance" }).catch(() => {});
@@ -67,7 +73,11 @@ Page({
           wx.navigateTo({ url: "/pages/approval/index" });
           return;
         }
-        wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+        if (res.tapIndex === 3) {
+          wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+          return;
+        }
+        wx.navigateTo({ url: "/pages/fuel-apply/index" });
       }
     });
   }

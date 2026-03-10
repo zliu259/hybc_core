@@ -92,3 +92,54 @@ export const getFinanceSnapshot = (params: {
     };
   }>("get", "/api/v1/dashboard/finance-snapshot", { params });
 };
+
+export type VehicleFuelOverviewPeriodType = "month" | "year";
+
+export const getVehicleFuelOverview = (params: {
+  period_type: VehicleFuelOverviewPeriodType;
+  period?: string;
+  entity_id?: number;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      filters: {
+        period_type: VehicleFuelOverviewPeriodType;
+        period: string;
+        start_date: string;
+        end_date: string;
+        entity_id: number | null;
+      };
+      summary: {
+        vehicle_total: number;
+        active_vehicle_total: number;
+        company_owned_vehicle_total: number;
+        employee_owned_vehicle_total: number;
+        mileage_log_count: number;
+        mileage_km_total: number;
+        fuel_apply_count: number;
+        fuel_requested_amount_total: number;
+        fuel_processed_count: number;
+        fuel_rejected_count: number;
+        fuel_pending_count: number;
+        active_card_count: number;
+        active_card_balance_total: number;
+      };
+      charts: {
+        fuel_apply_trend: Array<{
+          bucket: string;
+          apply_count: number;
+          requested_amount_total: number;
+        }>;
+        top_vehicles: Array<{
+          id: number;
+          vehicle_uuid: string;
+          current_plate_no: string;
+          ownership_type: string;
+          apply_count: number;
+          requested_amount_total: number;
+        }>;
+      };
+    };
+  }>("get", "/api/v1/dashboard/vehicle-fuel-overview", { params });
+};

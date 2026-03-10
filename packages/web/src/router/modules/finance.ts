@@ -221,6 +221,45 @@ export default {
       ]
     },
     {
+      path: "/finance/fleet-center",
+      name: "FinanceFleetCenter",
+      component: Layout,
+      redirect: "/finance/fleet/application",
+      meta: {
+        title: "车辆油卡",
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+      },
+      children: [
+        {
+          path: "/finance/fleet/application",
+          name: "FuelQuotaApplicationPage",
+          component: () => import("@/views/finance/fleet/application.vue"),
+          meta: {
+            title: "油卡额度申请",
+            roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+          }
+        },
+        {
+          path: "/finance/fleet/vehicles",
+          name: "FleetVehicleOps",
+          component: () => import("@/views/finance/fleet/vehicles.vue"),
+          meta: {
+            title: "车辆与办公室处理",
+            roles: ["super_admin", "manager", "site_manager", "finance"]
+          }
+        },
+        {
+          path: "/finance/fleet/dashboard",
+          name: "FleetFuelDashboard",
+          component: () => import("@/views/finance/fleet/dashboard.vue"),
+          meta: {
+            title: "车辆用油总览",
+            roles: ["super_admin", "manager", "site_manager", "finance"]
+          }
+        }
+      ]
+    },
+    {
       path: "/finance/legacy-reimbursement",
       name: "ReimbursementLegacyRedirect",
       redirect: "/finance/reimbursement",
