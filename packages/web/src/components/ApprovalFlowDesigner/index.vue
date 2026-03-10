@@ -391,7 +391,7 @@ const removeSelection = () => {
 };
 
 const onKeyDown = (event: KeyboardEvent) => {
-  if (event.key !== "Delete") {
+  if (event.key !== "Delete" && event.key !== "Backspace") {
     return;
   }
 

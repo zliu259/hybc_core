@@ -70,8 +70,24 @@ const toTemplateNode = (
   nextKeys: string[]
 ): TemplateNodeConfig => {
   const normalizedNext = nextKeys.filter(key => key !== VIRTUAL_END_ID);
+  const validNextSet = new Set(normalizedNext);
+
+  const explicitNext =
+    typeof node.data.nextKey === "string" && validNextSet.has(node.data.nextKey)
+      ? node.data.nextKey
+      : null;
+
+  const conditions = Array.isArray(node.data.conditions)
+    ? node.data.conditions.filter(condition => validNextSet.has(condition.next_key))
+    : undefined;
+
+  const defaultNextKey =
+    typeof node.data.defaultNextKey === "string" && validNextSet.has(node.data.defaultNextKey)
+      ? node.data.defaultNextKey
+      : undefined;
+
   const fallbackNext = normalizedNext[0] ?? null;
-  const explicitNext = node.data.nextKey;
+  const finalNext = explicitNext ?? fallbackNext;
 
   return {
     key: node.id,
@@ -81,12 +97,9 @@ const toTemplateNode = (
     auto_action: node.data.autoAction,
     ai_slot_id: node.data.aiSlotId,
     timeout_hours: node.data.timeoutHours,
-    conditions: node.data.conditions,
-    default_next_key: node.data.defaultNextKey,
-    next_key:
-      typeof explicitNext === "string" || explicitNext === null
-        ? explicitNext
-        : fallbackNext
+    conditions,
+    default_next_key: defaultNextKey,
+    next_key: finalNext
   };
 };
 
