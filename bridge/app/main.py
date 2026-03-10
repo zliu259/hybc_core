@@ -31,7 +31,7 @@ class RelayRuntimeStats:
         self.lock = Lock()
 
     def _trim(self, now: float) -> None:
-        cutoff = now - max(settings.relay_error_window_seconds, 1)
+        cutoff = now - _safe_positive_int(settings.relay_error_window_seconds, 60)
         while self.window_total and self.window_total[0] < cutoff:
             self.window_total.popleft()
         while self.window_timeout and self.window_timeout[0] < cutoff:
@@ -50,10 +50,11 @@ class RelayRuntimeStats:
         total = len(self.window_total)
         timeout_rate = (len(self.window_timeout) / total) if total > 0 else 0.0
         error_rate = (len(self.window_upstream_error) / total) if total > 0 else 0.0
-        if total >= max(settings.relay_min_samples, 1):
-            if timeout_rate >= settings.relay_timeout_rate_threshold:
+        min_samples = _safe_positive_int(settings.relay_min_samples, 10)
+        if total >= min_samples:
+            if timeout_rate >= _safe_float(settings.relay_timeout_rate_threshold, 0.3):
                 return True, "timeout_rate"
-            if error_rate >= settings.relay_error_rate_threshold:
+            if error_rate >= _safe_float(settings.relay_error_rate_threshold, 0.5):
                 return True, "error_rate"
         return False, "ok"
 
@@ -71,7 +72,7 @@ class RelayRuntimeStats:
                     "reason": reason,
                     "inflight_requests": self.inflight,
                     "max_inflight": _safe_positive_int(settings.relay_max_inflight, 120),
-                    "window_seconds": max(settings.relay_error_window_seconds, 1),
+                    "window_seconds": _safe_positive_int(settings.relay_error_window_seconds, 60),
                     "sample_size": total,
                     "timeout_rate": round(timeout_rate, 4),
                     "upstream_error_rate": round(error_rate, 4),
@@ -84,7 +85,7 @@ class RelayRuntimeStats:
                 "reason": "status_error",
                 "inflight_requests": 0,
                 "max_inflight": _safe_positive_int(settings.relay_max_inflight, 120),
-                "window_seconds": max(settings.relay_error_window_seconds, 1),
+                "window_seconds": _safe_positive_int(settings.relay_error_window_seconds, 60),
                 "sample_size": 0,
                 "timeout_rate": 0.0,
                 "upstream_error_rate": 0.0,
@@ -117,7 +118,10 @@ class RelayRuntimeStats:
                     self.window_upstream_error.append(now)
                 overloaded, reason = self._is_overloaded_no_lock(now)
                 if overloaded and reason in {"inflight_limit", "timeout_rate", "error_rate"}:
-                    self.cooldown_until = max(self.cooldown_until, now + max(settings.relay_cooldown_seconds, 1))
+                    self.cooldown_until = max(
+                        self.cooldown_until,
+                        now + _safe_positive_int(settings.relay_cooldown_seconds, 20),
+                    )
         except Exception:
             self.inflight = max(0, self.inflight - 1)
 
@@ -135,10 +139,17 @@ def _safe_positive_int(value: Any, fallback: int) -> int:
     return fallback
 
 
+def _safe_float(value: Any, fallback: float) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return fallback
+
+
 async def reject_when_overloaded() -> None:
     overloaded, reason = relay_stats.reject_if_overloaded()
     if overloaded:
-        retry_after = str(max(settings.relay_cooldown_seconds, 1))
+        retry_after = str(_safe_positive_int(settings.relay_cooldown_seconds, 20))
         payload = {
             "ok": False,
             "error": {
