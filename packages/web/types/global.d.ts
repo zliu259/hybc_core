@@ -111,6 +111,19 @@ declare global {
     TooltipEffect?: Effect;
     ResponsiveStorageNameSpace?: string;
     MenuSearchHistory?: number;
+    ApiRelayPool?: {
+      enabled?: boolean;
+      maxAttempts?: number;
+      nodes?: Array<{
+        id?: string;
+        baseUrl?: string;
+        priority?: number;
+        enabled?: boolean;
+        statusPath?: string;
+        supportsWriteFallback?: boolean;
+        probeTimeoutMs?: number;
+      }>;
+    };
   }
 
   /**

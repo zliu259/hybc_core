@@ -1,4 +1,9 @@
-const { getBaseUrl, setBaseUrl, getFallbackBaseUrls } = require("./config");
+const {
+  getBaseUrl,
+  setBaseUrl,
+  buildFallbackCandidates,
+  DEFAULT_RELAY_STATUS_PATH,
+} = require("./config");
 const { getToken, setToken, clearToken } = require("./auth");
 
 const DEFAULT_TIMEOUT_MS = 20000;
@@ -46,6 +51,148 @@ const buildUrl = (path) => {
   return `${getBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
+const probeRelayStatus = (candidate) => {
+  if (!candidate || !candidate.isRelay) return Promise.resolve(true);
+  const statusPath =
+    typeof candidate.statusPath === "string" && candidate.statusPath.trim()
+      ? candidate.statusPath
+      : DEFAULT_RELAY_STATUS_PATH;
+  const statusUrl = buildUrlWithBase(candidate.baseUrl, statusPath);
+  const timeout =
+    Number.isFinite(candidate.probeTimeoutMs) && Number(candidate.probeTimeoutMs) > 0
+      ? Number(candidate.probeTimeoutMs)
+      : 1200;
+
+  return new Promise((resolve) => {
+    wx.request({
+      url: statusUrl,
+      method: "GET",
+      timeout,
+      success(res) {
+        if (!(res.statusCode >= 200 && res.statusCode < 300)) {
+          resolve(false);
+          return;
+        }
+        const body = res.data || {};
+        if (body.overloaded === true) {
+          resolve(false);
+          return;
+        }
+        if (typeof body.cooldown_seconds_left === "number" && body.cooldown_seconds_left > 0) {
+          resolve(false);
+          return;
+        }
+        resolve(true);
+      },
+      fail() {
+        resolve(false);
+      }
+    });
+  });
+};
+
+const executeRequest = ({
+  url,
+  method,
+  data,
+  timeout,
+  header,
+}) =>
+  new Promise((resolve, reject) => {
+    wx.request({
+      url,
+      method,
+      data,
+      timeout,
+      header,
+      success(res) {
+        const body = res.data || {};
+        if (res.statusCode >= 200 && res.statusCode < 300 && body.success !== false) {
+          resolve({ body, url });
+          return;
+        }
+        if (res.statusCode === 401) {
+          clearToken();
+        }
+        reject(
+          new Error(
+            (body && body.error && body.error.message) ||
+              `Request failed (${res.statusCode}) (${url})`
+          )
+        );
+      },
+      fail(err) {
+        const rawMessage = (err && err.errMsg) || (err && err.message) || "request:fail";
+        const error = new Error(`${normalizeMiniappNetworkErrorMessage(rawMessage)} (${url})`);
+        error.__networkFail = true;
+        error.__rawErrMsg = rawMessage;
+        reject(error);
+      }
+    });
+  });
+
+const canAutoFallback = (method, header = {}) => {
+  const m = String(method || "GET").toUpperCase();
+  if (m === "GET" || m === "HEAD" || m === "OPTIONS") return true;
+  const keys = Object.keys(header || {});
+  return keys.some((k) => k.toLowerCase() === "idempotency-key");
+};
+
+const requestWithFallback = ({ method, path, data, header = {}, timeout }) => {
+  const currentBase = getBaseUrl();
+  const candidates = buildFallbackCandidates(currentBase, {
+    includeLocal: false,
+    method,
+  });
+  const shouldFallback = canAutoFallback(method, header);
+
+  const doRequest = (index = 0) => {
+    if (index >= candidates.length) {
+      return Promise.reject(new Error("No available API endpoint"));
+    }
+    const candidate = candidates[index];
+    if (!candidate || !candidate.baseUrl) {
+      return doRequest(index + 1);
+    }
+
+    return probeRelayStatus(candidate).then((eligible) => {
+      if (!eligible) {
+        return doRequest(index + 1);
+      }
+      const url = buildUrlWithBase(candidate.baseUrl, path);
+      const authHeader = getToken() ? { Authorization: `Bearer ${getToken()}` } : {};
+      return executeRequest({
+        url,
+        method,
+        data,
+        timeout,
+        header: {
+          "content-type": "application/json",
+          ...authHeader,
+          ...header,
+          ...(candidate.isRelay ? { "X-Relay-Fallback": "1" } : {})
+        },
+      })
+        .then(({ body }) => {
+          setBaseUrl(candidate.baseUrl);
+          return body;
+        })
+        .catch((error) => {
+          if (
+            shouldFallback &&
+            index + 1 < candidates.length &&
+            (isConnectionRefusedError(error) || isNetworkLayerFailure(error) || isRetryableNetworkError(error))
+          ) {
+            return doRequest(index + 1);
+          }
+          throw error;
+        });
+    });
+  };
+
+  return doRequest(0);
+};
+
 const ensureSessionReady = () => {
   const token = getToken();
   if (token) return Promise.resolve(token);
@@ -63,45 +210,12 @@ const ensureSessionReady = () => {
 
 const request = ({ method = "GET", path, data, header = {} }) => {
   return ensureSessionReady().then(() => {
-    return new Promise((resolve, reject) => {
-      const token = getToken();
-      const authHeader = token ? { Authorization: `Bearer ${token}` } : {};
-
-      wx.request({
-        url: buildUrl(path),
-        method,
-        data,
-        timeout: DEFAULT_TIMEOUT_MS,
-        header: {
-          "content-type": "application/json",
-          ...authHeader,
-          ...header
-        },
-        success(res) {
-          const body = res.data || {};
-          if (
-            res.statusCode >= 200 &&
-            res.statusCode < 300 &&
-            body.success !== false
-          ) {
-            resolve(body);
-            return;
-          }
-
-          if (res.statusCode === 401) {
-            clearToken();
-          }
-
-          reject(
-            new Error(
-              (body && body.error && body.error.message) || "Request failed"
-            )
-          );
-        },
-        fail(err) {
-          reject(err);
-        }
-      });
+    return requestWithFallback({
+      method,
+      path,
+      data,
+      header,
+      timeout: DEFAULT_TIMEOUT_MS,
     });
   });
 };
@@ -111,47 +225,40 @@ const loginRequest = ({
   endpoint = "/api/v1/auth/login/web",
   includeLocalFallback = false
 }) => {
-  const baseCandidates = getFallbackBaseUrls(getBaseUrl(), {
+  const fallbackCandidates = buildFallbackCandidates(getBaseUrl(), {
     includeLocal: includeLocalFallback
   });
 
   const doRequest = (attempt, baseIndex = 0) =>
-    new Promise((resolve, reject) => {
-      const targetBase = baseCandidates[baseIndex] || getBaseUrl();
-      const url = buildUrlWithBase(targetBase, endpoint);
-      wx.request({
-        url,
-        method: "POST",
-        data: typeof payload === "string" ? { code: payload } : payload,
-        header: {
-          "content-type": "application/json"
-        },
-        timeout: LOGIN_TIMEOUT_MS,
-        success(res) {
-          const body = res.data || {};
-          if (res.statusCode >= 200 && res.statusCode < 300 && body.success !== false) {
-            if (body.data && body.data.accessToken) {
-              setToken(body.data.accessToken);
-            }
-            setBaseUrl(targetBase);
-            resolve(body.data || {});
-            return;
-          }
-          reject(new Error((body && body.error && body.error.message) || `Login failed (${url})`));
-        },
-        fail(err) {
-          const errorMessage =
-            (err && err.errMsg) || (err && err.message) || "Login request failed";
-          const friendlyMessage = normalizeMiniappNetworkErrorMessage(errorMessage) || errorMessage;
-          const networkError = new Error(`${friendlyMessage} (${url})`);
-          networkError.__networkFail = true;
-          networkError.__rawErrMsg = (err && err.errMsg) || "";
-          reject(networkError);
+    Promise.resolve().then(() => {
+      const candidate = fallbackCandidates[baseIndex] || { baseUrl: getBaseUrl() };
+      return probeRelayStatus(candidate).then((eligible) => {
+        if (!eligible && baseIndex + 1 < fallbackCandidates.length) {
+          return doRequest(attempt, baseIndex + 1);
         }
+        const targetBase = candidate.baseUrl || getBaseUrl();
+        const url = buildUrlWithBase(targetBase, endpoint);
+        return executeRequest({
+          url,
+          method: "POST",
+          data: typeof payload === "string" ? { code: payload } : payload,
+          timeout: LOGIN_TIMEOUT_MS,
+          header: {
+            "content-type": "application/json",
+            ...(candidate.isRelay ? { "X-Relay-Fallback": "1" } : {})
+          },
+        }).then(({ body }) => {
+          const responseBody = body && body.data ? body.data : body;
+          if (responseBody && responseBody.accessToken) {
+            setToken(responseBody.accessToken);
+          }
+          setBaseUrl(targetBase);
+          return responseBody || {};
+        });
       });
     }).catch((error) => {
       if (
-        baseIndex + 1 < baseCandidates.length &&
+        baseIndex + 1 < fallbackCandidates.length &&
         (isConnectionRefusedError(error) || isNetworkLayerFailure(error))
       ) {
         return doRequest(attempt, baseIndex + 1);
@@ -167,40 +274,14 @@ const loginRequest = ({
 
 const uploadBinary = ({ path, arrayBuffer, contentType }) => {
   return ensureSessionReady().then(() => {
-    return new Promise((resolve, reject) => {
-      const token = getToken();
-      wx.request({
-        url: buildUrl(path),
-        method: "PUT",
-        data: arrayBuffer,
-        timeout: 30000,
-        header: {
-          "content-type": contentType || "application/octet-stream",
-          ...(token ? { Authorization: `Bearer ${token}` } : {})
-        },
-        success(res) {
-          const body = res.data || {};
-          if (
-            res.statusCode >= 200 &&
-            res.statusCode < 300 &&
-            body.success !== false
-          ) {
-            resolve(body);
-            return;
-          }
-
-          if (res.statusCode === 401) {
-            clearToken();
-          }
-
-          reject(
-            new Error((body && body.error && body.error.message) || "Upload failed")
-          );
-        },
-        fail(err) {
-          reject(err);
-        }
-      });
+    return requestWithFallback({
+      method: "PUT",
+      path,
+      data: arrayBuffer,
+      timeout: 30000,
+      header: {
+        "content-type": contentType || "application/octet-stream"
+      }
     });
   });
 };

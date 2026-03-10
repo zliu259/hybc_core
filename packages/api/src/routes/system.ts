@@ -53,6 +53,15 @@ type HealthItem = {
   checked_at: string;
   detail?: string;
   latency_ms?: number;
+  overloaded?: boolean;
+};
+
+const parseCsvUrls = (value: string | undefined): string[] => {
+  if (!value) return [];
+  return value
+    .split(",")
+    .map((v) => v.trim())
+    .filter(Boolean);
 };
 
 const checkExternalHealth = async (key: string, url: string): Promise<HealthItem> => {
@@ -76,6 +85,53 @@ const checkExternalHealth = async (key: string, url: string): Promise<HealthItem
       checked_at: new Date().toISOString(),
       detail: error instanceof Error ? error.message : "network error",
       latency_ms: Date.now() - started,
+    };
+  }
+};
+
+const checkRelayStatus = async (key: string, url: string): Promise<HealthItem> => {
+  const started = Date.now();
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    const resp = await fetch(url, { signal: controller.signal, redirect: "manual" });
+    clearTimeout(timer);
+    if (!(resp.status >= 200 && resp.status < 400)) {
+      return {
+        key,
+        status: "down",
+        checked_at: new Date().toISOString(),
+        detail: `http ${resp.status}`,
+        latency_ms: Date.now() - started,
+      };
+    }
+
+    let overloaded = false;
+    let reason = "ok";
+    try {
+      const body = (await resp.json()) as { overloaded?: boolean; reason?: string };
+      overloaded = body.overloaded === true;
+      reason = body.reason || (overloaded ? "overloaded" : "ok");
+    } catch {
+      reason = "status_parse_failed";
+    }
+
+    return {
+      key,
+      status: overloaded ? "down" : "up",
+      checked_at: new Date().toISOString(),
+      detail: overloaded ? `overloaded:${reason}` : reason,
+      latency_ms: Date.now() - started,
+      overloaded,
+    };
+  } catch (error) {
+    return {
+      key,
+      status: "down",
+      checked_at: new Date().toISOString(),
+      detail: error instanceof Error ? error.message : "network error",
+      latency_ms: Date.now() - started,
+      overloaded: false,
     };
   }
 };
@@ -185,11 +241,18 @@ systemRoutes.get("/ops/status-center", async (c) => {
 
   const bridgeUrl = c.env.BRIDGE_HEALTH_URL || "https://bridge.hybcdg.com/health";
   const runnerUrl = c.env.RUNNER_HEALTH_URL || "https://runner.hybcdg.com/health";
-  const [bridgeHealth, runnerHealth] = await Promise.all([
+  const relayStatusUrls = parseCsvUrls(c.env.RELAY_STATUS_URLS);
+  const relayChecks = relayStatusUrls.map((url, index) => {
+    const key = `relay_${index + 1}`;
+    return checkRelayStatus(key, url);
+  });
+
+  const externalChecks = await Promise.all([
     checkExternalHealth("bridge_service", bridgeUrl),
     checkExternalHealth("runner_service", runnerUrl),
+    ...relayChecks,
   ]);
-  items.push(bridgeHealth, runnerHealth);
+  items.push(...externalChecks);
 
   const nodeRows = await c.env.DB.prepare(
     `SELECT node_id, node_name, status, last_heartbeat_at
@@ -225,11 +288,13 @@ systemRoutes.get("/ops/status-center", async (c) => {
 });
 
 systemRoutes.get("/ops/wecom-bridge-config", async (c) => {
+  const relayStatusUrls = parseCsvUrls(c.env.RELAY_STATUS_URLS);
   return c.json({
     success: true,
     data: {
       wechat_bridge_base_url: c.env.WECHAT_BRIDGE_BASE_URL || "",
       has_bridge_token: Boolean(c.env.WECHAT_BRIDGE_TOKEN),
+      relay_status_urls: relayStatusUrls,
     },
   });
 });

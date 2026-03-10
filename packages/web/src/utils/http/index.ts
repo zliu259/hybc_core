@@ -12,6 +12,11 @@ import type {
 import { stringify } from "qs";
 import { getToken, formatToken, removeToken } from "@/utils/auth";
 import { useUserStoreHook } from "@/store/modules/user";
+import {
+  clearRelayCooldown,
+  getRelayCandidates,
+  markRelayFailure,
+} from "./relay-pool";
 
 // 相关配置请参考：www.axios-js.com/zh-cn/docs/#axios-request-config-1
 const defaultConfig: AxiosRequestConfig = {
@@ -46,6 +51,64 @@ class PureHttp {
 
   /** 保存当前`Axios`实例对象 */
   private static axiosInstance: AxiosInstance = Axios.create(defaultConfig);
+
+  private static isNetworkFallbackError(error: PureHttpError): boolean {
+    if (error.response) return false;
+    const code = String(error.code || "");
+    return (
+      code === "ECONNABORTED" ||
+      code === "ERR_NETWORK" ||
+      code === "ETIMEDOUT" ||
+      code === "ERR_CONNECTION_ABORTED"
+    );
+  }
+
+  private static async retryWithRelay(
+    error: PureHttpError
+  ): Promise<unknown> {
+    const sourceConfig = error.config as PureHttpRequestConfig | undefined;
+    if (!sourceConfig) throw error;
+    if (sourceConfig.__relayFallbackTried) throw error;
+    if (!PureHttp.isNetworkFallbackError(error)) throw error;
+
+    const baseURL =
+      (typeof sourceConfig.baseURL === "string" && sourceConfig.baseURL) ||
+      (typeof PureHttp.axiosInstance.defaults.baseURL === "string"
+        ? PureHttp.axiosInstance.defaults.baseURL
+        : "") ||
+      (import.meta.env.VITE_API_BASE_URL || "");
+
+    const relayCandidates = await getRelayCandidates(
+      sourceConfig.method,
+      sourceConfig.headers as Record<string, unknown> | undefined,
+      baseURL
+    );
+    if (relayCandidates.length === 0) throw error;
+
+    let lastError: unknown = error;
+    for (const candidate of relayCandidates) {
+      const retryConfig: PureHttpRequestConfig = {
+        ...sourceConfig,
+        headers: {
+          ...(sourceConfig.headers || {}),
+          "X-Relay-Fallback": "1",
+          "X-Relay-Id": candidate.id,
+        },
+        baseURL: candidate.baseUrl,
+        __relayFallbackTried: true,
+        __relayFallbackSource: candidate.id,
+      };
+      try {
+        const response = await PureHttp.axiosInstance.request(retryConfig);
+        clearRelayCooldown(candidate.baseUrl);
+        return response;
+      } catch (candidateError) {
+        markRelayFailure(candidate.baseUrl);
+        lastError = candidateError;
+      }
+    }
+    throw lastError;
+  }
 
   /** 重连原始请求 */
   private static retryOriginalRequest(config: PureHttpRequestConfig) {
@@ -148,7 +211,15 @@ class PureHttp {
         const $error = error;
         $error.isCancelRequest = Axios.isCancel($error);
         // 所有的响应异常 区分来源为取消请求/非取消请求
-        return Promise.reject($error);
+        if ($error.isCancelRequest) {
+          return Promise.reject($error);
+        }
+        return PureHttp.retryWithRelay($error)
+          .then((resp: unknown) => {
+            const response = resp as PureHttpResponse;
+            return response.data;
+          })
+          .catch((fallbackError: unknown) => Promise.reject(fallbackError));
       }
     );
   }

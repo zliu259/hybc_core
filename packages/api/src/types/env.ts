@@ -10,6 +10,7 @@ export interface Env {
   TASK_API_KEY: string;
   BRIDGE_HMAC_SECRET?: string;
   BRIDGE_HEALTH_URL?: string;
+  RELAY_STATUS_URLS?: string;
   RUNNER_HEALTH_URL?: string;
   WECHAT_CORPID?: string;
   WECHAT_SECRET?: string;
