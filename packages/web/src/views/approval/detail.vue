@@ -83,6 +83,10 @@ const getNodeAssignees = (assigneeUserids: string | null): string[] => {
   }
 };
 
+const getNodeAssigneeLabels = (assigneeUserids: string | null): string[] => {
+  return getNodeAssignees(assigneeUserids).map(item => toUserLabel(item));
+};
+
 const nodeStatusColor: Record<string, string> = {
   completed: "#67c23a",
   in_progress: "#409eff",
@@ -285,6 +289,18 @@ const toContractDirectionTagType = (direction: unknown): TagType => {
 };
 
 const paymentCategoryLabelMap: Record<string, string> = {
+  special_approval: "特殊审批",
+  admin_fee: "行政费",
+  labor_fee: "劳务费",
+  machinery_fee: "机械费",
+  material_fee: "材料费",
+  other_fee: "其他费用",
+  specialApproval: "特殊审批",
+  adminFee: "行政费",
+  laborFee: "劳务费",
+  machineryFee: "机械费",
+  materialFee: "材料费",
+  otherFee: "其他费用",
   特殊审批: "特殊审批",
   行政费: "行政费",
   劳务费: "劳务费",
@@ -912,7 +928,7 @@ onMounted(async () => {
                 toBizTypeLabel(detail.instance.biz_type)
               }}</el-descriptions-item>
               <el-descriptions-item label="发起人">{{
-                detail.instance.initiator_userid
+                toUserLabel(detail.instance.initiator_userid)
               }}</el-descriptions-item>
               <el-descriptions-item label="状态">
                 <el-tag size="small">{{ toStatusLabel(detail.instance.status) }}</el-tag>
@@ -1277,8 +1293,8 @@ onMounted(async () => {
                   </div>
                   <div style="font-size: 13px; color: #666; margin-bottom: 4px">
                     设定审批人：
-                    <template v-if="getNodeAssignees(node.assignee_userids).length > 0">
-                      {{ getNodeAssignees(node.assignee_userids).join("、") }}
+                    <template v-if="getNodeAssigneeLabels(node.assignee_userids).length > 0">
+                      {{ getNodeAssigneeLabels(node.assignee_userids).join("、") }}
                     </template>
                     <template v-else>-</template>
                   </div>
@@ -1287,7 +1303,7 @@ onMounted(async () => {
                     :key="task.id"
                     style="font-size: 13px; color: #666; margin-top: 4px"
                   >
-                    <span>{{ task.assignee_userid }}</span>
+                    <span>{{ toUserLabel(task.assignee_userid) }}</span>
                     <el-button
                       v-if="isSuperAdmin && task.status === 'pending' && task.assignee_userid !== 'AI_GATE'"
                       link

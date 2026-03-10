@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import {
   listPendingApprovals,
@@ -9,12 +9,14 @@ import {
   type ProcessedApprovalItem,
   type ApprovalInstance
 } from "@/api/approval";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 import { formatBeijingDateTime } from "@/utils/datetime";
 
 defineOptions({ name: "ApprovalCenter" });
 
 const router = useRouter();
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const activeTab = ref("pending");
 
 const bizTypeOptions = [
@@ -121,7 +123,23 @@ const gotoDetail = (id: number) => {
 const bizTypeLabel = (value: string) =>
   bizTypeOptions.find(o => o.value === value)?.label ?? toBizTypeLabel(value);
 
-onMounted(loadPending);
+const userNameMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const item of wecomUsers.value) {
+    map.set(item.userid, item.name || item.userid);
+  }
+  return map;
+});
+
+const toUserLabel = (userid: string | null | undefined) => {
+  if (!userid) return "-";
+  return userNameMap.value.get(userid) ?? userid;
+};
+
+onMounted(async () => {
+  await loadWecomUsers();
+  await loadPending();
+});
 </script>
 
 <template>
@@ -175,7 +193,9 @@ onMounted(loadPending);
             min-width="220"
             show-overflow-tooltip
           />
-          <el-table-column prop="initiator_userid" label="发起人" width="140" />
+          <el-table-column label="发起人" width="140">
+            <template #default="{ row }">{{ toUserLabel(row.initiator_userid) }}</template>
+          </el-table-column>
           <el-table-column
             prop="current_node_name"
             label="当前节点"
@@ -229,7 +249,9 @@ onMounted(loadPending);
             min-width="220"
             show-overflow-tooltip
           />
-          <el-table-column prop="initiator_userid" label="发起人" width="140" />
+          <el-table-column label="发起人" width="140">
+            <template #default="{ row }">{{ toUserLabel(row.initiator_userid) }}</template>
+          </el-table-column>
           <el-table-column label="实例状态" width="110">
             <template #default="{ row }">
               <el-tag :type="statusTagType[row.status] ?? 'info'" size="small">
@@ -291,7 +313,9 @@ onMounted(loadPending);
             min-width="220"
             show-overflow-tooltip
           />
-          <el-table-column prop="initiator_userid" label="发起人" width="140" />
+          <el-table-column label="发起人" width="140">
+            <template #default="{ row }">{{ toUserLabel(row.initiator_userid) }}</template>
+          </el-table-column>
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
               <el-tag :type="statusTagType[row.status] ?? 'info'" size="small">

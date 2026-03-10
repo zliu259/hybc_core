@@ -73,6 +73,35 @@ const aiStatusTagType: Record<string, TagType> = {
   completed: "success",
   failed: "danger"
 };
+const aiStatusLabelMap: Record<string, string> = {
+  none: "未触发",
+  pending: "审查中",
+  completed: "已完成",
+  failed: "失败"
+};
+
+const bizStatusLabelMap: Record<string, string> = {
+  draft: "草稿",
+  pending: "待处理",
+  in_progress: "审批中",
+  approved: "已通过",
+  rejected: "已驳回",
+  cancelled: "已取消",
+  withdrawn: "已撤回",
+  paid: "已支付",
+  completed: "已完成",
+  failed: "失败"
+};
+
+const toBizStatusLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return bizStatusLabelMap[value] ?? value;
+};
+
+const toAiStatusLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return aiStatusLabelMap[value] ?? value;
+};
 
 const riskLevelLabelMap: Record<string, string> = {
   high: "高风险",
@@ -537,7 +566,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" :loading="loading" style="background: #fffaf2">
+  <el-card v-loading="loading" shadow="never" style="background: #fffaf2">
     <template #header>
       <div
         style="
@@ -780,7 +809,7 @@ onMounted(async () => {
             :type="aiStatusTagType[aiStatus] || 'info'"
             style="margin-left: 8px"
           >
-            {{ aiStatus }}
+            {{ toAiStatusLabel(aiStatus) }}
           </el-tag>
         </div>
       </el-col>
@@ -814,7 +843,9 @@ onMounted(async () => {
       <el-table-column prop="change_type" label="类型" width="100" />
       <el-table-column prop="old_amount" label="原金额" width="120" />
       <el-table-column prop="new_amount" label="新金额" width="120" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{ toBizStatusLabel(scope.row.status) }}</template>
+      </el-table-column>
       <el-table-column prop="reason" label="原因" min-width="220" />
       <el-table-column label="操作" width="150" fixed="right">
         <template #default="scope">
@@ -919,7 +950,9 @@ onMounted(async () => {
       <el-table-column prop="id" label="ID" width="80" />
       <el-table-column prop="serial_no" label="流水号" width="160" />
       <el-table-column prop="amount" label="金额" width="120" />
-      <el-table-column prop="status" label="状态" width="120" />
+      <el-table-column label="状态" width="120">
+        <template #default="scope">{{ toBizStatusLabel(scope.row.status) }}</template>
+      </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
     </el-table>
   </el-card>
