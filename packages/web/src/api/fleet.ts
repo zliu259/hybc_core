@@ -107,6 +107,12 @@ export const listFuelCards = (params?: { status?: string }) => {
   });
 };
 
+export const listMyFuelCards = () => {
+  return http.request<{ success: boolean; data: FuelCard[] }>("get", "/api/v1/fleet/fuel-cards", {
+    params: { mine: true, status: "active" }
+  });
+};
+
 export const createFuelCard = (data: {
   card_no: string;
   issued_to_entity_id?: number;
@@ -120,10 +126,10 @@ export const createFuelCard = (data: {
   );
 };
 
-export const bindFuelCardVehicle = (fuelCardId: number, data: { vehicle_id: number }) => {
+export const bindFuelCardUser = (fuelCardId: number, data: { bind_userid: string }) => {
   return http.request<{ success: boolean }>(
     "post",
-    `/api/v1/fleet/fuel-cards/${fuelCardId}/bind-vehicle`,
+    `/api/v1/fleet/fuel-cards/${fuelCardId}/bind-user`,
     { data }
   );
 };
@@ -138,6 +144,7 @@ export const listFuelQuotaApplications = (params?: { mine?: boolean; status?: st
 
 export const createFuelQuotaApplication = (data: {
   vehicle_id: number;
+  fuel_card_id: number;
   requested_amount: number;
   vehicle_mileage_km: number;
   photo_keys_json?: string;

@@ -5,6 +5,11 @@
       <view class="picker-value">{{vehicleLabels[vehicleIndex]}}</view>
     </picker>
 
+    <view class="label required">油卡卡号</view>
+    <picker mode="selector" range="{{fuelCardLabels}}" value="{{fuelCardIndex}}" bindchange="onFuelCardChange">
+      <view class="picker-value">{{fuelCardLabels[fuelCardIndex]}}</view>
+    </picker>
+
     <view class="label required">申请额度</view>
     <input
       class="input"

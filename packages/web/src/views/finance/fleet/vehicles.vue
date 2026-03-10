@@ -2,8 +2,9 @@
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { listEntities, type Entity } from "@/api/entity";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
-  bindFuelCardVehicle,
+  bindFuelCardUser,
   createFleetVehicle,
   createFuelCard,
   createVehicleMileageLog,
@@ -24,6 +25,7 @@ const vehicles = ref<FleetVehicle[]>([]);
 const cards = ref<FuelCard[]>([]);
 const applications = ref<FuelQuotaApplication[]>([]);
 const loading = ref(false);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const vehicleForm = ref({
   current_plate_no: "",
@@ -47,7 +49,7 @@ const cardForm = ref({
 
 const bindForm = ref({
   fuel_card_id: undefined as number | undefined,
-  vehicle_id: undefined as number | undefined
+  bind_userid: ""
 });
 
 const processDialogVisible = ref(false);
@@ -66,7 +68,8 @@ const loadData = async () => {
       listEntities({ status: "active" }),
       listFleetVehicles(),
       listFuelCards({ status: "active" }),
-      listFuelQuotaApplications({ status: "pending" })
+      listFuelQuotaApplications({ status: "pending" }),
+      loadWecomUsers()
     ]);
     entities.value = entityResult.data;
     vehicles.value = vehicleResult.data;
@@ -125,12 +128,12 @@ const submitFuelCard = async () => {
 };
 
 const submitBinding = async () => {
-  if (!bindForm.value.fuel_card_id || !bindForm.value.vehicle_id) {
-    message("请选择油卡与车辆", { type: "warning" });
+  if (!bindForm.value.fuel_card_id || !bindForm.value.bind_userid.trim()) {
+    message("请选择油卡与员工", { type: "warning" });
     return;
   }
-  await bindFuelCardVehicle(bindForm.value.fuel_card_id, { vehicle_id: bindForm.value.vehicle_id });
-  bindForm.value = { fuel_card_id: undefined, vehicle_id: undefined };
+  await bindFuelCardUser(bindForm.value.fuel_card_id, { bind_userid: bindForm.value.bind_userid.trim() });
+  bindForm.value = { fuel_card_id: undefined, bind_userid: "" };
   message("油卡绑定成功", { type: "success" });
 };
 
@@ -220,9 +223,14 @@ onMounted(loadData);
               <el-option v-for="item in cards" :key="item.id" :label="item.card_no" :value="item.id" />
             </el-select>
           </el-form-item>
-          <el-form-item label="绑定车辆">
-            <el-select v-model="bindForm.vehicle_id" clearable filterable style="width: 220px">
-              <el-option v-for="item in vehicles" :key="item.id" :label="item.current_plate_no" :value="item.id" />
+          <el-form-item label="绑定员工">
+            <el-select v-model="bindForm.bind_userid" clearable filterable style="width: 280px">
+              <el-option
+                v-for="item in wecomUsers"
+                :key="item.userid"
+                :label="`${item.name} (${item.userid})`"
+                :value="item.userid"
+              />
             </el-select>
           </el-form-item>
           <el-button @click="submitBinding">执行绑定</el-button>

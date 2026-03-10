@@ -6,7 +6,9 @@ import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   createFuelQuotaApplication,
   listFleetVehicles,
+  listMyFuelCards,
   listFuelQuotaApplications,
+  type FuelCard,
   type FleetVehicle,
   type FuelQuotaApplication
 } from "@/api/fleet";
@@ -15,11 +17,13 @@ defineOptions({ name: "FuelQuotaApplicationPage" });
 
 const loading = ref(false);
 const vehicles = ref<FleetVehicle[]>([]);
+const fuelCards = ref<FuelCard[]>([]);
 const myApplications = ref<FuelQuotaApplication[]>([]);
 const photoKeys = ref<string[]>([]);
 
 const form = ref({
   vehicle_id: undefined as number | undefined,
+  fuel_card_id: undefined as number | undefined,
   requested_amount: 0,
   vehicle_mileage_km: 0
 });
@@ -27,11 +31,13 @@ const form = ref({
 const loadData = async () => {
   loading.value = true;
   try {
-    const [vehicleResult, appResult] = await Promise.all([
+    const [vehicleResult, cardResult, appResult] = await Promise.all([
       listFleetVehicles({ status: "active" }),
+      listMyFuelCards(),
       listFuelQuotaApplications({ mine: true })
     ]);
     vehicles.value = vehicleResult.data;
+    fuelCards.value = cardResult.data;
     myApplications.value = appResult.data;
   } finally {
     loading.value = false;
@@ -71,17 +77,22 @@ const submitApplication = async () => {
     message("请选择车辆", { type: "warning" });
     return;
   }
+  if (!form.value.fuel_card_id) {
+    message("请选择油卡", { type: "warning" });
+    return;
+  }
   if (form.value.requested_amount <= 0) {
     message("请输入申请额度", { type: "warning" });
     return;
   }
   await createFuelQuotaApplication({
     vehicle_id: form.value.vehicle_id,
+    fuel_card_id: form.value.fuel_card_id,
     requested_amount: form.value.requested_amount,
     vehicle_mileage_km: form.value.vehicle_mileage_km,
     photo_keys_json: JSON.stringify(photoKeys.value)
   });
-  form.value = { vehicle_id: undefined, requested_amount: 0, vehicle_mileage_km: 0 };
+  form.value = { vehicle_id: undefined, fuel_card_id: undefined, requested_amount: 0, vehicle_mileage_km: 0 };
   photoKeys.value = [];
   await loadData();
   message("油卡额度申请已提交", { type: "success" });
@@ -105,6 +116,11 @@ onMounted(loadData);
           <el-option v-for="item in vehicles" :key="item.id" :label="`${item.current_plate_no} (${item.vehicle_uuid})`" :value="item.id" />
         </el-select>
       </el-form-item>
+      <el-form-item label="油卡卡号">
+        <el-select v-model="form.fuel_card_id" filterable style="width: 100%">
+          <el-option v-for="item in fuelCards" :key="item.id" :label="`${item.card_no}（余额: ${item.latest_balance}）`" :value="item.id" />
+        </el-select>
+      </el-form-item>
       <el-form-item label="申请额度">
         <el-input-number v-model="form.requested_amount" :min="0" :step="100" />
       </el-form-item>
@@ -126,6 +142,7 @@ onMounted(loadData);
       <el-table-column prop="current_plate_no" label="车辆" width="120" />
       <el-table-column prop="vehicle_mileage_km" label="里程" width="100" />
       <el-table-column prop="requested_amount" label="申请额度" width="120" />
+      <el-table-column prop="card_no" label="油卡卡号" width="180" />
       <el-table-column prop="status" label="状态" width="100" />
       <el-table-column prop="requested_at" label="申请日期" width="180" />
       <el-table-column prop="processed_by_userid" label="处理人" width="140" />

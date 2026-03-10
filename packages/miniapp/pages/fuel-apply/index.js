@@ -8,8 +8,12 @@ Page({
     vehicles: [],
     vehicleLabels: ["请选择车辆"],
     vehicleIndex: 0,
+    fuelCards: [],
+    fuelCardLabels: ["请选择油卡"],
+    fuelCardIndex: 0,
     form: {
       vehicle_id: "",
+      fuel_card_id: "",
       requested_amount: "",
       vehicle_mileage_km: ""
     },
@@ -25,17 +29,23 @@ Page({
     if (this.data.loading) return;
     this.setData({ loading: true });
     try {
-      const [vehicleRes, myRes] = await Promise.all([
+      const [vehicleRes, cardRes, myRes] = await Promise.all([
         request({ method: "GET", path: "/api/v1/fleet/vehicles?status=active" }).catch(() => null),
+        request({ method: "GET", path: "/api/v1/fleet/fuel-cards?mine=true&status=active" }).catch(() => null),
         request({ method: "GET", path: "/api/v1/fleet/fuel-applications?mine=true" }).catch(() => null)
       ]);
 
       const vehicles = vehicleRes && Array.isArray(vehicleRes.data) ? vehicleRes.data : [];
+      const fuelCards = cardRes && Array.isArray(cardRes.data) ? cardRes.data : [];
       const myApplications = myRes && Array.isArray(myRes.data) ? myRes.data : [];
       this.setData({
         vehicles,
+        fuelCards,
         vehicleLabels: ["请选择车辆"].concat(
           vehicles.map((item) => `${item.current_plate_no || "-"} (${item.vehicle_uuid || item.id})`)
+        ),
+        fuelCardLabels: ["请选择油卡"].concat(
+          fuelCards.map((item) => `${item.card_no || item.id} (余额: ${item.latest_balance || 0})`)
         ),
         myApplications
       });
@@ -50,6 +60,15 @@ Page({
     this.setData({
       vehicleIndex: index,
       "form.vehicle_id": vehicle ? vehicle.id : ""
+    });
+  },
+
+  onFuelCardChange(e) {
+    const index = Number(e.detail.value || 0);
+    const card = this.data.fuelCards[index - 1] || null;
+    this.setData({
+      fuelCardIndex: index,
+      "form.fuel_card_id": card ? card.id : ""
     });
   },
 
@@ -107,11 +126,16 @@ Page({
   async submit() {
     if (this.data.submitting) return;
     const vehicleId = Number(this.data.form.vehicle_id || 0);
+    const fuelCardId = Number(this.data.form.fuel_card_id || 0);
     const amount = Number(this.data.form.requested_amount || 0);
     const mileage = Number(this.data.form.vehicle_mileage_km || 0);
 
     if (!vehicleId) {
       wx.showToast({ title: "请选择车辆", icon: "none" });
+      return;
+    }
+    if (!fuelCardId) {
+      wx.showToast({ title: "请选择油卡", icon: "none" });
       return;
     }
     if (!Number.isFinite(amount) || amount <= 0) {
@@ -130,6 +154,7 @@ Page({
         path: "/api/v1/fleet/fuel-applications",
         data: {
           vehicle_id: vehicleId,
+          fuel_card_id: fuelCardId,
           requested_amount: amount,
           vehicle_mileage_km: mileage,
           photo_keys_json: JSON.stringify(this.data.photoList.map((item) => item.file_key))
@@ -139,8 +164,10 @@ Page({
       wx.showToast({ title: "申请已提交", icon: "success" });
       this.setData({
         vehicleIndex: 0,
+        fuelCardIndex: 0,
         form: {
           vehicle_id: "",
+          fuel_card_id: "",
           requested_amount: "",
           vehicle_mileage_km: ""
         },

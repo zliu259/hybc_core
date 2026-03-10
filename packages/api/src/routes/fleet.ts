@@ -228,14 +228,26 @@ fleetRoutes.post(
 );
 
 fleetRoutes.get("/fuel-cards", async (c) => {
+  const auth = c.get("auth");
   const status = c.req.query("status");
-  let sql = "SELECT * FROM fuel_card WHERE 1=1";
+  const mine = c.req.query("mine") === "true";
+  let sql = "SELECT DISTINCT card.* FROM fuel_card card";
   const params: string[] = [];
+
+  if (mine) {
+    sql += " JOIN fuel_card_user_binding bind ON bind.fuel_card_id = card.id AND bind.status = 'active'";
+  }
+
+  sql += " WHERE 1=1";
+  if (mine) {
+    sql += " AND bind.bind_userid = ?";
+    params.push(auth.sub);
+  }
   if (status) {
-    sql += " AND status = ?";
+    sql += " AND card.status = ?";
     params.push(status);
   }
-  sql += " ORDER BY id DESC";
+  sql += " ORDER BY card.id DESC";
   const rows = await c.env.DB.prepare(sql).bind(...params).all();
   return c.json({ success: true, data: rows.results ?? [] });
 });
@@ -271,6 +283,30 @@ fleetRoutes.post(
       .run();
 
     return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  }
+);
+
+fleetRoutes.post(
+  "/fuel-cards/:id/bind-user",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const fuelCardId = Number(c.req.param("id"));
+    const body = (await c.req.json()) as { bind_userid: string };
+    if (!body.bind_userid?.trim()) {
+      return c.json({ success: false, error: { message: "bind_userid is required" } }, 400);
+    }
+
+    const ts = nowIso();
+    await c.env.DB.prepare(
+      `INSERT INTO fuel_card_user_binding (fuel_card_id, bind_userid, status, created_at, updated_at)
+       VALUES (?, ?, 'active', ?, ?)
+       ON CONFLICT(fuel_card_id, bind_userid)
+       DO UPDATE SET status = 'active', updated_at = excluded.updated_at`
+    )
+      .bind(fuelCardId, body.bind_userid.trim(), ts, ts)
+      .run();
+
+    return c.json({ success: true }, 201);
   }
 );
 
@@ -334,6 +370,7 @@ fleetRoutes.post(
     const auth = c.get("auth");
     const body = (await c.req.json()) as {
       vehicle_id: number;
+      fuel_card_id: number;
       requested_amount: number;
       vehicle_mileage_km: number;
       photo_keys_json?: string;
@@ -341,6 +378,7 @@ fleetRoutes.post(
 
     if (
       typeof body.vehicle_id !== "number" ||
+      typeof body.fuel_card_id !== "number" ||
       typeof body.requested_amount !== "number" ||
       typeof body.vehicle_mileage_km !== "number"
     ) {
@@ -348,11 +386,27 @@ fleetRoutes.post(
         {
           success: false,
           error: {
-            message: "vehicle_id, requested_amount, vehicle_mileage_km are required"
+            message: "vehicle_id, fuel_card_id, requested_amount, vehicle_mileage_km are required"
           }
         },
         400
       );
+    }
+
+    const fuelCard = await c.env.DB.prepare("SELECT id, status FROM fuel_card WHERE id = ?")
+      .bind(body.fuel_card_id)
+      .first<{ id: number; status: string }>();
+    if (!fuelCard || fuelCard.status !== "active") {
+      return c.json({ success: false, error: { message: "fuel_card_id is invalid or inactive" } }, 400);
+    }
+
+    const cardBinding = await c.env.DB.prepare(
+      "SELECT id FROM fuel_card_user_binding WHERE fuel_card_id = ? AND bind_userid = ? AND status = 'active'"
+    )
+      .bind(body.fuel_card_id, auth.sub)
+      .first<{ id: number }>();
+    if (!cardBinding) {
+      return c.json({ success: false, error: { message: "fuel card is not bound to current user" } }, 400);
     }
 
     const ts = nowIso();
@@ -363,6 +417,7 @@ fleetRoutes.post(
         application_no,
         applicant_userid,
         vehicle_id,
+        fuel_card_id,
         requested_amount,
         vehicle_mileage_km,
         photo_keys_json,
@@ -370,12 +425,13 @@ fleetRoutes.post(
         requested_at,
         created_at,
         updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
     )
       .bind(
         applicationNo,
         auth.sub,
         body.vehicle_id,
+        body.fuel_card_id,
         body.requested_amount,
         body.vehicle_mileage_km,
         body.photo_keys_json ?? null,
@@ -405,6 +461,15 @@ fleetRoutes.post(
       office_remark?: string;
     };
 
+    const currentApplication = await c.env.DB.prepare(
+      "SELECT id, fuel_card_id FROM fuel_quota_application WHERE id = ?"
+    )
+      .bind(id)
+      .first<{ id: number; fuel_card_id: number | null }>();
+    if (!currentApplication) {
+      return c.json({ success: false, error: { message: "application not found" } }, 404);
+    }
+
     if (body.status !== "processed" && body.status !== "rejected") {
       return c.json({ success: false, error: { message: "invalid status" } }, 400);
     }
@@ -426,7 +491,7 @@ fleetRoutes.post(
         processed_by_userid = ?,
         processed_at = ?,
         office_remark = ?,
-        fuel_card_id = ?,
+        fuel_card_id = COALESCE(?, fuel_card_id),
         latest_card_balance = ?,
         updated_at = ?
        WHERE id = ?`
@@ -443,13 +508,12 @@ fleetRoutes.post(
       )
       .run();
 
-    if (
-      body.status === "processed" &&
-      typeof body.fuel_card_id === "number" &&
-      typeof body.latest_card_balance === "number"
-    ) {
+    const targetFuelCardId =
+      typeof body.fuel_card_id === "number" ? body.fuel_card_id : currentApplication.fuel_card_id;
+
+    if (body.status === "processed" && typeof body.latest_card_balance === "number" && targetFuelCardId) {
       await c.env.DB.prepare("UPDATE fuel_card SET latest_balance = ?, updated_at = ? WHERE id = ?")
-        .bind(body.latest_card_balance, ts, body.fuel_card_id)
+        .bind(body.latest_card_balance, ts, targetFuelCardId)
         .run();
     }
 
