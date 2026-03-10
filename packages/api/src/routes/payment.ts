@@ -41,6 +41,15 @@ type MarkPaidBody = {
   remark?: string;
 };
 
+const accountToDisplayText = (account: {
+  bank_name: string;
+  bank_branch_no: string | null;
+  account_no: string;
+}) => {
+  const branch = account.bank_branch_no?.trim();
+  return `${account.bank_name}${branch ? `-${branch}` : ""} / ${account.account_no}`;
+};
+
 type AttachmentMeta = {
   file_key: string;
   file_name: string;
@@ -492,8 +501,9 @@ paymentRoutes.post(
       `INSERT INTO payment_request
         (serial_no, contract_id, project_id, applicant_userid, expected_payment_date,
          category, payee_id, amount, amount_cn, content, payment_method,
+         payment_entity_id, payment_entity_bank_account_id, payment_account,
          status, ai_risk_status, attachments_json, remark, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?)`
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?)`
     )
       .bind(
         serialNo,
@@ -507,6 +517,9 @@ paymentRoutes.post(
         amountCn,
         body.content,
         body.payment_method,
+        contract?.entity_id ?? null,
+        null,
+        null,
         body.attachments_json ?? null,
         body.remark ?? null,
         now,
@@ -552,6 +565,24 @@ paymentRoutes.put(
     }
 
     const hasNonAttachmentMutation =
+      body.payment_entity_id !== undefined ||
+      body.payment_entity_bank_account_id !== undefined ||
+      body.payment_account !== undefined ||
+      body.expected_payment_date !== undefined ||
+      body.category !== undefined ||
+      body.payee_id !== undefined ||
+      body.amount !== undefined ||
+      body.content !== undefined ||
+      body.payment_method !== undefined ||
+      body.remark !== undefined ||
+      body.status !== undefined;
+
+    const hasPayoutMutation =
+      body.payment_entity_id !== undefined ||
+      body.payment_entity_bank_account_id !== undefined ||
+      body.payment_account !== undefined;
+
+    const hasBusinessMutationExcludingPayout =
       body.expected_payment_date !== undefined ||
       body.category !== undefined ||
       body.payee_id !== undefined ||
@@ -571,7 +602,31 @@ paymentRoutes.put(
 
     if (!isSuperAdmin) {
       if (existing.status !== "draft") {
-        if (!(approvalFinished && !hasNonAttachmentMutation)) {
+        if (approvalInProgress && hasPayoutMutation && !hasBusinessMutationExcludingPayout) {
+          const approverTask = existing.approval_instance_id
+            ? await c.env.DB.prepare(
+                `SELECT id FROM approval_task
+                 WHERE instance_id = ?
+                   AND assignee_userid = ?
+                   AND status IN ('pending', 'in_progress')
+                 ORDER BY id DESC LIMIT 1`
+              )
+                .bind(existing.approval_instance_id, auth.sub)
+                .first<{ id: number }>()
+            : null;
+
+          if (!approverTask) {
+            return c.json(
+              {
+                success: false,
+                error: {
+                  message: "Only current approver can adjust payout entity/account during approval"
+                }
+              },
+              400
+            );
+          }
+        } else if (!(approvalFinished && !hasNonAttachmentMutation)) {
           return c.json(
             {
               success: false,
@@ -623,6 +678,51 @@ paymentRoutes.put(
     }
 
     const newAmountCn = body.amount !== undefined ? toAmountChinese(body.amount) : null;
+
+    let normalizedPaymentAccount: string | null = null;
+    let normalizedPaymentEntityBankAccountId: number | null = null;
+
+    if (body.payment_entity_bank_account_id !== undefined) {
+      if (body.payment_entity_bank_account_id === null) {
+        normalizedPaymentEntityBankAccountId = null;
+      } else if (typeof body.payment_entity_bank_account_id === "number") {
+        const bankAccount = await c.env.DB.prepare(
+          "SELECT id, entity_id, bank_name, bank_branch_no, account_no FROM entity_bank_account WHERE id = ? AND status = 'active'"
+        )
+          .bind(body.payment_entity_bank_account_id)
+          .first<{
+            id: number;
+            entity_id: number;
+            bank_name: string;
+            bank_branch_no: string | null;
+            account_no: string;
+          }>();
+
+        if (!bankAccount) {
+          return c.json({ success: false, error: { message: "Payment bank account not found" } }, 400);
+        }
+        if (
+          typeof body.payment_entity_id === "number" &&
+          bankAccount.entity_id !== body.payment_entity_id
+        ) {
+          return c.json(
+            { success: false, error: { message: "Selected account does not belong to selected entity" } },
+            400
+          );
+        }
+
+        normalizedPaymentEntityBankAccountId = bankAccount.id;
+        normalizedPaymentAccount = accountToDisplayText(bankAccount);
+        if (body.payment_entity_id === undefined) {
+          body.payment_entity_id = bankAccount.entity_id;
+        }
+      }
+    }
+
+    if (body.payment_account !== undefined) {
+      normalizedPaymentAccount = body.payment_account?.trim() || null;
+    }
+
     const auditRemark =
       isSuperAdmin && hasNonAttachmentMutation
         ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
@@ -637,6 +737,9 @@ paymentRoutes.put(
         amount_cn = COALESCE(?, amount_cn),
         content = COALESCE(?, content),
         payment_method = COALESCE(?, payment_method),
+        payment_entity_id = COALESCE(?, payment_entity_id),
+        payment_entity_bank_account_id = COALESCE(?, payment_entity_bank_account_id),
+        payment_account = COALESCE(?, payment_account),
         attachments_json = COALESCE(?, attachments_json),
         remark = COALESCE(?, remark),
         status = COALESCE(?, status),
@@ -651,6 +754,9 @@ paymentRoutes.put(
         newAmountCn,
         body.content ?? null,
         body.payment_method ?? null,
+        body.payment_entity_id ?? null,
+        normalizedPaymentEntityBankAccountId,
+        normalizedPaymentAccount,
         body.attachments_json ?? null,
         auditRemark ?? null,
         body.status ?? null,

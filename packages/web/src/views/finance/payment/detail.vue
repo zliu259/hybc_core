@@ -521,12 +521,87 @@ const applyApprovalNoteTemplate = (value: string) => {
 
 const paidDialogVisible = ref(false);
 const paidSubmitting = ref(false);
+const payoutSaving = ref(false);
 const paidForm = ref({
   paid_at: "",
   payment_reference: "",
   payment_account: "",
   remark: ""
 });
+
+const payoutForm = ref({
+  payment_entity_id: undefined as number | undefined,
+  payment_entity_bank_account_id: undefined as number | undefined,
+  payment_account: ""
+});
+
+const payoutEntity = computed(() => {
+  if (!payoutForm.value.payment_entity_id) return null;
+  return entities.value.find(item => item.id === payoutForm.value.payment_entity_id) ?? null;
+});
+
+const payoutEntityAccounts = computed(() => {
+  if (!payoutForm.value.payment_entity_id) return [];
+  return (entityBankAccountMap.value[payoutForm.value.payment_entity_id] ?? []).filter(
+    item => item.status === "active"
+  );
+});
+
+const canAdjustPayoutInApproval = computed(() => {
+  if (isCreate.value || !inApprovalFlow.value || !approvalDetail.value) return false;
+  const actions = approvalDetail.value.available_actions ?? [];
+  return actions.includes("approve") || actions.includes("reject") || actions.includes("return_prev");
+});
+
+const onPayoutEntityChange = (entityId: number | undefined) => {
+  if (!entityId) {
+    payoutForm.value.payment_entity_bank_account_id = undefined;
+    payoutForm.value.payment_account = "";
+    return;
+  }
+  const accounts = (entityBankAccountMap.value[entityId] ?? []).filter(item => item.status === "active");
+  if (accounts.length > 0) {
+    payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
+    payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
+  } else {
+    payoutForm.value.payment_entity_bank_account_id = undefined;
+    payoutForm.value.payment_account = "";
+  }
+};
+
+const onPayoutAccountChange = (accountId: number | undefined) => {
+  if (!accountId) {
+    payoutForm.value.payment_account = "";
+    return;
+  }
+  const target = payoutEntityAccounts.value.find(item => item.id === accountId);
+  payoutForm.value.payment_account = target ? `${target.bank_name} / ${target.account_no}` : "";
+};
+
+const savePayoutSelection = async () => {
+  if (!detail.value || isCreate.value) return;
+  if (!payoutForm.value.payment_entity_id) {
+    message("请选择付款主体", { type: "warning" });
+    return;
+  }
+  if (!payoutForm.value.payment_entity_bank_account_id) {
+    message("请选择付款账户", { type: "warning" });
+    return;
+  }
+
+  payoutSaving.value = true;
+  try {
+    await updatePaymentRequest(detail.value.id, {
+      payment_entity_id: payoutForm.value.payment_entity_id,
+      payment_entity_bank_account_id: payoutForm.value.payment_entity_bank_account_id,
+      payment_account: payoutForm.value.payment_account || null
+    });
+    message("付款主体与账户已更新", { type: "success" });
+    await loadDetail();
+  } finally {
+    payoutSaving.value = false;
+  }
+};
 
 const loadRefs = async () => {
   const [contractRes, payeeRes, projectRes, entityRes] = await Promise.all([
@@ -586,6 +661,11 @@ const loadDetail = async () => {
       payment_method: result.data.payment_method,
       remark: result.data.remark ?? ""
     };
+    payoutForm.value = {
+      payment_entity_id: result.data.payment_entity_id ?? selectedContract.value?.entity_id ?? undefined,
+      payment_entity_bank_account_id: result.data.payment_entity_bank_account_id ?? undefined,
+      payment_account: result.data.payment_account ?? ""
+    };
     superEditMode.value = false;
     superEditNote.value = "";
     attachmentItems.value = parseAttachments(result.data.attachments_json);
@@ -593,6 +673,19 @@ const loadDetail = async () => {
     riskStatus.value = rr.data.status;
     riskReport.value = rr.data.result;
     await loadApprovalDetail(result.data.approval_instance_id);
+    if (
+      payoutForm.value.payment_entity_id &&
+      !payoutForm.value.payment_entity_bank_account_id
+    ) {
+      const accounts =
+        entityBankAccountMap.value[payoutForm.value.payment_entity_id]?.filter(item => item.status === "active") ?? [];
+      if (accounts.length > 0) {
+        payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
+        if (!payoutForm.value.payment_account) {
+          payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
+        }
+      }
+    }
   } finally {
     loading.value = false;
   }
@@ -906,6 +999,58 @@ onMounted(async () => {
       style="margin-bottom: 12px"
     />
 
+    <el-card
+      v-if="canAdjustPayoutInApproval"
+      shadow="never"
+      style="margin-bottom: 12px; border: 1px solid #f3d19e"
+    >
+      <template #header>
+        <span>审批操作区 - 付款主体与账户调整</span>
+      </template>
+      <el-form inline>
+        <el-form-item label="付款主体">
+          <el-select
+            v-model="payoutForm.payment_entity_id"
+            clearable
+            filterable
+            style="width: 260px"
+            @change="onPayoutEntityChange"
+          >
+            <el-option
+              v-for="item in entities"
+              :key="item.id"
+              :label="item.entity_name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="付款账户">
+          <el-select
+            v-model="payoutForm.payment_entity_bank_account_id"
+            clearable
+            filterable
+            style="width: 360px"
+            @change="onPayoutAccountChange"
+          >
+            <el-option
+              v-for="item in payoutEntityAccounts"
+              :key="item.id"
+              :label="`${item.bank_name} / ${item.account_no}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button type="primary" :loading="payoutSaving" @click="savePayoutSelection"
+            >保存出纳账户选择</el-button
+          >
+        </el-form-item>
+      </el-form>
+      <div style="margin-top: 8px; color: #8c6a2f; font-size: 12px">
+        当前选择：{{ payoutEntity?.entity_name || "-" }} / {{ payoutForm.payment_account || "-" }}
+      </div>
+    </el-card>
+
     <el-form
       v-if="isSuperAdmin && !isCreate"
       inline
@@ -1174,9 +1319,10 @@ onMounted(async () => {
         selectedEntity?.entity_name || "-"
       }}</el-descriptions-item>
       <el-descriptions-item label="我方账号" :span="2">{{
-        selectedEntityAccount
-          ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
-          : "-"
+        detail.payment_account ||
+          (selectedEntityAccount
+            ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
+            : "-")
       }}</el-descriptions-item>
       <el-descriptions-item label="对方单位">{{
         selectedPayee?.name || detail.contract?.counterparty || "-"

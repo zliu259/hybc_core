@@ -21,6 +21,8 @@ export type PaymentRequest = {
   paid_at: string | null;
   paid_by_userid: string | null;
   payment_reference: string | null;
+  payment_entity_id: number | null;
+  payment_entity_bank_account_id: number | null;
   payment_account: string | null;
   attachments_json: string | null;
   remark: string | null;
@@ -108,6 +110,9 @@ export const updatePaymentRequest = (
     amount?: number;
     content?: string;
     payment_method?: string;
+    payment_entity_id?: number | null;
+    payment_entity_bank_account_id?: number | null;
+    payment_account?: string | null;
     attachments_json?: string;
     remark?: string;
     status?: string;
