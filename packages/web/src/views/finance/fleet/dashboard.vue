@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import echarts from "@/plugins/echarts";
 import { listEntities, type Entity } from "@/api/entity";
 import { getVehicleFuelOverview, type VehicleFuelOverviewPeriodType } from "@/api/dashboard";
+import { message } from "@/utils/message";
 
 defineOptions({ name: "FleetFuelDashboard" });
 
@@ -95,15 +96,21 @@ const onPeriodTypeChange = (val: VehicleFuelOverviewPeriodType) => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const [entityResult, overviewResult] = await Promise.all([
-      listEntities({ status: "active" }),
-      getVehicleFuelOverview({
-        period_type: periodType.value,
-        period: period.value,
-        entity_id: entityId.value
-      })
-    ]);
-    entities.value = entityResult.data;
+    const overviewResult = await getVehicleFuelOverview({
+      period_type: periodType.value,
+      period: period.value,
+      entity_id: entityId.value
+    });
+
+    try {
+      const entityResult = await listEntities({ status: "active" });
+      entities.value = entityResult.data;
+    } catch (err) {
+      entities.value = [];
+      const errMsg = err instanceof Error ? err.message : "实体列表加载失败";
+      message(errMsg, { type: "warning" });
+    }
+
     summary.value = overviewResult.data.summary;
     trend.value = overviewResult.data.charts.fuel_apply_trend;
     topVehicles.value = overviewResult.data.charts.top_vehicles;

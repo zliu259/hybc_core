@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { listEntities, type Entity } from "@/api/entity";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
@@ -8,13 +8,16 @@ import {
   createFleetVehicle,
   createFuelCard,
   createVehicleMileageLog,
+  getFuelQuotaPendingSummary,
   listFleetVehicles,
+  listFuelCardBalanceLogs,
   listFuelCards,
   listFuelQuotaApplications,
   processFuelQuotaApplication,
   updateFleetVehicle,
   type FleetVehicle,
   type FuelCard,
+  type FuelCardBalanceLog,
   type FuelQuotaApplication
 } from "@/api/fleet";
 
@@ -23,9 +26,12 @@ defineOptions({ name: "FleetVehicleOps" });
 const entities = ref<Entity[]>([]);
 const vehicles = ref<FleetVehicle[]>([]);
 const cards = ref<FuelCard[]>([]);
-const applications = ref<FuelQuotaApplication[]>([]);
+const pendingApplications = ref<FuelQuotaApplication[]>([]);
+const allApplications = ref<FuelQuotaApplication[]>([]);
 const loading = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+
+const pendingSummary = ref({ pending_count: 0, processed_count: 0, rejected_count: 0 });
 
 const vehicleForm = ref({
   current_plate_no: "",
@@ -61,20 +67,74 @@ const processForm = ref({
   office_remark: ""
 });
 
+const balanceLogDialogVisible = ref(false);
+const selectedCard = ref<FuelCard | null>(null);
+const balanceLogs = ref<FuelCardBalanceLog[]>([]);
+
+const pendingCount = computed(() => pendingSummary.value.pending_count || pendingApplications.value.length);
+
+const fuelStatusLabel = (status: string) => {
+  if (status === "pending") return "待处理";
+  if (status === "processed") return "已处理";
+  if (status === "rejected") return "已拒绝";
+  return status;
+};
+
+const ownershipText = (value: string) => {
+  if (value === "company_owned") return "公司车辆";
+  if (value === "employee_owned") return "员工车辆";
+  return value;
+};
+
+const resolveUserName = (userid: string | null | undefined) => {
+  if (!userid) return "-";
+  const matched = wecomUsers.value.find(item => item.userid === userid);
+  return matched?.name?.trim() ? `${matched.name} (${userid})` : userid;
+};
+
+const formatBoundUsers = (row: FuelCard) => {
+  const raw = (row.bind_userids || "").trim();
+  if (!raw) return "未绑定";
+  return raw
+    .split(",")
+    .map(item => item.trim())
+    .filter(Boolean)
+    .map(userid => resolveUserName(userid))
+    .join("、");
+};
+
+const operationTypeLabel = (operationType: FuelCardBalanceLog["operation_type"]) => {
+  if (operationType === "card_created") return "建卡";
+  if (operationType === "application_processed") return "申请处理";
+  if (operationType === "manual_adjustment") return "人工调整";
+  return operationType;
+};
+
 const loadData = async () => {
   loading.value = true;
   try {
-    const [entityResult, vehicleResult, cardResult, appResult] = await Promise.all([
+    const [
+      entityResult,
+      vehicleResult,
+      cardResult,
+      pendingResult,
+      allResult,
+      pendingSummaryResult
+    ] = await Promise.all([
       listEntities({ status: "active" }),
       listFleetVehicles(),
       listFuelCards({ status: "active" }),
       listFuelQuotaApplications({ status: "pending" }),
+      listFuelQuotaApplications(),
+      getFuelQuotaPendingSummary(),
       loadWecomUsers()
     ]);
     entities.value = entityResult.data;
     vehicles.value = vehicleResult.data;
     cards.value = cardResult.data;
-    applications.value = appResult.data;
+    pendingApplications.value = pendingResult.data;
+    allApplications.value = allResult.data;
+    pendingSummary.value = pendingSummaryResult.data;
   } finally {
     loading.value = false;
   }
@@ -134,6 +194,7 @@ const submitBinding = async () => {
   }
   await bindFuelCardUser(bindForm.value.fuel_card_id, { bind_userid: bindForm.value.bind_userid.trim() });
   bindForm.value = { fuel_card_id: undefined, bind_userid: "" };
+  await loadData();
   message("油卡绑定成功", { type: "success" });
 };
 
@@ -141,8 +202,8 @@ const openProcess = (row: FuelQuotaApplication) => {
   processTarget.value = row;
   processForm.value = {
     status: "processed",
-    fuel_card_id: undefined,
-    latest_card_balance: 0,
+    fuel_card_id: row.fuel_card_id || undefined,
+    latest_card_balance: row.card_latest_balance || 0,
     office_remark: ""
   };
   processDialogVisible.value = true;
@@ -156,6 +217,13 @@ const submitProcess = async () => {
   processDialogVisible.value = false;
   await loadData();
   message("申请处理完成", { type: "success" });
+};
+
+const openBalanceLogs = async (row: FuelCard) => {
+  selectedCard.value = row;
+  const result = await listFuelCardBalanceLogs(row.id, { page: 1, pageSize: 100 });
+  balanceLogs.value = result.data;
+  balanceLogDialogVisible.value = true;
 };
 
 onMounted(loadData);
@@ -194,7 +262,9 @@ onMounted(loadData);
           <el-table-column prop="vehicle_uuid" label="车辆UUID" min-width="220" />
           <el-table-column prop="current_plate_no" label="当前车牌" width="120" />
           <el-table-column prop="vehicle_model" label="车型" width="140" />
-          <el-table-column prop="ownership_type" label="归属权" width="130" />
+          <el-table-column label="归属权" width="130">
+            <template #default="scope">{{ ownershipText(scope.row.ownership_type) }}</template>
+          </el-table-column>
           <el-table-column prop="owner_name" label="权属人" width="140" />
           <el-table-column prop="status" label="状态" width="100" />
           <el-table-column label="操作" width="110" fixed="right">
@@ -238,23 +308,42 @@ onMounted(loadData);
 
         <el-table :data="cards" style="margin-top: 12px">
           <el-table-column prop="card_no" label="油卡号" min-width="180" />
+          <el-table-column label="绑定员工" min-width="220">
+            <template #default="scope">{{ formatBoundUsers(scope.row) }}</template>
+          </el-table-column>
           <el-table-column prop="latest_balance" label="最新余额" width="120" />
           <el-table-column prop="status" label="状态" width="100" />
           <el-table-column prop="updated_at" label="更新时间" width="180" />
+          <el-table-column label="操作记录" width="120" fixed="right">
+            <template #default="scope">
+              <el-button link type="primary" @click="openBalanceLogs(scope.row)">查看记录</el-button>
+            </template>
+          </el-table-column>
         </el-table>
       </el-tab-pane>
 
-      <el-tab-pane label="办公室处理">
+      <el-tab-pane :label="`办公室处理(${pendingCount})`">
         <el-form inline>
-          <el-form-item label="车辆"><el-select v-model="mileageForm.vehicle_id" clearable filterable style="width: 220px"><el-option v-for="item in vehicles" :key="item.id" :label="item.current_plate_no" :value="item.id" /></el-select></el-form-item>
+          <el-form-item label="车辆"
+            ><el-select v-model="mileageForm.vehicle_id" clearable filterable style="width: 220px"
+              ><el-option
+                v-for="item in vehicles"
+                :key="item.id"
+                :label="item.current_plate_no"
+                :value="item.id"
+              />
+            </el-select></el-form-item
+          >
           <el-form-item label="公里数"><el-input-number v-model="mileageForm.mileage_km" :min="0" /></el-form-item>
           <el-form-item label="备注"><el-input v-model="mileageForm.remark" /></el-form-item>
           <el-button @click="submitMileage">记录里程</el-button>
         </el-form>
 
-        <el-table :data="applications" style="margin-top: 12px">
+        <el-table :data="pendingApplications" style="margin-top: 12px">
           <el-table-column prop="application_no" label="申请单号" min-width="160" />
-          <el-table-column prop="applicant_userid" label="申请人" width="140" />
+          <el-table-column label="申请人" width="180">
+            <template #default="scope">{{ resolveUserName(scope.row.applicant_userid) }}</template>
+          </el-table-column>
           <el-table-column prop="current_plate_no" label="车辆" width="120" />
           <el-table-column prop="vehicle_mileage_km" label="里程" width="100" />
           <el-table-column prop="requested_amount" label="额度" width="110" />
@@ -264,6 +353,26 @@ onMounted(loadData);
               <el-button type="primary" link @click="openProcess(scope.row)">处理</el-button>
             </template>
           </el-table-column>
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="额度申请全量记录">
+        <el-table :data="allApplications" style="margin-top: 12px">
+          <el-table-column prop="application_no" label="申请单号" min-width="160" />
+          <el-table-column label="申请人" width="180">
+            <template #default="scope">{{ resolveUserName(scope.row.applicant_userid) }}</template>
+          </el-table-column>
+          <el-table-column prop="current_plate_no" label="车辆" width="120" />
+          <el-table-column prop="requested_amount" label="额度" width="110" />
+          <el-table-column label="状态" width="100">
+            <template #default="scope">{{ fuelStatusLabel(scope.row.status) }}</template>
+          </el-table-column>
+          <el-table-column prop="office_remark" label="处理备注" min-width="180" />
+          <el-table-column prop="processed_at" label="处理时间" width="180" />
+          <el-table-column label="处理人" width="180">
+            <template #default="scope">{{ resolveUserName(scope.row.processed_by_userid) }}</template>
+          </el-table-column>
+          <el-table-column prop="latest_card_balance" label="处理后余额" width="120" />
         </el-table>
       </el-tab-pane>
     </el-tabs>
@@ -293,5 +402,22 @@ onMounted(loadData);
       <el-button @click="processDialogVisible = false">取消</el-button>
       <el-button type="primary" @click="submitProcess">提交处理</el-button>
     </template>
+  </el-dialog>
+
+  <el-dialog v-model="balanceLogDialogVisible" :title="`油卡操作记录 - ${selectedCard?.card_no || ''}`" width="880px">
+    <el-table :data="balanceLogs" size="small" stripe>
+      <el-table-column label="类型" width="120">
+        <template #default="scope">{{ operationTypeLabel(scope.row.operation_type) }}</template>
+      </el-table-column>
+      <el-table-column prop="previous_balance" label="变更前" width="120" />
+      <el-table-column prop="new_balance" label="变更后" width="120" />
+      <el-table-column prop="change_amount" label="变动值" width="120" />
+      <el-table-column prop="related_application_id" label="关联申请ID" width="120" />
+      <el-table-column label="操作人" min-width="180">
+        <template #default="scope">{{ resolveUserName(scope.row.operator_userid) }}</template>
+      </el-table-column>
+      <el-table-column prop="remark" label="备注" min-width="180" />
+      <el-table-column prop="created_at" label="时间" width="180" />
+    </el-table>
   </el-dialog>
 </template>

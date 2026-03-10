@@ -21,6 +21,21 @@ export type FuelCard = {
   status: string;
   created_at: string;
   updated_at: string;
+  bind_userids?: string;
+  bind_user_count?: number;
+};
+
+export type FuelCardBalanceLog = {
+  id: number;
+  fuel_card_id: number;
+  operation_type: "card_created" | "application_processed" | "manual_adjustment";
+  previous_balance: number;
+  new_balance: number;
+  change_amount: number;
+  related_application_id: number | null;
+  operator_userid: string | null;
+  remark: string | null;
+  created_at: string;
 };
 
 export type FuelQuotaApplication = {
@@ -42,6 +57,7 @@ export type FuelQuotaApplication = {
   current_plate_no: string;
   ownership_type: "company_owned" | "employee_owned";
   card_no: string | null;
+  card_latest_balance: number | null;
 };
 
 export const listFleetVehicles = (params?: {
@@ -107,6 +123,16 @@ export const listFuelCards = (params?: { status?: string }) => {
   });
 };
 
+export const listFuelCardBalanceLogs = (fuelCardId: number, params?: { page?: number; pageSize?: number }) => {
+  return http.request<{
+    success: boolean;
+    data: FuelCardBalanceLog[];
+    pagination: { page: number; pageSize: number; total: number };
+  }>("get", `/api/v1/fleet/fuel-cards/${fuelCardId}/balance-logs`, {
+    params
+  });
+};
+
 export const listMyFuelCards = () => {
   return http.request<{ success: boolean; data: FuelCard[] }>("get", "/api/v1/fleet/fuel-cards", {
     params: { mine: true, status: "active" }
@@ -140,6 +166,13 @@ export const listFuelQuotaApplications = (params?: { mine?: boolean; status?: st
     "/api/v1/fleet/fuel-applications",
     { params }
   );
+};
+
+export const getFuelQuotaPendingSummary = () => {
+  return http.request<{
+    success: boolean;
+    data: { pending_count: number; processed_count: number; rejected_count: number };
+  }>("get", "/api/v1/fleet/fuel-applications/pending-summary");
 };
 
 export const createFuelQuotaApplication = (data: {

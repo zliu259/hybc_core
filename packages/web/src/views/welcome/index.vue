@@ -15,6 +15,7 @@ import {
   listReimbursementEnvelopes,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
+import { getFuelQuotaPendingSummary } from "@/api/fleet";
 import { message } from "@/utils/message";
 
 defineOptions({
@@ -41,6 +42,7 @@ const bankForm = ref({
 });
 const pendingApprovalItems = ref<PendingApprovalItem[]>([]);
 const pendingApprovalTotal = ref(0);
+const fuelOfficePendingCount = ref(0);
 
 type PersonalCertificate = {
   id: number;
@@ -77,6 +79,10 @@ const canLaunchOutboundPayment = computed(() =>
   roles.value.some(role =>
     ["super_admin", "manager", "site_manager", "finance", "operator"].includes(role)
   )
+);
+
+const canHandleFuelOffice = computed(() =>
+  roles.value.some(role => ["super_admin", "manager", "finance"].includes(role))
 );
 
 const certStatus = (expireDate: string) => {
@@ -139,6 +145,13 @@ const loadData = async () => {
     bankCards.value = bankAccountResult.data;
     pendingApprovalItems.value = pendingResult.data || [];
     pendingApprovalTotal.value = pendingResult.pagination?.total || 0;
+
+    if (canHandleFuelOffice.value) {
+      const fuelPendingResult = await getFuelQuotaPendingSummary();
+      fuelOfficePendingCount.value = fuelPendingResult.data.pending_count;
+    } else {
+      fuelOfficePendingCount.value = 0;
+    }
     if (!bankCards.value.length) {
       bankCards.value = [
         {
@@ -225,6 +238,10 @@ const goFuelApplication = () => {
 
 const goMyApplications = () => {
   router.push("/workspace/my-applications");
+};
+
+const goFuelOfficeDesk = () => {
+  router.push("/finance/fleet/vehicles");
 };
 
 const goApprovalItem = (item: PendingApprovalItem) => {
@@ -315,6 +332,14 @@ const onCertUpload = (file: UploadFile) => {
         >
         <el-button @click="goFuelApplication">油卡额度申请</el-button>
         <el-button @click="goMyApplications">我的申请</el-button>
+        <el-badge
+          v-if="canHandleFuelOffice"
+          :value="fuelOfficePendingCount"
+          :hidden="fuelOfficePendingCount <= 0"
+          :max="99"
+        >
+          <el-button @click="goFuelOfficeDesk">油卡办公室待办</el-button>
+        </el-badge>
         <el-button @click="router.push('/project/hub')">进入项目大厅</el-button>
         <el-badge
           :value="pendingApprovalCount"
@@ -428,9 +453,17 @@ const onCertUpload = (file: UploadFile) => {
       <template #header>
         <div class="card-header card-header--with-action">
           <span>我的待办提醒（{{ pendingApprovalCount }}）</span>
-          <el-button link type="primary" @click="goApprovalDesk"
-            >进入统一审批台</el-button
-          >
+          <el-space>
+            <el-badge
+              v-if="canHandleFuelOffice"
+              :value="fuelOfficePendingCount"
+              :hidden="fuelOfficePendingCount <= 0"
+              :max="99"
+            >
+              <el-button link type="primary" @click="goFuelOfficeDesk">油卡办公室待办</el-button>
+            </el-badge>
+            <el-button link type="primary" @click="goApprovalDesk">进入统一审批台</el-button>
+          </el-space>
         </div>
       </template>
       <el-empty

@@ -146,6 +146,8 @@ onMounted(loadData);
       <el-table-column prop="status" label="状态" width="100" />
       <el-table-column prop="requested_at" label="申请日期" width="180" />
       <el-table-column prop="processed_by_userid" label="处理人" width="140" />
+      <el-table-column prop="processed_at" label="处理时间" width="180" />
+      <el-table-column prop="office_remark" label="处理备注" min-width="180" />
       <el-table-column prop="latest_card_balance" label="卡余额" width="120" />
     </el-table>
   </el-card>

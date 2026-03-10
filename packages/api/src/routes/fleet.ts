@@ -7,6 +7,49 @@ import type { Env } from "../types/env";
 
 const nowIso = () => new Date().toISOString();
 
+const appendFuelCardBalanceLog = async (
+  env: Env,
+  payload: {
+    fuelCardId: number;
+    operationType: "card_created" | "application_processed" | "manual_adjustment";
+    previousBalance: number;
+    newBalance: number;
+    relatedApplicationId?: number;
+    operatorUserid?: string;
+    remark?: string;
+  }
+) => {
+  const ts = nowIso();
+  const previousBalance = Number.isFinite(payload.previousBalance) ? payload.previousBalance : 0;
+  const newBalance = Number.isFinite(payload.newBalance) ? payload.newBalance : 0;
+  const changeAmount = newBalance - previousBalance;
+  await env.DB.prepare(
+    `INSERT INTO fuel_card_balance_log (
+      fuel_card_id,
+      operation_type,
+      previous_balance,
+      new_balance,
+      change_amount,
+      related_application_id,
+      operator_userid,
+      remark,
+      created_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      payload.fuelCardId,
+      payload.operationType,
+      previousBalance,
+      newBalance,
+      changeAmount,
+      payload.relatedApplicationId ?? null,
+      payload.operatorUserid ?? null,
+      payload.remark ?? null,
+      ts
+    )
+    .run();
+};
+
 type CompanyVehicle = {
   id: number;
   vehicle_uuid: string;
@@ -231,23 +274,25 @@ fleetRoutes.get("/fuel-cards", async (c) => {
   const auth = c.get("auth");
   const status = c.req.query("status");
   const mine = c.req.query("mine") === "true";
-  let sql = "SELECT DISTINCT card.* FROM fuel_card card";
+  let sql = `SELECT
+    card.*,
+    IFNULL(GROUP_CONCAT(DISTINCT bind.bind_userid), '') AS bind_userids,
+    COUNT(DISTINCT CASE WHEN bind.status = 'active' THEN bind.bind_userid END) AS bind_user_count
+   FROM fuel_card card`;
   const params: string[] = [];
 
-  if (mine) {
-    sql += " JOIN fuel_card_user_binding bind ON bind.fuel_card_id = card.id AND bind.status = 'active'";
-  }
+  sql += " LEFT JOIN fuel_card_user_binding bind ON bind.fuel_card_id = card.id";
 
   sql += " WHERE 1=1";
   if (mine) {
-    sql += " AND bind.bind_userid = ?";
+    sql += " AND bind.status = 'active' AND bind.bind_userid = ?";
     params.push(auth.sub);
   }
   if (status) {
     sql += " AND card.status = ?";
     params.push(status);
   }
-  sql += " ORDER BY card.id DESC";
+  sql += " GROUP BY card.id ORDER BY card.id DESC";
   const rows = await c.env.DB.prepare(sql).bind(...params).all();
   return c.json({ success: true, data: rows.results ?? [] });
 });
@@ -282,7 +327,59 @@ fleetRoutes.post(
       )
       .run();
 
+    await appendFuelCardBalanceLog(c.env, {
+      fuelCardId: Number(result.meta.last_row_id),
+      operationType: "card_created",
+      previousBalance: 0,
+      newBalance: typeof body.latest_balance === "number" ? body.latest_balance : 0,
+      operatorUserid: c.get("auth").sub,
+      remark: "create fuel card"
+    });
+
     return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  }
+);
+
+fleetRoutes.get(
+  "/fuel-cards/:id/balance-logs",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const fuelCardId = Number(c.req.param("id"));
+    const page = Number(c.req.query("page") ?? "1");
+    const pageSize = Number(c.req.query("pageSize") ?? "20");
+    const offset = (page - 1) * pageSize;
+
+    const countRow = await c.env.DB.prepare(
+      "SELECT COUNT(*) AS total FROM fuel_card_balance_log WHERE fuel_card_id = ?"
+    )
+      .bind(fuelCardId)
+      .first<{ total: number }>();
+
+    const rows = await c.env.DB.prepare(
+      `SELECT
+        id,
+        fuel_card_id,
+        operation_type,
+        previous_balance,
+        new_balance,
+        change_amount,
+        related_application_id,
+        operator_userid,
+        remark,
+        created_at
+       FROM fuel_card_balance_log
+       WHERE fuel_card_id = ?
+       ORDER BY id DESC
+       LIMIT ? OFFSET ?`
+    )
+      .bind(fuelCardId, pageSize, offset)
+      .all();
+
+    return c.json({
+      success: true,
+      data: rows.results ?? [],
+      pagination: { page, pageSize, total: countRow?.total ?? 0 }
+    });
   }
 );
 
@@ -342,7 +439,8 @@ fleetRoutes.get("/fuel-applications", async (c) => {
     v.vehicle_uuid,
     v.current_plate_no,
     v.ownership_type,
-    card.card_no
+    card.card_no,
+    card.latest_balance as card_latest_balance
    FROM fuel_quota_application a
    JOIN company_vehicle v ON v.id = a.vehicle_id
    LEFT JOIN fuel_card card ON card.id = a.fuel_card_id
@@ -362,6 +460,29 @@ fleetRoutes.get("/fuel-applications", async (c) => {
   const rows = await c.env.DB.prepare(sql).bind(...params).all();
   return c.json({ success: true, data: rows.results ?? [] });
 });
+
+fleetRoutes.get(
+  "/fuel-applications/pending-summary",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const row = await c.env.DB.prepare(
+      `SELECT
+        SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) AS pending_count,
+        SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) AS processed_count,
+        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected_count
+       FROM fuel_quota_application`
+    ).first<{ pending_count: number; processed_count: number; rejected_count: number }>();
+
+    return c.json({
+      success: true,
+      data: {
+        pending_count: row?.pending_count ?? 0,
+        processed_count: row?.processed_count ?? 0,
+        rejected_count: row?.rejected_count ?? 0
+      }
+    });
+  }
+);
 
 fleetRoutes.post(
   "/fuel-applications",
@@ -441,6 +562,24 @@ fleetRoutes.post(
       )
       .run();
 
+    await c.env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "fuel_quota_application_submitted",
+        "fleet-route",
+        JSON.stringify({
+          application_id: result.meta.last_row_id,
+          application_no: applicationNo,
+          applicant_userid: auth.sub,
+          vehicle_id: body.vehicle_id,
+          fuel_card_id: body.fuel_card_id,
+          requested_amount: body.requested_amount
+        }),
+        ts
+      )
+      .run();
+
     return c.json(
       { success: true, data: { id: result.meta.last_row_id, application_no: applicationNo } },
       201
@@ -512,10 +651,44 @@ fleetRoutes.post(
       typeof body.fuel_card_id === "number" ? body.fuel_card_id : currentApplication.fuel_card_id;
 
     if (body.status === "processed" && typeof body.latest_card_balance === "number" && targetFuelCardId) {
+      const targetCard = await c.env.DB.prepare("SELECT latest_balance FROM fuel_card WHERE id = ?")
+        .bind(targetFuelCardId)
+        .first<{ latest_balance: number }>();
+      const previousBalance = typeof targetCard?.latest_balance === "number" ? targetCard.latest_balance : 0;
+
       await c.env.DB.prepare("UPDATE fuel_card SET latest_balance = ?, updated_at = ? WHERE id = ?")
         .bind(body.latest_card_balance, ts, targetFuelCardId)
         .run();
+
+      await appendFuelCardBalanceLog(c.env, {
+        fuelCardId: targetFuelCardId,
+        operationType: "application_processed",
+        previousBalance,
+        newBalance: body.latest_card_balance,
+        relatedApplicationId: id,
+        operatorUserid: auth.sub,
+        remark: body.office_remark ?? "process fuel quota application"
+      });
     }
+
+    await c.env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "fuel_quota_application_processed",
+        "fleet-route",
+        JSON.stringify({
+          application_id: id,
+          status: body.status,
+          processed_by_userid: auth.sub,
+          fuel_card_id: targetFuelCardId,
+          latest_card_balance:
+            typeof body.latest_card_balance === "number" ? body.latest_card_balance : null,
+          office_remark: body.office_remark ?? null
+        }),
+        ts
+      )
+      .run();
 
     return c.json({ success: true });
   }

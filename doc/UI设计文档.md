@@ -963,19 +963,24 @@
 - 公司实体管理（增强版）：`/admin/system-base/entity` → `packages/web/src/views/entity/index.vue`
 - 财务中心实体资料管理：`/finance/entity/profile` → `packages/web/src/views/entity/index.vue`
 - 油卡额度申请（员工入口）：`/finance/fleet/application` → `packages/web/src/views/finance/fleet/application.vue`
+- 油卡额度全量处理页：`/finance/fleet/applications-all` → `packages/web/src/views/finance/fleet/applications-list.vue`
 - 车辆档案与办公室处理：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
 - 车辆用油领导总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
 
 ### 8.2 API 指向
 - 公司实体增强：`/api/v1/entity`、`/api/v1/entity/:id/attachments`、`/api/v1/entity/:id/storage-summary`
 - 车辆与油卡：`/api/v1/fleet/vehicles`、`/api/v1/fleet/fuel-cards`、`/api/v1/fleet/fuel-applications`
+- 油卡绑定与余额变动记录：`/api/v1/fleet/fuel-cards`（含绑定用户聚合字段）、`/api/v1/fleet/fuel-cards/:id/balance-logs`
 - 办公室处理申请：`/api/v1/fleet/fuel-applications/:id/process`
+- 办公室待办数字汇总：`/api/v1/fleet/fuel-applications/pending-summary`
 - 领导总览：`/api/v1/dashboard/vehicle-fuel-overview`
 - 实体附件管理动作：上传/下载/删除（下载通过 `/api/v1/upload/object/:key`）
 
 ### 8.3 个人工作台员工闭环（2026-03）
 - 个人工作台首页增加入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
+- 个人工作台首页新增“油卡办公室待办”数字提醒入口（财务/经理/超管可见）：`packages/web/src/views/welcome/index.vue`
 - 新增“我的申请”页面，聚合展示员工本人发起的对外付款申请、报销申请、油卡额度申请：`packages/web/src/views/workspace/my-applications/index.vue`
+- “我的申请-油卡额度申请”新增处理结果展示（处理备注、处理时间、处理人、处理后余额）：`packages/web/src/views/workspace/my-applications/index.vue`
 - 个人工作台路由新增：`/workspace/my-applications`：`packages/web/src/router/modules/workspace.ts`
 - 对外付款列表接口新增 `mine/applicant_userid` 过滤，支持员工仅查看本人申请：`packages/api/src/routes/payment.ts`、`packages/web/src/api/payment.ts`
 

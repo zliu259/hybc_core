@@ -261,6 +261,15 @@ export default {
           }
         },
         {
+          path: "/finance/fleet/applications-all",
+          name: "FuelQuotaApplicationAllList",
+          component: () => import("@/views/finance/fleet/applications-list.vue"),
+          meta: {
+            title: "油卡额度全量处理",
+            roles: ["super_admin", "manager", "finance"]
+          }
+        },
+        {
           path: "/finance/fleet/vehicles",
           name: "FleetVehicleOps",
           component: () => import("@/views/finance/fleet/vehicles.vue"),

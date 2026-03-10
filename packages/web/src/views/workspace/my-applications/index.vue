@@ -42,6 +42,23 @@ const fuelStatusLabel = (status: string) => {
   return status;
 };
 
+const fuelProcessResult = (item: FuelQuotaApplication) => {
+  if (item.status === "processed") {
+    const resultParts: string[] = [];
+    if (typeof item.latest_card_balance === "number") {
+      resultParts.push(`余额 ${item.latest_card_balance}`);
+    }
+    if (item.office_remark?.trim()) {
+      resultParts.push(item.office_remark.trim());
+    }
+    return resultParts.length > 0 ? resultParts.join("；") : "已处理";
+  }
+  if (item.status === "rejected") {
+    return item.office_remark?.trim() || "已拒绝";
+  }
+  return "-";
+};
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -132,6 +149,11 @@ onMounted(loadData);
           <el-table-column label="状态" width="120">
             <template #default="scope">{{ fuelStatusLabel(scope.row.status) }}</template>
           </el-table-column>
+          <el-table-column label="处理结果" min-width="220">
+            <template #default="scope">{{ fuelProcessResult(scope.row) }}</template>
+          </el-table-column>
+          <el-table-column prop="processed_at" label="处理时间" width="180" />
+          <el-table-column prop="processed_by_userid" label="处理人" width="140" />
           <el-table-column prop="requested_at" label="申请时间" width="180" />
         </el-table>
       </el-tab-pane>
