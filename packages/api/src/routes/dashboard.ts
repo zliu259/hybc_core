@@ -394,9 +394,9 @@ dashboardRoutes.get(
       `SELECT
         COUNT(*) as apply_count,
         IFNULL(SUM(requested_amount), 0) as requested_amount_total,
-        SUM(CASE WHEN status = 'processed' THEN 1 ELSE 0 END) as processed_count,
-        SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) as rejected_count,
-       SUM(CASE WHEN status = 'pending' THEN 1 ELSE 0 END) as pending_count
+        SUM(CASE WHEN a.status = 'processed' THEN 1 ELSE 0 END) as processed_count,
+        SUM(CASE WHEN a.status = 'rejected' THEN 1 ELSE 0 END) as rejected_count,
+        SUM(CASE WHEN a.status = 'pending' THEN 1 ELSE 0 END) as pending_count
        FROM fuel_quota_application a
        JOIN company_vehicle v ON v.id = a.vehicle_id
        WHERE a.requested_at >= ? AND a.requested_at < ?`
