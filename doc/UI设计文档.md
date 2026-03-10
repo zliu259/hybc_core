@@ -37,6 +37,7 @@
 - 工作台我的报销提交：`packages/web/src/views/workspace/reimbursement/list.vue`
 - 仪表盘：`packages/web/src/views/dashboard/index.vue`
 - 实体管理：`packages/web/src/views/entity/index.vue`
+- 财务中心-实体资料管理：`packages/web/src/views/entity/index.vue`（路由：`/finance/entity/profile`）
 - 数据字典管理：`packages/web/src/views/dict/index.vue`
 - 项目列表：`packages/web/src/views/project/list.vue`
 - 项目选择大厅：`packages/web/src/views/project/hub.vue`
@@ -937,6 +938,7 @@
 
 ### 8.1 页面与路由映射
 - 公司实体管理（增强版）：`/admin/system-base/entity` → `packages/web/src/views/entity/index.vue`
+- 财务中心实体资料管理：`/finance/entity/profile` → `packages/web/src/views/entity/index.vue`
 - 油卡额度申请（员工入口）：`/finance/fleet/application` → `packages/web/src/views/finance/fleet/application.vue`
 - 车辆档案与办公室处理：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
 - 车辆用油领导总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
@@ -946,6 +948,7 @@
 - 车辆与油卡：`/api/v1/fleet/vehicles`、`/api/v1/fleet/fuel-cards`、`/api/v1/fleet/fuel-applications`
 - 办公室处理申请：`/api/v1/fleet/fuel-applications/:id/process`
 - 领导总览：`/api/v1/dashboard/vehicle-fuel-overview`
+- 实体附件管理动作：上传/下载/删除（下载通过 `/api/v1/upload/object/:key`）
 - 每个高风险操作都有确认与结果反馈。
 - 桌面端与移动端关键动作路径均可完成。
 - 样式 token 与状态语义一致，不出现颜色语义冲突。

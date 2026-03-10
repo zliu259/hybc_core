@@ -228,6 +228,11 @@ const removeAttachment = async (attachmentId: number) => {
   message("附件已删除", { type: "success" });
 };
 
+const downloadAttachment = (row: EntityAttachment) => {
+  const url = resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(row.file_key)}`);
+  window.open(url, "_blank", "noopener,noreferrer");
+};
+
 onMounted(loadEntities);
 </script>
 
@@ -351,8 +356,9 @@ onMounted(loadEntities);
                 <template #default="scope">{{ scope.row.file_size ? Math.ceil(scope.row.file_size / 1024) : "-" }}</template>
               </el-table-column>
               <el-table-column prop="created_at" label="上传时间" width="180" />
-              <el-table-column label="操作" width="110" fixed="right">
+              <el-table-column label="操作" width="160" fixed="right">
                 <template #default="scope">
+                  <el-button link type="primary" @click="downloadAttachment(scope.row)">下载</el-button>
                   <el-button link type="danger" @click="removeAttachment(scope.row.id)">删除</el-button>
                 </template>
               </el-table-column>

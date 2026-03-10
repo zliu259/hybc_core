@@ -221,6 +221,27 @@ export default {
       ]
     },
     {
+      path: "/finance/entity-center",
+      name: "FinanceEntityCenter",
+      component: Layout,
+      redirect: "/finance/entity/profile",
+      meta: {
+        title: "实体公司资料",
+        roles: ["super_admin", "manager", "site_manager", "finance"]
+      },
+      children: [
+        {
+          path: "/finance/entity/profile",
+          name: "FinanceEntityProfile",
+          component: () => import("@/views/entity/index.vue"),
+          meta: {
+            title: "实体资料管理",
+            roles: ["super_admin", "manager", "site_manager", "finance"]
+          }
+        }
+      ]
+    },
+    {
       path: "/finance/fleet-center",
       name: "FinanceFleetCenter",
       component: Layout,
