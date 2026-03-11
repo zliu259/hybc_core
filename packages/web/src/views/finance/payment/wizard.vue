@@ -295,7 +295,7 @@ const resetQuickPayeeForm = () => {
 };
 
 const loadPayees = async () => {
-  const payeeRes = await listPayees();
+  const payeeRes = await listPayees({ type: "external" });
   payees.value = payeeRes.data;
 };
 
@@ -326,7 +326,11 @@ const submitQuickExternalPayee = async () => {
       type: "external"
     });
     await loadPayees();
-    contractForm.value.payee_id = created.data.id;
+    if (shouldUseContractFlow.value) {
+      contractForm.value.payee_id = created.data.id;
+    } else {
+      directForm.value.payee_id = created.data.id;
+    }
     quickPayeeDialogVisible.value = false;
     resetQuickPayeeForm();
     message("外部收款人已添加，并自动选中", { type: "success" });
@@ -646,18 +650,23 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="收款人">
-            <el-select
-              v-model="directForm.payee_id"
-              filterable
-              style="width: 360px"
-            >
-              <el-option
-                v-for="item in payees"
-                :key="item.id"
-                :label="`${item.name} (${item.bank_name})`"
-                :value="item.id"
-              />
-            </el-select>
+            <div class="counterparty-field">
+              <el-select
+                v-model="directForm.payee_id"
+                filterable
+                style="width: 360px"
+              >
+                <el-option
+                  v-for="item in payees"
+                  :key="item.id"
+                  :label="`${item.name} (${item.bank_name})`"
+                  :value="item.id"
+                />
+              </el-select>
+              <el-button plain type="primary" @click="openQuickExternalPayeeDialog">
+                快速添加外部收款人
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="付款日期">
             <el-date-picker

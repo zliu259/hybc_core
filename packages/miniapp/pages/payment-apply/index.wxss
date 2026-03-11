@@ -114,3 +114,13 @@
   border: 1rpx solid #dbe8f8;
   background: #f7fbff;
 }
+
+.quick-payee-row {
+  margin-top: 10rpx;
+}
+
+.quick-payee-box {
+  border-style: dashed;
+  border-color: #cddff5;
+  background: #f8fbff;
+}

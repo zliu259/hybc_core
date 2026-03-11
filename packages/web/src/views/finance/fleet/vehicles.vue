@@ -32,6 +32,19 @@ const loading = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const pendingSummary = ref({ pending_count: 0, processed_count: 0, rejected_count: 0 });
+const vehicleStatusFilter = ref<"all" | "active" | "inactive">("all");
+
+const vehicleEditDialogVisible = ref(false);
+const vehicleEditSubmitting = ref(false);
+const editingVehicleId = ref<number | null>(null);
+const vehicleEditForm = ref({
+  current_plate_no: "",
+  vehicle_model: "",
+  ownership_type: "company_owned" as "company_owned" | "employee_owned",
+  owner_name: "",
+  entity_id: undefined as number | undefined,
+  status: "active" as "active" | "inactive"
+});
 
 const vehicleForm = ref({
   current_plate_no: "",
@@ -122,7 +135,9 @@ const loadData = async () => {
       pendingSummaryResult
     ] = await Promise.all([
       listEntities({ status: "active" }),
-      listFleetVehicles(),
+      listFleetVehicles(
+        vehicleStatusFilter.value === "all" ? undefined : { status: vehicleStatusFilter.value }
+      ),
       listFuelCards({ status: "active" }),
       listFuelQuotaApplications({ status: "pending" }),
       listFuelQuotaApplications(),
@@ -160,7 +175,54 @@ const submitVehicle = async () => {
 const markVehicleInactive = async (row: FleetVehicle) => {
   await updateFleetVehicle(row.id, { status: "inactive" });
   await loadData();
-  message("车辆状态已更新", { type: "success" });
+  message("车辆已停用", { type: "success" });
+};
+
+const markVehicleActive = async (row: FleetVehicle) => {
+  await updateFleetVehicle(row.id, { status: "active" });
+  await loadData();
+  message("车辆已启用", { type: "success" });
+};
+
+const openVehicleEdit = (row: FleetVehicle) => {
+  editingVehicleId.value = row.id;
+  vehicleEditForm.value = {
+    current_plate_no: row.current_plate_no || "",
+    vehicle_model: row.vehicle_model || "",
+    ownership_type: row.ownership_type,
+    owner_name: row.owner_name || "",
+    entity_id: typeof row.entity_id === "number" ? row.entity_id : undefined,
+    status: row.status === "inactive" ? "inactive" : "active"
+  };
+  vehicleEditDialogVisible.value = true;
+};
+
+const submitVehicleEdit = async () => {
+  if (!editingVehicleId.value) return;
+  if (!vehicleEditForm.value.current_plate_no.trim()) {
+    message("请填写车牌号", { type: "warning" });
+    return;
+  }
+
+  vehicleEditSubmitting.value = true;
+  try {
+    await updateFleetVehicle(editingVehicleId.value, {
+      current_plate_no: vehicleEditForm.value.current_plate_no.trim(),
+      vehicle_model: vehicleEditForm.value.vehicle_model.trim() || null,
+      ownership_type: vehicleEditForm.value.ownership_type,
+      owner_name: vehicleEditForm.value.owner_name.trim() || null,
+      entity_id:
+        typeof vehicleEditForm.value.entity_id === "number"
+          ? vehicleEditForm.value.entity_id
+          : null,
+      status: vehicleEditForm.value.status
+    });
+    vehicleEditDialogVisible.value = false;
+    await loadData();
+    message("车辆档案已更新", { type: "success" });
+  } finally {
+    vehicleEditSubmitting.value = false;
+  }
 };
 
 const submitMileage = async () => {
@@ -241,6 +303,13 @@ onMounted(loadData);
     <el-tabs>
       <el-tab-pane label="车辆档案">
         <el-form inline>
+          <el-form-item label="状态筛选">
+            <el-select v-model="vehicleStatusFilter" style="width: 160px" @change="loadData">
+              <el-option label="全部" value="all" />
+              <el-option label="启用中" value="active" />
+              <el-option label="已停用" value="inactive" />
+            </el-select>
+          </el-form-item>
           <el-form-item label="车牌号"><el-input v-model="vehicleForm.current_plate_no" /></el-form-item>
           <el-form-item label="车型"><el-input v-model="vehicleForm.vehicle_model" /></el-form-item>
           <el-form-item label="归属">
@@ -266,10 +335,27 @@ onMounted(loadData);
             <template #default="scope">{{ ownershipText(scope.row.ownership_type) }}</template>
           </el-table-column>
           <el-table-column prop="owner_name" label="权属人" width="140" />
-          <el-table-column prop="status" label="状态" width="100" />
-          <el-table-column label="操作" width="110" fixed="right">
+          <el-table-column label="状态" width="100">
             <template #default="scope">
-              <el-button link type="danger" @click="markVehicleInactive(scope.row)">停用</el-button>
+              <el-tag :type="scope.row.status === 'active' ? 'success' : 'info'">
+                {{ scope.row.status === "active" ? "启用中" : "已停用" }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="180" fixed="right">
+            <template #default="scope">
+              <el-button link type="primary" @click="openVehicleEdit(scope.row)">编辑</el-button>
+              <el-button
+                v-if="scope.row.status === 'active'"
+                link
+                type="danger"
+                @click="markVehicleInactive(scope.row)"
+              >
+                停用
+              </el-button>
+              <el-button v-else link type="success" @click="markVehicleActive(scope.row)">
+                启用
+              </el-button>
             </template>
           </el-table-column>
         </el-table>
@@ -419,5 +505,42 @@ onMounted(loadData);
       <el-table-column prop="remark" label="备注" min-width="180" />
       <el-table-column prop="created_at" label="时间" width="180" />
     </el-table>
+  </el-dialog>
+
+  <el-dialog v-model="vehicleEditDialogVisible" title="编辑车辆档案" width="560px">
+    <el-form label-width="110px">
+      <el-form-item label="车牌号" required>
+        <el-input v-model="vehicleEditForm.current_plate_no" />
+      </el-form-item>
+      <el-form-item label="车型">
+        <el-input v-model="vehicleEditForm.vehicle_model" />
+      </el-form-item>
+      <el-form-item label="归属">
+        <el-select v-model="vehicleEditForm.ownership_type" style="width: 100%">
+          <el-option label="公司车辆" value="company_owned" />
+          <el-option label="员工车辆" value="employee_owned" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="所属实体">
+        <el-select v-model="vehicleEditForm.entity_id" clearable filterable style="width: 100%">
+          <el-option v-for="item in entities" :key="item.id" :label="item.entity_name" :value="item.id" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="权属人">
+        <el-input v-model="vehicleEditForm.owner_name" />
+      </el-form-item>
+      <el-form-item label="状态">
+        <el-select v-model="vehicleEditForm.status" style="width: 100%">
+          <el-option label="启用中" value="active" />
+          <el-option label="已停用" value="inactive" />
+        </el-select>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="vehicleEditDialogVisible = false">取消</el-button>
+      <el-button type="primary" :loading="vehicleEditSubmitting" @click="submitVehicleEdit">
+        保存
+      </el-button>
+    </template>
   </el-dialog>
 </template>

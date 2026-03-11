@@ -435,7 +435,8 @@
   - 阈值色带与金额变更抽屉保留
 - 智能发单台关系输入收敛：`packages/web/src/views/finance/payment/wizard.vue`
   - 超阈值合同流中“对方单位”改为 `el-select`（来源收款人）
-  - 在“对方单位”字段旁新增“快速添加外部收款人”按钮，弹窗提交后自动刷新收款人下拉并选中新建项。
+  - 收款人数据源限定为 `type=external`，智能发单台不展示内部收款人（内部收款人仅用于报销打款场景）。
+  - 在“对方单位”与“直接付款-收款人”字段旁均提供“快速添加外部收款人”按钮，弹窗提交后自动刷新下拉并在当前流程自动选中新建项。
   - 付款金额、实体 ID 保持 `el-input-number` 数值控件
 - 报销集中打款流程抽屉化：`packages/web/src/views/finance/reimbursement/payout.vue`
   - 登记打款从 `Dialog` 改为 `Drawer`
@@ -910,6 +911,8 @@
 - miniapp 对外付款页重构为“阈值识别 + 双流程（直付/合同）”的一体化页面，阈值内直接创建付款并提审，超阈值自动转合同流程：`packages/miniapp/pages/payment-apply/index.{js,wxml,wxss,json}`
 - 直付流程字段与 Web 对齐：合同（可选）、项目、收款方、付款日期、付款类别、付款方式、付款事由、备注、附件（图片/文件）与提交审批动作：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
 - 合同流程字段与 Web 对齐：项目、我方主体、对方单位、经办人、合同日期、合同类型、合同附件，并支持“同时发起首笔预付款”子流程（金额/类别/日期/方式/事由/附件）：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
+- 收款方数据源与 Web 对齐为仅外部收款人（`type=external`），智能发单台不展示内部收款人，避免与报销打款场景混淆：`packages/miniapp/pages/payment-apply/index.js`
+- 直付与合同两种流程均支持“快速添加外部收款人”，新增成功后刷新下拉并在当前流程自动选中新建项：`packages/miniapp/pages/payment-apply/index.{js,wxml,wxss}`
 - 项目选择组件绑定改为纯 data 数值字段（`directProjectValue/contractProjectValue`），避免模板表达式计算导致的绑定不稳定：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
 - 首笔预付款类别在 UI 使用中文标签（预付款/进度款/结算款），提交值保留后端枚举（`prepayment/progress/settlement`），兼顾可读性与接口契约：`packages/miniapp/pages/payment-apply/index.js`
 
@@ -973,6 +976,8 @@
 - 油卡额度申请（员工入口）：`/finance/fleet/application` → `packages/web/src/views/finance/fleet/application.vue`
 - 油卡额度全量处理页：`/finance/fleet/applications-all` → `packages/web/src/views/finance/fleet/applications-list.vue`
 - 车辆档案与办公室处理：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
+  - 车辆档案支持按状态筛选（全部/启用中/已停用），可查看停用车辆。
+  - 车辆档案操作支持“编辑”与“启用/停用”双向切换；编辑弹窗支持修改车牌号、车型、归属、所属实体、权属人、状态。
 - 车辆用油领导总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
   - 该总览固定按全公司口径统计，不提供“公司实体”筛选控件，避免统计范围误解与空数据误判。
 

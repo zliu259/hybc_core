@@ -113,7 +113,7 @@ Page({
     amountDisplay: formatAmountDisplay(0),
 
     payees: [],
-    payeeLabels: ["请选择收款方"],
+    payeeLabels: ["请选择外部收款方"],
     entities: [],
     entityLabels: ["请选择我方主体"],
     contracts: [],
@@ -171,6 +171,16 @@ Page({
     firstPaymentCategoryIndex: 0,
     firstPaymentMethodIndex: 0,
 
+    quickPayeeVisible: false,
+    quickPayeeSubmitting: false,
+    quickPayeeTarget: "direct",
+    quickPayeeForm: {
+      name: "",
+      bank_name: "",
+      bank_account: "",
+      phone: ""
+    },
+
     directPaymentAttachments: [],
     contractAttachments: [],
     firstPaymentAttachments: []
@@ -193,7 +203,7 @@ Page({
     try {
       const [thresholdRes, payeeRes, contractRes, entityRes, wecomRes] = await Promise.all([
         request({ method: "GET", path: "/api/v1/admin/thresholds?biz_type=payment_request" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/payment/payee/list" }).catch(() => null),
+        request({ method: "GET", path: "/api/v1/payment/payee/list?type=external" }).catch(() => null),
         request({ method: "GET", path: "/api/v1/contract?direction=outbound&page=1&pageSize=200" }).catch(() => null),
         request({ method: "GET", path: "/api/v1/entity?page=1&pageSize=200" }).catch(() => null),
         request({ method: "GET", path: "/api/v1/auth/wecom/contacts" }).catch(() => null)
@@ -220,7 +230,7 @@ Page({
       this.setData({
         thresholdLimit,
         payees,
-        payeeLabels: ["请选择收款方"].concat(
+        payeeLabels: ["请选择外部收款方"].concat(
           payees.map((item) => `${item.name} (${item.bank_name || "-"})`)
         ),
         contracts,
@@ -239,6 +249,113 @@ Page({
       this.checkAmount();
     } finally {
       this.setData({ loadingMeta: false });
+    }
+  },
+
+  async reloadExternalPayees() {
+    const payeeRes = await request({
+      method: "GET",
+      path: "/api/v1/payment/payee/list?type=external"
+    }).catch(() => null);
+    const payees = payeeRes && Array.isArray(payeeRes.data) ? payeeRes.data : [];
+    this.setData({
+      payees,
+      payeeLabels: ["请选择外部收款方"].concat(
+        payees.map((item) => `${item.name} (${item.bank_name || "-"})`)
+      )
+    });
+    return payees;
+  },
+
+  openQuickPayee(e) {
+    const target = (e.currentTarget.dataset.target || "direct") === "contract" ? "contract" : "direct";
+    this.setData({
+      quickPayeeVisible: true,
+      quickPayeeTarget: target,
+      quickPayeeForm: {
+        name: "",
+        bank_name: "",
+        bank_account: "",
+        phone: ""
+      }
+    });
+  },
+
+  closeQuickPayee() {
+    this.setData({
+      quickPayeeVisible: false,
+      quickPayeeSubmitting: false,
+      quickPayeeForm: {
+        name: "",
+        bank_name: "",
+        bank_account: "",
+        phone: ""
+      }
+    });
+  },
+
+  onQuickPayeeInput(e) {
+    const key = e.currentTarget.dataset.key;
+    if (!key) return;
+    this.setData({ [`quickPayeeForm.${key}`]: e.detail.value || "" });
+  },
+
+  async submitQuickPayee() {
+    if (this.data.quickPayeeSubmitting) return;
+    const form = this.data.quickPayeeForm || {};
+    const payload = {
+      name: String(form.name || "").trim(),
+      bank_name: String(form.bank_name || "").trim(),
+      bank_account: String(form.bank_account || "").trim(),
+      phone: String(form.phone || "").trim()
+    };
+    const fieldError = firstError([
+      required(payload.name, "收款人名称"),
+      required(payload.bank_name, "开户行"),
+      required(payload.bank_account, "银行账号")
+    ]);
+    if (fieldError) {
+      wx.showToast({ title: fieldError, icon: "none" });
+      return;
+    }
+
+    this.setData({ quickPayeeSubmitting: true });
+    try {
+      const created = await request({
+        method: "POST",
+        path: "/api/v1/payment/payee",
+        data: {
+          name: payload.name,
+          bank_name: payload.bank_name,
+          bank_account: payload.bank_account,
+          phone: payload.phone || undefined,
+          type: "external"
+        }
+      });
+      const createdId = created && created.data ? Number(created.data.id || 0) : 0;
+      if (!createdId) throw new Error("外部收款人创建失败");
+
+      const payees = await this.reloadExternalPayees();
+      const nextIndex = payees.findIndex((item) => Number(item.id) === createdId) + 1;
+      const pickerIndex = nextIndex > 0 ? nextIndex : 0;
+
+      if (this.data.quickPayeeTarget === "contract") {
+        this.setData({
+          contractPayeeIndex: pickerIndex,
+          "contractForm.payee_id": String(createdId)
+        });
+      } else {
+        this.setData({
+          directPayeeIndex: pickerIndex,
+          "directForm.payee_id": String(createdId)
+        });
+      }
+
+      this.closeQuickPayee();
+      wx.showToast({ title: "外部收款人已添加", icon: "success" });
+    } catch (error) {
+      wx.showToast({ title: error.message || "添加失败", icon: "none" });
+      this.setData({ quickPayeeSubmitting: false });
     }
   },
 
