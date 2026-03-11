@@ -916,6 +916,9 @@
 - 合同流程字段与 Web 对齐：项目、我方主体、对方单位、经办人、合同日期、合同类型、合同附件，并支持“同时发起首笔预付款”子流程（金额/类别/日期/方式/事由/附件）：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
 - 收款方数据源与 Web 对齐为仅外部收款人（`type=external`），智能发单台不展示内部收款人，避免与报销打款场景混淆：`packages/miniapp/pages/payment-apply/index.js`
 - 直付与合同两种流程均支持“快速添加外部收款人”，新增成功后刷新下拉并在当前流程自动选中新建项：`packages/miniapp/pages/payment-apply/index.{js,wxml,wxss}`
+- 快速添加外部收款人流程增强：当远端刷新失败时保留本地回填与自动选中，避免“创建成功但下拉未更新”导致误判失败：`packages/miniapp/pages/payment-apply/index.js`
+- 收款方/对方单位选中后新增账户核对卡片，展示完整信息（收款人、开户行、银行账号、联系电话），与 Web 核对逻辑一致：`packages/miniapp/pages/payment-apply/index.{js,wxml,wxss}`
+- 快速添加外部收款人组件位置前置到“预计付款总额”与“直付/合同流程区”之间，弹出后更易感知与填写：`packages/miniapp/pages/payment-apply/index.wxml`
 - 项目选择组件绑定改为纯 data 数值字段（`directProjectValue/contractProjectValue`），避免模板表达式计算导致的绑定不稳定：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
 - 首笔预付款类别在 UI 使用中文标签（预付款/进度款/结算款），提交值保留后端枚举（`prepayment/progress/settlement`），兼顾可读性与接口契约：`packages/miniapp/pages/payment-apply/index.js`
 
@@ -953,6 +956,16 @@
 - 页面同时支持手动输入/粘贴 UUID（含扫码链接自动提取 `envelope_uuid`），并维护最近核查记录列表，方便连续核查：`packages/miniapp/pages/reimbursement-archive/index.js`
 - 流程入口补齐：审批与申请页（发起申请分段）新增“信封扫码核查”卡片，并在语音助手菜单新增快捷动作：`packages/miniapp/pages/finance/index.{js,wxml}`
 - 小程序路由注册补齐：`packages/miniapp/app.json`
+
+### 4.24 Miniapp 待我审批直出列表（2026-03）
+- 流程页“待我审批”分段移除“统一审批列表 / AI 摘要卡片”二选一入口，改为页内直接展示待审批实例列表：`packages/miniapp/pages/finance/index.wxml`
+- 新增待审批列表数据加载与映射（类型、状态、节点、提交时间），点击列表项直接进入审批详情：`packages/miniapp/pages/finance/index.js`
+- 增加待审批列表空态与加载态样式，避免分段切换后的空白感：`packages/miniapp/pages/finance/index.wxss`
+
+### 4.25 项目创建编号与项目经理选择优化（2026-03）
+- Web 项目立项支持项目编号自动生成（页面默认预填 + 一键重新生成）；提交时若编号为空则由后端自动补齐：`packages/web/src/views/project/create.vue`、`packages/api/src/routes/project.ts`
+- Web 项目经理选择改为“按姓名显示、按 userid 回填提交”：`packages/web/src/views/project/create.vue`
+- Miniapp 项目创建页项目经理输入框改为下拉选择（显示姓名、回填 userid），并同步支持项目编号自动生成：`packages/miniapp/pages/project-create/index.{js,wxml}`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

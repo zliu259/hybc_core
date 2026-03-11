@@ -76,7 +76,7 @@ export const getProjectById = (id: number) => {
 };
 
 export const createProject = (data: {
-  project_code: string;
+  project_code?: string;
   project_name: string;
   entity_id?: number | null;
   manager_userid?: string | null;

@@ -10,13 +10,21 @@
     </view>
 
     <view wx:if="{{segment === 'pending'}}" class="entry-grid">
-      <view class="entry-card" data-path="/pages/approval/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">🔴 统一审批列表</view></view>
-        <view class="entry-desc">右滑快批，减少点选层级</view>
-      </view>
-      <view class="entry-card" data-path="/pages/approval/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">🟢 AI 摘要卡片</view></view>
-        <view class="entry-desc">红灯拦截/黄灯提醒/绿灯放行</view>
+      <view wx:if="{{pendingLoading}}" class="pending-tip">正在加载待审批列表...</view>
+      <view wx:elif="{{pendingList.length === 0}}" class="pending-tip">当前没有待审批事项</view>
+      <view
+        wx:for="{{pendingList}}"
+        wx:key="id"
+        class="entry-card pending-entry"
+        data-id="{{item.id}}"
+        bindtap="openPendingDetail"
+      >
+        <view class="entry-top"><view class="entry-title">{{item.instance_no}}</view></view>
+        <view class="entry-desc">{{item.biz_summary || '-'}}</view>
+        <view class="entry-meta">类型：{{item.bizTypeLabel}}</view>
+        <view class="entry-meta">节点：{{item.current_node_name || '-'}}</view>
+        <view class="entry-meta">状态：{{item.statusText}}</view>
+        <view class="entry-meta">提交时间：{{item.submittedAtText}}</view>
       </view>
     </view>
 

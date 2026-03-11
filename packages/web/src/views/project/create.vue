@@ -23,17 +23,32 @@ const form = reactive({
   end_date: ""
 });
 
+const generateProjectCode = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  const ss = String(d.getSeconds()).padStart(2, "0");
+  return `PRJ-${y}${m}${day}-${hh}${mm}${ss}`;
+};
+
+const fillAutoProjectCode = () => {
+  form.project_code = generateProjectCode();
+};
+
 const submit = async () => {
-  if (!form.project_code || !form.project_name) {
-    message("请填写项目编号和项目名称", { type: "warning" });
+  if (!form.project_name.trim()) {
+    message("请填写项目名称", { type: "warning" });
     return;
   }
 
   saving.value = true;
   try {
     await createProject({
-      project_code: form.project_code,
-      project_name: form.project_name,
+      project_code: form.project_code.trim() || undefined,
+      project_name: form.project_name.trim(),
       manager_userid: form.manager_userid || null,
       start_date: form.start_date || null,
       end_date: form.end_date || null
@@ -46,14 +61,21 @@ const submit = async () => {
   }
 };
 
-onMounted(loadWecomUsers);
+onMounted(async () => {
+  fillAutoProjectCode();
+  await loadWecomUsers();
+});
 </script>
 
 <template>
   <el-card shadow="never" header="项目立项表单">
     <el-form label-width="120px">
       <el-form-item label="项目编号" required>
-        <el-input v-model="form.project_code" />
+        <el-input v-model="form.project_code" placeholder="留空可自动生成">
+          <template #append>
+            <el-button @click="fillAutoProjectCode">自动生成</el-button>
+          </template>
+        </el-input>
       </el-form-item>
       <el-form-item label="项目名称" required>
         <el-input v-model="form.project_name" />
@@ -69,7 +91,7 @@ onMounted(loadWecomUsers);
           <el-option
             v-for="item in wecomUsers"
             :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
+            :label="item.name"
             :value="item.userid"
           />
         </el-select>

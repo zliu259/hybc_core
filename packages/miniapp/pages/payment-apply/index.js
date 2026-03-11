@@ -101,6 +101,23 @@ const serializeAttachments = (list) => {
   return JSON.stringify((Array.isArray(list) ? list : []).map(normalizeAttachment));
 };
 
+const sortContractsNewestFirst = (list) => {
+  return (Array.isArray(list) ? list.slice() : []).sort((a, b) => {
+    const timeA = new Date(a && (a.created_at || a.contract_date || "")).getTime();
+    const timeB = new Date(b && (b.created_at || b.contract_date || "")).getTime();
+    if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
+      return timeB - timeA;
+    }
+    return Number((b && b.id) || 0) - Number((a && a.id) || 0);
+  });
+};
+
+const buildPayeeLabels = (payees) => {
+  return ["请选择外部收款方"].concat(
+    (Array.isArray(payees) ? payees : []).map((item) => `${item.name} (${item.bank_name || "-"})`)
+  );
+};
+
 Page({
   data: {
     loadingMeta: false,
@@ -183,7 +200,9 @@ Page({
 
     directPaymentAttachments: [],
     contractAttachments: [],
-    firstPaymentAttachments: []
+    firstPaymentAttachments: [],
+    selectedDirectPayee: null,
+    selectedContractPayee: null
   },
 
   onShow() {
@@ -220,7 +239,9 @@ Page({
         : 10000;
 
       const payees = payeeRes && Array.isArray(payeeRes.data) ? payeeRes.data : [];
-      const contracts = contractRes && Array.isArray(contractRes.data) ? contractRes.data : [];
+      const contracts = sortContractsNewestFirst(
+        contractRes && Array.isArray(contractRes.data) ? contractRes.data : []
+      );
       const entities = entityRes && Array.isArray(entityRes.data) ? entityRes.data : [];
       const wecomUsers =
         wecomRes && wecomRes.data && Array.isArray(wecomRes.data.users)
@@ -230,9 +251,7 @@ Page({
       this.setData({
         thresholdLimit,
         payees,
-        payeeLabels: ["请选择外部收款方"].concat(
-          payees.map((item) => `${item.name} (${item.bank_name || "-"})`)
-        ),
+        payeeLabels: buildPayeeLabels(payees),
         contracts,
         contractLabels: ["无合同 / 无需合同"].concat(
           contracts.map((item) => `${item.contract_no} - ${item.counterparty || "-"}`)
@@ -247,6 +266,7 @@ Page({
         )
       });
       this.checkAmount();
+      this.syncSelectedPayeeInfo();
     } finally {
       this.setData({ loadingMeta: false });
     }
@@ -256,15 +276,24 @@ Page({
     const payeeRes = await request({
       method: "GET",
       path: "/api/v1/payment/payee/list?type=external"
-    }).catch(() => null);
+    });
     const payees = payeeRes && Array.isArray(payeeRes.data) ? payeeRes.data : [];
     this.setData({
       payees,
-      payeeLabels: ["请选择外部收款方"].concat(
-        payees.map((item) => `${item.name} (${item.bank_name || "-"})`)
-      )
+      payeeLabels: buildPayeeLabels(payees)
     });
+    this.syncSelectedPayeeInfo();
     return payees;
+  },
+
+  syncSelectedPayeeInfo() {
+    const payees = Array.isArray(this.data.payees) ? this.data.payees : [];
+    const direct = payees.find((item) => Number(item.id) === Number(this.data.directForm.payee_id)) || null;
+    const contract = payees.find((item) => Number(item.id) === Number(this.data.contractForm.payee_id)) || null;
+    this.setData({
+      selectedDirectPayee: direct,
+      selectedContractPayee: contract
+    });
   },
 
   openQuickPayee(e) {
@@ -335,24 +364,57 @@ Page({
       const createdId = created && created.data ? Number(created.data.id || 0) : 0;
       if (!createdId) throw new Error("外部收款人创建失败");
 
-      const payees = await this.reloadExternalPayees();
+      let payees = [];
+      let refreshFailed = false;
+      try {
+        payees = await this.reloadExternalPayees();
+      } catch {
+        refreshFailed = true;
+        payees = [
+          {
+            id: createdId,
+            name: payload.name,
+            bank_name: payload.bank_name,
+            bank_account: payload.bank_account,
+            phone: payload.phone || "",
+            type: "external"
+          }
+        ].concat(this.data.payees || []);
+        this.setData({
+          payees,
+          payeeLabels: buildPayeeLabels(payees)
+        });
+      }
       const nextIndex = payees.findIndex((item) => Number(item.id) === createdId) + 1;
       const pickerIndex = nextIndex > 0 ? nextIndex : 0;
+
+      const selected = payees.find((item) => Number(item.id) === createdId) || {
+        id: createdId,
+        name: payload.name,
+        bank_name: payload.bank_name,
+        bank_account: payload.bank_account,
+        phone: payload.phone || ""
+      };
 
       if (this.data.quickPayeeTarget === "contract") {
         this.setData({
           contractPayeeIndex: pickerIndex,
-          "contractForm.payee_id": String(createdId)
+          "contractForm.payee_id": String(createdId),
+          selectedContractPayee: selected
         });
       } else {
         this.setData({
           directPayeeIndex: pickerIndex,
-          "directForm.payee_id": String(createdId)
+          "directForm.payee_id": String(createdId),
+          selectedDirectPayee: selected
         });
       }
 
       this.closeQuickPayee();
-      wx.showToast({ title: "外部收款人已添加", icon: "success" });
+      wx.showToast({
+        title: refreshFailed ? "已添加，列表已本地更新" : "外部收款人已添加",
+        icon: "success"
+      });
     } catch (error) {
       wx.showToast({ title: error.message || "添加失败", icon: "none" });
       this.setData({ quickPayeeSubmitting: false });
@@ -405,7 +467,8 @@ Page({
     const payee = index > 0 ? this.data.payees[index - 1] : null;
     this.setData({
       directPayeeIndex: index,
-      "directForm.payee_id": payee ? String(payee.id) : ""
+      "directForm.payee_id": payee ? String(payee.id) : "",
+      selectedDirectPayee: payee || null
     });
   },
 
@@ -423,7 +486,8 @@ Page({
     const payee = index > 0 ? this.data.payees[index - 1] : null;
     this.setData({
       contractPayeeIndex: index,
-      "contractForm.payee_id": payee ? String(payee.id) : ""
+      "contractForm.payee_id": payee ? String(payee.id) : "",
+      selectedContractPayee: payee || null
     });
   },
 

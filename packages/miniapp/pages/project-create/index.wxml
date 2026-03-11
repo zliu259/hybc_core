@@ -1,13 +1,15 @@
 <view class="page">
   <hy-panel-card title="🏗️ 项目创建向导" subtitle="一步一问，快速完成项目立项">
-    <view class="label required">项目编号</view>
+    <view class="label">项目编号</view>
     <input class="input" value="{{form.project_code}}" data-key="project_code" bindinput="onInput" disabled="{{busy}}" />
 
     <view class="label required">项目名称</view>
     <input class="input" value="{{form.project_name}}" data-key="project_name" bindinput="onInput" disabled="{{busy}}" />
 
-    <view class="label">项目经理（企微userid）</view>
-    <input class="input" value="{{form.manager_userid}}" data-key="manager_userid" bindinput="onInput" disabled="{{busy}}" />
+    <view class="label">项目经理</view>
+    <picker mode="selector" range="{{managerOptions}}" value="{{managerIndex}}" bindchange="onManagerChange" disabled="{{busy}}">
+      <view class="input">{{managerOptions[managerIndex] || '请选择项目经理'}}</view>
+    </picker>
 
     <view class="label">开始日期</view>
     <picker mode="date" value="{{form.start_date}}" bindchange="onDateChange" data-key="start_date" disabled="{{busy}}">

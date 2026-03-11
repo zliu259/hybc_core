@@ -51,11 +51,7 @@ const wxChooseMessageFile = ({ count = 1, type = "file" } = {}) =>
 
 const wxGetLocation = () =>
   new Promise((resolve, reject) => {
-    wx.getLocation({
-      type: "gcj02",
-      success: resolve,
-      fail: reject
-    });
+    reject(new Error("当前版本未开通定位权限"));
   });
 
 const wxRecordAudioOnce = ({

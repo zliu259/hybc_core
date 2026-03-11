@@ -7,6 +7,17 @@ import { hydrateLegacyProject, hydrateLegacySection } from "../utils/legacy-comp
 
 const nowIso = () => new Date().toISOString();
 
+const generateProjectCode = () => {
+  const d = new Date();
+  const y = d.getUTCFullYear();
+  const m = String(d.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(d.getUTCDate()).padStart(2, "0");
+  const hh = String(d.getUTCHours()).padStart(2, "0");
+  const mm = String(d.getUTCMinutes()).padStart(2, "0");
+  const ss = String(d.getUTCSeconds()).padStart(2, "0");
+  return `PRJ-${y}${m}${day}-${hh}${mm}${ss}`;
+};
+
 const fixedNonProjectOptions = [
   { project_code: "办公室", project_name: "办公室" },
   { project_code: "仓库", project_name: "仓库" }
@@ -137,7 +148,7 @@ projectRoutes.get("/:id", async (c) => {
 
 projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"]), async (c) => {
   const body = (await c.req.json()) as {
-    project_code: string;
+    project_code?: string;
     project_name: string;
     entity_id?: number | null;
     manager_userid?: string | null;
@@ -167,15 +178,22 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
     );
   }
 
+  const projectName = String(body.project_name ?? "").trim();
+  if (!projectName) {
+    return c.json({ success: false, error: { message: "project_name is required" } }, 400);
+  }
+
+  const projectCode = String(body.project_code ?? "").trim() || generateProjectCode();
+
   const createdAt = nowIso();
   const result = await c.env.DB.prepare(
     "INSERT INTO project (project_code, project_name, entity_id, manager_userid, status, start_date, end_date, location_text, project_briefing, project_start_at, project_kind, external_party_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
   )
     .bind(
-      body.project_code,
-      body.project_name,
+      projectCode,
+      projectName,
       body.entity_id ?? null,
-      body.manager_userid ?? null,
+      body.manager_userid?.trim() || null,
       status,
       body.start_date ?? null,
       body.end_date ?? null,

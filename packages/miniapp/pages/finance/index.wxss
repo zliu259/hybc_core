@@ -20,3 +20,20 @@
   color: #fff;
   font-weight: 600;
 }
+
+.pending-tip {
+  padding: 24rpx 12rpx;
+  text-align: center;
+  color: #6b7a90;
+  font-size: 24rpx;
+}
+
+.pending-entry .entry-desc {
+  margin-top: 6rpx;
+}
+
+.entry-meta {
+  margin-top: 4rpx;
+  font-size: 22rpx;
+  color: #6b7a90;
+}
