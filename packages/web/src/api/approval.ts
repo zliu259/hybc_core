@@ -291,3 +291,10 @@ export const resubmitApproval = (
     { data }
   );
 };
+
+export const uploadApprovalAttachment = (
+  id: number,
+  data: { file_key: string; file_name: string; file_size?: number }
+) => {
+  return http.request<{ success: boolean }>("post", `/api/v1/approval/${id}/attachments`, { data });
+};

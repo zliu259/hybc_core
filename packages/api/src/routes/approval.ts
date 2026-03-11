@@ -470,6 +470,139 @@ approvalRoutes.post("/:id/transfer", async (c) => {
   }
 });
 
+approvalRoutes.post("/:id/attachments", async (c) => {
+  const instanceId = Number(c.req.param("id"));
+  const auth = c.get("auth");
+  const body = (await c.req.json().catch(() => ({}))) as {
+    file_key?: string;
+    file_name?: string;
+    file_size?: number;
+  };
+
+  const fileKey = body.file_key?.trim() || "";
+  const fileName = body.file_name?.trim() || fileKey;
+  const fileSize = typeof body.file_size === "number" && Number.isFinite(body.file_size)
+    ? body.file_size
+    : undefined;
+
+  if (!fileKey) {
+    return c.json({ success: false, error: { message: "file_key is required" } }, 400);
+  }
+
+  const instance = await c.env.DB.prepare(
+    `SELECT id, biz_type, biz_id
+     FROM approval_instance
+     WHERE id = ?
+     LIMIT 1`
+  )
+    .bind(instanceId)
+    .first<{ id: number; biz_type: string; biz_id: number }>();
+
+  if (!instance) {
+    return c.json({ success: false, error: { message: "Approval instance not found" } }, 404);
+  }
+
+  const pendingTask = await c.env.DB.prepare(
+    `SELECT id FROM approval_task
+     WHERE instance_id = ?
+       AND assignee_userid = ?
+       AND status = 'pending'
+     LIMIT 1`
+  )
+    .bind(instanceId, auth.sub)
+    .first<{ id: number }>();
+
+  const canUpload = Boolean(pendingTask) || auth.roles.includes("super_admin");
+  if (!canUpload) {
+    return c.json(
+      { success: false, error: { message: "No permission to upload attachment on this approval" } },
+      403
+    );
+  }
+
+  const attachmentItem = {
+    file_key: fileKey,
+    file_name: fileName,
+    ...(typeof fileSize === "number" ? { file_size: fileSize } : {})
+  };
+
+  const loadAttachmentItems = (raw: string | null): Array<{ file_key: string; file_name: string; file_size?: number }> => {
+    if (!raw) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      const list: Array<{ file_key: string; file_name: string; file_size?: number }> = [];
+      for (const item of parsed) {
+        if (typeof item === "string") {
+          list.push({ file_key: item, file_name: item });
+          continue;
+        }
+        if (!item || typeof item !== "object") continue;
+        const row = item as {
+          file_key?: string;
+          key?: string;
+          file_name?: string;
+          name?: string;
+          file_size?: number;
+          size?: number;
+        };
+        const key = row.file_key ?? row.key;
+        if (!key) continue;
+        list.push({
+          file_key: key,
+          file_name: row.file_name ?? row.name ?? key,
+          ...(typeof row.file_size === "number" ? { file_size: row.file_size } : {}),
+          ...(typeof row.size === "number" ? { file_size: row.size } : {})
+        });
+      }
+      return list;
+    } catch {
+      return [];
+    }
+  };
+
+  const mergeAttachments = (raw: string | null) => {
+    const list = loadAttachmentItems(raw);
+    const exists = list.some(item => item.file_key === fileKey);
+    if (!exists) {
+      list.unshift(attachmentItem);
+    }
+    return JSON.stringify(list);
+  };
+
+  const now = new Date().toISOString();
+  if (instance.biz_type === "payment_request") {
+    const target = await c.env.DB.prepare("SELECT attachments_json FROM payment_request WHERE id = ? LIMIT 1")
+      .bind(instance.biz_id)
+      .first<{ attachments_json: string | null }>();
+    if (!target) {
+      return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
+    }
+    await c.env.DB.prepare("UPDATE payment_request SET attachments_json = ?, updated_at = ? WHERE id = ?")
+      .bind(mergeAttachments(target.attachments_json), now, instance.biz_id)
+      .run();
+    return c.json({ success: true });
+  }
+
+  if (instance.biz_type === "outbound_contract" || instance.biz_type === "inbound_contract") {
+    const target = await c.env.DB.prepare("SELECT attachments_json FROM contract WHERE id = ? LIMIT 1")
+      .bind(instance.biz_id)
+      .first<{ attachments_json: string | null }>();
+    if (!target) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+    await c.env.DB.prepare("UPDATE contract SET attachments_json = ?, updated_at = ? WHERE id = ?")
+      .bind(mergeAttachments(target.attachments_json), now, instance.biz_id)
+      .run();
+    return c.json({ success: true });
+  }
+
+  return c.json(
+    { success: false, error: { message: `Attachments are not supported for biz_type=${instance.biz_type}` } },
+    400
+  );
+});
+
 approvalRoutes.post("/:id/force-transfer", async (c) => {
   const instanceId = Number(c.req.param("id"));
   const auth = c.get("auth");

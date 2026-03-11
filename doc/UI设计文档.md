@@ -435,6 +435,7 @@
   - 阈值色带与金额变更抽屉保留
 - 智能发单台关系输入收敛：`packages/web/src/views/finance/payment/wizard.vue`
   - 超阈值合同流中“对方单位”改为 `el-select`（来源收款人）
+  - 在“对方单位”字段旁新增“快速添加外部收款人”按钮，弹窗提交后自动刷新收款人下拉并选中新建项。
   - 付款金额、实体 ID 保持 `el-input-number` 数值控件
 - 报销集中打款流程抽屉化：`packages/web/src/views/finance/reimbursement/payout.vue`
   - 登记打款从 `Dialog` 改为 `Drawer`
@@ -864,6 +865,11 @@
 - 审批详情流程线为 `super_admin` 增加“强制改派”入口，仅对待处理人工任务显示，支持直接替换当前审批人：`packages/web/src/views/approval/detail.vue`
 - 审批详情新增“强制改派审批人（超管）”弹窗，要求填写改派原因并选择目标审批人，提交后即时刷新流程：`packages/web/src/views/approval/detail.vue`
 - 新增超管专用后端接口 `POST /api/v1/approval/:id/force-transfer`，强制改派会写入 `approval_transfer` 留痕并标记来源：`packages/api/src/routes/approval.ts`、`packages/api/src/services/approval/operations.ts`、`packages/api/src/types/approval.ts`、`packages/web/src/api/approval.ts`
+
+### 4.14 审批台附件补传（2026-03）
+- 审批详情页支持在审批台直接上传附件到对应业务数据（当前支持付款申请、合同审批）：`packages/web/src/views/approval/detail.vue`
+- 前端新增审批附件上传 API：`packages/web/src/api/approval.ts`
+- 后端新增 `POST /api/v1/approval/:id/attachments`，按审批实例定位业务并写回 `attachments_json`，限制为“当前待处理审批人或超管”可操作：`packages/api/src/routes/approval.ts`
 
 ### 4.12 正式发票签发附件化与自动回填（2026-03）
 - 发票签发弹窗收敛为“上传发票附件 + 备注”，去除开票日期、发票代码、号码、校验码、金额等人工输入项：`packages/web/src/views/finance/receipt/invoice.vue`

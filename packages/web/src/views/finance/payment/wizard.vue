@@ -13,6 +13,7 @@ import {
 } from "@/api/contract";
 import type { Project } from "@/api/project";
 import {
+  createPayee,
   createPaymentRequest,
   listPayees,
   submitPaymentApproval,
@@ -102,6 +103,14 @@ const contractAttachments = ref<AttachmentDraft[]>([]);
 const directPaymentAttachments = ref<AttachmentDraft[]>([]);
 const firstPaymentAttachments = ref<AttachmentDraft[]>([]);
 const uploadingAttachment = ref(false);
+const quickPayeeDialogVisible = ref(false);
+const quickPayeeSubmitting = ref(false);
+const quickPayeeForm = ref({
+  name: "",
+  bank_name: "",
+  bank_account: "",
+  phone: ""
+});
 
 let checkTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -276,10 +285,59 @@ const removeAttachment = (target: AttachmentDraft[], index: number) => {
   target.splice(index, 1);
 };
 
+const resetQuickPayeeForm = () => {
+  quickPayeeForm.value = {
+    name: "",
+    bank_name: "",
+    bank_account: "",
+    phone: ""
+  };
+};
+
+const loadPayees = async () => {
+  const payeeRes = await listPayees();
+  payees.value = payeeRes.data;
+};
+
+const openQuickExternalPayeeDialog = () => {
+  quickPayeeDialogVisible.value = true;
+};
+
+const submitQuickExternalPayee = async () => {
+  const payload = {
+    name: quickPayeeForm.value.name.trim(),
+    bank_name: quickPayeeForm.value.bank_name.trim(),
+    bank_account: quickPayeeForm.value.bank_account.trim(),
+    phone: quickPayeeForm.value.phone.trim()
+  };
+
+  if (!payload.name || !payload.bank_name || !payload.bank_account) {
+    message("请填写外部收款人名称、开户行和银行账号", { type: "warning" });
+    return;
+  }
+
+  quickPayeeSubmitting.value = true;
+  try {
+    const created = await createPayee({
+      name: payload.name,
+      bank_name: payload.bank_name,
+      bank_account: payload.bank_account,
+      phone: payload.phone || undefined,
+      type: "external"
+    });
+    await loadPayees();
+    contractForm.value.payee_id = created.data.id;
+    quickPayeeDialogVisible.value = false;
+    resetQuickPayeeForm();
+    message("外部收款人已添加，并自动选中", { type: "success" });
+  } finally {
+    quickPayeeSubmitting.value = false;
+  }
+};
+
 const loadMeta = async () => {
-  const [thresholdRes, payeeRes, contractRes, entityRes] = await Promise.all([
+  const [thresholdRes, contractRes, entityRes] = await Promise.all([
     listBizThresholds({ biz_type: "payment_request" }).catch(() => null),
-    listPayees(),
     listContracts({ direction: "outbound", page: 1, pageSize: 200 }),
     listEntities()
   ]);
@@ -294,7 +352,7 @@ const loadMeta = async () => {
     }
   }
 
-  payees.value = payeeRes.data;
+  await loadPayees();
   contracts.value = contractRes.data;
   entities.value = entityRes.data;
   await Promise.all([loadProjects(), loadWecomUsers()]);
@@ -759,20 +817,25 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="对方单位" required>
-            <el-select
-              v-model="contractForm.payee_id"
-              clearable
-              filterable
-              placeholder="选择收款单位"
-              style="width: 360px"
-            >
-              <el-option
-                v-for="item in payees"
-                :key="item.id"
-                :label="`${item.name} (${item.bank_name})`"
-                :value="item.id"
-              />
-            </el-select>
+            <div class="counterparty-field">
+              <el-select
+                v-model="contractForm.payee_id"
+                clearable
+                filterable
+                placeholder="选择收款单位"
+                style="width: 360px"
+              >
+                <el-option
+                  v-for="item in payees"
+                  :key="item.id"
+                  :label="`${item.name} (${item.bank_name})`"
+                  :value="item.id"
+                />
+              </el-select>
+              <el-button plain type="primary" @click="openQuickExternalPayeeDialog">
+                快速添加外部收款人
+              </el-button>
+            </div>
           </el-form-item>
           <el-form-item label="经办人">
             <el-select
@@ -988,6 +1051,41 @@ onMounted(async () => {
         </el-button>
       </template>
     </el-card>
+
+    <el-dialog
+      v-model="quickPayeeDialogVisible"
+      title="快速添加外部收款人"
+      width="520px"
+      @closed="resetQuickPayeeForm"
+    >
+      <el-form label-width="110px">
+        <el-form-item label="收款人名称" required>
+          <el-input v-model="quickPayeeForm.name" placeholder="请输入名称" />
+        </el-form-item>
+        <el-form-item label="开户行" required>
+          <el-input v-model="quickPayeeForm.bank_name" placeholder="请输入开户行" />
+        </el-form-item>
+        <el-form-item label="银行账号" required>
+          <el-input
+            v-model="quickPayeeForm.bank_account"
+            placeholder="请输入银行账号"
+          />
+        </el-form-item>
+        <el-form-item label="联系电话">
+          <el-input v-model="quickPayeeForm.phone" placeholder="选填" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="quickPayeeDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="quickPayeeSubmitting"
+          @click="submitQuickExternalPayee"
+        >
+          保存并选中
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -1007,5 +1105,11 @@ onMounted(async () => {
   font-size: 18px;
   font-weight: 700;
   color: #2a241d;
+}
+
+.counterparty-field {
+  display: flex;
+  align-items: center;
+  gap: 12px;
 }
 </style>

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { type UploadRequestOptions } from "element-plus";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
@@ -12,6 +13,7 @@ import {
   withdrawApproval,
   cancelApproval,
   resubmitApproval,
+  uploadApprovalAttachment,
   type ApprovalDetailResponse,
   type ApprovalTask
 } from "@/api/approval";
@@ -42,7 +44,8 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
-import { resolveUploadUrl } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import { formatToken, getToken } from "@/utils/auth";
 import { formatBeijingDateTime } from "@/utils/datetime";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
@@ -115,6 +118,18 @@ const hasAction = (action: string) =>
 
 const commentInput = ref("");
 const actionLoading = ref(false);
+const uploadingApprovalAttachment = ref(false);
+
+const canUploadInApproval = computed(() => {
+  if (isSuperAdmin.value) return true;
+  return (
+    hasAction("approve") ||
+    hasAction("reject") ||
+    hasAction("return_prev") ||
+    hasAction("return_to") ||
+    hasAction("return_initiator")
+  );
+});
 
 const returnDialogVisible = ref(false);
 const returnType = ref<"initiator" | "prev" | "to">("initiator");
@@ -756,6 +771,46 @@ const openAttachmentPreview = (fileKey: string, fileName: string) => {
   previewDrawerVisible.value = true;
 };
 
+const uploadAttachmentFromApproval = async (options: UploadRequestOptions) => {
+  const rawFile = options.file;
+  uploadingApprovalAttachment.value = true;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "approval"
+    });
+
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+
+    await uploadApprovalAttachment(instanceId.value, {
+      file_key: signRes.data.key,
+      file_name: rawFile.name,
+      file_size: rawFile.size
+    });
+
+    message("审批附件上传成功", { type: "success" });
+    options.onSuccess?.({});
+    await loadDetail();
+  } catch {
+    message("审批附件上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    uploadingApprovalAttachment.value = false;
+  }
+};
+
 const goToLinkedContract = () => {
   const contractId = invoiceRequestDetail.value?.contract_id;
   if (!contractId) return;
@@ -1124,6 +1179,15 @@ onMounted(async () => {
                 <el-descriptions-item label="付款内容" :span="2">{{ paymentDetail.content }}</el-descriptions-item>
                 <el-descriptions-item label="备注" :span="2">{{ paymentDetail.remark || '-' }}</el-descriptions-item>
               </el-descriptions>
+              <el-upload
+                v-if="canUploadInApproval"
+                drag
+                :show-file-list="false"
+                :http-request="uploadAttachmentFromApproval"
+                style="margin-top: 12px"
+              >
+                <div class="el-upload__text">上传审批附件（付款），或 <em>点击上传</em></div>
+              </el-upload>
               <el-table :data="paymentAttachments" size="small" border style="margin-top: 12px">
                 <el-table-column label="附件名" min-width="240">
                   <template #default="scope">{{ scope.row.file_name }}</template>
@@ -1168,6 +1232,15 @@ onMounted(async () => {
                 <el-descriptions-item label="已付金额">{{ contractDetail.paid_amount }}</el-descriptions-item>
                 <el-descriptions-item label="备注" :span="2">{{ contractDetail.remark || '-' }}</el-descriptions-item>
               </el-descriptions>
+              <el-upload
+                v-if="canUploadInApproval"
+                drag
+                :show-file-list="false"
+                :http-request="uploadAttachmentFromApproval"
+                style="margin-top: 12px"
+              >
+                <div class="el-upload__text">上传审批附件（合同），或 <em>点击上传</em></div>
+              </el-upload>
               <el-table :data="contractAttachments" size="small" border style="margin-top: 12px">
                 <el-table-column label="附件名" min-width="240">
                   <template #default="scope">{{ scope.row.file_name }}</template>
