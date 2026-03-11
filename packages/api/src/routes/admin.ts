@@ -22,6 +22,11 @@ import { validateTemplate } from "../services/approval/template-parser";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { advanceWorkflow } from "../services/approval/engine";
 import {
+  resolveApplicantDisplayName,
+  resolveApprovalPushMeta,
+  sendApprovalTodoTemplateCard
+} from "../services/wecom-approval-push";
+import {
   listRunnerRuntimeConfig,
   upsertRunnerRuntimeConfig,
   refreshRunnerRuntimeKvFromDb
@@ -595,6 +600,165 @@ adminRoutes.get(
         },
         top_errors,
         recent
+      }
+    });
+  }
+);
+
+adminRoutes.post(
+  "/wecom-push/force-current-nodes",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const rows = await c.env.DB.prepare(
+      `SELECT DISTINCT
+         ai.id AS instance_id,
+         ai.instance_no,
+         ai.biz_type,
+         ai.biz_id,
+         ai.biz_summary,
+         ai.initiator_userid,
+         COALESCE(ani.node_name, ai.current_node_key, '当前节点') AS current_node_name,
+         at2.assignee_userid
+       FROM approval_instance ai
+       JOIN approval_task at2
+         ON at2.instance_id = ai.id
+        AND at2.status = 'pending'
+        AND at2.assignee_userid IS NOT NULL
+        AND at2.assignee_userid != ''
+       LEFT JOIN approval_node_instance ani
+         ON ani.instance_id = ai.id
+        AND ani.node_key = ai.current_node_key
+        AND ani.round = ai.current_round
+       WHERE ai.status = 'in_progress'
+       ORDER BY ai.id DESC`
+    ).all<{
+      instance_id: number;
+      instance_no: string;
+      biz_type: string;
+      biz_id: number;
+      biz_summary: string;
+      initiator_userid: string;
+      current_node_name: string;
+      assignee_userid: string;
+    }>();
+
+    const items = rows.results ?? [];
+    let successCount = 0;
+    let failureCount = 0;
+    const errors: string[] = [];
+    const applicantNameCache = new Map<string, string>();
+    const pushMetaCache = new Map<number, { requestTitle: string; amountText: string | null }>();
+    const instanceSet = new Set<number>();
+
+    for (const item of items) {
+      instanceSet.add(item.instance_id);
+      try {
+        let applicantName = applicantNameCache.get(item.initiator_userid);
+        if (!applicantName) {
+          applicantName = await resolveApplicantDisplayName(c.env, item.initiator_userid);
+          applicantNameCache.set(item.initiator_userid, applicantName);
+        }
+
+        let pushMeta = pushMetaCache.get(item.instance_id);
+        if (!pushMeta) {
+          pushMeta = await resolveApprovalPushMeta(
+            c.env,
+            item.biz_type,
+            item.biz_id,
+            item.biz_summary
+          );
+          pushMetaCache.set(item.instance_id, pushMeta);
+        }
+
+        const result = await sendApprovalTodoTemplateCard(
+          c.env,
+          {
+            instanceId: item.instance_id,
+            instanceNo: item.instance_no,
+            bizType: item.biz_type,
+            bizId: item.biz_id,
+            bizSummary: item.biz_summary,
+            currentNodeName: item.current_node_name,
+            assigneeUserId: item.assignee_userid,
+            applicantName,
+            requestTitle: pushMeta.requestTitle,
+            amountText: pushMeta.amountText ?? undefined
+          },
+          {
+            disableDuplicateCheck: true
+          }
+        );
+
+        successCount += 1;
+        await c.env.DB.prepare(
+          "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+        )
+          .bind(
+            "wecom_template_card_sent",
+            "admin-force-current-nodes",
+            JSON.stringify({
+              instance_id: item.instance_id,
+              assignee_userid: item.assignee_userid,
+              msgid: result.msgid,
+              invaliduser: result.invaliduser,
+              unlicenseduser: result.unlicenseduser,
+              force_scan: true,
+              operated_by: auth.sub
+            }),
+            nowIso()
+          )
+          .run();
+      } catch (error) {
+        failureCount += 1;
+        const message = error instanceof Error ? error.message : "send failed";
+        errors.push(`${item.instance_id}/${item.assignee_userid}: ${message}`);
+        await c.env.DB.prepare(
+          "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+        )
+          .bind(
+            "wecom_template_card_failed",
+            "admin-force-current-nodes",
+            JSON.stringify({
+              instance_id: item.instance_id,
+              assignee_userid: item.assignee_userid,
+              error: message,
+              force_scan: true,
+              operated_by: auth.sub
+            }),
+            nowIso()
+          )
+          .run();
+      }
+    }
+
+    await c.env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "wecom_template_card_summary",
+        "admin-force-current-nodes",
+        JSON.stringify({
+          force_scan: true,
+          operated_by: auth.sub,
+          scanned_instances: instanceSet.size,
+          scanned_recipients: items.length,
+          success_count: successCount,
+          failure_count: failureCount,
+          errors: errors.slice(0, 100)
+        }),
+        nowIso()
+      )
+      .run();
+
+    return c.json({
+      success: true,
+      data: {
+        scanned_instances: instanceSet.size,
+        scanned_recipients: items.length,
+        success_count: successCount,
+        failure_count: failureCount,
+        errors: errors.slice(0, 20)
       }
     });
   }

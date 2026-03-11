@@ -322,7 +322,7 @@ const handleApprovalSubmitted = async (
     return;
   }
 
-  const taskRows = await env.DB.prepare(
+  const pendingTaskRows = await env.DB.prepare(
     `SELECT DISTINCT assignee_userid
      FROM approval_task
      WHERE instance_id = ?
@@ -333,22 +333,29 @@ const handleApprovalSubmitted = async (
     .bind(instanceId)
     .all<{ assignee_userid: string }>();
 
-  const assignees = (taskRows.results ?? []).map((item) => item.assignee_userid);
-  if (assignees.length === 0) {
+  const recipientSet = new Set<string>();
+  for (const row of pendingTaskRows.results ?? []) {
+    const userid = row.assignee_userid.trim();
+    if (userid) recipientSet.add(userid);
+  }
+
+  const recipients = [...recipientSet];
+  if (recipients.length === 0) {
     return;
   }
 
   let successCount = 0;
   const errors: string[] = [];
   const applicantName = await resolveApplicantDisplayName(env, instance.initiator_userid);
-  for (const assignee of assignees) {
+  const pushMeta = await resolveApprovalPushMeta(
+    env,
+    instance.biz_type,
+    instance.biz_id,
+    instance.biz_summary
+  );
+
+  for (const assignee of recipients) {
     try {
-      const pushMeta = await resolveApprovalPushMeta(
-        env,
-        instance.biz_type,
-        instance.biz_id,
-        instance.biz_summary
-      );
       const result = await sendApprovalTodoTemplateCard(env, {
         instanceId,
         instanceNo: instance.instance_no,
@@ -403,15 +410,16 @@ const handleApprovalSubmitted = async (
   await env.DB.prepare(
     "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
   )
-    .bind(
-      "wecom_template_card_summary",
-      "queue-handler",
-      JSON.stringify({
-        instance_id: instanceId,
-        assignee_count: assignees.length,
-        success_count: successCount,
-        failure_count: errors.length,
-        errors
+      .bind(
+        "wecom_template_card_summary",
+        "queue-handler",
+        JSON.stringify({
+          instance_id: instanceId,
+          recipient_count: recipients.length,
+          pending_assignee_count: (pendingTaskRows.results ?? []).length,
+          success_count: successCount,
+          failure_count: errors.length,
+          errors
       }),
       nowIso()
     )
@@ -442,6 +450,78 @@ export const queue = async (
                   "queue-handler",
                   JSON.stringify({
                     instance_id: instanceId,
+                    error: error instanceof Error ? error.message : "unknown error"
+                  }),
+                  nowIso()
+                )
+                .run();
+            }
+          }
+          break;
+        }
+        case "APPROVAL_NODE_ENTERED": {
+          const instanceId = Number(event.payload?.instance_id ?? 0);
+          if (!Number.isNaN(instanceId) && instanceId > 0) {
+            try {
+              await handleApprovalSubmitted(env, instanceId);
+            } catch (error) {
+              await env.DB.prepare(
+                "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+              )
+                .bind(
+                  "wecom_template_card_isolation_guard",
+                  "queue-handler",
+                  JSON.stringify({
+                    instance_id: instanceId,
+                    event_type: "APPROVAL_NODE_ENTERED",
+                    error: error instanceof Error ? error.message : "unknown error"
+                  }),
+                  nowIso()
+                )
+                .run();
+            }
+          }
+          break;
+        }
+        case "APPROVAL_TRANSFERRED": {
+          const instanceId = Number(event.payload?.instance_id ?? 0);
+          if (!Number.isNaN(instanceId) && instanceId > 0) {
+            try {
+              await handleApprovalSubmitted(env, instanceId);
+            } catch (error) {
+              await env.DB.prepare(
+                "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+              )
+                .bind(
+                  "wecom_template_card_isolation_guard",
+                  "queue-handler",
+                  JSON.stringify({
+                    instance_id: instanceId,
+                    event_type: "APPROVAL_TRANSFERRED",
+                    error: error instanceof Error ? error.message : "unknown error"
+                  }),
+                  nowIso()
+                )
+                .run();
+            }
+          }
+          break;
+        }
+        case "APPROVAL_RETURNED": {
+          const instanceId = Number(event.payload?.instance_id ?? 0);
+          if (!Number.isNaN(instanceId) && instanceId > 0) {
+            try {
+              await handleApprovalSubmitted(env, instanceId);
+            } catch (error) {
+              await env.DB.prepare(
+                "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+              )
+                .bind(
+                  "wecom_template_card_isolation_guard",
+                  "queue-handler",
+                  JSON.stringify({
+                    instance_id: instanceId,
+                    event_type: "APPROVAL_RETURNED",
                     error: error instanceof Error ? error.message : "unknown error"
                   }),
                   nowIso()

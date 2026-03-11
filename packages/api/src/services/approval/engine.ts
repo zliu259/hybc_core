@@ -449,6 +449,12 @@ export const advanceWorkflow = async (
     await nextExecutor.initializeNode(env, updatedNextNodeInst, nextNode.config, instanceId);
   }
 
+  await publishEvent(env, "APPROVAL_NODE_ENTERED", "approval-engine", {
+    instance_id: instanceId,
+    instance_no: instance.instance_no,
+    node_key: nextKey
+  });
+
   if (nextNode.type === "auto" || nextNode.type === "cc" || nextNode.type === "ai_gate") {
     await advanceWorkflow(env, instanceId, aiGateHandler);
   }
@@ -548,6 +554,12 @@ export const handleRoundReset = async (
     const executor = executorFactory(targetNode.type);
     await executor.initializeNode(env, updatedTargetInst, targetNode.config, instanceId);
   }
+
+  await publishEvent(env, "APPROVAL_NODE_ENTERED", "approval-engine", {
+    instance_id: instanceId,
+    instance_no: instance.instance_no,
+    node_key: targetNodeKey
+  });
 
   // Update instance current_node_key
   await env.DB.prepare(

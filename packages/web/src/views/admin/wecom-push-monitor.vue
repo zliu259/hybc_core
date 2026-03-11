@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { ElMessageBox } from "element-plus";
 import {
+  forceWeComPushCurrentNodes,
   getWeComPushMonitor,
   listRunnerRuntimeConfig,
   upsertRunnerRuntimeConfig,
@@ -13,6 +15,7 @@ defineOptions({ name: "AdminWeComPushMonitor" });
 
 const loading = ref(false);
 const saving = ref(false);
+const forcing = ref(false);
 const hours = ref(24);
 const state = ref<WeComPushMonitorResponse | null>(null);
 const configForm = ref({
@@ -74,6 +77,30 @@ const refresh = async () => {
     state.value = result.data;
   } finally {
     loading.value = false;
+  }
+};
+
+const forcePushCurrentNodes = async () => {
+  await ElMessageBox.confirm(
+    "将扫描当前所有处于审批流中的节点待办并进行强制推送（跳过重复发送保护）。此操作不可撤销，是否继续？",
+    "强制推送当前节点",
+    {
+      type: "warning",
+      confirmButtonText: "确认强制推送",
+      cancelButtonText: "取消"
+    }
+  );
+
+  forcing.value = true;
+  try {
+    const result = await forceWeComPushCurrentNodes();
+    message(
+      `已扫描${result.data.scanned_instances}个审批实例，推送${result.data.success_count}条，失败${result.data.failure_count}条`,
+      { type: result.data.failure_count > 0 ? "warning" : "success" }
+    );
+    await refresh();
+  } finally {
+    forcing.value = false;
   }
 };
 
@@ -181,6 +208,9 @@ onMounted(async () => {
             <el-option :value="72" label="最近72小时" />
             <el-option :value="168" label="最近7天" />
           </el-select>
+          <el-button type="danger" :loading="forcing" @click="forcePushCurrentNodes"
+            >扫描当前节点并强制推送</el-button
+          >
           <el-button type="primary" :loading="loading" @click="refresh">刷新</el-button>
         </div>
       </div>

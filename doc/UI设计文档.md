@@ -75,6 +75,7 @@
 - 计算节点监控与Runner运行参数：`packages/web/src/views/ai/nodes.vue`
 - AI关卡任务管理（超管）：`packages/web/src/views/admin/ai-gate-tasks.vue`
 - 企微推送监控（超管）：`packages/web/src/views/admin/wecom-push-monitor.vue`
+  - 新增“扫描当前节点并强制推送”按钮，调用 `POST /api/v1/admin/wecom-push/force-current-nodes`，用于对当前所有在途审批节点待办执行强制推送。
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 资产运维看板：`packages/web/src/views/asset/ledger.vue`
 - 资产详情：`packages/web/src/views/asset/detail.vue`

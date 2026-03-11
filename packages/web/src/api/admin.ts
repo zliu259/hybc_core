@@ -131,6 +131,14 @@ export type WeComPushMonitorResponse = {
   recent: WeComPushMonitorEvent[];
 };
 
+export type WeComForceCurrentNodesResult = {
+  scanned_instances: number;
+  scanned_recipients: number;
+  success_count: number;
+  failure_count: number;
+  errors: string[];
+};
+
 export const listApprovalTemplates = (params?: { biz_type?: string }) => {
   return http.request<{ success: boolean; data: ApprovalTemplate[] }>(
     "get",
@@ -496,5 +504,12 @@ export const getWeComPushMonitor = (params?: { hours?: number; limit?: number })
     "get",
     "/api/v1/admin/wecom-push/monitor",
     { params }
+  );
+};
+
+export const forceWeComPushCurrentNodes = () => {
+  return http.request<{ success: boolean; data: WeComForceCurrentNodesResult }>(
+    "post",
+    "/api/v1/admin/wecom-push/force-current-nodes"
   );
 };
