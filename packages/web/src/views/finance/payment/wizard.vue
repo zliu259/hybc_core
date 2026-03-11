@@ -223,6 +223,27 @@ const selectedDirectContract = computed(() => {
   return contracts.value.find(item => item.id === directForm.value.contract_id) ?? null;
 });
 
+const sortedContracts = computed(() => {
+  return [...contracts.value].sort((a, b) => {
+    const timeA = new Date(a.created_at || a.contract_date || "").getTime();
+    const timeB = new Date(b.created_at || b.contract_date || "").getTime();
+    if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
+      return timeB - timeA;
+    }
+    return b.id - a.id;
+  });
+});
+
+const selectedDirectPayee = computed(() => {
+  if (!directForm.value.payee_id) return null;
+  return payees.value.find(item => item.id === directForm.value.payee_id) ?? null;
+});
+
+const selectedContractPayee = computed(() => {
+  if (!contractForm.value.payee_id) return null;
+  return payees.value.find(item => item.id === contractForm.value.payee_id) ?? null;
+});
+
 const selectedDirectContractRemaining = computed(() => {
   const target = selectedDirectContract.value;
   if (!target) return null;
@@ -619,7 +640,7 @@ onMounted(async () => {
             >
               <el-option label="无合同 / 无需合同" :value="null" />
               <el-option
-                v-for="item in contracts"
+                v-for="item in sortedContracts"
                 :key="item.id"
                 :label="`${item.contract_no} - ${item.counterparty}`"
                 :value="item.id"
@@ -667,6 +688,18 @@ onMounted(async () => {
                 快速添加外部收款人
               </el-button>
             </div>
+            <el-descriptions
+              v-if="selectedDirectPayee"
+              :column="1"
+              border
+              size="small"
+              class="payee-verify-card"
+            >
+              <el-descriptions-item label="收款人">{{ selectedDirectPayee.name }}</el-descriptions-item>
+              <el-descriptions-item label="开户行">{{ selectedDirectPayee.bank_name }}</el-descriptions-item>
+              <el-descriptions-item label="银行账号">{{ selectedDirectPayee.bank_account }}</el-descriptions-item>
+              <el-descriptions-item label="联系电话">{{ selectedDirectPayee.phone || "-" }}</el-descriptions-item>
+            </el-descriptions>
           </el-form-item>
           <el-form-item label="付款日期">
             <el-date-picker
@@ -780,7 +813,7 @@ onMounted(async () => {
               style="width: 360px"
             >
               <el-option
-                v-for="item in contracts"
+                v-for="item in sortedContracts"
                 :key="item.id"
                 :label="`${item.contract_no} - ${item.counterparty}`"
                 :value="item.id"
@@ -845,6 +878,18 @@ onMounted(async () => {
                 快速添加外部收款人
               </el-button>
             </div>
+            <el-descriptions
+              v-if="selectedContractPayee"
+              :column="1"
+              border
+              size="small"
+              class="payee-verify-card"
+            >
+              <el-descriptions-item label="收款人">{{ selectedContractPayee.name }}</el-descriptions-item>
+              <el-descriptions-item label="开户行">{{ selectedContractPayee.bank_name }}</el-descriptions-item>
+              <el-descriptions-item label="银行账号">{{ selectedContractPayee.bank_account }}</el-descriptions-item>
+              <el-descriptions-item label="联系电话">{{ selectedContractPayee.phone || "-" }}</el-descriptions-item>
+            </el-descriptions>
           </el-form-item>
           <el-form-item label="经办人">
             <el-select
@@ -1120,5 +1165,10 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   gap: 12px;
+}
+
+.payee-verify-card {
+  margin-top: 10px;
+  width: min(640px, 100%);
 }
 </style>

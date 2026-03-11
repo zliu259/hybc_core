@@ -351,6 +351,18 @@ const removeStagedAttachment = (index: number) => {
   attachmentItems.value.splice(index, 1);
 };
 
+const downloadAttachment = (item: EnvelopeAttachmentDraft) => {
+  if (!item.file_key) return;
+  const link = document.createElement("a");
+  link.href = resolveUploadUrl(attachmentUrl(item.file_key));
+  link.download = item.file_name || item.file_key;
+  link.target = "_blank";
+  link.rel = "noopener noreferrer";
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+};
+
 const save = async () => {
   if (isCreate.value && form.value.channel === "physical" && !form.value.bind_envelope_uuid.trim()) {
     message("实物信封报销必须先输入或扫描信封UUID", { type: "warning" });
@@ -718,13 +730,7 @@ watch(
         </el-table-column>
         <el-table-column label="文件名" min-width="260">
           <template #default="scope">
-            <el-link
-              :href="attachmentUrl(scope.row.file_key)"
-              target="_blank"
-              type="primary"
-            >
-              {{ scope.row.file_name }}
-            </el-link>
+            <span>{{ scope.row.file_name }}</span>
           </template>
         </el-table-column>
         <el-table-column label="大小" width="120">
@@ -737,8 +743,11 @@ watch(
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
+            <el-button link type="primary" @click="downloadAttachment(scope.row)">
+              下载
+            </el-button>
             <el-button
               link
               type="danger"
