@@ -289,7 +289,7 @@ const serializeAttachments = (): string => {
 };
 
 const fileUrl = (fileKey: string) =>
-  `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
+  resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
 
 const approvalDialogVisible = ref(false);
 const approvalSummary = ref("");
@@ -672,7 +672,7 @@ onMounted(async () => {
           <el-option
             v-for="item in wecomUsers"
             :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
+            :label="item.name"
             :value="item.userid"
           />
         </el-select>

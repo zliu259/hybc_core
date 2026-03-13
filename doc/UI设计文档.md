@@ -967,6 +967,10 @@
 - Web 项目经理选择改为“按姓名显示、按 userid 回填提交”：`packages/web/src/views/project/create.vue`
 - Miniapp 项目创建页项目经理输入框改为下拉选择（显示姓名、回填 userid），并同步支持项目编号自动生成：`packages/miniapp/pages/project-create/index.{js,wxml}`
 
+### 4.26 合同详情附件跳转修复与经办人显示收敛（2026-03）
+- 合同详情附件“预览/下载”链接改为绝对 API 地址，避免在个人工作台 hash 路由下被前端路由吞掉导致跳转错误：`packages/web/src/views/finance/contract/detail.vue`
+- 合同详情“经办人”下拉展示改为仅姓名，提交值继续使用 `userid`，降低选择噪音：`packages/web/src/views/finance/contract/detail.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
