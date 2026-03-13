@@ -251,6 +251,11 @@ export interface PendingApprovalItem {
   instance_no: string;
   biz_type: string;
   biz_summary: string;
+  biz_detail?: string | null;
+  biz_amount?: number | null;
+  biz_project_id?: number | null;
+  project_name?: string | null;
+  project_code?: string | null;
   initiator_userid: string;
   current_node_key: string | null;
   current_node_name: string | null;
@@ -258,6 +263,24 @@ export interface PendingApprovalItem {
   submitted_at: string;
   task_id: number;
   task_status: TaskStatus;
+}
+
+export interface ProcessedApprovalItem {
+  id: number;
+  instance_no: string;
+  biz_type: string;
+  biz_summary: string;
+  biz_detail?: string | null;
+  biz_amount?: number | null;
+  biz_project_id?: number | null;
+  project_name?: string | null;
+  project_code?: string | null;
+  initiator_userid: string;
+  status: InstanceStatus;
+  submitted_at: string;
+  action: string | null;
+  acted_at: string | null;
+  comment: string | null;
 }
 
 export interface ApprovalDetailResponse {

@@ -22,6 +22,11 @@ export type PendingApprovalItem = {
   instance_no: string;
   biz_type: string;
   biz_summary: string;
+  biz_detail?: string | null;
+  biz_amount?: number | null;
+  biz_project_id?: number | null;
+  project_name?: string | null;
+  project_code?: string | null;
   initiator_userid: string;
   current_node_key: string | null;
   current_node_name: string | null;
@@ -36,6 +41,11 @@ export type ProcessedApprovalItem = {
   instance_no: string;
   biz_type: string;
   biz_summary: string;
+  biz_detail?: string | null;
+  biz_amount?: number | null;
+  biz_project_id?: number | null;
+  project_name?: string | null;
+  project_code?: string | null;
   initiator_userid: string;
   status: string;
   submitted_at: string;

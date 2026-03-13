@@ -131,11 +131,50 @@ approvalRoutes.get("/pending", async (c) => {
     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
        ai.initiator_userid, ai.current_node_key, ai.status, ai.submitted_at,
        at2.id as task_id, at2.status as task_status,
-       ani.node_name as current_node_name
+       ani.node_name as current_node_name,
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.amount FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.total_amount FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.total_amount FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.total_amount FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.amount_with_tax FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_amount,
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.project_id FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_project_id,
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.serial_no || ' | ' || IFNULL(pr.content, '-') FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.batch_no || ' | ' || rb.item_count || '单' FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.request_no || ' | ' || IFNULL(ir.customer_name, '-') FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         WHEN 'stock_order' THEN (SELECT so.order_no || ' | ' || IFNULL(so.order_type, '-') FROM stock_order so WHERE so.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_detail,
+       p.project_name,
+       p.project_code
      FROM approval_task at2
      JOIN approval_instance ai ON ai.id = at2.instance_id
      LEFT JOIN approval_node_instance ani ON ani.instance_id = ai.id
        AND ani.node_key = ai.current_node_key AND ani.round = ai.current_round
+     LEFT JOIN project p ON p.id = (
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.project_id FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
+         ELSE NULL
+       END
+     )
      ${whereSql}
      ORDER BY at2.created_at DESC LIMIT ? OFFSET ?`
   )
@@ -186,9 +225,48 @@ approvalRoutes.get("/processed", async (c) => {
   const rows = await c.env.DB.prepare(
     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
        ai.initiator_userid, ai.status, ai.submitted_at,
-       at2.action, at2.acted_at, at2.comment
+       at2.action, at2.acted_at, at2.comment,
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.amount FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.total_amount FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.total_amount FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.total_amount FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.amount_with_tax FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_amount,
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.project_id FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_project_id,
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.serial_no || ' | ' || IFNULL(pr.content, '-') FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.batch_no || ' | ' || rb.item_count || '单' FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.request_no || ' | ' || IFNULL(ir.customer_name, '-') FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         WHEN 'stock_order' THEN (SELECT so.order_no || ' | ' || IFNULL(so.order_type, '-') FROM stock_order so WHERE so.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_detail,
+       p.project_name,
+       p.project_code
      FROM approval_task at2
      JOIN approval_instance ai ON ai.id = at2.instance_id
+     LEFT JOIN project p ON p.id = (
+       CASE ai.biz_type
+         WHEN 'payment_request' THEN (SELECT pr.project_id FROM payment_request pr WHERE pr.id = ai.biz_id)
+         WHEN 'outbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
+         WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
+         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
+         ELSE NULL
+       END
+     )
      ${whereSql}
      ORDER BY at2.acted_at DESC LIMIT ? OFFSET ?`
   )

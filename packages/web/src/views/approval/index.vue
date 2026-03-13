@@ -136,6 +136,21 @@ const toUserLabel = (userid: string | null | undefined) => {
   return userNameMap.value.get(userid) ?? userid;
 };
 
+const formatAmount = (value: number | null | undefined) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return value.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
+const projectLabel = (
+  row: Pick<PendingApprovalItem, "project_name" | "project_code"> | Pick<ProcessedApprovalItem, "project_name" | "project_code">
+) => {
+  if (row.project_name && row.project_code) return `${row.project_name} (${row.project_code})`;
+  return row.project_name || row.project_code || "-";
+};
+
 onMounted(async () => {
   await loadWecomUsers();
   await loadPending();
@@ -187,10 +202,23 @@ onMounted(async () => {
               bizTypeLabel(row.biz_type)
             }}</template>
           </el-table-column>
+          <el-table-column prop="instance_no" label="审批单号" width="170" />
+          <el-table-column label="所属项目" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ projectLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column label="金额" width="140">
+            <template #default="{ row }">{{ formatAmount(row.biz_amount) }}</template>
+          </el-table-column>
+          <el-table-column
+            prop="biz_detail"
+            label="业务明细"
+            min-width="220"
+            show-overflow-tooltip
+          />
           <el-table-column
             prop="biz_summary"
             label="摘要"
-            min-width="220"
+            min-width="240"
             show-overflow-tooltip
           />
           <el-table-column label="发起人" width="140">
@@ -243,10 +271,23 @@ onMounted(async () => {
               bizTypeLabel(row.biz_type)
             }}</template>
           </el-table-column>
+          <el-table-column prop="instance_no" label="审批单号" width="170" />
+          <el-table-column label="所属项目" min-width="180" show-overflow-tooltip>
+            <template #default="{ row }">{{ projectLabel(row) }}</template>
+          </el-table-column>
+          <el-table-column label="金额" width="140">
+            <template #default="{ row }">{{ formatAmount(row.biz_amount) }}</template>
+          </el-table-column>
+          <el-table-column
+            prop="biz_detail"
+            label="业务明细"
+            min-width="220"
+            show-overflow-tooltip
+          />
           <el-table-column
             prop="biz_summary"
             label="摘要"
-            min-width="220"
+            min-width="240"
             show-overflow-tooltip
           />
           <el-table-column label="发起人" width="140">

@@ -266,7 +266,7 @@
 
 #### H. 审批中心 `views/approval/index.vue`
 - Tab：待审批、已处理、抄送我。
-- 列表列：业务类型、发起人、当前节点、超时状态（新增支持 `invoice_request` 业务类型筛选与展示）。
+- 待审批/已处理列表列：业务类型、审批单号、所属项目、金额、业务明细、摘要、发起人、节点/操作、时间、状态（用于审批快速识别）。
 - API 指向：`/api/v1/approval/pending`
 
 #### I. 审批详情 `views/approval/detail.vue`
