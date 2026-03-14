@@ -66,6 +66,17 @@ export default {
             title: "报销批次详情",
             showLink: false
           }
+        },
+        {
+          path: "/finance/reimbursement/envelope-generator",
+          name: "ReimbursementEnvelopeGenerator",
+          component: () =>
+            import("@/views/finance/reimbursement/envelope-generator.vue"),
+          meta: {
+            title: "信封生成器",
+            roles: ["super_admin", "manager", "finance"],
+            showLink: false
+          }
         }
       ]
     },

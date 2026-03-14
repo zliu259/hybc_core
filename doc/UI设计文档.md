@@ -56,6 +56,7 @@
 - 收款人管理：`packages/web/src/views/finance/payee/index.vue`
   - 个人工作台路径 `/workspace/payee` 下仅显示“与当前账号姓名匹配”的内部收款人记录（服务端按 `nickname/username` 与收款人姓名匹配过滤）。
 - 报销处理列表：`packages/web/src/views/finance/reimbursement/list.vue`
+- 报销信封生成器（正式离线版）：`packages/web/src/views/finance/reimbursement/envelope-generator.vue`
 - 报销详情：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 报销预审工作台：`packages/web/src/views/finance/reimbursement/precheck.vue`
 - 报销查重中心：`packages/web/src/views/finance/reimbursement/duplicate.vue`
@@ -169,7 +170,14 @@
 - 页面收敛：移除“批量生成未登记信封”入口，实体信封由办公室线下发放并通过 UUID 入流。
 - 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
 - 功能融合：查重线索、异常检测、预审通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
+- 财务视图新增“信封生成器”按钮入口，进入正式离线生成页用于批量打印与复印补打。
 - API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
+
+#### F-1. 报销信封生成器（正式离线版） `views/finance/reimbursement/envelope-generator.vue`
+- 本地离线生成：在浏览器端批量生成 UUID4 与二维码，不调用后端生成接口。
+- 参数输入：生成数量、纸张大小（默认 A4，支持常见纸型与自定义）、信封大小（常见信封规格与自定义）、批次名称。
+- 结果布局：每个信封包含信封编号（`RM-YYYYMMDD-序号`）、二维码、UUID 字符串，并预留“封装时间/签收时间/填报人”填写位。
+- 输出能力：支持直接打印预览（`window.print`）、导出 CSV 清单、导出/导入批次 JSON（用于离线复打与跨设备交接）。
 
 #### F-2. 报销详情 `views/finance/reimbursement/detail.vue`
 - 页面分区：基础信息、信封标识、状态总览、附件（拖拽上传）、操作区。
