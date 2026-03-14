@@ -1,9 +1,8 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import QRCode from "qrcode";
 import { jsPDF } from "jspdf";
-import html2canvas from "html2canvas";
 import { message } from "@/utils/message";
 
 defineOptions({ name: "ReimbursementEnvelopeGenerator" });
@@ -57,7 +56,6 @@ const generating = ref(false);
 const generatedAt = ref("");
 const items = ref<EnvelopeItem[]>([]);
 const importFileInput = ref<HTMLInputElement | null>(null);
-const pdfPageRefs = ref<(HTMLElement | null)[]>([]);
 
 const activePreset = computed(
   () => sizePresets.find(item => item.value === form.value.sizePreset) ?? sizePresets[0]
@@ -108,19 +106,6 @@ const createUuid = () => {
     const v = c === "x" ? r : (r & 0x3) | 0x8;
     return v.toString(16);
   });
-};
-
-const setPdfPageRef = (el: unknown, index: number) => {
-  if (!el) {
-    pdfPageRefs.value[index] = null;
-    return;
-  }
-  if (el instanceof HTMLElement) {
-    pdfPageRefs.value[index] = el;
-    return;
-  }
-  const maybe = el as { $el?: unknown };
-  pdfPageRefs.value[index] = maybe.$el instanceof HTMLElement ? maybe.$el : null;
 };
 
 const persistSettings = () => {
@@ -190,7 +175,6 @@ const generate = async () => {
 const clearAll = () => {
   items.value = [];
   generatedAt.value = "";
-  pdfPageRefs.value = [];
 };
 
 const exportCsv = () => {
@@ -289,6 +273,110 @@ const importJson = async (event: Event) => {
   }
 };
 
+const mmToPx = (mm: number) => (mm * 96) / 25.4;
+
+const loadImage = (src: string) =>
+  new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error("image_load_failed"));
+    img.src = src;
+  });
+
+const renderEnvelopeCanvas = async (item: EnvelopeItem) => {
+  const scale = 2;
+  const widthPx = Math.max(1, Math.round(mmToPx(pageWidthMm.value)));
+  const heightPx = Math.max(1, Math.round(mmToPx(pageHeightMm.value)));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = widthPx * scale;
+  canvas.height = heightPx * scale;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) {
+    throw new Error("canvas_context_failed");
+  }
+
+  ctx.scale(scale, scale);
+  ctx.fillStyle = "#ffffff";
+  ctx.fillRect(0, 0, widthPx, heightPx);
+
+  const margin = mmToPx(8);
+  ctx.fillStyle = "#685f54";
+  ctx.font = `${Math.round(mmToPx(3.3))}px sans-serif`;
+  ctx.fillText(`生成时间：${generatedAt.value}`, margin, margin + mmToPx(2));
+
+  ctx.fillStyle = "#1f1f1f";
+  ctx.textAlign = "center";
+  ctx.font = `700 ${Math.round(mmToPx(4.4))}px sans-serif`;
+  ctx.fillText(form.value.title.trim(), widthPx / 2, margin + mmToPx(12));
+
+  const qrSize = mmToPx(30);
+  const qrX = margin;
+  const qrY = margin + mmToPx(16);
+  const qrImage = await loadImage(item.qrDataUrl);
+  ctx.drawImage(qrImage, qrX, qrY, qrSize, qrSize);
+
+  const textX = qrX + qrSize + mmToPx(8);
+  const textY = qrY + mmToPx(1);
+  const bodyFont = Math.round(mmToPx(4.1));
+  ctx.textAlign = "left";
+  ctx.fillStyle = "#1f1f1f";
+  ctx.font = `${bodyFont}px sans-serif`;
+
+  const uuidMaxWidth = widthPx - textX - margin;
+  const rawUuid = item.uuid;
+  const uuidChunks: string[] = [];
+  let start = 0;
+  while (start < rawUuid.length) {
+    let end = start + 1;
+    while (end <= rawUuid.length && ctx.measureText(rawUuid.slice(start, end)).width <= uuidMaxWidth) {
+      end += 1;
+    }
+    uuidChunks.push(rawUuid.slice(start, Math.max(start + 1, end - 1)));
+    start = Math.max(start + 1, end - 1);
+  }
+
+  uuidChunks.forEach((line, index) => {
+    ctx.fillText(line, textX, textY + bodyFont + index * Math.round(bodyFont * 1.35));
+  });
+
+  const lineStartY = textY + Math.round(bodyFont * 1.35) * Math.max(2, uuidChunks.length + 1);
+  ctx.fillText("封装日期：________年____月____日", textX, lineStartY);
+  ctx.fillText("签收日期：________年____月____日", textX, lineStartY + Math.round(bodyFont * 1.6));
+  ctx.fillText("填 报 人：________________", textX, lineStartY + Math.round(bodyFont * 3.2));
+
+  return canvas;
+};
+
+const buildPdf = async () => {
+  const pdf = new jsPDF({
+    orientation: form.value.orientation,
+    unit: "mm",
+    format: [pageWidthMm.value, pageHeightMm.value]
+  });
+
+  for (let i = 0; i < items.value.length; i += 1) {
+    const canvas = await renderEnvelopeCanvas(items.value[i]);
+    const imgData = canvas.toDataURL("image/png");
+    if (i > 0) {
+      pdf.addPage([pageWidthMm.value, pageHeightMm.value], form.value.orientation);
+    }
+    pdf.addImage(
+      imgData,
+      "PNG",
+      0,
+      0,
+      pageWidthMm.value,
+      pageHeightMm.value,
+      undefined,
+      "FAST"
+    );
+  }
+
+  return pdf;
+};
+
 const exportPdf = async () => {
   if (!items.value.length) {
     message("请先生成数据", { type: "warning" });
@@ -296,40 +384,7 @@ const exportPdf = async () => {
   }
 
   try {
-    await nextTick();
-    const pages = pdfPageRefs.value.filter((el): el is HTMLElement => Boolean(el));
-    if (!pages.length) {
-      message("未找到可导出的页面", { type: "error" });
-      return;
-    }
-
-    const pdf = new jsPDF({
-      orientation: form.value.orientation,
-      unit: "mm",
-      format: [pageWidthMm.value, pageHeightMm.value]
-    });
-
-    for (let i = 0; i < pages.length; i += 1) {
-      const canvas = await html2canvas(pages[i], {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true
-      });
-      const imgData = canvas.toDataURL("image/png");
-      if (i > 0) {
-        pdf.addPage([pageWidthMm.value, pageHeightMm.value], form.value.orientation);
-      }
-      pdf.addImage(
-        imgData,
-        "PNG",
-        0,
-        0,
-        pageWidthMm.value,
-        pageHeightMm.value,
-        undefined,
-        "FAST"
-      );
-    }
+    const pdf = await buildPdf();
 
     pdf.save(`reimbursement-envelope-${(generatedAt.value || formatNow()).replace(/[\s:]/g, "-")}.pdf`);
     message("PDF 已生成并开始下载", { type: "success" });
@@ -345,40 +400,7 @@ const printPdf = async () => {
   }
 
   try {
-    await nextTick();
-    const pages = pdfPageRefs.value.filter((el): el is HTMLElement => Boolean(el));
-    if (!pages.length) {
-      message("未找到可打印的页面", { type: "error" });
-      return;
-    }
-
-    const pdf = new jsPDF({
-      orientation: form.value.orientation,
-      unit: "mm",
-      format: [pageWidthMm.value, pageHeightMm.value]
-    });
-
-    for (let i = 0; i < pages.length; i += 1) {
-      const canvas = await html2canvas(pages[i], {
-        scale: 2,
-        backgroundColor: "#ffffff",
-        useCORS: true
-      });
-      const imgData = canvas.toDataURL("image/png");
-      if (i > 0) {
-        pdf.addPage([pageWidthMm.value, pageHeightMm.value], form.value.orientation);
-      }
-      pdf.addImage(
-        imgData,
-        "PNG",
-        0,
-        0,
-        pageWidthMm.value,
-        pageHeightMm.value,
-        undefined,
-        "FAST"
-      );
-    }
+    const pdf = await buildPdf();
 
     const blob = pdf.output("blob");
     const blobUrl = URL.createObjectURL(blob);
@@ -388,11 +410,16 @@ const printPdf = async () => {
       URL.revokeObjectURL(blobUrl);
       return;
     }
-    win.onload = () => {
-      win.focus();
-      win.print();
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+    const tryPrint = () => {
+      try {
+        win.focus();
+        win.print();
+      } finally {
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 3000);
+      }
     };
+    win.addEventListener("load", tryPrint, { once: true });
+    setTimeout(tryPrint, 1200);
   } catch {
     message("打印失败，请重试", { type: "error" });
   }
@@ -492,27 +519,6 @@ onMounted(() => {
     </div>
     <el-empty v-else description="请先生成数据" />
 
-    <div class="pdf-host">
-      <div
-        v-for="(item, index) in items"
-        :key="`${item.uuid}-${index}`"
-        :ref="el => setPdfPageRef(el, index)"
-        class="pdf-page"
-        :style="previewStyle"
-      >
-        <div class="pdf-meta">生成时间：{{ generatedAt }}</div>
-        <div class="pdf-title">{{ form.title }}</div>
-        <div class="pdf-layout">
-          <img class="pdf-qr" :src="item.qrDataUrl" alt="pdf-qr" />
-          <div class="pdf-right">
-            <div class="uuid">{{ item.uuid }}</div>
-            <div>封装日期：________年____月____日</div>
-            <div>签收日期：________年____月____日</div>
-            <div>填 报 人：________________</div>
-          </div>
-        </div>
-      </div>
-    </div>
   </div>
 </template>
 
@@ -567,29 +573,25 @@ onMounted(() => {
   padding: 2mm;
 }
 
-.preview-title,
-.pdf-title {
+.preview-title {
   text-align: center;
   font-size: 16px;
   font-weight: 700;
   margin-bottom: 4mm;
 }
 
-.preview-layout,
-.pdf-layout {
+.preview-layout {
   display: flex;
   gap: 7mm;
   align-items: center;
 }
 
-.preview-qr,
-.pdf-qr {
+.preview-qr {
   width: 30mm;
   height: 30mm;
 }
 
-.preview-right,
-.pdf-right {
+.preview-right {
   display: flex;
   flex-direction: column;
   gap: 4mm;
@@ -601,22 +603,4 @@ onMounted(() => {
   word-break: break-all;
 }
 
-.pdf-host {
-  position: fixed;
-  left: -20000px;
-  top: 0;
-  opacity: 0;
-  pointer-events: none;
-}
-
-.pdf-page {
-  background: #fff;
-  padding: 8mm;
-  box-sizing: border-box;
-}
-
-.pdf-meta {
-  color: #685f54;
-  font-size: 12px;
-}
 </style>
