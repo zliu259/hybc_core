@@ -190,6 +190,14 @@ Page({
   onChannelChange(e) {
     const index = Number(e.detail.value || 0);
     const selected = this.data.channelOptions[index] || this.data.channelOptions[0];
+    if (selected.value === "electronic") {
+      this.setData({
+        channelIndex: index,
+        "draft.channel": selected.value,
+        "draft.preferred_envelope_uuid": ""
+      });
+      return;
+    }
     this.setData({ channelIndex: index, "draft.channel": selected.value });
   },
 
@@ -285,7 +293,10 @@ Page({
         data: {
           project_id: Number(draft.project_id || 0),
           channel: draft.channel || "physical",
-          preferred_envelope_uuid: draft.preferred_envelope_uuid || undefined,
+          preferred_envelope_uuid:
+            draft.channel === "physical"
+              ? draft.preferred_envelope_uuid || undefined
+              : undefined,
           invoice_no: draft.invoice_no || undefined,
           expense_date: draft.expense_date || undefined,
           amount: Number(draft.amount || 0) || undefined,
@@ -395,10 +406,6 @@ Page({
   async submitEnvelope() {
     if (!this.data.latestEnvelopeId) {
       sayToast({ title: "请先保存草稿", icon: "none", danger: true });
-      return;
-    }
-    if (this.data.draft.channel === "electronic") {
-      sayToast({ title: "电子发票上传后自动进入审计，无需手动提交", icon: "none" });
       return;
     }
 

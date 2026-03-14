@@ -2046,10 +2046,6 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "Forbidden" } }, 403);
     }
 
-    if (envelope.channel !== "physical") {
-      return c.json({ success: false, error: { message: "Only physical envelope needs submit step" } }, 400);
-    }
-
     if (![
       "draft",
       "submitted",

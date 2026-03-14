@@ -382,7 +382,10 @@ const save = async () => {
         project_id: form.value.project_id,
         applicant_userid: form.value.applicant_userid || undefined,
         channel: form.value.channel,
-        preferred_envelope_uuid: form.value.bind_envelope_uuid || undefined,
+        preferred_envelope_uuid:
+          form.value.channel === "physical"
+            ? form.value.bind_envelope_uuid || undefined
+            : undefined,
         expense_date: form.value.expense_date || undefined,
         amount: form.value.amount,
         category: form.value.category || undefined,
@@ -523,6 +526,15 @@ watch(
     await loadDetail();
   }
 );
+
+watch(
+  () => form.value.channel,
+  channel => {
+    if (channel === "electronic") {
+      form.value.bind_envelope_uuid = "";
+    }
+  }
+);
 </script>
 
 <template>
@@ -655,7 +667,12 @@ watch(
             <el-descriptions-item v-if="isCreate" label="绑定现有信封UUID">
               <el-input
                 v-model="form.bind_envelope_uuid"
-                placeholder="可选：若已持有预打印信封，可直接填UUID绑定"
+                :disabled="form.channel === 'electronic'"
+                :placeholder="
+                  form.channel === 'electronic'
+                    ? '电子发票通道自动生成UUID'
+                    : '可选：若已持有预打印信封，可直接填UUID绑定'
+                "
                 style="width: 100%"
               />
             </el-descriptions-item>
@@ -786,6 +803,16 @@ watch(
             @click="submitEnvelope"
           >
             提交报销并寄送实物信封
+          </el-button>
+          <el-button
+            v-if="
+              detail.channel === 'electronic' &&
+              ['draft', 'submitted'].includes(detail.status)
+            "
+            type="primary"
+            @click="submitEnvelope"
+          >
+            提交电子发票报销
           </el-button>
           <el-button v-if="detail.channel === 'electronic'" @click="refreshOcrStatus"
             >刷新OCR状态</el-button

@@ -17,7 +17,14 @@
       <hy-status-chip text="批次：{{batchInfoText}}" theme="warning" variant="light" />
     </view>
 
-    <t-notice-bar content="建议流程：实物信封需先扫码/输入UUID再保存草稿；上传附件会立即进入审计。电子发票上传后自动进入办公室核查流程。" theme="warning" />
+    <t-notice-bar content="建议流程（与Web一致）：先绑定信封UUID（实物信封必填）并保存，再上传附件后提交；电子发票上传会自动触发OCR，资料确认后同样点击“提交报销”。" theme="warning" />
+
+    <view class="label">绑定信封 UUID（实物信封必填）</view>
+    <input class="input standard-input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy || draft.channel === 'electronic'}}" placeholder="{{draft.channel === 'electronic' ? '电子发票通道自动生成UUID' : '可扫码或粘贴 UUID'}}" />
+
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy || draft.channel === 'electronic'}}">📷 扫码录入UUID</t-button>
+    </view>
 
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" enableGps="{{false}}" bind:change="onProjectChange" />
 
@@ -26,11 +33,8 @@
       <view class="picker-value">{{channelOptions[channelIndex].label}}</view>
     </picker>
 
-    <view class="label">绑定信封 UUID（实物信封必填）</view>
-    <input class="input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy}}" placeholder="实物信封需扫码或粘贴 UUID" />
-
     <view class="label">发票号（可选）</view>
-    <input class="input" value="{{draft.invoice_no}}" data-key="invoice_no" bindinput="onDraftInput" disabled="{{busy}}" />
+    <input class="input standard-input" value="{{draft.invoice_no}}" data-key="invoice_no" bindinput="onDraftInput" disabled="{{busy}}" />
 
     <view class="label">费用日期（可选）</view>
     <picker mode="date" value="{{draft.expense_date}}" bindchange="onDraftInput" data-key="expense_date">
@@ -38,16 +42,15 @@
     </picker>
 
     <view class="label">金额（可选）</view>
-    <input class="input" type="digit" value="{{draft.amount}}" data-key="amount" bindinput="onDraftInput" disabled="{{busy}}" />
+    <input class="input standard-input" type="digit" value="{{draft.amount}}" data-key="amount" bindinput="onDraftInput" disabled="{{busy}}" />
 
     <view class="label">类别（可选）</view>
-    <input class="input" value="{{draft.category}}" data-key="category" bindinput="onDraftInput" disabled="{{busy}}" />
+    <input class="input standard-input" value="{{draft.category}}" data-key="category" bindinput="onDraftInput" disabled="{{busy}}" />
 
     <view class="label">说明（可选）</view>
     <textarea class="textarea" value="{{draft.description}}" data-key="description" bindinput="onDraftInput" maxlength="240" disabled="{{busy}}" />
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy}}">📷 扫码录入UUID</t-button>
       <t-button class="btn btn-primary" theme="primary" bindtap="createOrUpdateDraft" loading="{{busy}}" disabled="{{busy}}">💾 保存草稿</t-button>
     </view>
 
@@ -62,12 +65,12 @@
     </view>
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">📸 上传电子发票并OCR</t-button>
+      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">📸 上传电子发票（自动OCR）</t-button>
     </view>
 
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">刷新OCR状态</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId || draft.channel === 'electronic'}}">📨 提交报销</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📨 提交报销</t-button>
     </view>
 
     <view class="label">附件列表</view>

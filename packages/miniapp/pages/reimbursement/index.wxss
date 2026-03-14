@@ -30,6 +30,18 @@
   font-size: 28rpx;
 }
 
+.standard-input {
+  min-height: 88rpx;
+  height: 88rpx;
+  line-height: 48rpx;
+}
+
+.picker-value {
+  min-height: 88rpx;
+  display: flex;
+  align-items: center;
+}
+
 .picker-value {
   color: #1f2937;
 }

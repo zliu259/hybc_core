@@ -200,6 +200,9 @@
   - 存在查重风险时，申请人需“坚持提交”后才允许进入办公室预审通过；
   - 页面显示审计提示，办公室侧可见坚持提交标记并执行复核。
 - 操作区收敛：保存、实物扫码登记、实物提交、电子 OCR 刷新、办公室核查签收/异常、预审动作。
+- 提交入口补齐：电子发票通道在 `draft/submitted` 状态同样显示“提交电子发票报销”，避免仅见“保存”不见“提交”的操作断层。
+- UUID 逻辑对齐 miniapp：创建态下若通道为“电子发票”，绑定 UUID 输入禁用并自动清空，创建请求不传 `preferred_envelope_uuid`，由后端自动生成。
+- 提交流程统一：`POST /api/v1/reimbursement/:id/submit` 对实物/电子通道均可执行（前提满足附件、状态、权限校验），避免电子通道点击提交时报 400。
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
@@ -631,7 +634,11 @@
   - 封装短震/长震与统一 toast，供审批/报销/勘查等关键流程复用。
 - 权限一致性补齐：
   - `packages/miniapp/pages/finance/index.{js,wxml}`：按角色显示“对外付款”入口
-  - `packages/miniapp/pages/reimbursement/index.{js,wxml}`：聚焦个人报销操作（保存草稿、上传附件、提交报销）
+- `packages/miniapp/pages/reimbursement/index.{js,wxml}`：聚焦个人报销操作（保存草稿、上传附件、提交报销）
+  - UUID 绑定区前置到页面上部，先绑定再录入，减少现场漏绑。
+  - `uuid/发票号/金额/类别` 输入框统一标准高度，避免文字显示被压缩。
+  - 电子发票按钮文案收敛为“上传电子发票（自动OCR）”；提示文案明确“资料确认后点击提交报销”。
+  - 当报销通道为“电子发票”时，UUID 输入与扫码录入自动禁用，UUID 由后端自动生成。
   - `packages/miniapp/pages/approval/index.{js,wxml}`：转签改为动态成员选择（基于企业微信通讯录）
   - `packages/api/src/routes/survey.ts`：现场勘查提交支持 `operator` 角色
 
