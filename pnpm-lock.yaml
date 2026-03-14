@@ -108,6 +108,9 @@ importers:
       element-plus:
         specifier: ^2.11.5
         version: 2.13.2(vue@3.5.28(typescript@5.9.3))
+      html2canvas:
+        specifier: ^1.4.1
+        version: 1.4.1
       js-cookie:
         specifier: ^3.0.5
         version: 3.0.5
@@ -5712,8 +5715,7 @@ snapshots:
 
   balanced-match@2.0.0: {}
 
-  base64-arraybuffer@1.0.2:
-    optional: true
+  base64-arraybuffer@1.0.2: {}
 
   baseline-browser-mapping@2.9.19: {}
 
@@ -5982,7 +5984,6 @@ snapshots:
   css-line-break@2.1.0:
     dependencies:
       utrie: 1.0.2
-    optional: true
 
   css-select@5.2.2:
     dependencies:
@@ -6585,7 +6586,6 @@ snapshots:
     dependencies:
       css-line-break: 2.1.0
       text-segmentation: 1.0.3
-    optional: true
 
   htmlparser2@8.0.2:
     dependencies:
@@ -7786,7 +7786,6 @@ snapshots:
   text-segmentation@1.0.3:
     dependencies:
       utrie: 1.0.2
-    optional: true
 
   tinybench@2.9.0: {}
 
@@ -7912,7 +7911,6 @@ snapshots:
   utrie@1.0.2:
     dependencies:
       base64-arraybuffer: 1.0.2
-    optional: true
 
   vite-node@3.2.4(@types/node@20.19.33)(jiti@2.6.1)(lightningcss@1.30.2)(sass@1.97.3)(yaml@2.8.2):
     dependencies:
