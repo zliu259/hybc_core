@@ -353,7 +353,7 @@ watch(workflowView, mode => {
       <el-button v-if="workflowView === 'finance'" @click="goPayoutCenter"
         >进入集中打款台</el-button
       >
-      <el-button v-if="workflowView === 'finance'" type="primary" plain @click="goEnvelopeGenerator"
+      <el-button v-if="!isWorkspaceRoute && canFinanceCenter" type="primary" plain @click="goEnvelopeGenerator"
         >信封生成器</el-button
       >
     </el-form>
