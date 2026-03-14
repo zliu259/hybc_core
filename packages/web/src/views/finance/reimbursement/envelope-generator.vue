@@ -295,33 +295,107 @@ const exportPdf = async () => {
     return;
   }
 
-  await nextTick();
-  const pages = pdfPageRefs.value.filter((el): el is HTMLElement => Boolean(el));
-  if (!pages.length) {
-    message("未找到可导出的页面", { type: "error" });
+  try {
+    await nextTick();
+    const pages = pdfPageRefs.value.filter((el): el is HTMLElement => Boolean(el));
+    if (!pages.length) {
+      message("未找到可导出的页面", { type: "error" });
+      return;
+    }
+
+    const pdf = new jsPDF({
+      orientation: form.value.orientation,
+      unit: "mm",
+      format: [pageWidthMm.value, pageHeightMm.value]
+    });
+
+    for (let i = 0; i < pages.length; i += 1) {
+      const canvas = await html2canvas(pages[i], {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true
+      });
+      const imgData = canvas.toDataURL("image/png");
+      if (i > 0) {
+        pdf.addPage([pageWidthMm.value, pageHeightMm.value], form.value.orientation);
+      }
+      pdf.addImage(
+        imgData,
+        "PNG",
+        0,
+        0,
+        pageWidthMm.value,
+        pageHeightMm.value,
+        undefined,
+        "FAST"
+      );
+    }
+
+    pdf.save(`reimbursement-envelope-${(generatedAt.value || formatNow()).replace(/[\s:]/g, "-")}.pdf`);
+    message("PDF 已生成并开始下载", { type: "success" });
+  } catch {
+    message("PDF 生成失败，请重试", { type: "error" });
+  }
+};
+
+const printPdf = async () => {
+  if (!items.value.length) {
+    message("请先生成数据", { type: "warning" });
     return;
   }
 
-  const pdf = new jsPDF({
-    orientation: form.value.orientation,
-    unit: "mm",
-    format: [pageWidthMm.value, pageHeightMm.value]
-  });
-
-  for (let i = 0; i < pages.length; i += 1) {
-    const canvas = await html2canvas(pages[i], {
-      scale: 2,
-      backgroundColor: "#ffffff",
-      useCORS: true
-    });
-    const imgData = canvas.toDataURL("image/png");
-    if (i > 0) {
-      pdf.addPage([pageWidthMm.value, pageHeightMm.value], form.value.orientation);
+  try {
+    await nextTick();
+    const pages = pdfPageRefs.value.filter((el): el is HTMLElement => Boolean(el));
+    if (!pages.length) {
+      message("未找到可打印的页面", { type: "error" });
+      return;
     }
-    pdf.addImage(imgData, "PNG", 0, 0, pageWidthMm.value, pageHeightMm.value, undefined, "FAST");
-  }
 
-  pdf.save(`reimbursement-envelope-${(generatedAt.value || formatNow()).replace(/[\s:]/g, "-")}.pdf`);
+    const pdf = new jsPDF({
+      orientation: form.value.orientation,
+      unit: "mm",
+      format: [pageWidthMm.value, pageHeightMm.value]
+    });
+
+    for (let i = 0; i < pages.length; i += 1) {
+      const canvas = await html2canvas(pages[i], {
+        scale: 2,
+        backgroundColor: "#ffffff",
+        useCORS: true
+      });
+      const imgData = canvas.toDataURL("image/png");
+      if (i > 0) {
+        pdf.addPage([pageWidthMm.value, pageHeightMm.value], form.value.orientation);
+      }
+      pdf.addImage(
+        imgData,
+        "PNG",
+        0,
+        0,
+        pageWidthMm.value,
+        pageHeightMm.value,
+        undefined,
+        "FAST"
+      );
+    }
+
+    const blob = pdf.output("blob");
+    const blobUrl = URL.createObjectURL(blob);
+    const win = window.open(blobUrl, "_blank");
+    if (!win) {
+      message("浏览器拦截了打印窗口，请允许弹窗后重试", { type: "warning" });
+      URL.revokeObjectURL(blobUrl);
+      return;
+    }
+    win.onload = () => {
+      win.focus();
+      win.print();
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+    };
+  } catch {
+    message("打印失败，请重试", { type: "error" });
+  }
 };
 
 const goBack = () => {
@@ -344,6 +418,7 @@ onMounted(() => {
             <el-button @click="clearAll">清空</el-button>
             <el-button type="primary" :loading="generating" @click="generate">生成</el-button>
             <el-button type="success" plain @click="exportPdf">直接生成PDF</el-button>
+            <el-button type="success" plain @click="printPdf">打印PDF</el-button>
             <el-button type="warning" plain @click="exportCsv">导出CSV</el-button>
             <el-button type="warning" plain @click="exportJson">导出JSON</el-button>
             <el-button plain @click="triggerImport">导入JSON</el-button>
@@ -518,20 +593,20 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 4mm;
+  font-size: 14px;
 }
 
 .uuid {
-  font-size: 11px;
+  font-size: 14px;
   word-break: break-all;
 }
 
 .pdf-host {
   position: fixed;
-  left: -99999px;
+  left: -20000px;
   top: 0;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .pdf-page {
