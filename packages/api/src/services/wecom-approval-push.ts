@@ -180,16 +180,16 @@ const resolveMiniProgramPagePath = (instanceId: number, config: WeComPushRouteCo
 const resolveRouteConfig = async (env: Env): Promise<WeComPushRouteConfig> => {
   try {
     const runtimeMap = await loadRunnerRuntimeMap(env);
-    const defaultTargetRaw = runtimeMap.WECOM_APPROVAL_DEFAULT_TARGET ?? env.WECOM_APPROVAL_DEFAULT_TARGET;
+    const defaultTargetRaw = env.WECOM_APPROVAL_DEFAULT_TARGET ?? runtimeMap.WECOM_APPROVAL_DEFAULT_TARGET;
 
     return {
       webBaseUrl:
-        (runtimeMap.WECOM_APPROVAL_WEB_BASE_URL || env.WECOM_APPROVAL_WEB_BASE_URL || "").trim() ||
+        (env.WECOM_APPROVAL_WEB_BASE_URL || runtimeMap.WECOM_APPROVAL_WEB_BASE_URL || "").trim() ||
         null,
       miniAppId:
-        (runtimeMap.WECOM_MINIAPP_APPID || env.WECOM_MINIAPP_APPID || "").trim() || null,
+        (env.WECOM_MINIAPP_APPID || runtimeMap.WECOM_MINIAPP_APPID || "").trim() || null,
       miniPagePathTemplate:
-        (runtimeMap.WECOM_APPROVAL_MINI_PAGE_PATH || env.WECOM_APPROVAL_MINI_PAGE_PATH || "").trim() ||
+        (env.WECOM_APPROVAL_MINI_PAGE_PATH || runtimeMap.WECOM_APPROVAL_MINI_PAGE_PATH || "").trim() ||
         null,
       defaultTarget: defaultTargetRaw === "web" ? "web" : "miniapp"
     };
