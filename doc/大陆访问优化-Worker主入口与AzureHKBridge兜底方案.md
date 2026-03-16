@@ -49,7 +49,7 @@ api.hybcdg.com -> Cloudflare Workers -> D1 / KV / R2 / Queue
 relay pool manifest
    |
    | choose first healthy + not overloaded relay
-   +--> api-hk-1.hybcdg.com -> Relay #1 -> Cloudflare Workers
+   +--> bridge.hybcdg.com -> Relay #1 -> Cloudflare Workers
    +--> api-hk-2.hybcdg.com -> Relay #2 -> Cloudflare Workers
    +--> api-sg-1.hybcdg.com -> Relay #3 -> Cloudflare Workers
    |

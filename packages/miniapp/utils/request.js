@@ -28,7 +28,7 @@ const isNetworkLayerFailure = (error) => {
 const normalizeMiniappNetworkErrorMessage = (rawMessage) => {
   const msg = rawMessage || "";
   if (msg.includes("url not in domain list")) {
-    return "请求域名未加入小程序合法域名，请在企业微信后台补充 request 合法域名（如 https://api.hybcdg.com）";
+    return "请求域名未加入小程序合法域名，请在企业微信后台补充 request 合法域名（如 https://bridge.hybcdg.com）";
   }
   if (msg.includes("SSL") || msg.includes("certificate") || msg.includes("cert")) {
     return "HTTPS 证书校验失败，请检查服务端证书链、证书有效期与域名匹配";

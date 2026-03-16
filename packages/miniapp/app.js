@@ -12,17 +12,7 @@ App({
     apiBaseUrl: DEFAULT_REMOTE_BASE_URL,
     relayPool: {
       enabled: false,
-      nodes: [
-        {
-          id: "relay-hk-1",
-          baseUrl: "https://api-hk-1.hybcdg.com",
-          priority: 10,
-          enabled: true,
-          statusPath: "/relay/status",
-          supportsWriteFallback: false,
-          probeTimeoutMs: 1200,
-        },
-      ],
+      nodes: [],
     },
     sessionReady: false,
     authError: ""

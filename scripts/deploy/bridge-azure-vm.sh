@@ -88,6 +88,12 @@ if [[ -n "${BRIDGE_EXTRA_DOMAINS:-}" ]]; then
   as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_EXTRA_DOMAINS' '${BRIDGE_EXTRA_DOMAINS}'"
 fi
 
+WORKER_API_BASE_URL_VALUE="${WORKER_API_BASE_URL:-https://api.hybcdg.com}"
+RELAY_API_TIMEOUT_SECONDS_VALUE="${RELAY_API_TIMEOUT_SECONDS:-30}"
+
+as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'WORKER_API_BASE_URL' '${WORKER_API_BASE_URL_VALUE}'"
+as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'RELAY_API_TIMEOUT_SECONDS' '${RELAY_API_TIMEOUT_SECONDS_VALUE}'"
+
 as_root python3 -m venv "$DEPLOY_ROOT/bridge/.venv"
 as_root "$DEPLOY_ROOT/bridge/.venv/bin/pip" install --upgrade pip
 as_root "$DEPLOY_ROOT/bridge/.venv/bin/pip" install -r "$DEPLOY_ROOT/bridge/requirements.txt"

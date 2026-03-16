@@ -29,7 +29,7 @@
     "nodes": [
       {
         "id": "relay-hk-1",
-        "baseUrl": "https://api-hk-1.hybcdg.com",
+        "baseUrl": "https://bridge.hybcdg.com",
         "priority": 10,
         "enabled": true,
         "statusPath": "/relay/status",

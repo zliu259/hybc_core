@@ -1,17 +1,26 @@
 const API_BASE_KEY = "hybc_api_base_url";
 const RELAY_POOL_KEY = "hybc_relay_pool";
 const DEFAULT_LOCAL_BASE_URL = "http://127.0.0.1:8787";
-const DEFAULT_REMOTE_BASE_URL = "https://api.hybcdg.com";
-const REMOTE_FALLBACK_BASE_URL = "https://api.hybcdg.com";
+const DEFAULT_REMOTE_BASE_URL = "https://bridge.hybcdg.com";
+const DIRECT_WORKER_BASE_URL = "https://api.hybcdg.com";
+const REMOTE_FALLBACK_BASE_URL = DIRECT_WORKER_BASE_URL;
 const DEFAULT_RELAY_STATUS_PATH = "/relay/status";
+const FORCE_HK_BRIDGE_PRIMARY = true;
 
-const normalizeBaseUrl = (value) => {
+const normalizeBaseUrl = (value, options = {}) => {
   const raw = (value || "").trim();
   if (!raw) return DEFAULT_REMOTE_BASE_URL;
   const normalized = raw.endsWith("/") ? raw.slice(0, -1) : raw;
   if (
     normalized.includes("apix.hybcdg.com:8787") ||
     normalized.includes("apix.hybcdg.com:8849")
+  ) {
+    return DEFAULT_REMOTE_BASE_URL;
+  }
+  if (
+    FORCE_HK_BRIDGE_PRIMARY &&
+    options.allowDirectWorker !== true &&
+    normalized === DIRECT_WORKER_BASE_URL
   ) {
     return DEFAULT_REMOTE_BASE_URL;
   }
@@ -121,8 +130,10 @@ module.exports = {
   RELAY_POOL_KEY,
   DEFAULT_LOCAL_BASE_URL,
   DEFAULT_REMOTE_BASE_URL,
+  DIRECT_WORKER_BASE_URL,
   REMOTE_FALLBACK_BASE_URL,
   DEFAULT_RELAY_STATUS_PATH,
+  FORCE_HK_BRIDGE_PRIMARY,
   isLocalOnlyBaseUrl,
   getRelayPoolConfig,
   setRelayPoolConfig,

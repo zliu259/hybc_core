@@ -8,6 +8,10 @@ def _int_env(name: str, default: int) -> int:
     value = os.getenv(name)
     if value is None:
         return default
+    try:
+        return int(value)
+    except ValueError:
+        return default
 
 
 def _float_env(name: str, default: float) -> float:
@@ -16,10 +20,6 @@ def _float_env(name: str, default: float) -> float:
         return default
     try:
         return float(value)
-    except ValueError:
-        return default
-    try:
-        return int(value)
     except ValueError:
         return default
 
@@ -38,6 +38,7 @@ class Settings:
     worker_timeout_seconds: int = _int_env("WORKER_TIMEOUT_SECONDS", 10)
     worker_max_retries: int = _int_env("WORKER_MAX_RETRIES", 3)
     worker_api_base_url: str = os.getenv("WORKER_API_BASE_URL", "https://api.hybcdg.com")
+    relay_api_timeout_seconds: int = _int_env("RELAY_API_TIMEOUT_SECONDS", 30)
     relay_max_inflight: int = _int_env("RELAY_MAX_INFLIGHT", 120)
     relay_error_window_seconds: int = _int_env("RELAY_ERROR_WINDOW_SECONDS", 60)
     relay_min_samples: int = _int_env("RELAY_MIN_SAMPLES", 10)

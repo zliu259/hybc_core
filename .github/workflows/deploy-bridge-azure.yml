@@ -56,6 +56,10 @@ jobs:
             chmod +x "$DEPLOY_ROOT/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/bridge-azure-update.sh"
 
             export BRIDGE_PROXY_TOKEN="${{ secrets.AZURE_BRIDGE_PROXY_TOKEN }}"
+            export WORKER_API_BASE_URL="${{ vars.AZURE_BRIDGE_WORKER_API_BASE_URL }}"
+            export RELAY_API_TIMEOUT_SECONDS="${{ vars.AZURE_BRIDGE_RELAY_API_TIMEOUT_SECONDS }}"
+            : "${WORKER_API_BASE_URL:=https://api.hybcdg.com}"
+            : "${RELAY_API_TIMEOUT_SECONDS:=30}"
 
             cd "$DEPLOY_ROOT"
             bash scripts/deploy/bridge-azure-update.sh

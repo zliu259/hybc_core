@@ -131,7 +131,7 @@ Service file assumes deployment path:
 - venv: `/opt/hybc_core/bridge/.venv`
 - env file: `/opt/hybc_core/bridge/.env`
 
-If you use additional relay subdomains (for example `api-hk-1.hybcdg.com`, `api-hk-2.hybcdg.com`), set:
+If you use additional relay subdomains (for example `bridge-hk-2.hybcdg.com`, `bridge-sg-1.hybcdg.com`), set:
 
 - `BRIDGE_PUBLIC_DOMAIN`: primary HTTPS hostname
 - `BRIDGE_EXTRA_DOMAINS`: comma-separated extra hostnames

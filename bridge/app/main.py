@@ -283,7 +283,18 @@ def _build_target_url(base_url: str, full_path: str, query: str) -> str:
 
 
 def _filter_request_headers(headers: Any) -> dict[str, str]:
-    blocked = {"host", "content-length", "connection"}
+    blocked = {
+        "connection",
+        "content-length",
+        "host",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
     safe_headers: dict[str, str] = {}
     for k, v in headers.items():
         lk = str(k).lower()
@@ -291,6 +302,47 @@ def _filter_request_headers(headers: Any) -> dict[str, str]:
             continue
         safe_headers[str(k)] = str(v)
     safe_headers["X-Relay-Source"] = settings.bridge_source
+    return safe_headers
+
+
+def _append_forwarded_for(existing: str, client_host: str) -> str:
+    if existing and client_host:
+        return f"{existing}, {client_host}"
+    return existing or client_host
+
+
+def _inject_forward_headers(request: Request, headers: dict[str, str]) -> dict[str, str]:
+    forwarded_headers = dict(headers)
+    client_host = request.client.host if request.client else ""
+    forwarded_headers["X-Forwarded-For"] = _append_forwarded_for(
+        request.headers.get("x-forwarded-for", ""), client_host
+    )
+    forwarded_headers["X-Forwarded-Proto"] = request.url.scheme
+    host_header = request.headers.get("host", "")
+    if host_header:
+        forwarded_headers["X-Forwarded-Host"] = host_header
+    forwarded_headers["X-Request-Id"] = request.headers.get("x-request-id", uuid.uuid4().hex)
+    return forwarded_headers
+
+
+def _filter_response_headers(headers: Any) -> dict[str, str]:
+    blocked = {
+        "connection",
+        "content-length",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
+    safe_headers: dict[str, str] = {}
+    for k, v in headers.items():
+        lk = str(k).lower()
+        if lk in blocked:
+            continue
+        safe_headers[str(k)] = str(v)
     return safe_headers
 
 
@@ -303,9 +355,9 @@ async def _relay_api_request(request: Request, full_path: str) -> Response:
         target_url = _build_target_url(settings.worker_api_base_url, full_path, query)
         method = request.method.upper()
         body = await request.body()
-        headers = _filter_request_headers(request.headers)
+        headers = _inject_forward_headers(request, _filter_request_headers(request.headers))
 
-        async with httpx.AsyncClient(timeout=settings.worker_timeout_seconds) as client:
+        async with httpx.AsyncClient(timeout=settings.relay_api_timeout_seconds) as client:
             upstream = await client.request(
                 method=method,
                 url=target_url,
@@ -314,13 +366,7 @@ async def _relay_api_request(request: Request, full_path: str) -> Response:
             )
         if upstream.status_code >= 500:
             upstream_error = True
-        response_headers: dict[str, str] = {}
-        content_type = upstream.headers.get("content-type")
-        if content_type:
-            response_headers["content-type"] = content_type
-        retry_after = upstream.headers.get("retry-after")
-        if retry_after:
-            response_headers["retry-after"] = retry_after
+        response_headers = _filter_response_headers(upstream.headers)
         return Response(
             content=upstream.content,
             status_code=upstream.status_code,

@@ -17,6 +17,27 @@ if [[ ! -f "$DEPLOY_ROOT/bridge/.env" ]]; then
   cp "$DEPLOY_ROOT/bridge/.env.example" "$DEPLOY_ROOT/bridge/.env"
 fi
 
+upsert_env() {
+  local file="$1"
+  local key="$2"
+  local value="$3"
+  if grep -q "^${key}=" "$file"; then
+    sed -i.bak "s#^${key}=.*#${key}=${value}#" "$file"
+  else
+    printf "%s=%s\n" "$key" "$value" >>"$file"
+  fi
+}
+
+WORKER_API_BASE_URL="${WORKER_API_BASE_URL:-https://api.hybcdg.com}"
+RELAY_API_TIMEOUT_SECONDS="${RELAY_API_TIMEOUT_SECONDS:-30}"
+
+upsert_env "$DEPLOY_ROOT/bridge/.env" "WORKER_API_BASE_URL" "$WORKER_API_BASE_URL"
+upsert_env "$DEPLOY_ROOT/bridge/.env" "RELAY_API_TIMEOUT_SECONDS" "$RELAY_API_TIMEOUT_SECONDS"
+
+if [[ -n "${BRIDGE_PROXY_TOKEN:-}" ]]; then
+  upsert_env "$DEPLOY_ROOT/bridge/.env" "BRIDGE_PROXY_TOKEN" "$BRIDGE_PROXY_TOKEN"
+fi
+
 if [[ ! -d "$DEPLOY_ROOT/bridge/.venv" ]]; then
   python3 -m venv "$DEPLOY_ROOT/bridge/.venv"
 fi
