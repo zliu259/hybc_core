@@ -1083,6 +1083,63 @@ paymentRoutes.post(
 );
 
 paymentRoutes.post(
+  "/:id/reactivate",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const now = nowIso();
+
+    const pr = await c.env.DB.prepare(
+      "SELECT * FROM payment_request WHERE id = ?"
+    )
+      .bind(id)
+      .first<PaymentRequest>();
+
+    if (!pr) {
+      return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
+    }
+
+    if (pr.status !== "cancelled") {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Only cancelled payment requests can be reactivated" }
+        },
+        400
+      );
+    }
+
+    const reactivateLog = `[REACTIVATE ${now}] ${auth.sub}`;
+    const mergedRemark = `${(pr.remark ?? "").trim()}\n${reactivateLog}`.trim();
+
+    await c.env.DB.prepare(
+      `UPDATE payment_request
+          SET status = 'draft',
+              approval_instance_id = NULL,
+              paid_at = NULL,
+              paid_by_userid = NULL,
+              payment_reference = NULL,
+              updated_at = ?,
+              remark = ?
+        WHERE id = ?`
+    )
+      .bind(now, mergedRemark || null, id)
+      .run();
+
+    await publishEvent(c.env, "PAYMENT_REACTIVATED", "payment_request", {
+      payment_request_id: id,
+      serial_no: pr.serial_no,
+      reactivated_by: auth.sub,
+      previous_status: pr.status,
+      contract_id: pr.contract_id
+    });
+
+    return c.json({ success: true });
+  }
+);
+
+paymentRoutes.post(
   "/:id/trigger-risk-assessment",
   requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {

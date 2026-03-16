@@ -997,6 +997,12 @@
 ### 4.27 Miniapp 智能发单台提交反馈统一（2026-03）
 - 小程序智能发单台直付/合同两条提交流程统一为：提交中 loading 防重、成功提示“提交成功”并返回上一级、失败提示“提交失败，请重试”：`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/pages/payment-apply/index.wxml`
 
+### 4.28 Web 付款详情超管“重新激活”能力（2026-03）
+- 付款详情新增超管“重新激活”按钮，仅在已废除（`cancelled`）状态显示可用；激活后恢复草稿态并可重新提审：`packages/web/src/views/finance/payment/detail.vue`
+- 前端付款 API 新增 `reactivatePayment(id)`：`packages/web/src/api/payment.ts`
+- 后端新增 `POST /api/v1/payment/:id/reactivate`（仅 `super_admin`），将已废除付款恢复为 `draft`，清理旧审批实例关联并保留审计留痕：`packages/api/src/routes/payment.ts`
+- 事件总线新增 `PAYMENT_REACTIVATED` 事件类型，支持后续审计与自动化订阅：`packages/api/src/services/event-bus.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

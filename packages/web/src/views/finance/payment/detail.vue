@@ -9,6 +9,7 @@ import {
   getPaymentRequest,
   getRiskReport,
   markPaymentPaid,
+  reactivatePayment,
   voidPayment,
   submitPaymentApproval,
   triggerRiskAssessment,
@@ -48,6 +49,7 @@ const userStore = useUserStoreHook();
 const loading = ref(false);
 const saving = ref(false);
 const voiding = ref(false);
+const reactivating = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const userNameMap = computed(() => {
@@ -958,6 +960,34 @@ const onVoidPayment = async () => {
   }
 };
 
+const onReactivatePayment = async () => {
+  if (isCreate.value || !isSuperAdmin.value || detail.value?.status !== "cancelled") {
+    return;
+  }
+  try {
+    await ElMessageBox.confirm(
+      "确认重新激活该付款申请？激活后将恢复为草稿状态，可重新编辑并提审。",
+      "重新激活付款",
+      {
+        confirmButtonText: "确认激活",
+        cancelButtonText: "取消",
+        type: "warning"
+      }
+    );
+  } catch {
+    return;
+  }
+
+  reactivating.value = true;
+  try {
+    await reactivatePayment(requestId.value);
+    message("付款已重新激活", { type: "success" });
+    await loadDetail();
+  } finally {
+    reactivating.value = false;
+  }
+};
+
 onMounted(async () => {
   await Promise.all([loadRefs(), loadWecomUsers()]);
   await loadDetail();
@@ -1015,6 +1045,16 @@ onMounted(async () => {
             @click="onVoidPayment"
           >
             废除付款
+          </el-button>
+          <el-button
+            v-if="isSuperAdmin"
+            type="primary"
+            plain
+            :loading="reactivating"
+            :disabled="isCreate || detail?.status !== 'cancelled'"
+            @click="onReactivatePayment"
+          >
+            重新激活
           </el-button>
         </div>
       </div>

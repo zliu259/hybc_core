@@ -147,6 +147,10 @@ export const voidPayment = (id: number, data?: { reason?: string }) => {
   });
 };
 
+export const reactivatePayment = (id: number) => {
+  return http.request<{ success: boolean }>("post", `/api/v1/payment/${id}/reactivate`);
+};
+
 export const triggerRiskAssessment = (id: number) => {
   return http.request<{ success: boolean }>(
     "post",
