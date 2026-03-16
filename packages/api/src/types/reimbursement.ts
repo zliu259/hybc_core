@@ -13,6 +13,7 @@ export const reimbursementStatuses = [
   "approved",
   "paid",
   "rejected",
+  "cancelled",
   "deleted"
 ] as const;
 export type ReimbursementStatus = (typeof reimbursementStatuses)[number];

@@ -29,6 +29,12 @@ import type {
 
 const nowIso = () => new Date().toISOString();
 const UNASSIGNED_APPLICANT = "__UNASSIGNED__";
+const UUID_REGEX =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isValidUuid = (value: string | null | undefined): boolean => {
+  const trimmed = String(value || "").trim();
+  return Boolean(trimmed && UUID_REGEX.test(trimmed));
+};
 
 const parseTaskResult = (resultJson: string | null): Record<string, unknown> | null => {
   if (!resultJson) {
@@ -1666,6 +1672,15 @@ reimbursementRoutes.post(
         400
       );
     }
+    if (requestedChannel === "physical" && !isValidUuid(preferredEnvelopeUuid)) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Physical reimbursement UUID must be a valid UUID format" }
+        },
+        400
+      );
+    }
     const isPrivileged = auth.roles.some((role) =>
       ["super_admin", "manager", "site_manager", "finance"].includes(role)
     );
@@ -2061,6 +2076,18 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "Envelope not registered to applicant yet" } }, 400);
     }
 
+    if (envelope.channel === "physical" && !isValidUuid(envelope.envelope_uuid)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: "Physical envelope must be bound with a valid scanned UUID before submit"
+          }
+        },
+        400
+      );
+    }
+
     const attachmentRow = await c.env.DB.prepare(
       "SELECT file_key FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' ORDER BY id DESC LIMIT 1"
     )
@@ -2116,6 +2143,59 @@ reimbursementRoutes.post(
     });
 
     return c.json({ success: true, data: { id, status: "submitted" } });
+  }
+);
+
+reimbursementRoutes.post(
+  "/:id/void",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+
+    const envelope = await c.env.DB.prepare(
+      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<ReimbursementEnvelope>();
+
+    if (!envelope) {
+      return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    if (envelope.status === "cancelled") {
+      return c.json(
+        { success: false, error: { message: "Envelope is already cancelled" } },
+        400
+      );
+    }
+
+    if (["batched", "pending_approval", "approved", "paid"].includes(envelope.status)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: `Envelope in status ${envelope.status} cannot be cancelled directly`
+          }
+        },
+        400
+      );
+    }
+
+    await c.env.DB.prepare(
+      "UPDATE reimbursement_envelope SET status = 'cancelled', updated_at = ? WHERE id = ?"
+    )
+      .bind(nowIso(), id)
+      .run();
+
+    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CANCELLED", "reimbursement_envelope", {
+      envelope_id: id,
+      envelope_uuid: envelope.envelope_uuid,
+      previous_status: envelope.status,
+      cancelled_by: auth.sub
+    });
+
+    return c.json({ success: true, data: { id, status: "cancelled" } });
   }
 );
 

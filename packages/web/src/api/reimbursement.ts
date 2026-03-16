@@ -208,6 +208,13 @@ export const submitReimbursementEnvelope = (
   }>("post", `/api/v1/reimbursement/${id}/submit`, { data });
 };
 
+export const voidReimbursementEnvelope = (id: number) => {
+  return http.request<{
+    success: boolean;
+    data: { id: number; status: string };
+  }>("post", `/api/v1/reimbursement/${id}/void`);
+};
+
 export const verifyReimbursementEnvelope = (data: {
   envelope_id?: number;
   envelope_uuid?: string;

@@ -72,7 +72,8 @@ const statusTagType: Record<string, TagType> = {
   pending_approval: "warning",
   approved: "success",
   paid: "primary",
-  rejected: "danger"
+  rejected: "danger",
+  cancelled: "info"
 };
 
 const pdfTagType: Record<string, TagType> = {
@@ -298,6 +299,7 @@ watch(workflowView, mode => {
           <el-option label="已审批" value="approved" />
           <el-option label="已放款" value="paid" />
           <el-option label="已拒绝" value="rejected" />
+          <el-option label="已废止" value="cancelled" />
         </el-select>
       </el-form-item>
       <el-form-item label="通道">

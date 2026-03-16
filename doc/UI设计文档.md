@@ -204,6 +204,7 @@
 - 提交入口补齐：电子发票通道在 `draft/submitted` 状态同样显示“提交电子发票报销”，避免仅见“保存”不见“提交”的操作断层。
 - UUID 逻辑对齐 miniapp：创建态下若通道为“电子发票”，绑定 UUID 输入禁用并自动清空，创建请求不传 `preferred_envelope_uuid`，由后端自动生成。
 - 提交流程统一：`POST /api/v1/reimbursement/:id/submit` 对实物/电子通道均可执行（前提满足附件、状态、权限校验），避免电子通道点击提交时报 400。
+- 超管废止能力：报销详情新增“废止报销提交”动作（仅 `super_admin` 可见），可对 `draft/submitted/received/unregistered` 状态执行废止，废止后状态为 `cancelled`：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/api/src/routes/reimbursement.ts`
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
@@ -1003,6 +1004,11 @@
 - 前端付款 API 新增 `reactivatePayment(id)`：`packages/web/src/api/payment.ts`
 - 后端新增 `POST /api/v1/payment/:id/reactivate`（仅 `super_admin`），将已废除付款恢复为 `draft`，清理旧审批实例关联并保留审计留痕：`packages/api/src/routes/payment.ts`
 - 事件总线新增 `PAYMENT_REACTIVATED` 事件类型，支持后续审计与自动化订阅：`packages/api/src/services/event-bus.ts`
+
+### 4.29 Miniapp 实物报销 UUID 提交闸门加固（2026-03）
+- 小程序个人报销提交在实物信封通道下新增“有效 UUID”强校验：创建草稿与提交动作均要求 UUID 为合法格式，拦截占位符/无效值：`packages/miniapp/pages/reimbursement/index.js`
+- 扫码录入 UUID 支持从扫码结果中自动提取 `envelope_uuid` 参数或 UUID 片段，无法识别时直接阻断提交流程：`packages/miniapp/pages/reimbursement/index.js`
+- 后端提交兜底校验：`POST /api/v1/reimbursement/:id/submit` 在 `physical` 通道下强制校验已绑定 UUID 格式，不满足则拒绝提交：`packages/api/src/routes/reimbursement.ts`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

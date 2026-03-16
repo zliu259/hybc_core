@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { UploadRequestOptions } from "element-plus";
+import { ElMessageBox, type UploadRequestOptions } from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
@@ -16,6 +16,7 @@ import {
   submitReimbursementEnvelope,
   updateReimbursementEnvelope,
   verifyReimbursementEnvelope,
+  voidReimbursementEnvelope,
   type ReimbursementEnvelopeDetail
 } from "@/api/reimbursement";
 import { useProjectOptions } from "@/composables/useProjectOptions";
@@ -27,6 +28,7 @@ defineOptions({ name: "ReimbursementDetail" });
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStoreHook();
+const roleSet = computed(() => new Set(userStore.roles ?? []));
 
 const envelopeId = computed(() => Number(route.params.id));
 const isCreate = computed(() => route.params.id === "create");
@@ -57,7 +59,8 @@ const statusLabelMap: Record<string, string> = {
   pending_approval: "待审批",
   approved: "已审批",
   paid: "已打款",
-  rejected: "已驳回"
+  rejected: "已驳回",
+  cancelled: "已废止"
 };
 
 const verificationStatusLabelMap: Record<string, string> = {
@@ -134,6 +137,8 @@ const canOfficeAudit = computed(() => {
   return hasOfficeRole && (!isApplicant || canSelfAudit);
 });
 
+const isSuperAdmin = computed(() => roleSet.value.has("super_admin"));
+
 const hasDuplicateRisks = computed(() => {
   const checks = detail.value?.duplicate_checks ?? [];
   return checks.length > 0;
@@ -193,6 +198,7 @@ const stagedAttachmentsForSubmit = () =>
     }));
 
 const verifyNote = ref("");
+const voiding = ref(false);
 const ocrStatusText = ref("none");
 const anomalyStatusText = ref("none");
 const auditPollingTimer = ref<number | null>(null);
@@ -460,6 +466,32 @@ const submitEnvelope = async () => {
     message("已按申请人坚持提交并附带审计提示，等待办公室核查", { type: "warning" });
     await loadDetail();
     ensureAuditPolling("已触发后台审计，系统将自动刷新进度");
+  }
+};
+
+const voidEnvelope = async () => {
+  if (!detail.value || !isSuperAdmin.value) return;
+  try {
+    await ElMessageBox.confirm(
+      "确认废止该报销提交？废止后该单据将不再参与后续流转。",
+      "废止报销提交",
+      {
+        confirmButtonText: "确认废止",
+        cancelButtonText: "取消",
+        type: "warning"
+      }
+    );
+  } catch {
+    return;
+  }
+
+  voiding.value = true;
+  try {
+    await voidReimbursementEnvelope(detail.value.id);
+    message("报销提交已废止", { type: "success" });
+    await loadDetail();
+  } finally {
+    voiding.value = false;
   }
 };
 
@@ -817,6 +849,15 @@ watch(
           <el-button v-if="detail.channel === 'electronic'" @click="refreshOcrStatus"
             >刷新OCR状态</el-button
           >
+          <el-button
+            v-if="isSuperAdmin && ['draft', 'submitted', 'received', 'unregistered'].includes(detail.status)"
+            type="danger"
+            plain
+            :loading="voiding"
+            @click="voidEnvelope"
+          >
+            废止报销提交
+          </el-button>
           <template v-if="canOfficeAudit && ['submitted', 'received'].includes(detail.status)">
             <el-input
               v-model="verifyNote"

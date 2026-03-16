@@ -15,6 +15,7 @@ const statusText = (status) => {
     approved: "已审批",
     paid: "已打款",
     rejected: "已拒绝",
+    cancelled: "已废止",
     pending: "处理中",
     completed: "已完成",
     failed: "失败"
@@ -71,6 +72,18 @@ const isImageByName = (name) => {
   return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"].some((ext) =>
     lower.endsWith(ext)
   );
+};
+
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const isValidUuid = (value) => UUID_REGEX.test(String(value || "").trim());
+const normalizeScannedUuid = (raw) => {
+  const text = String(raw || "").trim();
+  if (!text) return "";
+  if (isValidUuid(text)) return text;
+  const queryMatch = text.match(/(?:^|[?&#])envelope_uuid=([0-9a-fA-F-]{36})(?:[&#]|$)/i);
+  if (queryMatch && isValidUuid(queryMatch[1])) return queryMatch[1];
+  const uuidMatch = text.match(/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-5][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}/);
+  return uuidMatch && isValidUuid(uuidMatch[0]) ? uuidMatch[0] : "";
 };
 
 Page({
@@ -248,7 +261,12 @@ Page({
   async scanQr() {
     try {
       const result = await wxScanCode();
-      this.setData({ "draft.preferred_envelope_uuid": result.result || "" });
+      const scannedUuid = normalizeScannedUuid(result.result || "");
+      if (!scannedUuid) {
+        sayToast({ title: "未识别到有效UUID，请重试", icon: "none", danger: true });
+        return;
+      }
+      this.setData({ "draft.preferred_envelope_uuid": scannedUuid });
     } catch {
       sayToast({ title: "扫码取消", icon: "none" });
     }
@@ -261,8 +279,8 @@ Page({
       sayToast({ title: errorText, icon: "none", danger: true });
       return;
     }
-    if (draft.channel === "physical" && !String(draft.preferred_envelope_uuid || "").trim()) {
-      sayToast({ title: "实物信封必须先录入UUID", icon: "none", danger: true });
+    if (draft.channel === "physical" && !isValidUuid(draft.preferred_envelope_uuid)) {
+      sayToast({ title: "实物信封必须先扫描或录入有效UUID", icon: "none", danger: true });
       return;
     }
 
@@ -406,6 +424,18 @@ Page({
   async submitEnvelope() {
     if (!this.data.latestEnvelopeId) {
       sayToast({ title: "请先保存草稿", icon: "none", danger: true });
+      return;
+    }
+
+    const envelopeUuid = String(
+      this.data.latestEnvelopeUuid || this.data.draft.preferred_envelope_uuid || ""
+    ).trim();
+    if (this.data.draft.channel === "physical" && !isValidUuid(envelopeUuid)) {
+      sayToast({
+        title: "实体信封必须先扫码录入有效UUID后再提交",
+        icon: "none",
+        danger: true
+      });
       return;
     }
 
