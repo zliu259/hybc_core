@@ -141,6 +141,12 @@ export const markPaymentPaid = (
   );
 };
 
+export const voidPayment = (id: number, data?: { reason?: string }) => {
+  return http.request<{ success: boolean }>("post", `/api/v1/payment/${id}/void`, {
+    data
+  });
+};
+
 export const triggerRiskAssessment = (id: number) => {
   return http.request<{ success: boolean }>(
     "post",

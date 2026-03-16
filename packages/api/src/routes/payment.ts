@@ -41,6 +41,10 @@ type MarkPaidBody = {
   remark?: string;
 };
 
+type VoidPaymentBody = {
+  reason?: string;
+};
+
 const accountToDisplayText = (account: {
   bank_name: string;
   bank_branch_no: string | null;
@@ -985,6 +989,93 @@ paymentRoutes.post(
       serial_no: pr.serial_no,
       contract_id: pr.contract_id,
       amount: pr.amount
+    });
+
+    return c.json({ success: true });
+  }
+);
+
+paymentRoutes.post(
+  "/:id/void",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as VoidPaymentBody;
+    const now = nowIso();
+
+    const pr = await c.env.DB.prepare(
+      "SELECT * FROM payment_request WHERE id = ?"
+    )
+      .bind(id)
+      .first<PaymentRequest>();
+
+    if (!pr) {
+      return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
+    }
+
+    if (pr.status === "cancelled") {
+      return c.json(
+        { success: false, error: { message: "Payment request is already cancelled" } },
+        400
+      );
+    }
+
+    const reason = body.reason?.trim();
+    const voidLog = `[VOID ${now}] ${auth.sub}${reason ? `: ${reason}` : ""}`;
+    const mergedRemark = `${(pr.remark ?? "").trim()}\n${voidLog}`.trim();
+
+    await c.env.DB.prepare(
+      `UPDATE payment_request
+          SET status = 'cancelled',
+              remark = ?,
+              updated_at = ?
+        WHERE id = ?`
+    )
+      .bind(mergedRemark || null, now, id)
+      .run();
+
+    if (pr.status === "paid" && pr.contract_id !== null) {
+      await c.env.DB.prepare(
+        `UPDATE contract
+            SET paid_amount = CASE WHEN paid_amount >= ? THEN paid_amount - ? ELSE 0 END,
+                updated_at = ?
+          WHERE id = ?`
+      )
+        .bind(pr.amount, pr.amount, now, pr.contract_id)
+        .run();
+    }
+
+    if (pr.approval_instance_id) {
+      await c.env.DB.prepare(
+        `UPDATE approval_task
+            SET status = 'cancelled',
+                updated_at = ?
+          WHERE instance_id = ?
+            AND status IN ('pending', 'in_progress')`
+      )
+        .bind(now, pr.approval_instance_id)
+        .run();
+
+      await c.env.DB.prepare(
+        `UPDATE approval_instance
+            SET status = 'cancelled',
+                completed_at = COALESCE(completed_at, ?),
+                updated_at = ?
+          WHERE id = ?
+            AND status IN ('pending', 'in_progress')`
+      )
+        .bind(now, now, pr.approval_instance_id)
+        .run();
+    }
+
+    await publishEvent(c.env, "PAYMENT_CANCELLED", "payment_request", {
+      payment_request_id: id,
+      serial_no: pr.serial_no,
+      previous_status: pr.status,
+      reason: reason || null,
+      cancelled_by: auth.sub,
+      contract_id: pr.contract_id
     });
 
     return c.json({ success: true });

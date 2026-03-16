@@ -134,6 +134,14 @@ watch(
 
 const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
+const goBackAfterSubmit = () => {
+  if (typeof window !== "undefined" && window.history.length > 1) {
+    router.back();
+    return;
+  }
+  router.push(inWorkspaceRoute.value ? "/workspace/payment" : "/finance/payment");
+};
+
 const toChineseAmount = (amount: number): string => {
   if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
   if (amount === 0) return "零元整";
@@ -394,6 +402,7 @@ const checkAmount = () => {
 };
 
 const submitDirectPayment = async () => {
+  if (submitting.value) return;
   const amount = Number(amountInput.value ?? 0);
   if (amount > thresholdLimit.value && !directForm.value.contract_id) {
     exceedsThreshold.value = true;
@@ -458,18 +467,17 @@ const submitDirectPayment = async () => {
       biz_summary: "智能发单台-直接付款",
       instance_config: { note: "阈值内直接付款" }
     });
-    message("付款申请已创建并提交审批", { type: "success" });
-    router.replace(
-      inWorkspaceRoute.value
-        ? `/workspace/payment/detail/${created.data.id}`
-        : `/finance/payment/detail/${created.data.id}`
-    );
+    message("提交成功", { type: "success" });
+    goBackAfterSubmit();
+  } catch {
+    message("提交失败，请重试", { type: "error" });
   } finally {
     submitting.value = false;
   }
 };
 
 const submitContractFlow = async () => {
+  if (submitting.value) return;
   if (
     !amountInput.value ||
     !contractForm.value.project_id ||
@@ -553,10 +561,10 @@ const submitContractFlow = async () => {
       });
     }
 
-    message("流程已提交：合同审批" + (paymentId ? " + 首笔付款审批" : ""), {
-      type: "success"
-    });
-    router.replace(`/finance/contract/detail/${contract.data.id}`);
+    message("提交成功", { type: "success" });
+    goBackAfterSubmit();
+  } catch {
+    message("提交失败，请重试", { type: "error" });
   } finally {
     submitting.value = false;
   }

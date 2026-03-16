@@ -735,10 +735,10 @@ Page({
         }
       });
 
-      wx.showToast({ title: "付款申请已提交审批", icon: "success" });
-      setTimeout(() => wx.navigateTo({ url: "/pages/approval/index" }), 500);
-    } catch (error) {
-      wx.showToast({ title: error.message || "提交失败", icon: "none" });
+      wx.showToast({ title: "提交成功", icon: "success" });
+      setTimeout(() => wx.navigateBack({ delta: 1 }), 500);
+    } catch {
+      wx.showToast({ title: "提交失败，请重试", icon: "none" });
     } finally {
       this.setData({ submitting: false });
     }
@@ -823,12 +823,12 @@ Page({
       }
 
       wx.showToast({
-        title: paymentId ? "合同+首笔付款已提审" : "合同已提审",
+        title: "提交成功",
         icon: "success"
       });
-      setTimeout(() => wx.navigateTo({ url: "/pages/approval/index" }), 500);
-    } catch (error) {
-      wx.showToast({ title: error.message || "提交失败", icon: "none" });
+      setTimeout(() => wx.navigateBack({ delta: 1 }), 500);
+    } catch {
+      wx.showToast({ title: "提交失败，请重试", icon: "none" });
     } finally {
       this.setData({ submitting: false });
     }

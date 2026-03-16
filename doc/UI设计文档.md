@@ -844,6 +844,12 @@
 - 审批详情“申请明细”中的合同/项目/主体/人员改为展示名称（或合同号+对方单位），不再直接显示 ID：`packages/web/src/views/approval/detail.vue`
 - Web 付款 API 类型同步支持可空合同：`packages/web/src/api/payment.ts`
 
+### 3.25 Web 付款详情与发单提交可用性加固（2026-03）
+- 付款详情附件“查看/下载”统一改为绝对 API 地址并补齐下载属性，修复工作台路由下点击附件误跳转问题：`packages/web/src/views/finance/payment/detail.vue`
+- 付款详情新增超管“废除付款”动作（危险确认 + 状态刷新），补齐高权限终止路径：`packages/web/src/views/finance/payment/detail.vue`、`packages/web/src/api/payment.ts`
+- 后端新增 `POST /api/v1/payment/:id/void`（仅 `super_admin`），废除时同步取消在途审批任务/实例，已付款场景回退合同 `paid_amount`：`packages/api/src/routes/payment.ts`、`packages/api/src/services/event-bus.ts`
+- Web 智能发单台提交动作补齐防重与反馈统一：提交中 loading、成功提示“提交成功”并返回上一级、失败提示“提交失败，请重试”：`packages/web/src/views/finance/payment/wizard.vue`
+
 ### 4.5 小程序审批端与Web审批台信息对齐（2026-03）
 - 小程序审批中心从“仅列表+动作”升级为“可展开审批详情”，补齐与 Web 一致的决策关键信息：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`、`packages/miniapp/pages/approval/index.wxss`
 - 详情弹层补齐业务摘要与流程信息：审批编号、业务类型、发起人、状态、提交流转时间、节点意见与动作：`packages/miniapp/pages/approval/index.wxml`
@@ -987,6 +993,9 @@
 ### 4.26 合同详情附件跳转修复与经办人显示收敛（2026-03）
 - 合同详情附件“预览/下载”链接改为绝对 API 地址，避免在个人工作台 hash 路由下被前端路由吞掉导致跳转错误：`packages/web/src/views/finance/contract/detail.vue`
 - 合同详情“经办人”下拉展示改为仅姓名，提交值继续使用 `userid`，降低选择噪音：`packages/web/src/views/finance/contract/detail.vue`
+
+### 4.27 Miniapp 智能发单台提交反馈统一（2026-03）
+- 小程序智能发单台直付/合同两条提交流程统一为：提交中 loading 防重、成功提示“提交成功”并返回上一级、失败提示“提交失败，请重试”：`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/pages/payment-apply/index.wxml`
 
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { UploadRequestOptions } from "element-plus";
+import { ElMessageBox, type UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
@@ -9,6 +9,7 @@ import {
   getPaymentRequest,
   getRiskReport,
   markPaymentPaid,
+  voidPayment,
   submitPaymentApproval,
   triggerRiskAssessment,
   updatePaymentRequest,
@@ -46,6 +47,7 @@ const router = useRouter();
 const userStore = useUserStoreHook();
 const loading = ref(false);
 const saving = ref(false);
+const voiding = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const userNameMap = computed(() => {
@@ -464,7 +466,7 @@ const serializeAttachments = (): string => {
 };
 
 const fileUrl = (fileKey: string) =>
-  `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
+  resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
 
 const roundNodes = computed(() => {
   if (!approvalDetail.value) return [];
@@ -930,6 +932,32 @@ const confirmMarkPaid = async () => {
   }
 };
 
+const onVoidPayment = async () => {
+  if (isCreate.value || !isSuperAdmin.value || !detail.value) return;
+  try {
+    await ElMessageBox.confirm(
+      "确认废除该付款申请？废除后将不再出现在付款列表中。",
+      "废除付款",
+      {
+        confirmButtonText: "确认废除",
+        cancelButtonText: "取消",
+        type: "warning"
+      }
+    );
+  } catch {
+    return;
+  }
+
+  voiding.value = true;
+  try {
+    await voidPayment(requestId.value);
+    message("付款已废除", { type: "success" });
+    await loadDetail();
+  } finally {
+    voiding.value = false;
+  }
+};
+
 onMounted(async () => {
   await Promise.all([loadRefs(), loadWecomUsers()]);
   await loadDetail();
@@ -977,6 +1005,16 @@ onMounted(async () => {
             @click="onMarkPaid"
           >
             标记付款
+          </el-button>
+          <el-button
+            v-if="isSuperAdmin"
+            type="danger"
+            plain
+            :loading="voiding"
+            :disabled="isCreate || detail?.status === 'cancelled'"
+            @click="onVoidPayment"
+          >
+            废除付款
           </el-button>
         </div>
       </div>
@@ -1269,6 +1307,7 @@ onMounted(async () => {
                 <el-link
                   :href="fileUrl(scope.row.file_key)"
                   target="_blank"
+                  rel="noopener noreferrer"
                   type="primary"
                 >
                   查看
@@ -1276,6 +1315,8 @@ onMounted(async () => {
                 <el-link
                   :href="fileUrl(scope.row.file_key)"
                   target="_blank"
+                  :download="scope.row.file_name || true"
+                  rel="noopener noreferrer"
                   type="success"
                   style="margin-left: 12px"
                 >
