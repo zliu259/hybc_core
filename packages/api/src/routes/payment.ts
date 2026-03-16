@@ -344,7 +344,7 @@ paymentRoutes.get("/", async (c) => {
   const auth = c.get("auth");
   const contractId = c.req.query("contract_id");
   const projectId = c.req.query("project_id");
-  const status = c.req.query("status");
+  const status = c.req.query("status")?.trim().toLowerCase() || "";
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
   const applicantUserid = c.req.query("applicant_userid");
@@ -353,8 +353,13 @@ paymentRoutes.get("/", async (c) => {
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
-  let sql = "SELECT * FROM payment_request WHERE status != 'cancelled'";
-  let countSql = "SELECT COUNT(*) as total FROM payment_request WHERE status != 'cancelled'";
+  const includeCancelled = status === "cancelled";
+  let sql = includeCancelled
+    ? "SELECT * FROM payment_request WHERE 1=1"
+    : "SELECT * FROM payment_request WHERE status != 'cancelled'";
+  let countSql = includeCancelled
+    ? "SELECT COUNT(*) as total FROM payment_request WHERE 1=1"
+    : "SELECT COUNT(*) as total FROM payment_request WHERE status != 'cancelled'";
   const params: (string | number)[] = [];
 
   if (contractId) {
