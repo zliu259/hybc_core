@@ -160,6 +160,21 @@ export const listApprovalInstances = (params?: {
   );
 };
 
+export const listAllApprovalInstances = (params?: {
+  biz_type?: string;
+  status?: string;
+  keyword?: string;
+  initiator?: string;
+  page?: number;
+  pageSize?: number;
+}) => {
+  return http.request<PaginatedResponse<ApprovalInstance>>(
+    "get",
+    "/api/v1/approval/admin/all",
+    { params }
+  );
+};
+
 export const listPendingApprovals = (params?: {
   biz_type?: string;
   keyword?: string;
@@ -271,6 +286,17 @@ export const forceTransferApproval = (
   return http.request<{ success: boolean }>(
     "post",
     `/api/v1/approval/${id}/force-transfer`,
+    { data }
+  );
+};
+
+export const forceApproveTask = (
+  instanceId: number,
+  data: { task_id: number; comment?: string }
+) => {
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/approval/${instanceId}/force-approve`,
     { data }
   );
 };

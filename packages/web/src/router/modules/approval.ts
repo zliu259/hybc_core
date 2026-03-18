@@ -31,6 +31,15 @@ export default {
       }
     },
     {
+      path: "/approval/admin-monitor",
+      name: "ApprovalAdminMonitor",
+      component: () => import("@/views/approval/admin-monitor.vue"),
+      meta: {
+        title: "审批监控台",
+        roles: ["super_admin"]
+      }
+    },
+    {
       path: "/approval/detail/:id",
       name: "ApprovalDetail",
       component: () => import("@/views/approval/detail.vue"),

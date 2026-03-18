@@ -13,7 +13,8 @@ import type {
 } from "../types/approval";
 import {
   submitForApproval,
-  getInstanceDetail
+  getInstanceDetail,
+  advanceWorkflow
 } from "../services/approval/engine";
 import { createAiGateHandler } from "../services/ai-slot";
 import {
@@ -427,6 +428,60 @@ approvalRoutes.get("/remindable", async (c) => {
   });
 });
 
+approvalRoutes.get("/admin/all", async (c) => {
+  const auth = c.get("auth");
+  if (!auth.roles.includes("super_admin")) {
+    return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+  }
+
+  const bizType = c.req.query("biz_type");
+  const status = c.req.query("status");
+  const keyword = c.req.query("keyword");
+  const initiator = c.req.query("initiator");
+  const page = Number(c.req.query("page") ?? "1");
+  const pageSize = Number(c.req.query("pageSize") ?? "30");
+  const offset = (page - 1) * pageSize;
+
+  let sql = "SELECT * FROM approval_instance WHERE 1=1";
+  let countSql = "SELECT COUNT(*) as total FROM approval_instance WHERE 1=1";
+  const params: (string | number)[] = [];
+
+  if (bizType) {
+    sql += " AND biz_type = ?";
+    countSql += " AND biz_type = ?";
+    params.push(bizType);
+  }
+  if (status) {
+    sql += " AND status = ?";
+    countSql += " AND status = ?";
+    params.push(status);
+  }
+  if (initiator) {
+    sql += " AND initiator_userid = ?";
+    countSql += " AND initiator_userid = ?";
+    params.push(initiator);
+  }
+  if (keyword) {
+    sql += " AND biz_summary LIKE ?";
+    countSql += " AND biz_summary LIKE ?";
+    params.push(`%${keyword}%`);
+  }
+
+  const countResult = await c.env.DB.prepare(countSql)
+    .bind(...params)
+    .first<{ total: number }>();
+  sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params, pageSize, offset)
+    .all<ApprovalInstance>();
+
+  return c.json({
+    success: true,
+    data: rows.results ?? [],
+    pagination: { page, pageSize, total: countResult?.total ?? 0 }
+  });
+});
+
 // ─── GET /:id — Full instance detail ──────────
 
 approvalRoutes.get("/:id", async (c) => {
@@ -714,6 +769,65 @@ approvalRoutes.post("/:id/force-transfer", async (c) => {
     return c.json({ success: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Force transfer failed";
+    return c.json({ success: false, error: { message } }, 400);
+  }
+});
+
+approvalRoutes.post("/:id/force-approve", async (c) => {
+  const instanceId = Number(c.req.param("id"));
+  const auth = c.get("auth");
+  if (!auth.roles.includes("super_admin")) {
+    return c.json(
+      { success: false, error: { message: "Only super_admin can force approve" } },
+      403
+    );
+  }
+
+  const body = (await c.req.json().catch(() => ({}))) as {
+    task_id: number;
+    comment?: string;
+  };
+  if (!Number.isFinite(body.task_id) || body.task_id <= 0) {
+    return c.json({ success: false, error: { message: "task_id is required" } }, 400);
+  }
+
+  try {
+    const task = await c.env.DB.prepare(
+      "SELECT * FROM approval_task WHERE id = ? AND instance_id = ? AND status = 'pending'"
+    )
+      .bind(body.task_id, instanceId)
+      .first<ApprovalTask>();
+    if (!task) {
+      return c.json({ success: false, error: { message: "Pending task not found" } }, 404);
+    }
+
+    const now = new Date().toISOString();
+    await c.env.DB.prepare(
+      "UPDATE approval_task SET action = 'approve', comment = ?, status = 'completed', acted_at = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(body.comment ?? `超管强制通过 (by ${auth.sub})`, now, now, body.task_id)
+      .run();
+
+    await advanceWorkflow(c.env, instanceId, createAiGateHandler());
+
+    await c.env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "approval_force_approved",
+        "approval-route",
+        JSON.stringify({
+          instance_id: instanceId,
+          task_id: body.task_id,
+          forced_by: auth.sub
+        }),
+        now
+      )
+      .run();
+
+    return c.json({ success: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Force approve failed";
     return c.json({ success: false, error: { message } }, 400);
   }
 });

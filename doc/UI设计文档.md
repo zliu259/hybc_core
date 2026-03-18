@@ -69,6 +69,7 @@
 - 收款统计仪表盘：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 审批中心：`packages/web/src/views/approval/index.vue`
 - 审批统一工作台：`packages/web/src/views/approval/unified-tasklist.vue`
+- 审批监控台（超管）：`packages/web/src/views/approval/admin-monitor.vue`
 - 审批详情：`packages/web/src/views/approval/detail.vue`
 - 审批模板配置：`packages/web/src/views/approval/template-config.vue`
 - 金额阈值配置：`packages/web/src/views/approval/threshold-config.vue`
@@ -290,6 +291,13 @@
 - 收款退款明细区（`biz_type=receipt_refund`）：展示退款单、收款记录、合同信息；当存在关联发票时展示发票信息，并提示流程含“红冲发票签发”节点。
 - 下区：动作区（通过/拒绝/退回/转签/撤回）。
 - API 指向：`/api/v1/approval/:id/*`、`/api/v1/receipt/refund/:id`
+
+#### I-1. 审批监控台（超管） `views/approval/admin-monitor.vue`
+- 列表维度：审批单号、业务类型、摘要、发起人、当前节点、状态、提交时间、完成时间。
+- 筛选条件：业务类型、状态、发起人 userid、摘要关键字。
+- 行动作：查看详情、强制通过、强制转签（仅 `in_progress` 且 `super_admin` 可见）。
+- 强制通过流程：先拉取审批详情并列出 pending 任务，再选择任务 + 填写意见后执行。
+- API 指向：`/api/v1/approval/admin/all`、`/api/v1/approval/:id/force-approve`、`/api/v1/approval/:id/force-transfer`
 
 #### I-2. 审批模板配置 `views/approval/template-config.vue`
 - 模板列表表格：模板编码、名称、业务类型、状态、操作（编辑/预览/删除）。
