@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createTrackedAsset,
   listAssetTypes,
@@ -70,8 +71,7 @@ const form = ref({
   current_warehouse_id: undefined as number | undefined,
   current_location: "",
   purchased_date: "",
-  properties_json: '{"spec":""}'
-  ,
+  properties_json: '{"spec":""}',
   ownership_type: "owned" as "owned" | "leased_in"
 });
 
@@ -117,8 +117,7 @@ const openCreate = () => {
     current_warehouse_id: undefined,
     current_location: "",
     purchased_date: "",
-    properties_json: '{"spec":""}'
-    ,
+    properties_json: '{"spec":""}',
     ownership_type: "owned"
   };
   createDialogVisible.value = true;
@@ -232,7 +231,11 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="归属">
-        <el-select v-model="filters.ownership_type" clearable style="width: 160px">
+        <el-select
+          v-model="filters.ownership_type"
+          clearable
+          style="width: 160px"
+        >
           <el-option label="自有" value="owned" />
           <el-option label="租入" value="leased_in" />
         </el-select>
@@ -269,10 +272,19 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="brand" label="品牌" width="120" />
       <el-table-column prop="model" label="型号" width="120" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="归属" width="100">
         <template #default="scope">
-          <el-tag :type="scope.row.ownership_type === 'leased_in' ? 'warning' : 'success'" size="small">
+          <el-tag
+            :type="
+              scope.row.ownership_type === 'leased_in' ? 'warning' : 'success'
+            "
+            size="small"
+          >
             {{ scope.row.ownership_type === "leased_in" ? "租入" : "自有" }}
           </el-tag>
         </template>

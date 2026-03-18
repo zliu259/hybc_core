@@ -2,6 +2,11 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import {
+  pdfStatusLabel,
+  precheckStatusLabel,
+  statusLabel
+} from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
@@ -174,10 +179,14 @@ const onPrecheck = async (
     await loadData();
   } catch (error) {
     const err = error as {
-      response?: { status?: number; data?: { data?: { wait_for_audit?: boolean } } };
+      response?: {
+        status?: number;
+        data?: { data?: { wait_for_audit?: boolean } };
+      };
     };
     const waitForAudit =
-      err.response?.status === 409 && err.response?.data?.data?.wait_for_audit === true;
+      err.response?.status === 409 &&
+      err.response?.data?.data?.wait_for_audit === true;
     if (!waitForAudit) throw error;
     message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
       type: "warning"
@@ -355,7 +364,11 @@ watch(workflowView, mode => {
       <el-button v-if="workflowView === 'finance'" @click="goPayoutCenter"
         >进入集中打款台</el-button
       >
-      <el-button v-if="!isWorkspaceRoute && canFinanceCenter" type="primary" plain @click="goEnvelopeGenerator"
+      <el-button
+        v-if="!isWorkspaceRoute && canFinanceCenter"
+        type="primary"
+        plain
+        @click="goEnvelopeGenerator"
         >信封生成器</el-button
       >
     </el-form>
@@ -371,18 +384,22 @@ watch(workflowView, mode => {
       <el-table-column prop="applicant_userid" label="填报人" width="140" />
       <el-table-column prop="amount" label="金额" width="100" />
       <el-table-column prop="duplicate_count" label="查重线索" width="100" />
-      <el-table-column prop="precheck_status" label="预审" width="100" />
+      <el-table-column label="预审" width="100">
+        <template #default="scope">{{
+          precheckStatusLabel(scope.row.precheck_status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="110">
         <template #default="scope">
           <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
-            scope.row.status
+            statusLabel(scope.row.status)
           }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="PDF" width="110">
         <template #default="scope">
           <el-tag :type="pdfTagType[scope.row.pdf_status] || 'info'">{{
-            scope.row.pdf_status
+            pdfStatusLabel(scope.row.pdf_status)
           }}</el-tag>
         </template>
       </el-table-column>

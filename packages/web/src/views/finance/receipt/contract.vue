@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { statusLabel } from "@/utils/enum-labels";
 import { listContracts, type Contract } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
 
@@ -127,7 +128,11 @@ onMounted(async () => {
       <el-table-column prop="total_amount" label="合同总额" width="120" />
       <el-table-column prop="invoiced_amount" label="已开票" width="120" />
       <el-table-column prop="received_amount" label="已收款" width="120" />
-      <el-table-column prop="status" label="状态" width="120" />
+      <el-table-column label="状态" width="120">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="goDetail(scope.row.id)"

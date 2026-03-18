@@ -35,7 +35,11 @@ const loadData = async () => {
 };
 
 const loadProjects = async () => {
-  const result = await listProjects({ page: 1, pageSize: 200, status: "active" });
+  const result = await listProjects({
+    page: 1,
+    pageSize: 200,
+    status: "active"
+  });
   projects.value = result.data;
 };
 

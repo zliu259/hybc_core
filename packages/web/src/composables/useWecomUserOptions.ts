@@ -19,8 +19,7 @@ const safeStoreCachedUsers = (users: WeComUser[]) => {
   if (typeof window === "undefined") return;
   try {
     window.localStorage.setItem(WE_COM_USERS_CACHE_KEY, JSON.stringify(users));
-  } catch {
-  }
+  } catch {}
 };
 
 export function useWecomUserOptions() {

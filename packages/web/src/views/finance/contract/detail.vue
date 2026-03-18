@@ -26,7 +26,10 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
-import { isApprovalFinishedLocked, isApprovalInProgress } from "../shared/approvalLock";
+import {
+  isApprovalFinishedLocked,
+  isApprovalInProgress
+} from "../shared/approvalLock";
 
 defineOptions({ name: "ContractDetail" });
 
@@ -127,16 +130,15 @@ const toRiskLevelTagType = (level: unknown): TagType => {
 
 const isCreate = computed(() => route.params.id === "create");
 const contractId = computed(() => Number(route.params.id));
-const inApprovalFlow = computed(
-  () => isApprovalInProgress(detail.value?.status)
+const inApprovalFlow = computed(() =>
+  isApprovalInProgress(detail.value?.status)
 );
-const approvalFinishedLock = computed(
-  () =>
-    isApprovalFinishedLocked({
-      isCreate: isCreate.value,
-      approvalInstanceId: detail.value?.approval_instance_id,
-      bizStatus: detail.value?.status
-    })
+const approvalFinishedLock = computed(() =>
+  isApprovalFinishedLocked({
+    isCreate: isCreate.value,
+    approvalInstanceId: detail.value?.approval_instance_id,
+    bizStatus: detail.value?.status
+  })
 );
 const superEditMode = ref(false);
 const superEditNote = ref("");
@@ -153,7 +155,9 @@ const remainingAmount = computed(() => {
 
 const amountInput = computed({
   get: () =>
-    Number.isFinite(form.value.total_amount) ? String(form.value.total_amount) : "",
+    Number.isFinite(form.value.total_amount)
+      ? String(form.value.total_amount)
+      : "",
   set: (value: string) => {
     const normalized = value.trim();
     if (!normalized) {
@@ -165,7 +169,9 @@ const amountInput = computed({
   }
 });
 
-const amountUppercase = computed(() => toChineseAmount(form.value.total_amount));
+const amountUppercase = computed(() =>
+  toChineseAmount(form.value.total_amount)
+);
 const amountDisplay = computed(() => {
   const value = Number(form.value.total_amount || 0);
   return `${value.toLocaleString("zh-CN", {
@@ -173,8 +179,8 @@ const amountDisplay = computed(() => {
     maximumFractionDigits: 2
   })}（${amountUppercase.value}）`;
 });
-const selectedEntity = computed(() =>
-  entities.value.find(item => item.id === form.value.entity_id) ?? null
+const selectedEntity = computed(
+  () => entities.value.find(item => item.id === form.value.entity_id) ?? null
 );
 const selectedEntityAccount = computed(() => {
   const entityId = form.value.entity_id;
@@ -244,35 +250,39 @@ const toChineseAmount = (amount: number): string => {
   return `${intResult || "零"}元${result}`;
 };
 
-const parseAttachments = (raw: string | null | undefined): ContractAttachmentDraft[] => {
+const parseAttachments = (
+  raw: string | null | undefined
+): ContractAttachmentDraft[] => {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     const items: Array<ContractAttachmentDraft | null> = parsed.map(item => {
-        if (typeof item === "string") {
-          return { file_key: item, file_name: item };
-        }
-        if (item && typeof item === "object") {
-          const row = item as {
-            file_key?: string;
-            key?: string;
-            file_name?: string;
-            name?: string;
-            file_size?: number;
-            size?: number;
-          };
-          const key = row.file_key ?? row.key;
-          if (!key) return null;
-          return {
-            file_key: key,
-            file_name: row.file_name ?? row.name ?? key,
-            file_size: row.file_size ?? row.size
-          };
-        }
-        return null;
-      });
-    return items.filter((item): item is ContractAttachmentDraft => item !== null);
+      if (typeof item === "string") {
+        return { file_key: item, file_name: item };
+      }
+      if (item && typeof item === "object") {
+        const row = item as {
+          file_key?: string;
+          key?: string;
+          file_name?: string;
+          name?: string;
+          file_size?: number;
+          size?: number;
+        };
+        const key = row.file_key ?? row.key;
+        if (!key) return null;
+        return {
+          file_key: key,
+          file_name: row.file_name ?? row.name ?? key,
+          file_size: row.file_size ?? row.size
+        };
+      }
+      return null;
+    });
+    return items.filter(
+      (item): item is ContractAttachmentDraft => item !== null
+    );
   } catch {
     return [];
   }
@@ -306,7 +316,9 @@ const approvalNoteTemplates = [
   "附件已更新到最新版本，请以最新附件为准。"
 ];
 const selectedApprovalNoteTemplate = ref("");
-const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
+const isSuperAdmin = computed(() =>
+  (userStore.roles ?? []).includes("super_admin")
+);
 
 const applyApprovalNoteTemplate = (value: string) => {
   if (!value) return;
@@ -314,11 +326,17 @@ const applyApprovalNoteTemplate = (value: string) => {
 };
 
 const loadBaseData = async () => {
-  const [entityRes] = await Promise.all([listEntities(), loadProjects(), loadWecomUsers()]);
+  const [entityRes] = await Promise.all([
+    listEntities(),
+    loadProjects(),
+    loadWecomUsers()
+  ]);
   entities.value = entityRes.data;
   const entries = await Promise.all(
     entityRes.data.map(async item => {
-      const accountRes = await listEntityBankAccounts(item.id).catch(() => ({ data: [] }));
+      const accountRes = await listEntityBankAccounts(item.id).catch(() => ({
+        data: []
+      }));
       return [item.id, accountRes.data] as const;
     })
   );
@@ -360,7 +378,9 @@ const loadAiReview = async () => {
 
 const onSave = async () => {
   if (!canEdit.value) {
-    message("审批结束后仅允许补充附件；如需修改请联系超管开启编辑模式", { type: "warning" });
+    message("审批结束后仅允许补充附件；如需修改请联系超管开启编辑模式", {
+      type: "warning"
+    });
     return;
   }
 
@@ -373,7 +393,11 @@ const onSave = async () => {
     return;
   }
 
-  if (isSuperAdmin.value && superEditMode.value && !superEditNote.value.trim()) {
+  if (
+    isSuperAdmin.value &&
+    superEditMode.value &&
+    !superEditNote.value.trim()
+  ) {
     message("超管编辑模式下必须填写修改说明", { type: "warning" });
     return;
   }
@@ -405,7 +429,8 @@ const onSave = async () => {
       total_amount: form.value.total_amount,
       attachments_json: serializeAttachments(),
       remark: form.value.remark,
-      admin_edit_mode: isSuperAdmin.value && superEditMode.value ? true : undefined,
+      admin_edit_mode:
+        isSuperAdmin.value && superEditMode.value ? true : undefined,
       edit_note:
         isSuperAdmin.value && superEditMode.value
           ? superEditNote.value.trim() || undefined
@@ -453,7 +478,8 @@ const confirmSubmitApproval = async () => {
       }
     }
   } else {
-    const pickedUserIds = approvalFormConfig.value.default_assignee_userids.filter(Boolean);
+    const pickedUserIds =
+      approvalFormConfig.value.default_assignee_userids.filter(Boolean);
     const note = approvalFormConfig.value.note.trim();
     if (pickedUserIds.length > 0 || note) {
       instanceConfig = {
@@ -580,7 +606,11 @@ onMounted(async () => {
         }}</span>
         <div>
           <el-button @click="goBack">返回</el-button>
-          <el-button type="primary" :loading="saving" :disabled="!canEdit" @click="onSave"
+          <el-button
+            type="primary"
+            :loading="saving"
+            :disabled="!canEdit"
+            @click="onSave"
             >保存</el-button
           >
           <el-button
@@ -603,7 +633,10 @@ onMounted(async () => {
 
     <el-form label-width="110px" style="max-width: 900px">
       <el-form-item label="合同方向">
-        <el-radio-group v-model="form.direction" :disabled="!isCreate && !canEdit">
+        <el-radio-group
+          v-model="form.direction"
+          :disabled="!isCreate && !canEdit"
+        >
           <el-radio label="outbound">对外付款</el-radio>
           <el-radio label="inbound">收款</el-radio>
         </el-radio-group>
@@ -640,19 +673,32 @@ onMounted(async () => {
               :label="item.entity_name"
             />
           </el-select>
-          <div v-if="selectedEntity" style="margin-top: 6px; color: #6e6458; font-size: 13px">
+          <div
+            v-if="selectedEntity"
+            style="margin-top: 6px; color: #6e6458; font-size: 13px"
+          >
             {{ selectedEntity.entity_name }}
             <span v-if="selectedEntityAccount">
-              | {{ selectedEntityAccount.bank_name }} / {{ selectedEntityAccount.account_no }}
+              | {{ selectedEntityAccount.bank_name }} /
+              {{ selectedEntityAccount.account_no }}
             </span>
           </div>
         </div>
       </el-form-item>
       <el-form-item label="对方单位">
-        <el-input v-model="form.counterparty" :disabled="!canEdit" placeholder="请输入对方单位" />
+        <el-input
+          v-model="form.counterparty"
+          :disabled="!canEdit"
+          placeholder="请输入对方单位"
+        />
       </el-form-item>
       <el-form-item label="合同类型">
-        <el-select v-model="form.contract_type" clearable style="width: 220px" :disabled="!canEdit">
+        <el-select
+          v-model="form.contract_type"
+          clearable
+          style="width: 220px"
+          :disabled="!canEdit"
+        >
           <el-option label="人工" value="人工" />
           <el-option label="机械" value="机械" />
           <el-option label="总包" value="总包" />
@@ -695,7 +741,9 @@ onMounted(async () => {
             style="max-width: 260px"
             :disabled="!canEdit"
           />
-          <span style="font-weight: 700; color: #6b4f2a">{{ amountDisplay }}</span>
+          <span style="font-weight: 700; color: #6b4f2a">{{
+            amountDisplay
+          }}</span>
         </div>
       </el-form-item>
       <el-form-item label="合同附件">
@@ -708,22 +756,36 @@ onMounted(async () => {
             :http-request="uploadAttachment"
             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
           >
-            <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+            <div class="el-upload__text">
+              拖拽文件到这里，或 <em>点击上传</em>
+            </div>
             <template #tip>
-              <div class="el-upload__tip">支持常见文档和图片，上传后可预览/下载</div>
+              <div class="el-upload__tip">
+                支持常见文档和图片，上传后可预览/下载
+              </div>
             </template>
           </el-upload>
 
-          <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
+          <el-table
+            :data="attachmentItems"
+            size="small"
+            style="margin-top: 12px"
+          >
             <el-table-column label="文件名" min-width="260">
               <template #default="scope">{{ scope.row.file_name }}</template>
             </el-table-column>
             <el-table-column label="大小" width="120">
-              <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+              <template #default="scope">{{
+                scope.row.file_size ?? "-"
+              }}</template>
             </el-table-column>
             <el-table-column label="操作" width="220" fixed="right">
               <template #default="scope">
-                <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                <el-link
+                  :href="fileUrl(scope.row.file_key)"
+                  target="_blank"
+                  type="primary"
+                >
                   预览
                 </el-link>
                 <el-link
@@ -749,7 +811,12 @@ onMounted(async () => {
         </div>
       </el-form-item>
       <el-form-item label="备注">
-        <el-input v-model="form.remark" type="textarea" :rows="3" :disabled="!canEdit" />
+        <el-input
+          v-model="form.remark"
+          type="textarea"
+          :rows="3"
+          :disabled="!canEdit"
+        />
       </el-form-item>
     </el-form>
 
@@ -769,7 +836,11 @@ onMounted(async () => {
       style="margin-bottom: 12px"
     />
 
-    <el-form v-if="isSuperAdmin && !isCreate" inline style="margin-bottom: 10px">
+    <el-form
+      v-if="isSuperAdmin && !isCreate"
+      inline
+      style="margin-bottom: 10px"
+    >
       <el-form-item label="超管编辑模式">
         <el-switch v-model="superEditMode" />
       </el-form-item>
@@ -844,7 +915,9 @@ onMounted(async () => {
       <el-table-column prop="old_amount" label="原金额" width="120" />
       <el-table-column prop="new_amount" label="新金额" width="120" />
       <el-table-column label="状态" width="100">
-        <template #default="scope">{{ toBizStatusLabel(scope.row.status) }}</template>
+        <template #default="scope">{{
+          toBizStatusLabel(scope.row.status)
+        }}</template>
       </el-table-column>
       <el-table-column prop="reason" label="原因" min-width="220" />
       <el-table-column label="操作" width="150" fixed="right">
@@ -879,7 +952,7 @@ onMounted(async () => {
             placeholder="可选，留空使用系统默认摘要"
           />
         </el-form-item>
-        <el-form-item label="设置模式" v-if="isSuperAdmin">
+        <el-form-item v-if="isSuperAdmin" label="设置模式">
           <el-radio-group v-model="approvalConfigMode">
             <el-radio-button value="form">可视化</el-radio-button>
             <el-radio-button value="json">JSON(高级)</el-radio-button>
@@ -928,7 +1001,7 @@ onMounted(async () => {
             />
           </el-form-item>
         </template>
-        <el-form-item label="实例配置(JSON)" v-else-if="isSuperAdmin">
+        <el-form-item v-else-if="isSuperAdmin" label="实例配置(JSON)">
           <el-input
             v-model="approvalConfigText"
             type="textarea"
@@ -951,7 +1024,9 @@ onMounted(async () => {
       <el-table-column prop="serial_no" label="流水号" width="160" />
       <el-table-column prop="amount" label="金额" width="120" />
       <el-table-column label="状态" width="120">
-        <template #default="scope">{{ toBizStatusLabel(scope.row.status) }}</template>
+        <template #default="scope">{{
+          toBizStatusLabel(scope.row.status)
+        }}</template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
     </el-table>

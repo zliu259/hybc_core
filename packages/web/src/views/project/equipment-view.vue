@@ -38,14 +38,20 @@ const loadData = async () => {
     consumptions.value =
       (result.data.consumptions as Array<Record<string, unknown>>) ?? [];
     rentalAlert.value =
-      (result.data.rental_alert as { active_count?: number; overdue_count?: number })?.active_count !==
-      undefined
+      (
+        result.data.rental_alert as {
+          active_count?: number;
+          overdue_count?: number;
+        }
+      )?.active_count !== undefined
         ? {
             active_count: Number(
-              (result.data.rental_alert as { active_count?: number }).active_count ?? 0
+              (result.data.rental_alert as { active_count?: number })
+                .active_count ?? 0
             ),
             overdue_count: Number(
-              (result.data.rental_alert as { overdue_count?: number }).overdue_count ?? 0
+              (result.data.rental_alert as { overdue_count?: number })
+                .overdue_count ?? 0
             )
           }
         : { active_count: 0, overdue_count: 0 };
@@ -109,7 +115,13 @@ onMounted(async () => {
             <el-table-column prop="status" label="状态" width="100" />
             <el-table-column label="租赁" width="120">
               <template #default="scope">
-                <el-tag v-if="scope.row.rental_mode" :type="scope.row.rental_mode === 'lease_in' ? 'warning' : 'primary'" size="small">
+                <el-tag
+                  v-if="scope.row.rental_mode"
+                  :type="
+                    scope.row.rental_mode === 'lease_in' ? 'warning' : 'primary'
+                  "
+                  size="small"
+                >
                   {{ scope.row.rental_mode === "lease_in" ? "租入" : "外租" }}
                 </el-tag>
                 <span v-else>-</span>

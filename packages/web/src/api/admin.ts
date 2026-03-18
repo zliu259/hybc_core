@@ -499,7 +499,10 @@ export const handleApprovalAiGateTask = (
   }>("post", `/api/v1/admin/approval-ai-gate/tasks/${taskId}/handle`, { data });
 };
 
-export const getWeComPushMonitor = (params?: { hours?: number; limit?: number }) => {
+export const getWeComPushMonitor = (params?: {
+  hours?: number;
+  limit?: number;
+}) => {
   return http.request<{ success: boolean; data: WeComPushMonitorResponse }>(
     "get",
     "/api/v1/admin/wecom-push/monitor",

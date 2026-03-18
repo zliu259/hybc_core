@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { precheckStatusLabel } from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 import {
   listPrecheckPendingEnvelopes,
@@ -74,10 +75,14 @@ const doPrecheck = async (
     await loadData();
   } catch (error) {
     const err = error as {
-      response?: { status?: number; data?: { data?: { wait_for_audit?: boolean } } };
+      response?: {
+        status?: number;
+        data?: { data?: { wait_for_audit?: boolean } };
+      };
     };
     const waitForAudit =
-      err.response?.status === 409 && err.response?.data?.data?.wait_for_audit === true;
+      err.response?.status === 409 &&
+      err.response?.data?.data?.wait_for_audit === true;
     if (!waitForAudit) throw error;
     message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
       type: "warning"
@@ -138,7 +143,11 @@ onMounted(async () => {
       <el-table-column prop="applicant_userid" label="填报人" width="140" />
       <el-table-column prop="amount" label="金额" width="110" />
       <el-table-column prop="duplicate_count" label="查重线索" width="110" />
-      <el-table-column prop="precheck_status" label="预审状态" width="120" />
+      <el-table-column label="预审状态" width="120">
+        <template #default="scope">{{
+          precheckStatusLabel(scope.row.precheck_status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" min-width="380" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="openDetail(scope.row.id)"

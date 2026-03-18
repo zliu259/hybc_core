@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   listAiProviders,
   createAiProvider,
@@ -367,7 +368,10 @@ onMounted(() => {
         <el-input v-model="bootstrapForm.openai_model" style="width: 220px" />
       </el-form-item>
       <el-form-item label="OpenAI Endpoint">
-        <el-input v-model="bootstrapForm.openai_endpoint" style="width: 320px" />
+        <el-input
+          v-model="bootstrapForm.openai_endpoint"
+          style="width: 320px"
+        />
       </el-form-item>
       <el-form-item>
         <el-button
@@ -408,7 +412,7 @@ onMounted(() => {
               <el-tag
                 :type="row.status === 'active' ? 'success' : 'info'"
                 size="small"
-                >{{ row.status }}</el-tag
+                >{{ statusLabel(row.status) }}</el-tag
               >
             </template>
           </el-table-column>
@@ -449,7 +453,7 @@ onMounted(() => {
               <el-tag
                 :type="row.status === 'active' ? 'success' : 'info'"
                 size="small"
-                >{{ row.status }}</el-tag
+                >{{ statusLabel(row.status) }}</el-tag
               >
             </template>
           </el-table-column>
@@ -487,7 +491,7 @@ onMounted(() => {
               <el-tag
                 :type="row.status === 'active' ? 'success' : 'info'"
                 size="small"
-                >{{ row.status }}</el-tag
+                >{{ statusLabel(row.status) }}</el-tag
               >
             </template>
           </el-table-column>

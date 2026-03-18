@@ -53,8 +53,8 @@ const loadData = async () => {
   try {
     const [inventoryRes, alertRes] = await Promise.all([
       listInventory({
-      warehouse_id: filters.value.warehouse_id,
-      asset_type_id: filters.value.asset_type_id
+        warehouse_id: filters.value.warehouse_id,
+        asset_type_id: filters.value.asset_type_id
       }),
       listInventoryAlerts()
     ]);

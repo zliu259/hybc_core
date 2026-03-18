@@ -152,14 +152,14 @@ const loadRuntimeConfig = async () => {
     runtimeForm.value = {
       OPENAI_API_KEY: map.get("OPENAI_API_KEY") ?? "",
       OPENAI_MODEL: map.get("OPENAI_MODEL") ?? "gpt-5.2",
-      OPENAI_BASE_URL: map.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
+      OPENAI_BASE_URL:
+        map.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
       OPENAI_MODEL_CONTRACT_REVIEW_TEXT:
         map.get("OPENAI_MODEL_CONTRACT_REVIEW_TEXT") ?? "gpt-5.2",
       OPENAI_MODEL_CONTRACT_REVIEW_VISION:
         map.get("OPENAI_MODEL_CONTRACT_REVIEW_VISION") ?? "gpt-4o",
       ANTHROPIC_API_KEY: map.get("ANTHROPIC_API_KEY") ?? "",
-      ANTHROPIC_MODEL:
-        map.get("ANTHROPIC_MODEL") ?? "claude-sonnet-4-20250514",
+      ANTHROPIC_MODEL: map.get("ANTHROPIC_MODEL") ?? "claude-sonnet-4-20250514",
       MOCK_AI_ONLY: map.get("MOCK_AI_ONLY") ?? "false"
     };
   } finally {
@@ -295,7 +295,9 @@ onUnmounted(() => {
       <el-row :gutter="16">
         <el-col :span="12">
           <el-form-item label="OPENAI_VISION_MODEL">
-            <el-input v-model="runtimeForm.OPENAI_MODEL_CONTRACT_REVIEW_VISION" />
+            <el-input
+              v-model="runtimeForm.OPENAI_MODEL_CONTRACT_REVIEW_VISION"
+            />
           </el-form-item>
         </el-col>
         <el-col :span="12">
@@ -326,7 +328,10 @@ onUnmounted(() => {
       </el-row>
 
       <el-form-item>
-        <el-button type="primary" :loading="runtimeSaving" @click="saveRuntimeConfig"
+        <el-button
+          type="primary"
+          :loading="runtimeSaving"
+          @click="saveRuntimeConfig"
           >保存运行参数</el-button
         >
       </el-form-item>
@@ -346,7 +351,10 @@ onUnmounted(() => {
         </el-select>
       </el-form-item>
       <el-form-item>
-        <el-button type="primary" :loading="testCreating" @click="createTestTask"
+        <el-button
+          type="primary"
+          :loading="testCreating"
+          @click="createTestTask"
           >创建测试任务</el-button
         >
       </el-form-item>

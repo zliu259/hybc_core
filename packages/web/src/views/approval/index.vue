@@ -39,7 +39,6 @@ const statusTagType: Record<string, TagType> = {
   withdrawn: "info"
 };
 
-
 const pendingLoading = ref(false);
 const pendingList = ref<PendingApprovalItem[]>([]);
 const pendingPage = ref(1);
@@ -145,9 +144,12 @@ const formatAmount = (value: number | null | undefined) => {
 };
 
 const projectLabel = (
-  row: Pick<PendingApprovalItem, "project_name" | "project_code"> | Pick<ProcessedApprovalItem, "project_name" | "project_code">
+  row:
+    | Pick<PendingApprovalItem, "project_name" | "project_code">
+    | Pick<ProcessedApprovalItem, "project_name" | "project_code">
 ) => {
-  if (row.project_name && row.project_code) return `${row.project_name} (${row.project_code})`;
+  if (row.project_name && row.project_code)
+    return `${row.project_name} (${row.project_code})`;
   return row.project_name || row.project_code || "-";
 };
 
@@ -203,11 +205,17 @@ onMounted(async () => {
             }}</template>
           </el-table-column>
           <el-table-column prop="instance_no" label="审批单号" width="170" />
-          <el-table-column label="所属项目" min-width="180" show-overflow-tooltip>
+          <el-table-column
+            label="所属项目"
+            min-width="180"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">{{ projectLabel(row) }}</template>
           </el-table-column>
           <el-table-column label="金额" width="140">
-            <template #default="{ row }">{{ formatAmount(row.biz_amount) }}</template>
+            <template #default="{ row }">{{
+              formatAmount(row.biz_amount)
+            }}</template>
           </el-table-column>
           <el-table-column
             prop="biz_detail"
@@ -222,7 +230,9 @@ onMounted(async () => {
             show-overflow-tooltip
           />
           <el-table-column label="发起人" width="140">
-            <template #default="{ row }">{{ toUserLabel(row.initiator_userid) }}</template>
+            <template #default="{ row }">{{
+              toUserLabel(row.initiator_userid)
+            }}</template>
           </el-table-column>
           <el-table-column
             prop="current_node_name"
@@ -230,7 +240,9 @@ onMounted(async () => {
             width="140"
           />
           <el-table-column label="提交时间" width="180">
-            <template #default="{ row }">{{ formatBeijingDateTime(row.submitted_at) }}</template>
+            <template #default="{ row }">{{
+              formatBeijingDateTime(row.submitted_at)
+            }}</template>
           </el-table-column>
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
@@ -272,11 +284,17 @@ onMounted(async () => {
             }}</template>
           </el-table-column>
           <el-table-column prop="instance_no" label="审批单号" width="170" />
-          <el-table-column label="所属项目" min-width="180" show-overflow-tooltip>
+          <el-table-column
+            label="所属项目"
+            min-width="180"
+            show-overflow-tooltip
+          >
             <template #default="{ row }">{{ projectLabel(row) }}</template>
           </el-table-column>
           <el-table-column label="金额" width="140">
-            <template #default="{ row }">{{ formatAmount(row.biz_amount) }}</template>
+            <template #default="{ row }">{{
+              formatAmount(row.biz_amount)
+            }}</template>
           </el-table-column>
           <el-table-column
             prop="biz_detail"
@@ -291,7 +309,9 @@ onMounted(async () => {
             show-overflow-tooltip
           />
           <el-table-column label="发起人" width="140">
-            <template #default="{ row }">{{ toUserLabel(row.initiator_userid) }}</template>
+            <template #default="{ row }">{{
+              toUserLabel(row.initiator_userid)
+            }}</template>
           </el-table-column>
           <el-table-column label="实例状态" width="110">
             <template #default="{ row }">
@@ -311,7 +331,9 @@ onMounted(async () => {
             </template>
           </el-table-column>
           <el-table-column label="操作时间" width="180">
-            <template #default="{ row }">{{ formatBeijingDateTime(row.acted_at) }}</template>
+            <template #default="{ row }">{{
+              formatBeijingDateTime(row.acted_at)
+            }}</template>
           </el-table-column>
           <el-table-column
             prop="comment"
@@ -355,7 +377,9 @@ onMounted(async () => {
             show-overflow-tooltip
           />
           <el-table-column label="发起人" width="140">
-            <template #default="{ row }">{{ toUserLabel(row.initiator_userid) }}</template>
+            <template #default="{ row }">{{
+              toUserLabel(row.initiator_userid)
+            }}</template>
           </el-table-column>
           <el-table-column label="状态" width="100">
             <template #default="{ row }">
@@ -365,7 +389,9 @@ onMounted(async () => {
             </template>
           </el-table-column>
           <el-table-column label="提交时间" width="180">
-            <template #default="{ row }">{{ formatBeijingDateTime(row.submitted_at) }}</template>
+            <template #default="{ row }">{{
+              formatBeijingDateTime(row.submitted_at)
+            }}</template>
           </el-table-column>
         </el-table>
         <el-pagination

@@ -30,12 +30,42 @@ const SETTINGS_KEY = "hybc-envelope-generator-settings-v2";
 const router = useRouter();
 
 const sizePresets: SizePreset[] = [
-  { label: "A4 横向 (297x210mm)", value: "a4-landscape", widthMm: 297, heightMm: 210 },
-  { label: "A3 横向 (420x297mm)", value: "a3-landscape", widthMm: 420, heightMm: 297 },
-  { label: "A5 横向 (210x148mm)", value: "a5-landscape", widthMm: 210, heightMm: 148 },
-  { label: "C4 横向 (324x229mm)", value: "c4-landscape", widthMm: 324, heightMm: 229 },
-  { label: "C5 横向 (229x162mm)", value: "c5-landscape", widthMm: 229, heightMm: 162 },
-  { label: "DL 横向 (220x110mm)", value: "dl-landscape", widthMm: 220, heightMm: 110 },
+  {
+    label: "A4 横向 (297x210mm)",
+    value: "a4-landscape",
+    widthMm: 297,
+    heightMm: 210
+  },
+  {
+    label: "A3 横向 (420x297mm)",
+    value: "a3-landscape",
+    widthMm: 420,
+    heightMm: 297
+  },
+  {
+    label: "A5 横向 (210x148mm)",
+    value: "a5-landscape",
+    widthMm: 210,
+    heightMm: 148
+  },
+  {
+    label: "C4 横向 (324x229mm)",
+    value: "c4-landscape",
+    widthMm: 324,
+    heightMm: 229
+  },
+  {
+    label: "C5 横向 (229x162mm)",
+    value: "c5-landscape",
+    widthMm: 229,
+    heightMm: 162
+  },
+  {
+    label: "DL 横向 (220x110mm)",
+    value: "dl-landscape",
+    widthMm: 220,
+    heightMm: 110
+  },
   { label: "自定义尺寸", value: "custom", widthMm: 297, heightMm: 210 }
 ];
 
@@ -52,15 +82,21 @@ const items = ref<EnvelopeItem[]>([]);
 const importFileInput = ref<HTMLInputElement | null>(null);
 
 const activePreset = computed(
-  () => sizePresets.find(item => item.value === form.value.sizePreset) ?? sizePresets[0]
+  () =>
+    sizePresets.find(item => item.value === form.value.sizePreset) ??
+    sizePresets[0]
 );
 
 const pageWidthMm = computed(() =>
-  form.value.sizePreset === "custom" ? form.value.customWidthMm : activePreset.value.widthMm
+  form.value.sizePreset === "custom"
+    ? form.value.customWidthMm
+    : activePreset.value.widthMm
 );
 
 const pageHeightMm = computed(() =>
-  form.value.sizePreset === "custom" ? form.value.customHeightMm : activePreset.value.heightMm
+  form.value.sizePreset === "custom"
+    ? form.value.customHeightMm
+    : activePreset.value.heightMm
 );
 
 const previewStyle = computed(() => ({
@@ -79,7 +115,10 @@ const formatNow = () => {
 };
 
 const createUuid = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   const template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
@@ -129,7 +168,9 @@ const generate = async () => {
   if (!validateForm()) return;
   generating.value = true;
   try {
-    const uuids = Array.from({ length: Math.floor(form.value.count) }, () => createUuid());
+    const uuids = Array.from({ length: Math.floor(form.value.count) }, () =>
+      createUuid()
+    );
     const qrData = await Promise.all(
       uuids.map(uuid =>
         QRCode.toDataURL(uuid, {
@@ -139,7 +180,10 @@ const generate = async () => {
         })
       )
     );
-    items.value = uuids.map((uuid, index) => ({ uuid, qrDataUrl: qrData[index] }));
+    items.value = uuids.map((uuid, index) => ({
+      uuid,
+      qrDataUrl: qrData[index]
+    }));
     generatedAt.value = formatNow();
     persistSettings();
     message(`已生成 ${items.value.length} 份`, { type: "success" });
@@ -228,11 +272,18 @@ const importJson = async (event: Event) => {
       }))
     );
     items.value = nextItems;
-    generatedAt.value = typeof payload.generatedAt === "string" ? payload.generatedAt : formatNow();
+    generatedAt.value =
+      typeof payload.generatedAt === "string"
+        ? payload.generatedAt
+        : formatNow();
     if (payload.page) {
       form.value.sizePreset = "custom";
-      form.value.customWidthMm = Number(payload.page.widthMm || form.value.customWidthMm);
-      form.value.customHeightMm = Number(payload.page.heightMm || form.value.customHeightMm);
+      form.value.customWidthMm = Number(
+        payload.page.widthMm || form.value.customWidthMm
+      );
+      form.value.customHeightMm = Number(
+        payload.page.heightMm || form.value.customHeightMm
+      );
     }
     persistSettings();
     message(`已导入 ${items.value.length} 份`, { type: "success" });
@@ -278,7 +329,16 @@ const exportPdf = () => {
     const qrSize = Math.min(cardH * 0.44, 72);
     const qrX = cardX + 12;
     const qrY = cardY + 20;
-    pdf.addImage(item.qrDataUrl, "PNG", qrX, qrY, qrSize, qrSize, undefined, "FAST");
+    pdf.addImage(
+      item.qrDataUrl,
+      "PNG",
+      qrX,
+      qrY,
+      qrSize,
+      qrSize,
+      undefined,
+      "FAST"
+    );
 
     const textX = qrX + qrSize + 12;
     const textWidth = cardW - qrSize - 28;
@@ -319,10 +379,18 @@ onMounted(() => {
           <div class="actions">
             <el-button @click="goBack">返回报销处理</el-button>
             <el-button @click="clearAll">清空</el-button>
-            <el-button type="primary" :loading="generating" @click="generate">生成</el-button>
-            <el-button type="success" plain @click="exportPdf">直接生成PDF</el-button>
-            <el-button type="warning" plain @click="exportCsv">导出CSV</el-button>
-            <el-button type="warning" plain @click="exportJson">导出JSON</el-button>
+            <el-button type="primary" :loading="generating" @click="generate"
+              >生成</el-button
+            >
+            <el-button type="success" plain @click="exportPdf"
+              >直接生成PDF</el-button
+            >
+            <el-button type="warning" plain @click="exportCsv"
+              >导出CSV</el-button
+            >
+            <el-button type="warning" plain @click="exportJson"
+              >导出JSON</el-button
+            >
             <el-button plain @click="triggerImport">导入JSON</el-button>
           </div>
         </div>
@@ -343,9 +411,17 @@ onMounted(() => {
               />
             </el-select>
             <template v-if="form.sizePreset === 'custom'">
-              <el-input-number v-model="form.customWidthMm" :min="80" :max="1000" />
+              <el-input-number
+                v-model="form.customWidthMm"
+                :min="80"
+                :max="1000"
+              />
               <span>mm ×</span>
-              <el-input-number v-model="form.customHeightMm" :min="80" :max="1000" />
+              <el-input-number
+                v-model="form.customHeightMm"
+                :min="80"
+                :max="1000"
+              />
               <span>mm</span>
             </template>
           </div>
@@ -381,7 +457,9 @@ onMounted(() => {
           </div>
         </div>
       </div>
-      <div class="meta">预览仅显示第 1 份，PDF 会包含全部 {{ items.length }} 份</div>
+      <div class="meta">
+        预览仅显示第 1 份，PDF 会包含全部 {{ items.length }} 份
+      </div>
     </div>
     <el-empty v-else description="请先生成数据" />
   </div>

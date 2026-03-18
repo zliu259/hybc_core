@@ -107,7 +107,9 @@ const loadData = async () => {
   }
 };
 
-const noticesNum = computed(() => notices.value.reduce((sum, tab) => sum + tab.list.length, 0));
+const noticesNum = computed(() =>
+  notices.value.reduce((sum, tab) => sum + tab.list.length, 0)
+);
 const getLabel = (item: NoticeTab) =>
   `${item.name}${item.list.length > 0 ? `(${item.list.length})` : ""}`;
 
@@ -142,8 +144,8 @@ const openDetail = (id: number) => {
       <el-dropdown-menu>
         <el-tabs
           v-model="activeKey"
-          :stretch="true"
           v-loading="loading"
+          :stretch="true"
           class="dropdown-tabs"
           :style="{ width: notices.length === 0 ? '200px' : '330px' }"
         >
@@ -169,12 +171,20 @@ const openDetail = (id: number) => {
                       >
                         <div class="notice-item-title">
                           <span>{{ notice.title }}</span>
-                          <el-tag v-if="notice.extra" size="small" :type="notice.status">
+                          <el-tag
+                            v-if="notice.extra"
+                            size="small"
+                            :type="notice.status"
+                          >
                             {{ notice.extra }}
                           </el-tag>
                         </div>
-                        <div class="notice-item-desc">{{ notice.description }}</div>
-                        <div class="notice-item-time">{{ notice.datetime }}</div>
+                        <div class="notice-item-desc">
+                          {{ notice.description }}
+                        </div>
+                        <div class="notice-item-time">
+                          {{ notice.datetime }}
+                        </div>
                       </div>
                     </template>
                   </div>

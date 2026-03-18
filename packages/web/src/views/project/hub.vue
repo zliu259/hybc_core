@@ -29,7 +29,10 @@ const statusOptions = [
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
-const statusMap: Record<string, { label: string; type: TagType; progress: number }> = {
+const statusMap: Record<
+  string,
+  { label: string; type: TagType; progress: number }
+> = {
   planning: { label: "规划中", type: "info", progress: 10 },
   preparing: { label: "筹备中", type: "warning", progress: 35 },
   active: { label: "施工中", type: "success", progress: 72 },
@@ -46,7 +49,8 @@ const statusRank: Record<string, number> = {
 };
 
 const projectDisplayTime = (item: Project): number => {
-  const source = item.project_start_at || item.start_date || item.created_at || "";
+  const source =
+    item.project_start_at || item.start_date || item.created_at || "";
   const time = Date.parse(source);
   return Number.isNaN(time) ? 0 : time;
 };
@@ -58,7 +62,8 @@ const projectDisplayDate = (item: Project): string => {
 
 const sortedRows = computed(() => {
   return [...rows.value].sort((a, b) => {
-    const statusDiff = (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
+    const statusDiff =
+      (statusRank[a.status] ?? 9) - (statusRank[b.status] ?? 9);
     if (statusDiff !== 0) return statusDiff;
     const timeDiff = projectDisplayTime(b) - projectDisplayTime(a);
     if (timeDiff !== 0) return timeDiff;
@@ -68,7 +73,11 @@ const sortedRows = computed(() => {
 
 const canCreateProject = computed(() => {
   const roles = userStore.roles || [];
-  return roles.includes("super_admin") || roles.includes("manager") || roles.includes("site_manager");
+  return (
+    roles.includes("super_admin") ||
+    roles.includes("manager") ||
+    roles.includes("site_manager")
+  );
 });
 
 const loadData = async () => {
@@ -118,7 +127,7 @@ onMounted(loadData);
 </script>
 
 <template>
-  <el-card shadow="never" style="background: #fffaf2" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" style="background: #fffaf2">
     <template #header>
       <div class="head">
         <div>
@@ -132,7 +141,12 @@ onMounted(loadData);
             placeholder="搜索项目编号/名称"
             style="width: 220px"
           />
-          <el-select v-model="filters.status" clearable placeholder="状态筛选" style="width: 140px">
+          <el-select
+            v-model="filters.status"
+            clearable
+            placeholder="状态筛选"
+            style="width: 140px"
+          >
             <el-option
               v-for="item in statusOptions"
               :key="item.value"
@@ -160,7 +174,14 @@ onMounted(loadData);
     </template>
 
     <el-row :gutter="16">
-      <el-col v-for="item in sortedRows" :key="item.id" :xs="24" :sm="12" :md="8" :lg="6">
+      <el-col
+        v-for="item in sortedRows"
+        :key="item.id"
+        :xs="24"
+        :sm="12"
+        :md="8"
+        :lg="6"
+      >
         <div class="project-card" @click="goWorkspace(item.id)">
           <div class="project-card__tag">
             <el-tag :type="statusMap[item.status]?.type || 'info'" size="small">
@@ -169,8 +190,12 @@ onMounted(loadData);
           </div>
           <div class="project-card__title">{{ item.project_name }}</div>
           <div class="project-card__code">{{ item.project_code }}</div>
-          <div class="project-card__meta">开工时间：{{ projectDisplayDate(item) }}</div>
-          <div class="project-card__meta">位置：{{ item.location_text || "未设置" }}</div>
+          <div class="project-card__meta">
+            开工时间：{{ projectDisplayDate(item) }}
+          </div>
+          <div class="project-card__meta">
+            位置：{{ item.location_text || "未设置" }}
+          </div>
           <div class="project-card__briefing">
             项目交底：{{ item.project_briefing || "暂无" }}
           </div>
@@ -182,7 +207,9 @@ onMounted(loadData);
               :stroke-width="8"
             />
           </div>
-          <div class="project-card__foot">负责人：{{ item.manager_userid || "未指定" }}</div>
+          <div class="project-card__foot">
+            负责人：{{ item.manager_userid || "未指定" }}
+          </div>
         </div>
       </el-col>
     </el-row>
@@ -248,7 +275,9 @@ onMounted(loadData);
   border-radius: 10px;
   background: linear-gradient(180deg, #fffdf8 0%, #fff8ec 100%);
   cursor: pointer;
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  transition:
+    transform 0.2s ease,
+    box-shadow 0.2s ease;
 }
 
 .project-card:hover {

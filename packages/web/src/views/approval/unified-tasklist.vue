@@ -28,8 +28,8 @@ const comment = ref("");
 const transferTo = ref("");
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
-const activePending = computed(() =>
-  pendingRows.value.find(item => item.id === selectedId.value) || null
+const activePending = computed(
+  () => pendingRows.value.find(item => item.id === selectedId.value) || null
 );
 
 const bizTypeStyle = (bizType: string) => {
@@ -134,14 +134,16 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" class="tasklist" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" class="tasklist">
     <template #header>
       <div class="tasklist__header">审批中心 - 统一工作台</div>
     </template>
 
     <div class="tasklist__layout">
       <div class="tasklist__left">
-        <div class="tasklist__left-title">待办池 ({{ pendingRows.length }})</div>
+        <div class="tasklist__left-title">
+          待办池 ({{ pendingRows.length }})
+        </div>
         <div class="tasklist__list">
           <div
             v-for="row in pendingRows"
@@ -156,23 +158,34 @@ onMounted(async () => {
             <div class="task-item__biz">{{ toBizTypeLabel(row.biz_type) }}</div>
             <div class="task-item__summary">{{ row.biz_summary }}</div>
             <div class="task-item__meta">
-              {{ row.initiator_userid }} · {{ formatBeijingDateTime(row.submitted_at) }}
+              {{ row.initiator_userid }} ·
+              {{ formatBeijingDateTime(row.submitted_at) }}
             </div>
           </div>
         </div>
       </div>
 
-      <div class="tasklist__right" v-loading="detailLoading">
+      <div v-loading="detailLoading" class="tasklist__right">
         <template v-if="activePending">
           <div class="preview-head">
-            <div class="preview-head__title">{{ activePending.biz_summary }}</div>
-            <el-tag type="warning">{{ activePending.current_node_name || "待处理" }}</el-tag>
+            <div class="preview-head__title">
+              {{ activePending.biz_summary }}
+            </div>
+            <el-tag type="warning">{{
+              activePending.current_node_name || "待处理"
+            }}</el-tag>
           </div>
 
           <el-descriptions :column="2" border>
-            <el-descriptions-item label="业务类型">{{ toBizTypeLabel(activePending.biz_type) }}</el-descriptions-item>
-            <el-descriptions-item label="发起人">{{ activePending.initiator_userid }}</el-descriptions-item>
-            <el-descriptions-item label="实例编号">{{ activePending.instance_no }}</el-descriptions-item>
+            <el-descriptions-item label="业务类型">{{
+              toBizTypeLabel(activePending.biz_type)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="发起人">{{
+              activePending.initiator_userid
+            }}</el-descriptions-item>
+            <el-descriptions-item label="实例编号">{{
+              activePending.instance_no
+            }}</el-descriptions-item>
             <el-descriptions-item label="提交时间">{{
               formatBeijingDateTime(activePending.submitted_at)
             }}</el-descriptions-item>
@@ -186,7 +199,11 @@ onMounted(async () => {
                 <el-timeline-item
                   v-for="node in detail?.nodes || []"
                   :key="node.id"
-                  :timestamp="formatBeijingDateTime(node.completed_at || node.started_at || node.created_at)"
+                  :timestamp="
+                    formatBeijingDateTime(
+                      node.completed_at || node.started_at || node.created_at
+                    )
+                  "
                 >
                   {{ node.node_name }} · {{ toStatusLabel(node.status) }}
                 </el-timeline-item>
@@ -216,9 +233,24 @@ onMounted(async () => {
                   :value="item.userid"
                 />
               </el-select>
-              <el-button type="success" :loading="actionLoading" @click="handleApprove">通过</el-button>
-              <el-button type="danger" :loading="actionLoading" @click="handleReject">驳回</el-button>
-              <el-button type="warning" :loading="actionLoading" @click="handleTransfer">转签</el-button>
+              <el-button
+                type="success"
+                :loading="actionLoading"
+                @click="handleApprove"
+                >通过</el-button
+              >
+              <el-button
+                type="danger"
+                :loading="actionLoading"
+                @click="handleReject"
+                >驳回</el-button
+              >
+              <el-button
+                type="warning"
+                :loading="actionLoading"
+                @click="handleTransfer"
+                >转签</el-button
+              >
             </div>
           </div>
         </template>

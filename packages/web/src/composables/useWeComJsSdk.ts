@@ -12,7 +12,11 @@ type WeComWx = {
   ready: (callback: () => void) => void;
   error: (callback: (error: unknown) => void) => void;
   agentConfig: (options: Record<string, unknown>) => void;
-  invoke: (api: string, payload: Record<string, unknown>, callback: JsApiCallback) => void;
+  invoke: (
+    api: string,
+    payload: Record<string, unknown>,
+    callback: JsApiCallback
+  ) => void;
 };
 
 type WeComWw = {
@@ -57,7 +61,10 @@ const loadScript = async (src: string): Promise<void> => {
   });
 };
 
-const ensureJsSdkGlobal = async (): Promise<{ mode: "ww" | "wx"; windowRef: WeComSdkWindow }> => {
+const ensureJsSdkGlobal = async (): Promise<{
+  mode: "ww" | "wx";
+  windowRef: WeComSdkWindow;
+}> => {
   const windowRef = window as WeComSdkWindow;
 
   if (windowRef.ww?.register) {
@@ -107,8 +114,8 @@ const invokeInWx = async (
   api: string,
   payload: Record<string, unknown>
 ): Promise<JsApiCallbackPayload> => {
-  return new Promise<JsApiCallbackPayload>((resolve) => {
-    wx.invoke(api, payload, (result) => {
+  return new Promise<JsApiCallbackPayload>(resolve => {
+    wx.invoke(api, payload, result => {
       resolve(result);
     });
   });
@@ -173,7 +180,7 @@ export const initWeComJsSdk = async (jsApiList: string[]) => {
         });
       });
 
-      windowRef.wx?.error((error) => reject(error));
+      windowRef.wx?.error(error => reject(error));
     });
 
     return {

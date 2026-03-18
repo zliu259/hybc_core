@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import { listEntities, type Entity } from "@/api/entity";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
@@ -31,7 +32,11 @@ const allApplications = ref<FuelQuotaApplication[]>([]);
 const loading = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
-const pendingSummary = ref({ pending_count: 0, processed_count: 0, rejected_count: 0 });
+const pendingSummary = ref({
+  pending_count: 0,
+  processed_count: 0,
+  rejected_count: 0
+});
 const vehicleStatusFilter = ref<"all" | "active" | "inactive">("all");
 
 const vehicleEditDialogVisible = ref(false);
@@ -84,7 +89,9 @@ const balanceLogDialogVisible = ref(false);
 const selectedCard = ref<FuelCard | null>(null);
 const balanceLogs = ref<FuelCardBalanceLog[]>([]);
 
-const pendingCount = computed(() => pendingSummary.value.pending_count || pendingApplications.value.length);
+const pendingCount = computed(
+  () => pendingSummary.value.pending_count || pendingApplications.value.length
+);
 
 const fuelStatusLabel = (status: string) => {
   if (status === "pending") return "待处理";
@@ -116,7 +123,9 @@ const formatBoundUsers = (row: FuelCard) => {
     .join("、");
 };
 
-const operationTypeLabel = (operationType: FuelCardBalanceLog["operation_type"]) => {
+const operationTypeLabel = (
+  operationType: FuelCardBalanceLog["operation_type"]
+) => {
   if (operationType === "card_created") return "建卡";
   if (operationType === "application_processed") return "申请处理";
   if (operationType === "manual_adjustment") return "人工调整";
@@ -136,7 +145,9 @@ const loadData = async () => {
     ] = await Promise.all([
       listEntities({ status: "active" }),
       listFleetVehicles(
-        vehicleStatusFilter.value === "all" ? undefined : { status: vehicleStatusFilter.value }
+        vehicleStatusFilter.value === "all"
+          ? undefined
+          : { status: vehicleStatusFilter.value }
       ),
       listFuelCards({ status: "active" }),
       listFuelQuotaApplications({ status: "pending" }),
@@ -244,7 +255,11 @@ const submitFuelCard = async () => {
     return;
   }
   await createFuelCard({ ...cardForm.value });
-  cardForm.value = { card_no: "", issued_to_entity_id: undefined, latest_balance: 0 };
+  cardForm.value = {
+    card_no: "",
+    issued_to_entity_id: undefined,
+    latest_balance: 0
+  };
   await loadData();
   message("油卡已创建", { type: "success" });
 };
@@ -254,7 +269,9 @@ const submitBinding = async () => {
     message("请选择油卡与员工", { type: "warning" });
     return;
   }
-  await bindFuelCardUser(bindForm.value.fuel_card_id, { bind_userid: bindForm.value.bind_userid.trim() });
+  await bindFuelCardUser(bindForm.value.fuel_card_id, {
+    bind_userid: bindForm.value.bind_userid.trim()
+  });
   bindForm.value = { fuel_card_id: undefined, bind_userid: "" };
   await loadData();
   message("油卡绑定成功", { type: "success" });
@@ -283,7 +300,10 @@ const submitProcess = async () => {
 
 const openBalanceLogs = async (row: FuelCard) => {
   selectedCard.value = row;
-  const result = await listFuelCardBalanceLogs(row.id, { page: 1, pageSize: 100 });
+  const result = await listFuelCardBalanceLogs(row.id, {
+    page: 1,
+    pageSize: 100
+  });
   balanceLogs.value = result.data;
   balanceLogDialogVisible.value = true;
 };
@@ -294,7 +314,13 @@ onMounted(loadData);
 <template>
   <el-card shadow="never" :loading="loading">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>公司车辆与油卡管理</span>
         <el-button type="primary" @click="loadData">刷新</el-button>
       </div>
@@ -304,47 +330,84 @@ onMounted(loadData);
       <el-tab-pane label="车辆档案">
         <el-form inline>
           <el-form-item label="状态筛选">
-            <el-select v-model="vehicleStatusFilter" style="width: 160px" @change="loadData">
+            <el-select
+              v-model="vehicleStatusFilter"
+              style="width: 160px"
+              @change="loadData"
+            >
               <el-option label="全部" value="all" />
               <el-option label="启用中" value="active" />
               <el-option label="已停用" value="inactive" />
             </el-select>
           </el-form-item>
-          <el-form-item label="车牌号"><el-input v-model="vehicleForm.current_plate_no" /></el-form-item>
-          <el-form-item label="车型"><el-input v-model="vehicleForm.vehicle_model" /></el-form-item>
+          <el-form-item label="车牌号"
+            ><el-input v-model="vehicleForm.current_plate_no"
+          /></el-form-item>
+          <el-form-item label="车型"
+            ><el-input v-model="vehicleForm.vehicle_model"
+          /></el-form-item>
           <el-form-item label="归属">
-            <el-select v-model="vehicleForm.ownership_type" style="width: 150px">
+            <el-select
+              v-model="vehicleForm.ownership_type"
+              style="width: 150px"
+            >
               <el-option label="公司车辆" value="company_owned" />
               <el-option label="员工车辆" value="employee_owned" />
             </el-select>
           </el-form-item>
           <el-form-item label="所属实体">
-            <el-select v-model="vehicleForm.entity_id" clearable filterable style="width: 220px">
-              <el-option v-for="item in entities" :key="item.id" :label="item.entity_name" :value="item.id" />
+            <el-select
+              v-model="vehicleForm.entity_id"
+              clearable
+              filterable
+              style="width: 220px"
+            >
+              <el-option
+                v-for="item in entities"
+                :key="item.id"
+                :label="item.entity_name"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
-          <el-form-item label="权属人"><el-input v-model="vehicleForm.owner_name" /></el-form-item>
+          <el-form-item label="权属人"
+            ><el-input v-model="vehicleForm.owner_name"
+          /></el-form-item>
           <el-button type="primary" @click="submitVehicle">新增车辆</el-button>
         </el-form>
 
         <el-table :data="vehicles" style="margin-top: 12px">
-          <el-table-column prop="vehicle_uuid" label="车辆UUID" min-width="220" />
-          <el-table-column prop="current_plate_no" label="当前车牌" width="120" />
+          <el-table-column
+            prop="vehicle_uuid"
+            label="车辆UUID"
+            min-width="220"
+          />
+          <el-table-column
+            prop="current_plate_no"
+            label="当前车牌"
+            width="120"
+          />
           <el-table-column prop="vehicle_model" label="车型" width="140" />
           <el-table-column label="归属权" width="130">
-            <template #default="scope">{{ ownershipText(scope.row.ownership_type) }}</template>
+            <template #default="scope">{{
+              ownershipText(scope.row.ownership_type)
+            }}</template>
           </el-table-column>
           <el-table-column prop="owner_name" label="权属人" width="140" />
           <el-table-column label="状态" width="100">
             <template #default="scope">
-              <el-tag :type="scope.row.status === 'active' ? 'success' : 'info'">
+              <el-tag
+                :type="scope.row.status === 'active' ? 'success' : 'info'"
+              >
                 {{ scope.row.status === "active" ? "启用中" : "已停用" }}
               </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="操作" width="180" fixed="right">
             <template #default="scope">
-              <el-button link type="primary" @click="openVehicleEdit(scope.row)">编辑</el-button>
+              <el-button link type="primary" @click="openVehicleEdit(scope.row)"
+                >编辑</el-button
+              >
               <el-button
                 v-if="scope.row.status === 'active'"
                 link
@@ -353,7 +416,12 @@ onMounted(loadData);
               >
                 停用
               </el-button>
-              <el-button v-else link type="success" @click="markVehicleActive(scope.row)">
+              <el-button
+                v-else
+                link
+                type="success"
+                @click="markVehicleActive(scope.row)"
+              >
                 启用
               </el-button>
             </template>
@@ -363,24 +431,53 @@ onMounted(loadData);
 
       <el-tab-pane label="油卡管理">
         <el-form inline>
-          <el-form-item label="油卡号"><el-input v-model="cardForm.card_no" /></el-form-item>
+          <el-form-item label="油卡号"
+            ><el-input v-model="cardForm.card_no"
+          /></el-form-item>
           <el-form-item label="所属实体">
-            <el-select v-model="cardForm.issued_to_entity_id" clearable filterable style="width: 220px">
-              <el-option v-for="item in entities" :key="item.id" :label="item.entity_name" :value="item.id" />
+            <el-select
+              v-model="cardForm.issued_to_entity_id"
+              clearable
+              filterable
+              style="width: 220px"
+            >
+              <el-option
+                v-for="item in entities"
+                :key="item.id"
+                :label="item.entity_name"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
-          <el-form-item label="余额"><el-input-number v-model="cardForm.latest_balance" :min="0" /></el-form-item>
+          <el-form-item label="余额"
+            ><el-input-number v-model="cardForm.latest_balance" :min="0"
+          /></el-form-item>
           <el-button type="primary" @click="submitFuelCard">新增油卡</el-button>
         </el-form>
 
         <el-form inline style="margin-top: 8px">
           <el-form-item label="绑定油卡">
-            <el-select v-model="bindForm.fuel_card_id" clearable filterable style="width: 220px">
-              <el-option v-for="item in cards" :key="item.id" :label="item.card_no" :value="item.id" />
+            <el-select
+              v-model="bindForm.fuel_card_id"
+              clearable
+              filterable
+              style="width: 220px"
+            >
+              <el-option
+                v-for="item in cards"
+                :key="item.id"
+                :label="item.card_no"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="绑定员工">
-            <el-select v-model="bindForm.bind_userid" clearable filterable style="width: 280px">
+            <el-select
+              v-model="bindForm.bind_userid"
+              clearable
+              filterable
+              style="width: 280px"
+            >
               <el-option
                 v-for="item in wecomUsers"
                 :key="item.userid"
@@ -395,14 +492,22 @@ onMounted(loadData);
         <el-table :data="cards" style="margin-top: 12px">
           <el-table-column prop="card_no" label="油卡号" min-width="180" />
           <el-table-column label="绑定员工" min-width="220">
-            <template #default="scope">{{ formatBoundUsers(scope.row) }}</template>
+            <template #default="scope">{{
+              formatBoundUsers(scope.row)
+            }}</template>
           </el-table-column>
           <el-table-column prop="latest_balance" label="最新余额" width="120" />
-          <el-table-column prop="status" label="状态" width="100" />
+          <el-table-column label="状态" width="100">
+            <template #default="scope">{{
+              statusLabel(scope.row.status)
+            }}</template>
+          </el-table-column>
           <el-table-column prop="updated_at" label="更新时间" width="180" />
           <el-table-column label="操作记录" width="120" fixed="right">
             <template #default="scope">
-              <el-button link type="primary" @click="openBalanceLogs(scope.row)">查看记录</el-button>
+              <el-button link type="primary" @click="openBalanceLogs(scope.row)"
+                >查看记录</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
@@ -411,24 +516,37 @@ onMounted(loadData);
       <el-tab-pane :label="`办公室处理(${pendingCount})`">
         <el-form inline>
           <el-form-item label="车辆"
-            ><el-select v-model="mileageForm.vehicle_id" clearable filterable style="width: 220px"
+            ><el-select
+              v-model="mileageForm.vehicle_id"
+              clearable
+              filterable
+              style="width: 220px"
               ><el-option
                 v-for="item in vehicles"
                 :key="item.id"
                 :label="item.current_plate_no"
                 :value="item.id"
-              />
-            </el-select></el-form-item
-          >
-          <el-form-item label="公里数"><el-input-number v-model="mileageForm.mileage_km" :min="0" /></el-form-item>
-          <el-form-item label="备注"><el-input v-model="mileageForm.remark" /></el-form-item>
+              /> </el-select
+          ></el-form-item>
+          <el-form-item label="公里数"
+            ><el-input-number v-model="mileageForm.mileage_km" :min="0"
+          /></el-form-item>
+          <el-form-item label="备注"
+            ><el-input v-model="mileageForm.remark"
+          /></el-form-item>
           <el-button @click="submitMileage">记录里程</el-button>
         </el-form>
 
         <el-table :data="pendingApplications" style="margin-top: 12px">
-          <el-table-column prop="application_no" label="申请单号" min-width="160" />
+          <el-table-column
+            prop="application_no"
+            label="申请单号"
+            min-width="160"
+          />
           <el-table-column label="申请人" width="180">
-            <template #default="scope">{{ resolveUserName(scope.row.applicant_userid) }}</template>
+            <template #default="scope">{{
+              resolveUserName(scope.row.applicant_userid)
+            }}</template>
           </el-table-column>
           <el-table-column prop="current_plate_no" label="车辆" width="120" />
           <el-table-column prop="vehicle_mileage_km" label="里程" width="100" />
@@ -436,7 +554,9 @@ onMounted(loadData);
           <el-table-column prop="requested_at" label="申请时间" width="180" />
           <el-table-column label="操作" width="120" fixed="right">
             <template #default="scope">
-              <el-button type="primary" link @click="openProcess(scope.row)">处理</el-button>
+              <el-button type="primary" link @click="openProcess(scope.row)"
+                >处理</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
@@ -444,27 +564,49 @@ onMounted(loadData);
 
       <el-tab-pane label="额度申请全量记录">
         <el-table :data="allApplications" style="margin-top: 12px">
-          <el-table-column prop="application_no" label="申请单号" min-width="160" />
+          <el-table-column
+            prop="application_no"
+            label="申请单号"
+            min-width="160"
+          />
           <el-table-column label="申请人" width="180">
-            <template #default="scope">{{ resolveUserName(scope.row.applicant_userid) }}</template>
+            <template #default="scope">{{
+              resolveUserName(scope.row.applicant_userid)
+            }}</template>
           </el-table-column>
           <el-table-column prop="current_plate_no" label="车辆" width="120" />
           <el-table-column prop="requested_amount" label="额度" width="110" />
           <el-table-column label="状态" width="100">
-            <template #default="scope">{{ fuelStatusLabel(scope.row.status) }}</template>
+            <template #default="scope">{{
+              fuelStatusLabel(scope.row.status)
+            }}</template>
           </el-table-column>
-          <el-table-column prop="office_remark" label="处理备注" min-width="180" />
+          <el-table-column
+            prop="office_remark"
+            label="处理备注"
+            min-width="180"
+          />
           <el-table-column prop="processed_at" label="处理时间" width="180" />
           <el-table-column label="处理人" width="180">
-            <template #default="scope">{{ resolveUserName(scope.row.processed_by_userid) }}</template>
+            <template #default="scope">{{
+              resolveUserName(scope.row.processed_by_userid)
+            }}</template>
           </el-table-column>
-          <el-table-column prop="latest_card_balance" label="处理后余额" width="120" />
+          <el-table-column
+            prop="latest_card_balance"
+            label="处理后余额"
+            width="120"
+          />
         </el-table>
       </el-tab-pane>
     </el-tabs>
   </el-card>
 
-  <el-dialog v-model="processDialogVisible" title="处理油卡额度申请" width="520px">
+  <el-dialog
+    v-model="processDialogVisible"
+    title="处理油卡额度申请"
+    width="520px"
+  >
     <el-form label-width="120px">
       <el-form-item label="处理结果">
         <el-select v-model="processForm.status" style="width: 100%">
@@ -473,15 +615,29 @@ onMounted(loadData);
         </el-select>
       </el-form-item>
       <el-form-item label="油卡">
-        <el-select v-model="processForm.fuel_card_id" clearable filterable style="width: 100%">
-          <el-option v-for="item in cards" :key="item.id" :label="item.card_no" :value="item.id" />
+        <el-select
+          v-model="processForm.fuel_card_id"
+          clearable
+          filterable
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in cards"
+            :key="item.id"
+            :label="item.card_no"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="最新余额">
         <el-input-number v-model="processForm.latest_card_balance" :min="0" />
       </el-form-item>
       <el-form-item label="处理备注">
-        <el-input v-model="processForm.office_remark" type="textarea" :rows="3" />
+        <el-input
+          v-model="processForm.office_remark"
+          type="textarea"
+          :rows="3"
+        />
       </el-form-item>
     </el-form>
     <template #footer>
@@ -490,24 +646,40 @@ onMounted(loadData);
     </template>
   </el-dialog>
 
-  <el-dialog v-model="balanceLogDialogVisible" :title="`油卡操作记录 - ${selectedCard?.card_no || ''}`" width="880px">
+  <el-dialog
+    v-model="balanceLogDialogVisible"
+    :title="`油卡操作记录 - ${selectedCard?.card_no || ''}`"
+    width="880px"
+  >
     <el-table :data="balanceLogs" size="small" stripe>
       <el-table-column label="类型" width="120">
-        <template #default="scope">{{ operationTypeLabel(scope.row.operation_type) }}</template>
+        <template #default="scope">{{
+          operationTypeLabel(scope.row.operation_type)
+        }}</template>
       </el-table-column>
       <el-table-column prop="previous_balance" label="变更前" width="120" />
       <el-table-column prop="new_balance" label="变更后" width="120" />
       <el-table-column prop="change_amount" label="变动值" width="120" />
-      <el-table-column prop="related_application_id" label="关联申请ID" width="120" />
+      <el-table-column
+        prop="related_application_id"
+        label="关联申请ID"
+        width="120"
+      />
       <el-table-column label="操作人" min-width="180">
-        <template #default="scope">{{ resolveUserName(scope.row.operator_userid) }}</template>
+        <template #default="scope">{{
+          resolveUserName(scope.row.operator_userid)
+        }}</template>
       </el-table-column>
       <el-table-column prop="remark" label="备注" min-width="180" />
       <el-table-column prop="created_at" label="时间" width="180" />
     </el-table>
   </el-dialog>
 
-  <el-dialog v-model="vehicleEditDialogVisible" title="编辑车辆档案" width="560px">
+  <el-dialog
+    v-model="vehicleEditDialogVisible"
+    title="编辑车辆档案"
+    width="560px"
+  >
     <el-form label-width="110px">
       <el-form-item label="车牌号" required>
         <el-input v-model="vehicleEditForm.current_plate_no" />
@@ -522,8 +694,18 @@ onMounted(loadData);
         </el-select>
       </el-form-item>
       <el-form-item label="所属实体">
-        <el-select v-model="vehicleEditForm.entity_id" clearable filterable style="width: 100%">
-          <el-option v-for="item in entities" :key="item.id" :label="item.entity_name" :value="item.id" />
+        <el-select
+          v-model="vehicleEditForm.entity_id"
+          clearable
+          filterable
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in entities"
+            :key="item.id"
+            :label="item.entity_name"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="权属人">
@@ -538,7 +720,11 @@ onMounted(loadData);
     </el-form>
     <template #footer>
       <el-button @click="vehicleEditDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="vehicleEditSubmitting" @click="submitVehicleEdit">
+      <el-button
+        type="primary"
+        :loading="vehicleEditSubmitting"
+        @click="submitVehicleEdit"
+      >
         保存
       </el-button>
     </template>

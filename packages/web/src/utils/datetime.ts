@@ -4,7 +4,9 @@ const asDate = (value: string | null | undefined): Date | null => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
-export const formatBeijingDateTime = (value: string | null | undefined): string => {
+export const formatBeijingDateTime = (
+  value: string | null | undefined
+): string => {
   const d = asDate(value);
   if (!d) return "-";
   const parts = new Intl.DateTimeFormat("zh-CN", {

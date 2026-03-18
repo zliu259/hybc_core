@@ -3,6 +3,7 @@ import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import { formatToken, getToken } from "@/utils/auth";
 import { listContracts, type Contract } from "@/api/contract";
 import {
@@ -64,7 +65,9 @@ const createForm = ref({
   receiver_account_id: undefined as number | undefined,
   remark: ""
 });
-const createVoucherList = ref<Array<{ file_key: string; file_name: string; file_size?: number }>>([]);
+const createVoucherList = ref<
+  Array<{ file_key: string; file_name: string; file_size?: number }>
+>([]);
 const uploadingVoucher = ref(false);
 
 const refundDialogVisible = ref(false);
@@ -164,7 +167,11 @@ const uploadVoucher = async (options: UploadRequestOptions) => {
 };
 
 const submitCreate = async () => {
-  if (!createForm.value.contract_id || !createForm.value.received_date || createForm.value.amount <= 0) {
+  if (
+    !createForm.value.contract_id ||
+    !createForm.value.received_date ||
+    createForm.value.amount <= 0
+  ) {
     message("请填写合同、收款日期、金额", { type: "warning" });
     return;
   }
@@ -208,7 +215,10 @@ const openRefund = (row: Receipt) => {
 
 const submitRefund = async () => {
   if (!refundTarget.value) return;
-  if (refundForm.value.refund_mode === "partial" && refundForm.value.amount <= 0) {
+  if (
+    refundForm.value.refund_mode === "partial" &&
+    refundForm.value.amount <= 0
+  ) {
     message("部分退款金额必须大于0", { type: "warning" });
     return;
   }
@@ -217,14 +227,19 @@ const submitRefund = async () => {
     const created = await createReceiptRefund({
       receipt_id: refundTarget.value.id,
       refund_mode: refundForm.value.refund_mode,
-      amount: refundForm.value.refund_mode === "partial" ? refundForm.value.amount : undefined,
+      amount:
+        refundForm.value.refund_mode === "partial"
+          ? refundForm.value.amount
+          : undefined,
       reason: refundForm.value.reason || undefined,
       remark: refundForm.value.remark || undefined
     });
     await submitReceiptRefundApproval(created.data.id, {
       biz_summary: `退款申请 ${created.data.refund_no} | 收款单 ${refundTarget.value.receipt_no}`
     });
-    message(`退款已发起并提交审批：${created.data.refund_no}`, { type: "success" });
+    message(`退款已发起并提交审批：${created.data.refund_no}`, {
+      type: "success"
+    });
     refundDialogVisible.value = false;
   } finally {
     refunding.value = false;
@@ -323,10 +338,16 @@ onMounted(async () => {
         </template>
       </el-table-column>
       <el-table-column prop="receiver_userid" label="登记人" width="140" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="240" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="goDetail(scope.row)">详情</el-button>
+          <el-button link type="primary" @click="goDetail(scope.row)"
+            >详情</el-button
+          >
           <el-button
             v-if="scope.row.status === 'recorded'"
             link
@@ -429,18 +450,29 @@ onMounted(async () => {
             :http-request="uploadVoucher"
             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
           >
-            <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+            <div class="el-upload__text">
+              拖拽文件到这里，或 <em>点击上传</em>
+            </div>
           </el-upload>
-          <el-table :data="createVoucherList" size="small" style="margin-top: 12px">
+          <el-table
+            :data="createVoucherList"
+            size="small"
+            style="margin-top: 12px"
+          >
             <el-table-column label="文件名" min-width="260">
               <template #default="scope">{{ scope.row.file_name }}</template>
             </el-table-column>
             <el-table-column label="大小" width="120">
-              <template #default="scope">{{ scope.row.file_size ?? '-' }}</template>
+              <template #default="scope">{{
+                scope.row.file_size ?? "-"
+              }}</template>
             </el-table-column>
             <el-table-column label="操作" width="100">
               <template #default="scope">
-                <el-button link type="danger" @click="createVoucherList.splice(scope.$index, 1)"
+                <el-button
+                  link
+                  type="danger"
+                  @click="createVoucherList.splice(scope.$index, 1)"
                   >移除</el-button
                 >
               </template>
@@ -471,8 +503,17 @@ onMounted(async () => {
           <el-radio value="partial">部分退款</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item v-if="refundForm.refund_mode === 'partial'" label="退款金额" required>
-        <el-input-number v-model="refundForm.amount" :min="0" :precision="2" :step="100" />
+      <el-form-item
+        v-if="refundForm.refund_mode === 'partial'"
+        label="退款金额"
+        required
+      >
+        <el-input-number
+          v-model="refundForm.amount"
+          :min="0"
+          :precision="2"
+          :step="100"
+        />
       </el-form-item>
       <el-form-item label="退款原因">
         <el-input v-model="refundForm.reason" />
@@ -483,7 +524,9 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="refundDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="refunding" @click="submitRefund">发起并提交审批</el-button>
+      <el-button type="primary" :loading="refunding" @click="submitRefund"
+        >发起并提交审批</el-button
+      >
     </template>
   </el-dialog>
 </template>

@@ -108,7 +108,13 @@ export default {
       component: () => import("@/views/finance/payee/index.vue"),
       meta: {
         title: "外部收款人",
-        roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+        roles: [
+          "super_admin",
+          "manager",
+          "site_manager",
+          "finance",
+          "operator"
+        ],
         showLink: false
       }
     },
@@ -118,7 +124,13 @@ export default {
       component: () => import("@/views/finance/payee/index.vue"),
       meta: {
         title: "添加外部收款人",
-        roles: ["super_admin", "manager", "site_manager", "finance", "operator"],
+        roles: [
+          "super_admin",
+          "manager",
+          "site_manager",
+          "finance",
+          "operator"
+        ],
         showLink: false
       }
     }

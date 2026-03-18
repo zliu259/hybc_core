@@ -61,7 +61,8 @@ export default {
         {
           path: "/finance/reimbursement/batch/:id",
           name: "ReimbursementBatchDetail",
-          component: () => import("@/views/finance/reimbursement/batch-detail.vue"),
+          component: () =>
+            import("@/views/finance/reimbursement/batch-detail.vue"),
           meta: {
             title: "报销批次详情",
             showLink: false
@@ -274,7 +275,8 @@ export default {
         {
           path: "/finance/fleet/applications-all",
           name: "FuelQuotaApplicationAllList",
-          component: () => import("@/views/finance/fleet/applications-list.vue"),
+          component: () =>
+            import("@/views/finance/fleet/applications-list.vue"),
           meta: {
             title: "油卡额度全量处理",
             roles: ["super_admin", "manager", "finance"]

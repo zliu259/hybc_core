@@ -201,7 +201,12 @@ export const createAssetRentalTerm = (data: {
 export const returnAssetRentalTerm = (
   id: number,
   data?: { returned_date?: string; note?: string }
-) => http.request<{ success: boolean }>("post", `/api/v1/asset/rental/term/${id}/return`, { data });
+) =>
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/asset/rental/term/${id}/return`,
+    { data }
+  );
 
 export const scanOverdueRentalTerms = () =>
   http.request<{ success: boolean; data: { updated: number } }>(

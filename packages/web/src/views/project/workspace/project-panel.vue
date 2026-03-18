@@ -4,6 +4,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { ElMessageBox } from "element-plus";
+import { statusLabel } from "@/utils/enum-labels";
 import { useUserStoreHook } from "@/store/modules/user";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
@@ -65,7 +66,9 @@ const operatorLogDetail = ref<OperatorLog | null>(null);
 
 const managerLogDialogVisible = ref(false);
 const managerLogDetailVisible = ref(false);
-const managerLogDetail = ref<(ManagerLog & { photos: Array<Record<string, unknown>> }) | null>(null);
+const managerLogDetail = ref<
+  (ManagerLog & { photos: Array<Record<string, unknown>> }) | null
+>(null);
 const managerLogDetailLoading = ref(false);
 const managerLogUploading = ref(false);
 
@@ -84,7 +87,9 @@ const managerLogForm = ref({
   risk_note: ""
 });
 
-const managerLogPhotos = ref<Array<{ file_key: string; file_url: string; file_name: string }>>([]);
+const managerLogPhotos = ref<
+  Array<{ file_key: string; file_url: string; file_name: string }>
+>([]);
 
 const operatorLogDialogVisible = ref(false);
 const operatorLogSubmitting = ref(false);
@@ -112,7 +117,9 @@ const breakthroughForm = ref({
 
 const canWriteProjectLog = computed(() => {
   const roles = userStore.roles ?? [];
-  return roles.some(role => ["super_admin", "manager", "site_manager", "finance"].includes(role));
+  return roles.some(role =>
+    ["super_admin", "manager", "site_manager", "finance"].includes(role)
+  );
 });
 
 const statusLabelMap: Record<string, string> = {
@@ -175,7 +182,8 @@ const sectionDrawerProgress = computed(() => {
     (sum, item) => sum + (item.footage_m || 0),
     0
   );
-  const percent = sectionLength > 0 ? Math.min(100, (advanced / sectionLength) * 100) : 0;
+  const percent =
+    sectionLength > 0 ? Math.min(100, (advanced / sectionLength) * 100) : 0;
   const remaining = Math.max(0, sectionLength - advanced);
 
   let phase = "待推进";
@@ -195,10 +203,16 @@ const sectionDrawerProgress = computed(() => {
 
 const sectionMetrics = computed(() => {
   return sections.value.map(section => {
-    const sectionLogs = operatorLogs.value.filter(item => item.section_id === section.id);
-    const footage = sectionLogs.reduce((sum, item) => sum + (item.footage_m || 0), 0);
+    const sectionLogs = operatorLogs.value.filter(
+      item => item.section_id === section.id
+    );
+    const footage = sectionLogs.reduce(
+      (sum, item) => sum + (item.footage_m || 0),
+      0
+    );
     const sectionLength = section.section_length || 0;
-    const progress = sectionLength > 0 ? Math.min(100, (footage / sectionLength) * 100) : 0;
+    const progress =
+      sectionLength > 0 ? Math.min(100, (footage / sectionLength) * 100) : 0;
     const breakthroughCount = breakthroughReports.value.filter(
       item => item.section_id === section.id
     ).length;
@@ -271,7 +285,8 @@ const saveBase = async () => {
 const setStatus = async (status: string) => {
   if (!project.value) return;
   try {
-    const fromLabel = statusLabelMap[project.value.status] || project.value.status;
+    const fromLabel =
+      statusLabelMap[project.value.status] || project.value.status;
     const toLabel = statusLabelMap[status] || status;
     await ElMessageBox.confirm(
       `确认将项目状态从“${fromLabel}”调整为“${toLabel}”吗？`,
@@ -285,8 +300,7 @@ const setStatus = async (status: string) => {
     await updateProjectStatus(project.value.id, status);
     message("状态已更新", { type: "success" });
     await loadProjectMain();
-  } catch {
-  }
+  } catch {}
 };
 
 const openSectionDrawer = async (section: ProjectSection) => {
@@ -320,7 +334,10 @@ const loadSectionDetailData = async (sectionId: number) => {
 
 const saveSectionStatus = async () => {
   if (!currentSection.value) return;
-  if (!sectionStatusValue.value || sectionStatusValue.value === currentSection.value.status) {
+  if (
+    !sectionStatusValue.value ||
+    sectionStatusValue.value === currentSection.value.status
+  ) {
     message("状态未变化", { type: "info" });
     return;
   }
@@ -346,7 +363,9 @@ const saveSectionStatus = async () => {
       ...currentSection.value,
       status: sectionStatusValue.value
     };
-    const idx = sections.value.findIndex(item => item.id === currentSection.value?.id);
+    const idx = sections.value.findIndex(
+      item => item.id === currentSection.value?.id
+    );
     if (idx >= 0) {
       sections.value[idx] = {
         ...sections.value[idx],
@@ -433,7 +452,10 @@ const submitOperatorLog = async () => {
       message("施工日志已创建", { type: "success" });
     }
     operatorLogDialogVisible.value = false;
-    await Promise.all([loadSectionDetailData(currentSection.value.id), loadProjectLogData()]);
+    await Promise.all([
+      loadSectionDetailData(currentSection.value.id),
+      loadProjectLogData()
+    ]);
   } finally {
     operatorLogSubmitting.value = false;
   }
@@ -458,7 +480,8 @@ const openEditBreakthrough = (row: BreakthroughReport) => {
   editingBreakthroughId.value = row.id;
   breakthroughForm.value = {
     report_date: row.report_date,
-    breakthrough_m: row.breakthrough_m === null ? undefined : row.breakthrough_m,
+    breakthrough_m:
+      row.breakthrough_m === null ? undefined : row.breakthrough_m,
     summary: row.summary || "",
     detail: row.detail || ""
   };
@@ -490,7 +513,10 @@ const submitBreakthrough = async () => {
       message("贯通报告已创建", { type: "success" });
     }
     breakthroughDialogVisible.value = false;
-    await Promise.all([loadSectionDetailData(currentSection.value.id), loadProjectLogData()]);
+    await Promise.all([
+      loadSectionDetailData(currentSection.value.id),
+      loadProjectLogData()
+    ]);
   } finally {
     breakthroughSubmitting.value = false;
   }
@@ -557,7 +583,9 @@ const submitManagerLog = async () => {
   }
   creatingManagerLog.value = true;
   try {
-    const photos = managerLogPhotos.value.map(item => ({ file_key: item.file_key }));
+    const photos = managerLogPhotos.value.map(item => ({
+      file_key: item.file_key
+    }));
 
     await createManagerLog({
       project_id: props.projectId,
@@ -592,9 +620,12 @@ const quickTriggerSummary = async (reportType: "daily" | "weekly") => {
     report_type: reportType,
     project_id: props.projectId
   });
-  message(`已触发${reportType === "daily" ? "日报" : "周报"}汇总，任务ID ${res.data.task_id}`, {
-    type: "success"
-  });
+  message(
+    `已触发${reportType === "daily" ? "日报" : "周报"}汇总，任务ID ${res.data.task_id}`,
+    {
+      type: "success"
+    }
+  );
 };
 
 watch(
@@ -661,15 +692,27 @@ onMounted(loadWecomUsers);
         <el-form-item label="项目状态">
           <el-space>
             <el-tag>{{ projectStatusLabel }}</el-tag>
-            <el-button size="small" @click="setStatus('planning')">规划中</el-button>
-            <el-button size="small" @click="setStatus('preparing')">筹备中</el-button>
-            <el-button size="small" @click="setStatus('active')">施工中</el-button>
-            <el-button size="small" @click="setStatus('completing')">收尾中</el-button>
-            <el-button size="small" @click="setStatus('archived')">已归档</el-button>
+            <el-button size="small" @click="setStatus('planning')"
+              >规划中</el-button
+            >
+            <el-button size="small" @click="setStatus('preparing')"
+              >筹备中</el-button
+            >
+            <el-button size="small" @click="setStatus('active')"
+              >施工中</el-button
+            >
+            <el-button size="small" @click="setStatus('completing')"
+              >收尾中</el-button
+            >
+            <el-button size="small" @click="setStatus('archived')"
+              >已归档</el-button
+            >
           </el-space>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="saving" @click="saveBase">保存</el-button>
+          <el-button type="primary" :loading="saving" @click="saveBase"
+            >保存</el-button
+          >
         </el-form-item>
       </el-form>
     </el-card>
@@ -685,10 +728,16 @@ onMounted(loadWecomUsers);
         >
           <div class="section-card__head">
             <div>
-              <div class="section-card__code">{{ item.section.section_code }}</div>
-              <div class="section-card__name">{{ item.section.section_name }}</div>
+              <div class="section-card__code">
+                {{ item.section.section_code }}
+              </div>
+              <div class="section-card__name">
+                {{ item.section.section_name }}
+              </div>
             </div>
-            <el-tag size="small">{{ sectionStatusLabel(item.section.status) }}</el-tag>
+            <el-tag size="small">{{
+              sectionStatusLabel(item.section.status)
+            }}</el-tag>
           </div>
 
           <div class="section-card__line">
@@ -698,7 +747,13 @@ onMounted(loadWecomUsers);
           <el-progress
             :percentage="Number(item.progress.toFixed(1))"
             :stroke-width="12"
-            :color="item.progress >= 85 ? '#67c23a' : item.progress >= 60 ? '#e6a23c' : '#f56c6c'"
+            :color="
+              item.progress >= 85
+                ? '#67c23a'
+                : item.progress >= 60
+                  ? '#e6a23c'
+                  : '#f56c6c'
+            "
           />
 
           <div class="section-card__meta">
@@ -709,35 +764,70 @@ onMounted(loadWecomUsers);
             <span>施工日志: {{ item.logCount }}</span>
             <span>贯通报告: {{ item.breakthroughCount }}</span>
           </div>
-          <div class="section-card__meta">最近更新: {{ item.latestLogDate }}</div>
+          <div class="section-card__meta">
+            最近更新: {{ item.latestLogDate }}
+          </div>
         </div>
       </div>
     </el-card>
 
     <el-card shadow="never" header="项目日志一站式视图" class="mt-3">
       <div class="log-toolbar">
-        <el-button type="primary" :disabled="!canWriteProjectLog" @click="openManagerLogDialog">
+        <el-button
+          type="primary"
+          :disabled="!canWriteProjectLog"
+          @click="openManagerLogDialog"
+        >
           快速填写项目日志
         </el-button>
-        <el-button @click="router.push('/construction/manager-log')">打开项目日志中心</el-button>
-        <el-button @click="quickTriggerSummary('daily')">触发日报汇总</el-button>
-        <el-button @click="quickTriggerSummary('weekly')">触发周报汇总</el-button>
+        <el-button @click="router.push('/construction/manager-log')"
+          >打开项目日志中心</el-button
+        >
+        <el-button @click="quickTriggerSummary('daily')"
+          >触发日报汇总</el-button
+        >
+        <el-button @click="quickTriggerSummary('weekly')"
+          >触发周报汇总</el-button
+        >
       </div>
 
       <el-descriptions :column="2" border class="mb-3">
-        <el-descriptions-item label="项目日志总数">{{ managerLogs.length }}</el-descriptions-item>
-        <el-descriptions-item label="最新日志日期">{{ managerLogs[0]?.log_date || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="项目日志总数">{{
+          managerLogs.length
+        }}</el-descriptions-item>
+        <el-descriptions-item label="最新日志日期">{{
+          managerLogs[0]?.log_date || "-"
+        }}</el-descriptions-item>
       </el-descriptions>
 
       <el-table :data="managerLogs" max-height="320">
         <el-table-column prop="log_date" label="日期" width="120" />
-        <el-table-column prop="title" label="标题" min-width="220" show-overflow-tooltip />
-        <el-table-column prop="risk_note" label="风险提示" min-width="220" show-overflow-tooltip />
+        <el-table-column
+          prop="title"
+          label="标题"
+          min-width="220"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="risk_note"
+          label="风险提示"
+          min-width="220"
+          show-overflow-tooltip
+        />
         <el-table-column prop="manager_userid" label="填报人" width="120" />
-        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column label="状态" width="100">
+          <template #default="scope">{{
+            statusLabel(scope.row.status)
+          }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="openManagerLogDetail(scope.row.id)">查看单条日志</el-button>
+            <el-button
+              link
+              type="primary"
+              @click="openManagerLogDetail(scope.row.id)"
+              >查看单条日志</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
@@ -751,10 +841,18 @@ onMounted(loadWecomUsers);
     >
       <div v-loading="sectionDrawerLoading">
         <el-descriptions :column="4" border class="mb-3">
-          <el-descriptions-item label="标段编码">{{ currentSection?.section_code }}</el-descriptions-item>
-          <el-descriptions-item label="标段名称">{{ currentSection?.section_name }}</el-descriptions-item>
-          <el-descriptions-item label="里程(m)">{{ currentSection?.section_length || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ sectionStatusLabel(currentSection?.status) }}</el-descriptions-item>
+          <el-descriptions-item label="标段编码">{{
+            currentSection?.section_code
+          }}</el-descriptions-item>
+          <el-descriptions-item label="标段名称">{{
+            currentSection?.section_name
+          }}</el-descriptions-item>
+          <el-descriptions-item label="里程(m)">{{
+            currentSection?.section_length || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{
+            sectionStatusLabel(currentSection?.status)
+          }}</el-descriptions-item>
         </el-descriptions>
 
         <el-card shadow="never" class="mb-3" header="标段状态管理">
@@ -767,7 +865,11 @@ onMounted(loadWecomUsers);
                 :value="opt.value"
               />
             </el-select>
-            <el-button type="primary" :loading="sectionStatusSaving" @click="saveSectionStatus">
+            <el-button
+              type="primary"
+              :loading="sectionStatusSaving"
+              @click="saveSectionStatus"
+            >
               保存标段状态
             </el-button>
           </el-space>
@@ -775,8 +877,12 @@ onMounted(loadWecomUsers);
 
         <el-card shadow="never" class="mb-3" header="标段推进轨迹">
           <div class="rail-header">
-            <el-tag type="success" effect="light">{{ sectionDrawerProgress.phase }}</el-tag>
-            <span class="rail-percent">{{ sectionDrawerProgress.percent.toFixed(1) }}%</span>
+            <el-tag type="success" effect="light">{{
+              sectionDrawerProgress.phase
+            }}</el-tag>
+            <span class="rail-percent"
+              >{{ sectionDrawerProgress.percent.toFixed(1) }}%</span
+            >
           </div>
 
           <div class="rail-track-wrap">
@@ -800,7 +906,9 @@ onMounted(loadWecomUsers);
 
           <div class="rail-meta">
             <span>总里程：{{ sectionDrawerProgress.sectionLength || 0 }}m</span>
-            <span>累计顶进：{{ sectionDrawerProgress.advanced.toFixed(1) }}m</span>
+            <span
+              >累计顶进：{{ sectionDrawerProgress.advanced.toFixed(1) }}m</span
+            >
             <span>剩余：{{ sectionDrawerProgress.remaining.toFixed(1) }}m</span>
           </div>
         </el-card>
@@ -809,22 +917,52 @@ onMounted(loadWecomUsers);
           <el-col :span="14">
             <el-card shadow="never" header="该标段施工日志">
               <div class="section-toolbar mb-3">
-                <el-button type="primary" @click="openCreateOperatorLog">新增施工日志</el-button>
+                <el-button type="primary" @click="openCreateOperatorLog"
+                  >新增施工日志</el-button
+                >
               </div>
               <el-table :data="sectionOperatorLogs" max-height="320">
                 <el-table-column prop="log_date" label="日期" width="120" />
                 <el-table-column label="班次" width="80">
-                  <template #default="scope">{{ shiftLabel(scope.row.shift) }}</template>
+                  <template #default="scope">{{
+                    shiftLabel(scope.row.shift)
+                  }}</template>
                 </el-table-column>
-                <el-table-column prop="completed_pipe_count" label="完成管节" width="100" />
-                <el-table-column prop="cumulative_pipe_count" label="累计管节" width="100" />
+                <el-table-column
+                  prop="completed_pipe_count"
+                  label="完成管节"
+                  width="100"
+                />
+                <el-table-column
+                  prop="cumulative_pipe_count"
+                  label="累计管节"
+                  width="100"
+                />
                 <el-table-column prop="footage_m" label="里程(m)" width="100" />
-                <el-table-column prop="issue_summary" label="问题摘要" min-width="200" show-overflow-tooltip />
-                <el-table-column prop="operator_userid" label="填报人" width="120" />
+                <el-table-column
+                  prop="issue_summary"
+                  label="问题摘要"
+                  min-width="200"
+                  show-overflow-tooltip
+                />
+                <el-table-column
+                  prop="operator_userid"
+                  label="填报人"
+                  width="120"
+                />
                 <el-table-column label="操作" width="180" fixed="right">
                   <template #default="scope">
-                    <el-button link type="primary" @click="openEditOperatorLog(scope.row)">编辑</el-button>
-                    <el-button link type="primary" @click="openOperatorLogDetail(scope.row.id)">
+                    <el-button
+                      link
+                      type="primary"
+                      @click="openEditOperatorLog(scope.row)"
+                      >编辑</el-button
+                    >
+                    <el-button
+                      link
+                      type="primary"
+                      @click="openOperatorLogDetail(scope.row.id)"
+                    >
                       查看详情
                     </el-button>
                   </template>
@@ -836,16 +974,35 @@ onMounted(loadWecomUsers);
           <el-col :span="10">
             <el-card shadow="never" header="该标段贯通报告">
               <div class="section-toolbar mb-3">
-                <el-button type="primary" @click="openCreateBreakthrough">新增贯通报告</el-button>
+                <el-button type="primary" @click="openCreateBreakthrough"
+                  >新增贯通报告</el-button
+                >
               </div>
               <el-table :data="sectionBreakthroughReports" max-height="320">
-                <el-table-column prop="report_no" label="报告号" min-width="180" />
+                <el-table-column
+                  prop="report_no"
+                  label="报告号"
+                  min-width="180"
+                />
                 <el-table-column prop="report_date" label="日期" width="110" />
-                <el-table-column prop="breakthrough_m" label="里程(m)" width="100" />
-                <el-table-column prop="status" label="状态" width="90" />
+                <el-table-column
+                  prop="breakthrough_m"
+                  label="里程(m)"
+                  width="100"
+                />
+                <el-table-column label="状态" width="90">
+                  <template #default="scope">{{
+                    statusLabel(scope.row.status)
+                  }}</template>
+                </el-table-column>
                 <el-table-column label="操作" width="90" fixed="right">
                   <template #default="scope">
-                    <el-button link type="primary" @click="openEditBreakthrough(scope.row)">编辑</el-button>
+                    <el-button
+                      link
+                      type="primary"
+                      @click="openEditBreakthrough(scope.row)"
+                      >编辑</el-button
+                    >
                   </template>
                 </el-table-column>
               </el-table>
@@ -855,7 +1012,11 @@ onMounted(loadWecomUsers);
       </div>
     </el-drawer>
 
-    <el-dialog v-model="managerLogDialogVisible" title="快速填写项目日志" width="720px">
+    <el-dialog
+      v-model="managerLogDialogVisible"
+      title="快速填写项目日志"
+      width="720px"
+    >
       <el-form label-width="110px">
         <el-form-item label="日志日期" required>
           <el-date-picker
@@ -868,10 +1029,18 @@ onMounted(loadWecomUsers);
           <el-input v-model="managerLogForm.title" />
         </el-form-item>
         <el-form-item label="日志正文">
-          <el-input v-model="managerLogForm.detail_html" type="textarea" :rows="6" />
+          <el-input
+            v-model="managerLogForm.detail_html"
+            type="textarea"
+            :rows="6"
+          />
         </el-form-item>
         <el-form-item label="风险说明">
-          <el-input v-model="managerLogForm.risk_note" type="textarea" :rows="3" />
+          <el-input
+            v-model="managerLogForm.risk_note"
+            type="textarea"
+            :rows="3"
+          />
         </el-form-item>
         <el-form-item label="上传照片">
           <el-upload
@@ -881,19 +1050,37 @@ onMounted(loadWecomUsers);
             :disabled="managerLogUploading"
             accept="image/*"
           >
-            <el-button type="primary" :loading="managerLogUploading">上传照片</el-button>
+            <el-button type="primary" :loading="managerLogUploading"
+              >上传照片</el-button
+            >
           </el-upload>
-          <div class="photo-list" v-if="managerLogPhotos.length">
-            <div v-for="(item, index) in managerLogPhotos" :key="item.file_key" class="photo-item">
-              <el-link :href="item.file_url" target="_blank">{{ item.file_name }}</el-link>
-              <el-button link type="danger" @click="removeManagerLogPhoto(index)">移除</el-button>
+          <div v-if="managerLogPhotos.length" class="photo-list">
+            <div
+              v-for="(item, index) in managerLogPhotos"
+              :key="item.file_key"
+              class="photo-item"
+            >
+              <el-link :href="item.file_url" target="_blank">{{
+                item.file_name
+              }}</el-link>
+              <el-button
+                link
+                type="danger"
+                @click="removeManagerLogPhoto(index)"
+                >移除</el-button
+              >
             </div>
           </div>
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="managerLogDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="creatingManagerLog" @click="submitManagerLog">提交日志</el-button>
+        <el-button
+          type="primary"
+          :loading="creatingManagerLog"
+          @click="submitManagerLog"
+          >提交日志</el-button
+        >
       </template>
     </el-dialog>
 
@@ -921,24 +1108,46 @@ onMounted(loadWecomUsers);
           <el-input v-model="operatorLogForm.weather" style="width: 220px" />
         </el-form-item>
         <el-form-item label="当班下管数量">
-          <el-input-number v-model="operatorLogForm.completed_pipe_count" :min="0" />
+          <el-input-number
+            v-model="operatorLogForm.completed_pipe_count"
+            :min="0"
+          />
         </el-form-item>
         <el-form-item label="累计下管数量">
-          <el-input-number v-model="operatorLogForm.cumulative_pipe_count" :min="0" />
+          <el-input-number
+            v-model="operatorLogForm.cumulative_pipe_count"
+            :min="0"
+          />
         </el-form-item>
         <el-form-item label="当日进尺(m)">
-          <el-input-number v-model="operatorLogForm.footage_m" :min="0" :precision="2" />
+          <el-input-number
+            v-model="operatorLogForm.footage_m"
+            :min="0"
+            :precision="2"
+          />
         </el-form-item>
         <el-form-item label="问题摘要">
-          <el-input v-model="operatorLogForm.issue_summary" type="textarea" :rows="3" />
+          <el-input
+            v-model="operatorLogForm.issue_summary"
+            type="textarea"
+            :rows="3"
+          />
         </el-form-item>
         <el-form-item label="备注">
-          <el-input v-model="operatorLogForm.remark" type="textarea" :rows="2" />
+          <el-input
+            v-model="operatorLogForm.remark"
+            type="textarea"
+            :rows="2"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="operatorLogDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="operatorLogSubmitting" @click="submitOperatorLog">
+        <el-button
+          type="primary"
+          :loading="operatorLogSubmitting"
+          @click="submitOperatorLog"
+        >
           保存
         </el-button>
       </template>
@@ -959,33 +1168,62 @@ onMounted(loadWecomUsers);
           />
         </el-form-item>
         <el-form-item label="贯通里程(m)">
-          <el-input-number v-model="breakthroughForm.breakthrough_m" :min="0" :precision="2" />
+          <el-input-number
+            v-model="breakthroughForm.breakthrough_m"
+            :min="0"
+            :precision="2"
+          />
         </el-form-item>
         <el-form-item label="摘要">
           <el-input v-model="breakthroughForm.summary" />
         </el-form-item>
         <el-form-item label="详情">
-          <el-input v-model="breakthroughForm.detail" type="textarea" :rows="4" />
+          <el-input
+            v-model="breakthroughForm.detail"
+            type="textarea"
+            :rows="4"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="breakthroughDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="breakthroughSubmitting" @click="submitBreakthrough">
+        <el-button
+          type="primary"
+          :loading="breakthroughSubmitting"
+          @click="submitBreakthrough"
+        >
           保存
         </el-button>
       </template>
     </el-dialog>
 
-    <el-drawer v-model="managerLogDetailVisible" title="单条项目日志" size="560px" destroy-on-close>
+    <el-drawer
+      v-model="managerLogDetailVisible"
+      title="单条项目日志"
+      size="560px"
+      destroy-on-close
+    >
       <div v-loading="managerLogDetailLoading">
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="日期">{{ managerLogDetail?.log_date || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="标题">{{ managerLogDetail?.title || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="填报人">{{ managerLogDetail?.manager_userid || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ managerLogDetail?.status || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="风险说明">{{ managerLogDetail?.risk_note || "-" }}</el-descriptions-item>
+          <el-descriptions-item label="日期">{{
+            managerLogDetail?.log_date || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="标题">{{
+            managerLogDetail?.title || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="填报人">{{
+            managerLogDetail?.manager_userid || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{
+            managerLogDetail?.status || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="风险说明">{{
+            managerLogDetail?.risk_note || "-"
+          }}</el-descriptions-item>
           <el-descriptions-item label="日志正文">
-            <div class="log-detail-content">{{ managerLogDetail?.detail_html || "-" }}</div>
+            <div class="log-detail-content">
+              {{ managerLogDetail?.detail_html || "-" }}
+            </div>
           </el-descriptions-item>
           <el-descriptions-item label="照片数量">
             {{ managerLogDetail?.photos?.length || 0 }}
@@ -994,18 +1232,41 @@ onMounted(loadWecomUsers);
       </div>
     </el-drawer>
 
-    <el-drawer v-model="operatorLogDetailVisible" title="单条施工日志" size="560px" destroy-on-close>
+    <el-drawer
+      v-model="operatorLogDetailVisible"
+      title="单条施工日志"
+      size="560px"
+      destroy-on-close
+    >
       <div v-loading="operatorLogDetailLoading">
         <el-descriptions :column="1" border>
-          <el-descriptions-item label="日期">{{ operatorLogDetail?.log_date || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="班次">{{ shiftLabel(operatorLogDetail?.shift) }}</el-descriptions-item>
-          <el-descriptions-item label="填报人">{{ operatorLogDetail?.operator_userid || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="完成管节">{{ operatorLogDetail?.completed_pipe_count ?? "-" }}</el-descriptions-item>
-          <el-descriptions-item label="累计管节">{{ operatorLogDetail?.cumulative_pipe_count ?? "-" }}</el-descriptions-item>
-          <el-descriptions-item label="当日顶进(m)">{{ operatorLogDetail?.footage_m ?? "-" }}</el-descriptions-item>
-          <el-descriptions-item label="问题摘要">{{ operatorLogDetail?.issue_summary || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="备注">{{ operatorLogDetail?.remark || "-" }}</el-descriptions-item>
-          <el-descriptions-item label="状态">{{ operatorLogDetail?.status || "-" }}</el-descriptions-item>
+          <el-descriptions-item label="日期">{{
+            operatorLogDetail?.log_date || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="班次">{{
+            shiftLabel(operatorLogDetail?.shift)
+          }}</el-descriptions-item>
+          <el-descriptions-item label="填报人">{{
+            operatorLogDetail?.operator_userid || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="完成管节">{{
+            operatorLogDetail?.completed_pipe_count ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="累计管节">{{
+            operatorLogDetail?.cumulative_pipe_count ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="当日顶进(m)">{{
+            operatorLogDetail?.footage_m ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="问题摘要">{{
+            operatorLogDetail?.issue_summary || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="备注">{{
+            operatorLogDetail?.remark || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="状态">{{
+            operatorLogDetail?.status || "-"
+          }}</el-descriptions-item>
         </el-descriptions>
       </div>
     </el-drawer>

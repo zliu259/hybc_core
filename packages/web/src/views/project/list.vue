@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { statusLabel } from "@/utils/enum-labels";
 import { listProjects, updateProjectStatus, type Project } from "@/api/project";
 
 defineOptions({
@@ -75,13 +76,19 @@ onMounted(loadProjects);
         </el-select>
       </el-form-item>
       <el-button type="primary" @click="loadProjects">查询</el-button>
-      <el-button @click="router.push('/field/project/create')">新建立项</el-button>
+      <el-button @click="router.push('/field/project/create')"
+        >新建立项</el-button
+      >
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="project_code" label="项目编号" width="170" />
       <el-table-column prop="project_name" label="项目名称" min-width="220" />
-      <el-table-column prop="status" label="状态" width="120" />
+      <el-table-column label="状态" width="120">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="manager_userid" label="项目经理" width="140" />
       <el-table-column prop="updated_at" label="更新时间" width="200" />
       <el-table-column label="操作" width="320" fixed="right">

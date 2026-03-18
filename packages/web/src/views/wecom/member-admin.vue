@@ -28,7 +28,7 @@ const permissionSync = ref<{
 
 const departmentMap = computed(() => {
   const map = new Map<number, string>();
-  departments.value.forEach((item) => {
+  departments.value.forEach(item => {
     map.set(item.id, item.name);
   });
   return map;
@@ -36,7 +36,7 @@ const departmentMap = computed(() => {
 
 const filteredUsers = computed(() => {
   const text = keyword.value.trim().toLowerCase();
-  return users.value.filter((item) => {
+  return users.value.filter(item => {
     const hitKeyword =
       !text ||
       item.userid.toLowerCase().includes(text) ||
@@ -111,7 +111,7 @@ const syncContacts = async () => {
 const formatDepartmentNames = (departmentIds: number[]) => {
   if (!departmentIds?.length) return "-";
   return departmentIds
-    .map((id) => departmentMap.value.get(id) ?? `ID:${id}`)
+    .map(id => departmentMap.value.get(id) ?? `ID:${id}`)
     .join(" / ");
 };
 
@@ -159,11 +159,7 @@ onMounted(() => {
         clearable
         placeholder="按 userid/姓名/手机号/邮箱 搜索"
       />
-      <el-select
-        v-model="departmentId"
-        clearable
-        placeholder="按部门筛选"
-      >
+      <el-select v-model="departmentId" clearable placeholder="按部门筛选">
         <el-option
           v-for="dept in departments"
           :key="dept.id"
@@ -178,7 +174,9 @@ onMounted(() => {
       <el-table-column prop="name" label="姓名" width="120" />
       <el-table-column label="系统角色" width="120">
         <template #default="scope">
-          <el-tag size="small" type="primary">{{ roleLabel(scope.row.system_role) }}</el-tag>
+          <el-tag size="small" type="primary">{{
+            roleLabel(scope.row.system_role)
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column label="识别来源" width="120">

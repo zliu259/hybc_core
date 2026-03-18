@@ -14,7 +14,11 @@ import {
   deleteDictItem,
   type DictItem
 } from "@/api/dict";
-import { getWeComContacts, type WeComDepartment, type WeComUser } from "@/api/wecom";
+import {
+  getWeComContacts,
+  type WeComDepartment,
+  type WeComUser
+} from "@/api/wecom";
 
 type OpsNode = {
   id: "entity" | "dict" | "wecom_user" | "wecom_dept";
@@ -64,7 +68,9 @@ const tableRows = computed<Array<Record<string, unknown>>>(() => {
   return wecomDepartments.value;
 });
 
-const tableColumns = computed<Array<{ key: string; label: string; width?: number }>>(() => {
+const tableColumns = computed<
+  Array<{ key: string; label: string; width?: number }>
+>(() => {
   if (activeNode.value === "entity") {
     return [
       { key: "id", label: "ID", width: 80 },
@@ -110,7 +116,9 @@ const loadData = async () => {
       getWeComContacts()
     ]);
     entities.value = entityRes.data;
-    dictItems.value = Array.isArray(dictRes.data) ? dictRes.data : Object.values(dictRes.data).flat();
+    dictItems.value = Array.isArray(dictRes.data)
+      ? dictRes.data
+      : Object.values(dictRes.data).flat();
     wecomUsers.value = wecomRes.data.users;
     wecomDepartments.value = wecomRes.data.departments;
   } finally {
@@ -177,7 +185,10 @@ const save = async () => {
   submitting.value = true;
   try {
     if (editKind.value === "entity") {
-      if (!entityForm.value.entity_code.trim() || !entityForm.value.entity_name.trim()) {
+      if (
+        !entityForm.value.entity_code.trim() ||
+        !entityForm.value.entity_name.trim()
+      ) {
         message("请填写实体编码与名称", { type: "warning" });
         return;
       }
@@ -195,7 +206,10 @@ const save = async () => {
         });
       }
     } else {
-      if (!dictForm.value.dict_type.trim() || !dictForm.value.dict_label.trim()) {
+      if (
+        !dictForm.value.dict_type.trim() ||
+        !dictForm.value.dict_label.trim()
+      ) {
         message("请填写字典类型与标签", { type: "warning" });
         return;
       }
@@ -254,10 +268,13 @@ onMounted(loadData);
       class="mb-3"
     />
 
-    <div class="layout" v-loading="loading">
+    <div v-loading="loading" class="layout">
       <div class="left-tree">
         <div class="left-tree__title">数据域</div>
-        <el-menu :default-active="activeNode" @select="(key: string) => (activeNode = key as OpsNode['id'])">
+        <el-menu
+          :default-active="activeNode"
+          @select="(key: string) => (activeNode = key as OpsNode['id'])"
+        >
           <el-menu-item v-for="item in nodes" :key="item.id" :index="item.id">
             {{ item.label }}
           </el-menu-item>
@@ -266,7 +283,9 @@ onMounted(loadData);
 
       <div class="right-table">
         <div class="right-table__head">
-          <div class="title">{{ nodes.find(item => item.id === activeNode)?.label }}</div>
+          <div class="title">
+            {{ nodes.find(item => item.id === activeNode)?.label }}
+          </div>
           <div style="display: flex; gap: 8px">
             <el-button @click="loadData">刷新</el-button>
             <el-button
@@ -296,8 +315,13 @@ onMounted(loadData);
             fixed="right"
           >
             <template #default="scope">
-              <el-button link type="primary" @click="openEdit(scope.row)">编辑</el-button>
-              <el-popconfirm title="确认执行删除/停用？" @confirm="remove(scope.row)">
+              <el-button link type="primary" @click="openEdit(scope.row)"
+                >编辑</el-button
+              >
+              <el-popconfirm
+                title="确认执行删除/停用？"
+                @confirm="remove(scope.row)"
+              >
                 <template #reference>
                   <el-button link type="danger">删除</el-button>
                 </template>
@@ -317,7 +341,10 @@ onMounted(loadData);
   >
     <el-form v-if="editKind === 'entity'" label-width="100px">
       <el-form-item label="实体编码" required>
-        <el-input v-model="entityForm.entity_code" :disabled="editMode === 'edit'" />
+        <el-input
+          v-model="entityForm.entity_code"
+          :disabled="editMode === 'edit'"
+        />
       </el-form-item>
       <el-form-item label="实体名称" required>
         <el-input v-model="entityForm.entity_name" />
@@ -335,7 +362,10 @@ onMounted(loadData);
 
     <el-form v-else label-width="100px">
       <el-form-item label="字典类型" required>
-        <el-input v-model="dictForm.dict_type" :disabled="editMode === 'edit'" />
+        <el-input
+          v-model="dictForm.dict_type"
+          :disabled="editMode === 'edit'"
+        />
       </el-form-item>
       <el-form-item label="字典标签" required>
         <el-input v-model="dictForm.dict_label" />
@@ -356,7 +386,9 @@ onMounted(loadData);
 
     <template #footer>
       <el-button @click="editDrawerVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="save">保存</el-button>
+      <el-button type="primary" :loading="submitting" @click="save"
+        >保存</el-button
+      >
     </template>
   </el-drawer>
 </template>

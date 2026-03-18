@@ -112,7 +112,7 @@ onMounted(loadData);
 </script>
 
 <template>
-  <el-card shadow="never" class="dispatch" v-loading="loading || actionLoading">
+  <el-card v-loading="loading || actionLoading" shadow="never" class="dispatch">
     <template #header>
       <div>
         <div class="dispatch__title">出入库调度</div>
@@ -140,7 +140,9 @@ onMounted(loadData);
             <div class="kanban-card__no">{{ item.order_no }}</div>
             <div class="kanban-card__meta">类型：{{ item.order_type }}</div>
             <div class="kanban-card__meta">状态：{{ item.status }}</div>
-            <div class="kanban-card__meta">项目：{{ item.project_id || "-" }}</div>
+            <div class="kanban-card__meta">
+              项目：{{ item.project_id || "-" }}
+            </div>
           </div>
         </div>
       </div>

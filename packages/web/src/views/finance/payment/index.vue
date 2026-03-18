@@ -238,10 +238,14 @@ onMounted(async () => {
         </template>
       </el-table-column>
       <el-table-column label="申请时间" width="180">
-        <template #default="scope">{{ formatBeijingDateTime(scope.row.created_at) }}</template>
+        <template #default="scope">{{
+          formatBeijingDateTime(scope.row.created_at)
+        }}</template>
       </el-table-column>
       <el-table-column label="支付时间" width="180">
-        <template #default="scope">{{ formatBeijingDateTime(scope.row.paid_at) }}</template>
+        <template #default="scope">{{
+          formatBeijingDateTime(scope.row.paid_at)
+        }}</template>
       </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="scope">

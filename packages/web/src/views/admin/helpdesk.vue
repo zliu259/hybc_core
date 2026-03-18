@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { helpdeskCategoryLabel } from "@/utils/enum-labels";
 import {
   getSupportTicket,
   listSupportTickets,
@@ -106,8 +107,17 @@ onMounted(loadRows);
 
     <el-table :data="rows" :loading="loading" stripe size="small">
       <el-table-column prop="id" label="工单ID" width="90" />
-      <el-table-column prop="category" label="分类" width="140" />
-      <el-table-column prop="description" label="问题描述" min-width="280" show-overflow-tooltip />
+      <el-table-column label="分类" width="140">
+        <template #default="scope">{{
+          helpdeskCategoryLabel(scope.row.category)
+        }}</template>
+      </el-table-column>
+      <el-table-column
+        prop="description"
+        label="问题描述"
+        min-width="280"
+        show-overflow-tooltip
+      />
       <el-table-column label="状态" width="100">
         <template #default="scope">
           <el-tag :type="statusTagType(scope.row.status)">
@@ -118,7 +128,9 @@ onMounted(loadRows);
       <el-table-column prop="created_at" label="提交时间" width="180" />
       <el-table-column label="操作" width="90" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row.id)">详情</el-button>
+          <el-button link type="primary" @click="openDetail(scope.row.id)"
+            >详情</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -131,10 +143,18 @@ onMounted(loadRows);
     destroy-on-close
   >
     <el-descriptions :column="1" border>
-      <el-descriptions-item label="工单ID">{{ activeTicketId }}</el-descriptions-item>
-      <el-descriptions-item label="分类">{{ activeCategory }}</el-descriptions-item>
-      <el-descriptions-item label="状态">{{ statusLabel(activeStatus) }}</el-descriptions-item>
-      <el-descriptions-item label="问题描述">{{ activeDescription }}</el-descriptions-item>
+      <el-descriptions-item label="工单ID">{{
+        activeTicketId
+      }}</el-descriptions-item>
+      <el-descriptions-item label="分类">{{
+        activeCategory
+      }}</el-descriptions-item>
+      <el-descriptions-item label="状态">{{
+        statusLabel(activeStatus)
+      }}</el-descriptions-item>
+      <el-descriptions-item label="问题描述">{{
+        activeDescription
+      }}</el-descriptions-item>
       <el-descriptions-item label="附件">
         <el-space wrap>
           <span v-if="!activeAttachments.length">-</span>
@@ -150,12 +170,20 @@ onMounted(loadRows);
           </el-link>
         </el-space>
       </el-descriptions-item>
-      <el-descriptions-item label="历史回复">{{ activeReply || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="历史回复">{{
+        activeReply || "-"
+      }}</el-descriptions-item>
     </el-descriptions>
 
     <el-form label-position="top" class="mt-3">
       <el-form-item label="处理说明/解决方案">
-        <el-input v-model="replyInput" type="textarea" :rows="5" maxlength="1000" show-word-limit />
+        <el-input
+          v-model="replyInput"
+          type="textarea"
+          :rows="5"
+          maxlength="1000"
+          show-word-limit
+        />
       </el-form-item>
       <el-button type="primary" :loading="resolving" @click="submitResolve">
         标记已解决

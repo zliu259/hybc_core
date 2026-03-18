@@ -15,9 +15,15 @@ import {
 defineOptions({ name: "PayeeList" });
 
 const route = useRoute();
-const isWorkspaceInternalMode = computed(() => route.path === "/workspace/payee");
-const isWorkspaceExternalMode = computed(() => route.path === "/workspace/payee-external");
-const isWorkspaceMode = computed(() => isWorkspaceInternalMode.value || isWorkspaceExternalMode.value);
+const isWorkspaceInternalMode = computed(
+  () => route.path === "/workspace/payee"
+);
+const isWorkspaceExternalMode = computed(
+  () => route.path === "/workspace/payee-external"
+);
+const isWorkspaceMode = computed(
+  () => isWorkspaceInternalMode.value || isWorkspaceExternalMode.value
+);
 
 const activeTab = ref<"external" | "internal">("external");
 const loading = ref(false);
@@ -143,7 +149,11 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never" style="background: #fffaf2">
-    <el-tabs v-if="!isWorkspaceMode" v-model="activeTab" @tab-change="() => loadData()">
+    <el-tabs
+      v-if="!isWorkspaceMode"
+      v-model="activeTab"
+      @tab-change="() => loadData()"
+    >
       <el-tab-pane label="外部收款人" name="external" />
       <el-tab-pane label="内部收款人" name="internal" />
     </el-tabs>
@@ -169,7 +179,9 @@ onMounted(async () => {
         <el-input v-model="keyword" placeholder="名称/账号" clearable />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button v-if="!isWorkspaceInternalMode" @click="openCreate">新增收款人</el-button>
+      <el-button v-if="!isWorkspaceInternalMode" @click="openCreate"
+        >新增收款人</el-button
+      >
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
@@ -178,7 +190,12 @@ onMounted(async () => {
       <el-table-column prop="bank_account" label="账号" min-width="220" />
       <el-table-column prop="phone" label="电话" width="130" />
       <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column v-if="!isWorkspaceInternalMode" label="操作" width="160" fixed="right">
+      <el-table-column
+        v-if="!isWorkspaceInternalMode"
+        label="操作"
+        width="160"
+        fixed="right"
+      >
         <template #default="scope">
           <el-button link type="primary" @click="openEdit(scope.row)"
             >编辑</el-button
@@ -211,7 +228,9 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
+        <el-button type="primary" :loading="saving" @click="onSave"
+          >保存</el-button
+        >
       </template>
     </el-dialog>
   </el-card>

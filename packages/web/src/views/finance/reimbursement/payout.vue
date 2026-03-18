@@ -3,10 +3,16 @@ import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import { createUploadSignature } from "@/api/upload";
 import { resolveUploadUrl } from "@/api/upload";
 import { formatToken, getToken } from "@/utils/auth";
-import { listEntities, listEntityBankAccounts, type Entity, type EntityBankAccount } from "@/api/entity";
+import {
+  listEntities,
+  listEntityBankAccounts,
+  type Entity,
+  type EntityBankAccount
+} from "@/api/entity";
 import {
   getReimbursementBatch,
   listReimbursementBatches,
@@ -28,7 +34,14 @@ const payDialogVisible = ref(false);
 const payTargetIds = ref<number[]>([]);
 const entities = ref<Entity[]>([]);
 const bankAccounts = ref<EntityBankAccount[]>([]);
-const voucherItems = ref<Array<{ file_key: string; file_name: string; file_size?: number; is_new: boolean }>>([]);
+const voucherItems = ref<
+  Array<{
+    file_key: string;
+    file_name: string;
+    file_size?: number;
+    is_new: boolean;
+  }>
+>([]);
 const uploadingVoucher = ref(false);
 const payForm = ref({
   paid_at: "",
@@ -38,8 +51,12 @@ const payForm = ref({
   payment_entity_bank_account_id: undefined as number | undefined
 });
 
-const activeEntities = computed(() => entities.value.filter(item => item.status === "active"));
-const activeBankAccounts = computed(() => bankAccounts.value.filter(item => item.status === "active"));
+const activeEntities = computed(() =>
+  entities.value.filter(item => item.status === "active")
+);
+const activeBankAccounts = computed(() =>
+  bankAccounts.value.filter(item => item.status === "active")
+);
 
 const selectedAmount = computed(() => {
   return rows.value
@@ -146,11 +163,18 @@ const removeVoucher = (index: number) => {
 };
 
 const submitMarkPaid = async () => {
-  if (!payForm.value.paid_at || !payForm.value.payment_reference || !payForm.value.payment_account) {
+  if (
+    !payForm.value.paid_at ||
+    !payForm.value.payment_reference ||
+    !payForm.value.payment_account
+  ) {
     message("请补全打款信息", { type: "warning" });
     return;
   }
-  if (!payForm.value.payment_entity_id || !payForm.value.payment_entity_bank_account_id) {
+  if (
+    !payForm.value.payment_entity_id ||
+    !payForm.value.payment_entity_bank_account_id
+  ) {
     message("请选择支付实体和支付账号", { type: "warning" });
     return;
   }
@@ -164,7 +188,8 @@ const submitMarkPaid = async () => {
           payment_reference: payForm.value.payment_reference,
           payment_account: payForm.value.payment_account,
           payment_entity_id: payForm.value.payment_entity_id,
-          payment_entity_bank_account_id: payForm.value.payment_entity_bank_account_id,
+          payment_entity_bank_account_id:
+            payForm.value.payment_entity_bank_account_id,
           payment_vouchers: voucherItems.value.map(item => ({
             file_key: item.file_key,
             file_name: item.file_name,
@@ -181,7 +206,10 @@ const submitMarkPaid = async () => {
   }
 };
 
-const onExpand = async (row: ReimbursementBatch, expandedRows: ReimbursementBatch[]) => {
+const onExpand = async (
+  row: ReimbursementBatch,
+  expandedRows: ReimbursementBatch[]
+) => {
   const isExpanded = expandedRows.some(item => item.id === row.id);
   if (!isExpanded || detailsMap.value[row.id]) return;
   const detail = await getReimbursementBatch(row.id);
@@ -200,7 +228,10 @@ onMounted(async () => {
     })
   ]);
   const batchIdFromQuery = Number(route.query.batch_id || 0);
-  if (batchIdFromQuery > 0 && rows.value.some(item => item.id === batchIdFromQuery)) {
+  if (
+    batchIdFromQuery > 0 &&
+    rows.value.some(item => item.id === batchIdFromQuery)
+  ) {
     openPayDialog([batchIdFromQuery]);
   }
 });
@@ -214,10 +245,14 @@ onMounted(async () => {
           <div class="title">报内报销集中打款台</div>
           <div class="sub">已审批批次可在此登记打款流水与付款账户</div>
           <div v-if="selectedIds.length > 0" class="summary">
-            已选 {{ selectedIds.length }} 批次，合计 ¥{{ selectedAmount.toFixed(2) }}
+            已选 {{ selectedIds.length }} 批次，合计 ¥{{
+              selectedAmount.toFixed(2)
+            }}
           </div>
         </div>
-        <el-button type="primary" @click="openPayDialog(selectedIds)">登记打款</el-button>
+        <el-button type="primary" @click="openPayDialog(selectedIds)"
+          >登记打款</el-button
+        >
       </div>
     </template>
 
@@ -238,10 +273,18 @@ onMounted(async () => {
             style="margin: 8px 0"
           >
             <el-table-column prop="envelope_no" label="信封编号" width="160" />
-            <el-table-column prop="applicant_userid" label="归属人" width="130" />
+            <el-table-column
+              prop="applicant_userid"
+              label="归属人"
+              width="130"
+            />
             <el-table-column prop="amount" label="报销金额" width="120" />
             <el-table-column prop="invoice_no" label="发票号" min-width="180" />
-            <el-table-column prop="description" label="报销说明" min-width="200" />
+            <el-table-column
+              prop="description"
+              label="报销说明"
+              min-width="200"
+            />
           </el-table>
         </template>
       </el-table-column>
@@ -250,19 +293,26 @@ onMounted(async () => {
       <el-table-column prop="item_count" label="信封数" width="100" />
       <el-table-column prop="status" label="状态" width="120">
         <template #default="{ row }">
-          <el-tag type="success">{{ row.status }}</el-tag>
+          <el-tag type="success">{{ statusLabel(row.status) }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openPayDialog([row.id])">登记打款</el-button>
+          <el-button link type="primary" @click="openPayDialog([row.id])"
+            >登记打款</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
   </el-card>
 
-  <el-drawer v-model="payDialogVisible" title="登记打款" size="520px" destroy-on-close>
+  <el-drawer
+    v-model="payDialogVisible"
+    title="登记打款"
+    size="520px"
+    destroy-on-close
+  >
     <el-form label-width="110px">
       <el-form-item label="打款日期" required>
         <el-date-picker
@@ -308,7 +358,10 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="付款账户" required>
-        <el-input v-model="payForm.payment_account" placeholder="例如 建行尾号8888" />
+        <el-input
+          v-model="payForm.payment_account"
+          placeholder="例如 建行尾号8888"
+        />
       </el-form-item>
       <el-form-item label="支付凭证">
         <el-upload
@@ -318,15 +371,24 @@ onMounted(async () => {
           :disabled="uploadingVoucher"
           :http-request="uploadVoucher"
         >
-          <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+          <div class="el-upload__text">
+            拖拽文件到这里，或 <em>点击上传</em>
+          </div>
           <div class="el-upload__tip">支持上传打款截图、回单等凭证</div>
         </el-upload>
-        <el-table v-if="voucherItems.length > 0" :data="voucherItems" size="small" style="margin-top: 8px">
+        <el-table
+          v-if="voucherItems.length > 0"
+          :data="voucherItems"
+          size="small"
+          style="margin-top: 8px"
+        >
           <el-table-column prop="file_name" label="文件名" min-width="220" />
           <el-table-column prop="file_size" label="大小" width="120" />
           <el-table-column label="操作" width="90">
             <template #default="{ $index }">
-              <el-button link type="danger" @click="removeVoucher($index)">移除</el-button>
+              <el-button link type="danger" @click="removeVoucher($index)"
+                >移除</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
@@ -334,7 +396,11 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="payDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="actionLoading" @click="submitMarkPaid">
+      <el-button
+        type="primary"
+        :loading="actionLoading"
+        @click="submitMarkPaid"
+      >
         提交
       </el-button>
     </template>

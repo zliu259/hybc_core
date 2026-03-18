@@ -454,7 +454,11 @@ export const markBatchPaid = (
     payment_account?: string;
     payment_entity_id?: number;
     payment_entity_bank_account_id?: number;
-    payment_vouchers?: { file_key: string; file_name?: string; file_size?: number }[];
+    payment_vouchers?: {
+      file_key: string;
+      file_name?: string;
+      file_size?: number;
+    }[];
   }
 ) => {
   return http.request<{ success: boolean }>(

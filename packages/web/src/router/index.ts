@@ -170,9 +170,16 @@ router.beforeEach((to: ToRouteType, _from, next) => {
   }
   if (Cookies.get(multipleTabsKey) && userInfo) {
     // 无权限跳转403页面
-    const normalizedToRoles = normalizeRoles(to.meta?.roles as string[] | undefined);
-    const normalizedUserRoles = normalizeRoles(userInfo?.roles as string[] | undefined);
-    if (normalizedToRoles.length > 0 && !isOneOfArray(normalizedToRoles, normalizedUserRoles)) {
+    const normalizedToRoles = normalizeRoles(
+      to.meta?.roles as string[] | undefined
+    );
+    const normalizedUserRoles = normalizeRoles(
+      userInfo?.roles as string[] | undefined
+    );
+    if (
+      normalizedToRoles.length > 0 &&
+      !isOneOfArray(normalizedToRoles, normalizedUserRoles)
+    ) {
       next({ path: "/access-denied" });
       return;
     }

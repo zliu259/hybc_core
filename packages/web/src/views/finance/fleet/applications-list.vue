@@ -28,7 +28,9 @@ const fuelStatusLabel = (value: string) => {
   return value;
 };
 
-const fuelStatusType = (value: string): "warning" | "success" | "danger" | "info" => {
+const fuelStatusType = (
+  value: string
+): "warning" | "success" | "danger" | "info" => {
   if (value === "pending") return "warning";
   if (value === "processed") return "success";
   if (value === "rejected") return "danger";
@@ -90,10 +92,22 @@ onMounted(loadData);
 <template>
   <el-card shadow="never" :loading="loading">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>油卡额度申请全量处理页</span>
         <el-space>
-          <el-select v-model="status" clearable placeholder="全部状态" style="width: 140px" @change="loadData">
+          <el-select
+            v-model="status"
+            clearable
+            placeholder="全部状态"
+            style="width: 140px"
+            @change="loadData"
+          >
             <el-option label="待处理" value="pending" />
             <el-option label="已处理" value="processed" />
             <el-option label="已拒绝" value="rejected" />
@@ -107,7 +121,9 @@ onMounted(loadData);
     <el-table :data="rows" stripe>
       <el-table-column prop="application_no" label="申请单号" min-width="170" />
       <el-table-column label="申请人" width="180">
-        <template #default="scope">{{ resolveUserName(scope.row.applicant_userid) }}</template>
+        <template #default="scope">{{
+          resolveUserName(scope.row.applicant_userid)
+        }}</template>
       </el-table-column>
       <el-table-column prop="current_plate_no" label="车辆" width="120" />
       <el-table-column prop="requested_amount" label="申请额度" width="120" />
@@ -120,9 +136,15 @@ onMounted(loadData);
       </el-table-column>
       <el-table-column prop="processed_at" label="处理时间" width="180" />
       <el-table-column label="处理人" width="180">
-        <template #default="scope">{{ resolveUserName(scope.row.processed_by_userid) }}</template>
+        <template #default="scope">{{
+          resolveUserName(scope.row.processed_by_userid)
+        }}</template>
       </el-table-column>
-      <el-table-column prop="latest_card_balance" label="处理后余额" width="120" />
+      <el-table-column
+        prop="latest_card_balance"
+        label="处理后余额"
+        width="120"
+      />
       <el-table-column prop="office_remark" label="处理备注" min-width="220" />
       <el-table-column prop="requested_at" label="申请时间" width="180" />
       <el-table-column

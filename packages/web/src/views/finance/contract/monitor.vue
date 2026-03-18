@@ -119,7 +119,11 @@ onMounted(loadData);
 
     <el-form inline>
       <el-form-item label="关键字">
-        <el-input v-model="filters.keyword" clearable placeholder="合同号/对方单位" />
+        <el-input
+          v-model="filters.keyword"
+          clearable
+          placeholder="合同号/对方单位"
+        />
       </el-form-item>
       <el-form-item label="状态">
         <el-select v-model="filters.status" clearable style="width: 160px">
@@ -168,7 +172,9 @@ onMounted(loadData);
       </el-table-column>
       <el-table-column label="操作" width="140" fixed="right">
         <template #default="{ row }">
-          <el-button link type="primary" @click="openAmountDrawer(row)">变更金额</el-button>
+          <el-button link type="primary" @click="openAmountDrawer(row)"
+            >变更金额</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -185,7 +191,10 @@ onMounted(loadData);
         <el-input :model-value="activeRow?.contract_no" disabled />
       </el-form-item>
       <el-form-item label="原合同金额">
-        <el-input :model-value="String(activeRow?.total_amount ?? '')" disabled />
+        <el-input
+          :model-value="String(activeRow?.total_amount ?? '')"
+          disabled
+        />
       </el-form-item>
       <el-form-item label="新合同金额" required>
         <el-input-number
@@ -202,7 +211,11 @@ onMounted(loadData);
 
     <template #footer>
       <el-button @click="drawerVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submitAmountChange">
+      <el-button
+        type="primary"
+        :loading="submitting"
+        @click="submitAmountChange"
+      >
         提交审批
       </el-button>
     </template>

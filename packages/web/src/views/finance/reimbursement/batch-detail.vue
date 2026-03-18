@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { precheckStatusLabel, statusLabel } from "@/utils/enum-labels";
 import {
   getBatchAuditReport,
   getReimbursementBatch,
@@ -157,8 +158,16 @@ onMounted(loadDetail);
         <el-table-column prop="envelope_no" label="信封编号" width="160" />
         <el-table-column prop="invoice_no" label="发票号" width="180" />
         <el-table-column prop="amount" label="金额" width="120" />
-        <el-table-column prop="precheck_status" label="预审" width="120" />
-        <el-table-column prop="status" label="状态" width="120" />
+        <el-table-column label="预审" width="120">
+          <template #default="scope">{{
+            precheckStatusLabel(scope.row.precheck_status)
+          }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="120">
+          <template #default="scope">{{
+            statusLabel(scope.row.status)
+          }}</template>
+        </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="scope">
             <el-button

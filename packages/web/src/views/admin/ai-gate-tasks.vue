@@ -97,15 +97,32 @@ onMounted(loadRows);
 <template>
   <el-card shadow="never" style="background: #fffaf2">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+          flex-wrap: wrap;
+        "
+      >
         <div>
-          <div style="font-size: 18px; font-weight: 700; color: #2a241d">AI关卡任务总览</div>
+          <div style="font-size: 18px; font-weight: 700; color: #2a241d">
+            AI关卡任务总览
+          </div>
           <div style="margin-top: 4px; font-size: 13px; color: #6e6458">
             超级管理员可处理AI关卡卡点：放行、驳回、补充意见
           </div>
         </div>
-        <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
-          <el-select v-model="statusFilter" clearable placeholder="任务状态" style="width: 160px">
+        <div
+          style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap"
+        >
+          <el-select
+            v-model="statusFilter"
+            clearable
+            placeholder="任务状态"
+            style="width: 160px"
+          >
             <el-option label="pending" value="pending" />
             <el-option label="assigned" value="assigned" />
             <el-option label="running" value="running" />
@@ -137,36 +154,69 @@ onMounted(loadRows);
         <template #default="scope">{{ scope.row.node_key || "-" }}</template>
       </el-table-column>
       <el-table-column label="AI Slot" min-width="160">
-        <template #default="scope">{{ scope.row.ai_slot_id || scope.row.task_biz_type }}</template>
+        <template #default="scope">{{
+          scope.row.ai_slot_id || scope.row.task_biz_type
+        }}</template>
       </el-table-column>
       <el-table-column label="审批实例" width="180">
-        <template #default="scope">{{ scope.row.instance?.instance_no || "-" }}</template>
+        <template #default="scope">{{
+          scope.row.instance?.instance_no || "-"
+        }}</template>
       </el-table-column>
       <el-table-column label="审批状态" width="110">
-        <template #default="scope">{{ toStatusLabel(scope.row.instance?.status || "-") }}</template>
+        <template #default="scope">{{
+          toStatusLabel(scope.row.instance?.status || "-")
+        }}</template>
       </el-table-column>
       <el-table-column label="当前节点" min-width="120">
-        <template #default="scope">{{ scope.row.instance?.current_node_key || "-" }}</template>
+        <template #default="scope">{{
+          scope.row.instance?.current_node_key || "-"
+        }}</template>
       </el-table-column>
       <el-table-column label="摘要" min-width="220" show-overflow-tooltip>
-        <template #default="scope">{{ scope.row.instance?.biz_summary || "-" }}</template>
+        <template #default="scope">{{
+          scope.row.instance?.biz_summary || "-"
+        }}</template>
       </el-table-column>
       <el-table-column label="错误信息" min-width="180" show-overflow-tooltip>
-        <template #default="scope">{{ scope.row.error_message || "-" }}</template>
+        <template #default="scope">{{
+          scope.row.error_message || "-"
+        }}</template>
       </el-table-column>
       <el-table-column label="创建时间" width="170">
-        <template #default="scope">{{ formatBeijingDateTime(scope.row.task_created_at) }}</template>
+        <template #default="scope">{{
+          formatBeijingDateTime(scope.row.task_created_at)
+        }}</template>
       </el-table-column>
       <el-table-column label="完成时间" width="170">
-        <template #default="scope">{{ formatBeijingDateTime(scope.row.task_completed_at) }}</template>
+        <template #default="scope">{{
+          formatBeijingDateTime(scope.row.task_completed_at)
+        }}</template>
       </el-table-column>
       <el-table-column label="操作" width="300" fixed="right">
         <template #default="scope">
           <el-space>
-            <el-button link type="primary" @click="goApprovalDetail(scope.row)">审批详情</el-button>
-            <el-button link type="success" @click="openActionDialog(scope.row, 'approve')">放行</el-button>
-            <el-button link type="danger" @click="openActionDialog(scope.row, 'reject')">驳回</el-button>
-            <el-button link type="warning" @click="openActionDialog(scope.row, 'comment')">补充意见</el-button>
+            <el-button link type="primary" @click="goApprovalDetail(scope.row)"
+              >审批详情</el-button
+            >
+            <el-button
+              link
+              type="success"
+              @click="openActionDialog(scope.row, 'approve')"
+              >放行</el-button
+            >
+            <el-button
+              link
+              type="danger"
+              @click="openActionDialog(scope.row, 'reject')"
+              >驳回</el-button
+            >
+            <el-button
+              link
+              type="warning"
+              @click="openActionDialog(scope.row, 'comment')"
+              >补充意见</el-button
+            >
           </el-space>
         </template>
       </el-table-column>
@@ -187,8 +237,22 @@ onMounted(loadRows);
   <el-dialog v-model="actionDialogVisible" title="处理AI关卡任务" width="520px">
     <el-form label-width="110px">
       <el-form-item label="处理动作">
-        <el-tag :type="actionType === 'approve' ? 'success' : actionType === 'reject' ? 'danger' : 'warning'">
-          {{ actionType === "approve" ? "建议通过" : actionType === "reject" ? "建议拒绝" : "建议补充材料" }}
+        <el-tag
+          :type="
+            actionType === 'approve'
+              ? 'success'
+              : actionType === 'reject'
+                ? 'danger'
+                : 'warning'
+          "
+        >
+          {{
+            actionType === "approve"
+              ? "建议通过"
+              : actionType === "reject"
+                ? "建议拒绝"
+                : "建议补充材料"
+          }}
         </el-tag>
       </el-form-item>
       <el-form-item label="处理说明">
@@ -204,7 +268,9 @@ onMounted(loadRows);
     </el-form>
     <template #footer>
       <el-button @click="actionDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submitAction">确认提交</el-button>
+      <el-button type="primary" :loading="submitting" @click="submitAction"
+        >确认提交</el-button
+      >
     </template>
   </el-dialog>
 </template>

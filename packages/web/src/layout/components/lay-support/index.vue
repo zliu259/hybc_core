@@ -18,21 +18,23 @@ const submitLoading = ref(false);
 const listLoading = ref(false);
 const tickets = ref<SupportTicket[]>([]);
 
-const submitForm = reactive<{ category: SupportTicketCategory; description: string }>(
-  {
-    category: "system_error",
-    description: ""
-  }
-);
+const submitForm = reactive<{
+  category: SupportTicketCategory;
+  description: string;
+}>({
+  category: "system_error",
+  description: ""
+});
 const attachmentFiles = ref<UploadFile[]>([]);
 
-const categoryOptions: Array<{ label: string; value: SupportTicketCategory }> = [
-  { label: "账号问题", value: "account_issue" },
-  { label: "权限缺失", value: "permission_missing" },
-  { label: "系统报错", value: "system_error" },
-  { label: "功能建议", value: "feature_suggestion" },
-  { label: "其他", value: "other" }
-];
+const categoryOptions: Array<{ label: string; value: SupportTicketCategory }> =
+  [
+    { label: "账号问题", value: "account_issue" },
+    { label: "权限缺失", value: "permission_missing" },
+    { label: "系统报错", value: "system_error" },
+    { label: "功能建议", value: "feature_suggestion" },
+    { label: "其他", value: "other" }
+  ];
 
 const statusTagType = computed(() => {
   return (status: SupportTicket["status"]) => {
@@ -55,16 +57,14 @@ const resetSubmitForm = () => {
 };
 
 const onAttachmentChange = (file: UploadFile, files: UploadFile[]) => {
-  const accepted = files
-    .slice(-5)
-    .filter(item => {
-      const size = item.size || 0;
-      if (size > 10 * 1024 * 1024) {
-        message(`文件 ${item.name} 超过 10MB，已忽略`, { type: "warning" });
-        return false;
-      }
-      return true;
-    });
+  const accepted = files.slice(-5).filter(item => {
+    const size = item.size || 0;
+    if (size > 10 * 1024 * 1024) {
+      message(`文件 ${item.name} 超过 10MB，已忽略`, { type: "warning" });
+      return false;
+    }
+    return true;
+  });
   attachmentFiles.value = accepted;
 };
 
@@ -175,7 +175,10 @@ onMounted(async () => {
           </el-form-item>
 
           <el-form-item>
-            <el-button type="primary" :loading="submitLoading" @click="submitTicket"
+            <el-button
+              type="primary"
+              :loading="submitLoading"
+              @click="submitTicket"
               >提交</el-button
             >
           </el-form-item>
@@ -184,8 +187,11 @@ onMounted(async () => {
 
       <el-tab-pane label="我的记录" name="records">
         <el-scrollbar max-height="calc(100vh - 180px)">
-          <div class="ticket-list" v-loading="listLoading">
-            <el-empty v-if="!tickets.length && !listLoading" description="暂无记录" />
+          <div v-loading="listLoading" class="ticket-list">
+            <el-empty
+              v-if="!tickets.length && !listLoading"
+              description="暂无记录"
+            />
             <el-card
               v-for="item in tickets"
               :key="item.id"

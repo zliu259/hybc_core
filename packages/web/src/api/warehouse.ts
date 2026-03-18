@@ -287,16 +287,23 @@ export const confirmEquipmentPlan = (
     data: { stock_order_id: number; order_no: string };
   }>("post", `/api/v1/warehouse/equipment-plan/${id}/confirm`, { data });
 
-export const listStocktakeTasks = (params?: { status?: string; warehouse_id?: number }) =>
-  http.request<{ success: boolean; data: StocktakeTask[] }>("get", "/api/v1/warehouse/stocktake", {
-    params
-  });
+export const listStocktakeTasks = (params?: {
+  status?: string;
+  warehouse_id?: number;
+}) =>
+  http.request<{ success: boolean; data: StocktakeTask[] }>(
+    "get",
+    "/api/v1/warehouse/stocktake",
+    {
+      params
+    }
+  );
 
 export const getStocktakeTask = (id: number) =>
-  http.request<{ success: boolean; data: StocktakeTask & { lines: StocktakeLine[] } }>(
-    "get",
-    `/api/v1/warehouse/stocktake/${id}`
-  );
+  http.request<{
+    success: boolean;
+    data: StocktakeTask & { lines: StocktakeLine[] };
+  }>("get", `/api/v1/warehouse/stocktake/${id}`);
 
 export const createStocktakeTask = (data: {
   task_title: string;
@@ -340,9 +347,13 @@ export const updateStocktakeLine = (
     note?: string;
   }
 ) =>
-  http.request<{ success: boolean }>("put", `/api/v1/warehouse/stocktake/${id}/line/${lineId}`, {
-    data
-  });
+  http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/warehouse/stocktake/${id}/line/${lineId}`,
+    {
+      data
+    }
+  );
 
 export const completeStocktakeTask = (id: number) =>
   http.request<{

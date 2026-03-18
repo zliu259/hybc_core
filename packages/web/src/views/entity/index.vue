@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import type { UploadRequestOptions } from "element-plus";
 import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createEntity,
   deleteEntity,
@@ -46,7 +47,10 @@ const entityForm = ref({
   entity_name: "",
   legal_person: "",
   tax_id: "",
-  company_attribute: "self_owned" as "self_owned" | "external" | "shareholder_personal",
+  company_attribute: "self_owned" as
+    | "self_owned"
+    | "external"
+    | "shareholder_personal",
   primary_bank_name: "",
   primary_bank_branch_no: "",
   primary_bank_account_no: ""
@@ -70,7 +74,9 @@ const invoiceForm = ref({
 });
 
 const selectedEntity = computed(() => {
-  return entities.value.find((item) => item.id === selectedEntityId.value) ?? null;
+  return (
+    entities.value.find(item => item.id === selectedEntityId.value) ?? null
+  );
 });
 
 const companyAttributeLabel = (value: string) => {
@@ -81,12 +87,13 @@ const companyAttributeLabel = (value: string) => {
 };
 
 const loadSubResources = async (entityId: number) => {
-  const [bankResult, invoiceResult, attachmentResult, storageResult] = await Promise.all([
-    listEntityBankAccounts(entityId),
-    listEntityInvoiceProfiles(entityId),
-    listEntityAttachments(entityId),
-    getEntityStorageSummary(entityId)
-  ]);
+  const [bankResult, invoiceResult, attachmentResult, storageResult] =
+    await Promise.all([
+      listEntityBankAccounts(entityId),
+      listEntityInvoiceProfiles(entityId),
+      listEntityAttachments(entityId),
+      getEntityStorageSummary(entityId)
+    ]);
   bankAccounts.value = bankResult.data;
   invoiceProfiles.value = invoiceResult.data;
   attachments.value = attachmentResult.data;
@@ -198,7 +205,9 @@ const createBankAccountRow = async () => {
 
   try {
     saving.value = true;
-    await createEntityBankAccount(selectedEntityId.value, { ...bankForm.value });
+    await createEntityBankAccount(selectedEntityId.value, {
+      ...bankForm.value
+    });
     bankForm.value = {
       bank_name: "",
       account_name: "",
@@ -257,13 +266,16 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       category: "entity"
     });
 
-    const uploadResp = await fetch(resolveUploadUrl(signResult.data.uploadUrl), {
-      method: "PUT",
-      headers: {
-        "content-type": options.file.type || "application/octet-stream"
-      },
-      body: options.file
-    });
+    const uploadResp = await fetch(
+      resolveUploadUrl(signResult.data.uploadUrl),
+      {
+        method: "PUT",
+        headers: {
+          "content-type": options.file.type || "application/octet-stream"
+        },
+        body: options.file
+      }
+    );
 
     if (!uploadResp.ok) {
       throw new Error(`upload_failed_${uploadResp.status}`);
@@ -292,7 +304,9 @@ const removeAttachment = async (attachmentId: number) => {
 };
 
 const downloadAttachment = (row: EntityAttachment) => {
-  const url = resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(row.file_key)}`);
+  const url = resolveUploadUrl(
+    `/api/v1/upload/object/${encodeURIComponent(row.file_key)}`
+  );
   window.open(url, "_blank", "noopener,noreferrer");
 };
 
@@ -304,21 +318,40 @@ onMounted(loadEntities);
     <el-col :md="10" :xs="24">
       <el-card shadow="never" header="公司实体管理">
         <el-form label-width="98px">
-          <el-form-item label="实体编码"><el-input v-model="entityForm.entity_code" /></el-form-item>
-          <el-form-item label="实体名称"><el-input v-model="entityForm.entity_name" /></el-form-item>
-          <el-form-item label="法人"><el-input v-model="entityForm.legal_person" /></el-form-item>
-          <el-form-item label="税号"><el-input v-model="entityForm.tax_id" /></el-form-item>
+          <el-form-item label="实体编码"
+            ><el-input v-model="entityForm.entity_code"
+          /></el-form-item>
+          <el-form-item label="实体名称"
+            ><el-input v-model="entityForm.entity_name"
+          /></el-form-item>
+          <el-form-item label="法人"
+            ><el-input v-model="entityForm.legal_person"
+          /></el-form-item>
+          <el-form-item label="税号"
+            ><el-input v-model="entityForm.tax_id"
+          /></el-form-item>
           <el-form-item label="公司属性">
-            <el-select v-model="entityForm.company_attribute" style="width: 100%">
+            <el-select
+              v-model="entityForm.company_attribute"
+              style="width: 100%"
+            >
               <el-option label="自有公司" value="self_owned" />
               <el-option label="外挂公司" value="external" />
               <el-option label="股东个人" value="shareholder_personal" />
             </el-select>
           </el-form-item>
-          <el-form-item label="主开户行"><el-input v-model="entityForm.primary_bank_name" /></el-form-item>
-          <el-form-item label="主行号"><el-input v-model="entityForm.primary_bank_branch_no" /></el-form-item>
-          <el-form-item label="主账号"><el-input v-model="entityForm.primary_bank_account_no" /></el-form-item>
-          <el-button type="primary" :loading="saving" @click="createEntityRow">新增实体</el-button>
+          <el-form-item label="主开户行"
+            ><el-input v-model="entityForm.primary_bank_name"
+          /></el-form-item>
+          <el-form-item label="主行号"
+            ><el-input v-model="entityForm.primary_bank_branch_no"
+          /></el-form-item>
+          <el-form-item label="主账号"
+            ><el-input v-model="entityForm.primary_bank_account_no"
+          /></el-form-item>
+          <el-button type="primary" :loading="saving" @click="createEntityRow"
+            >新增实体</el-button
+          >
         </el-form>
 
         <el-table
@@ -330,15 +363,24 @@ onMounted(loadEntities);
           <el-table-column prop="entity_code" label="编码" width="120" />
           <el-table-column prop="entity_name" label="名称" />
           <el-table-column label="属性" width="110">
-            <template #default="scope">{{ companyAttributeLabel(scope.row.company_attribute) }}</template>
+            <template #default="scope">{{
+              companyAttributeLabel(scope.row.company_attribute)
+            }}</template>
           </el-table-column>
-          <el-table-column prop="status" label="状态" width="90" />
+          <el-table-column label="状态" width="90">
+            <template #default="scope">{{
+              statusLabel(scope.row.status)
+            }}</template>
+          </el-table-column>
           <el-table-column label="操作" width="100" fixed="right">
             <template #default="scope">
               <el-button
                 link
                 type="danger"
-                @click.stop="selectedEntityId = scope.row.id; removeSelectedEntity()"
+                @click.stop="
+                  selectedEntityId = scope.row.id;
+                  removeSelectedEntity();
+                "
                 >删除</el-button
               >
             </template>
@@ -348,24 +390,45 @@ onMounted(loadEntities);
     </el-col>
 
     <el-col :md="14" :xs="24">
-      <el-card shadow="never" :header="`实体详情 - ${selectedEntity?.entity_name ?? '-'}`">
+      <el-card
+        shadow="never"
+        :header="`实体详情 - ${selectedEntity?.entity_name ?? '-'}`"
+      >
         <el-descriptions :column="2" border size="small">
           <el-descriptions-item label="公司属性">
             {{ companyAttributeLabel(selectedEntity?.company_attribute ?? "") }}
           </el-descriptions-item>
-          <el-descriptions-item label="税号">{{ selectedEntity?.tax_id || "-" }}</el-descriptions-item>
+          <el-descriptions-item label="税号">{{
+            selectedEntity?.tax_id || "-"
+          }}</el-descriptions-item>
           <el-descriptions-item label="已用空间(MB)">
-            {{ storageSummary.storage_used_mb }} / {{ storageSummary.storage_quota_mb }}
+            {{ storageSummary.storage_used_mb }} /
+            {{ storageSummary.storage_quota_mb }}
           </el-descriptions-item>
-          <el-descriptions-item label="附件数量">{{ storageSummary.active_attachment_count }}</el-descriptions-item>
+          <el-descriptions-item label="附件数量">{{
+            storageSummary.active_attachment_count
+          }}</el-descriptions-item>
         </el-descriptions>
 
-        <el-form v-if="selectedEntity" label-width="90px" style="margin-top: 12px">
-          <el-form-item label="实体名称"><el-input v-model="selectedEntity.entity_name" /></el-form-item>
-          <el-form-item label="法人"><el-input v-model="selectedEntity.legal_person" /></el-form-item>
-          <el-form-item label="税号"><el-input v-model="selectedEntity.tax_id" /></el-form-item>
+        <el-form
+          v-if="selectedEntity"
+          label-width="90px"
+          style="margin-top: 12px"
+        >
+          <el-form-item label="实体名称"
+            ><el-input v-model="selectedEntity.entity_name"
+          /></el-form-item>
+          <el-form-item label="法人"
+            ><el-input v-model="selectedEntity.legal_person"
+          /></el-form-item>
+          <el-form-item label="税号"
+            ><el-input v-model="selectedEntity.tax_id"
+          /></el-form-item>
           <el-form-item label="公司属性">
-            <el-select v-model="selectedEntity.company_attribute" style="width: 100%">
+            <el-select
+              v-model="selectedEntity.company_attribute"
+              style="width: 100%"
+            >
               <el-option label="自有公司" value="self_owned" />
               <el-option label="外挂公司" value="external" />
               <el-option label="股东个人" value="shareholder_personal" />
@@ -377,22 +440,50 @@ onMounted(loadEntities);
               <el-option label="停用" value="inactive" />
             </el-select>
           </el-form-item>
-          <el-form-item label="主开户行"><el-input v-model="selectedEntity.primary_bank_name" /></el-form-item>
-          <el-form-item label="主行号"><el-input v-model="selectedEntity.primary_bank_branch_no" /></el-form-item>
-          <el-form-item label="主账号"><el-input v-model="selectedEntity.primary_bank_account_no" /></el-form-item>
-          <el-button type="primary" :loading="saving" @click="saveSelectedEntity">保存实体详情</el-button>
-          <el-button type="danger" plain @click="removeSelectedEntity">删除实体</el-button>
+          <el-form-item label="主开户行"
+            ><el-input v-model="selectedEntity.primary_bank_name"
+          /></el-form-item>
+          <el-form-item label="主行号"
+            ><el-input v-model="selectedEntity.primary_bank_branch_no"
+          /></el-form-item>
+          <el-form-item label="主账号"
+            ><el-input v-model="selectedEntity.primary_bank_account_no"
+          /></el-form-item>
+          <el-button
+            type="primary"
+            :loading="saving"
+            @click="saveSelectedEntity"
+            >保存实体详情</el-button
+          >
+          <el-button type="danger" plain @click="removeSelectedEntity"
+            >删除实体</el-button
+          >
         </el-form>
 
         <el-tabs style="margin-top: 12px">
           <el-tab-pane label="银行账户">
             <el-form inline>
-              <el-form-item label="银行名"><el-input v-model="bankForm.bank_name" /></el-form-item>
-              <el-form-item label="户名"><el-input v-model="bankForm.account_name" /></el-form-item>
-              <el-form-item label="账号"><el-input v-model="bankForm.account_no" /></el-form-item>
-              <el-form-item label="分行号"><el-input v-model="bankForm.bank_branch_no" /></el-form-item>
-              <el-form-item label="行号"><el-input v-model="bankForm.bank_line_no" /></el-form-item>
-               <el-button type="primary" :loading="saving" @click="createBankAccountRow">新增账户</el-button>
+              <el-form-item label="银行名"
+                ><el-input v-model="bankForm.bank_name"
+              /></el-form-item>
+              <el-form-item label="户名"
+                ><el-input v-model="bankForm.account_name"
+              /></el-form-item>
+              <el-form-item label="账号"
+                ><el-input v-model="bankForm.account_no"
+              /></el-form-item>
+              <el-form-item label="分行号"
+                ><el-input v-model="bankForm.bank_branch_no"
+              /></el-form-item>
+              <el-form-item label="行号"
+                ><el-input v-model="bankForm.bank_line_no"
+              /></el-form-item>
+              <el-button
+                type="primary"
+                :loading="saving"
+                @click="createBankAccountRow"
+                >新增账户</el-button
+              >
             </el-form>
             <el-table :data="bankAccounts">
               <el-table-column prop="bank_name" label="银行" />
@@ -405,13 +496,30 @@ onMounted(loadEntities);
 
           <el-tab-pane label="开票信息">
             <el-form label-width="86px">
-              <el-form-item label="抬头"><el-input v-model="invoiceForm.invoice_title" /></el-form-item>
-              <el-form-item label="税号"><el-input v-model="invoiceForm.tax_no" /></el-form-item>
-              <el-form-item label="地址"><el-input v-model="invoiceForm.address" /></el-form-item>
-              <el-form-item label="电话"><el-input v-model="invoiceForm.phone" /></el-form-item>
-              <el-form-item label="开户行"><el-input v-model="invoiceForm.bank_name" /></el-form-item>
-              <el-form-item label="银行账号"><el-input v-model="invoiceForm.bank_account" /></el-form-item>
-               <el-button type="primary" :loading="saving" @click="createInvoiceProfileRow">新增开票信息</el-button>
+              <el-form-item label="抬头"
+                ><el-input v-model="invoiceForm.invoice_title"
+              /></el-form-item>
+              <el-form-item label="税号"
+                ><el-input v-model="invoiceForm.tax_no"
+              /></el-form-item>
+              <el-form-item label="地址"
+                ><el-input v-model="invoiceForm.address"
+              /></el-form-item>
+              <el-form-item label="电话"
+                ><el-input v-model="invoiceForm.phone"
+              /></el-form-item>
+              <el-form-item label="开户行"
+                ><el-input v-model="invoiceForm.bank_name"
+              /></el-form-item>
+              <el-form-item label="银行账号"
+                ><el-input v-model="invoiceForm.bank_account"
+              /></el-form-item>
+              <el-button
+                type="primary"
+                :loading="saving"
+                @click="createInvoiceProfileRow"
+                >新增开票信息</el-button
+              >
             </el-form>
             <el-table :data="invoiceProfiles" style="margin-top: 12px">
               <el-table-column prop="invoice_title" label="抬头" />
@@ -422,20 +530,40 @@ onMounted(loadEntities);
           </el-tab-pane>
 
           <el-tab-pane label="公司附件">
-            <el-upload drag :show-file-list="false" :http-request="uploadAttachment">
-              <div class="el-upload__text">拖拽营业执照等附件到这里，或 <em>点击上传</em></div>
+            <el-upload
+              drag
+              :show-file-list="false"
+              :http-request="uploadAttachment"
+            >
+              <div class="el-upload__text">
+                拖拽营业执照等附件到这里，或 <em>点击上传</em>
+              </div>
             </el-upload>
             <el-table :data="attachments" style="margin-top: 12px">
               <el-table-column prop="file_name" label="文件名" />
               <el-table-column prop="file_category" label="分类" width="120" />
               <el-table-column label="大小(KB)" width="120">
-                <template #default="scope">{{ scope.row.file_size ? Math.ceil(scope.row.file_size / 1024) : "-" }}</template>
+                <template #default="scope">{{
+                  scope.row.file_size
+                    ? Math.ceil(scope.row.file_size / 1024)
+                    : "-"
+                }}</template>
               </el-table-column>
               <el-table-column prop="created_at" label="上传时间" width="180" />
               <el-table-column label="操作" width="160" fixed="right">
                 <template #default="scope">
-                  <el-button link type="primary" @click="downloadAttachment(scope.row)">下载</el-button>
-                  <el-button link type="danger" @click="removeAttachment(scope.row.id)">删除</el-button>
+                  <el-button
+                    link
+                    type="primary"
+                    @click="downloadAttachment(scope.row)"
+                    >下载</el-button
+                  >
+                  <el-button
+                    link
+                    type="danger"
+                    @click="removeAttachment(scope.row.id)"
+                    >删除</el-button
+                  >
                 </template>
               </el-table-column>
             </el-table>

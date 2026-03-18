@@ -139,7 +139,9 @@ const goBackAfterSubmit = () => {
     router.back();
     return;
   }
-  router.push(inWorkspaceRoute.value ? "/workspace/payment" : "/finance/payment");
+  router.push(
+    inWorkspaceRoute.value ? "/workspace/payment" : "/finance/payment"
+  );
 };
 
 const toChineseAmount = (amount: number): string => {
@@ -228,7 +230,10 @@ const selectedContractCounterparty = computed(() => {
 
 const selectedDirectContract = computed(() => {
   if (!directForm.value.contract_id) return null;
-  return contracts.value.find(item => item.id === directForm.value.contract_id) ?? null;
+  return (
+    contracts.value.find(item => item.id === directForm.value.contract_id) ??
+    null
+  );
 });
 
 const sortedContracts = computed(() => {
@@ -244,12 +249,16 @@ const sortedContracts = computed(() => {
 
 const selectedDirectPayee = computed(() => {
   if (!directForm.value.payee_id) return null;
-  return payees.value.find(item => item.id === directForm.value.payee_id) ?? null;
+  return (
+    payees.value.find(item => item.id === directForm.value.payee_id) ?? null
+  );
 });
 
 const selectedContractPayee = computed(() => {
   if (!contractForm.value.payee_id) return null;
-  return payees.value.find(item => item.id === contractForm.value.payee_id) ?? null;
+  return (
+    payees.value.find(item => item.id === contractForm.value.payee_id) ?? null
+  );
 });
 
 const selectedDirectContractRemaining = computed(() => {
@@ -692,7 +701,11 @@ onMounted(async () => {
                   :value="item.id"
                 />
               </el-select>
-              <el-button plain type="primary" @click="openQuickExternalPayeeDialog">
+              <el-button
+                plain
+                type="primary"
+                @click="openQuickExternalPayeeDialog"
+              >
                 快速添加外部收款人
               </el-button>
             </div>
@@ -703,10 +716,18 @@ onMounted(async () => {
               size="small"
               class="payee-verify-card"
             >
-              <el-descriptions-item label="收款人">{{ selectedDirectPayee.name }}</el-descriptions-item>
-              <el-descriptions-item label="开户行">{{ selectedDirectPayee.bank_name }}</el-descriptions-item>
-              <el-descriptions-item label="银行账号">{{ selectedDirectPayee.bank_account }}</el-descriptions-item>
-              <el-descriptions-item label="联系电话">{{ selectedDirectPayee.phone || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="收款人">{{
+                selectedDirectPayee.name
+              }}</el-descriptions-item>
+              <el-descriptions-item label="开户行">{{
+                selectedDirectPayee.bank_name
+              }}</el-descriptions-item>
+              <el-descriptions-item label="银行账号">{{
+                selectedDirectPayee.bank_account
+              }}</el-descriptions-item>
+              <el-descriptions-item label="联系电话">{{
+                selectedDirectPayee.phone || "-"
+              }}</el-descriptions-item>
             </el-descriptions>
           </el-form-item>
           <el-form-item label="付款日期">
@@ -882,7 +903,11 @@ onMounted(async () => {
                   :value="item.id"
                 />
               </el-select>
-              <el-button plain type="primary" @click="openQuickExternalPayeeDialog">
+              <el-button
+                plain
+                type="primary"
+                @click="openQuickExternalPayeeDialog"
+              >
                 快速添加外部收款人
               </el-button>
             </div>
@@ -893,10 +918,18 @@ onMounted(async () => {
               size="small"
               class="payee-verify-card"
             >
-              <el-descriptions-item label="收款人">{{ selectedContractPayee.name }}</el-descriptions-item>
-              <el-descriptions-item label="开户行">{{ selectedContractPayee.bank_name }}</el-descriptions-item>
-              <el-descriptions-item label="银行账号">{{ selectedContractPayee.bank_account }}</el-descriptions-item>
-              <el-descriptions-item label="联系电话">{{ selectedContractPayee.phone || "-" }}</el-descriptions-item>
+              <el-descriptions-item label="收款人">{{
+                selectedContractPayee.name
+              }}</el-descriptions-item>
+              <el-descriptions-item label="开户行">{{
+                selectedContractPayee.bank_name
+              }}</el-descriptions-item>
+              <el-descriptions-item label="银行账号">{{
+                selectedContractPayee.bank_account
+              }}</el-descriptions-item>
+              <el-descriptions-item label="联系电话">{{
+                selectedContractPayee.phone || "-"
+              }}</el-descriptions-item>
             </el-descriptions>
           </el-form-item>
           <el-form-item label="经办人">
@@ -1125,7 +1158,10 @@ onMounted(async () => {
           <el-input v-model="quickPayeeForm.name" placeholder="请输入名称" />
         </el-form-item>
         <el-form-item label="开户行" required>
-          <el-input v-model="quickPayeeForm.bank_name" placeholder="请输入开户行" />
+          <el-input
+            v-model="quickPayeeForm.bank_name"
+            placeholder="请输入开户行"
+          />
         </el-form-item>
         <el-form-item label="银行账号" required>
           <el-input

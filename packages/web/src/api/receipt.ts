@@ -278,16 +278,22 @@ export const issueInvoiceFromRequest = (
 ) => {
   return http.request<{
     success: boolean;
-    data: { id: number; invoice_no: string; verification_task_id: number | null };
+    data: {
+      id: number;
+      invoice_no: string;
+      verification_task_id: number | null;
+    };
   }>("post", `/api/v1/receipt/invoice-request/${id}/issue`, { data });
 };
 
-export const triggerInvoiceVerify = (id: number, data?: { file_key?: string }) => {
-  return http.request<{ success: boolean; data: { task_id: number; verification_status: string } }>(
-    "post",
-    `/api/v1/receipt/invoice/${id}/trigger-verify`,
-    { data }
-  );
+export const triggerInvoiceVerify = (
+  id: number,
+  data?: { file_key?: string }
+) => {
+  return http.request<{
+    success: boolean;
+    data: { task_id: number; verification_status: string };
+  }>("post", `/api/v1/receipt/invoice/${id}/trigger-verify`, { data });
 };
 
 export const getInvoiceVerifyStatus = (id: number) => {
@@ -463,9 +469,8 @@ export const updateReceiptRefundBankSlips = (
   id: number,
   data: { bank_slips_json: string; append?: boolean }
 ) => {
-  return http.request<{ success: boolean; data: { id: number; bank_slips_json: string } }>(
-    "patch",
-    `/api/v1/receipt/refund/${id}/bank-slips`,
-    { data }
-  );
+  return http.request<{
+    success: boolean;
+    data: { id: number; bank_slips_json: string };
+  }>("patch", `/api/v1/receipt/refund/${id}/bank-slips`, { data });
 };

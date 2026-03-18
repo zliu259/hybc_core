@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import type { UploadRequestOptions } from "element-plus";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   createFuelQuotaApplication,
@@ -51,13 +52,16 @@ const uploadPhoto = async (options: UploadRequestOptions) => {
       contentType: options.file.type || undefined,
       category: "fuel-application"
     });
-    const uploadResp = await fetch(resolveUploadUrl(signResult.data.uploadUrl), {
-      method: "PUT",
-      headers: {
-        "content-type": options.file.type || "application/octet-stream"
-      },
-      body: options.file
-    });
+    const uploadResp = await fetch(
+      resolveUploadUrl(signResult.data.uploadUrl),
+      {
+        method: "PUT",
+        headers: {
+          "content-type": options.file.type || "application/octet-stream"
+        },
+        body: options.file
+      }
+    );
 
     if (!uploadResp.ok) {
       throw new Error(`upload_failed_${uploadResp.status}`);
@@ -92,7 +96,12 @@ const submitApplication = async () => {
     vehicle_mileage_km: form.value.vehicle_mileage_km,
     photo_keys_json: JSON.stringify(photoKeys.value)
   });
-  form.value = { vehicle_id: undefined, fuel_card_id: undefined, requested_amount: 0, vehicle_mileage_km: 0 };
+  form.value = {
+    vehicle_id: undefined,
+    fuel_card_id: undefined,
+    requested_amount: 0,
+    vehicle_mileage_km: 0
+  };
   photoKeys.value = [];
   await loadData();
   message("油卡额度申请已提交", { type: "success" });
@@ -104,7 +113,13 @@ onMounted(loadData);
 <template>
   <el-card shadow="never" :loading="loading">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>油卡额度申请</span>
         <el-button @click="loadData">刷新</el-button>
       </div>
@@ -113,12 +128,22 @@ onMounted(loadData);
     <el-form label-width="110px" style="max-width: 720px">
       <el-form-item label="所用车辆">
         <el-select v-model="form.vehicle_id" filterable style="width: 100%">
-          <el-option v-for="item in vehicles" :key="item.id" :label="`${item.current_plate_no} (${item.vehicle_uuid})`" :value="item.id" />
+          <el-option
+            v-for="item in vehicles"
+            :key="item.id"
+            :label="`${item.current_plate_no} (${item.vehicle_uuid})`"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="油卡卡号">
         <el-select v-model="form.fuel_card_id" filterable style="width: 100%">
-          <el-option v-for="item in fuelCards" :key="item.id" :label="`${item.card_no}（余额: ${item.latest_balance}）`" :value="item.id" />
+          <el-option
+            v-for="item in fuelCards"
+            :key="item.id"
+            :label="`${item.card_no}（余额: ${item.latest_balance}）`"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="申请额度">
@@ -128,7 +153,12 @@ onMounted(loadData);
         <el-input-number v-model="form.vehicle_mileage_km" :min="0" />
       </el-form-item>
       <el-form-item label="现场照片">
-        <el-upload drag multiple :show-file-list="true" :http-request="uploadPhoto">
+        <el-upload
+          drag
+          multiple
+          :show-file-list="true"
+          :http-request="uploadPhoto"
+        >
           <div class="el-upload__text">上传加油申请照片</div>
         </el-upload>
       </el-form-item>
@@ -143,7 +173,11 @@ onMounted(loadData);
       <el-table-column prop="vehicle_mileage_km" label="里程" width="100" />
       <el-table-column prop="requested_amount" label="申请额度" width="120" />
       <el-table-column prop="card_no" label="油卡卡号" width="180" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="requested_at" label="申请日期" width="180" />
       <el-table-column prop="processed_by_userid" label="处理人" width="140" />
       <el-table-column prop="processed_at" label="处理时间" width="180" />

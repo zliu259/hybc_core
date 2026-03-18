@@ -82,7 +82,10 @@ const filteredInventoryRows = computed(() =>
   inventoryRows.value.filter(row => {
     const isConsumable = Boolean(consumableTypeMap.value[row.asset_type_id]);
     if (!isConsumable) return false;
-    if (filters.value.asset_type_id && row.asset_type_id !== filters.value.asset_type_id) {
+    if (
+      filters.value.asset_type_id &&
+      row.asset_type_id !== filters.value.asset_type_id
+    ) {
       return false;
     }
     return true;
@@ -155,7 +158,11 @@ const openCreateConsumption = () => {
 };
 
 const submitConsumption = async () => {
-  if (!form.value.warehouse_id || !form.value.asset_type_id || !form.value.consumed_date) {
+  if (
+    !form.value.warehouse_id ||
+    !form.value.asset_type_id ||
+    !form.value.consumed_date
+  ) {
     message("请完整填写仓库、消耗品类型、消耗日期", { type: "warning" });
     return;
   }
@@ -202,17 +209,21 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" class="consumables" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" class="consumables">
     <template #header>
       <div class="head">
         <div>
           <div class="title">消耗品管理总览</div>
-          <div class="sub">独立查看耗材库存与消耗记录，并串联出入库制单入口</div>
+          <div class="sub">
+            独立查看耗材库存与消耗记录，并串联出入库制单入口
+          </div>
         </div>
         <div class="actions">
           <el-button @click="goCreator">去出入库制单</el-button>
           <el-button @click="goStocktake">去公司盘库</el-button>
-          <el-button type="primary" @click="openCreateConsumption">登记消耗</el-button>
+          <el-button type="primary" @click="openCreateConsumption"
+            >登记消耗</el-button
+          >
         </div>
       </div>
     </template>
@@ -246,7 +257,12 @@ onMounted(async () => {
 
     <el-form inline>
       <el-form-item label="仓库">
-        <el-select v-model="filters.warehouse_id" clearable filterable style="width: 180px">
+        <el-select
+          v-model="filters.warehouse_id"
+          clearable
+          filterable
+          style="width: 180px"
+        >
           <el-option
             v-for="item in warehouses"
             :key="item.id"
@@ -256,7 +272,12 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="消耗品类型">
-        <el-select v-model="filters.asset_type_id" clearable filterable style="width: 220px">
+        <el-select
+          v-model="filters.asset_type_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
           <el-option
             v-for="item in consumableTypes"
             :key="item.id"
@@ -266,7 +287,12 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="关联项目">
-        <el-select v-model="filters.project_id" clearable filterable style="width: 220px">
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
           <el-option
             v-for="item in projects"
             :key="item.id"
@@ -304,12 +330,20 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="仓库" min-width="140">
           <template #default="scope">
-            {{ toString(scope.row.warehouse_name) || toString(scope.row.warehouse_id) || "-" }}
+            {{
+              toString(scope.row.warehouse_name) ||
+              toString(scope.row.warehouse_id) ||
+              "-"
+            }}
           </template>
         </el-table-column>
         <el-table-column label="消耗品类型" min-width="180">
           <template #default="scope">
-            {{ toString(scope.row.type_name) || toString(scope.row.asset_type_id) || "-" }}
+            {{
+              toString(scope.row.type_name) ||
+              toString(scope.row.asset_type_id) ||
+              "-"
+            }}
           </template>
         </el-table-column>
         <el-table-column label="数量" width="120">
@@ -319,7 +353,11 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="关联项目" min-width="180">
           <template #default="scope">
-            {{ toString(scope.row.project_name) || toString(scope.row.project_id) || "-" }}
+            {{
+              toString(scope.row.project_name) ||
+              toString(scope.row.project_id) ||
+              "-"
+            }}
           </template>
         </el-table-column>
         <el-table-column label="备注" min-width="220" show-overflow-tooltip>
@@ -331,7 +369,11 @@ onMounted(async () => {
     </el-card>
   </el-card>
 
-  <el-dialog v-model="consumptionDialogVisible" title="登记消耗品消耗" width="560px">
+  <el-dialog
+    v-model="consumptionDialogVisible"
+    title="登记消耗品消耗"
+    width="560px"
+  >
     <el-form label-width="110px">
       <el-form-item label="仓库" required>
         <el-select v-model="form.warehouse_id" filterable style="width: 100%">
@@ -354,7 +396,12 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="关联项目">
-        <el-select v-model="form.project_id" clearable filterable style="width: 100%">
+        <el-select
+          v-model="form.project_id"
+          clearable
+          filterable
+          style="width: 100%"
+        >
           <el-option
             v-for="item in projects"
             :key="item.id"
@@ -380,7 +427,9 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="consumptionDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submitConsumption">提交</el-button>
+      <el-button type="primary" :loading="submitting" @click="submitConsumption"
+        >提交</el-button
+      >
     </template>
   </el-dialog>
 </template>

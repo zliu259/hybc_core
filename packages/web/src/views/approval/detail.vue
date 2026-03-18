@@ -57,7 +57,9 @@ const userStore = useUserStoreHook();
 const loading = ref(false);
 const detail = ref<ApprovalDetailResponse | null>(null);
 const selectedRound = ref(1);
-const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
+const isSuperAdmin = computed(() =>
+  (userStore.roles ?? []).includes("super_admin")
+);
 
 const instanceId = computed(() => Number(route.params.id));
 
@@ -158,14 +160,16 @@ const payoutForm = ref({
 const canAdjustPayoutInApprovalWorkbench = computed(() => {
   if (!detail.value || !paymentDetail.value) return false;
   if (detail.value.instance.biz_type !== "payment_request") return false;
-  return hasAction("approve") || hasAction("reject") || hasAction("return_prev");
+  return (
+    hasAction("approve") || hasAction("reject") || hasAction("return_prev")
+  );
 });
 
 const payoutEntityAccounts = computed(() => {
   if (!payoutForm.value.payment_entity_id) return [];
-  return (entityBankAccountMap.value[payoutForm.value.payment_entity_id] ?? []).filter(
-    item => item.status === "active"
-  );
+  return (
+    entityBankAccountMap.value[payoutForm.value.payment_entity_id] ?? []
+  ).filter(item => item.status === "active");
 });
 
 const onPayoutEntityChange = (entityId: number | undefined) => {
@@ -192,22 +196,30 @@ const onPayoutAccountChange = (accountId: number | undefined) => {
     return;
   }
   const target = payoutEntityAccounts.value.find(item => item.id === accountId);
-  payoutForm.value.payment_account = target ? `${target.bank_name} / ${target.account_no}` : "";
+  payoutForm.value.payment_account = target
+    ? `${target.bank_name} / ${target.account_no}`
+    : "";
 };
 
 const syncPayoutSelection = async () => {
   if (!paymentDetail.value) return;
   if (!canAdjustPayoutInApprovalWorkbench.value) return;
-  if (!payoutForm.value.payment_entity_id || !payoutForm.value.payment_entity_bank_account_id) {
+  if (
+    !payoutForm.value.payment_entity_id ||
+    !payoutForm.value.payment_entity_bank_account_id
+  ) {
     message("请先选择付款主体和付款账户", { type: "warning" });
     throw new Error("payout selection required");
   }
   await updatePaymentRequest(paymentDetail.value.id, {
     payment_entity_id: payoutForm.value.payment_entity_id,
-    payment_entity_bank_account_id: payoutForm.value.payment_entity_bank_account_id,
+    payment_entity_bank_account_id:
+      payoutForm.value.payment_entity_bank_account_id,
     payment_account: payoutForm.value.payment_account || null,
     admin_edit_mode: isSuperAdmin.value ? true : undefined,
-    edit_note: isSuperAdmin.value ? "approval workbench payout selection update" : undefined
+    edit_note: isSuperAdmin.value
+      ? "approval workbench payout selection update"
+      : undefined
   });
 };
 
@@ -351,7 +363,10 @@ const parseAiDecisionFromText = (text: string | null | undefined) => {
   };
 };
 
-const toAiOutcomeLabel = (outcome: string | null | undefined, comment: string | null | undefined) => {
+const toAiOutcomeLabel = (
+  outcome: string | null | undefined,
+  comment: string | null | undefined
+) => {
   if (outcome === "approve") return "建议通过";
   if (outcome === "reject") {
     const text = comment ?? "";
@@ -423,11 +438,14 @@ const toPaymentMethodLabel = (value: string | null | undefined) => {
   return paymentMethodLabelMap[value] ?? value;
 };
 
-const parseJsonObject = (raw: string | null | undefined): Record<string, unknown> => {
+const parseJsonObject = (
+  raw: string | null | undefined
+): Record<string, unknown> => {
   if (!raw) return {};
   try {
     const parsed = JSON.parse(raw) as unknown;
-    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return {};
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed))
+      return {};
     return parsed as Record<string, unknown>;
   } catch {
     return {};
@@ -454,23 +472,33 @@ const toNumberOrNull = (value: unknown): number | null => {
   return null;
 };
 
-const parseInvoiceItems = (raw: string | null | undefined): InvoiceItemRow[] => {
+const parseInvoiceItems = (
+  raw: string | null | undefined
+): InvoiceItemRow[] => {
   if (!raw) return [];
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
     return parsed.map((item): InvoiceItemRow => {
-      const row = item && typeof item === "object" ? (item as Record<string, unknown>) : {};
+      const row =
+        item && typeof item === "object"
+          ? (item as Record<string, unknown>)
+          : {};
       const quantity = toNumberOrNull(row.quantity);
       const unitPrice = toNumberOrNull(row.unit_price);
       const explicitAmount = toNumberOrNull(row.amount);
       return {
         name: typeof row.name === "string" ? row.name : "",
-        specification: typeof row.specification === "string" ? row.specification : "",
+        specification:
+          typeof row.specification === "string" ? row.specification : "",
         unit: typeof row.unit === "string" ? row.unit : "",
         quantity,
         unit_price: unitPrice,
-        amount: explicitAmount ?? (quantity !== null && unitPrice !== null ? quantity * unitPrice : null)
+        amount:
+          explicitAmount ??
+          (quantity !== null && unitPrice !== null
+            ? quantity * unitPrice
+            : null)
       };
     });
   } catch {
@@ -484,7 +512,9 @@ const normalizeAiReview = (row: AiReviewRow): AiReviewNormalized => {
   const comment = row.comment ?? embedded?.comment ?? embedded?.summary ?? null;
   const summaryText =
     comment ??
-    (row.summary && !parseEmbeddedAiSummary(row.summary) ? row.summary : null) ??
+    (row.summary && !parseEmbeddedAiSummary(row.summary)
+      ? row.summary
+      : null) ??
     "-";
   return {
     outcomeCode: outcome,
@@ -517,7 +547,9 @@ const formatAiNodeDecision = (task: ApprovalTask) => {
   if (outcome || comment) {
     return toAiOutcomeLabel(outcome, comment);
   }
-  const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
+  const node = detail.value?.nodes.find(
+    item => item.id === task.node_instance_id
+  );
   const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
   return fallback?.outcomeLabel ?? "-";
 };
@@ -530,7 +562,9 @@ const formatAiNodeDecisionTagType = (task: ApprovalTask): TagType => {
   if (outcome || comment) {
     return toAiOutcomeTagType(outcome, comment);
   }
-  const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
+  const node = detail.value?.nodes.find(
+    item => item.id === task.node_instance_id
+  );
   const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
   return fallback?.outcomeTagType ?? "info";
 };
@@ -540,7 +574,9 @@ const formatAiNodeComment = (task: ApprovalTask) => {
   const embedded = parseAiDecisionFromText(task.comment);
   if (embedded?.comment) return embedded.comment;
   if (task.comment) return task.comment;
-  const node = detail.value?.nodes.find(item => item.id === task.node_instance_id);
+  const node = detail.value?.nodes.find(
+    item => item.id === task.node_instance_id
+  );
   const fallback = node ? getAiNodeSuggestion(node.node_key) : null;
   return fallback?.summaryText === "-" ? "" : fallback?.summaryText;
 };
@@ -702,11 +738,17 @@ const formatAmount = (amount: number | null | undefined) => {
   });
 };
 
-const formatAmountWithUpper = (amount: number | null | undefined, upper?: string | null) => {
+const formatAmountWithUpper = (
+  amount: number | null | undefined,
+  upper?: string | null
+) => {
   if (typeof amount !== "number" || !Number.isFinite(amount)) {
     return { lower: "-", upper: "-" };
   }
-  const upperText = typeof upper === "string" && upper.trim() ? upper.trim() : toChineseAmount(amount);
+  const upperText =
+    typeof upper === "string" && upper.trim()
+      ? upper.trim()
+      : toChineseAmount(amount);
   return {
     lower: formatAmount(amount),
     upper: upperText
@@ -714,7 +756,10 @@ const formatAmountWithUpper = (amount: number | null | undefined, upper?: string
 };
 
 const paymentAmountDisplay = computed(() =>
-  formatAmountWithUpper(paymentDetail.value?.amount, paymentDetail.value?.amount_cn)
+  formatAmountWithUpper(
+    paymentDetail.value?.amount,
+    paymentDetail.value?.amount_cn
+  )
 );
 
 const contractAmountDisplay = computed(() =>
@@ -744,7 +789,9 @@ const loadMetaOptions = async () => {
     })
   );
   for (const item of accountResults) {
-    grouped[item.entityId] = item.accounts.filter(account => account.status === "active");
+    grouped[item.entityId] = item.accounts.filter(
+      account => account.status === "active"
+    );
   }
   entityBankAccountMap.value = grouped;
 };
@@ -844,7 +891,8 @@ const loadDetail = async () => {
       paymentDetail.value = paymentRes.data;
       payoutForm.value = {
         payment_entity_id: paymentRes.data.payment_entity_id ?? undefined,
-        payment_entity_bank_account_id: paymentRes.data.payment_entity_bank_account_id ?? undefined,
+        payment_entity_bank_account_id:
+          paymentRes.data.payment_entity_bank_account_id ?? undefined,
         payment_account: paymentRes.data.payment_account ?? ""
       };
       if (
@@ -852,15 +900,18 @@ const loadDetail = async () => {
         !payoutForm.value.payment_entity_bank_account_id
       ) {
         const accounts =
-          entityBankAccountMap.value[payoutForm.value.payment_entity_id]?.filter(
-            item => item.status === "active"
-          ) ?? [];
+          entityBankAccountMap.value[
+            payoutForm.value.payment_entity_id
+          ]?.filter(item => item.status === "active") ?? [];
         if (accounts.length > 0) {
           payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
           payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
         }
       }
-    } else if (bizType === "outbound_contract" || bizType === "inbound_contract") {
+    } else if (
+      bizType === "outbound_contract" ||
+      bizType === "inbound_contract"
+    ) {
       const contractRes = await getContract(bizId);
       contractDetail.value = contractRes.data;
     } else if (bizType === "reimbursement_batch") {
@@ -1004,7 +1055,10 @@ const handleForceTransfer = async () => {
     message("未选择待改派任务", { type: "warning" });
     return;
   }
-  if (!forceTransferToUserid.value.trim() || !forceTransferReason.value.trim()) {
+  if (
+    !forceTransferToUserid.value.trim() ||
+    !forceTransferReason.value.trim()
+  ) {
     message("请填写改派目标审批人与原因", { type: "warning" });
     return;
   }
@@ -1103,7 +1157,9 @@ onMounted(async () => {
                 toUserLabel(detail.instance.initiator_userid)
               }}</el-descriptions-item>
               <el-descriptions-item label="状态">
-                <el-tag size="small">{{ toStatusLabel(detail.instance.status) }}</el-tag>
+                <el-tag size="small">{{
+                  toStatusLabel(detail.instance.status)
+                }}</el-tag>
               </el-descriptions-item>
               <el-descriptions-item label="提交时间">{{
                 formatBeijingDateTime(detail.instance.submitted_at)
@@ -1127,7 +1183,9 @@ onMounted(async () => {
               </div>
               <el-descriptions v-if="paymentRiskReport" :column="2" border>
                 <el-descriptions-item label="风险等级">
-                  <el-tag :type="toRiskLevelTagType(paymentRiskReport.overall_risk)">
+                  <el-tag
+                    :type="toRiskLevelTagType(paymentRiskReport.overall_risk)"
+                  >
                     {{ toRiskLevelLabel(paymentRiskReport.overall_risk) }}
                   </el-tag>
                 </el-descriptions-item>
@@ -1150,34 +1208,55 @@ onMounted(async () => {
             <template v-if="paymentDetail">
               <el-divider>申请明细（付款）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="流水号">{{ paymentDetail.serial_no }}</el-descriptions-item>
+                <el-descriptions-item label="流水号">{{
+                  paymentDetail.serial_no
+                }}</el-descriptions-item>
                 <el-descriptions-item label="关联合同">
                   <el-link
                     v-if="paymentDetail.contract && paymentDetail.contract_id"
                     type="primary"
                     @click="goToPaymentContract"
                   >
-                    {{ `${paymentDetail.contract.contract_no} - ${paymentDetail.contract.counterparty}` }}
+                    {{
+                      `${paymentDetail.contract.contract_no} - ${paymentDetail.contract.counterparty}`
+                    }}
                   </el-link>
                   <template v-else>无合同 / 无需合同</template>
                 </el-descriptions-item>
-                <el-descriptions-item label="所属项目">{{ toProjectLabel(paymentDetail.project_id) }}</el-descriptions-item>
-                <el-descriptions-item label="收款方">{{ paymentDetail.payee?.name || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{
+                  toProjectLabel(paymentDetail.project_id)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="收款方">{{
+                  paymentDetail.payee?.name || "-"
+                }}</el-descriptions-item>
                 <el-descriptions-item label="收款账号" :span="2">
                   {{
                     paymentDetail.payee
                       ? `${paymentDetail.payee.bank_name} / ${paymentDetail.payee.bank_account}`
-                      : '-'
+                      : "-"
                   }}
                 </el-descriptions-item>
                 <el-descriptions-item label="申请金额">
-                  {{ paymentAmountDisplay.lower }}（<strong>{{ paymentAmountDisplay.upper }}</strong>）
+                  {{ paymentAmountDisplay.lower }}（<strong>{{
+                    paymentAmountDisplay.upper
+                  }}</strong
+                  >）
                 </el-descriptions-item>
-                <el-descriptions-item label="付款类别">{{ toPaymentCategoryLabel(paymentDetail.category) }}</el-descriptions-item>
-                <el-descriptions-item label="预计付款日">{{ paymentDetail.expected_payment_date }}</el-descriptions-item>
-                <el-descriptions-item label="付款方式">{{ toPaymentMethodLabel(paymentDetail.payment_method) }}</el-descriptions-item>
-                <el-descriptions-item label="付款内容" :span="2">{{ paymentDetail.content }}</el-descriptions-item>
-                <el-descriptions-item label="备注" :span="2">{{ paymentDetail.remark || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="付款类别">{{
+                  toPaymentCategoryLabel(paymentDetail.category)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="预计付款日">{{
+                  paymentDetail.expected_payment_date
+                }}</el-descriptions-item>
+                <el-descriptions-item label="付款方式">{{
+                  toPaymentMethodLabel(paymentDetail.payment_method)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="付款内容" :span="2">{{
+                  paymentDetail.content
+                }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{
+                  paymentDetail.remark || "-"
+                }}</el-descriptions-item>
               </el-descriptions>
               <el-upload
                 v-if="canUploadInApproval"
@@ -1186,24 +1265,44 @@ onMounted(async () => {
                 :http-request="uploadAttachmentFromApproval"
                 style="margin-top: 12px"
               >
-                <div class="el-upload__text">上传审批附件（付款），或 <em>点击上传</em></div>
+                <div class="el-upload__text">
+                  上传审批附件（付款），或 <em>点击上传</em>
+                </div>
               </el-upload>
-              <el-table :data="paymentAttachments" size="small" border style="margin-top: 12px">
+              <el-table
+                :data="paymentAttachments"
+                size="small"
+                border
+                style="margin-top: 12px"
+              >
                 <el-table-column label="附件名" min-width="240">
-                  <template #default="scope">{{ scope.row.file_name }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_name
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="大小" width="120">
-                  <template #default="scope">{{ scope.row.file_size ?? '-' }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_size ?? "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="操作" width="190">
                   <template #default="scope">
                     <el-link
                       type="primary"
-                      @click="openAttachmentPreview(scope.row.file_key, scope.row.file_name)"
+                      @click="
+                        openAttachmentPreview(
+                          scope.row.file_key,
+                          scope.row.file_name
+                        )
+                      "
                     >
                       预览
                     </el-link>
-                    <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                    <el-link
+                      :href="fileUrl(scope.row.file_key)"
+                      target="_blank"
+                      type="primary"
+                    >
                       下载
                     </el-link>
                   </template>
@@ -1214,23 +1313,49 @@ onMounted(async () => {
             <template v-if="contractDetail">
               <el-divider>申请明细（合同）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="合同号">{{ contractDetail.contract_no }}</el-descriptions-item>
+                <el-descriptions-item label="合同号">{{
+                  contractDetail.contract_no
+                }}</el-descriptions-item>
                 <el-descriptions-item label="方向">
-                  <el-tag :type="toContractDirectionTagType(contractDetail.direction)" size="small">
-                    <strong>{{ toContractDirectionLabel(contractDetail.direction) }}</strong>
+                  <el-tag
+                    :type="toContractDirectionTagType(contractDetail.direction)"
+                    size="small"
+                  >
+                    <strong>{{
+                      toContractDirectionLabel(contractDetail.direction)
+                    }}</strong>
                   </el-tag>
                 </el-descriptions-item>
-                <el-descriptions-item label="所属项目">{{ toProjectLabel(contractDetail.project_id) }}</el-descriptions-item>
-                <el-descriptions-item label="我方主体">{{ toEntityLabel(contractDetail.entity_id) }}</el-descriptions-item>
-                <el-descriptions-item label="对方单位">{{ contractDetail.counterparty }}</el-descriptions-item>
-                <el-descriptions-item label="合同类型">{{ contractDetail.contract_type }}</el-descriptions-item>
-                <el-descriptions-item label="经办人">{{ toUserLabel(contractDetail.handler_userid) }}</el-descriptions-item>
-                <el-descriptions-item label="合同日期">{{ contractDetail.contract_date }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{
+                  toProjectLabel(contractDetail.project_id)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="我方主体">{{
+                  toEntityLabel(contractDetail.entity_id)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="对方单位">{{
+                  contractDetail.counterparty
+                }}</el-descriptions-item>
+                <el-descriptions-item label="合同类型">{{
+                  contractDetail.contract_type
+                }}</el-descriptions-item>
+                <el-descriptions-item label="经办人">{{
+                  toUserLabel(contractDetail.handler_userid)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="合同日期">{{
+                  contractDetail.contract_date
+                }}</el-descriptions-item>
                 <el-descriptions-item label="合同金额">
-                  {{ contractAmountDisplay.lower }}（<strong>{{ contractAmountDisplay.upper }}</strong>）
+                  {{ contractAmountDisplay.lower }}（<strong>{{
+                    contractAmountDisplay.upper
+                  }}</strong
+                  >）
                 </el-descriptions-item>
-                <el-descriptions-item label="已付金额">{{ contractDetail.paid_amount }}</el-descriptions-item>
-                <el-descriptions-item label="备注" :span="2">{{ contractDetail.remark || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="已付金额">{{
+                  contractDetail.paid_amount
+                }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{
+                  contractDetail.remark || "-"
+                }}</el-descriptions-item>
               </el-descriptions>
               <el-upload
                 v-if="canUploadInApproval"
@@ -1239,24 +1364,44 @@ onMounted(async () => {
                 :http-request="uploadAttachmentFromApproval"
                 style="margin-top: 12px"
               >
-                <div class="el-upload__text">上传审批附件（合同），或 <em>点击上传</em></div>
+                <div class="el-upload__text">
+                  上传审批附件（合同），或 <em>点击上传</em>
+                </div>
               </el-upload>
-              <el-table :data="contractAttachments" size="small" border style="margin-top: 12px">
+              <el-table
+                :data="contractAttachments"
+                size="small"
+                border
+                style="margin-top: 12px"
+              >
                 <el-table-column label="附件名" min-width="240">
-                  <template #default="scope">{{ scope.row.file_name }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_name
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="大小" width="120">
-                  <template #default="scope">{{ scope.row.file_size ?? '-' }}</template>
+                  <template #default="scope">{{
+                    scope.row.file_size ?? "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="操作" width="190">
                   <template #default="scope">
                     <el-link
                       type="primary"
-                      @click="openAttachmentPreview(scope.row.file_key, scope.row.file_name)"
+                      @click="
+                        openAttachmentPreview(
+                          scope.row.file_key,
+                          scope.row.file_name
+                        )
+                      "
                     >
                       预览
                     </el-link>
-                    <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                    <el-link
+                      :href="fileUrl(scope.row.file_key)"
+                      target="_blank"
+                      type="primary"
+                    >
                       下载
                     </el-link>
                   </template>
@@ -1267,84 +1412,173 @@ onMounted(async () => {
             <template v-if="reimbursementBatchDetail">
               <el-divider>申请明细（报销批次）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="批次号">{{ reimbursementBatchDetail.batch_no }}</el-descriptions-item>
-                <el-descriptions-item label="状态">{{ reimbursementBatchDetail.status }}</el-descriptions-item>
-                <el-descriptions-item label="所属项目">{{ toProjectLabel(reimbursementBatchDetail.project_id) }}</el-descriptions-item>
-                <el-descriptions-item label="申请人">{{ toUserLabel(reimbursementBatchDetail.applicant_userid) }}</el-descriptions-item>
+                <el-descriptions-item label="批次号">{{
+                  reimbursementBatchDetail.batch_no
+                }}</el-descriptions-item>
+                <el-descriptions-item label="状态">{{
+                  reimbursementBatchDetail.status
+                }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{
+                  toProjectLabel(reimbursementBatchDetail.project_id)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="申请人">{{
+                  toUserLabel(reimbursementBatchDetail.applicant_userid)
+                }}</el-descriptions-item>
                 <el-descriptions-item label="总金额">
-                  {{ reimbursementAmountDisplay.lower }}（<strong>{{ reimbursementAmountDisplay.upper }}</strong>）
+                  {{ reimbursementAmountDisplay.lower }}（<strong>{{
+                    reimbursementAmountDisplay.upper
+                  }}</strong
+                  >）
                 </el-descriptions-item>
-                <el-descriptions-item label="单据数">{{ reimbursementBatchDetail.item_count }}</el-descriptions-item>
+                <el-descriptions-item label="单据数">{{
+                  reimbursementBatchDetail.item_count
+                }}</el-descriptions-item>
               </el-descriptions>
-              <el-table :data="reimbursementBatchDetail.items" size="small" border style="margin-top: 12px">
-                <el-table-column prop="envelope_no" label="报销单号" min-width="150" />
-                <el-table-column prop="invoice_no" label="发票号" min-width="150" />
+              <el-table
+                :data="reimbursementBatchDetail.items"
+                size="small"
+                border
+                style="margin-top: 12px"
+              >
+                <el-table-column
+                  prop="envelope_no"
+                  label="报销单号"
+                  min-width="150"
+                />
+                <el-table-column
+                  prop="invoice_no"
+                  label="发票号"
+                  min-width="150"
+                />
                 <el-table-column prop="amount" label="金额" width="120" />
                 <el-table-column prop="category" label="类别" width="120" />
-                <el-table-column prop="description" label="说明" min-width="220" />
+                <el-table-column
+                  prop="description"
+                  label="说明"
+                  min-width="220"
+                />
               </el-table>
             </template>
 
             <template v-if="invoiceRequestDetail">
               <el-divider>申请明细（开票申请）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="申请单号">{{ invoiceRequestDetail.request_no }}</el-descriptions-item>
-                <el-descriptions-item label="状态">{{ toStatusLabel(invoiceRequestDetail.status) }}</el-descriptions-item>
-                <el-descriptions-item label="对方名称">{{ invoiceRequestDetail.customer_name }}</el-descriptions-item>
-                <el-descriptions-item label="对方税号">{{ invoiceRequestDetail.customer_tax_no }}</el-descriptions-item>
+                <el-descriptions-item label="申请单号">{{
+                  invoiceRequestDetail.request_no
+                }}</el-descriptions-item>
+                <el-descriptions-item label="状态">{{
+                  toStatusLabel(invoiceRequestDetail.status)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="对方名称">{{
+                  invoiceRequestDetail.customer_name
+                }}</el-descriptions-item>
+                <el-descriptions-item label="对方税号">{{
+                  invoiceRequestDetail.customer_tax_no
+                }}</el-descriptions-item>
                 <el-descriptions-item label="对方联系方式">
                   {{
-                    (parseJsonObject(invoiceRequestDetail.buyer_json).counterparty_contact as string | undefined) || '-'
+                    (parseJsonObject(invoiceRequestDetail.buyer_json)
+                      .counterparty_contact as string | undefined) || "-"
                   }}
                 </el-descriptions-item>
                 <el-descriptions-item label="我方开票主体">
                   {{
-                    (parseJsonObject(invoiceRequestDetail.buyer_json).seller_entity_name as string | undefined) || '-'
+                    (parseJsonObject(invoiceRequestDetail.buyer_json)
+                      .seller_entity_name as string | undefined) || "-"
                   }}
                 </el-descriptions-item>
-                <el-descriptions-item label="所属项目">{{ toProjectLabel(invoiceRequestDetail.project_id) }}</el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{
+                  toProjectLabel(invoiceRequestDetail.project_id)
+                }}</el-descriptions-item>
                 <el-descriptions-item label="关联合同号">
                   <el-link type="primary" @click="goToLinkedContract">
-                    {{ invoiceRequestDetail.business_contract_no || invoiceLinkedContract?.contract_no || '-' }}
+                    {{
+                      invoiceRequestDetail.business_contract_no ||
+                      invoiceLinkedContract?.contract_no ||
+                      "-"
+                    }}
                   </el-link>
                   <el-tag
                     v-if="invoiceLinkedContract"
                     size="small"
-                    :type="toContractDirectionTagType(invoiceLinkedContract.direction)"
+                    :type="
+                      toContractDirectionTagType(
+                        invoiceLinkedContract.direction
+                      )
+                    "
                     style="margin-left: 8px"
                   >
-                    {{ toContractDirectionLabel(invoiceLinkedContract.direction) }}
+                    {{
+                      toContractDirectionLabel(invoiceLinkedContract.direction)
+                    }}
                   </el-tag>
                 </el-descriptions-item>
-                <el-descriptions-item label="发票类型">{{ toInvoiceTypeLabel(invoiceRequestDetail.invoice_type) }}</el-descriptions-item>
-                <el-descriptions-item label="发票类目">{{ toInvoiceCategoryLabel(invoiceRequestDetail.invoice_category) }}</el-descriptions-item>
-                <el-descriptions-item label="税率">{{ invoiceRequestDetail.tax_rate }}%</el-descriptions-item>
-                <el-descriptions-item label="币种">{{ invoiceRequestDetail.currency }}</el-descriptions-item>
-                <el-descriptions-item label="不含税金额">{{ formatAmount(invoiceRequestDetail.amount_without_tax) }}</el-descriptions-item>
-                <el-descriptions-item label="预计税额">{{ formatAmount(invoiceRequestDetail.tax_amount_estimated) }}</el-descriptions-item>
-                <el-descriptions-item label="价税合计">{{ formatAmount(invoiceRequestDetail.amount_with_tax) }}</el-descriptions-item>
-                <el-descriptions-item label="申请人">{{ toUserLabel(invoiceRequestDetail.applicant_userid) }}</el-descriptions-item>
-                <el-descriptions-item label="汇款凭证">{{ invoiceRequestDetail.payment_reference || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="备注" :span="2">{{ invoiceRequestDetail.remark || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="发票类型">{{
+                  toInvoiceTypeLabel(invoiceRequestDetail.invoice_type)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="发票类目">{{
+                  toInvoiceCategoryLabel(invoiceRequestDetail.invoice_category)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="税率"
+                  >{{ invoiceRequestDetail.tax_rate }}%</el-descriptions-item
+                >
+                <el-descriptions-item label="币种">{{
+                  invoiceRequestDetail.currency
+                }}</el-descriptions-item>
+                <el-descriptions-item label="不含税金额">{{
+                  formatAmount(invoiceRequestDetail.amount_without_tax)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="预计税额">{{
+                  formatAmount(invoiceRequestDetail.tax_amount_estimated)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="价税合计">{{
+                  formatAmount(invoiceRequestDetail.amount_with_tax)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="申请人">{{
+                  toUserLabel(invoiceRequestDetail.applicant_userid)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="汇款凭证">{{
+                  invoiceRequestDetail.payment_reference || "-"
+                }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{
+                  invoiceRequestDetail.remark || "-"
+                }}</el-descriptions-item>
               </el-descriptions>
-              <el-table :data="invoiceRequestItems" size="small" border style="margin-top: 12px">
+              <el-table
+                :data="invoiceRequestItems"
+                size="small"
+                border
+                style="margin-top: 12px"
+              >
                 <el-table-column label="名称" min-width="180">
-                  <template #default="scope">{{ scope.row.name || '-' }}</template>
+                  <template #default="scope">{{
+                    scope.row.name || "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="规格" min-width="150">
-                  <template #default="scope">{{ scope.row.specification || '-' }}</template>
+                  <template #default="scope">{{
+                    scope.row.specification || "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="单位" width="90">
-                  <template #default="scope">{{ scope.row.unit || '-' }}</template>
+                  <template #default="scope">{{
+                    scope.row.unit || "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="数量" width="120">
-                  <template #default="scope">{{ scope.row.quantity ?? '-' }}</template>
+                  <template #default="scope">{{
+                    scope.row.quantity ?? "-"
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="单价" width="140">
-                  <template #default="scope">{{ formatAmount(scope.row.unit_price) }}</template>
+                  <template #default="scope">{{
+                    formatAmount(scope.row.unit_price)
+                  }}</template>
                 </el-table-column>
                 <el-table-column label="金额" width="160">
-                  <template #default="scope">{{ formatAmount(scope.row.amount) }}</template>
+                  <template #default="scope">{{
+                    formatAmount(scope.row.amount)
+                  }}</template>
                 </el-table-column>
               </el-table>
             </template>
@@ -1352,30 +1586,74 @@ onMounted(async () => {
             <template v-if="receiptRefundDetail">
               <el-divider>申请明细（收款退款）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="退款单号">{{ receiptRefundDetail.refund_no }}</el-descriptions-item>
+                <el-descriptions-item label="退款单号">{{
+                  receiptRefundDetail.refund_no
+                }}</el-descriptions-item>
                 <el-descriptions-item label="退款方式">
-                  {{ receiptRefundDetail.refund_mode === 'full' ? '全部退款' : '部分退款' }}
+                  {{
+                    receiptRefundDetail.refund_mode === "full"
+                      ? "全部退款"
+                      : "部分退款"
+                  }}
                 </el-descriptions-item>
-                <el-descriptions-item label="退款金额">{{ formatAmount(receiptRefundDetail.amount) }}</el-descriptions-item>
-                <el-descriptions-item label="收款单号">{{ receiptRefundDetail.receipt.receipt_no }}</el-descriptions-item>
-                <el-descriptions-item label="收款日期">{{ receiptRefundDetail.receipt.received_date }}</el-descriptions-item>
-                <el-descriptions-item label="收款金额">{{ formatAmount(receiptRefundDetail.receipt.amount) }}</el-descriptions-item>
-                <el-descriptions-item label="收款账户" :span="2">{{ receiptRefundDetail.receipt.payment_account || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="合同号">{{ receiptRefundDetail.contract.contract_no }}</el-descriptions-item>
-                <el-descriptions-item label="合同对方">{{ receiptRefundDetail.contract.counterparty }}</el-descriptions-item>
-                <el-descriptions-item label="合同金额">{{ formatAmount(receiptRefundDetail.contract.total_amount) }}</el-descriptions-item>
-                <el-descriptions-item label="合同已收">{{ formatAmount(receiptRefundDetail.contract.received_amount) }}</el-descriptions-item>
+                <el-descriptions-item label="退款金额">{{
+                  formatAmount(receiptRefundDetail.amount)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="收款单号">{{
+                  receiptRefundDetail.receipt.receipt_no
+                }}</el-descriptions-item>
+                <el-descriptions-item label="收款日期">{{
+                  receiptRefundDetail.receipt.received_date
+                }}</el-descriptions-item>
+                <el-descriptions-item label="收款金额">{{
+                  formatAmount(receiptRefundDetail.receipt.amount)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="收款账户" :span="2">{{
+                  receiptRefundDetail.receipt.payment_account || "-"
+                }}</el-descriptions-item>
+                <el-descriptions-item label="合同号">{{
+                  receiptRefundDetail.contract.contract_no
+                }}</el-descriptions-item>
+                <el-descriptions-item label="合同对方">{{
+                  receiptRefundDetail.contract.counterparty
+                }}</el-descriptions-item>
+                <el-descriptions-item label="合同金额">{{
+                  formatAmount(receiptRefundDetail.contract.total_amount)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="合同已收">{{
+                  formatAmount(receiptRefundDetail.contract.received_amount)
+                }}</el-descriptions-item>
                 <el-descriptions-item label="是否含发票" :span="2">
-                  {{ receiptRefundDetail.invoice ? '是（流程含红冲发票签发）' : '否' }}
+                  {{
+                    receiptRefundDetail.invoice
+                      ? "是（流程含红冲发票签发）"
+                      : "否"
+                  }}
                 </el-descriptions-item>
-                <el-descriptions-item v-if="receiptRefundDetail.invoice" label="发票号">
-                  {{ receiptRefundDetail.invoice?.invoice_no || '-' }}
+                <el-descriptions-item
+                  v-if="receiptRefundDetail.invoice"
+                  label="发票号"
+                >
+                  {{ receiptRefundDetail.invoice?.invoice_no || "-" }}
                 </el-descriptions-item>
-                <el-descriptions-item v-if="receiptRefundDetail.invoice" label="发票金额">
-                  {{ formatAmount(receiptRefundDetail.invoice?.amount_with_tax ?? receiptRefundDetail.invoice?.amount ?? null) }}
+                <el-descriptions-item
+                  v-if="receiptRefundDetail.invoice"
+                  label="发票金额"
+                >
+                  {{
+                    formatAmount(
+                      receiptRefundDetail.invoice?.amount_with_tax ??
+                        receiptRefundDetail.invoice?.amount ??
+                        null
+                    )
+                  }}
                 </el-descriptions-item>
-                <el-descriptions-item label="退款原因" :span="2">{{ receiptRefundDetail.reason || '-' }}</el-descriptions-item>
-                <el-descriptions-item label="备注" :span="2">{{ receiptRefundDetail.remark || '-' }}</el-descriptions-item>
+                <el-descriptions-item label="退款原因" :span="2">{{
+                  receiptRefundDetail.reason || "-"
+                }}</el-descriptions-item>
+                <el-descriptions-item label="备注" :span="2">{{
+                  receiptRefundDetail.remark || "-"
+                }}</el-descriptions-item>
               </el-descriptions>
             </template>
 
@@ -1389,14 +1667,20 @@ onMounted(async () => {
                 </el-table-column>
                 <el-table-column label="状态" width="110">
                   <template #default="scope">
-                    <el-tag :type="aiGateTagType[scope.row.status] || 'info'" size="small">
+                    <el-tag
+                      :type="aiGateTagType[scope.row.status] || 'info'"
+                      size="small"
+                    >
                       {{ toStatusLabel(scope.row.status) }}
                     </el-tag>
                   </template>
                 </el-table-column>
                 <el-table-column label="结论" width="120">
                   <template #default="scope">
-                    <el-tag :type="normalizeAiReview(scope.row).outcomeTagType" size="small">
+                    <el-tag
+                      :type="normalizeAiReview(scope.row).outcomeTagType"
+                      size="small"
+                    >
                       {{ normalizeAiReview(scope.row).outcomeLabel }}
                     </el-tag>
                   </template>
@@ -1483,8 +1767,14 @@ onMounted(async () => {
                   </div>
                   <div style="font-size: 13px; color: #666; margin-bottom: 4px">
                     设定审批人：
-                    <template v-if="getNodeAssigneeLabels(node.assignee_userids).length > 0">
-                      {{ getNodeAssigneeLabels(node.assignee_userids).join("、") }}
+                    <template
+                      v-if="
+                        getNodeAssigneeLabels(node.assignee_userids).length > 0
+                      "
+                    >
+                      {{
+                        getNodeAssigneeLabels(node.assignee_userids).join("、")
+                      }}
                     </template>
                     <template v-else>-</template>
                   </div>
@@ -1495,7 +1785,11 @@ onMounted(async () => {
                   >
                     <span>{{ toUserLabel(task.assignee_userid) }}</span>
                     <el-button
-                      v-if="isSuperAdmin && task.status === 'pending' && task.assignee_userid !== 'AI_GATE'"
+                      v-if="
+                        isSuperAdmin &&
+                        task.status === 'pending' &&
+                        task.assignee_userid !== 'AI_GATE'
+                      "
                       link
                       type="warning"
                       style="margin-left: 8px"
@@ -1510,7 +1804,13 @@ onMounted(async () => {
                       style="margin-left: 6px"
                       >{{ formatAiNodeDecision(task) }}</el-tag
                     >
-                    <span v-if="task.assignee_userid === 'AI_GATE' && formatAiNodeComment(task)" style="margin-left: 6px; color: #666">
+                    <span
+                      v-if="
+                        task.assignee_userid === 'AI_GATE' &&
+                        formatAiNodeComment(task)
+                      "
+                      style="margin-left: 6px; color: #666"
+                    >
                       ：{{ formatAiNodeComment(task) }}
                     </span>
                     <span
@@ -1518,7 +1818,10 @@ onMounted(async () => {
                       style="margin-left: 6px; color: #999"
                       >{{ formatBeijingDateTime(task.acted_at) }}</span
                     >
-                    <div v-if="task.comment && task.assignee_userid !== 'AI_GATE'" style="margin-top: 2px; color: #888; font-style: italic">
+                    <div
+                      v-if="task.comment && task.assignee_userid !== 'AI_GATE'"
+                      style="margin-top: 2px; color: #888; font-style: italic"
+                    >
                       {{ task.comment }}
                     </div>
                   </div>
@@ -1674,7 +1977,9 @@ onMounted(async () => {
             title="该文件类型暂不支持内嵌预览，请使用下载打开"
           />
           <div style="margin-top: 12px">
-            <el-link :href="previewFileUrl" target="_blank" type="primary">下载附件</el-link>
+            <el-link :href="previewFileUrl" target="_blank" type="primary"
+              >下载附件</el-link
+            >
           </div>
         </template>
       </div>
@@ -1744,7 +2049,11 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <el-dialog v-model="forceTransferDialogVisible" title="强制改派审批人（超管）" width="520px">
+    <el-dialog
+      v-model="forceTransferDialogVisible"
+      title="强制改派审批人（超管）"
+      width="520px"
+    >
       <el-alert
         type="warning"
         :closable="false"
@@ -1777,7 +2086,10 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="forceTransferDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="actionLoading" @click="handleForceTransfer"
+        <el-button
+          type="primary"
+          :loading="actionLoading"
+          @click="handleForceTransfer"
           >确认强制改派</el-button
         >
       </template>

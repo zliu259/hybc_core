@@ -120,7 +120,8 @@ const parseConfigString = (config: string): TemplateConfig | null => {
             ? item.next_key
             : typeof item.nextKey === "string"
               ? item.nextKey
-              : Array.isArray(item.next_keys) && typeof item.next_keys[0] === "string"
+              : Array.isArray(item.next_keys) &&
+                  typeof item.next_keys[0] === "string"
                 ? (item.next_keys[0] as string)
                 : null;
 
@@ -138,13 +139,19 @@ const parseConfigString = (config: string): TemplateConfig | null => {
             (typeof item.node_name === "string" && item.node_name) ||
             NODE_LABELS[type],
           assignee_userids: assigneeUserids,
-          auto_action: typeof item.auto_action === "string" ? item.auto_action : undefined,
-          ai_slot_id: typeof item.ai_slot_id === "string" ? item.ai_slot_id : undefined,
+          auto_action:
+            typeof item.auto_action === "string" ? item.auto_action : undefined,
+          ai_slot_id:
+            typeof item.ai_slot_id === "string" ? item.ai_slot_id : undefined,
           timeout_hours:
-            typeof item.timeout_hours === "number" ? item.timeout_hours : undefined,
+            typeof item.timeout_hours === "number"
+              ? item.timeout_hours
+              : undefined,
           conditions: Array.isArray(item.conditions) ? item.conditions : [],
           default_next_key:
-            typeof item.default_next_key === "string" ? item.default_next_key : undefined,
+            typeof item.default_next_key === "string"
+              ? item.default_next_key
+              : undefined,
           next_key: nextKey
         };
       })
@@ -468,7 +475,12 @@ onBeforeUnmount(() => {
       <NodePalette :readonly="readonly" @dragstart="onDragStartFromPalette" />
     </aside>
 
-    <section ref="canvasRef" class="designer-canvas" @dragover="onDragOver" @drop="onDrop">
+    <section
+      ref="canvasRef"
+      class="designer-canvas"
+      @dragover="onDragOver"
+      @drop="onDrop"
+    >
       <VueFlow
         :id="flowId"
         v-model:nodes="nodes"

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { statusLabel } from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 
 defineOptions({
@@ -39,7 +40,11 @@ onMounted(load);
     <el-table :data="rows" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="project_code" label="项目编号" width="180" />
       <el-table-column prop="project_name" label="项目名称" min-width="220" />
-      <el-table-column prop="status" label="状态" width="120" />
+      <el-table-column label="状态" width="120">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="进入" width="240" fixed="right">
         <template #default="scope">
           <el-button

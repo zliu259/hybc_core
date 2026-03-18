@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createAssetType,
   deleteAssetType,
@@ -100,7 +101,11 @@ onMounted(loadData);
       </el-table-column>
       <el-table-column prop="unit" label="单位" width="90" />
       <el-table-column prop="min_stock" label="安全库存" width="110" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column
         prop="property_schema"
         label="属性模板(JSON)"

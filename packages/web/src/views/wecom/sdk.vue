@@ -11,7 +11,10 @@ defineOptions({
 
 type WeComInvoker = {
   mode: "ww" | "wx";
-  invoke: (api: string, payload?: Record<string, unknown>) => Promise<Record<string, unknown>>;
+  invoke: (
+    api: string,
+    payload?: Record<string, unknown>
+  ) => Promise<Record<string, unknown>>;
 };
 
 const JS_API_LIST = [
@@ -56,7 +59,11 @@ const ensureSdkReady = async () => {
   }
 };
 
-const runApi = async (label: string, api: string, payload: Record<string, unknown> = {}) => {
+const runApi = async (
+  label: string,
+  api: string,
+  payload: Record<string, unknown> = {}
+) => {
   actionLoading.value = true;
   try {
     const client = await ensureSdkReady();
@@ -110,15 +117,21 @@ const callOpenUserProfile = () => {
   }
   void runApi("打开用户资料", "openUserProfile", { userid: username });
 };
-const callHideMenu = () => runApi("隐藏右上角菜单", "hideMenuItems", { menuList: ["menuItem:copyUrl"] });
-const callShowMenu = () => runApi("恢复右上角菜单", "showMenuItems", { menuList: ["menuItem:copyUrl"] });
+const callHideMenu = () =>
+  runApi("隐藏右上角菜单", "hideMenuItems", { menuList: ["menuItem:copyUrl"] });
+const callShowMenu = () =>
+  runApi("恢复右上角菜单", "showMenuItems", { menuList: ["menuItem:copyUrl"] });
 const callCloseWindow = () => runApi("关闭当前窗口", "closeWindow");
 </script>
 
 <template>
   <el-card shadow="never" header="企业微信 JS-SDK 能力台">
     <el-alert
-      :title="isInWeComClient() ? '当前在企业微信容器内，可直接调试 JS-SDK' : '当前不在企业微信容器，部分 API 会失败（可先验证初始化）'"
+      :title="
+        isInWeComClient()
+          ? '当前在企业微信容器内，可直接调试 JS-SDK'
+          : '当前不在企业微信容器，部分 API 会失败（可先验证初始化）'
+      "
       type="info"
       :closable="false"
       show-icon
@@ -128,10 +141,12 @@ const callCloseWindow = () => runApi("关闭当前窗口", "closeWindow");
       <el-button type="primary" :loading="sdkLoading" @click="ensureSdkReady">
         初始化 SDK
       </el-button>
-      <el-tag type="success">状态: {{ sdkReady ? `已初始化(${sdkMode})` : "未初始化" }}</el-tag>
+      <el-tag type="success"
+        >状态: {{ sdkReady ? `已初始化(${sdkMode})` : "未初始化" }}</el-tag
+      >
     </div>
 
-    <div class="actions" v-loading="actionLoading">
+    <div v-loading="actionLoading" class="actions">
       <el-button @click="callGetContext">getContext</el-button>
       <el-button @click="callScan">scanQRCode</el-button>
       <el-button @click="callSelectContact">selectEnterpriseContact</el-button>
@@ -143,7 +158,9 @@ const callCloseWindow = () => runApi("关闭当前窗口", "closeWindow");
       <el-button @click="callOpenUserProfile">openUserProfile</el-button>
       <el-button @click="callHideMenu">hideMenuItems</el-button>
       <el-button @click="callShowMenu">showMenuItems</el-button>
-      <el-button type="danger" plain @click="callCloseWindow">closeWindow</el-button>
+      <el-button type="danger" plain @click="callCloseWindow"
+        >closeWindow</el-button
+      >
     </div>
 
     <el-input

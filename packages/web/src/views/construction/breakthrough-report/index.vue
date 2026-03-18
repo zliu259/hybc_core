@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createBreakthroughReport,
   deleteBreakthroughReport,
@@ -152,7 +153,11 @@ onMounted(async () => {
         min-width="180"
         show-overflow-tooltip
       />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
           <el-button link type="danger" @click="remove(scope.row)"

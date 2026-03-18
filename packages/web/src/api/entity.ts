@@ -178,7 +178,10 @@ export const createEntityAttachment = (
   );
 };
 
-export const deleteEntityAttachment = (entityId: number, attachmentId: number) => {
+export const deleteEntityAttachment = (
+  entityId: number,
+  attachmentId: number
+) => {
   return http.request<{ success: boolean }>(
     "delete",
     `/api/v1/entity/${entityId}/attachments/${attachmentId}`

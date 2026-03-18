@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   deleteOperatorLog,
   listOperatorLogs,
@@ -129,7 +130,11 @@ onMounted(async () => {
       />
       <el-table-column prop="footage_m" label="进尺(m)" width="100" />
       <el-table-column prop="operator_userid" label="填报人" width="120" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
           <el-button link type="danger" @click="remove(scope.row)"

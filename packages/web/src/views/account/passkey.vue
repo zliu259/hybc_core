@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   beginPasskeyRegistration,
   finishPasskeyRegistration,
@@ -165,7 +166,11 @@ onMounted(load);
           {{ scope.row.credentialId }}
         </template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="createdAt" label="创建时间" width="200" />
       <el-table-column prop="lastUsedAt" label="最近使用" width="200" />
       <el-table-column label="操作" width="100">

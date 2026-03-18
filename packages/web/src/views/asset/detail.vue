@@ -50,7 +50,9 @@ type LocationOption = {
 };
 
 const warehouses = ref<Warehouse[]>([]);
-const activeProjects = ref<Array<{ id: number; project_name: string; status: string }>>([]);
+const activeProjects = ref<
+  Array<{ id: number; project_name: string; status: string }>
+>([]);
 
 const statusOptions = [
   { label: "在库", value: "idle" },
@@ -139,7 +141,12 @@ const docForm = ref({
 const eventDialogVisible = ref(false);
 const eventSubmitting = ref(false);
 const eventForm = ref({
-  event_type: "maintenance" as "maintenance" | "repair" | "incident" | "transfer" | "check",
+  event_type: "maintenance" as
+    | "maintenance"
+    | "repair"
+    | "incident"
+    | "transfer"
+    | "check",
   event_time: "",
   detail: ""
 });
@@ -206,7 +213,8 @@ const toEventDetailText = (detail: string | null): string => {
 };
 
 const resolveLocationSelection = (result: TrackedAsset) => {
-  if (result.current_warehouse_id) return `warehouse:${result.current_warehouse_id}`;
+  if (result.current_warehouse_id)
+    return `warehouse:${result.current_warehouse_id}`;
   if (result.current_project_id) return `project:${result.current_project_id}`;
   if ((result.current_location ?? "").trim() === "出租") return "rent_out";
   return "";
@@ -230,10 +238,20 @@ const loadMeta = async () => {
     listProjects({ page: 1, pageSize: 500 })
   ]);
   warehouses.value = warehouseRes.data;
-  const doneStatuses = new Set(["completed", "closed", "cancelled", "archived", "done"]);
+  const doneStatuses = new Set([
+    "completed",
+    "closed",
+    "cancelled",
+    "archived",
+    "done"
+  ]);
   activeProjects.value = projectRes.data
     .filter(item => !doneStatuses.has((item.status || "").toLowerCase()))
-    .map(item => ({ id: item.id, project_name: item.project_name, status: item.status }));
+    .map(item => ({
+      id: item.id,
+      project_name: item.project_name,
+      status: item.status
+    }));
 };
 
 const loadData = async () => {
@@ -422,7 +440,9 @@ onMounted(async () => {
           >
           <el-table :data="asset?.documents ?? []" style="margin-top: 12px">
             <el-table-column label="文档类型" width="120">
-              <template #default="scope">{{ docTypeLabelMap[scope.row.doc_type] || scope.row.doc_type }}</template>
+              <template #default="scope">{{
+                docTypeLabelMap[scope.row.doc_type] || scope.row.doc_type
+              }}</template>
             </el-table-column>
             <el-table-column prop="file_name" label="文件名" min-width="140" />
             <el-table-column
@@ -450,8 +470,13 @@ onMounted(async () => {
               :timestamp="toDisplayTime(item.event_time)"
               placement="top"
             >
-              <div>{{ eventTypeLabelMap[item.event_type] || item.event_type }} · 操作人：{{ item.operator_userid }}</div>
-              <div style="color: #6e6458">{{ toEventDetailText(item.detail) }}</div>
+              <div>
+                {{ eventTypeLabelMap[item.event_type] || item.event_type }} ·
+                操作人：{{ item.operator_userid }}
+              </div>
+              <div style="color: #6e6458">
+                {{ toEventDetailText(item.detail) }}
+              </div>
             </el-timeline-item>
           </el-timeline>
         </el-card>

@@ -170,7 +170,9 @@ onMounted(loadTemplates);
       <el-table-column prop="template_code" label="模板编码" width="160" />
       <el-table-column prop="template_name" label="模板名称" min-width="180" />
       <el-table-column label="业务类型" width="140">
-        <template #default="{ row }">{{ toBizTypeLabel(row.biz_type) }}</template>
+        <template #default="{ row }">{{
+          toBizTypeLabel(row.biz_type)
+        }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="100">
         <template #default="{ row }">
@@ -237,7 +239,9 @@ onMounted(loadTemplates);
     <ApprovalFlowDesigner v-model:config="form.config_json" />
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
+      <el-button type="primary" :loading="saving" @click="handleSave"
+        >保存</el-button
+      >
     </template>
   </el-dialog>
 

@@ -142,13 +142,20 @@ export const markPaymentPaid = (
 };
 
 export const voidPayment = (id: number, data?: { reason?: string }) => {
-  return http.request<{ success: boolean }>("post", `/api/v1/payment/${id}/void`, {
-    data
-  });
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/payment/${id}/void`,
+    {
+      data
+    }
+  );
 };
 
 export const reactivatePayment = (id: number) => {
-  return http.request<{ success: boolean }>("post", `/api/v1/payment/${id}/reactivate`);
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/payment/${id}/reactivate`
+  );
 };
 
 export const triggerRiskAssessment = (id: number) => {
@@ -175,7 +182,11 @@ export const getRiskReport = (id: number) => {
   }>("get", `/api/v1/payment/${id}/risk-report`);
 };
 
-export const listPayees = (params?: { type?: string; keyword?: string; mine?: boolean }) => {
+export const listPayees = (params?: {
+  type?: string;
+  keyword?: string;
+  mine?: boolean;
+}) => {
   return http.request<{ success: boolean; data: Payee[] }>(
     "get",
     "/api/v1/payment/payee/list",

@@ -26,7 +26,8 @@ const dynamicImportReloadKey = "hybc:dynamic-import-reload-once";
 
 const reloadOnDynamicImportError = (): void => {
   const token = `${window.location.pathname}${window.location.search}`;
-  const reloaded = window.sessionStorage.getItem(dynamicImportReloadKey) === token;
+  const reloaded =
+    window.sessionStorage.getItem(dynamicImportReloadKey) === token;
   if (reloaded) return;
   window.sessionStorage.setItem(dynamicImportReloadKey, token);
   window.location.reload();
@@ -39,7 +40,8 @@ window.addEventListener("vite:preloadError", event => {
 
 window.addEventListener("unhandledrejection", event => {
   const reason = event.reason;
-  const message = reason instanceof Error ? reason.message : String(reason ?? "");
+  const message =
+    reason instanceof Error ? reason.message : String(reason ?? "");
   if (message.includes("Failed to fetch dynamically imported module")) {
     event.preventDefault();
     reloadOnDynamicImportError();

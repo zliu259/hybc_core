@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
+import { contractTypeLabel } from "@/utils/enum-labels";
 import { listContracts, deleteContract, type Contract } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
 
@@ -186,7 +187,11 @@ onMounted(async () => {
         </template>
       </el-table-column>
       <el-table-column prop="counterparty" label="对方单位" min-width="180" />
-      <el-table-column prop="contract_type" label="合同类型" width="110" />
+      <el-table-column label="合同类型" width="110">
+        <template #default="scope">{{
+          contractTypeLabel(scope.row.contract_type)
+        }}</template>
+      </el-table-column>
       <el-table-column label="合同金额" width="130">
         <template #default="scope">{{
           scope.row.total_amount.toFixed(2)

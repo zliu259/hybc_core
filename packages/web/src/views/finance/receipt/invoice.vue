@@ -6,7 +6,12 @@ import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import { listContracts, type Contract } from "@/api/contract";
 import { listEntities, type Entity } from "@/api/entity";
-import { listPayees, createPayee, updatePayee, type Payee } from "@/api/payment";
+import {
+  listPayees,
+  createPayee,
+  updatePayee,
+  type Payee
+} from "@/api/payment";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import {
@@ -105,8 +110,10 @@ const invoiceRequestStatusLabelMap: Record<string, string> = {
   cancelled: "已取消"
 };
 
-const toInvoiceTypeLabel = (value: string) => invoiceTypeLabelMap[value] || value;
-const toInvoiceRequestStatusLabel = (value: string) => invoiceRequestStatusLabelMap[value] || value;
+const toInvoiceTypeLabel = (value: string) =>
+  invoiceTypeLabelMap[value] || value;
+const toInvoiceRequestStatusLabel = (value: string) =>
+  invoiceRequestStatusLabelMap[value] || value;
 
 const requestForm = ref({
   contract_id: undefined as number | undefined,
@@ -130,23 +137,61 @@ const itemTemplates: InvoiceItemTemplate[] = [
   {
     key: "service-basic",
     label: "服务费模板",
-    items: [{ name: "技术服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 }]
+    items: [
+      {
+        name: "技术服务费",
+        specification: "",
+        unit: "项",
+        quantity: 1,
+        unit_price: 0
+      }
+    ]
   },
   {
     key: "office-admin",
     label: "行政办公模板",
     items: [
-      { name: "办公耗材", specification: "", unit: "批", quantity: 1, unit_price: 0 },
-      { name: "行政服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 }
+      {
+        name: "办公耗材",
+        specification: "",
+        unit: "批",
+        quantity: 1,
+        unit_price: 0
+      },
+      {
+        name: "行政服务费",
+        specification: "",
+        unit: "项",
+        quantity: 1,
+        unit_price: 0
+      }
     ]
   },
   {
     key: "project-mix",
     label: "项目混合模板",
     items: [
-      { name: "材料费", specification: "", unit: "批", quantity: 1, unit_price: 0 },
-      { name: "人工服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 },
-      { name: "运输服务费", specification: "", unit: "次", quantity: 1, unit_price: 0 }
+      {
+        name: "材料费",
+        specification: "",
+        unit: "批",
+        quantity: 1,
+        unit_price: 0
+      },
+      {
+        name: "人工服务费",
+        specification: "",
+        unit: "项",
+        quantity: 1,
+        unit_price: 0
+      },
+      {
+        name: "运输服务费",
+        specification: "",
+        unit: "次",
+        quantity: 1,
+        unit_price: 0
+      }
     ]
   }
 ];
@@ -231,8 +276,12 @@ const toChineseAmount = (amount: number): string => {
   return `${intResult || "零"}元${result}`;
 };
 
-const amountWithoutTaxCn = computed(() => toChineseAmount(amountWithoutTax.value));
-const taxAmountEstimatedCn = computed(() => toChineseAmount(taxAmountEstimated.value));
+const amountWithoutTaxCn = computed(() =>
+  toChineseAmount(amountWithoutTax.value)
+);
+const taxAmountEstimatedCn = computed(() =>
+  toChineseAmount(taxAmountEstimated.value)
+);
 const amountWithTaxCn = computed(() => toChineseAmount(amountWithTax.value));
 
 const issueDialogVisible = ref(false);
@@ -272,7 +321,11 @@ watch(
 );
 
 const loadContracts = async () => {
-  const result = await listContracts({ direction: "inbound", page: 1, pageSize: 300 });
+  const result = await listContracts({
+    direction: "inbound",
+    page: 1,
+    pageSize: 300
+  });
   contracts.value = result.data;
 };
 
@@ -345,12 +398,26 @@ const openCreateRequest = () => {
     tax_rate_percent: 6,
     remark: ""
   };
-  invoiceItems.value = [{ name: "服务费", specification: "", unit: "项", quantity: 1, unit_price: 0 }];
+  invoiceItems.value = [
+    {
+      name: "服务费",
+      specification: "",
+      unit: "项",
+      quantity: 1,
+      unit_price: 0
+    }
+  ];
   requestDialogVisible.value = true;
 };
 
 const addInvoiceItem = () => {
-  invoiceItems.value.push({ name: "", specification: "", unit: "", quantity: 1, unit_price: 0 });
+  invoiceItems.value.push({
+    name: "",
+    specification: "",
+    unit: "",
+    quantity: 1,
+    unit_price: 0
+  });
 };
 
 const cloneItem = (item: InvoiceItemDraft): InvoiceItemDraft => ({
@@ -453,11 +520,15 @@ const saveCounterpartyIfNeeded = async () => {
   if (!requestForm.value.counterparty_name.trim()) return;
 
   if (counterpartyMode.value === "manual") {
-    const existing = payees.value.find(item => item.name === requestForm.value.counterparty_name.trim());
+    const existing = payees.value.find(
+      item => item.name === requestForm.value.counterparty_name.trim()
+    );
     if (existing) {
       requestForm.value.counterparty_payee_id = existing.id;
       if (!existing.phone && requestForm.value.counterparty_contact.trim()) {
-        await updatePayee(existing.id, { phone: requestForm.value.counterparty_contact.trim() });
+        await updatePayee(existing.id, {
+          phone: requestForm.value.counterparty_contact.trim()
+        });
       }
       return;
     }
@@ -480,7 +551,9 @@ const saveCounterpartyIfNeeded = async () => {
   const selected = payees.value.find(item => item.id === payeeId);
   if (!selected) return;
   if (!selected.phone && requestForm.value.counterparty_contact.trim()) {
-    await updatePayee(payeeId, { phone: requestForm.value.counterparty_contact.trim() });
+    await updatePayee(payeeId, {
+      phone: requestForm.value.counterparty_contact.trim()
+    });
   }
 };
 
@@ -489,7 +562,10 @@ const submitCreateRequest = async () => {
     message("请先选择收款合同", { type: "warning" });
     return;
   }
-  if (!requestForm.value.counterparty_name.trim() || !requestForm.value.counterparty_tax_no.trim()) {
+  if (
+    !requestForm.value.counterparty_name.trim() ||
+    !requestForm.value.counterparty_tax_no.trim()
+  ) {
     message("请填写对方名称和对方税号", { type: "warning" });
     return;
   }
@@ -497,7 +573,10 @@ const submitCreateRequest = async () => {
     message("请填写发票类目", { type: "warning" });
     return;
   }
-  if (!invoiceItems.value.length || invoiceItems.value.some(item => !item.name.trim())) {
+  if (
+    !invoiceItems.value.length ||
+    invoiceItems.value.some(item => !item.name.trim())
+  ) {
     message("请完善开票明细（至少一行且名称必填）", { type: "warning" });
     return;
   }
@@ -515,12 +594,14 @@ const submitCreateRequest = async () => {
       project_id: requestForm.value.project_id,
       counterparty_name: requestForm.value.counterparty_name.trim(),
       counterparty_tax_no: requestForm.value.counterparty_tax_no.trim(),
-      counterparty_contact: requestForm.value.counterparty_contact.trim() || undefined,
+      counterparty_contact:
+        requestForm.value.counterparty_contact.trim() || undefined,
       seller_entity_id: requestForm.value.seller_entity_id,
       seller_entity_name: selectedEntityName || undefined,
       buyer_json: JSON.stringify({
         counterparty_payee_id: requestForm.value.counterparty_payee_id ?? null,
-        counterparty_contact: requestForm.value.counterparty_contact.trim() || null,
+        counterparty_contact:
+          requestForm.value.counterparty_contact.trim() || null,
         seller_entity_id: requestForm.value.seller_entity_id ?? null,
         seller_entity_name: selectedEntityName || null
       }),
@@ -539,7 +620,9 @@ const submitCreateRequest = async () => {
       attachments_json: remittanceAttachments.value.length
         ? serializeAttachments(remittanceAttachments.value)
         : undefined,
-      payment_reference: remittanceAttachments.value.length ? "汇款凭证已上传" : undefined,
+      payment_reference: remittanceAttachments.value.length
+        ? "汇款凭证已上传"
+        : undefined,
       remark: requestForm.value.remark || undefined
     });
 
@@ -553,7 +636,9 @@ const submitCreateRequest = async () => {
 
 const submitApproval = async (row: InvoiceRequest) => {
   const result = await submitInvoiceRequestApproval(row.id);
-  message(`已提交审批（实例号：${result.data.instance_no}）`, { type: "success" });
+  message(`已提交审批（实例号：${result.data.instance_no}）`, {
+    type: "success"
+  });
   await loadData();
 };
 
@@ -622,7 +707,9 @@ const submitIssue = async () => {
       file_key: issueForm.value.file_key,
       remark: issueForm.value.remark || undefined
     });
-    message(`签发成功：${result.data.invoice_no}，已自动触发二维码/OCR解析`, { type: "success" });
+    message(`签发成功：${result.data.invoice_no}，已自动触发二维码/OCR解析`, {
+      type: "success"
+    });
     issueDialogVisible.value = false;
     activeTab.value = "invoice";
     await loadData();
@@ -652,9 +739,20 @@ onMounted(async () => {
 <template>
   <el-card shadow="never" style="background: #fffaf2">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>发票签发管理（收款）</span>
-        <el-button v-if="activeTab === 'request'" type="primary" @click="openCreateRequest">新建开票申请</el-button>
+        <el-button
+          v-if="activeTab === 'request'"
+          type="primary"
+          @click="openCreateRequest"
+          >新建开票申请</el-button
+        >
       </div>
     </template>
 
@@ -665,7 +763,12 @@ onMounted(async () => {
 
     <el-form inline>
       <el-form-item label="合同">
-        <el-select v-model="filters.contract_id" clearable filterable style="width: 260px">
+        <el-select
+          v-model="filters.contract_id"
+          clearable
+          filterable
+          style="width: 260px"
+        >
           <el-option
             v-for="item in contracts"
             :key="item.id"
@@ -676,45 +779,98 @@ onMounted(async () => {
       </el-form-item>
       <el-form-item label="状态">
         <el-select v-model="filters.status" clearable style="width: 170px">
-          <el-option v-if="activeTab === 'request'" label="草稿" value="draft" />
-          <el-option v-if="activeTab === 'request'" label="审批中" value="pending_approval" />
-          <el-option v-if="activeTab === 'request'" label="已通过" value="approved" />
-          <el-option v-if="activeTab === 'request'" label="已驳回" value="rejected" />
-          <el-option v-if="activeTab === 'request'" label="已签发" value="issued" />
+          <el-option
+            v-if="activeTab === 'request'"
+            label="草稿"
+            value="draft"
+          />
+          <el-option
+            v-if="activeTab === 'request'"
+            label="审批中"
+            value="pending_approval"
+          />
+          <el-option
+            v-if="activeTab === 'request'"
+            label="已通过"
+            value="approved"
+          />
+          <el-option
+            v-if="activeTab === 'request'"
+            label="已驳回"
+            value="rejected"
+          />
+          <el-option
+            v-if="activeTab === 'request'"
+            label="已签发"
+            value="issued"
+          />
 
-          <el-option v-if="activeTab === 'invoice'" label="已签发" value="issued" />
-          <el-option v-if="activeTab === 'invoice'" label="已作废" value="cancelled" />
-          <el-option v-if="activeTab === 'invoice'" label="红冲" value="red_issued" />
+          <el-option
+            v-if="activeTab === 'invoice'"
+            label="已签发"
+            value="issued"
+          />
+          <el-option
+            v-if="activeTab === 'invoice'"
+            label="已作废"
+            value="cancelled"
+          />
+          <el-option
+            v-if="activeTab === 'invoice'"
+            label="红冲"
+            value="red_issued"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="关键字">
         <el-input
           v-model="filters.keyword"
           clearable
-          :placeholder="activeTab === 'request' ? '申请单号/对方名称/税号' : '发票号/抬头/税号'"
+          :placeholder="
+            activeTab === 'request'
+              ? '申请单号/对方名称/税号'
+              : '发票号/抬头/税号'
+          "
         />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
     </el-form>
 
-    <el-table v-if="activeTab === 'request'" :data="requestList" :loading="loadingRequest" style="margin-top: 12px">
+    <el-table
+      v-if="activeTab === 'request'"
+      :data="requestList"
+      :loading="loadingRequest"
+      style="margin-top: 12px"
+    >
       <el-table-column prop="request_no" label="申请单号" width="170" />
       <el-table-column label="合同号" width="170">
-        <template #default="scope">{{ contractMap[scope.row.contract_id] || scope.row.contract_id }}</template>
+        <template #default="scope">{{
+          contractMap[scope.row.contract_id] || scope.row.contract_id
+        }}</template>
       </el-table-column>
       <el-table-column prop="customer_name" label="对方名称" min-width="180" />
-      <el-table-column prop="customer_tax_no" label="对方税号" min-width="180" />
+      <el-table-column
+        prop="customer_tax_no"
+        label="对方税号"
+        min-width="180"
+      />
       <el-table-column prop="amount_with_tax" label="价税合计" width="120" />
       <el-table-column label="类型" width="120">
-        <template #default="scope">{{ toInvoiceTypeLabel(scope.row.invoice_type) }}</template>
+        <template #default="scope">{{
+          toInvoiceTypeLabel(scope.row.invoice_type)
+        }}</template>
       </el-table-column>
       <el-table-column label="状态" width="120">
-        <template #default="scope">{{ toInvoiceRequestStatusLabel(scope.row.status) }}</template>
+        <template #default="scope">{{
+          toInvoiceRequestStatusLabel(scope.row.status)
+        }}</template>
       </el-table-column>
       <el-table-column label="操作" width="300" fixed="right">
         <template #default="scope">
           <el-button
-            v-if="scope.row.status === 'draft' || scope.row.status === 'rejected'"
+            v-if="
+              scope.row.status === 'draft' || scope.row.status === 'rejected'
+            "
             link
             type="primary"
             @click="submitApproval(scope.row)"
@@ -722,7 +878,10 @@ onMounted(async () => {
             提交审批
           </el-button>
           <el-button
-            v-if="scope.row.status === 'approved' || scope.row.status === 'ready_to_issue'"
+            v-if="
+              scope.row.status === 'approved' ||
+              scope.row.status === 'ready_to_issue'
+            "
             link
             type="success"
             @click="openIssue(scope.row)"
@@ -741,16 +900,27 @@ onMounted(async () => {
       </el-table-column>
     </el-table>
 
-    <el-table v-else :data="invoiceList" :loading="loadingInvoice" style="margin-top: 12px">
+    <el-table
+      v-else
+      :data="invoiceList"
+      :loading="loadingInvoice"
+      style="margin-top: 12px"
+    >
       <el-table-column prop="invoice_no" label="系统单号" width="170" />
       <el-table-column prop="invoice_number" label="税务发票号" width="170" />
       <el-table-column label="合同号" width="170">
-        <template #default="scope">{{ contractMap[scope.row.contract_id] || scope.row.contract_id }}</template>
+        <template #default="scope">{{
+          contractMap[scope.row.contract_id] || scope.row.contract_id
+        }}</template>
       </el-table-column>
       <el-table-column prop="title" label="发票抬头" min-width="180" />
       <el-table-column prop="issue_date" label="开票日期" width="130" />
       <el-table-column prop="amount_with_tax" label="价税合计" width="120" />
-      <el-table-column prop="verification_status" label="校验状态" width="110" />
+      <el-table-column
+        prop="verification_status"
+        label="校验状态"
+        width="110"
+      />
       <el-table-column label="操作" width="220" fixed="right">
         <template #default="scope">
           <el-button
@@ -761,7 +931,9 @@ onMounted(async () => {
           >
             OCR/二维码校验
           </el-button>
-          <el-button link type="danger" @click="onDelete(scope.row)">删除</el-button>
+          <el-button link type="danger" @click="onDelete(scope.row)"
+            >删除</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -785,7 +957,11 @@ onMounted(async () => {
   <el-dialog v-model="requestDialogVisible" title="新建开票申请" width="80%">
     <el-form label-width="130px">
       <el-form-item label="收款合同" required>
-        <el-select v-model="requestForm.contract_id" filterable style="width: 100%">
+        <el-select
+          v-model="requestForm.contract_id"
+          filterable
+          style="width: 100%"
+        >
           <el-option
             v-for="item in contracts"
             :key="item.id"
@@ -796,7 +972,12 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="项目（统计）">
-        <el-select v-model="requestForm.project_id" clearable filterable style="width: 100%">
+        <el-select
+          v-model="requestForm.project_id"
+          clearable
+          filterable
+          style="width: 100%"
+        >
           <el-option
             v-for="item in projects"
             :key="item.id"
@@ -807,8 +988,18 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="我方开票主体">
-        <el-select v-model="requestForm.seller_entity_id" clearable filterable style="width: 100%">
-          <el-option v-for="item in entities" :key="item.id" :label="item.entity_name" :value="item.id" />
+        <el-select
+          v-model="requestForm.seller_entity_id"
+          clearable
+          filterable
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in entities"
+            :key="item.id"
+            :label="item.entity_name"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
 
@@ -819,14 +1010,30 @@ onMounted(async () => {
         </el-radio-group>
       </el-form-item>
 
-      <el-form-item v-if="counterpartyMode === 'select'" label="对方名称（选择）">
-        <el-select v-model="requestForm.counterparty_payee_id" clearable filterable style="width: 100%">
-          <el-option v-for="item in payees" :key="item.id" :label="item.name" :value="item.id" />
+      <el-form-item
+        v-if="counterpartyMode === 'select'"
+        label="对方名称（选择）"
+      >
+        <el-select
+          v-model="requestForm.counterparty_payee_id"
+          clearable
+          filterable
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in payees"
+            :key="item.id"
+            :label="item.name"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
 
       <el-form-item label="对方名称" required>
-        <el-input v-model="requestForm.counterparty_name" placeholder="公司全称" />
+        <el-input
+          v-model="requestForm.counterparty_name"
+          placeholder="公司全称"
+        />
       </el-form-item>
 
       <el-form-item label="对方税号" required>
@@ -834,7 +1041,10 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="对方联系方式">
-        <el-input v-model="requestForm.counterparty_contact" placeholder="手机号/联系人" />
+        <el-input
+          v-model="requestForm.counterparty_contact"
+          placeholder="手机号/联系人"
+        />
       </el-form-item>
 
       <el-form-item label="保存对方信息">
@@ -850,7 +1060,10 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="发票类目">
-        <el-input v-model="requestForm.invoice_category" placeholder="支持自定义，如：技术服务费" />
+        <el-input
+          v-model="requestForm.invoice_category"
+          placeholder="支持自定义，如：技术服务费"
+        />
       </el-form-item>
 
       <el-form-item label="税率（%）">
@@ -896,12 +1109,24 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="数量" width="120">
           <template #default="scope">
-            <el-input-number v-model="scope.row.quantity" :min="0" :precision="4" :step="1" :controls="false" />
+            <el-input-number
+              v-model="scope.row.quantity"
+              :min="0"
+              :precision="4"
+              :step="1"
+              :controls="false"
+            />
           </template>
         </el-table-column>
         <el-table-column label="单价" width="150">
           <template #default="scope">
-            <el-input-number v-model="scope.row.unit_price" :min="0" :precision="2" :step="100" :controls="false" />
+            <el-input-number
+              v-model="scope.row.unit_price"
+              :min="0"
+              :precision="2"
+              :step="100"
+              :controls="false"
+            />
           </template>
         </el-table-column>
         <el-table-column label="金额" width="200">
@@ -911,19 +1136,37 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="操作" width="130" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="duplicatePreviousItem(scope.$index)">复制上行</el-button>
-            <el-button link type="danger" @click="removeInvoiceItem(scope.$index)">删除</el-button>
+            <el-button
+              link
+              type="primary"
+              @click="duplicatePreviousItem(scope.$index)"
+              >复制上行</el-button
+            >
+            <el-button
+              link
+              type="danger"
+              @click="removeInvoiceItem(scope.$index)"
+              >删除</el-button
+            >
           </template>
         </el-table-column>
       </el-table>
       <div style="margin-top: 10px">
-        <el-button link type="primary" @click="addInvoiceItem">+ 新增明细行</el-button>
-        <el-button link type="primary" @click="duplicateLastItem">复制上一行</el-button>
+        <el-button link type="primary" @click="addInvoiceItem"
+          >+ 新增明细行</el-button
+        >
+        <el-button link type="primary" @click="duplicateLastItem"
+          >复制上一行</el-button
+        >
         <el-dropdown @command="importTemplate">
           <el-button link type="primary">从模板导入</el-button>
           <template #dropdown>
             <el-dropdown-menu>
-              <el-dropdown-item v-for="template in itemTemplates" :key="template.key" :command="template.key">
+              <el-dropdown-item
+                v-for="template in itemTemplates"
+                :key="template.key"
+                :command="template.key"
+              >
                 {{ template.label }}
               </el-dropdown-item>
             </el-dropdown-menu>
@@ -933,19 +1176,25 @@ onMounted(async () => {
 
       <el-form-item label="不含税金额">
         <el-input :model-value="amountWithoutTax.toFixed(2)" readonly />
-        <div style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00">
+        <div
+          style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00"
+        >
           大写：{{ amountWithoutTaxCn }}
         </div>
       </el-form-item>
       <el-form-item label="预计税额">
         <el-input :model-value="taxAmountEstimated.toFixed(2)" readonly />
-        <div style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00">
+        <div
+          style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00"
+        >
           大写：{{ taxAmountEstimatedCn }}
         </div>
       </el-form-item>
       <el-form-item label="价税合计">
         <el-input :model-value="amountWithTax.toFixed(2)" readonly />
-        <div style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00">
+        <div
+          style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00"
+        >
           大写：{{ amountWithTaxCn }}
         </div>
       </el-form-item>
@@ -960,18 +1209,31 @@ onMounted(async () => {
             :http-request="uploadAttachment"
             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
           >
-            <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+            <div class="el-upload__text">
+              拖拽文件到这里，或 <em>点击上传</em>
+            </div>
           </el-upload>
-          <el-table :data="remittanceAttachments" size="small" style="margin-top: 12px">
+          <el-table
+            :data="remittanceAttachments"
+            size="small"
+            style="margin-top: 12px"
+          >
             <el-table-column label="文件名" min-width="260">
               <template #default="scope">{{ scope.row.file_name }}</template>
             </el-table-column>
             <el-table-column label="大小" width="120">
-              <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+              <template #default="scope">{{
+                scope.row.file_size ?? "-"
+              }}</template>
             </el-table-column>
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="scope">
-                <el-button link type="danger" @click="removeAttachment(scope.$index)">移除</el-button>
+                <el-button
+                  link
+                  type="danger"
+                  @click="removeAttachment(scope.$index)"
+                  >移除</el-button
+                >
               </template>
             </el-table-column>
           </el-table>
@@ -984,7 +1246,12 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="requestDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="requesting" @click="submitCreateRequest">创建申请</el-button>
+      <el-button
+        type="primary"
+        :loading="requesting"
+        @click="submitCreateRequest"
+        >创建申请</el-button
+      >
     </template>
   </el-dialog>
 
@@ -1006,10 +1273,16 @@ onMounted(async () => {
             :http-request="uploadIssueAttachment"
             accept=".pdf,.jpg,.jpeg,.png,.webp"
           >
-            <div class="el-upload__text">拖拽发票到这里，或 <em>点击上传</em></div>
+            <div class="el-upload__text">
+              拖拽发票到这里，或 <em>点击上传</em>
+            </div>
           </el-upload>
           <div style="margin-top: 8px; color: #666">
-            {{ issueForm.file_name ? `已上传：${issueForm.file_name}` : "未上传附件" }}
+            {{
+              issueForm.file_name
+                ? `已上传：${issueForm.file_name}`
+                : "未上传附件"
+            }}
           </div>
         </div>
       </el-form-item>
@@ -1019,7 +1292,9 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="issueDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="issuing" @click="submitIssue">确认签发</el-button>
+      <el-button type="primary" :loading="issuing" @click="submitIssue"
+        >确认签发</el-button
+      >
     </template>
   </el-dialog>
 </template>

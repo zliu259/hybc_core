@@ -77,7 +77,9 @@ const permissionLabels = computed(() => permissions.value.filter(Boolean));
 
 const canLaunchOutboundPayment = computed(() =>
   roles.value.some(role =>
-    ["super_admin", "manager", "site_manager", "finance", "operator"].includes(role)
+    ["super_admin", "manager", "site_manager", "finance", "operator"].includes(
+      role
+    )
   )
 );
 
@@ -470,9 +472,13 @@ const onCertUpload = (file: UploadFile) => {
               :hidden="fuelOfficePendingCount <= 0"
               :max="99"
             >
-              <el-button link type="primary" @click="goFuelOfficeDesk">油卡办公室待办</el-button>
+              <el-button link type="primary" @click="goFuelOfficeDesk"
+                >油卡办公室待办</el-button
+              >
             </el-badge>
-            <el-button link type="primary" @click="goApprovalDesk">进入统一审批台</el-button>
+            <el-button link type="primary" @click="goApprovalDesk"
+              >进入统一审批台</el-button
+            >
           </el-space>
         </div>
       </template>

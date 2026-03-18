@@ -15,7 +15,7 @@ import { useUserStoreHook } from "@/store/modules/user";
 import {
   clearRelayCooldown,
   getRelayCandidates,
-  markRelayFailure,
+  markRelayFailure
 } from "./relay-pool";
 
 // 相关配置请参考：www.axios-js.com/zh-cn/docs/#axios-request-config-1
@@ -63,9 +63,7 @@ class PureHttp {
     );
   }
 
-  private static async retryWithRelay(
-    error: PureHttpError
-  ): Promise<unknown> {
+  private static async retryWithRelay(error: PureHttpError): Promise<unknown> {
     const sourceConfig = error.config as PureHttpRequestConfig | undefined;
     if (!sourceConfig) throw error;
     if (sourceConfig.__relayFallbackTried) throw error;
@@ -76,7 +74,8 @@ class PureHttp {
       (typeof PureHttp.axiosInstance.defaults.baseURL === "string"
         ? PureHttp.axiosInstance.defaults.baseURL
         : "") ||
-      (import.meta.env.VITE_API_BASE_URL || "");
+      import.meta.env.VITE_API_BASE_URL ||
+      "";
 
     const relayCandidates = await getRelayCandidates(
       sourceConfig.method,
@@ -92,11 +91,11 @@ class PureHttp {
         headers: {
           ...(sourceConfig.headers || {}),
           "X-Relay-Fallback": "1",
-          "X-Relay-Id": candidate.id,
+          "X-Relay-Id": candidate.id
         },
         baseURL: candidate.baseUrl,
         __relayFallbackTried: true,
-        __relayFallbackSource: candidate.id,
+        __relayFallbackSource: candidate.id
       };
       try {
         const response = await PureHttp.axiosInstance.request(retryConfig);

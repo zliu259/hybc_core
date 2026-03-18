@@ -15,7 +15,12 @@ export type WeComUser = {
   email?: string;
   avatar?: string;
   status?: number;
-  system_role?: "super_admin" | "finance" | "manager" | "site_manager" | "operator";
+  system_role?:
+    | "super_admin"
+    | "finance"
+    | "manager"
+    | "site_manager"
+    | "operator";
   role_source?: "wecom_tag" | "username_fallback";
   permissions?: string[];
   permission_status?: "configured";

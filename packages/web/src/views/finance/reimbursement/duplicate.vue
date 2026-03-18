@@ -25,7 +25,10 @@ const riskLevelLabelMap: Record<string, string> = {
   low: "低风险"
 };
 
-const riskLevelTagTypeMap: Record<string, "success" | "warning" | "danger" | "info"> = {
+const riskLevelTagTypeMap: Record<
+  string,
+  "success" | "warning" | "danger" | "info"
+> = {
   high: "danger",
   medium: "warning",
   low: "success"
@@ -36,7 +39,9 @@ const toRiskLevelLabel = (level: unknown) => {
   return riskLevelLabelMap[level] ?? level;
 };
 
-const toRiskLevelTagType = (level: unknown): "success" | "warning" | "danger" | "info" => {
+const toRiskLevelTagType = (
+  level: unknown
+): "success" | "warning" | "danger" | "info" => {
   if (typeof level !== "string" || !level) return "info";
   return riskLevelTagTypeMap[level] ?? "info";
 };

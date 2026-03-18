@@ -127,13 +127,20 @@ const canEdit = computed(() => {
 
 const canOfficeAudit = computed(() => {
   const roles = new Set(userStore.roles ?? []);
-  const hasOfficeRole = ["super_admin", "manager", "site_manager", "finance"].some(role =>
-    roles.has(role)
-  );
+  const hasOfficeRole = [
+    "super_admin",
+    "manager",
+    "site_manager",
+    "finance"
+  ].some(role => roles.has(role));
   const canSelfAudit = roles.has("super_admin") || roles.has("finance");
   const currentUserId = String(userStore.username || "").trim();
-  const applicantId = String(detail.value?.applicant_userid || form.value.applicant_userid || "").trim();
-  const isApplicant = Boolean(currentUserId && applicantId && currentUserId === applicantId);
+  const applicantId = String(
+    detail.value?.applicant_userid || form.value.applicant_userid || ""
+  ).trim();
+  const isApplicant = Boolean(
+    currentUserId && applicantId && currentUserId === applicantId
+  );
   return hasOfficeRole && (!isApplicant || canSelfAudit);
 });
 
@@ -217,7 +224,10 @@ const clearAuditPolling = () => {
 const shouldPollAudit = () => {
   if (!detail.value) return false;
   const pendingStatuses = new Set(["pending", "assigned", "running"]);
-  return pendingStatuses.has(ocrStatusText.value) || pendingStatuses.has(anomalyStatusText.value);
+  return (
+    pendingStatuses.has(ocrStatusText.value) ||
+    pendingStatuses.has(anomalyStatusText.value)
+  );
 };
 
 const refreshAuditStatuses = async (silent = false) => {
@@ -370,7 +380,11 @@ const downloadAttachment = (item: EnvelopeAttachmentDraft) => {
 };
 
 const save = async () => {
-  if (isCreate.value && form.value.channel === "physical" && !form.value.bind_envelope_uuid.trim()) {
+  if (
+    isCreate.value &&
+    form.value.channel === "physical" &&
+    !form.value.bind_envelope_uuid.trim()
+  ) {
     message("实物信封报销必须先输入或扫描信封UUID", { type: "warning" });
     return;
   }
@@ -452,10 +466,14 @@ const submitEnvelope = async () => {
     ensureAuditPolling("已触发后台审计，系统将自动刷新进度");
   } catch (error) {
     const err = error as {
-      response?: { status?: number; data?: { data?: { require_force_submit?: boolean } } };
+      response?: {
+        status?: number;
+        data?: { data?: { require_force_submit?: boolean } };
+      };
     };
     const requireForce =
-      err.response?.status === 409 && err.response?.data?.data?.require_force_submit === true;
+      err.response?.status === 409 &&
+      err.response?.data?.data?.require_force_submit === true;
     if (!requireForce) {
       throw error;
     }
@@ -463,7 +481,9 @@ const submitEnvelope = async () => {
       force_submit: true,
       force_submit_reason: verifyNote.value || "申请人确认继续提交，办公室复核"
     });
-    message("已按申请人坚持提交并附带审计提示，等待办公室核查", { type: "warning" });
+    message("已按申请人坚持提交并附带审计提示，等待办公室核查", {
+      type: "warning"
+    });
     await loadDetail();
     ensureAuditPolling("已触发后台审计，系统将自动刷新进度");
   }
@@ -529,10 +549,14 @@ const submitPrecheck = async (
     await loadDetail();
   } catch (error) {
     const err = error as {
-      response?: { status?: number; data?: { data?: { wait_for_audit?: boolean } } };
+      response?: {
+        status?: number;
+        data?: { data?: { wait_for_audit?: boolean } };
+      };
     };
     const waitForAudit =
-      err.response?.status === 409 && err.response?.data?.data?.wait_for_audit === true;
+      err.response?.status === 409 &&
+      err.response?.data?.data?.wait_for_audit === true;
     if (!waitForAudit) throw error;
     message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
       type: "warning"
@@ -794,7 +818,11 @@ watch(
         </el-table-column>
         <el-table-column label="操作" width="180" fixed="right">
           <template #default="scope">
-            <el-button link type="primary" @click="downloadAttachment(scope.row)">
+            <el-button
+              link
+              type="primary"
+              @click="downloadAttachment(scope.row)"
+            >
               下载
             </el-button>
             <el-button
@@ -822,7 +850,10 @@ watch(
 
         <template v-if="!isCreate && detail">
           <el-button
-            v-if="detail.channel === 'physical' && ['draft', 'submitted'].includes(detail.status)"
+            v-if="
+              detail.channel === 'physical' &&
+              ['draft', 'submitted'].includes(detail.status)
+            "
             @click="scanSubmit"
             >扫码登记并绑定填报人</el-button
           >
@@ -846,11 +877,18 @@ watch(
           >
             提交电子发票报销
           </el-button>
-          <el-button v-if="detail.channel === 'electronic'" @click="refreshOcrStatus"
+          <el-button
+            v-if="detail.channel === 'electronic'"
+            @click="refreshOcrStatus"
             >刷新OCR状态</el-button
           >
           <el-button
-            v-if="isSuperAdmin && ['draft', 'submitted', 'received', 'unregistered'].includes(detail.status)"
+            v-if="
+              isSuperAdmin &&
+              ['draft', 'submitted', 'received', 'unregistered'].includes(
+                detail.status
+              )
+            "
             type="danger"
             plain
             :loading="voiding"
@@ -858,7 +896,12 @@ watch(
           >
             废止报销提交
           </el-button>
-          <template v-if="canOfficeAudit && ['submitted', 'received'].includes(detail.status)">
+          <template
+            v-if="
+              canOfficeAudit &&
+              ['submitted', 'received'].includes(detail.status)
+            "
+          >
             <el-input
               v-model="verifyNote"
               style="width: 240px"

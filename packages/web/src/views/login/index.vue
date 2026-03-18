@@ -210,11 +210,13 @@ const initDesktopLoginPanel = async () => {
       agentid,
       redirectUri,
       state,
-      onLoginSuccess: (code) => {
+      onLoginSuccess: code => {
         void loginByCode(code);
       },
       onLoginFail: () => {
-        message("企业微信登录面板调用失败，请改用扫码登录", { type: "warning" });
+        message("企业微信登录面板调用失败，请改用扫码登录", {
+          type: "warning"
+        });
       }
     });
     panelEnabled.value = true;
@@ -275,7 +277,11 @@ onBeforeUnmount(() => {
           </Motion>
           <Motion :delay="150">
             <el-alert
-              :title="autoRedirecting ? '正在发起企业微信自动登录...' : '请使用企业微信扫码登录'"
+              :title="
+                autoRedirecting
+                  ? '正在发起企业微信自动登录...'
+                  : '请使用企业微信扫码登录'
+              "
               type="info"
               :closable="false"
               show-icon
@@ -299,8 +305,8 @@ onBeforeUnmount(() => {
             <div class="mt-4">
               <div
                 v-if="!isInWeComClient()"
-                class="panel-wrapper"
                 v-loading="panelLoading"
+                class="panel-wrapper"
               >
                 <div class="panel-title">浏览器登录（JS-SDK 面板）</div>
                 <div :id="panelElId" class="panel-box" />

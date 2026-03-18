@@ -1,7 +1,11 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import echarts from "@/plugins/echarts";
-import { getVehicleFuelOverview, type VehicleFuelOverviewPeriodType } from "@/api/dashboard";
+import { ownershipTypeLabel } from "@/utils/enum-labels";
+import {
+  getVehicleFuelOverview,
+  type VehicleFuelOverviewPeriodType
+} from "@/api/dashboard";
 
 defineOptions({ name: "FleetFuelDashboard" });
 
@@ -25,7 +29,9 @@ const summary = ref({
   active_card_balance_total: 0
 });
 
-const trend = ref<Array<{ bucket: string; apply_count: number; requested_amount_total: number }>>([]);
+const trend = ref<
+  Array<{ bucket: string; apply_count: number; requested_amount_total: number }>
+>([]);
 const topVehicles = ref<
   Array<{
     id: number;
@@ -61,13 +67,16 @@ const renderChart = async () => {
     tooltip: { trigger: "axis" },
     legend: { data: ["申请笔数", "申请额度"] },
     grid: { top: 36, right: 20, bottom: 30, left: 45 },
-    xAxis: { type: "category", data: trend.value.map((item) => item.bucket) },
-    yAxis: [{ type: "value", name: "笔数" }, { type: "value", name: "额度" }],
+    xAxis: { type: "category", data: trend.value.map(item => item.bucket) },
+    yAxis: [
+      { type: "value", name: "笔数" },
+      { type: "value", name: "额度" }
+    ],
     series: [
       {
         name: "申请笔数",
         type: "bar",
-        data: trend.value.map((item) => item.apply_count),
+        data: trend.value.map(item => item.apply_count),
         itemStyle: { color: "#4b6cb7" }
       },
       {
@@ -75,7 +84,9 @@ const renderChart = async () => {
         type: "line",
         yAxisIndex: 1,
         smooth: true,
-        data: trend.value.map((item) => Number(item.requested_amount_total.toFixed(2))),
+        data: trend.value.map(item =>
+          Number(item.requested_amount_total.toFixed(2))
+        ),
         itemStyle: { color: "#c26245" }
       }
     ]
@@ -125,10 +136,18 @@ onUnmounted(() => {
 <template>
   <el-card shadow="never" :loading="loading" style="background: #fffaf2">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <div>
           <div style="font-size: 18px; font-weight: 700">车辆用油领导总览</div>
-          <div style="font-size: 13px; color: #6e6458">全公司车辆与油卡额度申请监控</div>
+          <div style="font-size: 13px; color: #6e6458">
+            全公司车辆与油卡额度申请监控
+          </div>
         </div>
         <el-button type="primary" @click="loadData">刷新</el-button>
       </div>
@@ -136,30 +155,83 @@ onUnmounted(() => {
 
     <el-form inline>
       <el-form-item label="时间维度">
-        <el-select v-model="periodType" style="width: 120px" @change="onPeriodTypeChange">
+        <el-select
+          v-model="periodType"
+          style="width: 120px"
+          @change="onPeriodTypeChange"
+        >
           <el-option label="按月" value="month" />
           <el-option label="按年" value="year" />
         </el-select>
       </el-form-item>
       <el-form-item label="时间">
-        <el-date-picker v-if="periodType === 'month'" v-model="period" type="month" value-format="YYYY-MM" style="width: 160px" />
-        <el-date-picker v-else v-model="period" type="year" value-format="YYYY" style="width: 160px" />
+        <el-date-picker
+          v-if="periodType === 'month'"
+          v-model="period"
+          type="month"
+          value-format="YYYY-MM"
+          style="width: 160px"
+        />
+        <el-date-picker
+          v-else
+          v-model="period"
+          type="year"
+          value-format="YYYY"
+          style="width: 160px"
+        />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
     </el-form>
 
     <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :md="6" :xs="24"><el-card shadow="never">车辆总数：{{ summary.vehicle_total }}</el-card></el-col>
-      <el-col :md="6" :xs="24"><el-card shadow="never">在用车辆：{{ summary.active_vehicle_total }}</el-card></el-col>
-      <el-col :md="6" :xs="24"><el-card shadow="never">员工私车：{{ summary.employee_owned_vehicle_total }}</el-card></el-col>
-      <el-col :md="6" :xs="24"><el-card shadow="never">本期里程总和：{{ amountFormatter(summary.mileage_km_total) }} km</el-card></el-col>
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >车辆总数：{{ summary.vehicle_total }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >在用车辆：{{ summary.active_vehicle_total }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >员工私车：{{ summary.employee_owned_vehicle_total }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >本期里程总和：{{
+            amountFormatter(summary.mileage_km_total)
+          }}
+          km</el-card
+        ></el-col
+      >
     </el-row>
 
     <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :md="6" :xs="24"><el-card shadow="never">申请总额：¥{{ amountFormatter(summary.fuel_requested_amount_total) }}</el-card></el-col>
-      <el-col :md="6" :xs="24"><el-card shadow="never">申请笔数：{{ summary.fuel_apply_count }}</el-card></el-col>
-      <el-col :md="6" :xs="24"><el-card shadow="never">处理状态：{{ statusText }}</el-card></el-col>
-      <el-col :md="6" :xs="24"><el-card shadow="never">油卡余额总额：¥{{ amountFormatter(summary.active_card_balance_total) }}</el-card></el-col>
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >申请总额：¥{{
+            amountFormatter(summary.fuel_requested_amount_total)
+          }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >申请笔数：{{ summary.fuel_apply_count }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never">处理状态：{{ statusText }}</el-card></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >油卡余额总额：¥{{
+            amountFormatter(summary.active_card_balance_total)
+          }}</el-card
+        ></el-col
+      >
     </el-row>
 
     <el-card shadow="never" style="margin-top: 12px">
@@ -172,10 +244,16 @@ onUnmounted(() => {
       <el-table :data="topVehicles" stripe>
         <el-table-column prop="current_plate_no" label="车牌" width="120" />
         <el-table-column prop="vehicle_uuid" label="车辆UUID" min-width="220" />
-        <el-table-column prop="ownership_type" label="归属" width="120" />
+        <el-table-column label="归属" width="120">
+          <template #default="scope">{{
+            ownershipTypeLabel(scope.row.ownership_type)
+          }}</template>
+        </el-table-column>
         <el-table-column prop="apply_count" label="申请笔数" width="110" />
         <el-table-column label="申请总额" width="130">
-          <template #default="scope">¥{{ amountFormatter(scope.row.requested_amount_total) }}</template>
+          <template #default="scope"
+            >¥{{ amountFormatter(scope.row.requested_amount_total) }}</template
+          >
         </el-table-column>
       </el-table>
     </el-card>

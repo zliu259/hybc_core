@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createManagerLog,
   deleteManagerLog,
@@ -153,7 +154,11 @@ onMounted(async () => {
       <el-table-column prop="log_date" label="日期" width="120" />
       <el-table-column prop="title" label="标题" min-width="160" />
       <el-table-column prop="manager_userid" label="填报人" width="120" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
           <el-button link type="danger" @click="remove(scope.row)"

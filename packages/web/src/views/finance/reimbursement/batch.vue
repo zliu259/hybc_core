@@ -2,6 +2,12 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import {
+  aiAuditStatusLabel,
+  channelLabel,
+  precheckStatusLabel,
+  statusLabel
+} from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
@@ -75,7 +81,9 @@ const loadHistory = async () => {
       listReimbursementBatches({ status: "paid", page: 1, pageSize: 200 }),
       listReimbursementBatches({ status: "rejected", page: 1, pageSize: 200 })
     ]);
-    historyRows.value = [...paid.data, ...rejected.data].sort((a, b) => b.id - a.id);
+    historyRows.value = [...paid.data, ...rejected.data].sort(
+      (a, b) => b.id - a.id
+    );
   } finally {
     historyLoading.value = false;
   }
@@ -107,7 +115,12 @@ const loadCandidates = async () => {
 
 const autoSelectSubmittable = () => {
   candidateSelectedIds.value = candidates.value
-    .filter(item => item.status === "received" && item.precheck_status === "approved" && !item.batch_id)
+    .filter(
+      item =>
+        item.status === "received" &&
+        item.precheck_status === "approved" &&
+        !item.batch_id
+    )
     .map(item => item.id);
 };
 
@@ -122,7 +135,10 @@ const submitCreateAndApproval = async () => {
     const result = await createReimbursementBatch({
       project_id: filters.value.project_id,
       applicant_userid: filters.value.applicant_userid.trim(),
-      envelope_ids: candidateSelectedIds.value.length > 0 ? candidateSelectedIds.value : undefined
+      envelope_ids:
+        candidateSelectedIds.value.length > 0
+          ? candidateSelectedIds.value
+          : undefined
     });
 
     await submitBatchApproval(result.data.id);
@@ -161,11 +177,20 @@ watch(
 <template>
   <el-card shadow="never" style="background: #fffaf2">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>报销集中审批与历史中心</span>
         <el-space>
           <el-button @click="loadCandidates">刷新候选条目</el-button>
-          <el-button type="primary" :loading="creatingAndSubmitting" @click="submitCreateAndApproval"
+          <el-button
+            type="primary"
+            :loading="creatingAndSubmitting"
+            @click="submitCreateAndApproval"
             >创建并送审</el-button
           >
         </el-space>
@@ -181,8 +206,18 @@ watch(
 
     <el-form inline>
       <el-form-item label="所属项目">
-        <el-select v-model="filters.project_id" clearable filterable style="width: 220px">
-          <el-option v-for="item in projects" :key="item.id" :label="item.project_name" :value="item.id" />
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="item.project_name"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="申请人">
@@ -226,15 +261,32 @@ watch(
     >
       <el-table-column type="selection" width="52" />
       <el-table-column prop="envelope_no" label="信封编号" width="160" />
-      <el-table-column prop="status" label="状态" width="130" />
-      <el-table-column prop="precheck_status" label="预审状态" width="130" />
-      <el-table-column prop="channel" label="通道" width="110" />
+      <el-table-column label="状态" width="130">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
+      <el-table-column label="预审状态" width="130">
+        <template #default="scope">{{
+          precheckStatusLabel(scope.row.precheck_status)
+        }}</template>
+      </el-table-column>
+      <el-table-column label="通道" width="110">
+        <template #default="scope">{{
+          channelLabel(scope.row.channel)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="invoice_no" label="发票号" min-width="180" />
       <el-table-column prop="amount" label="金额" width="120" />
       <el-table-column prop="updated_at" label="最近更新时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="router.push(`/finance/reimbursement/detail/${scope.row.id}`)"
+          <el-button
+            link
+            type="primary"
+            @click="
+              router.push(`/finance/reimbursement/detail/${scope.row.id}`)
+            "
             >查看</el-button
           >
         </template>
@@ -246,17 +298,29 @@ watch(
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="batch_no" label="批次号" width="160" />
       <el-table-column label="项目" width="180">
-        <template #default="scope">{{ projectMap[scope.row.project_id] || scope.row.project_id }}</template>
+        <template #default="scope">{{
+          projectMap[scope.row.project_id] || scope.row.project_id
+        }}</template>
       </el-table-column>
       <el-table-column prop="applicant_userid" label="申报人" width="140" />
       <el-table-column prop="item_count" label="信封数" width="100" />
       <el-table-column prop="total_amount" label="总金额" width="120" />
-      <el-table-column prop="ai_audit_status" label="AI审计" width="120" />
-      <el-table-column prop="status" label="审批状态" width="120" />
+      <el-table-column label="AI审计" width="120">
+        <template #default="scope">{{
+          aiAuditStatusLabel(scope.row.ai_audit_status)
+        }}</template>
+      </el-table-column>
+      <el-table-column label="审批状态" width="120">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="created_at" label="创建时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row.id)">详情</el-button>
+          <el-button link type="primary" @click="openDetail(scope.row.id)"
+            >详情</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -281,16 +345,24 @@ watch(
     <el-table :data="historyRows" :loading="historyLoading" stripe>
       <el-table-column prop="batch_no" label="批次号" width="170" />
       <el-table-column label="项目" width="180">
-        <template #default="scope">{{ projectMap[scope.row.project_id] || scope.row.project_id }}</template>
+        <template #default="scope">{{
+          projectMap[scope.row.project_id] || scope.row.project_id
+        }}</template>
       </el-table-column>
       <el-table-column prop="applicant_userid" label="申报人" width="140" />
       <el-table-column prop="item_count" label="信封数" width="100" />
       <el-table-column prop="total_amount" label="总金额" width="120" />
-      <el-table-column prop="status" label="结果状态" width="120" />
+      <el-table-column label="结果状态" width="120">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="updated_at" label="最近更新时间" width="180" />
       <el-table-column label="操作" width="120" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row.id)">详情</el-button>
+          <el-button link type="primary" @click="openDetail(scope.row.id)"
+            >详情</el-button
+          >
         </template>
       </el-table-column>
     </el-table>

@@ -21,10 +21,10 @@ const latestNodes = ref<
 let timer: ReturnType<typeof setInterval> | null = null;
 
 const upCount = computed(
-  () => services.value.filter((item) => item.status === "up").length
+  () => services.value.filter(item => item.status === "up").length
 );
 const downCount = computed(
-  () => services.value.filter((item) => item.status === "down").length
+  () => services.value.filter(item => item.status === "down").length
 );
 
 const relativeTime = (iso: string | null): string => {
@@ -75,7 +75,13 @@ onUnmounted(() => {
 <template>
   <el-card shadow="never" style="margin-bottom: 16px">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>Service Monitoring Center</span>
         <el-button type="primary" :loading="loading" @click="refresh"
           >Refresh</el-button
@@ -91,7 +97,10 @@ onUnmounted(() => {
         <el-statistic title="Services Down" :value="downCount" />
       </el-col>
       <el-col :span="8">
-        <el-statistic title="Runner Nodes (online/sample)" :value="runnerOnline">
+        <el-statistic
+          title="Runner Nodes (online/sample)"
+          :value="runnerOnline"
+        >
           <template #suffix>/ {{ runnerSampled }}</template>
         </el-statistic>
       </el-col>
@@ -107,24 +116,40 @@ onUnmounted(() => {
       <el-table-column prop="key" label="Service" min-width="180" />
       <el-table-column label="Status" width="120">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'up' ? 'success' : 'danger'" size="small">
+          <el-tag
+            :type="row.status === 'up' ? 'success' : 'danger'"
+            size="small"
+          >
             {{ row.status }}
           </el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="latency_ms" label="Latency(ms)" width="120" />
-      <el-table-column prop="detail" label="Detail" min-width="280" show-overflow-tooltip />
+      <el-table-column
+        prop="detail"
+        label="Detail"
+        min-width="280"
+        show-overflow-tooltip
+      />
       <el-table-column prop="checked_at" label="Checked At" width="220" />
     </el-table>
   </el-card>
 
   <el-card shadow="never" header="Latest Runner Nodes">
     <el-table v-loading="loading" :data="latestNodes" style="width: 100%">
-      <el-table-column prop="node_id" label="Node ID" min-width="200" show-overflow-tooltip />
+      <el-table-column
+        prop="node_id"
+        label="Node ID"
+        min-width="200"
+        show-overflow-tooltip
+      />
       <el-table-column prop="node_name" label="Name" width="180" />
       <el-table-column label="Status" width="120">
         <template #default="{ row }">
-          <el-tag :type="row.status === 'online' ? 'success' : 'danger'" size="small">
+          <el-tag
+            :type="row.status === 'online' ? 'success' : 'danger'"
+            size="small"
+          >
             {{ row.status }}
           </el-tag>
         </template>
@@ -134,7 +159,11 @@ onUnmounted(() => {
           {{ relativeTime(row.last_heartbeat_at) }}
         </template>
       </el-table-column>
-      <el-table-column prop="last_heartbeat_at" label="Heartbeat Time" width="220" />
+      <el-table-column
+        prop="last_heartbeat_at"
+        label="Heartbeat Time"
+        width="220"
+      />
     </el-table>
   </el-card>
 </template>

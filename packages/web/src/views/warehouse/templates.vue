@@ -68,7 +68,9 @@ const save = () => {
     remark: form.remark.trim()
   };
   if (editId.value) {
-    rows.value = rows.value.map(item => (item.id === payload.id ? payload : item));
+    rows.value = rows.value.map(item =>
+      item.id === payload.id ? payload : item
+    );
   } else {
     rows.value.unshift(payload);
   }
@@ -107,7 +109,12 @@ const save = () => {
     </el-table>
   </el-card>
 
-  <el-drawer v-model="drawerVisible" title="模板维护" size="520px" destroy-on-close>
+  <el-drawer
+    v-model="drawerVisible"
+    title="模板维护"
+    size="520px"
+    destroy-on-close
+  >
     <el-form label-width="100px">
       <el-form-item label="模板名称" required>
         <el-input v-model="form.name" />

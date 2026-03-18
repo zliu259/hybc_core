@@ -1,6 +1,10 @@
 import { http } from "@/utils/http";
 
-export type FinanceSnapshotBizType = "all" | "outbound" | "internal" | "receipt";
+export type FinanceSnapshotBizType =
+  | "all"
+  | "outbound"
+  | "internal"
+  | "receipt";
 export type FinanceSnapshotPeriodType = "month" | "year";
 
 export type FinanceSnapshotDetail = {

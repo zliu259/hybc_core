@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createProjectSection,
   getProjectById,
@@ -107,7 +108,11 @@ onMounted(loadData);
           <el-table-column prop="section_code" label="标段编码" width="140" />
           <el-table-column prop="section_name" label="标段名称" />
           <el-table-column prop="section_length" label="里程(m)" width="120" />
-          <el-table-column prop="status" label="状态" width="120" />
+          <el-table-column label="状态" width="120">
+            <template #default="scope">{{
+              statusLabel(scope.row.status)
+            }}</template>
+          </el-table-column>
         </el-table>
       </el-card>
     </el-col>

@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { listAssetTypes, listTrackedAssets, type AssetType, type TrackedAsset } from "@/api/asset";
+import {
+  listAssetTypes,
+  listTrackedAssets,
+  type AssetType,
+  type TrackedAsset
+} from "@/api/asset";
 import {
   addStocktakeLine,
   completeStocktakeTask,
@@ -38,7 +43,9 @@ const inventoryRows = ref<InventoryRow[]>([]);
 const trackedAssets = ref<TrackedAsset[]>([]);
 
 const tasks = ref<StocktakeTask[]>([]);
-const activeTask = ref<(StocktakeTask & { lines: StocktakeLine[] }) | null>(null);
+const activeTask = ref<(StocktakeTask & { lines: StocktakeLine[] }) | null>(
+  null
+);
 
 const createForm = ref({
   title: "",
@@ -72,7 +79,10 @@ const lineStatusLabel: Record<StocktakeLineStatus, string> = {
   lost: "盘亏"
 };
 
-const lineStatusTag: Record<StocktakeLineStatus, "success" | "warning" | "danger" | "info" | "primary"> = {
+const lineStatusTag: Record<
+  StocktakeLineStatus,
+  "success" | "warning" | "danger" | "info" | "primary"
+> = {
   normal: "success",
   new: "primary",
   damaged: "warning",
@@ -84,18 +94,32 @@ const isConsumableType = (typeId: number): boolean => {
   return Boolean(item) && Number(item?.tracked_flag) === 0;
 };
 
-const consumableTypes = computed(() => assetTypes.value.filter(item => Number(item.tracked_flag) === 0));
-const trackedTypes = computed(() => assetTypes.value.filter(item => Number(item.tracked_flag) === 1));
+const consumableTypes = computed(() =>
+  assetTypes.value.filter(item => Number(item.tracked_flag) === 0)
+);
+const trackedTypes = computed(() =>
+  assetTypes.value.filter(item => Number(item.tracked_flag) === 1)
+);
 
 const companyOverview = computed(() => {
-  const consumableRows = inventoryRows.value.filter(row => isConsumableType(row.asset_type_id));
-  const companyInventoryQty = consumableRows.reduce((sum, row) => sum + toNum(row.quantity), 0);
-  const completedCount = tasks.value.filter(item => item.status === "completed").length;
-  const countingCount = tasks.value.filter(item => item.status === "counting").length;
+  const consumableRows = inventoryRows.value.filter(row =>
+    isConsumableType(row.asset_type_id)
+  );
+  const companyInventoryQty = consumableRows.reduce(
+    (sum, row) => sum + toNum(row.quantity),
+    0
+  );
+  const completedCount = tasks.value.filter(
+    item => item.status === "completed"
+  ).length;
+  const countingCount = tasks.value.filter(
+    item => item.status === "counting"
+  ).length;
 
   return {
     trackedAssetCount: trackedAssets.value.length,
-    consumableTypeCount: new Set(consumableRows.map(item => item.asset_type_id)).size,
+    consumableTypeCount: new Set(consumableRows.map(item => item.asset_type_id))
+      .size,
     companyInventoryQty,
     completedCount,
     countingCount
@@ -108,7 +132,9 @@ const activeSummary = computed(() => {
     return { total: 0, counted: 0, pending: 0, diffCount: 0 };
   }
   const counted = task.lines.filter(item => item.counted_qty !== null).length;
-  const diffCount = task.lines.filter(item => item.counted_qty !== null && item.diff_qty !== 0).length;
+  const diffCount = task.lines.filter(
+    item => item.counted_qty !== null && item.diff_qty !== 0
+  ).length;
   return {
     total: task.lines.length,
     counted,
@@ -174,7 +200,10 @@ const createTask = async () => {
     message("请选择盘点日期", { type: "warning" });
     return;
   }
-  if (createForm.value.scope === "warehouse" && !createForm.value.warehouse_id) {
+  if (
+    createForm.value.scope === "warehouse" &&
+    !createForm.value.warehouse_id
+  ) {
     message("仓库盘点模式需要选择仓库", { type: "warning" });
     return;
   }
@@ -184,7 +213,10 @@ const createTask = async () => {
     const result = await createStocktakeTask({
       task_title: title,
       scope: createForm.value.scope,
-      warehouse_id: createForm.value.scope === "warehouse" ? createForm.value.warehouse_id : undefined,
+      warehouse_id:
+        createForm.value.scope === "warehouse"
+          ? createForm.value.warehouse_id
+          : undefined,
       planned_date: createForm.value.planned_date
     });
     taskDialogVisible.value = false;
@@ -196,7 +228,10 @@ const createTask = async () => {
   }
 };
 
-const saveLine = async (line: StocktakeLine, payload: Partial<Pick<StocktakeLine, "counted_qty" | "line_status" | "note">>) => {
+const saveLine = async (
+  line: StocktakeLine,
+  payload: Partial<Pick<StocktakeLine, "counted_qty" | "line_status" | "note">>
+) => {
   if (!activeTask.value) return;
   lineSavingId.value = line.id;
   try {
@@ -221,7 +256,9 @@ const fillExpectedQty = async () => {
 
 const markTaskCompleted = async () => {
   if (!activeTask.value) return;
-  const hasPending = activeTask.value.lines.some(item => item.counted_qty === null);
+  const hasPending = activeTask.value.lines.some(
+    item => item.counted_qty === null
+  );
   if (hasPending) {
     message("仍有未录入的盘点项，请先完成数量录入", { type: "warning" });
     return;
@@ -229,7 +266,9 @@ const markTaskCompleted = async () => {
   const result = await completeStocktakeTask(activeTask.value.id);
   await loadTasks();
   await selectTask(activeTask.value.id);
-  message(`盘点任务已完成，差异条目 ${result.data.diff_count} 条`, { type: "success" });
+  message(`盘点任务已完成，差异条目 ${result.data.diff_count} 条`, {
+    type: "success"
+  });
 };
 
 const statusTag = (status: StocktakeTask["status"]) => {
@@ -244,7 +283,8 @@ const statusLabel = (status: StocktakeTask["status"]) => {
   return "草稿";
 };
 
-const kindLabel = (kind: StocktakeItemKind) => (kind === "asset" ? "设备资产" : "消耗品");
+const kindLabel = (kind: StocktakeItemKind) =>
+  kind === "asset" ? "设备资产" : "消耗品";
 
 const openNewItemDialog = () => {
   if (!activeTask.value) {
@@ -253,7 +293,9 @@ const openNewItemDialog = () => {
   }
 
   const defaultWarehouseId =
-    activeTask.value.scope === "warehouse" ? activeTask.value.warehouse_id || undefined : undefined;
+    activeTask.value.scope === "warehouse"
+      ? activeTask.value.warehouse_id || undefined
+      : undefined;
 
   newItemForm.value = {
     item_kind: "consumable",
@@ -317,17 +359,21 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" class="stocktake" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" class="stocktake">
     <template #header>
       <div class="head">
         <div>
           <div class="title">公司资产盘库</div>
-          <div class="sub">盘库中可直接新增发现的设备/消耗品并填写数量与状态，无需跳转其他页面</div>
+          <div class="sub">
+            盘库中可直接新增发现的设备/消耗品并填写数量与状态，无需跳转其他页面
+          </div>
         </div>
         <div class="actions">
           <el-button @click="loadData">刷新基线库存</el-button>
           <el-button @click="openNewItemDialog">盘库新增物品</el-button>
-          <el-button type="primary" @click="openCreateTask">新建盘点任务</el-button>
+          <el-button type="primary" @click="openCreateTask"
+            >新建盘点任务</el-button
+          >
         </div>
       </div>
     </template>
@@ -355,7 +401,8 @@ onMounted(async () => {
         <div class="kpi-card kpi-card--ok">
           <div class="kpi-label">盘点任务（进行中/已完成）</div>
           <div class="kpi-value">
-            {{ companyOverview.countingCount }} / {{ companyOverview.completedCount }}
+            {{ companyOverview.countingCount }} /
+            {{ companyOverview.completedCount }}
           </div>
         </div>
       </el-col>
@@ -377,18 +424,28 @@ onMounted(async () => {
             >
               <div class="task-item__top">
                 <div class="task-item__title">{{ item.task_title }}</div>
-                <el-tag size="small" :type="statusTag(item.status)">{{ statusLabel(item.status) }}</el-tag>
+                <el-tag size="small" :type="statusTag(item.status)">{{
+                  statusLabel(item.status)
+                }}</el-tag>
               </div>
               <div class="task-item__meta">单号：{{ item.task_no }}</div>
-              <div class="task-item__meta">范围：{{ item.warehouse_name || "全公司" }} · 日期：{{ item.planned_date }}</div>
+              <div class="task-item__meta">
+                范围：{{ item.warehouse_name || "全公司" }} · 日期：{{
+                  item.planned_date
+                }}
+              </div>
             </div>
-            <el-empty v-if="!tasks.length" description="暂无盘点任务" :image-size="90" />
+            <el-empty
+              v-if="!tasks.length"
+              description="暂无盘点任务"
+              :image-size="90"
+            />
           </div>
         </el-card>
       </el-col>
 
       <el-col :xs="24" :md="16">
-        <el-card shadow="never" class="panel" v-loading="activeTaskLoading">
+        <el-card v-loading="activeTaskLoading" shadow="never" class="panel">
           <template #header>
             <div class="active-head">
               <div>
@@ -400,7 +457,9 @@ onMounted(async () => {
               <div v-if="activeTask" class="actions">
                 <el-button @click="openNewItemDialog">新增发现物品</el-button>
                 <el-button @click="fillExpectedQty">一键带入账面数量</el-button>
-                <el-button type="primary" @click="markTaskCompleted">完成盘点</el-button>
+                <el-button type="primary" @click="markTaskCompleted"
+                  >完成盘点</el-button
+                >
               </div>
             </div>
           </template>
@@ -408,28 +467,52 @@ onMounted(async () => {
           <template v-if="activeTask">
             <el-row :gutter="10" class="summary-row">
               <el-col :sm="6" :xs="12">
-                <div class="summary-card">总条目：{{ activeSummary.total }}</div>
+                <div class="summary-card">
+                  总条目：{{ activeSummary.total }}
+                </div>
               </el-col>
               <el-col :sm="6" :xs="12">
-                <div class="summary-card">已录入：{{ activeSummary.counted }}</div>
+                <div class="summary-card">
+                  已录入：{{ activeSummary.counted }}
+                </div>
               </el-col>
               <el-col :sm="6" :xs="12">
-                <div class="summary-card">待录入：{{ activeSummary.pending }}</div>
+                <div class="summary-card">
+                  待录入：{{ activeSummary.pending }}
+                </div>
               </el-col>
               <el-col :sm="6" :xs="12">
-                <div class="summary-card summary-card--warn">差异条目：{{ activeSummary.diffCount }}</div>
+                <div class="summary-card summary-card--warn">
+                  差异条目：{{ activeSummary.diffCount }}
+                </div>
               </el-col>
             </el-row>
 
-            <el-table :data="activeTask.lines" size="small" style="margin-top: 8px">
+            <el-table
+              :data="activeTask.lines"
+              size="small"
+              style="margin-top: 8px"
+            >
               <el-table-column label="类别" width="90">
                 <template #default="scope">
                   {{ kindLabel(scope.row.item_kind) }}
                 </template>
               </el-table-column>
-              <el-table-column prop="warehouse_name" label="仓库" min-width="110" />
-              <el-table-column prop="item_name" label="物品/类型" min-width="160" />
-              <el-table-column prop="expected_qty" label="账面数量" width="110" />
+              <el-table-column
+                prop="warehouse_name"
+                label="仓库"
+                min-width="110"
+              />
+              <el-table-column
+                prop="item_name"
+                label="物品/类型"
+                min-width="160"
+              />
+              <el-table-column
+                prop="expected_qty"
+                label="账面数量"
+                width="110"
+              />
               <el-table-column label="实盘数量" width="160">
                 <template #default="scope">
                   <el-input-number
@@ -438,7 +521,9 @@ onMounted(async () => {
                     :precision="2"
                     :step="1"
                     :disabled="lineSavingId === scope.row.id"
-                    @update:model-value="saveLine(scope.row, { counted_qty: $event })"
+                    @update:model-value="
+                      saveLine(scope.row, { counted_qty: $event })
+                    "
                   />
                 </template>
               </el-table-column>
@@ -477,7 +562,11 @@ onMounted(async () => {
             </el-table>
           </template>
 
-          <el-empty v-else description="请选择或新建盘点任务" :image-size="100" />
+          <el-empty
+            v-else
+            description="请选择或新建盘点任务"
+            :image-size="100"
+          />
         </el-card>
       </el-col>
     </el-row>
@@ -486,7 +575,10 @@ onMounted(async () => {
   <el-dialog v-model="taskDialogVisible" title="新建盘点任务" width="560px">
     <el-form label-width="100px">
       <el-form-item label="任务名称" required>
-        <el-input v-model="createForm.title" placeholder="例如：2026Q1 全公司盘点" />
+        <el-input
+          v-model="createForm.title"
+          placeholder="例如：2026Q1 全公司盘点"
+        />
       </el-form-item>
       <el-form-item label="盘点范围" required>
         <el-radio-group v-model="createForm.scope">
@@ -494,8 +586,16 @@ onMounted(async () => {
           <el-radio label="warehouse">单仓库</el-radio>
         </el-radio-group>
       </el-form-item>
-      <el-form-item v-if="createForm.scope === 'warehouse'" label="指定仓库" required>
-        <el-select v-model="createForm.warehouse_id" filterable style="width: 100%">
+      <el-form-item
+        v-if="createForm.scope === 'warehouse'"
+        label="指定仓库"
+        required
+      >
+        <el-select
+          v-model="createForm.warehouse_id"
+          filterable
+          style="width: 100%"
+        >
           <el-option
             v-for="item in warehouses"
             :key="item.id"
@@ -515,7 +615,9 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="taskDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="creating" @click="createTask">创建任务</el-button>
+      <el-button type="primary" :loading="creating" @click="createTask"
+        >创建任务</el-button
+      >
     </template>
   </el-dialog>
 
@@ -528,7 +630,11 @@ onMounted(async () => {
         </el-radio-group>
       </el-form-item>
       <el-form-item label="归属仓库" required>
-        <el-select v-model="newItemForm.warehouse_id" filterable style="width: 100%">
+        <el-select
+          v-model="newItemForm.warehouse_id"
+          filterable
+          style="width: 100%"
+        >
           <el-option
             v-for="item in warehouses"
             :key="item.id"
@@ -543,10 +649,16 @@ onMounted(async () => {
           clearable
           filterable
           style="width: 100%"
-          :placeholder="newItemForm.item_kind === 'asset' ? '优先选择有状态资产类型' : '优先选择消耗品类型'"
+          :placeholder="
+            newItemForm.item_kind === 'asset'
+              ? '优先选择有状态资产类型'
+              : '优先选择消耗品类型'
+          "
         >
           <el-option
-            v-for="item in newItemForm.item_kind === 'asset' ? trackedTypes : consumableTypes"
+            v-for="item in newItemForm.item_kind === 'asset'
+              ? trackedTypes
+              : consumableTypes"
             :key="item.id"
             :label="`${item.type_name} (${item.type_code})`"
             :value="item.id"
@@ -554,10 +666,17 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="新物品名称">
-        <el-input v-model="newItemForm.custom_name" placeholder="未建类型时，可直接录入物品名称" />
+        <el-input
+          v-model="newItemForm.custom_name"
+          placeholder="未建类型时，可直接录入物品名称"
+        />
       </el-form-item>
       <el-form-item label="盘点数量" required>
-        <el-input-number v-model="newItemForm.quantity" :min="0.01" :precision="2" />
+        <el-input-number
+          v-model="newItemForm.quantity"
+          :min="0.01"
+          :precision="2"
+        />
       </el-form-item>
       <el-form-item label="单位">
         <el-input v-model="newItemForm.unit" style="width: 160px" />
@@ -581,7 +700,12 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="newItemDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="newItemSubmitting" @click="submitNewItem">加入当前盘点</el-button>
+      <el-button
+        type="primary"
+        :loading="newItemSubmitting"
+        @click="submitNewItem"
+        >加入当前盘点</el-button
+      >
     </template>
   </el-dialog>
 </template>

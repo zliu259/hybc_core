@@ -58,14 +58,16 @@ const handleBatchQr = () => {
     message("请先选择资产", { type: "warning" });
     return;
   }
-  message(`已生成二维码标签任务：${checkedIds.value.length} 项`, { type: "success" });
+  message(`已生成二维码标签任务：${checkedIds.value.length} 项`, {
+    type: "success"
+  });
 };
 
 onMounted(loadData);
 </script>
 
 <template>
-  <el-card shadow="never" class="ledger" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" class="ledger">
     <template #header>
       <div class="ledger__head">
         <div>
@@ -74,7 +76,9 @@ onMounted(loadData);
         </div>
         <div class="ledger__actions">
           <el-button @click="handleBatchPrint">打印入库单</el-button>
-          <el-button type="primary" @click="handleBatchQr">批量生成二维码标签</el-button>
+          <el-button type="primary" @click="handleBatchQr"
+            >批量生成二维码标签</el-button
+          >
         </div>
       </div>
     </template>
@@ -95,7 +99,12 @@ onMounted(loadData);
     </el-form>
 
     <div class="asset-grid">
-      <div v-for="row in rows" :key="row.id" class="asset-card" @click="goDetail(row.id)">
+      <div
+        v-for="row in rows"
+        :key="row.id"
+        class="asset-card"
+        @click="goDetail(row.id)"
+      >
         <div class="asset-card__check" @click.stop>
           <el-checkbox v-model="selected[row.id]" />
         </div>
@@ -106,7 +115,9 @@ onMounted(loadData);
           <div class="asset-card__status">
             <span
               class="status-dot"
-              :style="{ backgroundColor: statusMap[row.status]?.color || '#6e6458' }"
+              :style="{
+                backgroundColor: statusMap[row.status]?.color || '#6e6458'
+              }"
             />
             {{ statusMap[row.status]?.label || row.status }}
           </div>

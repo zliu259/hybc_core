@@ -58,15 +58,21 @@ const items = ref<EnvelopeItem[]>([]);
 const importFileInput = ref<HTMLInputElement | null>(null);
 
 const activePreset = computed(
-  () => sizePresets.find(item => item.value === form.value.sizePreset) ?? sizePresets[0]
+  () =>
+    sizePresets.find(item => item.value === form.value.sizePreset) ??
+    sizePresets[0]
 );
 
 const baseWidthMm = computed(() =>
-  form.value.sizePreset === "custom" ? form.value.customWidthMm : activePreset.value.widthMm
+  form.value.sizePreset === "custom"
+    ? form.value.customWidthMm
+    : activePreset.value.widthMm
 );
 
 const baseHeightMm = computed(() =>
-  form.value.sizePreset === "custom" ? form.value.customHeightMm : activePreset.value.heightMm
+  form.value.sizePreset === "custom"
+    ? form.value.customHeightMm
+    : activePreset.value.heightMm
 );
 
 const pageWidthMm = computed(() => {
@@ -97,7 +103,10 @@ const formatNow = () => {
 };
 
 const createUuid = () => {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+  if (
+    typeof crypto !== "undefined" &&
+    typeof crypto.randomUUID === "function"
+  ) {
     return crypto.randomUUID();
   }
   const template = "xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx";
@@ -151,7 +160,9 @@ const generate = async () => {
   if (!validateForm()) return;
   generating.value = true;
   try {
-    const uuids = Array.from({ length: Math.floor(form.value.count) }, () => createUuid());
+    const uuids = Array.from({ length: Math.floor(form.value.count) }, () =>
+      createUuid()
+    );
     const qrData = await Promise.all(
       uuids.map(uuid =>
         QRCode.toDataURL(uuid, {
@@ -161,7 +172,10 @@ const generate = async () => {
         })
       )
     );
-    items.value = uuids.map((uuid, index) => ({ uuid, qrDataUrl: qrData[index] }));
+    items.value = uuids.map((uuid, index) => ({
+      uuid,
+      qrDataUrl: qrData[index]
+    }));
     generatedAt.value = formatNow();
     persistSettings();
     message(`已生成 ${items.value.length} 份`, { type: "success" });
@@ -252,14 +266,24 @@ const importJson = async (event: Event) => {
       }))
     );
     items.value = nextItems;
-    generatedAt.value = typeof payload.generatedAt === "string" ? payload.generatedAt : formatNow();
+    generatedAt.value =
+      typeof payload.generatedAt === "string"
+        ? payload.generatedAt
+        : formatNow();
 
     if (payload.page) {
       form.value.sizePreset = "custom";
-      form.value.customWidthMm = Number(payload.page.widthMm || form.value.customWidthMm);
-      form.value.customHeightMm = Number(payload.page.heightMm || form.value.customHeightMm);
+      form.value.customWidthMm = Number(
+        payload.page.widthMm || form.value.customWidthMm
+      );
+      form.value.customHeightMm = Number(
+        payload.page.heightMm || form.value.customHeightMm
+      );
     }
-    if (payload.orientation === "landscape" || payload.orientation === "portrait") {
+    if (
+      payload.orientation === "landscape" ||
+      payload.orientation === "portrait"
+    ) {
       form.value.orientation = payload.orientation;
     }
     if (typeof payload.title === "string" && payload.title.trim()) {
@@ -330,7 +354,10 @@ const renderEnvelopeCanvas = async (item: EnvelopeItem) => {
   let start = 0;
   while (start < rawUuid.length) {
     let end = start + 1;
-    while (end <= rawUuid.length && ctx.measureText(rawUuid.slice(start, end)).width <= uuidMaxWidth) {
+    while (
+      end <= rawUuid.length &&
+      ctx.measureText(rawUuid.slice(start, end)).width <= uuidMaxWidth
+    ) {
       end += 1;
     }
     uuidChunks.push(rawUuid.slice(start, Math.max(start + 1, end - 1)));
@@ -338,13 +365,26 @@ const renderEnvelopeCanvas = async (item: EnvelopeItem) => {
   }
 
   uuidChunks.forEach((line, index) => {
-    ctx.fillText(line, textX, textY + bodyFont + index * Math.round(bodyFont * 1.35));
+    ctx.fillText(
+      line,
+      textX,
+      textY + bodyFont + index * Math.round(bodyFont * 1.35)
+    );
   });
 
-  const lineStartY = textY + Math.round(bodyFont * 1.35) * Math.max(2, uuidChunks.length + 1);
+  const lineStartY =
+    textY + Math.round(bodyFont * 1.35) * Math.max(2, uuidChunks.length + 1);
   ctx.fillText("封装日期：________年____月____日", textX, lineStartY);
-  ctx.fillText("签收日期：________年____月____日", textX, lineStartY + Math.round(bodyFont * 1.6));
-  ctx.fillText("填 报 人：________________", textX, lineStartY + Math.round(bodyFont * 3.2));
+  ctx.fillText(
+    "签收日期：________年____月____日",
+    textX,
+    lineStartY + Math.round(bodyFont * 1.6)
+  );
+  ctx.fillText(
+    "填 报 人：________________",
+    textX,
+    lineStartY + Math.round(bodyFont * 3.2)
+  );
 
   return canvas;
 };
@@ -360,7 +400,10 @@ const buildPdf = async () => {
     const canvas = await renderEnvelopeCanvas(items.value[i]);
     const imgData = canvas.toDataURL("image/png");
     if (i > 0) {
-      pdf.addPage([pageWidthMm.value, pageHeightMm.value], form.value.orientation);
+      pdf.addPage(
+        [pageWidthMm.value, pageHeightMm.value],
+        form.value.orientation
+      );
     }
     pdf.addImage(
       imgData,
@@ -386,7 +429,9 @@ const exportPdf = async () => {
   try {
     const pdf = await buildPdf();
 
-    pdf.save(`reimbursement-envelope-${(generatedAt.value || formatNow()).replace(/[\s:]/g, "-")}.pdf`);
+    pdf.save(
+      `reimbursement-envelope-${(generatedAt.value || formatNow()).replace(/[\s:]/g, "-")}.pdf`
+    );
     message("PDF 已生成并开始下载", { type: "success" });
   } catch {
     message("PDF 生成失败，请重试", { type: "error" });
@@ -443,11 +488,21 @@ onMounted(() => {
           <div class="actions">
             <el-button @click="goBack">返回报销处理</el-button>
             <el-button @click="clearAll">清空</el-button>
-            <el-button type="primary" :loading="generating" @click="generate">生成</el-button>
-            <el-button type="success" plain @click="exportPdf">直接生成PDF</el-button>
-            <el-button type="success" plain @click="printPdf">打印PDF</el-button>
-            <el-button type="warning" plain @click="exportCsv">导出CSV</el-button>
-            <el-button type="warning" plain @click="exportJson">导出JSON</el-button>
+            <el-button type="primary" :loading="generating" @click="generate"
+              >生成</el-button
+            >
+            <el-button type="success" plain @click="exportPdf"
+              >直接生成PDF</el-button
+            >
+            <el-button type="success" plain @click="printPdf"
+              >打印PDF</el-button
+            >
+            <el-button type="warning" plain @click="exportCsv"
+              >导出CSV</el-button
+            >
+            <el-button type="warning" plain @click="exportJson"
+              >导出JSON</el-button
+            >
             <el-button plain @click="triggerImport">导入JSON</el-button>
           </div>
         </div>
@@ -468,9 +523,17 @@ onMounted(() => {
               />
             </el-select>
             <template v-if="form.sizePreset === 'custom'">
-              <el-input-number v-model="form.customWidthMm" :min="80" :max="1000" />
+              <el-input-number
+                v-model="form.customWidthMm"
+                :min="80"
+                :max="1000"
+              />
               <span>mm ×</span>
-              <el-input-number v-model="form.customHeightMm" :min="80" :max="1000" />
+              <el-input-number
+                v-model="form.customHeightMm"
+                :min="80"
+                :max="1000"
+              />
               <span>mm</span>
             </template>
           </div>
@@ -515,10 +578,11 @@ onMounted(() => {
           </div>
         </div>
       </div>
-      <div class="meta">预览仅显示第 1 份，PDF 会包含全部 {{ items.length }} 份</div>
+      <div class="meta">
+        预览仅显示第 1 份，PDF 会包含全部 {{ items.length }} 份
+      </div>
     </div>
     <el-empty v-else description="请先生成数据" />
-
   </div>
 </template>
 
@@ -602,5 +666,4 @@ onMounted(() => {
   font-size: 14px;
   word-break: break-all;
 }
-
 </style>

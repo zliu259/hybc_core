@@ -25,23 +25,30 @@ const configForm = ref({
   WECOM_APPROVAL_DEFAULT_TARGET: "miniapp" as "web" | "miniapp"
 });
 
-const totals = computed(() =>
-  state.value?.totals ?? {
-    sent_count: 0,
-    failed_count: 0,
-    isolation_guard_count: 0,
-    summary_count: 0,
-    success_rate: 0
-  }
+const totals = computed(
+  () =>
+    state.value?.totals ?? {
+      sent_count: 0,
+      failed_count: 0,
+      isolation_guard_count: 0,
+      summary_count: 0,
+      success_rate: 0
+    }
 );
 
-const successRatePercent = computed(() => Number((totals.value.success_rate * 100).toFixed(2)));
+const successRatePercent = computed(() =>
+  Number((totals.value.success_rate * 100).toFixed(2))
+);
 
-const recentRows = computed<WeComPushMonitorEvent[]>(() => state.value?.recent ?? []);
+const recentRows = computed<WeComPushMonitorEvent[]>(
+  () => state.value?.recent ?? []
+);
 
 const topErrors = computed(() => state.value?.top_errors ?? []);
 
-const eventTypeTag = (type: string): "success" | "danger" | "warning" | "info" => {
+const eventTypeTag = (
+  type: string
+): "success" | "danger" | "warning" | "info" => {
   if (type === "wecom_template_card_sent") return "success";
   if (type === "wecom_template_card_failed") return "danger";
   if (type === "wecom_template_card_isolation_guard") return "warning";
@@ -106,14 +113,19 @@ const forcePushCurrentNodes = async () => {
 
 const loadConfig = async () => {
   const result = await listRunnerRuntimeConfig();
-  const configMap = new Map(result.data.map((item) => [item.config_key, item.config_value]));
-  configForm.value.WECOM_MINIAPP_APPID = configMap.get("WECOM_MINIAPP_APPID") || "";
+  const configMap = new Map(
+    result.data.map(item => [item.config_key, item.config_value])
+  );
+  configForm.value.WECOM_MINIAPP_APPID =
+    configMap.get("WECOM_MINIAPP_APPID") || "";
   configForm.value.WECOM_APPROVAL_WEB_BASE_URL =
     configMap.get("WECOM_APPROVAL_WEB_BASE_URL") || "";
   configForm.value.WECOM_APPROVAL_MINI_PAGE_PATH =
-    configMap.get("WECOM_APPROVAL_MINI_PAGE_PATH") || "pages/approval-detail/index?id={id}";
+    configMap.get("WECOM_APPROVAL_MINI_PAGE_PATH") ||
+    "pages/approval-detail/index?id={id}";
   const target = configMap.get("WECOM_APPROVAL_DEFAULT_TARGET");
-  configForm.value.WECOM_APPROVAL_DEFAULT_TARGET = target === "web" ? "web" : "miniapp";
+  configForm.value.WECOM_APPROVAL_DEFAULT_TARGET =
+    target === "web" ? "web" : "miniapp";
 };
 
 const saveConfig = async () => {
@@ -162,9 +174,18 @@ onMounted(async () => {
 <template>
   <el-card shadow="never" style="margin-bottom: 16px">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        "
+      >
         <span>推送跳转配置（超管）</span>
-        <el-button type="primary" :loading="saving" @click="saveConfig">保存配置</el-button>
+        <el-button type="primary" :loading="saving" @click="saveConfig"
+          >保存配置</el-button
+        >
       </div>
     </template>
 
@@ -198,7 +219,14 @@ onMounted(async () => {
 
   <el-card shadow="never" style="margin-bottom: 16px">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center; gap: 12px">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 12px;
+        "
+      >
         <span>企业微信推送状态监控</span>
         <div style="display: flex; gap: 8px; align-items: center">
           <el-select v-model="hours" style="width: 120px" @change="refresh">
@@ -208,10 +236,15 @@ onMounted(async () => {
             <el-option :value="72" label="最近72小时" />
             <el-option :value="168" label="最近7天" />
           </el-select>
-          <el-button type="danger" :loading="forcing" @click="forcePushCurrentNodes"
+          <el-button
+            type="danger"
+            :loading="forcing"
+            @click="forcePushCurrentNodes"
             >扫描当前节点并强制推送</el-button
           >
-          <el-button type="primary" :loading="loading" @click="refresh">刷新</el-button>
+          <el-button type="primary" :loading="loading" @click="refresh"
+            >刷新</el-button
+          >
         </div>
       </div>
     </template>
@@ -224,7 +257,10 @@ onMounted(async () => {
         <el-statistic title="发送失败" :value="totals.failed_count" />
       </el-col>
       <el-col :span="6">
-        <el-statistic title="隔离保护触发" :value="totals.isolation_guard_count" />
+        <el-statistic
+          title="隔离保护触发"
+          :value="totals.isolation_guard_count"
+        />
       </el-col>
       <el-col :span="6">
         <el-statistic title="成功率" :value="successRatePercent">
@@ -234,23 +270,42 @@ onMounted(async () => {
     </el-row>
 
     <div style="margin-top: 12px; color: var(--el-text-color-secondary)">
-      时间窗口：最近 {{ state?.window_hours ?? hours }} 小时；起始时间：{{ state?.since ?? "-" }}
+      时间窗口：最近 {{ state?.window_hours ?? hours }} 小时；起始时间：{{
+        state?.since ?? "-"
+      }}
     </div>
   </el-card>
 
   <el-card shadow="never" header="高频错误 Top 10" style="margin-bottom: 16px">
-    <el-table v-loading="loading" :data="topErrors" style="width: 100%" empty-text="暂无错误">
-      <el-table-column prop="message" label="错误信息" min-width="680" show-overflow-tooltip />
+    <el-table
+      v-loading="loading"
+      :data="topErrors"
+      style="width: 100%"
+      empty-text="暂无错误"
+    >
+      <el-table-column
+        prop="message"
+        label="错误信息"
+        min-width="680"
+        show-overflow-tooltip
+      />
       <el-table-column prop="count" label="出现次数" width="120" />
     </el-table>
   </el-card>
 
   <el-card shadow="never" header="最近推送事件">
-    <el-table v-loading="loading" :data="recentRows" style="width: 100%" empty-text="暂无事件">
+    <el-table
+      v-loading="loading"
+      :data="recentRows"
+      style="width: 100%"
+      empty-text="暂无事件"
+    >
       <el-table-column prop="id" label="ID" width="90" />
       <el-table-column label="事件类型" width="260">
         <template #default="{ row }">
-          <el-tag :type="eventTypeTag(row.event_type)" size="small">{{ row.event_type }}</el-tag>
+          <el-tag :type="eventTypeTag(row.event_type)" size="small">{{
+            row.event_type
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="event_source" label="来源" width="160" />

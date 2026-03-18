@@ -541,14 +541,18 @@ const payoutForm = ref({
 
 const payoutEntity = computed(() => {
   if (!payoutForm.value.payment_entity_id) return null;
-  return entities.value.find(item => item.id === payoutForm.value.payment_entity_id) ?? null;
+  return (
+    entities.value.find(
+      item => item.id === payoutForm.value.payment_entity_id
+    ) ?? null
+  );
 });
 
 const payoutEntityAccounts = computed(() => {
   if (!payoutForm.value.payment_entity_id) return [];
-  return (entityBankAccountMap.value[payoutForm.value.payment_entity_id] ?? []).filter(
-    item => item.status === "active"
-  );
+  return (
+    entityBankAccountMap.value[payoutForm.value.payment_entity_id] ?? []
+  ).filter(item => item.status === "active");
 });
 
 const canAdjustPayoutInApproval = computed(() => {
@@ -562,7 +566,9 @@ const onPayoutEntityChange = (entityId: number | undefined) => {
     payoutForm.value.payment_account = "";
     return;
   }
-  const accounts = (entityBankAccountMap.value[entityId] ?? []).filter(item => item.status === "active");
+  const accounts = (entityBankAccountMap.value[entityId] ?? []).filter(
+    item => item.status === "active"
+  );
   if (accounts.length > 0) {
     payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
     payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
@@ -578,7 +584,9 @@ const onPayoutAccountChange = (accountId: number | undefined) => {
     return;
   }
   const target = payoutEntityAccounts.value.find(item => item.id === accountId);
-  payoutForm.value.payment_account = target ? `${target.bank_name} / ${target.account_no}` : "";
+  payoutForm.value.payment_account = target
+    ? `${target.bank_name} / ${target.account_no}`
+    : "";
 };
 
 const savePayoutSelection = async () => {
@@ -596,7 +604,8 @@ const savePayoutSelection = async () => {
   try {
     await updatePaymentRequest(detail.value.id, {
       payment_entity_id: payoutForm.value.payment_entity_id,
-      payment_entity_bank_account_id: payoutForm.value.payment_entity_bank_account_id,
+      payment_entity_bank_account_id:
+        payoutForm.value.payment_entity_bank_account_id,
       payment_account: payoutForm.value.payment_account || null
     });
     message("付款主体与账户已更新", { type: "success" });
@@ -665,8 +674,12 @@ const loadDetail = async () => {
       remark: result.data.remark ?? ""
     };
     payoutForm.value = {
-      payment_entity_id: result.data.payment_entity_id ?? selectedContract.value?.entity_id ?? undefined,
-      payment_entity_bank_account_id: result.data.payment_entity_bank_account_id ?? undefined,
+      payment_entity_id:
+        result.data.payment_entity_id ??
+        selectedContract.value?.entity_id ??
+        undefined,
+      payment_entity_bank_account_id:
+        result.data.payment_entity_bank_account_id ?? undefined,
       payment_account: result.data.payment_account ?? ""
     };
     superEditMode.value = false;
@@ -681,7 +694,9 @@ const loadDetail = async () => {
       !payoutForm.value.payment_entity_bank_account_id
     ) {
       const accounts =
-        entityBankAccountMap.value[payoutForm.value.payment_entity_id]?.filter(item => item.status === "active") ?? [];
+        entityBankAccountMap.value[payoutForm.value.payment_entity_id]?.filter(
+          item => item.status === "active"
+        ) ?? [];
       if (accounts.length > 0) {
         payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
         if (!payoutForm.value.payment_account) {
@@ -961,7 +976,11 @@ const onVoidPayment = async () => {
 };
 
 const onReactivatePayment = async () => {
-  if (isCreate.value || !isSuperAdmin.value || detail.value?.status !== "cancelled") {
+  if (
+    isCreate.value ||
+    !isSuperAdmin.value ||
+    detail.value?.status !== "cancelled"
+  ) {
     return;
   }
   try {
@@ -1118,13 +1137,17 @@ onMounted(async () => {
           </el-select>
         </el-form-item>
         <el-form-item>
-          <el-button type="primary" :loading="payoutSaving" @click="savePayoutSelection"
+          <el-button
+            type="primary"
+            :loading="payoutSaving"
+            @click="savePayoutSelection"
             >保存出纳账户选择</el-button
           >
         </el-form-item>
       </el-form>
       <div style="margin-top: 8px; color: #8c6a2f; font-size: 12px">
-        当前选择：{{ payoutEntity?.entity_name || "-" }} / {{ payoutForm.payment_account || "-" }}
+        当前选择：{{ payoutEntity?.entity_name || "-" }} /
+        {{ payoutForm.payment_account || "-" }}
       </div>
     </el-card>
 
@@ -1400,9 +1423,9 @@ onMounted(async () => {
       }}</el-descriptions-item>
       <el-descriptions-item label="我方账号" :span="2">{{
         detail.payment_account ||
-          (selectedEntityAccount
-            ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
-            : "-")
+        (selectedEntityAccount
+          ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
+          : "-")
       }}</el-descriptions-item>
       <el-descriptions-item label="对方单位">{{
         selectedPayee?.name || detail.contract?.counterparty || "-"
@@ -1477,10 +1500,14 @@ onMounted(async () => {
     >
       <el-table-column prop="node_name" label="节点" min-width="140" />
       <el-table-column label="类型" width="120">
-        <template #default="scope">{{ toNodeTypeLabel(scope.row.node_type) }}</template>
+        <template #default="scope">{{
+          toNodeTypeLabel(scope.row.node_type)
+        }}</template>
       </el-table-column>
       <el-table-column label="状态" width="110">
-        <template #default="scope">{{ toNodeStatusLabel(scope.row.status) }}</template>
+        <template #default="scope">{{
+          toNodeStatusLabel(scope.row.status)
+        }}</template>
       </el-table-column>
       <el-table-column label="审批意见" min-width="260">
         <template #default="scope">
@@ -1490,7 +1517,9 @@ onMounted(async () => {
               :key="task.id"
               style="margin-bottom: 4px"
             >
-              {{ toUserLabel(task.assignee_userid) }}：{{ toActionLabel(task.action) }}
+              {{ toUserLabel(task.assignee_userid) }}：{{
+                toActionLabel(task.action)
+              }}
               <span v-if="task.comment">（{{ task.comment }}）</span>
             </div>
           </template>
@@ -1507,10 +1536,14 @@ onMounted(async () => {
     >
       <el-table-column prop="node_key" label="节点" width="160" />
       <el-table-column label="状态" width="100">
-        <template #default="scope">{{ toAiReviewStatusLabel(scope.row.status) }}</template>
+        <template #default="scope">{{
+          toAiReviewStatusLabel(scope.row.status)
+        }}</template>
       </el-table-column>
       <el-table-column label="结论" width="100">
-        <template #default="scope">{{ toAiOutcomeLabel(scope.row.outcome) }}</template>
+        <template #default="scope">{{
+          toAiOutcomeLabel(scope.row.outcome)
+        }}</template>
       </el-table-column>
       <el-table-column label="总结/意见" min-width="260">
         <template #default="scope">{{

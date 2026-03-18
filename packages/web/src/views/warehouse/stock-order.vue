@@ -57,7 +57,9 @@ const presetTemplates = [
     ]
   }
 ] as const;
-const selectedTemplateId = ref<(typeof presetTemplates)[number]["id"]>(presetTemplates[0].id);
+const selectedTemplateId = ref<(typeof presetTemplates)[number]["id"]>(
+  presetTemplates[0].id
+);
 
 const form = ref({
   order_type: "outbound" as "inbound" | "outbound" | "transfer",
@@ -209,7 +211,9 @@ const quickAddByKeyword = () => {
 };
 
 const applyPresetTemplate = () => {
-  const tpl = presetTemplates.find(item => item.id === selectedTemplateId.value);
+  const tpl = presetTemplates.find(
+    item => item.id === selectedTemplateId.value
+  );
   if (!tpl) return;
   let matched = 0;
   tpl.items.forEach(row => {
@@ -220,7 +224,9 @@ const applyPresetTemplate = () => {
     }
   });
   if (!matched) {
-    message("模板未匹配到任何资产类型，请维护资产类型后重试", { type: "warning" });
+    message("模板未匹配到任何资产类型，请维护资产类型后重试", {
+      type: "warning"
+    });
     return;
   }
   message(`模板已套用：${tpl.name}（匹配 ${matched} 项）`, { type: "success" });
@@ -340,7 +346,7 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" class="order-creator" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" class="order-creator">
     <template #header>
       <div class="order-creator__header">
         <div>
@@ -359,8 +365,15 @@ onMounted(async () => {
             placeholder="扫码值/关键字快速加入（编码、名称）"
             @keyup.enter="quickAddByKeyword"
           />
-          <el-input-number v-model="quickAddQty" :min="1" :precision="0" :step="1" />
-          <el-button type="primary" @click="quickAddByKeyword">快速加入</el-button>
+          <el-input-number
+            v-model="quickAddQty"
+            :min="1"
+            :precision="0"
+            :step="1"
+          />
+          <el-button type="primary" @click="quickAddByKeyword"
+            >快速加入</el-button
+          >
         </div>
 
         <div class="template-row">
@@ -389,9 +402,13 @@ onMounted(async () => {
           >
             <div>
               <div class="resource-item__name">{{ asset.type_name }}</div>
-              <div class="resource-item__meta">{{ asset.type_code }} · {{ asset.unit || "件" }}</div>
+              <div class="resource-item__meta">
+                {{ asset.type_code }} · {{ asset.unit || "件" }}
+              </div>
             </div>
-            <el-button type="primary" plain @click="addAssetToCart(asset.id)">加入</el-button>
+            <el-button type="primary" plain @click="addAssetToCart(asset.id)"
+              >加入</el-button
+            >
           </div>
         </el-scrollbar>
       </div>
@@ -490,7 +507,12 @@ onMounted(async () => {
           </el-form-item>
         </el-form>
 
-        <el-table :data="form.items" size="small" empty-text="请从左侧加入资产" border>
+        <el-table
+          :data="form.items"
+          size="small"
+          empty-text="请从左侧加入资产"
+          border
+        >
           <el-table-column label="资产类型" min-width="240">
             <template #default="scope">
               {{ getAssetTypeName(scope.row.asset_type_id) }}
@@ -508,15 +530,27 @@ onMounted(async () => {
           </el-table-column>
           <el-table-column label="操作" width="90">
             <template #default="scope">
-              <el-button link type="danger" @click="removeCartItem(scope.$index)">删除</el-button>
+              <el-button
+                link
+                type="danger"
+                @click="removeCartItem(scope.$index)"
+                >删除</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
 
         <div class="cart-actions">
-          <span class="cart-summary">已选 {{ form.items.length }} 项，合计数量 {{ totalCartQty }}</span>
+          <span class="cart-summary"
+            >已选 {{ form.items.length }} 项，合计数量 {{ totalCartQty }}</span
+          >
           <el-button @click="resetCreator">清空</el-button>
-          <el-button type="primary" :disabled="!canSubmit" :loading="submitting" @click="submit">
+          <el-button
+            type="primary"
+            :disabled="!canSubmit"
+            :loading="submitting"
+            @click="submit"
+          >
             提交制单
           </el-button>
         </div>
@@ -524,13 +558,17 @@ onMounted(async () => {
     </div>
   </el-card>
 
-  <el-card shadow="never" class="order-list" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" class="order-list">
     <template #header>
       <div class="order-list__header">
         <span>出入库单列表</span>
         <el-form inline>
           <el-form-item label="类型">
-            <el-select v-model="filters.order_type" clearable style="width: 140px">
+            <el-select
+              v-model="filters.order_type"
+              clearable
+              style="width: 140px"
+            >
               <el-option label="入库" value="inbound" />
               <el-option label="出库" value="outbound" />
               <el-option label="调拨" value="transfer" />
@@ -568,7 +606,9 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="scope">
-          <el-tag :type="statusTag(scope.row.status)">{{ scope.row.status }}</el-tag>
+          <el-tag :type="statusTag(scope.row.status)">{{
+            scope.row.status
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="updated_at" label="更新时间" width="190" />
@@ -593,7 +633,10 @@ onMounted(async () => {
             执行
           </el-button>
           <el-button
-            v-if="scope.row.status === 'draft' || scope.row.status === 'pending_approval'"
+            v-if="
+              scope.row.status === 'draft' ||
+              scope.row.status === 'pending_approval'
+            "
             link
             type="danger"
             :loading="actionId === scope.row.id"

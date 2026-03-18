@@ -2,6 +2,7 @@
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
 import { message } from "@/utils/message";
+import { fileCategoryLabel } from "@/utils/enum-labels";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
 import {
@@ -124,7 +125,7 @@ onMounted(loadData);
 </script>
 
 <template>
-  <el-card shadow="never" header="文件库" v-loading="loading">
+  <el-card v-loading="loading" shadow="never" header="文件库">
     <div class="toolbar">
       <el-select
         v-model="form.section_id"
@@ -139,8 +140,16 @@ onMounted(loadData);
           :value="item.value"
         />
       </el-select>
-      <el-input v-model="form.category" placeholder="分类" style="width: 160px" />
-      <el-input v-model="form.remark" placeholder="备注（可选）" style="width: 280px" />
+      <el-input
+        v-model="form.category"
+        placeholder="分类"
+        style="width: 160px"
+      />
+      <el-input
+        v-model="form.remark"
+        placeholder="备注（可选）"
+        style="width: 280px"
+      />
       <el-upload
         action="#"
         :show-file-list="false"
@@ -162,16 +171,29 @@ onMounted(loadData);
           }}
         </template>
       </el-table-column>
-      <el-table-column prop="category" label="分类" width="140" />
+      <el-table-column label="分类" width="140">
+        <template #default="scope">{{
+          fileCategoryLabel(scope.row.category)
+        }}</template>
+      </el-table-column>
       <el-table-column label="大小" width="110">
-        <template #default="scope">{{ formatBytes(scope.row.file_size) }}</template>
+        <template #default="scope">{{
+          formatBytes(scope.row.file_size)
+        }}</template>
       </el-table-column>
       <el-table-column prop="uploaded_by_userid" label="上传人" width="120" />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openDrawer(scope.row)">详情</el-button>
-          <el-link :href="scope.row.file_url" target="_blank" type="primary">查看</el-link>
-          <el-popconfirm title="确认移除该文件？" @confirm="removeFile(scope.row)">
+          <el-button link type="primary" @click="openDrawer(scope.row)"
+            >详情</el-button
+          >
+          <el-link :href="scope.row.file_url" target="_blank" type="primary"
+            >查看</el-link
+          >
+          <el-popconfirm
+            title="确认移除该文件？"
+            @confirm="removeFile(scope.row)"
+          >
             <template #reference>
               <el-button link type="danger">移除</el-button>
             </template>
@@ -181,10 +203,19 @@ onMounted(loadData);
     </el-table>
   </el-card>
 
-  <el-drawer v-model="drawerVisible" title="文件详情" size="520px" destroy-on-close>
+  <el-drawer
+    v-model="drawerVisible"
+    title="文件详情"
+    size="520px"
+    destroy-on-close
+  >
     <el-descriptions :column="1" border>
-      <el-descriptions-item label="文件名">{{ currentFile?.file_name }}</el-descriptions-item>
-      <el-descriptions-item label="分类">{{ currentFile?.category || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="文件名">{{
+        currentFile?.file_name
+      }}</el-descriptions-item>
+      <el-descriptions-item label="分类">{{
+        currentFile?.category ? fileCategoryLabel(currentFile.category) : "-"
+      }}</el-descriptions-item>
       <el-descriptions-item label="工作段">
         {{
           currentFile?.section_code
@@ -195,8 +226,12 @@ onMounted(loadData);
       <el-descriptions-item label="大小">
         {{ formatBytes(currentFile?.file_size || null) }}
       </el-descriptions-item>
-      <el-descriptions-item label="上传人">{{ currentFile?.uploaded_by_userid }}</el-descriptions-item>
-      <el-descriptions-item label="备注">{{ currentFile?.remark || '-' }}</el-descriptions-item>
+      <el-descriptions-item label="上传人">{{
+        currentFile?.uploaded_by_userid
+      }}</el-descriptions-item>
+      <el-descriptions-item label="备注">{{
+        currentFile?.remark || "-"
+      }}</el-descriptions-item>
     </el-descriptions>
   </el-drawer>
 </template>

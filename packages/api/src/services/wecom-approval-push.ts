@@ -203,6 +203,17 @@ const resolveRouteConfig = async (env: Env): Promise<WeComPushRouteConfig> => {
   }
 };
 
+const BIZ_TYPE_LABELS: Record<string, string> = {
+  outbound_contract: "对外合同审批",
+  inbound_contract: "收款合同审批",
+  payment_request: "付款审批",
+  reimbursement_batch: "报销审批",
+  invoice_request: "开票申请"
+};
+
+const bizTypeLabel = (bizType: string): string =>
+  BIZ_TYPE_LABELS[bizType] ?? bizType;
+
 const formatAmountCny = (amount: number | null | undefined): string | null => {
   if (typeof amount !== "number" || !Number.isFinite(amount)) return null;
   return amount.toLocaleString("zh-CN", {
@@ -244,6 +255,17 @@ export const resolveApprovalPushMeta = async (
     return {
       requestTitle: row?.request_no?.trim() ? `开票申请 ${row.request_no}` : bizSummary,
       amountText: formatAmountCny(row?.amount_with_tax)
+    };
+  }
+
+  if (bizType === "outbound_contract" || bizType === "inbound_contract") {
+    const row = await env.DB.prepare("SELECT total_amount, contract_no FROM contract WHERE id = ?")
+      .bind(bizId)
+      .first<{ total_amount: number | null; contract_no: string | null }>();
+    const direction = bizType === "outbound_contract" ? "对外合同" : "收款合同";
+    return {
+      requestTitle: row?.contract_no?.trim() ? `${direction} ${row.contract_no}` : bizSummary,
+      amountText: formatAmountCny(row?.total_amount)
     };
   }
 
@@ -331,10 +353,10 @@ const buildTemplateCard = async (
     },
     sub_title_text:
       mode === "urge"
-        ? `${payload.bizType} / ${payload.currentNodeName} 有催办提醒，请优先处理。${
+        ? `${bizTypeLabel(payload.bizType)} / ${payload.currentNodeName} 有催办提醒，请优先处理。${
             options?.urgeReason ? ` 原因：${options.urgeReason}` : ""
           }`
-        : `${payload.bizType} / ${payload.currentNodeName}有新的待办，请及时处理。`,
+        : `${bizTypeLabel(payload.bizType)} / ${payload.currentNodeName}有新的待办，请及时处理。`,
     jump_list: jumpList,
     card_action: cardAction
   };

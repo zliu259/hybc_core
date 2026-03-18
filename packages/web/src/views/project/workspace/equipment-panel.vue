@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
+import { statusLabel } from "@/utils/enum-labels";
 import { getAssetProjectView } from "@/api/asset";
 
 const props = defineProps<{ projectId: number }>();
@@ -26,14 +27,20 @@ const loadData = async () => {
     consumptions.value =
       (result.data.consumptions as Array<Record<string, unknown>>) ?? [];
     rentalAlert.value =
-      (result.data.rental_alert as { active_count?: number; overdue_count?: number })?.active_count !==
-      undefined
+      (
+        result.data.rental_alert as {
+          active_count?: number;
+          overdue_count?: number;
+        }
+      )?.active_count !== undefined
         ? {
             active_count: Number(
-              (result.data.rental_alert as { active_count?: number }).active_count ?? 0
+              (result.data.rental_alert as { active_count?: number })
+                .active_count ?? 0
             ),
             overdue_count: Number(
-              (result.data.rental_alert as { overdue_count?: number }).overdue_count ?? 0
+              (result.data.rental_alert as { overdue_count?: number })
+                .overdue_count ?? 0
             )
           }
         : { active_count: 0, overdue_count: 0 };
@@ -75,10 +82,20 @@ onMounted(loadData);
               label="资产名称"
               min-width="140"
             />
-            <el-table-column prop="status" label="状态" width="100" />
+            <el-table-column label="状态" width="100">
+              <template #default="scope">{{
+                statusLabel(scope.row.status)
+              }}</template>
+            </el-table-column>
             <el-table-column label="租赁" width="120">
               <template #default="scope">
-                <el-tag v-if="scope.row.rental_mode" :type="scope.row.rental_mode === 'lease_in' ? 'warning' : 'primary'" size="small">
+                <el-tag
+                  v-if="scope.row.rental_mode"
+                  :type="
+                    scope.row.rental_mode === 'lease_in' ? 'warning' : 'primary'
+                  "
+                  size="small"
+                >
                   {{ scope.row.rental_mode === "lease_in" ? "租入" : "外租" }}
                 </el-tag>
                 <span v-else>-</span>
@@ -106,7 +123,11 @@ onMounted(loadData);
             />
             <el-table-column label="操作" width="90" fixed="right">
               <template #default="scope">
-                <el-button link type="primary" @click="openAssetDetail(scope.row)">
+                <el-button
+                  link
+                  type="primary"
+                  @click="openAssetDetail(scope.row)"
+                >
                   详情
                 </el-button>
               </template>
@@ -138,7 +159,11 @@ onMounted(loadData);
           {{ currentAsset?.asset_name || "-" }}
         </el-descriptions-item>
         <el-descriptions-item label="状态">
-          {{ currentAsset?.status || "-" }}
+          {{
+            currentAsset?.status
+              ? statusLabel(currentAsset.status as string)
+              : "-"
+          }}
         </el-descriptions-item>
         <el-descriptions-item label="当前位置">
           {{ currentAsset?.current_location || "-" }}

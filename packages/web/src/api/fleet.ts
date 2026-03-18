@@ -28,7 +28,10 @@ export type FuelCard = {
 export type FuelCardBalanceLog = {
   id: number;
   fuel_card_id: number;
-  operation_type: "card_created" | "application_processed" | "manual_adjustment";
+  operation_type:
+    | "card_created"
+    | "application_processed"
+    | "manual_adjustment";
   previous_balance: number;
   new_balance: number;
   change_amount: number;
@@ -80,11 +83,10 @@ export const createFleetVehicle = (data: {
   vehicle_model?: string;
   status?: string;
 }) => {
-  return http.request<{ success: boolean; data: { id: number; vehicle_uuid: string } }>(
-    "post",
-    "/api/v1/fleet/vehicles",
-    { data }
-  );
+  return http.request<{
+    success: boolean;
+    data: { id: number; vehicle_uuid: string };
+  }>("post", "/api/v1/fleet/vehicles", { data });
 };
 
 export const updateFleetVehicle = (
@@ -98,7 +100,11 @@ export const updateFleetVehicle = (
     status?: string;
   }
 ) => {
-  return http.request<{ success: boolean }>("put", `/api/v1/fleet/vehicles/${id}`, { data });
+  return http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/fleet/vehicles/${id}`,
+    { data }
+  );
 };
 
 export const createVehicleMileageLog = (
@@ -118,12 +124,19 @@ export const createVehicleMileageLog = (
 };
 
 export const listFuelCards = (params?: { status?: string }) => {
-  return http.request<{ success: boolean; data: FuelCard[] }>("get", "/api/v1/fleet/fuel-cards", {
-    params
-  });
+  return http.request<{ success: boolean; data: FuelCard[] }>(
+    "get",
+    "/api/v1/fleet/fuel-cards",
+    {
+      params
+    }
+  );
 };
 
-export const listFuelCardBalanceLogs = (fuelCardId: number, params?: { page?: number; pageSize?: number }) => {
+export const listFuelCardBalanceLogs = (
+  fuelCardId: number,
+  params?: { page?: number; pageSize?: number }
+) => {
   return http.request<{
     success: boolean;
     data: FuelCardBalanceLog[];
@@ -134,9 +147,13 @@ export const listFuelCardBalanceLogs = (fuelCardId: number, params?: { page?: nu
 };
 
 export const listMyFuelCards = () => {
-  return http.request<{ success: boolean; data: FuelCard[] }>("get", "/api/v1/fleet/fuel-cards", {
-    params: { mine: true, status: "active" }
-  });
+  return http.request<{ success: boolean; data: FuelCard[] }>(
+    "get",
+    "/api/v1/fleet/fuel-cards",
+    {
+      params: { mine: true, status: "active" }
+    }
+  );
 };
 
 export const createFuelCard = (data: {
@@ -152,7 +169,10 @@ export const createFuelCard = (data: {
   );
 };
 
-export const bindFuelCardUser = (fuelCardId: number, data: { bind_userid: string }) => {
+export const bindFuelCardUser = (
+  fuelCardId: number,
+  data: { bind_userid: string }
+) => {
   return http.request<{ success: boolean }>(
     "post",
     `/api/v1/fleet/fuel-cards/${fuelCardId}/bind-user`,
@@ -160,7 +180,10 @@ export const bindFuelCardUser = (fuelCardId: number, data: { bind_userid: string
   );
 };
 
-export const listFuelQuotaApplications = (params?: { mine?: boolean; status?: string }) => {
+export const listFuelQuotaApplications = (params?: {
+  mine?: boolean;
+  status?: string;
+}) => {
   return http.request<{ success: boolean; data: FuelQuotaApplication[] }>(
     "get",
     "/api/v1/fleet/fuel-applications",
@@ -171,7 +194,11 @@ export const listFuelQuotaApplications = (params?: { mine?: boolean; status?: st
 export const getFuelQuotaPendingSummary = () => {
   return http.request<{
     success: boolean;
-    data: { pending_count: number; processed_count: number; rejected_count: number };
+    data: {
+      pending_count: number;
+      processed_count: number;
+      rejected_count: number;
+    };
   }>("get", "/api/v1/fleet/fuel-applications/pending-summary");
 };
 
@@ -182,11 +209,10 @@ export const createFuelQuotaApplication = (data: {
   vehicle_mileage_km: number;
   photo_keys_json?: string;
 }) => {
-  return http.request<{ success: boolean; data: { id: number; application_no: string } }>(
-    "post",
-    "/api/v1/fleet/fuel-applications",
-    { data }
-  );
+  return http.request<{
+    success: boolean;
+    data: { id: number; application_no: string };
+  }>("post", "/api/v1/fleet/fuel-applications", { data });
 };
 
 export const processFuelQuotaApplication = (

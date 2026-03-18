@@ -90,9 +90,24 @@ const snapshot = ref<{
     end_date: `${currentYear}-${currentMonth}-31`
   },
   summary: {
-    outbound: { count: 0, total_amount: 0, completed_amount: 0, pending_count: 0 },
-    internal: { count: 0, total_amount: 0, completed_amount: 0, pending_count: 0 },
-    receipt: { count: 0, total_amount: 0, completed_amount: 0, pending_count: 0 },
+    outbound: {
+      count: 0,
+      total_amount: 0,
+      completed_amount: 0,
+      pending_count: 0
+    },
+    internal: {
+      count: 0,
+      total_amount: 0,
+      completed_amount: 0,
+      pending_count: 0
+    },
+    receipt: {
+      count: 0,
+      total_amount: 0,
+      completed_amount: 0,
+      pending_count: 0
+    },
     total_amount: 0
   },
   charts: {
@@ -110,7 +125,7 @@ let structureChart: ReturnType<typeof echarts.init> | null = null;
 
 const projectMap = computed(() => {
   const map: Record<number, string> = {};
-  projects.value.forEach((item) => {
+  projects.value.forEach(item => {
     map[item.id] = item.project_name;
   });
   return map;
@@ -162,7 +177,7 @@ const renderCharts = async () => {
       grid: { top: 36, right: 20, bottom: 36, left: 56 },
       xAxis: {
         type: "category",
-        data: trend.map((item) => item.bucket)
+        data: trend.map(item => item.bucket)
       },
       yAxis: {
         type: "value"
@@ -172,28 +187,28 @@ const renderCharts = async () => {
           name: "对外付款",
           type: "bar",
           stack: "amount",
-          data: trend.map((item) => Number(item.outbound_amount.toFixed(2))),
+          data: trend.map(item => Number(item.outbound_amount.toFixed(2))),
           itemStyle: { color: "#c26245" }
         },
         {
           name: "对内付款",
           type: "bar",
           stack: "amount",
-          data: trend.map((item) => Number(item.internal_amount.toFixed(2))),
+          data: trend.map(item => Number(item.internal_amount.toFixed(2))),
           itemStyle: { color: "#4b6cb7" }
         },
         {
           name: "收款",
           type: "bar",
           stack: "amount",
-          data: trend.map((item) => Number(item.receipt_amount.toFixed(2))),
+          data: trend.map(item => Number(item.receipt_amount.toFixed(2))),
           itemStyle: { color: "#2f8f6b" }
         },
         {
           name: "合计",
           type: "line",
           smooth: true,
-          data: trend.map((item) => Number(item.total_amount.toFixed(2))),
+          data: trend.map(item => Number(item.total_amount.toFixed(2))),
           itemStyle: { color: "#2a241d" }
         }
       ]
@@ -220,7 +235,7 @@ const renderCharts = async () => {
           label: {
             formatter: "{b}\n{d}%"
           },
-          data: snapshot.value.charts.structure.map((item) => ({
+          data: snapshot.value.charts.structure.map(item => ({
             name: item.biz_type_label,
             value: Number(item.amount.toFixed(2))
           }))
@@ -282,7 +297,7 @@ const onResize = () => {
 
 watch(
   () => filters.value.period_type,
-  (val) => {
+  val => {
     onPeriodTypeChange(val);
   }
 );
@@ -308,7 +323,9 @@ onUnmounted(() => {
       <div class="header">
         <div>
           <div class="title">财务快照看板（升级版）</div>
-          <div class="sub">按时间/项目/办公室行政查看对外付款、对内付款、收款全景，并支持明细追踪与跳转</div>
+          <div class="sub">
+            按时间/项目/办公室行政查看对外付款、对内付款、收款全景，并支持明细追踪与跳转
+          </div>
         </div>
         <div class="header__ops">
           <el-button type="primary" @click="onQuery">刷新</el-button>
@@ -340,12 +357,27 @@ onUnmounted(() => {
         />
       </el-form-item>
       <el-form-item label="项目">
-        <el-select v-model="filters.project_id" clearable filterable style="width: 220px">
-          <el-option v-for="item in projects" :key="item.id" :label="item.project_name" :value="item.id" />
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="item.project_name"
+            :value="item.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="办公室行政">
-        <el-select v-model="filters.admin_userid" clearable filterable style="width: 230px">
+        <el-select
+          v-model="filters.admin_userid"
+          clearable
+          filterable
+          style="width: 230px"
+        >
           <el-option
             v-for="item in wecomUsers"
             :key="item.userid"
@@ -376,28 +408,45 @@ onUnmounted(() => {
       <el-col :md="6" :xs="24">
         <el-card shadow="never">
           <div class="kpi-label">对外付款总额</div>
-          <div class="kpi-value">¥{{ amountFormatter(snapshot.summary.outbound.total_amount) }}</div>
-          <div class="kpi-sub">完成 {{ snapshot.summary.outbound.count }} 笔，待处理 {{ snapshot.summary.outbound.pending_count }} 笔</div>
+          <div class="kpi-value">
+            ¥{{ amountFormatter(snapshot.summary.outbound.total_amount) }}
+          </div>
+          <div class="kpi-sub">
+            完成 {{ snapshot.summary.outbound.count }} 笔，待处理
+            {{ snapshot.summary.outbound.pending_count }} 笔
+          </div>
         </el-card>
       </el-col>
       <el-col :md="6" :xs="24">
         <el-card shadow="never">
           <div class="kpi-label">对内付款总额</div>
-          <div class="kpi-value">¥{{ amountFormatter(snapshot.summary.internal.total_amount) }}</div>
-          <div class="kpi-sub">完成 {{ snapshot.summary.internal.count }} 笔，待处理 {{ snapshot.summary.internal.pending_count }} 笔</div>
+          <div class="kpi-value">
+            ¥{{ amountFormatter(snapshot.summary.internal.total_amount) }}
+          </div>
+          <div class="kpi-sub">
+            完成 {{ snapshot.summary.internal.count }} 笔，待处理
+            {{ snapshot.summary.internal.pending_count }} 笔
+          </div>
         </el-card>
       </el-col>
       <el-col :md="6" :xs="24">
         <el-card shadow="never">
           <div class="kpi-label">收款总额</div>
-          <div class="kpi-value">¥{{ amountFormatter(snapshot.summary.receipt.total_amount) }}</div>
-          <div class="kpi-sub">完成 {{ snapshot.summary.receipt.count }} 笔，待处理 {{ snapshot.summary.receipt.pending_count }} 笔</div>
+          <div class="kpi-value">
+            ¥{{ amountFormatter(snapshot.summary.receipt.total_amount) }}
+          </div>
+          <div class="kpi-sub">
+            完成 {{ snapshot.summary.receipt.count }} 笔，待处理
+            {{ snapshot.summary.receipt.pending_count }} 笔
+          </div>
         </el-card>
       </el-col>
       <el-col :md="6" :xs="24">
         <el-card shadow="never">
           <div class="kpi-label">全口径资金总额</div>
-          <div class="kpi-value">¥{{ amountFormatter(snapshot.summary.total_amount) }}</div>
+          <div class="kpi-value">
+            ¥{{ amountFormatter(snapshot.summary.total_amount) }}
+          </div>
           <div class="kpi-sub">管理视角：对外 + 对内 + 收款</div>
         </el-card>
       </el-col>
@@ -430,23 +479,37 @@ onUnmounted(() => {
         <el-table-column prop="biz_type_label" label="业务" width="100" />
         <el-table-column label="单号" min-width="170">
           <template #default="scope">
-            <el-button link type="primary" @click="goDetail(scope.row)">{{ scope.row.biz_no }}</el-button>
+            <el-button link type="primary" @click="goDetail(scope.row)">{{
+              scope.row.biz_no
+            }}</el-button>
           </template>
         </el-table-column>
         <el-table-column label="项目" min-width="180">
           <template #default="scope">
-            {{ scope.row.project_name || projectMap[scope.row.project_id] || scope.row.project_id }}
+            {{
+              scope.row.project_name ||
+              projectMap[scope.row.project_id] ||
+              scope.row.project_id
+            }}
           </template>
         </el-table-column>
         <el-table-column prop="admin_userid" label="办公室行政" width="150" />
         <el-table-column label="金额" width="130">
-          <template #default="scope">¥{{ amountFormatter(scope.row.amount) }}</template>
+          <template #default="scope"
+            >¥{{ amountFormatter(scope.row.amount) }}</template
+          >
         </el-table-column>
         <el-table-column label="状态" width="120">
-          <template #default="scope">{{ toStatusLabel(scope.row.biz_type, scope.row.status) }}</template>
+          <template #default="scope">{{
+            toStatusLabel(scope.row.biz_type, scope.row.status)
+          }}</template>
         </el-table-column>
         <el-table-column prop="occurred_at" label="业务时间" width="180" />
-        <el-table-column prop="latest_trace_at" label="最近追踪时间" width="180" />
+        <el-table-column
+          prop="latest_trace_at"
+          label="最近追踪时间"
+          width="180"
+        />
         <el-table-column prop="track_note" label="追踪信息" min-width="180" />
       </el-table>
 
@@ -457,7 +520,12 @@ onUnmounted(() => {
         :current-page="page"
         :page-size="pageSize"
         :total="total"
-        @current-change="(val:number) => { page = val; loadSnapshot(); }"
+        @current-change="
+          (val: number) => {
+            page = val;
+            loadSnapshot();
+          }
+        "
       />
     </el-card>
   </el-card>

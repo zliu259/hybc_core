@@ -81,7 +81,7 @@ const parseRelayConfig = (): RelayNodeConfig[] => {
       supportsWriteFallback: relay.supportsWriteFallback === true,
       probeTimeoutMs: Number.isFinite(relay.probeTimeoutMs)
         ? Math.max(200, Number(relay.probeTimeoutMs))
-        : DEFAULT_PROBE_TIMEOUT_MS,
+        : DEFAULT_PROBE_TIMEOUT_MS
     });
   }
 
@@ -95,12 +95,17 @@ const supportsWriteFallback = (
   if (!isWriteMethod(method)) return true;
   if (!headers) return false;
   const keys = Object.keys(headers);
-  return keys.some((k) => k.toLowerCase() === "idempotency-key");
+  return keys.some(k => k.toLowerCase() === "idempotency-key");
 };
 
-const fetchRelayStatus = async (node: RelayNodeConfig): Promise<RelayProbeResult> => {
+const fetchRelayStatus = async (
+  node: RelayNodeConfig
+): Promise<RelayProbeResult> => {
   const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), node.probeTimeoutMs);
+  const timer = window.setTimeout(
+    () => controller.abort(),
+    node.probeTimeoutMs
+  );
   const endpoint = `${node.baseUrl}${node.statusPath.startsWith("/") ? node.statusPath : `/${node.statusPath}`}`;
 
   try {
@@ -108,10 +113,15 @@ const fetchRelayStatus = async (node: RelayNodeConfig): Promise<RelayProbeResult
       method: "GET",
       signal: controller.signal,
       headers: { Accept: "application/json" },
-      cache: "no-store",
+      cache: "no-store"
     });
     if (!response.ok) {
-      return { node, eligible: false, loadScore: Number.POSITIVE_INFINITY, reason: `status_${response.status}` };
+      return {
+        node,
+        eligible: false,
+        loadScore: Number.POSITIVE_INFINITY,
+        reason: `status_${response.status}`
+      };
     }
     const data = (await response.json()) as {
       overloaded?: boolean;
@@ -121,20 +131,50 @@ const fetchRelayStatus = async (node: RelayNodeConfig): Promise<RelayProbeResult
       admission_state?: string;
     };
     if (data.overloaded === true) {
-      return { node, eligible: false, loadScore: Number.POSITIVE_INFINITY, reason: "overloaded" };
+      return {
+        node,
+        eligible: false,
+        loadScore: Number.POSITIVE_INFINITY,
+        reason: "overloaded"
+      };
     }
-    if (typeof data.cooldown_seconds_left === "number" && data.cooldown_seconds_left > 0) {
-      return { node, eligible: false, loadScore: Number.POSITIVE_INFINITY, reason: "cooldown" };
+    if (
+      typeof data.cooldown_seconds_left === "number" &&
+      data.cooldown_seconds_left > 0
+    ) {
+      return {
+        node,
+        eligible: false,
+        loadScore: Number.POSITIVE_INFINITY,
+        reason: "cooldown"
+      };
     }
-    if (typeof data.admission_state === "string" && data.admission_state !== "accepting") {
-      return { node, eligible: false, loadScore: Number.POSITIVE_INFINITY, reason: "admission_blocked" };
+    if (
+      typeof data.admission_state === "string" &&
+      data.admission_state !== "accepting"
+    ) {
+      return {
+        node,
+        eligible: false,
+        loadScore: Number.POSITIVE_INFINITY,
+        reason: "admission_blocked"
+      };
     }
-    const inflight = typeof data.inflight_requests === "number" ? data.inflight_requests : 0;
-    const maxInflight = typeof data.max_inflight === "number" && data.max_inflight > 0 ? data.max_inflight : 1;
+    const inflight =
+      typeof data.inflight_requests === "number" ? data.inflight_requests : 0;
+    const maxInflight =
+      typeof data.max_inflight === "number" && data.max_inflight > 0
+        ? data.max_inflight
+        : 1;
     const loadScore = inflight / maxInflight;
     return { node, eligible: true, loadScore, reason: "ok" };
   } catch {
-    return { node, eligible: false, loadScore: Number.POSITIVE_INFINITY, reason: "probe_failed" };
+    return {
+      node,
+      eligible: false,
+      loadScore: Number.POSITIVE_INFINITY,
+      reason: "probe_failed"
+    };
   } finally {
     window.clearTimeout(timer);
   }
@@ -151,7 +191,7 @@ export const getRelayCandidates = async (
 
   const current = normalizeBaseUrl(currentBaseURL || "");
   const methodIsWrite = isWriteMethod(method);
-  const enabled = nodes.filter((node) => {
+  const enabled = nodes.filter(node => {
     if (!node.enabled) return false;
     if (current && node.baseUrl === current) return false;
     if (inCooldown(node.baseUrl)) return false;
@@ -161,11 +201,12 @@ export const getRelayCandidates = async (
   if (enabled.length === 0) return [];
 
   const probeResults = await Promise.all(enabled.map(fetchRelayStatus));
-  const eligible = probeResults.filter((item) => item.eligible);
+  const eligible = probeResults.filter(item => item.eligible);
   if (eligible.length === 0) return [];
 
   eligible.sort((a, b) => {
-    if (a.node.priority !== b.node.priority) return a.node.priority - b.node.priority;
+    if (a.node.priority !== b.node.priority)
+      return a.node.priority - b.node.priority;
     if (a.loadScore !== b.loadScore) return a.loadScore - b.loadScore;
     return a.node.id.localeCompare(b.node.id);
   });
@@ -173,16 +214,18 @@ export const getRelayCandidates = async (
   const grouped: RelayNodeConfig[] = [];
   for (let i = 0; i < eligible.length; i += 1) {
     const currentPriority = eligible[i].node.priority;
-    const samePriority = eligible.filter((it) => it.node.priority === currentPriority);
+    const samePriority = eligible.filter(
+      it => it.node.priority === currentPriority
+    );
     if (samePriority.length > 1) {
       samePriority.sort((a, b) => a.loadScore - b.loadScore);
       const head = samePriority.slice(0, Math.min(2, samePriority.length));
       const pick = head[Math.floor(Math.random() * head.length)];
-      if (!grouped.some((n) => n.id === pick.node.id)) {
+      if (!grouped.some(n => n.id === pick.node.id)) {
         grouped.push(pick.node);
       }
       for (const item of samePriority) {
-        if (!grouped.some((n) => n.id === item.node.id)) {
+        if (!grouped.some(n => n.id === item.node.id)) {
           grouped.push(item.node);
         }
       }
@@ -199,7 +242,10 @@ export const getRelayCandidates = async (
   return grouped.slice(0, maxAttempts);
 };
 
-export const markRelayFailure = (baseUrl: string, ms = RELAY_COOLDOWN_STORE_MS): void => {
+export const markRelayFailure = (
+  baseUrl: string,
+  ms = RELAY_COOLDOWN_STORE_MS
+): void => {
   relayCooldown.set(baseUrl, now() + Math.max(ms, 1000));
 };
 

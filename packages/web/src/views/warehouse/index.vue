@@ -2,6 +2,7 @@
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createWarehouse,
   deleteWarehouse,
@@ -43,14 +44,15 @@ const form = ref({
 const loadData = async () => {
   loading.value = true;
   try {
-    const [warehouseRes, stockOrderRes, alertRes, inventoryRes] = await Promise.all([
-      listWarehouses({
-        keyword: keyword.value || undefined
-      }),
-      listStockOrders(),
-      listInventoryAlerts(),
-      listInventory()
-    ]);
+    const [warehouseRes, stockOrderRes, alertRes, inventoryRes] =
+      await Promise.all([
+        listWarehouses({
+          keyword: keyword.value || undefined
+        }),
+        listStockOrders(),
+        listInventoryAlerts(),
+        listInventory()
+      ]);
     const pendingOrderCount = stockOrderRes.data.filter(item =>
       ["draft", "pending_approval", "approved"].includes(item.status)
     ).length;
@@ -185,10 +187,18 @@ onMounted(loadWecomUsers);
     </el-row>
 
     <div class="entry-row">
-      <el-button type="primary" plain @click="goTo('/warehouse/stock-order')">出入库制单</el-button>
-      <el-button type="primary" plain @click="goTo('/warehouse/dispatch')">调度看板</el-button>
-      <el-button type="primary" plain @click="goTo('/warehouse/inventory')">库存与预警</el-button>
-      <el-button type="primary" plain @click="goTo('/asset/list')">资产设备查验</el-button>
+      <el-button type="primary" plain @click="goTo('/warehouse/stock-order')"
+        >出入库制单</el-button
+      >
+      <el-button type="primary" plain @click="goTo('/warehouse/dispatch')"
+        >调度看板</el-button
+      >
+      <el-button type="primary" plain @click="goTo('/warehouse/inventory')"
+        >库存与预警</el-button
+      >
+      <el-button type="primary" plain @click="goTo('/asset/list')"
+        >资产设备查验</el-button
+      >
     </div>
 
     <el-form inline>
@@ -203,7 +213,11 @@ onMounted(loadWecomUsers);
       <el-table-column prop="warehouse_name" label="仓库名称" min-width="150" />
       <el-table-column prop="location" label="位置" min-width="160" />
       <el-table-column prop="manager_userid" label="负责人" width="140" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column
         prop="remark"
         label="备注"

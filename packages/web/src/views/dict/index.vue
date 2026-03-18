@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { statusLabel } from "@/utils/enum-labels";
 import {
   createDictItem,
   deleteDictItem,
@@ -101,7 +102,9 @@ onMounted(loadRows);
       <el-form-item label="排序">
         <el-input-number v-model="form.sort_order" :min="0" />
       </el-form-item>
-      <el-button type="primary" :loading="saving" @click="createRow">新增</el-button>
+      <el-button type="primary" :loading="saving" @click="createRow"
+        >新增</el-button
+      >
     </el-form>
 
     <el-table :data="dictRows" style="margin-top: 12px">
@@ -109,7 +112,11 @@ onMounted(loadRows);
       <el-table-column prop="dict_label" label="标签" width="180" />
       <el-table-column prop="dict_value" label="值" width="180" />
       <el-table-column prop="sort_order" label="排序" width="90" />
-      <el-table-column prop="status" label="状态" width="100" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">{{
+          statusLabel(scope.row.status)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="100" fixed="right">
         <template #default="scope">
           <el-button link type="danger" @click="removeRow(scope.row.id)">
