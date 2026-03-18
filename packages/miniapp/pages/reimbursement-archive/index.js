@@ -113,6 +113,7 @@ Page({
       return;
     }
 
+    wx.showLoading({ title: "提交中...", mask: true });
     this.setData({ loading: true, envelopeUuidInput: envelopeUuid });
     try {
       const resolveRes = await request({
@@ -146,10 +147,12 @@ Page({
       this.setData({ latestResolved: historyItem });
       this.saveHistory(historyItem);
       vibrateSuccess();
+      wx.hideLoading();
       sayToast({ title: fromScan ? "已打开电子档案" : "已定位电子档案", icon: "success" });
       wx.navigateTo({ url: `/pages/reimbursement/index?id=${envelopeId}` });
     } catch (error) {
       vibrateWarning();
+      wx.hideLoading();
       sayToast({ title: error.message || "打开档案失败", icon: "none", danger: true });
     } finally {
       this.setData({ loading: false });

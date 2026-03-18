@@ -56,6 +56,8 @@ const submit = async () => {
 
     message("项目立项成功", { type: "success" });
     router.push("/project/list");
+  } catch {
+    message("保存失败", { type: "error" });
   } finally {
     saving.value = false;
   }

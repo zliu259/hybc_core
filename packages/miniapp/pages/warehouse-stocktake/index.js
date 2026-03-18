@@ -168,8 +168,10 @@ Page({
     }
 
     this.setData({ busy: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       const result = await request({ method: "POST", path: "/api/v1/warehouse/stocktake", data: payload });
+      wx.hideLoading();
       wx.showToast({ title: `已创建 ${result.data.task_no}`, icon: "success" });
       this.setData({ createTitle: "" });
       await this.loadData();
@@ -177,6 +179,7 @@ Page({
         await this.selectTask(Number(result.data.id));
       }
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "创建盘点失败", icon: "none" });
       this.setData({ busy: false });
     }
@@ -224,6 +227,7 @@ Page({
     }
 
     this.setData({ lineBusy: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       await request({
         method: "PUT",
@@ -235,8 +239,10 @@ Page({
         }
       });
       await this.selectTask(this.data.activeTask.id);
+      wx.hideLoading();
       wx.showToast({ title: "明细已保存", icon: "success" });
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "保存明细失败", icon: "none" });
     } finally {
       this.setData({ lineBusy: false });
@@ -302,6 +308,7 @@ Page({
       : "new";
 
     this.setData({ addBusy: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       await request({
         method: "POST",
@@ -317,6 +324,7 @@ Page({
           note: this.data.addNote || undefined
         }
       });
+      wx.hideLoading();
       wx.showToast({ title: "新增物品已加入盘库", icon: "success" });
       this.setData({
         addAssetTypeIndex: -1,
@@ -328,6 +336,7 @@ Page({
       });
       await this.selectTask(this.data.activeTask.id);
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "新增物品失败", icon: "none" });
     } finally {
       this.setData({ addBusy: false });
@@ -337,15 +346,18 @@ Page({
   async completeTask() {
     if (!this.data.activeTask || this.data.busy) return;
     this.setData({ busy: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       const res = await request({
         method: "POST",
         path: `/api/v1/warehouse/stocktake/${this.data.activeTask.id}/complete`
       });
+      wx.hideLoading();
       wx.showToast({ title: `盘点完成，差异${res.data.diff_count}条`, icon: "success" });
       await this.loadData();
       await this.selectTask(this.data.activeTask.id);
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "完成盘点失败", icon: "none" });
       this.setData({ busy: false });
     }

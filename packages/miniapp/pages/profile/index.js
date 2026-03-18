@@ -219,6 +219,7 @@ Page({
 
   async urgeApprovalFlow() {
     if (this.data.busy) return;
+    wx.showLoading({ title: "提交中...", mask: true });
     this.setData({ busy: true });
     try {
       const listRes = await request({
@@ -227,9 +228,11 @@ Page({
       });
       const instances = Array.isArray(listRes.data) ? listRes.data : [];
       if (!instances.length) {
+        wx.hideLoading();
         wx.showToast({ title: "暂无可催办审批", icon: "none" });
         return;
       }
+      wx.hideLoading();
 
       const instanceLabels = instances.map((item) => {
         const typeLabel = this.bizTypeLabel(item.biz_type);
@@ -249,6 +252,7 @@ Page({
       const selectedInstance = instances[instancePick.tapIndex];
       const tasks = Array.isArray(selectedInstance.pending_tasks) ? selectedInstance.pending_tasks : [];
       if (!tasks.length) {
+        wx.hideLoading();
         wx.showToast({ title: "该审批暂无待催办人", icon: "none" });
         return;
       }
@@ -274,6 +278,7 @@ Page({
       });
       if (!confirmed) return;
 
+      wx.showLoading({ title: "提交中...", mask: true });
       await request({
         method: "POST",
         path: `/api/v1/approval/${Number(selectedInstance.id)}/urge`,
@@ -282,8 +287,10 @@ Page({
           reason: "申请人发起催办"
         }
       });
+      wx.hideLoading();
       wx.showToast({ title: "催办已发送", icon: "success" });
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "催办失败", icon: "none" });
     } finally {
       this.setData({ busy: false });

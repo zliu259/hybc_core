@@ -15,6 +15,7 @@ import { toBizTypeLabel, toStatusLabel } from "./labels";
 defineOptions({ name: "ApprovalTemplateConfig" });
 
 const loading = ref(false);
+const saving = ref(false);
 const templates = ref<ApprovalTemplate[]>([]);
 
 const dialogVisible = ref(false);
@@ -107,6 +108,7 @@ const handleSave = async () => {
     return;
   }
   try {
+    saving.value = true;
     if (dialogMode.value === "create") {
       await createApprovalTemplate({ ...form.value });
       message("模板创建成功", { type: "success" });
@@ -122,6 +124,8 @@ const handleSave = async () => {
     await loadTemplates();
   } catch {
     message("保存失败", { type: "error" });
+  } finally {
+    saving.value = false;
   }
 };
 
@@ -233,7 +237,7 @@ onMounted(loadTemplates);
     <ApprovalFlowDesigner v-model:config="form.config_json" />
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="handleSave">保存</el-button>
+      <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
     </template>
   </el-dialog>
 

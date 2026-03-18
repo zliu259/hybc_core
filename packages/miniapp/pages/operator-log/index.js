@@ -337,6 +337,7 @@ Page({
     }
 
     return this.runBusy(async () => {
+      wx.showLoading({ title: "提交中...", mask: true });
       const payload = {
         project_id: Number(form.project_id),
         section_id: Number(form.section_id),
@@ -364,10 +365,14 @@ Page({
           data: payload
         });
       }
+      wx.hideLoading();
       wx.showToast({ title: this.data.editingLogId > 0 ? "修改成功" : "提交成功", icon: "success" });
       setTimeout(() => {
         wx.navigateBack({ delta: 1 });
       }, 250);
-    }).catch((error) => wx.showToast({ title: error.message || "提交失败", icon: "none" }));
+    }).catch((error) => {
+      wx.hideLoading();
+      wx.showToast({ title: error.message || "提交失败", icon: "none" });
+    });
   }
 });

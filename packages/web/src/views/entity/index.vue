@@ -32,6 +32,7 @@ const selectedEntityId = ref<number | null>(null);
 const bankAccounts = ref<EntityBankAccount[]>([]);
 const invoiceProfiles = ref<EntityInvoiceProfile[]>([]);
 const attachments = ref<EntityAttachment[]>([]);
+const saving = ref(false);
 
 const storageSummary = ref({
   storage_quota_mb: 0,
@@ -109,19 +110,26 @@ const createEntityRow = async () => {
     return;
   }
 
-  await createEntity({ ...entityForm.value });
-  entityForm.value = {
-    entity_code: "",
-    entity_name: "",
-    legal_person: "",
-    tax_id: "",
-    company_attribute: "self_owned",
-    primary_bank_name: "",
-    primary_bank_branch_no: "",
-    primary_bank_account_no: ""
-  };
-  await loadEntities();
-  message("实体创建成功", { type: "success" });
+  try {
+    saving.value = true;
+    await createEntity({ ...entityForm.value });
+    entityForm.value = {
+      entity_code: "",
+      entity_name: "",
+      legal_person: "",
+      tax_id: "",
+      company_attribute: "self_owned",
+      primary_bank_name: "",
+      primary_bank_branch_no: "",
+      primary_bank_account_no: ""
+    };
+    await loadEntities();
+    message("实体创建成功", { type: "success" });
+  } catch {
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
+  }
 };
 
 const saveSelectedEntity = async () => {
@@ -129,18 +137,25 @@ const saveSelectedEntity = async () => {
     message("请先选择实体", { type: "warning" });
     return;
   }
-  await updateEntity(selectedEntity.value.id, {
-    entity_name: selectedEntity.value.entity_name,
-    legal_person: selectedEntity.value.legal_person,
-    tax_id: selectedEntity.value.tax_id,
-    company_attribute: selectedEntity.value.company_attribute,
-    status: selectedEntity.value.status,
-    primary_bank_name: selectedEntity.value.primary_bank_name,
-    primary_bank_branch_no: selectedEntity.value.primary_bank_branch_no,
-    primary_bank_account_no: selectedEntity.value.primary_bank_account_no
-  });
-  await loadEntities();
-  message("实体信息已更新", { type: "success" });
+  try {
+    saving.value = true;
+    await updateEntity(selectedEntity.value.id, {
+      entity_name: selectedEntity.value.entity_name,
+      legal_person: selectedEntity.value.legal_person,
+      tax_id: selectedEntity.value.tax_id,
+      company_attribute: selectedEntity.value.company_attribute,
+      status: selectedEntity.value.status,
+      primary_bank_name: selectedEntity.value.primary_bank_name,
+      primary_bank_branch_no: selectedEntity.value.primary_bank_branch_no,
+      primary_bank_account_no: selectedEntity.value.primary_bank_account_no
+    });
+    await loadEntities();
+    message("实体信息已更新", { type: "success" });
+  } catch {
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
+  }
 };
 
 const onSelectEntity = async (row: Entity | null) => {
@@ -181,16 +196,23 @@ const createBankAccountRow = async () => {
     return;
   }
 
-  await createEntityBankAccount(selectedEntityId.value, { ...bankForm.value });
-  bankForm.value = {
-    bank_name: "",
-    account_name: "",
-    account_no: "",
-    bank_branch_no: "",
-    bank_line_no: ""
-  };
-  await loadSubResources(selectedEntityId.value);
-  message("银行账户创建成功", { type: "success" });
+  try {
+    saving.value = true;
+    await createEntityBankAccount(selectedEntityId.value, { ...bankForm.value });
+    bankForm.value = {
+      bank_name: "",
+      account_name: "",
+      account_no: "",
+      bank_branch_no: "",
+      bank_line_no: ""
+    };
+    await loadSubResources(selectedEntityId.value);
+    message("银行账户创建成功", { type: "success" });
+  } catch {
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
+  }
 };
 
 const createInvoiceProfileRow = async () => {
@@ -199,19 +221,26 @@ const createInvoiceProfileRow = async () => {
     return;
   }
 
-  await createEntityInvoiceProfile(selectedEntityId.value, {
-    ...invoiceForm.value
-  });
-  invoiceForm.value = {
-    invoice_title: "",
-    tax_no: "",
-    address: "",
-    phone: "",
-    bank_name: "",
-    bank_account: ""
-  };
-  await loadSubResources(selectedEntityId.value);
-  message("开票信息创建成功", { type: "success" });
+  try {
+    saving.value = true;
+    await createEntityInvoiceProfile(selectedEntityId.value, {
+      ...invoiceForm.value
+    });
+    invoiceForm.value = {
+      invoice_title: "",
+      tax_no: "",
+      address: "",
+      phone: "",
+      bank_name: "",
+      bank_account: ""
+    };
+    await loadSubResources(selectedEntityId.value);
+    message("开票信息创建成功", { type: "success" });
+  } catch {
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
+  }
 };
 
 const uploadAttachment = async (options: UploadRequestOptions) => {
@@ -289,7 +318,7 @@ onMounted(loadEntities);
           <el-form-item label="主开户行"><el-input v-model="entityForm.primary_bank_name" /></el-form-item>
           <el-form-item label="主行号"><el-input v-model="entityForm.primary_bank_branch_no" /></el-form-item>
           <el-form-item label="主账号"><el-input v-model="entityForm.primary_bank_account_no" /></el-form-item>
-          <el-button type="primary" @click="createEntityRow">新增实体</el-button>
+          <el-button type="primary" :loading="saving" @click="createEntityRow">新增实体</el-button>
         </el-form>
 
         <el-table
@@ -351,7 +380,7 @@ onMounted(loadEntities);
           <el-form-item label="主开户行"><el-input v-model="selectedEntity.primary_bank_name" /></el-form-item>
           <el-form-item label="主行号"><el-input v-model="selectedEntity.primary_bank_branch_no" /></el-form-item>
           <el-form-item label="主账号"><el-input v-model="selectedEntity.primary_bank_account_no" /></el-form-item>
-          <el-button type="primary" @click="saveSelectedEntity">保存实体详情</el-button>
+          <el-button type="primary" :loading="saving" @click="saveSelectedEntity">保存实体详情</el-button>
           <el-button type="danger" plain @click="removeSelectedEntity">删除实体</el-button>
         </el-form>
 
@@ -363,7 +392,7 @@ onMounted(loadEntities);
               <el-form-item label="账号"><el-input v-model="bankForm.account_no" /></el-form-item>
               <el-form-item label="分行号"><el-input v-model="bankForm.bank_branch_no" /></el-form-item>
               <el-form-item label="行号"><el-input v-model="bankForm.bank_line_no" /></el-form-item>
-              <el-button type="primary" @click="createBankAccountRow">新增账户</el-button>
+               <el-button type="primary" :loading="saving" @click="createBankAccountRow">新增账户</el-button>
             </el-form>
             <el-table :data="bankAccounts">
               <el-table-column prop="bank_name" label="银行" />
@@ -382,7 +411,7 @@ onMounted(loadEntities);
               <el-form-item label="电话"><el-input v-model="invoiceForm.phone" /></el-form-item>
               <el-form-item label="开户行"><el-input v-model="invoiceForm.bank_name" /></el-form-item>
               <el-form-item label="银行账号"><el-input v-model="invoiceForm.bank_account" /></el-form-item>
-              <el-button type="primary" @click="createInvoiceProfileRow">新增开票信息</el-button>
+               <el-button type="primary" :loading="saving" @click="createInvoiceProfileRow">新增开票信息</el-button>
             </el-form>
             <el-table :data="invoiceProfiles" style="margin-top: 12px">
               <el-table-column prop="invoice_title" label="抬头" />

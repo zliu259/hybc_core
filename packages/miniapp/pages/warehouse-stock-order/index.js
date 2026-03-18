@@ -327,6 +327,7 @@ Page({
 
     if (!this.validateOrder(orderType, fromWarehouse, toWarehouse)) return;
 
+    wx.showLoading({ title: "提交中...", mask: true });
     this.setData({ busy: true });
     try {
       const items = this.data.cartItems.map((item) => ({
@@ -354,10 +355,12 @@ Page({
         }).catch(() => {});
       }
 
+      wx.hideLoading();
       wx.showToast({ title: "制单成功", icon: "success" });
       this.setData({ cartItems: [] });
       await this.loadData();
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "制单失败", icon: "none" });
     } finally {
       this.setData({ busy: false });

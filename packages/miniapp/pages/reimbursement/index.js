@@ -440,15 +440,18 @@ Page({
     }
 
     return this.runBusy(async () => {
+      wx.showLoading({ title: "提交中...", mask: true });
       await request({
         method: "POST",
         path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}/submit`
       });
       await this.loadEnvelopeDetail(this.data.latestEnvelopeId);
       vibrateSuccess();
+      wx.hideLoading();
       sayToast({ title: "报销已提交", icon: "success" });
     }).catch((error) => {
       vibrateWarning();
+      wx.hideLoading();
       sayToast({ title: error.message || "提交失败", icon: "none", danger: true });
     });
   },

@@ -202,6 +202,7 @@ Page({
     }
 
     this.setData({ breakthroughSubmitting: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       const payload = {
         project_id: this.data.projectId,
@@ -227,9 +228,11 @@ Page({
       }
 
       this.setData({ breakthroughDialogVisible: false });
+      wx.hideLoading();
       wx.showToast({ title: this.data.editingBreakthroughId > 0 ? "更新成功" : "创建成功", icon: "success" });
       await this.loadData();
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: (error && error.message) || "保存失败", icon: "none" });
     } finally {
       this.setData({ breakthroughSubmitting: false });

@@ -105,6 +105,7 @@ Page({
     }
 
     this.setData({ busy: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       const form = this.data.form;
       const res = await request({
@@ -120,6 +121,7 @@ Page({
         }
       });
 
+      wx.hideLoading();
       wx.showToast({ title: "立项成功", icon: "success" });
       setTimeout(() => {
         wx.navigateTo({
@@ -127,6 +129,7 @@ Page({
         });
       }, 400);
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "立项失败", icon: "none" });
     } finally {
       this.setData({ busy: false });

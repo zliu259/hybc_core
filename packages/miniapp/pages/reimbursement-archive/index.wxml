@@ -1,7 +1,7 @@
 <view class="page">
   <hy-panel-card title="📂 信封扫码核查" subtitle="办公室扫码信封UUID，快速打开对应报销电子档案">
     <view class="toolbar">
-      <t-button class="btn btn-primary" theme="primary" loading="{{loading}}" bindtap="onScanUuid"
+      <t-button class="btn btn-primary" theme="primary" loading="{{loading}}" disabled="{{loading}}" bindtap="onScanUuid"
         >扫码打开档案</t-button
       >
     </view>
@@ -15,7 +15,7 @@
       />
     </view>
     <view class="toolbar">
-      <t-button class="btn" variant="outline" loading="{{loading}}" bindtap="onManualResolve"
+      <t-button class="btn" variant="outline" loading="{{loading}}" disabled="{{loading}}" bindtap="onManualResolve"
         >手动定位并打开</t-button
       >
     </view>
@@ -43,7 +43,7 @@
       <view class="item-sub">申请人：{{item.applicant_userid}} · 金额：¥{{item.amount}}</view>
       <view class="item-sub">最近打开：{{item.opened_at}}</view>
       <view class="actions">
-        <t-button class="btn" size="small" variant="outline" data-uuid="{{item.envelope_uuid}}" bindtap="onOpenFromHistory"
+        <t-button class="btn" size="small" variant="outline" data-uuid="{{item.envelope_uuid}}" disabled="{{loading}}" bindtap="onOpenFromHistory"
           >再次打开</t-button
         >
       </view>

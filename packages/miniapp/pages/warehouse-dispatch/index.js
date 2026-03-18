@@ -78,12 +78,15 @@ Page({
   async executeOrder(e) {
     const id = Number(e.currentTarget.dataset.id || 0);
     if (!id || this.data.busy) return;
+    wx.showLoading({ title: "提交中...", mask: true });
     this.setData({ busy: true });
     try {
       await request({ method: "POST", path: `/api/v1/warehouse/stock-order/${id}/execute` });
+      wx.hideLoading();
       wx.showToast({ title: "执行成功", icon: "success" });
       await this.loadData();
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "执行失败", icon: "none" });
       this.setData({ busy: false });
     }

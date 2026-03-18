@@ -84,6 +84,7 @@ Page({
     }
 
     return this.runBusy(async () => {
+      wx.showLoading({ title: "提交中...", mask: true });
       await request({
         method: "POST",
         path: "/api/v1/log/manager",
@@ -96,10 +97,14 @@ Page({
           status: "submitted"
         }
       });
+      wx.hideLoading();
       wx.showToast({ title: "提交成功", icon: "success" });
       setTimeout(() => {
         wx.navigateBack({ delta: 1 });
       }, 250);
-    }).catch((error) => wx.showToast({ title: error.message || "提交失败", icon: "none" }));
+    }).catch((error) => {
+      wx.hideLoading();
+      wx.showToast({ title: error.message || "提交失败", icon: "none" });
+    });
   }
 });

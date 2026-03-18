@@ -130,6 +130,8 @@ const submitCreateAndApproval = async () => {
 
     await Promise.all([loadData(), loadCandidates(), loadHistory()]);
     router.push(`/finance/reimbursement/batch/${result.data.id}`);
+  } catch {
+    message("提交失败", { type: "error" });
   } finally {
     creatingAndSubmitting.value = false;
   }

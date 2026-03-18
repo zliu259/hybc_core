@@ -718,6 +718,7 @@ Page({
     if (this.data.acting || !this.data.id) return;
     const comment = (this.data.actionComment || "").trim();
     this.setData({ acting: true });
+    wx.showLoading({ title: "处理中...", mask: true });
     try {
       if (action === "approve") {
         if (
@@ -756,10 +757,12 @@ Page({
         });
       }
       vibrateSuccess();
+      wx.hideLoading();
       sayToast({ title: "操作成功", icon: "success" });
       await this.loadDetail();
     } catch (error) {
       vibrateWarning();
+      wx.hideLoading();
       sayToast({ title: error.message || "操作失败", icon: "none", danger: true });
     } finally {
       this.setData({ acting: false });

@@ -14,6 +14,7 @@ defineOptions({
 
 const dictType = ref("");
 const dictRows = ref<DictItem[]>([]);
+const saving = ref(false);
 const form = ref({
   dict_type: "",
   dict_label: "",
@@ -41,22 +42,36 @@ const createRow = async () => {
     return;
   }
 
-  await createDictItem({ ...form.value });
-  form.value = {
-    dict_type: form.value.dict_type,
-    dict_label: "",
-    dict_value: "",
-    sort_order: 10,
-    status: "active"
-  };
-  await loadRows();
-  message("字典项创建成功", { type: "success" });
+  try {
+    saving.value = true;
+    await createDictItem({ ...form.value });
+    form.value = {
+      dict_type: form.value.dict_type,
+      dict_label: "",
+      dict_value: "",
+      sort_order: 10,
+      status: "active"
+    };
+    await loadRows();
+    message("字典项创建成功", { type: "success" });
+  } catch {
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
+  }
 };
 
 const removeRow = async (id: number) => {
-  await deleteDictItem(id);
-  await loadRows();
-  message("删除成功", { type: "success" });
+  try {
+    saving.value = true;
+    await deleteDictItem(id);
+    await loadRows();
+    message("删除成功", { type: "success" });
+  } catch {
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
+  }
 };
 
 onMounted(loadRows);
@@ -86,7 +101,7 @@ onMounted(loadRows);
       <el-form-item label="排序">
         <el-input-number v-model="form.sort_order" :min="0" />
       </el-form-item>
-      <el-button type="primary" @click="createRow">新增</el-button>
+      <el-button type="primary" :loading="saving" @click="createRow">新增</el-button>
     </el-form>
 
     <el-table :data="dictRows" style="margin-top: 12px">

@@ -15,6 +15,7 @@ import { toStatusLabel } from "./labels";
 defineOptions({ name: "ApprovalThresholdConfig" });
 
 const loading = ref(false);
+const saving = ref(false);
 const templates = ref<ApprovalTemplate[]>([]);
 const selectedTemplateId = ref<number | undefined>(undefined);
 const thresholds = ref<ApprovalThreshold[]>([]);
@@ -95,6 +96,7 @@ const handleSave = async () => {
     return;
   }
   try {
+    saving.value = true;
     if (dialogMode.value === "create" && selectedTemplateId.value) {
       await createThreshold({
         template_id: selectedTemplateId.value,
@@ -127,6 +129,8 @@ const handleSave = async () => {
     await loadThresholds();
   } catch {
     message("保存失败", { type: "error" });
+  } finally {
+    saving.value = false;
   }
 };
 
@@ -239,7 +243,7 @@ onMounted(loadTemplates);
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="handleSave">保存</el-button>
+      <el-button type="primary" :loading="saving" @click="handleSave">保存</el-button>
     </template>
   </el-dialog>
 </template>

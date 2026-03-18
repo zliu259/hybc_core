@@ -27,6 +27,7 @@ const keyword = ref("");
 const dialogVisible = ref(false);
 const dialogMode = ref<"create" | "edit">("create");
 const editingId = ref<number | null>(null);
+const saving = ref(false);
 
 const form = ref({
   name: "",
@@ -78,28 +79,35 @@ const onSave = async () => {
     return;
   }
 
-  if (dialogMode.value === "create") {
-    await createPayee({
-      name: form.value.name,
-      bank_name: form.value.bank_name,
-      bank_account: form.value.bank_account,
-      phone: form.value.phone || undefined,
-      type: activeTab.value
-    });
-    message("创建成功", { type: "success" });
-  } else if (editingId.value) {
-    await updatePayee(editingId.value, {
-      name: form.value.name,
-      bank_name: form.value.bank_name,
-      bank_account: form.value.bank_account,
-      phone: form.value.phone || undefined,
-      type: activeTab.value
-    });
-    message("更新成功", { type: "success" });
-  }
+  try {
+    saving.value = true;
+    if (dialogMode.value === "create") {
+      await createPayee({
+        name: form.value.name,
+        bank_name: form.value.bank_name,
+        bank_account: form.value.bank_account,
+        phone: form.value.phone || undefined,
+        type: activeTab.value
+      });
+      message("创建成功", { type: "success" });
+    } else if (editingId.value) {
+      await updatePayee(editingId.value, {
+        name: form.value.name,
+        bank_name: form.value.bank_name,
+        bank_account: form.value.bank_account,
+        phone: form.value.phone || undefined,
+        type: activeTab.value
+      });
+      message("更新成功", { type: "success" });
+    }
 
-  dialogVisible.value = false;
-  await loadData();
+    dialogVisible.value = false;
+    await loadData();
+  } catch {
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
+  }
 };
 
 const onDelete = async (row: Payee) => {
@@ -107,11 +115,19 @@ const onDelete = async (row: Payee) => {
     await ElMessageBox.confirm(`确认删除收款人 ${row.name} 吗？`, "提示", {
       type: "warning"
     });
+  } catch {
+    return;
+  }
+
+  try {
+    saving.value = true;
     await deletePayee(row.id);
     message("删除成功", { type: "success" });
     await loadData();
   } catch {
-    // cancelled
+    message("操作失败", { type: "error" });
+  } finally {
+    saving.value = false;
   }
 };
 
@@ -195,7 +211,7 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="dialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="onSave">保存</el-button>
+        <el-button type="primary" :loading="saving" @click="onSave">保存</el-button>
       </template>
     </el-dialog>
   </el-card>

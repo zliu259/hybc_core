@@ -705,6 +705,7 @@ Page({
     }
 
     this.setData({ submitting: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       const form = this.data.directForm;
       const created = await request({
@@ -735,9 +736,11 @@ Page({
         }
       });
 
+      wx.hideLoading();
       wx.showToast({ title: "提交成功", icon: "success" });
       setTimeout(() => wx.navigateBack({ delta: 1 }), 500);
     } catch {
+      wx.hideLoading();
       wx.showToast({ title: "提交失败，请重试", icon: "none" });
     } finally {
       this.setData({ submitting: false });
@@ -753,6 +756,7 @@ Page({
     }
 
     this.setData({ submitting: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       const amount = Number(this.data.amountInput || 0);
       const contractForm = this.data.contractForm;
@@ -822,12 +826,14 @@ Page({
         });
       }
 
+      wx.hideLoading();
       wx.showToast({
         title: "提交成功",
         icon: "success"
       });
       setTimeout(() => wx.navigateBack({ delta: 1 }), 500);
     } catch {
+      wx.hideLoading();
       wx.showToast({ title: "提交失败，请重试", icon: "none" });
     } finally {
       this.setData({ submitting: false });

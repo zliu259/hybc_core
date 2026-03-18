@@ -72,11 +72,14 @@ Page({
   async analyzeAlert(e) {
     const id = Number(e.currentTarget.dataset.id || 0);
     if (!id) return;
+    wx.showLoading({ title: "处理中...", mask: true });
     this.setData({ busy: true });
     try {
       await request({ method: "POST", path: `/api/v1/warehouse/inventory/alert/${id}/analyze` });
+      wx.hideLoading();
       wx.showToast({ title: "已触发AI分析", icon: "success" });
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "触发失败", icon: "none" });
     } finally {
       this.setData({ busy: false });

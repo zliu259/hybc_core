@@ -71,6 +71,8 @@ const submit = async () => {
     });
     message("日志提交成功", { type: "success" });
     router.push("/construction/operator-log/list");
+  } catch {
+    message("提交失败", { type: "error" });
   } finally {
     submitting.value = false;
   }

@@ -80,6 +80,7 @@ Page({
     }
 
     return this.runBusy(async () => {
+      wx.showLoading({ title: "提交中...", mask: true });
       const form = this.data.form;
       const photoText = this.data.photoKeys.join(",");
       await request({
@@ -101,9 +102,11 @@ Page({
         }
       });
       vibrateSuccess();
+      wx.hideLoading();
       sayToast({ title: "提交成功", icon: "success" });
     }).catch((error) => {
       vibrateWarning();
+      wx.hideLoading();
       sayToast({ title: error.message || "提交失败", icon: "none", danger: true });
     });
   }
