@@ -137,7 +137,8 @@ const approvalFinishedLock = computed(() =>
   isApprovalFinishedLocked({
     isCreate: isCreate.value,
     approvalInstanceId: detail.value?.approval_instance_id,
-    bizStatus: detail.value?.status
+    bizStatus: detail.value?.status,
+    unlockedStatuses: ["draft"]
   })
 );
 const superEditMode = ref(false);

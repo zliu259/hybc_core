@@ -11,6 +11,14 @@ import { createAiGateHandler } from "../ai-slot";
 
 const nowIso = () => new Date().toISOString();
 
+const BIZ_TYPE_TABLE_MAP: Record<string, string> = {
+  payment_request: "payment_request",
+  outbound_contract: "contract",
+  inbound_contract: "contract",
+  reimbursement_batch: "reimbursement_batch",
+  invoice_request: "invoice_request"
+};
+
 // ─── Helper: Load and validate task ──────────
 
 const loadPendingTask = async (
@@ -174,6 +182,17 @@ export const returnToInitiator = async (
   )
     .bind(now, task.instance_id)
     .run();
+
+  // Revert the business record status to draft so initiator can edit and resubmit
+  const instance = await loadInstance(env, task.instance_id);
+  const bizTable = BIZ_TYPE_TABLE_MAP[instance.biz_type];
+  if (bizTable) {
+    await env.DB.prepare(
+      `UPDATE ${bizTable} SET status = 'draft', updated_at = ? WHERE id = ?`
+    )
+      .bind(now, instance.biz_id)
+      .run();
+  }
 
   // Record initiator action
   await env.DB.prepare(
