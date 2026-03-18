@@ -759,7 +759,14 @@ Page({
       vibrateSuccess();
       wx.hideLoading();
       sayToast({ title: "操作成功", icon: "success" });
-      await this.loadDetail();
+      setTimeout(() => {
+        const pages = getCurrentPages();
+        if (pages.length > 1) {
+          wx.navigateBack();
+        } else {
+          wx.redirectTo({ url: "/pages/approval/index" });
+        }
+      }, 800);
     } catch (error) {
       vibrateWarning();
       wx.hideLoading();
