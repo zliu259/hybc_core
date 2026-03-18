@@ -18,6 +18,7 @@ import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
+import { resubmit as resubmitOp } from "../services/approval/operations";
 
 const nowIso = () => new Date().toISOString();
 
@@ -832,11 +833,26 @@ paymentRoutes.post(
         .bind(request.approval_instance_id)
         .first<{ status: string }>();
 
-      if (existing && (existing.status === "pending" || existing.status === "in_progress")) {
+      if (existing && existing.status === "in_progress") {
         return c.json(
           { success: false, error: { message: "Approval instance already in progress" } },
           400
         );
+      }
+
+      if (existing && (existing.status === "pending" || existing.status === "withdrawn")) {
+        try {
+          await resubmitOp(c.env, request.approval_instance_id, auth.sub);
+          await c.env.DB.prepare(
+            "UPDATE payment_request SET status = 'pending_approval', updated_at = ? WHERE id = ?"
+          )
+            .bind(nowIso(), id)
+            .run();
+          return c.json({ success: true, data: { instance_id: request.approval_instance_id, resubmitted: true } });
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : "Resubmit failed";
+          return c.json({ success: false, error: { message: msg } }, 400);
+        }
       }
     }
 
