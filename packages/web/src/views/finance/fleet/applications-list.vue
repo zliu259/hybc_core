@@ -1,7 +1,13 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
-import { listFuelQuotaApplications, type FuelQuotaApplication } from "@/api/fleet";
+import { computed, onMounted, ref } from "vue";
+import { ElMessageBox, ElMessage } from "element-plus";
+import {
+  listFuelQuotaApplications,
+  voidFuelQuotaApplication,
+  type FuelQuotaApplication
+} from "@/api/fleet";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "FuelQuotaApplicationAllList" });
 
@@ -10,11 +16,23 @@ const status = ref<string | undefined>(undefined);
 const rows = ref<FuelQuotaApplication[]>([]);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
+const userStore = useUserStoreHook();
+const roleSet = computed(() => new Set(userStore.roles ?? []));
+const isSuperAdmin = computed(() => roleSet.value.has("super_admin"));
+
 const fuelStatusLabel = (value: string) => {
   if (value === "pending") return "待处理";
   if (value === "processed") return "已处理";
   if (value === "rejected") return "已拒绝";
+  if (value === "cancelled") return "已废除";
   return value;
+};
+
+const fuelStatusType = (value: string): "warning" | "success" | "danger" | "info" => {
+  if (value === "pending") return "warning";
+  if (value === "processed") return "success";
+  if (value === "rejected") return "danger";
+  return "info";
 };
 
 const resolveUserName = (userid: string | null | undefined) => {
@@ -36,6 +54,36 @@ const loadData = async () => {
   }
 };
 
+const voidingId = ref<number | null>(null);
+
+const handleVoid = async (row: FuelQuotaApplication) => {
+  try {
+    await ElMessageBox.confirm(
+      `确认废除申请单 ${row.application_no}？废除后该申请将不再参与后续处理。`,
+      "废除油卡额度申请",
+      {
+        confirmButtonText: "确认废除",
+        cancelButtonText: "取消",
+        type: "warning"
+      }
+    );
+  } catch {
+    return;
+  }
+
+  voidingId.value = row.id;
+  try {
+    await voidFuelQuotaApplication(row.id);
+    ElMessage.success("申请已废除");
+    await loadData();
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : "废除失败";
+    ElMessage.error(msg);
+  } finally {
+    voidingId.value = null;
+  }
+};
+
 onMounted(loadData);
 </script>
 
@@ -49,6 +97,7 @@ onMounted(loadData);
             <el-option label="待处理" value="pending" />
             <el-option label="已处理" value="processed" />
             <el-option label="已拒绝" value="rejected" />
+            <el-option label="已废除" value="cancelled" />
           </el-select>
           <el-button type="primary" @click="loadData">刷新</el-button>
         </el-space>
@@ -63,7 +112,11 @@ onMounted(loadData);
       <el-table-column prop="current_plate_no" label="车辆" width="120" />
       <el-table-column prop="requested_amount" label="申请额度" width="120" />
       <el-table-column label="状态" width="120">
-        <template #default="scope">{{ fuelStatusLabel(scope.row.status) }}</template>
+        <template #default="scope">
+          <el-tag :type="fuelStatusType(scope.row.status)" size="small">
+            {{ fuelStatusLabel(scope.row.status) }}
+          </el-tag>
+        </template>
       </el-table-column>
       <el-table-column prop="processed_at" label="处理时间" width="180" />
       <el-table-column label="处理人" width="180">
@@ -72,6 +125,26 @@ onMounted(loadData);
       <el-table-column prop="latest_card_balance" label="处理后余额" width="120" />
       <el-table-column prop="office_remark" label="处理备注" min-width="220" />
       <el-table-column prop="requested_at" label="申请时间" width="180" />
+      <el-table-column
+        v-if="isSuperAdmin"
+        label="操作"
+        width="100"
+        fixed="right"
+      >
+        <template #default="scope">
+          <el-button
+            v-if="scope.row.status !== 'cancelled'"
+            type="danger"
+            size="small"
+            text
+            :loading="voidingId === scope.row.id"
+            @click="handleVoid(scope.row)"
+          >
+            废除
+          </el-button>
+          <span v-else class="text-gray-400">-</span>
+        </template>
+      </el-table-column>
     </el-table>
   </el-card>
 </template>

@@ -46,7 +46,7 @@ export type FuelQuotaApplication = {
   requested_amount: number;
   vehicle_mileage_km: number;
   photo_keys_json: string | null;
-  status: "pending" | "processed" | "rejected";
+  status: "pending" | "processed" | "rejected" | "cancelled";
   requested_at: string;
   processed_by_userid: string | null;
   processed_at: string | null;
@@ -202,5 +202,16 @@ export const processFuelQuotaApplication = (
     "post",
     `/api/v1/fleet/fuel-applications/${id}/process`,
     { data }
+  );
+};
+
+export const voidFuelQuotaApplication = (
+  id: number,
+  data?: { reason?: string }
+) => {
+  return http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/fleet/fuel-applications/${id}/void`,
+    { data: data ?? {} }
   );
 };

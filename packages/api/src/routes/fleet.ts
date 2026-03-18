@@ -693,3 +693,63 @@ fleetRoutes.post(
     return c.json({ success: true });
   }
 );
+
+fleetRoutes.post(
+  "/fuel-applications/:id/void",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json()) as { reason?: string };
+
+    const application = await c.env.DB.prepare(
+      "SELECT id, status FROM fuel_quota_application WHERE id = ?"
+    )
+      .bind(id)
+      .first<{ id: number; status: string }>();
+
+    if (!application) {
+      return c.json({ success: false, error: { message: "application not found" } }, 404);
+    }
+
+    if (application.status === "cancelled") {
+      return c.json({ success: false, error: { message: "application is already cancelled" } }, 400);
+    }
+
+    const ts = nowIso();
+    await c.env.DB.prepare(
+      `UPDATE fuel_quota_application SET
+        status = 'cancelled',
+        office_remark = ?,
+        processed_by_userid = ?,
+        processed_at = ?,
+        updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(
+        body.reason ?? "超级管理员废除",
+        auth.sub,
+        ts,
+        ts,
+        id
+      )
+      .run();
+
+    await c.env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "fuel_quota_application_voided",
+        "fleet-route",
+        JSON.stringify({
+          application_id: id,
+          voided_by_userid: auth.sub,
+          reason: body.reason ?? null
+        }),
+        ts
+      )
+      .run();
+
+    return c.json({ success: true });
+  }
+);

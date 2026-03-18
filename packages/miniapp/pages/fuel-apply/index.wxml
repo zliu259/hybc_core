@@ -51,7 +51,7 @@
     <view wx:for="{{myApplications}}" wx:key="id" class="record-item">
       <view class="record-title">{{item.application_no}}</view>
       <view class="record-line">车辆：{{item.current_plate_no || '-'}} ｜ 里程：{{item.vehicle_mileage_km}}</view>
-      <view class="record-line">额度：{{item.requested_amount}} ｜ 状态：{{item.status}}</view>
+      <view class="record-line">额度：{{item.requested_amount}} ｜ 状态：{{item.statusLabel || item.status}}</view>
       <view class="record-line">申请时间：{{item.requested_at}}</view>
       <view class="record-line">处理人：{{item.processed_by_userid || '-'}} ｜ 卡余额：{{item.latest_card_balance || '-'}}</view>
     </view>

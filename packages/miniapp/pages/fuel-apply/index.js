@@ -1,6 +1,13 @@
 const { request } = require("../../utils/request");
 const { uploadFileToR2 } = require("../../utils/upload");
 
+const STATUS_LABELS = {
+  pending: "待处理",
+  processed: "已处理",
+  rejected: "已拒绝",
+  cancelled: "已废除"
+};
+
 Page({
   data: {
     loading: false,
@@ -37,7 +44,10 @@ Page({
 
       const vehicles = vehicleRes && Array.isArray(vehicleRes.data) ? vehicleRes.data : [];
       const fuelCards = cardRes && Array.isArray(cardRes.data) ? cardRes.data : [];
-      const myApplications = myRes && Array.isArray(myRes.data) ? myRes.data : [];
+      const myApplications = (myRes && Array.isArray(myRes.data) ? myRes.data : []).map((item) => ({
+        ...item,
+        statusLabel: STATUS_LABELS[item.status] || item.status
+      }));
       this.setData({
         vehicles,
         fuelCards,
@@ -148,6 +158,7 @@ Page({
     }
 
     this.setData({ submitting: true });
+    wx.showLoading({ title: "提交中...", mask: true });
     try {
       await request({
         method: "POST",
@@ -161,6 +172,7 @@ Page({
         }
       });
 
+      wx.hideLoading();
       wx.showToast({ title: "申请已提交", icon: "success" });
       this.setData({
         vehicleIndex: 0,
@@ -175,6 +187,7 @@ Page({
       });
       await this.loadData();
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: (error && error.message) || "提交失败", icon: "none" });
     } finally {
       this.setData({ submitting: false });
