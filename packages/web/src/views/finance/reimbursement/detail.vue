@@ -330,7 +330,7 @@ const refreshAuditStatuses = async (silent = false) => {
       { type: "info" }
     );
   }
-  await loadDetail();
+  await loadDetail({ showLoading: !silent });
 };
 
 const ensureAuditPolling = (reason?: string) => {
@@ -361,7 +361,8 @@ const ensureAuditPolling = (reason?: string) => {
   }, AUDIT_POLL_INTERVAL_MS);
 };
 
-const loadDetail = async () => {
+const loadDetail = async (options?: { showLoading?: boolean }) => {
+  const showLoading = options?.showLoading ?? true;
   if (isCreate.value) {
     detail.value = null;
     form.value = createDefaultForm();
@@ -370,7 +371,9 @@ const loadDetail = async () => {
     anomalyStatusText.value = "none";
     return;
   }
-  detailLoading.value = true;
+  if (showLoading) {
+    detailLoading.value = true;
+  }
   try {
     const result = await getReimbursementEnvelope(envelopeId.value);
     detail.value = result.data;
@@ -399,7 +402,9 @@ const loadDetail = async () => {
     anomalyStatusText.value = result.data.duplicate_check_status || "none";
     ensureAuditPolling();
   } finally {
-    detailLoading.value = false;
+    if (showLoading) {
+      detailLoading.value = false;
+    }
   }
 };
 
