@@ -34,13 +34,15 @@ const isWorkspaceView = computed(() => route.path.startsWith("/workspace/"));
 const envelopeId = computed(() => Number(route.params.id));
 const isCreate = computed(() => route.params.id === "create");
 
-const loading = ref(false);
+const baseDataLoading = ref(false);
+const detailLoading = ref(false);
+const loading = computed(() => baseDataLoading.value || detailLoading.value);
 const saving = ref(false);
 const detail = ref<ReimbursementEnvelopeDetail | null>(null);
 const { projects, loadProjects } = useProjectOptions();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
-const form = ref({
+const createDefaultForm = () => ({
   project_id: undefined as number | undefined,
   applicant_userid: "",
   channel: "physical" as "physical" | "electronic",
@@ -50,6 +52,8 @@ const form = ref({
   category: "",
   description: ""
 });
+
+const form = ref(createDefaultForm());
 
 const statusLabelMap: Record<string, string> = {
   unregistered: "未登记",
@@ -208,6 +212,22 @@ const toRiskLevelTagType = (
 const attachmentUrl = (fileKey: string) =>
   `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
 
+const previewDrawerVisible = ref(false);
+const previewFileUrl = ref("");
+const previewFileName = ref("");
+const previewInline = computed(() => {
+  const lower = previewFileName.value.toLowerCase();
+  return (
+    lower.endsWith(".pdf") ||
+    lower.endsWith(".png") ||
+    lower.endsWith(".jpg") ||
+    lower.endsWith(".jpeg") ||
+    lower.endsWith(".webp") ||
+    lower.endsWith(".gif") ||
+    lower.endsWith(".txt")
+  );
+});
+
 const parseReviewResult = (value?: string | null) => {
   if (!value) return null;
   try {
@@ -342,8 +362,15 @@ const ensureAuditPolling = (reason?: string) => {
 };
 
 const loadDetail = async () => {
-  if (isCreate.value) return;
-  loading.value = true;
+  if (isCreate.value) {
+    detail.value = null;
+    form.value = createDefaultForm();
+    attachmentItems.value = [];
+    ocrStatusText.value = "none";
+    anomalyStatusText.value = "none";
+    return;
+  }
+  detailLoading.value = true;
   try {
     const result = await getReimbursementEnvelope(envelopeId.value);
     detail.value = result.data;
@@ -372,7 +399,7 @@ const loadDetail = async () => {
     anomalyStatusText.value = result.data.duplicate_check_status || "none";
     ensureAuditPolling();
   } finally {
-    loading.value = false;
+    detailLoading.value = false;
   }
 };
 
@@ -447,8 +474,9 @@ const downloadAttachment = (item: EnvelopeAttachmentDraft) => {
 
 const previewAttachment = (item: EnvelopeAttachmentDraft) => {
   if (!item.file_key) return;
-  const url = resolveUploadUrl(attachmentUrl(item.file_key));
-  window.open(url, "_blank", "noopener,noreferrer");
+  previewFileUrl.value = resolveUploadUrl(attachmentUrl(item.file_key));
+  previewFileName.value = item.file_name || item.file_key;
+  previewDrawerVisible.value = true;
 };
 
 const save = async () => {
@@ -645,8 +673,13 @@ const submitPrecheck = async (
 };
 
 onMounted(async () => {
-  await Promise.all([loadProjects(), loadWecomUsers()]);
-  await loadDetail();
+  baseDataLoading.value = true;
+  try {
+    await Promise.all([loadProjects(), loadWecomUsers()]);
+    await loadDetail();
+  } finally {
+    baseDataLoading.value = false;
+  }
 });
 
 onBeforeUnmount(() => {
@@ -657,6 +690,7 @@ watch(
   () => route.params.id,
   async () => {
     clearAuditPolling();
+    previewDrawerVisible.value = false;
     await loadDetail();
   }
 );
@@ -1099,5 +1133,29 @@ watch(
       />
       <el-table-column prop="summary" label="说明" min-width="240" />
     </el-table>
+
+    <el-drawer v-model="previewDrawerVisible" title="附件预览" size="70%">
+      <div style="height: calc(100vh - 120px)">
+        <div style="margin-bottom: 8px; color: #666">{{ previewFileName }}</div>
+        <template v-if="previewInline">
+          <iframe
+            :src="previewFileUrl"
+            style="width: 100%; height: 100%; border: none"
+          />
+        </template>
+        <template v-else>
+          <el-alert
+            type="info"
+            :closable="false"
+            title="该文件类型暂不支持内嵌预览，请使用下载打开"
+          />
+          <div style="margin-top: 12px">
+            <el-link :href="previewFileUrl" target="_blank" type="primary"
+              >下载附件</el-link
+            >
+          </div>
+        </template>
+      </div>
+    </el-drawer>
   </el-card>
 </template>
