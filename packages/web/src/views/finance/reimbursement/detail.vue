@@ -243,17 +243,91 @@ const parsedSilentReviewResult = computed(() =>
 );
 const parsedRecognitionResult = computed(() => parseReviewResult(detail.value?.ocr_result_json));
 
+const normalizeDisplayText = (value: unknown) => {
+  if (typeof value !== "string") return "";
+  return value
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .trim();
+};
+
 const reviewSummaryText = computed(() => {
   const raw = parsedSilentReviewResult.value;
   if (!raw) return "-";
-  const summary =
-    (typeof raw.summary === "string" && raw.summary) ||
-    (typeof raw.comment === "string" && raw.comment) ||
-    (typeof raw.output === "string" && raw.output) ||
-    (raw.metadata && typeof raw.metadata === "object" && typeof (raw.metadata as Record<string, unknown>).summary === "string"
-      ? ((raw.metadata as Record<string, unknown>).summary as string)
+
+  const aiReasonability =
+    raw.ai_reasonability && typeof raw.ai_reasonability === "object"
+      ? (raw.ai_reasonability as Record<string, unknown>)
+      : null;
+
+  const topSummary =
+    normalizeDisplayText(raw.ai_reasonability_summary) ||
+    normalizeDisplayText(raw.summary) ||
+    normalizeDisplayText(raw.comment) ||
+    normalizeDisplayText(raw.output) ||
+    (raw.metadata && typeof raw.metadata === "object"
+      ? normalizeDisplayText((raw.metadata as Record<string, unknown>).summary)
       : "");
-  return summary || JSON.stringify(raw, null, 2);
+
+  const lines: string[] = [];
+
+  const riskLabel =
+    aiReasonability?.risk_level === "high"
+      ? "高风险"
+      : aiReasonability?.risk_level === "medium"
+        ? "中风险"
+        : aiReasonability?.risk_level === "low"
+          ? "低风险"
+          : "未标记";
+
+  if (aiReasonability) {
+    lines.push(`风险等级：${riskLabel}`);
+  }
+
+  const detailSummary = aiReasonability
+    ? normalizeDisplayText(aiReasonability.summary)
+    : "";
+  const finalSummary = topSummary || detailSummary;
+  if (finalSummary) {
+    lines.push(`结论：${finalSummary}`);
+  }
+
+  const anomalies = Array.isArray(aiReasonability?.anomalies)
+    ? (aiReasonability?.anomalies as Array<Record<string, unknown>>)
+    : [];
+  if (anomalies.length > 0) {
+    lines.push("主要异常：");
+    anomalies.forEach((item, index) => {
+      const type = normalizeDisplayText(item.type) || "未命名异常";
+      const level =
+        item.level === "high"
+          ? "高"
+          : item.level === "medium"
+            ? "中"
+            : item.level === "low"
+              ? "低"
+              : "未标注";
+      const detailText = normalizeDisplayText(item.detail);
+      lines.push(`${index + 1}. [${level}] ${type}${detailText ? `：${detailText}` : ""}`);
+    });
+  }
+
+  const recommendations = Array.isArray(aiReasonability?.recommendation)
+    ? (aiReasonability?.recommendation as unknown[])
+        .map((item) => normalizeDisplayText(item))
+        .filter(Boolean)
+    : [];
+  if (recommendations.length > 0) {
+    lines.push("建议动作：");
+    recommendations.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item}`);
+    });
+  }
+
+  if (lines.length === 0) {
+    return "系统尚未生成可读摘要，请稍后刷新后重试。";
+  }
+  return lines.join("\n");
 });
 
 const recognitionHintRows = computed(() => {
