@@ -352,7 +352,9 @@ Page({
           method: "POST",
           path: `/api/v1/warehouse/stock-order/${createdId}/submit-approval`,
           data: { biz_summary: `${orderType.label}制单（${items.length}项）` }
-        }).catch(() => {});
+        }).catch((error) => {
+          wx.showToast({ title: error.message || "已创建成功，但提交审批失败", icon: "none" });
+        });
       }
 
       wx.hideLoading();

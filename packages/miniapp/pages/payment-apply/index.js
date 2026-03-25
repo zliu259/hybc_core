@@ -221,12 +221,19 @@ Page({
     this.setData({ loadingMeta: true });
     try {
       const [thresholdRes, payeeRes, contractRes, entityRes, wecomRes] = await Promise.all([
-        request({ method: "GET", path: "/api/v1/admin/thresholds?biz_type=payment_request" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/payment/payee/list?type=external" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/contract?direction=outbound&page=1&pageSize=200" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/entity?page=1&pageSize=200" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/auth/wecom/contacts" }).catch(() => null)
+        request({ method: "GET", path: "/api/v1/admin/thresholds?biz_type=payment_request" }).catch((error) => ({ _error: error })),
+        request({ method: "GET", path: "/api/v1/payment/payee/list?type=external" }).catch((error) => ({ _error: error })),
+        request({ method: "GET", path: "/api/v1/contract?direction=outbound&page=1&pageSize=200" }).catch((error) => ({ _error: error })),
+        request({ method: "GET", path: "/api/v1/entity?page=1&pageSize=200" }).catch((error) => ({ _error: error })),
+        request({ method: "GET", path: "/api/v1/auth/wecom/contacts" }).catch((error) => ({ _error: error }))
       ]);
+
+      const hasPartialError = [thresholdRes, payeeRes, contractRes, entityRes, wecomRes].some(
+        (item) => item && item._error
+      );
+      if (hasPartialError) {
+        wx.showToast({ title: "部分基础数据加载失败，已使用可用数据继续", icon: "none" });
+      }
 
       const thresholds = thresholdRes && Array.isArray(thresholdRes.data) ? thresholdRes.data : [];
       const thresholdLimit = thresholds.length

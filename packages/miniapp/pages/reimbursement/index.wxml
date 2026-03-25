@@ -10,14 +10,12 @@
       <hy-status-chip text="识别号：{{latestEnvelopeNo || latestEnvelopeUuid || '-'}}" theme="success" variant="light" />
       <hy-status-chip text="状态：{{latestEnvelopeStatusText}}" theme="warning" variant="light" />
       <hy-status-chip text="核验：{{verificationStatusText}}" theme="success" variant="light" />
-      <hy-status-chip text="预审：{{precheckStatusText}}" theme="warning" variant="light" />
       <hy-status-chip text="PDF：{{pdfStatusText}}" theme="success" variant="light" />
       <hy-status-chip text="附件数：{{attachmentCount}}" theme="success" variant="light" />
-      <hy-status-chip text="OCR：{{ocrStatusText}}" theme="warning" variant="light" />
       <hy-status-chip text="批次：{{batchInfoText}}" theme="warning" variant="light" />
     </view>
 
-    <t-notice-bar content="建议流程（与Web一致）：先绑定信封UUID（实物信封必填）并保存，再上传附件后提交；电子发票上传会自动触发OCR，资料确认后同样点击“提交报销”。" theme="warning" />
+    <t-notice-bar content="建议流程（与Web一致）：先绑定信封UUID（实物信封必填）并保存，再上传附件后提交；提交后系统会在后台自动核查，无需手动触发处理步骤。" theme="warning" />
 
     <view class="label">绑定信封 UUID（实物信封必填）</view>
     <input class="input standard-input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy || draft.channel === 'electronic'}}" placeholder="{{draft.channel === 'electronic' ? '电子发票通道自动生成UUID' : '可扫码或粘贴 UUID'}}" />
@@ -65,11 +63,7 @@
     </view>
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">📸 上传电子发票（自动OCR）</t-button>
-    </view>
-
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">刷新OCR状态</t-button>
+      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">📸 上传电子发票（自动识别）</t-button>
       <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId || (latestEnvelopeStatus !== 'draft' && latestEnvelopeStatus !== 'unregistered')}}">📨 提交报销</t-button>
     </view>
 
@@ -109,8 +103,8 @@
       </view>
     </view>
 
-    <view class="label">查重线索</view>
-    <view wx:if="{{duplicateChecks.length === 0}}" class="attachment-empty">暂无查重线索</view>
+    <view class="label">复核提示</view>
+    <view wx:if="{{duplicateChecks.length === 0}}" class="attachment-empty">暂无复核提示</view>
     <view wx:for="{{duplicateChecks}}" wx:key="id" class="duplicate-item">
       <view class="duplicate-summary">{{item.summary}}</view>
       <view class="duplicate-risk">{{item.risk}}</view>

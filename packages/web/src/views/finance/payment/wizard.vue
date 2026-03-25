@@ -389,7 +389,12 @@ const submitQuickExternalPayee = async () => {
 
 const loadMeta = async () => {
   const [thresholdRes, contractRes, entityRes] = await Promise.all([
-    listBizThresholds({ biz_type: "payment_request" }).catch(() => null),
+    listBizThresholds({ biz_type: "payment_request" }).catch((error) => {
+      message(error instanceof Error ? error.message : "付款阈值加载失败，已按默认值继续", {
+        type: "warning"
+      });
+      return null;
+    }),
     listContracts({ direction: "outbound", page: 1, pageSize: 200 }),
     listEntities()
   ]);

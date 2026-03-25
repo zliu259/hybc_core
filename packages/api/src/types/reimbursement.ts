@@ -52,7 +52,12 @@ export interface ReimbursementEnvelope {
   pdf_file_key: string | null;
   ocr_task_id: number | null;
   ocr_status: TaskStatus;
+  ocr_result_json: string | null;
+  ocr_invoice_unique_no_hint: string | null;
+  ocr_invoice_no_hint: string | null;
+  ocr_expense_date_hint: string | null;
   duplicate_check_status: TaskStatus;
+  silent_review_result: string | null;
   duplicate_override_requested: number;
   duplicate_override_reason: string | null;
   submitted_at: string | null;

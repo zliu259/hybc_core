@@ -19,7 +19,12 @@ export type ReimbursementEnvelope = {
   batch_id?: number | null;
   approval_instance_id?: number | null;
   ocr_status: string;
+  ocr_result_json?: string | null;
+  ocr_invoice_unique_no_hint?: string | null;
+  ocr_invoice_no_hint?: string | null;
+  ocr_expense_date_hint?: string | null;
   duplicate_check_status: string;
+  silent_review_result?: string | null;
   duplicate_override_requested?: number;
   duplicate_override_reason?: string | null;
   pdf_status: string;
@@ -200,12 +205,18 @@ export const scanReimbursementEnvelope = (data: {
 
 export const submitReimbursementEnvelope = (
   id: number,
-  data?: { force_submit?: boolean; force_submit_reason?: string }
+  data?: { force_submit?: boolean; force_submit_reason?: string },
+  options?: { idempotencyKey?: string }
 ) => {
   return http.request<{
     success: boolean;
     data: { id: number; status: string };
-  }>("post", `/api/v1/reimbursement/${id}/submit`, { data });
+  }>("post", `/api/v1/reimbursement/${id}/submit`, {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const voidReimbursementEnvelope = (id: number) => {
@@ -405,7 +416,7 @@ export const createReimbursementBatch = (data: {
   project_id: number;
   applicant_userid: string;
   envelope_ids?: number[];
-}) => {
+}, options?: { idempotencyKey?: string }) => {
   return http.request<{
     success: boolean;
     data: {
@@ -414,7 +425,12 @@ export const createReimbursementBatch = (data: {
       total_amount: number;
       item_count: number;
     };
-  }>("post", "/api/v1/reimbursement/batch", { data });
+  }>("post", "/api/v1/reimbursement/batch", {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const triggerBatchAudit = (id: number) => {
@@ -438,12 +454,18 @@ export const getBatchAuditReport = (id: number) => {
 
 export const submitBatchApproval = (
   id: number,
-  data?: { biz_summary?: string; instance_config?: Record<string, unknown> }
+  data?: { biz_summary?: string; instance_config?: Record<string, unknown> },
+  options?: { idempotencyKey?: string }
 ) => {
   return http.request<{
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
-  }>("post", `/api/v1/reimbursement/batch/${id}/submit-approval`, { data });
+  }>("post", `/api/v1/reimbursement/batch/${id}/submit-approval`, {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const markBatchPaid = (
@@ -459,11 +481,17 @@ export const markBatchPaid = (
       file_name?: string;
       file_size?: number;
     }[];
-  }
+  },
+  options?: { idempotencyKey?: string }
 ) => {
   return http.request<{ success: boolean }>(
     "post",
     `/api/v1/reimbursement/batch/${id}/mark-paid`,
-    { data }
+    {
+      data,
+      headers: options?.idempotencyKey
+        ? { "Idempotency-Key": options.idempotencyKey }
+        : undefined
+    }
   );
 };

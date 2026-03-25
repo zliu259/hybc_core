@@ -34,11 +34,11 @@ const verificationStatusText = (status) => {
 
 const precheckStatusText = (status) => {
   const map = {
-    none: "未预审",
-    pending: "待预审",
-    approved: "预审通过",
+    none: "未复核",
+    pending: "待复核",
+    approved: "复核通过",
     supplement: "待补充",
-    rejected: "预审驳回"
+    rejected: "复核驳回"
   };
   return map[status] || "未知";
 };
@@ -118,7 +118,7 @@ Page({
     latestEnvelopeStatus: "none",
     latestEnvelopeStatusText: "未创建",
     verificationStatusText: "待核验",
-    precheckStatusText: "未预审",
+    precheckStatusText: "未复核",
     pdfStatusText: "未触发",
     batchInfoText: "未入批次",
     attachmentCount: 0,
@@ -172,7 +172,7 @@ Page({
       latestEnvelopeStatus: "none",
       latestEnvelopeStatusText: "未创建",
       verificationStatusText: "待核验",
-      precheckStatusText: "未预审",
+      precheckStatusText: "未复核",
       pdfStatusText: "未触发",
       batchInfoText: "未入批次",
       attachmentCount: 0,
@@ -389,15 +389,14 @@ Page({
       this.setData({
         mode: "detail",
         latestEnvelopeId: envelopeId,
-        ocrStatus: "pending",
-        ocrStatusText: statusText("pending")
+        ocrStatus: "none",
+        ocrStatusText: "系统将于提交后自动处理"
       });
       if (envelopeId) {
         await this.loadEnvelopeDetail(envelopeId);
       }
       vibrateSuccess();
-      sayToast({ title: "已触发OCR", icon: "success" });
-      setTimeout(() => this.refreshOcrStatus(), 1200);
+      sayToast({ title: "电子发票已上传，请确认信息后提交", icon: "success" });
     }).catch((error) => {
       vibrateWarning();
       sayToast({ title: error.message || "上传失败", icon: "none", danger: true });

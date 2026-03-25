@@ -3,7 +3,14 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
+import { writeAuditLog } from "../services/audit-log";
+import { runInTransaction } from "../services/db-transaction";
 import { publishEvent } from "../services/event-bus";
+import {
+  abandonIdempotentRequest,
+  beginIdempotentRequest,
+  completeIdempotentRequest
+} from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
@@ -33,6 +40,7 @@ const UNASSIGNED_APPLICANT = "__UNASSIGNED__";
 const validChannelSet = new Set<string>(reimbursementChannels);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const reimbursementOfficeRoles = ["super_admin", "manager", "site_manager", "finance"];
 const isValidUuid = (value: string | null | undefined): boolean => {
   const trimmed = String(value || "").trim();
   return Boolean(trimmed && UUID_REGEX.test(trimmed));
@@ -70,6 +78,61 @@ const extractInvoiceUniqueNo = (payload: Record<string, unknown> | null): string
   return null;
 };
 
+const parseStoredJson = (value: string | null | undefined): Record<string, unknown> | null => {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const normalizeHintValue = (value: unknown): string | null => {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim();
+  return normalized || null;
+};
+
+const extractInvoiceRecognitionHints = (payload: Record<string, unknown> | null) => {
+  return {
+    invoice_unique_no: extractInvoiceUniqueNo(payload),
+    invoice_no:
+      normalizeHintValue(payload?.invoice_no) ?? normalizeHintValue(payload?.invoice_number),
+    expense_date:
+      normalizeHintValue(payload?.issue_date) ?? normalizeHintValue(payload?.date),
+    result_json: payload ? JSON.stringify(payload) : null
+  };
+};
+
+const hasOfficeRole = (roles: string[] = []) => {
+  return roles.some((role) => reimbursementOfficeRoles.includes(role));
+};
+
+const assertEnvelopeAccess = async (
+  env: Env,
+  envelopeId: number,
+  auth: { sub: string; roles: string[] }
+): Promise<ReimbursementEnvelope | null> => {
+  const envelope = await env.DB.prepare(
+    "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+  )
+    .bind(envelopeId)
+    .first<ReimbursementEnvelope>();
+
+  if (!envelope) return null;
+  if (hasOfficeRole(auth.roles) || envelope.applicant_userid === auth.sub) {
+    return envelope;
+  }
+  return null;
+};
+
+const filterTaskResultForViewer = (
+  auth: { roles: string[] },
+  result: Record<string, unknown> | null
+) => {
+  return hasOfficeRole(auth.roles) ? result : null;
+};
+
 const insertAttachments = async (
   db: D1Database,
   envelopeId: number,
@@ -102,7 +165,15 @@ const insertAttachments = async (
   }
 };
 
-const applyDuplicateChecks = async (env: Env, envelopeId: number): Promise<number> => {
+const applyDuplicateChecks = async (
+  env: Env,
+  envelopeId: number,
+  hints?: {
+    invoice_unique_no?: string | null;
+    invoice_no?: string | null;
+    expense_date?: string | null;
+  }
+): Promise<number> => {
   const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
     .bind(envelopeId)
     .first<ReimbursementEnvelope>();
@@ -118,8 +189,9 @@ const applyDuplicateChecks = async (env: Env, envelopeId: number): Promise<numbe
   const now = nowIso();
   let count = 0;
 
-  const invoiceUniqueNo = envelope.invoice_unique_no?.trim();
-  const invoiceNo = envelope.invoice_no?.trim();
+  const invoiceUniqueNo = hints?.invoice_unique_no?.trim() || envelope.invoice_unique_no?.trim();
+  const invoiceNo = hints?.invoice_no?.trim() || envelope.invoice_no?.trim();
+  const expenseDate = hints?.expense_date?.trim() || envelope.expense_date;
   if (invoiceUniqueNo || invoiceNo) {
     const rows = invoiceUniqueNo
       ? await env.DB.prepare(
@@ -172,7 +244,7 @@ const applyDuplicateChecks = async (env: Env, envelopeId: number): Promise<numbe
        ORDER BY updated_at DESC
        LIMIT 10`
     )
-      .bind(envelopeId, envelope.amount, envelope.expense_date, envelope.expense_date)
+       .bind(envelopeId, envelope.amount, expenseDate, expenseDate)
       .all<{
         id: number;
         project_id: number;
@@ -388,19 +460,7 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
     const ocrResult = parseTaskResult(ocrTask?.result_json ?? null);
 
     if (ocrTask?.status === "completed" && envelope.ocr_status !== "completed") {
-      const invoiceUniqueNo = extractInvoiceUniqueNo(ocrResult);
-      const invoiceNo =
-        typeof ocrResult?.invoice_no === "string"
-          ? ocrResult.invoice_no
-          : typeof ocrResult?.invoice_number === "string"
-            ? ocrResult.invoice_number
-            : envelope.invoice_no;
-      const issueDate =
-        typeof ocrResult?.issue_date === "string"
-          ? ocrResult.issue_date
-          : typeof ocrResult?.date === "string"
-            ? ocrResult.date
-            : envelope.expense_date;
+      const hints = extractInvoiceRecognitionHints(ocrResult);
       const nextStatus =
         envelope.status === "received"
           ? "received"
@@ -411,17 +471,26 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
       await env.DB.prepare(
         `UPDATE reimbursement_envelope SET
            ocr_status = 'completed',
-           invoice_unique_no = COALESCE(?, invoice_unique_no),
-           invoice_no = COALESCE(?, invoice_no),
-           expense_date = COALESCE(?, expense_date),
+           ocr_result_json = ?,
+           ocr_invoice_unique_no_hint = ?,
+           ocr_invoice_no_hint = ?,
+           ocr_expense_date_hint = ?,
            status = ?,
            updated_at = ?
          WHERE id = ?`
       )
-        .bind(invoiceUniqueNo, invoiceNo ?? null, issueDate ?? null, nextStatus, nowIso(), envelopeId)
+        .bind(
+          hints.result_json,
+          hints.invoice_unique_no,
+          hints.invoice_no,
+          hints.expense_date,
+          nextStatus,
+          nowIso(),
+          envelopeId
+        )
         .run();
 
-      await applyDuplicateChecks(env, envelopeId);
+      await applyDuplicateChecks(env, envelopeId, hints);
     }
 
     if ((ocrTask?.status === "failed" || ocrTask?.status === "timeout") && envelope.ocr_status !== "failed") {
@@ -434,18 +503,24 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
   }
 
   const anomalyTask = await env.DB.prepare(
-    `SELECT status FROM task_queue
+    `SELECT status, result_json FROM task_queue
      WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
      ORDER BY id DESC LIMIT 1`
   )
     .bind(envelopeId)
-    .first<{ status: string }>();
+    .first<{ status: string; result_json: string | null }>();
 
   if (anomalyTask?.status === "completed") {
+    const silentReviewResult = parseTaskResult(anomalyTask.result_json ?? null);
     await env.DB.prepare(
-      "UPDATE reimbursement_envelope SET duplicate_check_status = 'completed', precheck_status = CASE WHEN precheck_status = 'none' THEN 'pending' ELSE precheck_status END, updated_at = ? WHERE id = ?"
+      `UPDATE reimbursement_envelope SET
+         duplicate_check_status = 'completed',
+         silent_review_result = ?,
+         precheck_status = CASE WHEN precheck_status = 'none' THEN 'pending' ELSE precheck_status END,
+         updated_at = ?
+       WHERE id = ?`
     )
-      .bind(nowIso(), envelopeId)
+      .bind(silentReviewResult ? JSON.stringify(silentReviewResult) : null, nowIso(), envelopeId)
       .run();
   }
 
@@ -471,11 +546,12 @@ reimbursementRoutes.get("/", async (c) => {
   const projectId = c.req.query("project_id");
   const creatorId = c.req.query("creator_id");
   const applicantUserid = c.req.query("applicant_userid");
-  const applicantFilter = creatorId
+  const requestedApplicantFilter = creatorId
     ? creatorId === "me"
       ? auth.sub
       : creatorId
     : applicantUserid;
+  const applicantFilter = hasOfficeRole(auth.roles) ? requestedApplicantFilter : auth.sub;
   const channel = c.req.query("channel");
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
@@ -629,7 +705,7 @@ reimbursementRoutes.get(
 
 reimbursementRoutes.get(
   "/batch",
-  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const status = c.req.query("status");
     const projectId = c.req.query("project_id");
@@ -678,7 +754,7 @@ reimbursementRoutes.get(
 
 reimbursementRoutes.get(
   "/batch/:id",
-  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
 
@@ -726,6 +802,7 @@ reimbursementRoutes.post(
   "/batch",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
+    const auth = c.get("auth");
     const body = (await c.req.json()) as CreateReimbursementBatchRequest;
 
     if (!body.project_id || body.project_id <= 0) {
@@ -774,42 +851,77 @@ reimbursementRoutes.post(
       );
     }
 
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const actorKey = auth.sub;
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { id: number; batch_no: string; total_amount: number; item_count: number };
+    }>(c.env.DB, `reimbursement:batch-create:${body.project_id}:${body.applicant_userid.trim()}`, actorKey, idempotencyKey);
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload, { status: idempotency.statusCode as 201 });
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Batch creation already in progress" } }, 409);
+    }
+
     const now = nowIso();
     const batchNo = await generateSerial(c.env.DB, "RM", "reimbursement_batch", "batch_no");
     const totalAmount = selected.reduce((sum, item) => sum + (item.amount || 0), 0);
 
-    const insertBatch = await c.env.DB.prepare(
-      `INSERT INTO reimbursement_batch
-        (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?)`
-    )
-      .bind(
-        batchNo,
-        body.project_id,
-        body.applicant_userid.trim(),
-        totalAmount,
-        selected.length,
-        now,
-        now
-      )
-      .run();
+    let batchId = 0;
+    try {
+      await runInTransaction(c.env.DB, async () => {
+        const insertBatch = await c.env.DB.prepare(
+          `INSERT INTO reimbursement_batch
+            (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?)`
+        )
+          .bind(
+            batchNo,
+            body.project_id,
+            body.applicant_userid.trim(),
+            totalAmount,
+            selected.length,
+            now,
+            now
+          )
+          .run();
 
-    const batchId = insertBatch.meta.last_row_id as number;
+        batchId = insertBatch.meta.last_row_id as number;
 
-    for (const envelope of selected) {
-      await c.env.DB.prepare(
-        `INSERT INTO reimbursement_batch_item
-          (batch_id, envelope_id, amount, status, created_at)
-         VALUES (?, ?, ?, 'active', ?)`
-      )
-        .bind(batchId, envelope.id, envelope.amount, now)
-        .run();
+        for (const envelope of selected) {
+          await c.env.DB.prepare(
+            `INSERT INTO reimbursement_batch_item
+              (batch_id, envelope_id, amount, status, created_at)
+             VALUES (?, ?, ?, 'active', ?)`
+          )
+            .bind(batchId, envelope.id, envelope.amount, now)
+            .run();
 
-      await c.env.DB.prepare(
-        "UPDATE reimbursement_envelope SET batch_id = ?, status = 'batched', updated_at = ? WHERE id = ?"
-      )
-        .bind(batchId, now, envelope.id)
-        .run();
+          const updateResult = await c.env.DB.prepare(
+            `UPDATE reimbursement_envelope
+                SET batch_id = ?, status = 'batched', updated_at = ?
+              WHERE id = ?
+                AND batch_id IS NULL
+                AND status = 'received'
+                AND precheck_status = 'approved'`
+          )
+            .bind(batchId, now, envelope.id)
+            .run();
+
+          if ((updateResult.meta.changes ?? 0) !== 1) {
+            throw new Error(`Envelope ${envelope.id} is no longer eligible for batching`);
+          }
+        }
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(
+        c.env.DB,
+        `reimbursement:batch-create:${body.project_id}:${body.applicant_userid.trim()}`,
+        actorKey,
+        idempotencyKey
+      );
+      throw error;
     }
 
     await publishEvent(c.env, "REIMBURSEMENT_BATCH_CREATED", "reimbursement_batch", {
@@ -821,16 +933,41 @@ reimbursementRoutes.post(
       total_amount: totalAmount
     });
 
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.batch.create",
+      targetType: "reimbursement_batch",
+      targetId: batchId,
+      detail: {
+        batch_no: batchNo,
+        project_id: body.project_id,
+        applicant_userid: body.applicant_userid.trim(),
+        item_count: selected.length,
+        total_amount: totalAmount
+      }
+    });
+
+    const payload = {
+      success: true,
+      data: {
+        id: batchId,
+        batch_no: batchNo,
+        total_amount: totalAmount,
+        item_count: selected.length
+      }
+    };
+    await completeIdempotentRequest(
+      c.env.DB,
+      `reimbursement:batch-create:${body.project_id}:${body.applicant_userid.trim()}`,
+      actorKey,
+      idempotencyKey,
+      201,
+      payload
+    );
+
     return c.json(
-      {
-        success: true,
-        data: {
-          id: batchId,
-          batch_no: batchNo,
-          total_amount: totalAmount,
-          item_count: selected.length
-        }
-      },
+      payload,
       201
     );
   }
@@ -900,7 +1037,7 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.get(
   "/batch/:id/audit-report",
-  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
 
@@ -982,6 +1119,18 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "Only draft batch can submit approval" } }, 400);
     }
 
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { approval_instance_id: number; instance_no: string };
+    }>(c.env.DB, `reimbursement:batch-submit-approval:${id}`, auth.sub, idempotencyKey);
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload);
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Approval submission already in progress" } }, 409);
+    }
+
     if (batch.approval_instance_id) {
       const existing = await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
         .bind(batch.approval_instance_id)
@@ -1010,54 +1159,68 @@ reimbursementRoutes.post(
         >
       >();
 
-    const instance = await submitForApproval(
-      c.env,
-      {
-        biz_type: "reimbursement_batch",
-        biz_id: id,
-        biz_summary:
-          body.biz_summary?.trim() ||
-          `${batch.batch_no} | ${batch.item_count} envelopes | ${batch.total_amount}`,
-        context: {
-          amount: batch.total_amount,
-          project_id: batch.project_id,
+    let instance: Awaited<ReturnType<typeof submitForApproval>>;
+
+    try {
+      instance = await submitForApproval(
+        c.env,
+        {
           biz_type: "reimbursement_batch",
           biz_id: id,
-          batch: {
-            batch_no: batch.batch_no,
-            applicant_userid: batch.applicant_userid,
-            total_amount: batch.total_amount,
-            item_count: batch.item_count,
-            status: batch.status
+          biz_summary:
+            body.biz_summary?.trim() ||
+            `${batch.batch_no} | ${batch.item_count} envelopes | ${batch.total_amount}`,
+          context: {
+            amount: batch.total_amount,
+            project_id: batch.project_id,
+            biz_type: "reimbursement_batch",
+            biz_id: id,
+            batch: {
+              batch_no: batch.batch_no,
+              applicant_userid: batch.applicant_userid,
+              total_amount: batch.total_amount,
+              item_count: batch.item_count,
+              status: batch.status
+            },
+            items: (batchItems.results ?? []).map(item => ({
+              envelope_id: item.id,
+              envelope_no: item.envelope_no,
+              invoice_no: item.invoice_no,
+              amount: item.amount,
+              category: item.category,
+              description: item.description
+            }))
           },
-          items: (batchItems.results ?? []).map(item => ({
-            envelope_id: item.id,
-            envelope_no: item.envelope_no,
-            invoice_no: item.invoice_no,
-            amount: item.amount,
-            category: item.category,
-            description: item.description
-          }))
+          instance_config: body.instance_config
         },
-        instance_config: body.instance_config
-      },
-      auth.sub,
-      createAiGateHandler()
-    );
+        auth.sub,
+        createAiGateHandler()
+      );
 
-    const now = nowIso();
+      const now = nowIso();
 
-    await c.env.DB.prepare(
-      "UPDATE reimbursement_batch SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
-    )
-      .bind(instance.id, now, id)
-      .run();
+      await runInTransaction(c.env.DB, async () => {
+        const batchUpdate = await c.env.DB.prepare(
+          `UPDATE reimbursement_batch
+              SET status = 'pending_approval', approval_instance_id = ?, updated_at = ?
+            WHERE id = ? AND status = 'draft'`
+        )
+          .bind(instance.id, now, id)
+          .run();
+        if ((batchUpdate.meta.changes ?? 0) !== 1) {
+          throw new Error("Batch is no longer in draft status");
+        }
 
-    await c.env.DB.prepare(
-      "UPDATE reimbursement_envelope SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE batch_id = ?"
-    )
-      .bind(instance.id, now, id)
-      .run();
+        await c.env.DB.prepare(
+          "UPDATE reimbursement_envelope SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE batch_id = ?"
+        )
+          .bind(instance.id, now, id)
+          .run();
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(c.env.DB, `reimbursement:batch-submit-approval:${id}`, auth.sub, idempotencyKey);
+      throw error;
+    }
 
     await publishEvent(c.env, "REIMBURSEMENT_BATCH_SUBMITTED", "reimbursement_batch", {
       batch_id: id,
@@ -1066,10 +1229,32 @@ reimbursementRoutes.post(
       submitted_by: auth.sub
     });
 
-    return c.json({
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.batch.submit_approval",
+      targetType: "reimbursement_batch",
+      targetId: id,
+      detail: {
+        approval_instance_id: instance.id,
+        batch_no: batch.batch_no
+      }
+    });
+
+    const payload = {
       success: true,
       data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
-    });
+    };
+    await completeIdempotentRequest(
+      c.env.DB,
+      `reimbursement:batch-submit-approval:${id}`,
+      auth.sub,
+      idempotencyKey,
+      200,
+      payload
+    );
+
+    return c.json(payload);
   }
 );
 
@@ -1150,50 +1335,103 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "Only approved batch can be marked as paid" } }, 400);
     }
 
-    const now = nowIso();
-    const paymentAccountText = `${entity.entity_name} / ${bankAccount.bank_name} / ${bankAccount.account_no}`;
-    await c.env.DB.prepare(
-      `UPDATE reimbursement_batch SET
-         status = 'paid',
-         paid_at = ?,
-         payment_reference = ?,
-         payment_account = ?,
-         payment_entity_id = ?,
-         payment_entity_bank_account_id = ?,
-         payment_vouchers_json = ?,
-         updated_at = ?
-       WHERE id = ?`
-    )
-      .bind(
-        body.paid_at.trim(),
-        body.payment_reference.trim(),
-        body.payment_account?.trim() || paymentAccountText,
-        body.payment_entity_id,
-        body.payment_entity_bank_account_id,
-        vouchers.length > 0 ? JSON.stringify(vouchers) : null,
-        now,
-        id
-      )
-      .run();
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{ success: boolean }>(
+      c.env.DB,
+      `reimbursement:batch-mark-paid:${id}`,
+      auth.sub,
+      idempotencyKey
+    );
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload);
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Payment registration already in progress" } }, 409);
+    }
 
-    await c.env.DB.prepare(
-      "UPDATE reimbursement_envelope SET status = 'paid', updated_at = ? WHERE batch_id = ?"
-    )
-      .bind(now, id)
-      .run();
+    const now = nowIso();
+    const paidAt = body.paid_at.trim();
+    const paymentReference = body.payment_reference.trim();
+    const paymentAccountText = `${entity.entity_name} / ${bankAccount.bank_name} / ${bankAccount.account_no}`;
+    try {
+      await runInTransaction(c.env.DB, async () => {
+        const updateBatch = await c.env.DB.prepare(
+          `UPDATE reimbursement_batch SET
+             status = 'paid',
+             paid_at = ?,
+             payment_reference = ?,
+             payment_account = ?,
+             payment_entity_id = ?,
+             payment_entity_bank_account_id = ?,
+             payment_vouchers_json = ?,
+             updated_at = ?
+           WHERE id = ? AND status = 'approved'`
+        )
+          .bind(
+            paidAt,
+            paymentReference,
+            body.payment_account?.trim() || paymentAccountText,
+            body.payment_entity_id,
+            body.payment_entity_bank_account_id,
+            vouchers.length > 0 ? JSON.stringify(vouchers) : null,
+            now,
+            id
+          )
+          .run();
+
+        if ((updateBatch.meta.changes ?? 0) !== 1) {
+          throw new Error("Batch is no longer approved");
+        }
+
+        await c.env.DB.prepare(
+          "UPDATE reimbursement_envelope SET status = 'paid', updated_at = ? WHERE batch_id = ?"
+        )
+          .bind(now, id)
+          .run();
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(c.env.DB, `reimbursement:batch-mark-paid:${id}`, auth.sub, idempotencyKey);
+      throw error;
+    }
 
     await publishEvent(c.env, "REIMBURSEMENT_BATCH_PAID", "reimbursement_batch", {
       batch_id: id,
       batch_no: batch.batch_no,
       total_amount: batch.total_amount,
-      paid_at: body.paid_at.trim(),
-      payment_reference: body.payment_reference.trim(),
+      paid_at: paidAt,
+      payment_reference: paymentReference,
       payment_entity_id: body.payment_entity_id,
       payment_entity_bank_account_id: body.payment_entity_bank_account_id,
       paid_by_userid: auth.sub
     });
 
-    return c.json({ success: true });
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.batch.mark_paid",
+      targetType: "reimbursement_batch",
+      targetId: id,
+      detail: {
+        batch_no: batch.batch_no,
+        total_amount: batch.total_amount,
+        paid_at: paidAt,
+        payment_reference: paymentReference,
+        payment_entity_id: body.payment_entity_id,
+        payment_entity_bank_account_id: body.payment_entity_bank_account_id
+      }
+    });
+
+    const payload = { success: true };
+    await completeIdempotentRequest(
+      c.env.DB,
+      `reimbursement:batch-mark-paid:${id}`,
+      auth.sub,
+      idempotencyKey,
+      200,
+      payload
+    );
+
+    return c.json(payload);
   }
 );
 
@@ -1249,16 +1487,8 @@ reimbursementRoutes.post(
         invoice_no: body.invoice_no,
         amount: body.amount,
         issue_date: body.issue_date
-      }
+        }
     ]);
-
-    await enqueueEnvelopeAiAudit(c.env, envelopeId, {
-      file_key: body.file_key
-    });
-
-    const latest = await c.env.DB.prepare("SELECT ocr_task_id FROM reimbursement_envelope WHERE id = ?")
-      .bind(envelopeId)
-      .first<{ ocr_task_id: number | null }>();
 
     return c.json(
       {
@@ -1267,7 +1497,7 @@ reimbursementRoutes.post(
           id: envelopeId,
           envelope_no: envelopeNo,
           envelope_uuid: envelopeUuid,
-          ocr_task_id: latest?.ocr_task_id ?? null
+          ocr_task_id: null
         }
       },
       201
@@ -1277,11 +1507,8 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.get("/:id/ocr-status", async (c) => {
   const id = Number(c.req.param("id"));
-  const envelope = await c.env.DB.prepare(
-    "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
-  )
-    .bind(id)
-    .first<ReimbursementEnvelope>();
+  const auth = c.get("auth");
+  const envelope = await assertEnvelopeAccess(c.env, id, auth);
 
   if (!envelope) {
     return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
@@ -1307,19 +1534,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
   let duplicateCount = 0;
 
   if (task?.status === "completed" && envelope.ocr_status !== "completed") {
-    const invoiceUniqueNo = extractInvoiceUniqueNo(result);
-    const invoiceNo =
-      typeof result?.invoice_no === "string"
-        ? result.invoice_no
-        : typeof result?.invoice_number === "string"
-          ? result.invoice_number
-          : envelope.invoice_no;
-    const issueDate =
-      typeof result?.issue_date === "string"
-        ? result.issue_date
-        : typeof result?.date === "string"
-          ? result.date
-          : envelope.expense_date;
+    const hints = extractInvoiceRecognitionHints(result);
 
     const nextStatus =
       envelope.status === "received"
@@ -1331,17 +1546,26 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          ocr_status = 'completed',
-         invoice_unique_no = COALESCE(?, invoice_unique_no),
-         invoice_no = COALESCE(?, invoice_no),
-         expense_date = COALESCE(?, expense_date),
+         ocr_result_json = ?,
+         ocr_invoice_unique_no_hint = ?,
+         ocr_invoice_no_hint = ?,
+         ocr_expense_date_hint = ?,
          status = ?,
          updated_at = ?
        WHERE id = ?`
     )
-      .bind(invoiceUniqueNo, invoiceNo ?? null, issueDate ?? null, nextStatus, nowIso(), id)
+      .bind(
+        hints.result_json,
+        hints.invoice_unique_no,
+        hints.invoice_no,
+        hints.expense_date,
+        nextStatus,
+        nowIso(),
+        id
+      )
       .run();
 
-    duplicateCount = await applyDuplicateChecks(c.env, id);
+    duplicateCount = await applyDuplicateChecks(c.env, id, hints);
   }
 
   if ((task?.status === "failed" || task?.status === "timeout") && envelope.ocr_status !== "failed") {
@@ -1371,7 +1595,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
             ? "failed"
             : envelope.ocr_status,
       task_id: envelope.ocr_task_id,
-      result,
+      result: filterTaskResultForViewer(auth, result),
       duplicate_count: duplicateCount
     }
   });
@@ -1421,12 +1645,9 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.get("/:id/anomaly-status", async (c) => {
   const id = Number(c.req.param("id"));
+  const auth = c.get("auth");
 
-  const envelope = await c.env.DB.prepare(
-    "SELECT id, precheck_status FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
-  )
-    .bind(id)
-    .first<{ id: number; precheck_status: string }>();
+  const envelope = await assertEnvelopeAccess(c.env, id, auth);
 
   if (!envelope) {
     return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
@@ -1446,7 +1667,7 @@ reimbursementRoutes.get("/:id/anomaly-status", async (c) => {
       task_id: task?.id ?? null,
       status: task?.status ?? "none",
       precheck_status: envelope.precheck_status,
-      result: parseTaskResult(task?.result_json ?? null)
+      result: filterTaskResultForViewer(auth, parseTaskResult(task?.result_json ?? null))
     }
   });
 });
@@ -1573,12 +1794,9 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));
+  const auth = c.get("auth");
   await syncEnvelopeAuditState(c.env, id);
-  const envelope = await c.env.DB.prepare(
-    "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
-  )
-    .bind(id)
-    .first<ReimbursementEnvelope>();
+  const envelope = await assertEnvelopeAccess(c.env, id, auth);
 
   if (!envelope) {
     return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
@@ -1616,6 +1834,7 @@ reimbursementRoutes.get("/:id", async (c) => {
 });
 
 reimbursementRoutes.get("/resolve/by-uuid", async (c) => {
+  const auth = c.get("auth");
   const envelopeUuid = c.req.query("envelope_uuid")?.trim();
   if (!envelopeUuid) {
     return c.json({ success: false, error: { message: "envelope_uuid is required" } }, 400);
@@ -1633,6 +1852,12 @@ reimbursementRoutes.get("/resolve/by-uuid", async (c) => {
     >();
 
   if (!envelope) {
+    return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+  }
+
+  const isUnassignedEnvelope =
+    envelope.applicant_userid === UNASSIGNED_APPLICANT || envelope.status === "unregistered";
+  if (!hasOfficeRole(auth.roles) && envelope.applicant_userid !== auth.sub && !isUnassignedEnvelope) {
     return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
   }
 
@@ -2142,15 +2367,34 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "Envelope not registered to applicant yet" } }, 400);
     }
 
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{ success: boolean; data: { id: number; status: string; already_submitted?: boolean } }>(
+      c.env.DB,
+      `reimbursement:submit:${id}`,
+      auth.sub,
+      idempotencyKey
+    );
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload, { status: idempotency.statusCode as 200 });
+    }
+    if (idempotency.kind === "pending") {
+      return c.json(
+        { success: false, error: { message: "Submission already in progress" } },
+        409
+      );
+    }
+
     if (envelope.status === "submitted") {
-      return c.json({
+      const payload = {
         success: true,
         data: {
           id,
           status: "submitted",
           already_submitted: true
         }
-      });
+      };
+      await completeIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey, 200, payload);
+      return c.json(payload);
     }
 
     if (envelope.channel === "physical" && !isValidUuid(envelope.envelope_uuid)) {
@@ -2177,6 +2421,7 @@ reimbursementRoutes.post(
 
     const duplicateCount = await applyDuplicateChecks(c.env, id);
     if (duplicateCount > 0 && body.force_submit !== true) {
+      await abandonIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey);
       return c.json(
         {
           success: false,
@@ -2218,16 +2463,19 @@ reimbursementRoutes.post(
         .first<{ status: string }>();
 
       if (latest?.status === "submitted") {
-        return c.json({
+        const payload = {
           success: true,
           data: {
             id,
             status: "submitted",
             already_submitted: true
           }
-        });
+        };
+        await completeIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey, 200, payload);
+        return c.json(payload);
       }
 
+      await abandonIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey);
       return c.json(
         {
           success: false,
@@ -2249,7 +2497,9 @@ reimbursementRoutes.post(
       submitted_by: auth.sub
     });
 
-    return c.json({ success: true, data: { id, status: "submitted" } });
+    const payload = { success: true, data: { id, status: "submitted" } };
+    await completeIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey, 200, payload);
+    return c.json(payload);
   }
 );
 
@@ -2300,6 +2550,18 @@ reimbursementRoutes.post(
       envelope_uuid: envelope.envelope_uuid,
       previous_status: envelope.status,
       cancelled_by: auth.sub
+    });
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.envelope.void",
+      targetType: "reimbursement_envelope",
+      targetId: id,
+      detail: {
+        envelope_uuid: envelope.envelope_uuid,
+        previous_status: envelope.status
+      }
     });
 
     return c.json({ success: true, data: { id, status: "cancelled" } });
@@ -2434,11 +2696,18 @@ reimbursementRoutes.post(
 
 reimbursementRoutes.get("/:id/pdf-status", async (c) => {
   const id = Number(c.req.param("id"));
-  const envelope = await c.env.DB.prepare(
-    "SELECT pdf_task_id, pdf_status, pdf_file_key FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
-  )
-    .bind(id)
-    .first<{ pdf_task_id: number | null; pdf_status: string; pdf_file_key: string | null }>();
+  const auth = c.get("auth");
+  const permittedEnvelope = await assertEnvelopeAccess(c.env, id, auth);
+
+  const envelope = permittedEnvelope
+    ? await c.env.DB.prepare(
+        `SELECT pdf_task_id, pdf_status, pdf_file_key
+           FROM reimbursement_envelope
+          WHERE id = ? AND status != 'deleted'`
+      )
+        .bind(id)
+        .first<{ pdf_task_id: number | null; pdf_status: string; pdf_file_key: string | null }>()
+    : null;
 
   if (!envelope) {
     return c.json({ success: false, error: { message: "Envelope not found" } }, 404);

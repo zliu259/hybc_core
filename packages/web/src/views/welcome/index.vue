@@ -3,13 +3,7 @@ import dayjs from "dayjs";
 import type { UploadFile } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import {
-  getCurrentUser,
-  listMyBankAccounts,
-  createMyBankAccount,
-  updateMyBankAccount,
-  type MyBankAccount
-} from "@/api/user";
+import { getCurrentUser } from "@/api/user";
 import { listPendingApprovals, type PendingApprovalItem } from "@/api/approval";
 import {
   listReimbursementEnvelopes,
@@ -29,17 +23,6 @@ const fullName = ref("");
 const roles = ref<string[]>([]);
 const permissions = ref<string[]>([]);
 const reimbursements = ref<ReimbursementEnvelope[]>([]);
-
-const bankCards = ref<MyBankAccount[]>([]);
-const bankEditVisible = ref(false);
-const bankEditMode = ref<"create" | "edit">("create");
-const bankSubmitting = ref(false);
-const editingBankId = ref<number | null>(null);
-const bankForm = ref({
-  bank_name: "",
-  account_name: "",
-  account_no: ""
-});
 const pendingApprovalItems = ref<PendingApprovalItem[]>([]);
 const pendingApprovalTotal = ref(0);
 const fuelOfficePendingCount = ref(0);
@@ -133,18 +116,16 @@ const loadData = async () => {
     fullName.value = me.data.nickname || me.data.username;
     roles.value = me.data.roles || [];
     permissions.value = me.data.permissions || [];
-    const [reimbursementResult, bankAccountResult, pendingResult] =
+    const [reimbursementResult, pendingResult] =
       await Promise.all([
         listReimbursementEnvelopes({
           creator_id: "me",
           page: 1,
           pageSize: 8
         }),
-        listMyBankAccounts(),
         listPendingApprovals({ page: 1, pageSize: 6 })
       ]);
     reimbursements.value = reimbursementResult.data;
-    bankCards.value = bankAccountResult.data;
     pendingApprovalItems.value = pendingResult.data || [];
     pendingApprovalTotal.value = pendingResult.pagination?.total || 0;
 
@@ -154,67 +135,8 @@ const loadData = async () => {
     } else {
       fuelOfficePendingCount.value = 0;
     }
-    if (!bankCards.value.length) {
-      bankCards.value = [
-        {
-          id: 0,
-          bank_name: "待补充",
-          account_name: "--",
-          account_no: "请在个人设置中绑定银行卡"
-        }
-      ];
-    }
   } finally {
     loading.value = false;
-  }
-};
-
-const openCreateBankCard = () => {
-  bankEditMode.value = "create";
-  editingBankId.value = null;
-  bankForm.value = {
-    bank_name: "",
-    account_name: fullName.value || username.value || "",
-    account_no: ""
-  };
-  bankEditVisible.value = true;
-};
-
-const openEditBankCard = (card: MyBankAccount) => {
-  bankEditMode.value = "edit";
-  editingBankId.value = card.id;
-  bankForm.value = {
-    bank_name: card.bank_name,
-    account_name: card.account_name,
-    account_no: card.account_no
-  };
-  bankEditVisible.value = true;
-};
-
-const submitBankCard = async () => {
-  const payload = {
-    bank_name: bankForm.value.bank_name.trim(),
-    account_name: bankForm.value.account_name.trim(),
-    account_no: bankForm.value.account_no.trim()
-  };
-  if (!payload.bank_name || !payload.account_name || !payload.account_no) {
-    message("请完整填写收款卡信息", { type: "warning" });
-    return;
-  }
-
-  bankSubmitting.value = true;
-  try {
-    if (bankEditMode.value === "create") {
-      await createMyBankAccount(payload);
-      message("已新增收款卡", { type: "success" });
-    } else if (editingBankId.value) {
-      await updateMyBankAccount(editingBankId.value, payload);
-      message("已更新收款卡", { type: "success" });
-    }
-    bankEditVisible.value = false;
-    await loadData();
-  } finally {
-    bankSubmitting.value = false;
   }
 };
 
@@ -242,14 +164,6 @@ const goMyApplications = () => {
   router.push("/workspace/my-applications");
 };
 
-const goExternalPayee = () => {
-  router.push("/workspace/payee");
-};
-
-const goExternalPayeeCreate = () => {
-  router.push("/workspace/payee-external");
-};
-
 const goFuelOfficeDesk = () => {
   router.push("/finance/fleet/vehicles");
 };
@@ -272,11 +186,6 @@ const formatAmount = (amount: number) => {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
   });
-};
-
-const maskCardNo = (cardNo: string) => {
-  if (cardNo.length <= 8) return cardNo;
-  return `${cardNo.slice(0, 4)} **** **** ${cardNo.slice(-4)}`;
 };
 
 onMounted(async () => {
@@ -341,8 +250,6 @@ const onCertUpload = (file: UploadFile) => {
           >发起对外付款</el-button
         >
         <el-button @click="goFuelApplication">油卡额度申请</el-button>
-        <el-button @click="goExternalPayee">我的内部收款信息</el-button>
-        <el-button @click="goExternalPayeeCreate">添加外部收款人</el-button>
         <el-button @click="goMyApplications">我的申请</el-button>
         <el-badge
           v-if="canHandleFuelOffice"
@@ -364,27 +271,6 @@ const onCertUpload = (file: UploadFile) => {
     </el-card>
 
     <div class="workspace__row">
-      <el-card shadow="never" class="bank-card-block">
-        <template #header>
-          <div class="card-header card-header--with-action">
-            <span>我的收款卡</span>
-            <el-button link type="primary" @click="openCreateBankCard"
-              >新增</el-button
-            >
-          </div>
-        </template>
-        <div v-for="card in bankCards" :key="card.id" class="bank-card">
-          <div class="bank-card__bank">{{ card.bank_name }}</div>
-          <div class="bank-card__no">{{ maskCardNo(card.account_no) }}</div>
-          <div class="bank-card__holder">持卡人：{{ card.account_name }}</div>
-          <div class="bank-card__actions">
-            <el-button link type="primary" @click="openEditBankCard(card)"
-              >编辑</el-button
-            >
-          </div>
-        </div>
-      </el-card>
-
       <el-card shadow="never" class="timeline-card">
         <template #header>
           <div class="card-header">我的报销进度</div>
@@ -509,35 +395,6 @@ const onCertUpload = (file: UploadFile) => {
         </div>
       </div>
     </el-card>
-
-    <el-dialog
-      v-model="bankEditVisible"
-      :title="bankEditMode === 'create' ? '新增收款卡' : '编辑收款卡'"
-      width="460px"
-      destroy-on-close
-    >
-      <el-form label-width="90px">
-        <el-form-item label="开户行" required>
-          <el-input v-model="bankForm.bank_name" maxlength="64" />
-        </el-form-item>
-        <el-form-item label="户名" required>
-          <el-input v-model="bankForm.account_name" maxlength="64" />
-        </el-form-item>
-        <el-form-item label="账号" required>
-          <el-input v-model="bankForm.account_no" maxlength="64" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="bankEditVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="bankSubmitting"
-          @click="submitBankCard"
-        >
-          保存
-        </el-button>
-      </template>
-    </el-dialog>
   </div>
 </template>
 
@@ -602,34 +459,15 @@ const onCertUpload = (file: UploadFile) => {
   justify-content: space-between;
 }
 
-.bank-card-block,
 .timeline-card,
 .cert-card,
 .todo-card {
   border-color: #d9ceb9;
 }
 
-.bank-card {
-  border: 1px solid #d9ceb9;
-  border-radius: 10px;
-  padding: 12px;
-  background: #fff;
-}
-
-.bank-card__bank {
-  font-weight: 700;
-  color: #2a241d;
-}
-
-.bank-card__no,
-.bank-card__holder,
 .cert-item__meta {
   margin-top: 6px;
   color: #6e6458;
-}
-
-.bank-card__actions {
-  margin-top: 6px;
 }
 
 .timeline-item {

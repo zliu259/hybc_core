@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
+import { createRateLimitMiddleware } from "../middleware/rate-limit";
 import {
   createSessionPayload,
   defaultPermissionsByRole,
@@ -720,7 +721,14 @@ authRoutes.get("/login/web", async (c) => {
   return c.redirect(target.toString(), 302);
 });
 
-authRoutes.post("/login/web", async (c) => {
+authRoutes.post(
+  "/login/web",
+  createRateLimitMiddleware({
+    scope: "auth:login:web",
+    maxRequests: 20,
+    windowSeconds: 300
+  }),
+  async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as LoginBody;
   try {
     let identity: {
@@ -769,9 +777,17 @@ authRoutes.post("/login/web", async (c) => {
       400
     );
   }
-});
+  }
+);
 
-authRoutes.post("/login/miniapp", async (c) => {
+authRoutes.post(
+  "/login/miniapp",
+  createRateLimitMiddleware({
+    scope: "auth:login:miniapp",
+    maxRequests: 20,
+    windowSeconds: 300
+  }),
+  async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as LoginBody;
   if (!body.code) {
     return c.json(
@@ -801,7 +817,8 @@ authRoutes.post("/login/miniapp", async (c) => {
       400
     );
   }
-});
+  }
+);
 
 authRoutes.get("/wecom/jssdk-config", async (c) => {
   const rawUrl = c.req.query("url") ?? "";
@@ -875,7 +892,14 @@ authRoutes.get("/wecom/jssdk-config", async (c) => {
   }
 });
 
-authRoutes.post("/refresh-token", async (c) => {
+authRoutes.post(
+  "/refresh-token",
+  createRateLimitMiddleware({
+    scope: "auth:refresh-token",
+    maxRequests: 30,
+    windowSeconds: 300
+  }),
+  async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as {
     refreshToken?: string;
   };
@@ -938,7 +962,8 @@ authRoutes.post("/refresh-token", async (c) => {
       401
     );
   }
-});
+  }
+);
 
 authRoutes.use("/wecom/*", authMiddleware);
 

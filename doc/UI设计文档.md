@@ -166,13 +166,14 @@
   - 财务中心入口：展示全部报销提交（办公室/领导可查看全量并代员工发起）。
 - 角色化流程视图：
   - 报销提交：统一提交视图（含代员工发起入口）
-  - 办公室：处理与审查（预审/查重/收件核查）
+  - 办公室：处理与审查（复核提示/智能核查/收件核查）
   - 财务与领导：集中审批与历史
 - 支持入口：UUID快速打开信封（办公室）、进入详情执行登记/提交/收件核查/预审动作。
 - 页面收敛：移除“批量生成未登记信封”入口，实体信封由办公室线下发放并通过 UUID 入流。
 - 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
-- 功能融合：查重线索、异常检测、预审通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
+- 功能融合：复核提示、智能核查、复核通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
 - 报销处理页（财务中心入口）常驻“信封生成器”按钮，避免因分段切换看不到入口。
+- 员工侧不再暴露 OCR/异常检测/预审 等技术步骤名词；员工仅看到“提交后后台静默核查”的业务提示：`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/miniapp/pages/reimbursement/index.{js,wxml}`
 - API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
 
 #### F-1. 报销信封生成器（正式离线版） `views/finance/reimbursement/envelope-generator.vue`
@@ -193,21 +194,22 @@
   - 创建态支持“绑定现有信封UUID”（预打印离线信封）；
   - 实物信封创建强制提供 UUID（输入或扫码），无 UUID 不允许建单；
   - 非创建态在附件已入库或非草稿时视为锁定。
-- 状态总览统一中文化显示（状态、核对状态、预审状态、PDF状态）。
+- 状态总览统一中文化显示（状态、核对状态、复核状态、PDF状态）；员工工作台路由下隐藏技术处理状态，仅保留业务状态。
 - 审计与签收：
-  - 上传附件后直接触发审计/OCR/查重；
-  - 电子发票上传后进入办公室核查流，核查通过后才签收（`received`）；
+  - 员工提交后才进入后台静默核查；识别结果与智能核查结果仅作为办公室处理提示，不得覆盖员工原始填报内容；
+  - 电子发票上传后保留草稿态，提交后进入办公室核查流，核查通过后才签收（`received`）；
   - 实物信封需办公室收到并核查后签收。
 - 查重强制：
   - 存在查重风险时，申请人需“坚持提交”后才允许进入办公室预审通过；
   - 页面显示审计提示，办公室侧可见坚持提交标记并执行复核。
-- 操作区收敛：保存、实物扫码登记、实物提交、电子 OCR 刷新、办公室核查签收/异常、预审动作。
+- 操作区收敛：保存、实物扫码登记、实物提交、办公室核查签收/异常、复核动作；员工端不再展示 OCR 刷新一类技术按钮。
 - 提交入口补齐：电子发票通道在 `draft/submitted` 状态同样显示“提交电子发票报销”，避免仅见“保存”不见“提交”的操作断层。
 - UUID 逻辑对齐 miniapp：创建态下若通道为“电子发票”，绑定 UUID 输入禁用并自动清空，创建请求不传 `preferred_envelope_uuid`，由后端自动生成。
 - 提交流程统一：`POST /api/v1/reimbursement/:id/submit` 对实物/电子通道均可执行（前提满足附件、状态、权限校验），避免电子通道点击提交时报 400。
 - 超管废止能力：报销详情新增“废止报销提交”动作（仅 `super_admin` 可见），可对 `draft/submitted/received/unregistered` 状态执行废止，废止后状态为 `cancelled`：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/api/src/routes/reimbursement.ts`
 - 办公室修正能力：办公室角色（super_admin/manager/site_manager/finance）可在报销 `submitted/received` 状态对员工提交信息进行修正并保存：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/api/src/routes/reimbursement.ts`
 - 附件预览补齐：报销详情附件区新增“预览”操作，与“下载”并列，支持办公室在详情页快速核查附件：`packages/web/src/views/finance/reimbursement/detail.vue`
+- 后台静默审查提示：办公室详情页新增“后台静默审查提示”区，展示识别建议与智能核查摘要，供办公室签收处理参考：`packages/web/src/views/finance/reimbursement/detail.vue`
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
@@ -215,14 +217,14 @@
 - 预审与异常检测在报销列表直接可操作，批次详情继续承载 AI 审计与审批联动。
 
 #### F-5. 报销集中审批批次列表 `views/finance/reimbursement/batch.vue`
-- 新增“候选报销条目”工作区：按项目 + 申请人自动列出未完成报销，可一键自动勾选“已收件+预审通过”并创建后立即送审。
-- 展示维度：批次号、项目、申报人、信封数、总金额、AI审计状态、审批状态。
+- 新增“候选报销条目”工作区：按项目 + 申请人自动列出未完成报销，可一键自动勾选“已收件+复核通过”并创建后立即送审。
+- 展示维度：批次号、项目、申报人、信封数、总金额、智能审核状态、审批状态。
 - 新增“历史完成（财务/领导）”区域：展示已付款/已拒绝等过往批次，支持进入批次详情追踪。
 - API 指向：`/api/v1/reimbursement/batch`
 
 #### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
-- 展示维度：批次信息、AI审计报告、批次信封明细、查重风险汇总。
-- 操作区：触发AI审计、提交集中审批、跳转“集中打款登记台”、跳转审批详情。
+- 展示维度：批次信息、智能审核报告、批次信封明细、查重风险汇总。
+- 操作区：触发智能审核、提交集中审批、跳转“集中打款登记台”、跳转审批详情。
 - API 指向：`/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/trigger-audit`, `/api/v1/reimbursement/batch/:id/audit-report`, `/api/v1/reimbursement/batch/:id/submit-approval`, `/api/v1/reimbursement/batch/:id/mark-paid`
 
 #### F-7. 报销集中打款登记台 `views/finance/reimbursement/payout.vue`
@@ -428,7 +430,7 @@
 
 ### 3.5 Sprint 1 重构落地点（2026-02）
 - 默认首页路由切换到个人工作台：`packages/web/src/router/modules/home.ts`（`/` -> `/workspace/home`，保留 `/welcome` 兼容重定向）。
-- 个人工作台页面：`packages/web/src/views/welcome/index.vue`（欢迎卡、快捷入口、收款卡区、报销时间线、证书网格与到期预警）。
+- 个人工作台页面：`packages/web/src/views/welcome/index.vue`（欢迎卡、快捷入口、报销时间线、证书网格与到期预警）。
 - 个人资质与证书卡片新增文件动作：`packages/web/src/views/welcome/index.vue`（单证书支持“查看/下载”附件；未上传附件时按钮禁用并提示）。
 - 全局技术支持抽屉入口：`packages/web/src/layout/components/lay-navbar/index.vue`。
 - 全局技术支持抽屉实现：`packages/web/src/layout/components/lay-support/index.vue`。
@@ -1067,10 +1069,8 @@
 - 实体附件管理动作：上传/下载/删除（下载通过 `/api/v1/upload/object/:key`）
 
 ### 8.3 个人工作台员工闭环（2026-03）
-- 个人工作台首页增加入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
-- 个人工作台首页新增“添加外部收款人”入口，允许全角色快速维护外部收款人：`packages/web/src/views/welcome/index.vue`
-- 个人工作台首页“我的内部收款信息”入口跳转 `/workspace/payee`，仅展示本人内部收款信息：`packages/web/src/views/welcome/index.vue`、`packages/web/src/views/finance/payee/index.vue`
-- 个人工作台首页新增“添加外部收款人”入口，跳转 `/workspace/payee-external`：`packages/web/src/views/welcome/index.vue`、`packages/web/src/router/modules/workspace.ts`
+- 个人工作台首页保留入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
+- 个人工作台首页已移除“我的内部收款信息 / 添加外部收款人 / 我的收款卡”相关入口与卡片，避免员工首页出现收款信息展示逻辑混乱：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页新增“油卡办公室待办”数字提醒入口（财务/经理/超管可见）：`packages/web/src/views/welcome/index.vue`
 - 新增“我的申请”页面，聚合展示员工本人发起的对外付款申请、报销申请、油卡额度申请：`packages/web/src/views/workspace/my-applications/index.vue`
 - “我的申请-油卡额度申请”新增处理结果展示（处理备注、处理时间、处理人、处理后余额）：`packages/web/src/views/workspace/my-applications/index.vue`

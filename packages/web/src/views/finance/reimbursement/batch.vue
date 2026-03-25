@@ -132,6 +132,7 @@ const submitCreateAndApproval = async () => {
 
   creatingAndSubmitting.value = true;
   try {
+    const createKey = `reimbursement-batch-create-${crypto.randomUUID()}`;
     const result = await createReimbursementBatch({
       project_id: filters.value.project_id,
       applicant_userid: filters.value.applicant_userid.trim(),
@@ -139,9 +140,11 @@ const submitCreateAndApproval = async () => {
         candidateSelectedIds.value.length > 0
           ? candidateSelectedIds.value
           : undefined
-    });
+    }, { idempotencyKey: createKey });
 
-    await submitBatchApproval(result.data.id);
+    await submitBatchApproval(result.data.id, undefined, {
+      idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
+    });
     message(`批次已创建并送审：${result.data.batch_no}`, { type: "success" });
 
     await Promise.all([loadData(), loadCandidates(), loadHistory()]);
@@ -248,7 +251,7 @@ watch(
       <el-button type="primary" @click="loadData">查询批次</el-button>
       <el-button @click="loadCandidates">查询候选报销</el-button>
       <el-button @click="autoSelectSubmittable"
-        >自动勾选可送审（已收件+预审通过）</el-button
+        >自动勾选可送审（已收件+复核通过）</el-button
       >
     </el-form>
 
@@ -266,7 +269,7 @@ watch(
           statusLabel(scope.row.status)
         }}</template>
       </el-table-column>
-      <el-table-column label="预审状态" width="130">
+      <el-table-column label="复核状态" width="130">
         <template #default="scope">{{
           precheckStatusLabel(scope.row.precheck_status)
         }}</template>
@@ -305,7 +308,7 @@ watch(
       <el-table-column prop="applicant_userid" label="申报人" width="140" />
       <el-table-column prop="item_count" label="信封数" width="100" />
       <el-table-column prop="total_amount" label="总金额" width="120" />
-      <el-table-column label="AI审计" width="120">
+      <el-table-column label="智能审核" width="120">
         <template #default="scope">{{
           aiAuditStatusLabel(scope.row.ai_audit_status)
         }}</template>

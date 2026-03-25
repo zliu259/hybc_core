@@ -163,7 +163,7 @@ const submitQuickScan = async () => {
 
 const onTriggerAnomaly = async (id: number) => {
   await triggerEnvelopeAnomalyCheck(id);
-  message("已触发异常检测", { type: "success" });
+  message("已触发智能核查", { type: "success" });
   await loadData();
 };
 
@@ -173,7 +173,7 @@ const onPrecheck = async (
 ) => {
   try {
     await precheckEnvelope(id, { action });
-    message(`预审已处理：${action}`, {
+    message(`复核已处理：${action}`, {
       type: action === "approved" ? "success" : "warning"
     });
     await loadData();
@@ -188,7 +188,7 @@ const onPrecheck = async (
       err.response?.status === 409 &&
       err.response?.data?.data?.wait_for_audit === true;
     if (!waitForAudit) throw error;
-    message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
+    message("后台静默审查尚未完成，系统已自动触发处理，请稍后再执行复核通过", {
       type: "warning"
     });
     await loadData();
@@ -270,7 +270,7 @@ watch(workflowView, mode => {
       v-if="workflowView === 'office'"
       type="warning"
       :closable="false"
-      title="办公室处理台：重点处理 submitted/received 单据，执行收件核查、异常审查和预审动作。"
+        title="办公室处理台：重点处理 submitted/received 单据，执行收件核查、智能核查和复核动作。"
       style="margin-bottom: 12px"
     />
     <el-alert
@@ -383,8 +383,8 @@ watch(workflowView, mode => {
       </el-table-column>
       <el-table-column prop="applicant_userid" label="填报人" width="140" />
       <el-table-column prop="amount" label="金额" width="100" />
-      <el-table-column prop="duplicate_count" label="查重线索" width="100" />
-      <el-table-column label="预审" width="100">
+      <el-table-column prop="duplicate_count" label="复核提示" width="100" />
+      <el-table-column label="复核" width="100">
         <template #default="scope">{{
           precheckStatusLabel(scope.row.precheck_status)
         }}</template>
@@ -411,15 +411,15 @@ watch(workflowView, mode => {
           >
           <template v-if="workflowView !== 'submission' && canOfficeOps">
             <el-button link @click="onTriggerAnomaly(scope.row.id)"
-              >异常检测</el-button
+              >智能核查</el-button
             >
             <el-button
               v-if="scope.row.status === 'received'"
               link
-              type="success"
-              @click="onPrecheck(scope.row.id, 'approved')"
-              >预审通过</el-button
-            >
+                type="success"
+                @click="onPrecheck(scope.row.id, 'approved')"
+                >复核通过</el-button
+              >
             <el-button
               v-if="scope.row.status === 'received'"
               link
@@ -430,10 +430,10 @@ watch(workflowView, mode => {
             <el-button
               v-if="scope.row.status === 'received'"
               link
-              type="danger"
-              @click="onPrecheck(scope.row.id, 'rejected')"
-              >预审驳回</el-button
-            >
+                type="danger"
+                @click="onPrecheck(scope.row.id, 'rejected')"
+                >复核驳回</el-button
+              >
           </template>
         </template>
       </el-table-column>

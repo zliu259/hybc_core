@@ -41,7 +41,7 @@ const runAudit = async () => {
   actionLoading.value = true;
   try {
     await triggerBatchAudit(batchId.value);
-    message("已触发AI审计", { type: "success" });
+    message("已触发智能审核", { type: "success" });
     await loadDetail();
   } finally {
     actionLoading.value = false;
@@ -52,13 +52,15 @@ const refreshAudit = async () => {
   const report = await getBatchAuditReport(batchId.value);
   auditStatus.value = report.data.status;
   auditResult.value = report.data.result;
-  message(`AI审计状态：${report.data.status}`, { type: "info" });
+  message(`智能审核状态：${report.data.status}`, { type: "info" });
 };
 
 const submitApproval = async () => {
   actionLoading.value = true;
   try {
-    const result = await submitBatchApproval(batchId.value);
+    const result = await submitBatchApproval(batchId.value, undefined, {
+      idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
+    });
     message(`已提交审批：${result.data.instance_no}`, { type: "success" });
     await loadDetail();
   } finally {
@@ -109,7 +111,7 @@ onMounted(loadDetail);
       <el-descriptions-item label="总金额">{{
         detail.total_amount
       }}</el-descriptions-item>
-      <el-descriptions-item label="AI审计状态">{{
+      <el-descriptions-item label="智能审核状态">{{
         detail.ai_audit_status
       }}</el-descriptions-item>
       <el-descriptions-item label="审批实例">{{
@@ -118,12 +120,12 @@ onMounted(loadDetail);
     </el-descriptions>
 
     <div style="margin-top: 12px">
-      <el-space>
-        <el-button type="primary" :loading="actionLoading" @click="runAudit"
-          >触发AI审计</el-button
+        <el-space>
+          <el-button type="primary" :loading="actionLoading" @click="runAudit"
+          >触发智能审核</el-button
         >
         <el-button :loading="actionLoading" @click="refreshAudit"
-          >刷新AI审计</el-button
+          >刷新审核状态</el-button
         >
         <el-button
           type="success"
@@ -145,7 +147,7 @@ onMounted(loadDetail);
       </el-space>
     </div>
 
-    <el-card shadow="never" style="margin-top: 16px" header="AI审计报告">
+    <el-card shadow="never" style="margin-top: 16px" header="智能审核报告">
       <div style="margin-bottom: 8px">状态：{{ auditStatus }}</div>
       <pre style="white-space: pre-wrap; word-break: break-word">{{
         auditResult || "-"
@@ -158,7 +160,7 @@ onMounted(loadDetail);
         <el-table-column prop="envelope_no" label="信封编号" width="160" />
         <el-table-column prop="invoice_no" label="发票号" width="180" />
         <el-table-column prop="amount" label="金额" width="120" />
-        <el-table-column label="预审" width="120">
+        <el-table-column label="复核" width="120">
           <template #default="scope">{{
             precheckStatusLabel(scope.row.precheck_status)
           }}</template>

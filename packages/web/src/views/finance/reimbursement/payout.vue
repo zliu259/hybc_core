@@ -195,7 +195,7 @@ const submitMarkPaid = async () => {
             file_name: item.file_name,
             file_size: item.file_size
           }))
-        })
+        }, { idempotencyKey: `reimbursement-batch-paid-${id}-${crypto.randomUUID()}` })
       )
     );
     message("打款登记成功", { type: "success" });

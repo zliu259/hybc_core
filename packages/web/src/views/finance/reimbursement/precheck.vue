@@ -60,7 +60,7 @@ const openDetail = (id: number) => {
 
 const triggerAnomaly = async (id: number) => {
   await triggerEnvelopeAnomalyCheck(id);
-  message("已触发异常检测", { type: "success" });
+  message("已触发智能核查", { type: "success" });
 };
 
 const doPrecheck = async (
@@ -69,7 +69,7 @@ const doPrecheck = async (
 ) => {
   try {
     await precheckEnvelope(id, { action });
-    message(`预审完成：${action}`, {
+    message(`复核完成：${action}`, {
       type: action === "approved" ? "success" : "warning"
     });
     await loadData();
@@ -84,7 +84,7 @@ const doPrecheck = async (
       err.response?.status === 409 &&
       err.response?.data?.data?.wait_for_audit === true;
     if (!waitForAudit) throw error;
-    message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
+    message("后台静默审查尚未完成，系统已自动触发处理，请稍后再执行复核通过", {
       type: "warning"
     });
     await loadData();
@@ -107,7 +107,7 @@ onMounted(async () => {
           align-items: center;
         "
       >
-        <span>预审工作台</span>
+        <span>复核工作台</span>
         <el-button @click="router.push('/finance/reimbursement')"
           >返回信封列表</el-button
         >
@@ -142,8 +142,8 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="applicant_userid" label="填报人" width="140" />
       <el-table-column prop="amount" label="金额" width="110" />
-      <el-table-column prop="duplicate_count" label="查重线索" width="110" />
-      <el-table-column label="预审状态" width="120">
+      <el-table-column prop="duplicate_count" label="复核提示" width="110" />
+      <el-table-column label="复核状态" width="120">
         <template #default="scope">{{
           precheckStatusLabel(scope.row.precheck_status)
         }}</template>
@@ -154,7 +154,7 @@ onMounted(async () => {
             >详情</el-button
           >
           <el-button link @click="triggerAnomaly(scope.row.id)"
-            >异常检测</el-button
+            >智能核查</el-button
           >
           <el-button
             link

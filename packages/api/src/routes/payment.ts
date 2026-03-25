@@ -13,10 +13,17 @@ import type {
   Contract
 } from "../types/contract";
 import type { InstanceConfig } from "../types/approval";
+import { writeAuditLog } from "../services/audit-log";
+import { runInTransaction } from "../services/db-transaction";
 import { generateSerial } from "../services/serial";
 import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
+import {
+  abandonIdempotentRequest,
+  beginIdempotentRequest,
+  completeIdempotentRequest
+} from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
 
@@ -797,6 +804,21 @@ paymentRoutes.put(
       )
       .run();
 
+    if (isSuperAdmin && hasNonAttachmentMutation) {
+      await writeAuditLog(c.env.DB, {
+        actorUserId: auth.sub,
+        actorRoles: auth.roles,
+        action: "payment_request.super_admin_edit",
+        targetType: "payment_request",
+        targetId: id,
+        detail: {
+          edit_note: body.edit_note?.trim() ?? null,
+          has_payout_mutation: hasPayoutMutation,
+          has_non_attachment_mutation: hasNonAttachmentMutation
+        }
+      });
+    }
+
     return c.json({ success: true });
   }
 );
@@ -826,6 +848,18 @@ paymentRoutes.post(
       );
     }
 
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { approval_instance_id: number; instance_no: string; resubmitted?: boolean };
+    }>(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey);
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload);
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Approval submission already in progress" } }, 409);
+    }
+
     if (request.approval_instance_id) {
       const existing = await c.env.DB.prepare(
         "SELECT status FROM approval_instance WHERE id = ?"
@@ -848,8 +882,18 @@ paymentRoutes.post(
           )
             .bind(nowIso(), id)
             .run();
-          return c.json({ success: true, data: { instance_id: request.approval_instance_id, resubmitted: true } });
+          const payload = {
+            success: true,
+            data: {
+              approval_instance_id: request.approval_instance_id,
+              instance_no: "",
+              resubmitted: true
+            }
+          };
+          await completeIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey, 200, payload);
+          return c.json(payload);
         } catch (err) {
+          await abandonIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey);
           const msg = err instanceof Error ? err.message : "Resubmit failed";
           return c.json({ success: false, error: { message: msg } }, 400);
         }
@@ -933,18 +977,46 @@ paymentRoutes.post(
       createAiGateHandler()
     );
 
-    await c.env.DB.prepare(
-      "UPDATE payment_request SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
-    )
-      .bind(instance.id, nowIso(), id)
-      .run();
+    try {
+      await runInTransaction(c.env.DB, async () => {
+        const updateResult = await c.env.DB.prepare(
+          `UPDATE payment_request
+              SET status = 'pending_approval', approval_instance_id = ?, updated_at = ?
+            WHERE id = ? AND status = 'draft'`
+        )
+          .bind(instance.id, nowIso(), id)
+          .run();
+
+        if ((updateResult.meta.changes ?? 0) !== 1) {
+          throw new Error("Payment request is no longer submittable");
+        }
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey);
+      throw error;
+    }
 
     await enqueuePaymentRiskAssessment(c.env, request);
 
-    return c.json({
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "payment_request.submit_approval",
+      targetType: "payment_request",
+      targetId: id,
+      detail: {
+        approval_instance_id: instance.id,
+        instance_no: instance.instance_no
+      }
+    });
+
+    const payload = {
       success: true,
       data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
-    });
+    };
+    await completeIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey, 200, payload);
+
+    return c.json(payload);
   }
 );
 
@@ -973,36 +1045,60 @@ paymentRoutes.post(
       );
     }
 
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{ success: boolean }>(
+      c.env.DB,
+      `payment:mark-paid:${id}`,
+      auth.sub,
+      idempotencyKey
+    );
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload);
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Mark-paid operation already in progress" } }, 409);
+    }
+
     const paidAt = body.paid_at?.trim() ? body.paid_at : now;
+    try {
+      await runInTransaction(c.env.DB, async () => {
+        const updateRequest = await c.env.DB.prepare(
+          `UPDATE payment_request SET
+            status = 'paid',
+            paid_at = ?,
+            paid_by_userid = ?,
+            payment_reference = COALESCE(?, payment_reference),
+            payment_account = COALESCE(?, payment_account),
+            remark = COALESCE(?, remark),
+            updated_at = ?
+          WHERE id = ? AND status = 'approved'`
+        )
+          .bind(
+            paidAt,
+            auth.sub,
+            body.payment_reference?.trim() || null,
+            body.payment_account?.trim() || null,
+            body.remark?.trim() || null,
+            now,
+            id
+          )
+          .run();
 
-    await c.env.DB.prepare(
-      `UPDATE payment_request SET
-        status = 'paid',
-        paid_at = ?,
-        paid_by_userid = ?,
-        payment_reference = COALESCE(?, payment_reference),
-        payment_account = COALESCE(?, payment_account),
-        remark = COALESCE(?, remark),
-        updated_at = ?
-      WHERE id = ?`
-    )
-      .bind(
-        paidAt,
-        auth.sub,
-        body.payment_reference?.trim() || null,
-        body.payment_account?.trim() || null,
-        body.remark?.trim() || null,
-        now,
-        id
-      )
-      .run();
+        if ((updateRequest.meta.changes ?? 0) !== 1) {
+          throw new Error("Payment request is no longer approved");
+        }
 
-    if (pr.contract_id !== null) {
-      await c.env.DB.prepare(
-        "UPDATE contract SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?"
-      )
-        .bind(pr.amount, now, pr.contract_id)
-        .run();
+        if (pr.contract_id !== null) {
+          await c.env.DB.prepare(
+            "UPDATE contract SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?"
+          )
+            .bind(pr.amount, now, pr.contract_id)
+            .run();
+        }
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(c.env.DB, `payment:mark-paid:${id}`, auth.sub, idempotencyKey);
+      throw error;
     }
 
     await publishEvent(c.env, "PAYMENT_COMPLETED", "payment_request", {
@@ -1012,7 +1108,24 @@ paymentRoutes.post(
       amount: pr.amount
     });
 
-    return c.json({ success: true });
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "payment_request.mark_paid",
+      targetType: "payment_request",
+      targetId: id,
+      detail: {
+        paid_at: paidAt,
+        amount: pr.amount,
+        contract_id: pr.contract_id,
+        payment_reference: body.payment_reference?.trim() || null
+      }
+    });
+
+    const payload = { success: true };
+    await completeIdempotentRequest(c.env.DB, `payment:mark-paid:${id}`, auth.sub, idempotencyKey, 200, payload);
+
+    return c.json(payload);
   }
 );
 
@@ -1099,6 +1212,19 @@ paymentRoutes.post(
       contract_id: pr.contract_id
     });
 
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "payment_request.void",
+      targetType: "payment_request",
+      targetId: id,
+      detail: {
+        previous_status: pr.status,
+        reason: reason || null,
+        contract_id: pr.contract_id
+      }
+    });
+
     return c.json({ success: true });
   }
 );
@@ -1154,6 +1280,18 @@ paymentRoutes.post(
       reactivated_by: auth.sub,
       previous_status: pr.status,
       contract_id: pr.contract_id
+    });
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "payment_request.reactivate",
+      targetType: "payment_request",
+      targetId: id,
+      detail: {
+        previous_status: pr.status,
+        contract_id: pr.contract_id
+      }
     });
 
     return c.json({ success: true });

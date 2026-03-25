@@ -11,9 +11,16 @@ import type {
   CreateAmountChangeRequest
 } from "../types/contract";
 import type { InstanceConfig } from "../types/approval";
+import { writeAuditLog } from "../services/audit-log";
+import { runInTransaction } from "../services/db-transaction";
 import { generateSerial } from "../services/serial";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
+import {
+  abandonIdempotentRequest,
+  beginIdempotentRequest,
+  completeIdempotentRequest
+} from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
 
@@ -391,6 +398,21 @@ contractRoutes.put(
       )
       .run();
 
+    if (isSuperAdmin && hasNonAttachmentMutation) {
+      await writeAuditLog(c.env.DB, {
+        actorUserId: auth.sub,
+        actorRoles: auth.roles,
+        action: "contract.super_admin_edit",
+        targetType: "contract",
+        targetId: id,
+        detail: {
+          edit_note: body.edit_note?.trim() ?? null,
+          has_detail_mutation: hasDetailMutation,
+          has_non_attachment_mutation: hasNonAttachmentMutation
+        }
+      });
+    }
+
     return c.json({ success: true });
   }
 );
@@ -442,6 +464,18 @@ contractRoutes.post(
       );
     }
 
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { approval_instance_id: number; instance_no: string; resubmitted?: boolean };
+    }>(c.env.DB, `contract:submit-approval:${id}`, auth.sub, idempotencyKey);
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload);
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Approval submission already in progress" } }, 409);
+    }
+
     if (contract.approval_instance_id) {
       const existing = await c.env.DB.prepare(
         "SELECT status FROM approval_instance WHERE id = ?"
@@ -464,8 +498,18 @@ contractRoutes.post(
           )
             .bind(nowIso(), id)
             .run();
-          return c.json({ success: true, data: { instance_id: contract.approval_instance_id, resubmitted: true } });
+          const payload = {
+            success: true,
+            data: {
+              approval_instance_id: contract.approval_instance_id,
+              instance_no: "",
+              resubmitted: true
+            }
+          };
+          await completeIdempotentRequest(c.env.DB, `contract:submit-approval:${id}`, auth.sub, idempotencyKey, 200, payload);
+          return c.json(payload);
         } catch (err) {
+          await abandonIdempotentRequest(c.env.DB, `contract:submit-approval:${id}`, auth.sub, idempotencyKey);
           const msg = err instanceof Error ? err.message : "Resubmit failed";
           return c.json({ success: false, error: { message: msg } }, 400);
         }
@@ -507,16 +551,44 @@ contractRoutes.post(
       createAiGateHandler()
     );
 
-    await c.env.DB.prepare(
-      "UPDATE contract SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
-    )
-      .bind(instance.id, nowIso(), id)
-      .run();
+    try {
+      await runInTransaction(c.env.DB, async () => {
+        const updateResult = await c.env.DB.prepare(
+          `UPDATE contract
+              SET status = 'pending_approval', approval_instance_id = ?, updated_at = ?
+            WHERE id = ? AND status IN ('draft', 'pending_review')`
+        )
+          .bind(instance.id, nowIso(), id)
+          .run();
 
-    return c.json({
+        if ((updateResult.meta.changes ?? 0) !== 1) {
+          throw new Error("Contract is no longer submittable");
+        }
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(c.env.DB, `contract:submit-approval:${id}`, auth.sub, idempotencyKey);
+      throw error;
+    }
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "contract.submit_approval",
+      targetType: "contract",
+      targetId: id,
+      detail: {
+        approval_instance_id: instance.id,
+        instance_no: instance.instance_no
+      }
+    });
+
+    const payload = {
       success: true,
       data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
-    });
+    };
+    await completeIdempotentRequest(c.env.DB, `contract:submit-approval:${id}`, auth.sub, idempotencyKey, 200, payload);
+
+    return c.json(payload);
   }
 );
 

@@ -29,6 +29,7 @@ const route = useRoute();
 const router = useRouter();
 const userStore = useUserStoreHook();
 const roleSet = computed(() => new Set(userStore.roles ?? []));
+const isWorkspaceView = computed(() => route.path.startsWith("/workspace/"));
 
 const envelopeId = computed(() => Number(route.params.id));
 const isCreate = computed(() => route.params.id === "create");
@@ -70,11 +71,11 @@ const verificationStatusLabelMap: Record<string, string> = {
 };
 
 const precheckStatusLabelMap: Record<string, string> = {
-  none: "未预审",
-  pending: "待预审",
-  approved: "预审通过",
+  none: "未复核",
+  pending: "待复核",
+  approved: "复核通过",
   supplement: "待补充",
-  rejected: "预审驳回"
+  rejected: "复核驳回"
 };
 
 const taskStatusLabelMap: Record<string, string> = {
@@ -95,7 +96,7 @@ const toVerificationStatusLabel = (status?: string | null) => {
 };
 
 const toPrecheckStatusLabel = (status?: string | null) => {
-  if (!status) return "未预审";
+  if (!status) return "未复核";
   return precheckStatusLabelMap[status] ?? status;
 };
 
@@ -155,6 +156,8 @@ const canOfficeAudit = computed(() => {
   return hasOfficeRole && (!isApplicant || canSelfAudit);
 });
 
+const canSeeOfficeReview = computed(() => canOfficeAudit.value && !isWorkspaceView.value);
+
 const isSuperAdmin = computed(() => roleSet.value.has("super_admin"));
 
 const hasDuplicateRisks = computed(() => {
@@ -205,6 +208,58 @@ const toRiskLevelTagType = (
 const attachmentUrl = (fileKey: string) =>
   `/api/v1/upload/object/${encodeURIComponent(fileKey)}`;
 
+const parseReviewResult = (value?: string | null) => {
+  if (!value) return null;
+  try {
+    return JSON.parse(value) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+};
+
+const parsedSilentReviewResult = computed(() =>
+  parseReviewResult(detail.value?.silent_review_result)
+);
+const parsedRecognitionResult = computed(() => parseReviewResult(detail.value?.ocr_result_json));
+
+const reviewSummaryText = computed(() => {
+  const raw = parsedSilentReviewResult.value;
+  if (!raw) return "-";
+  const summary =
+    (typeof raw.summary === "string" && raw.summary) ||
+    (typeof raw.comment === "string" && raw.comment) ||
+    (typeof raw.output === "string" && raw.output) ||
+    (raw.metadata && typeof raw.metadata === "object" && typeof (raw.metadata as Record<string, unknown>).summary === "string"
+      ? ((raw.metadata as Record<string, unknown>).summary as string)
+      : "");
+  return summary || JSON.stringify(raw, null, 2);
+});
+
+const recognitionHintRows = computed(() => {
+  if (!detail.value) return [] as Array<{ label: string; value: string }>;
+  return [
+    {
+      label: "识别发票号",
+      value: detail.value.ocr_invoice_no_hint || "-"
+    },
+    {
+      label: "识别发票唯一号",
+      value: detail.value.ocr_invoice_unique_no_hint || "-"
+    },
+    {
+      label: "识别费用日期",
+      value: detail.value.ocr_expense_date_hint || "-"
+    }
+  ];
+});
+
+const recognitionRawText = computed(() => {
+  if (!parsedRecognitionResult.value) return "-";
+  return JSON.stringify(parsedRecognitionResult.value, null, 2);
+});
+
+const createIdempotencyKey = (scope: string) => `${scope}-${crypto.randomUUID()}`;
+
 const stagedAttachmentsForSubmit = () =>
   attachmentItems.value
     .filter(item => item.is_new)
@@ -251,7 +306,7 @@ const refreshAuditStatuses = async (silent = false) => {
   anomalyStatusText.value = anomalyResult.data.status || "none";
   if (!silent) {
     message(
-      `审计进度：OCR ${toTaskStatusLabel(ocrStatusText.value)} / 异常审计 ${toTaskStatusLabel(anomalyStatusText.value)}`,
+      `处理进度：发票识别 ${toTaskStatusLabel(ocrStatusText.value)} / 智能核查 ${toTaskStatusLabel(anomalyStatusText.value)}`,
       { type: "info" }
     );
   }
@@ -477,10 +532,12 @@ const scanSubmit = async () => {
 const submitEnvelope = async () => {
   if (!detail.value) return;
   try {
-    await submitReimbursementEnvelope(detail.value.id);
+    await submitReimbursementEnvelope(detail.value.id, undefined, {
+      idempotencyKey: createIdempotencyKey("reimbursement-submit")
+    });
     message("报销已提交，等待办公室收件与后续核查", { type: "success" });
     await loadDetail();
-    ensureAuditPolling("已触发后台审计，系统将自动刷新进度");
+    ensureAuditPolling("已提交，系统正在后台静默核查并会自动刷新进度");
   } catch (error) {
     const err = error as {
       response?: {
@@ -494,15 +551,19 @@ const submitEnvelope = async () => {
     if (!requireForce) {
       throw error;
     }
-    await submitReimbursementEnvelope(detail.value.id, {
-      force_submit: true,
-      force_submit_reason: verifyNote.value || "申请人确认继续提交，办公室复核"
-    });
+    await submitReimbursementEnvelope(
+      detail.value.id,
+      {
+        force_submit: true,
+        force_submit_reason: verifyNote.value || "申请人确认继续提交，办公室复核"
+      },
+      { idempotencyKey: createIdempotencyKey("reimbursement-submit") }
+    );
     message("已按申请人坚持提交并附带审计提示，等待办公室核查", {
       type: "warning"
     });
     await loadDetail();
-    ensureAuditPolling("已触发后台审计，系统将自动刷新进度");
+    ensureAuditPolling("已提交，系统正在后台静默核查并会自动刷新进度");
   }
 };
 
@@ -560,7 +621,7 @@ const submitPrecheck = async (
       action,
       comment: verifyNote.value || undefined
     });
-    message(`预审已更新：${action}`, {
+    message(`复核已更新：${action}`, {
       type: action === "approved" ? "success" : "warning"
     });
     await loadDetail();
@@ -575,7 +636,7 @@ const submitPrecheck = async (
       err.response?.status === 409 &&
       err.response?.data?.data?.wait_for_audit === true;
     if (!waitForAudit) throw error;
-    message("审计尚未完成，系统已自动触发审计，请稍后再执行预审通过", {
+    message("后台静默审查尚未完成，系统已自动触发处理，请稍后再执行复核通过", {
       type: "warning"
     });
     await loadDetail();
@@ -768,7 +829,7 @@ watch(
             <el-descriptions-item label="核对状态">{{
               toVerificationStatusLabel(detail?.verification_status)
             }}</el-descriptions-item>
-            <el-descriptions-item label="预审状态">{{
+            <el-descriptions-item v-if="canSeeOfficeReview" label="复核状态">{{
               toPrecheckStatusLabel(detail?.precheck_status)
             }}</el-descriptions-item>
             <el-descriptions-item label="PDF状态">{{
@@ -902,9 +963,9 @@ watch(
             提交电子发票报销
           </el-button>
           <el-button
-            v-if="detail.channel === 'electronic'"
+            v-if="detail.channel === 'electronic' && canSeeOfficeReview"
             @click="refreshOcrStatus"
-            >刷新OCR状态</el-button
+            >刷新识别状态</el-button
           >
           <el-button
             v-if="
@@ -922,7 +983,7 @@ watch(
           </el-button>
           <template
             v-if="
-              canOfficeAudit &&
+              canSeeOfficeReview &&
               ['submitted', 'received'].includes(detail.status)
             "
           >
@@ -941,7 +1002,7 @@ watch(
               v-if="detail.status === 'received'"
               type="success"
               @click="submitPrecheck('approved')"
-              >预审通过</el-button
+              >复核通过</el-button
             >
             <el-button
               v-if="detail.status === 'received'"
@@ -953,7 +1014,7 @@ watch(
               v-if="detail.status === 'received'"
               type="danger"
               @click="submitPrecheck('rejected')"
-              >预审驳回</el-button
+              >复核驳回</el-button
             >
           </template>
         </template>
@@ -974,7 +1035,7 @@ watch(
       <el-descriptions-item label="核对状态">{{
         toVerificationStatusLabel(detail.verification_status)
       }}</el-descriptions-item>
-      <el-descriptions-item label="预审状态">{{
+      <el-descriptions-item v-if="canSeeOfficeReview" label="复核状态">{{
         toPrecheckStatusLabel(detail.precheck_status)
       }}</el-descriptions-item>
       <el-descriptions-item label="PDF状态">{{
@@ -986,13 +1047,36 @@ watch(
       <el-descriptions-item label="批次">{{
         detail.batch?.batch_no || "-"
       }}</el-descriptions-item>
-      <el-descriptions-item label="OCR状态">{{
+      <el-descriptions-item v-if="canSeeOfficeReview" label="发票识别状态">{{
         ocrStatusText
       }}</el-descriptions-item>
-      <el-descriptions-item label="异常检测">{{
+      <el-descriptions-item v-if="canSeeOfficeReview" label="智能核查状态">{{
         anomalyStatusText
       }}</el-descriptions-item>
     </el-descriptions>
+
+    <el-card
+      v-if="detail && canSeeOfficeReview"
+      shadow="never"
+      header="后台静默审查提示"
+      style="margin-top: 16px"
+    >
+      <el-descriptions :column="1" border>
+        <el-descriptions-item
+          v-for="item in recognitionHintRows"
+          :key="item.label"
+          :label="item.label"
+        >
+          {{ item.value }}
+        </el-descriptions-item>
+        <el-descriptions-item label="智能核查摘要">
+          <pre style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ reviewSummaryText }}</pre>
+        </el-descriptions-item>
+        <el-descriptions-item label="识别原始结果">
+          <pre style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ recognitionRawText }}</pre>
+        </el-descriptions-item>
+      </el-descriptions>
+    </el-card>
 
     <el-table
       v-if="detail && detail.duplicate_checks.length > 0"
