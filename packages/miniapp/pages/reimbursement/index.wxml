@@ -70,7 +70,7 @@
 
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="refreshOcrStatus" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">刷新OCR状态</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📨 提交报销</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId || (latestEnvelopeStatus !== 'draft' && latestEnvelopeStatus !== 'unregistered')}}">📨 提交报销</t-button>
     </view>
 
     <view class="label">附件列表</view>
@@ -97,6 +97,15 @@
           data-name="{{item.file_name}}"
           bindtap="downloadAttachment"
         >下载</t-button>
+        <t-button
+          class="btn"
+          size="small"
+          theme="danger"
+          variant="outline"
+          data-id="{{item.id}}"
+          bindtap="removeAttachment"
+          disabled="{{busy || (latestEnvelopeStatus !== 'draft' && latestEnvelopeStatus !== 'unregistered')}}"
+        >删除</t-button>
       </view>
     </view>
 

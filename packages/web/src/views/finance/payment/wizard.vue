@@ -363,15 +363,25 @@ const submitQuickExternalPayee = async () => {
       phone: payload.phone || undefined,
       type: "external"
     });
-    await loadPayees();
-    if (shouldUseContractFlow.value) {
-      contractForm.value.payee_id = created.data.id;
-    } else {
-      directForm.value.payee_id = created.data.id;
-    }
+    const createdId = created.data?.id;
     quickPayeeDialogVisible.value = false;
     resetQuickPayeeForm();
+    try {
+      await loadPayees();
+    } catch {
+      payees.value = [
+        { id: createdId, name: payload.name, bank_name: payload.bank_name, bank_account: payload.bank_account, phone: payload.phone, type: "external", status: "active" } as any,
+        ...payees.value
+      ];
+    }
+    if (shouldUseContractFlow.value) {
+      contractForm.value.payee_id = createdId;
+    } else {
+      directForm.value.payee_id = createdId;
+    }
     message("外部收款人已添加，并自动选中", { type: "success" });
+  } catch {
+    message("添加收款人失败，请重试", { type: "error" });
   } finally {
     quickPayeeSubmitting.value = false;
   }
@@ -1178,6 +1188,7 @@ onMounted(async () => {
         <el-button
           type="primary"
           :loading="quickPayeeSubmitting"
+          :disabled="quickPayeeSubmitting"
           @click="submitQuickExternalPayee"
         >
           保存并选中

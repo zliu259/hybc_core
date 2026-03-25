@@ -8,6 +8,7 @@ import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import type { Env } from "../types/env";
+import { reimbursementChannels } from "../types/reimbursement";
 import type {
   BatchGenerateEnvelopeRequest,
   CreateReimbursementBatchRequest,
@@ -29,6 +30,7 @@ import type {
 
 const nowIso = () => new Date().toISOString();
 const UNASSIGNED_APPLICANT = "__UNASSIGNED__";
+const validChannelSet = new Set<string>(reimbursementChannels);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isValidUuid = (value: string | null | undefined): boolean => {
@@ -393,32 +395,30 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
           : typeof ocrResult?.invoice_number === "string"
             ? ocrResult.invoice_number
             : envelope.invoice_no;
-      const amount =
-        typeof ocrResult?.amount === "number"
-          ? ocrResult.amount
-          : typeof ocrResult?.total_amount === "number"
-            ? ocrResult.total_amount
-            : envelope.amount;
       const issueDate =
         typeof ocrResult?.issue_date === "string"
           ? ocrResult.issue_date
           : typeof ocrResult?.date === "string"
             ? ocrResult.date
             : envelope.expense_date;
-      const nextStatus = envelope.status === "received" ? "received" : "submitted";
+      const nextStatus =
+        envelope.status === "received"
+          ? "received"
+          : envelope.status === "draft" || envelope.status === "unregistered"
+            ? envelope.status
+            : "submitted";
 
       await env.DB.prepare(
         `UPDATE reimbursement_envelope SET
            ocr_status = 'completed',
            invoice_unique_no = COALESCE(?, invoice_unique_no),
            invoice_no = COALESCE(?, invoice_no),
-           amount = COALESCE(?, amount),
            expense_date = COALESCE(?, expense_date),
            status = ?,
            updated_at = ?
          WHERE id = ?`
       )
-        .bind(invoiceUniqueNo, invoiceNo ?? null, amount ?? null, issueDate ?? null, nextStatus, nowIso(), envelopeId)
+        .bind(invoiceUniqueNo, invoiceNo ?? null, issueDate ?? null, nextStatus, nowIso(), envelopeId)
         .run();
 
       await applyDuplicateChecks(env, envelopeId);
@@ -1221,7 +1221,7 @@ reimbursementRoutes.post(
          invoice_unique_no, invoice_no, expense_date, amount, description,
          status, precheck_status, verification_status, ocr_status,
          duplicate_check_status, received_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, ?, 'submitted', 'pending', 'pending', 'none', 'none', NULL, ?, ?)`
+       VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, ?, 'draft', 'none', 'pending', 'none', 'none', NULL, ?, ?)`
     )
       .bind(
         envelopeNo,
@@ -1314,12 +1314,6 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
         : typeof result?.invoice_number === "string"
           ? result.invoice_number
           : envelope.invoice_no;
-    const amount =
-      typeof result?.amount === "number"
-        ? result.amount
-        : typeof result?.total_amount === "number"
-          ? result.total_amount
-          : envelope.amount;
     const issueDate =
       typeof result?.issue_date === "string"
         ? result.issue_date
@@ -1327,20 +1321,24 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
           ? result.date
           : envelope.expense_date;
 
-    const nextStatus = envelope.status === "received" ? "received" : "submitted";
+    const nextStatus =
+      envelope.status === "received"
+        ? "received"
+        : envelope.status === "draft" || envelope.status === "unregistered"
+          ? envelope.status
+          : "submitted";
 
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          ocr_status = 'completed',
          invoice_unique_no = COALESCE(?, invoice_unique_no),
          invoice_no = COALESCE(?, invoice_no),
-         amount = COALESCE(?, amount),
          expense_date = COALESCE(?, expense_date),
          status = ?,
          updated_at = ?
        WHERE id = ?`
     )
-      .bind(invoiceUniqueNo, invoiceNo ?? null, amount ?? null, issueDate ?? null, nextStatus, nowIso(), id)
+      .bind(invoiceUniqueNo, invoiceNo ?? null, issueDate ?? null, nextStatus, nowIso(), id)
       .run();
 
     duplicateCount = await applyDuplicateChecks(c.env, id);
@@ -1663,6 +1661,11 @@ reimbursementRoutes.post(
     const requestedChannel = body.channel ?? "physical";
     const preferredEnvelopeUuid = body.preferred_envelope_uuid?.trim();
     const generatedEnvelopeUuid = crypto.randomUUID();
+
+    if (!validChannelSet.has(requestedChannel)) {
+      return c.json({ success: false, error: { message: "Invalid reimbursement channel" } }, 400);
+    }
+
     if (requestedChannel === "physical" && !preferredEnvelopeUuid) {
       return c.json(
         {
@@ -1835,14 +1838,16 @@ reimbursementRoutes.put(
     }
 
     const isPrivileged = auth.roles.some((role) =>
-      ["super_admin", "manager", "site_manager"].includes(role)
+      ["super_admin", "manager", "site_manager", "finance"].includes(role)
     );
 
     if (!isPrivileged && existing.applicant_userid !== auth.sub) {
       return c.json({ success: false, error: { message: "Forbidden" } }, 403);
     }
 
-    if (["received", "batched", "pending_approval", "approved", "paid"].includes(existing.status)) {
+    const immutableStatuses = ["batched", "pending_approval", "approved", "paid"];
+    const isReceivedLocked = existing.status === "received" && !isPrivileged;
+    if (immutableStatuses.includes(existing.status) || isReceivedLocked) {
       return c.json(
         {
           success: false,
@@ -1850,6 +1855,10 @@ reimbursementRoutes.put(
         },
         400
       );
+    }
+
+    if (body.channel && !validChannelSet.has(body.channel)) {
+      return c.json({ success: false, error: { message: "Invalid reimbursement channel" } }, 400);
     }
 
     await c.env.DB.prepare(
@@ -1890,6 +1899,63 @@ reimbursementRoutes.put(
     }
 
     return c.json({ success: true });
+  }
+);
+
+reimbursementRoutes.post(
+  "/:id/attachments/:attachmentId/delete",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const attachmentId = Number(c.req.param("attachmentId"));
+    const auth = c.get("auth");
+
+    if (!Number.isFinite(attachmentId) || attachmentId <= 0) {
+      return c.json({ success: false, error: { message: "attachmentId is required" } }, 400);
+    }
+
+    const envelope = await c.env.DB.prepare(
+      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<ReimbursementEnvelope>();
+
+    if (!envelope) {
+      return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    const isPrivileged = auth.roles.some((role) =>
+      ["super_admin", "manager", "site_manager", "finance"].includes(role)
+    );
+    if (!isPrivileged && envelope.applicant_userid !== auth.sub) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    if (!["draft", "unregistered"].includes(envelope.status)) {
+      return c.json(
+        {
+          success: false,
+          error: { message: `Attachments can only be removed before submit. Current status: ${envelope.status}` }
+        },
+        400
+      );
+    }
+
+    const attachment = await c.env.DB.prepare(
+      "SELECT id, file_key, status FROM envelope_attachment WHERE id = ? AND envelope_id = ?"
+    )
+      .bind(attachmentId, id)
+      .first<{ id: number; file_key: string; status: string }>();
+
+    if (!attachment || attachment.status !== "active") {
+      return c.json({ success: false, error: { message: "Attachment not found" } }, 404);
+    }
+
+    await c.env.DB.prepare("UPDATE envelope_attachment SET status = 'deleted' WHERE id = ?")
+      .bind(attachmentId)
+      .run();
+
+    return c.json({ success: true, data: { id, attachment_id: attachmentId } });
   }
 );
 
@@ -2076,6 +2142,17 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "Envelope not registered to applicant yet" } }, 400);
     }
 
+    if (envelope.status === "submitted") {
+      return c.json({
+        success: true,
+        data: {
+          id,
+          status: "submitted",
+          already_submitted: true
+        }
+      });
+    }
+
     if (envelope.channel === "physical" && !isValidUuid(envelope.envelope_uuid)) {
       return c.json(
         {
@@ -2114,14 +2191,15 @@ reimbursementRoutes.post(
     }
 
     const now = nowIso();
-    await c.env.DB.prepare(
+    const submitResult = await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          status = 'submitted',
          duplicate_override_requested = ?,
          duplicate_override_reason = ?,
          submitted_at = COALESCE(submitted_at, ?),
          updated_at = ?
-       WHERE id = ?`
+       WHERE id = ?
+         AND status IN ('draft', 'unregistered')`
     )
       .bind(
         body.force_submit === true ? 1 : 0,
@@ -2131,6 +2209,35 @@ reimbursementRoutes.post(
         id
       )
       .run();
+
+    if ((submitResult.meta.changes ?? 0) === 0) {
+      const latest = await c.env.DB.prepare(
+        "SELECT status FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+      )
+        .bind(id)
+        .first<{ status: string }>();
+
+      if (latest?.status === "submitted") {
+        return c.json({
+          success: true,
+          data: {
+            id,
+            status: "submitted",
+            already_submitted: true
+          }
+        });
+      }
+
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: `Envelope in status ${latest?.status ?? "unknown"} cannot submit`
+          }
+        },
+        400
+      );
+    }
 
     await enqueueEnvelopeAiAudit(c.env, id, {
       file_key: attachmentRow.file_key

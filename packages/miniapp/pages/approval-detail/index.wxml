@@ -155,6 +155,14 @@
       </view>
     </view>
   </view>
+
+  <view class="footer-actions footer-acted" wx:if="{{!hasAnyAction && userAlreadyActed && !loading}}">
+    <view class="acted-hint">
+      <t-icon name="check-circle" size="36rpx" color="#67c23a" />
+      <text class="acted-hint-text">您已完成本条审批操作</text>
+    </view>
+    <t-button class="action-btn" theme="primary" variant="outline" block bindtap="goToPendingList">返回我的待审批</t-button>
+  </view>
 </view>
 
 <view wx:if="{{!detail && !loading}}" class="empty-wrap">

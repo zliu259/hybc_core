@@ -126,7 +126,8 @@ Page({
     duplicateChecks: [],
     ocrStatus: "none",
     ocrStatusText: "未开始",
-    busy: false
+    busy: false,
+    submitRequestKey: ""
   },
 
   onLoad(options) {
@@ -143,6 +144,10 @@ Page({
     if (this.data.latestEnvelopeId) {
       this.loadEnvelopeDetail(this.data.latestEnvelopeId);
     }
+  },
+
+  onUnload() {
+    this.resetDraft();
   },
 
   resetDraft() {
@@ -174,8 +179,20 @@ Page({
       attachmentItems: [],
       duplicateChecks: [],
       ocrStatus: "none",
-      ocrStatusText: "未开始"
+      ocrStatusText: "未开始",
+      submitRequestKey: ""
     });
+  },
+
+  canRemoveAttachment() {
+    return ["draft", "unregistered"].includes(this.data.latestEnvelopeStatus);
+  },
+
+  ensureSubmitRequestKey() {
+    if (this.data.submitRequestKey) return this.data.submitRequestKey;
+    const key = `rm-submit-${this.data.latestEnvelopeId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    this.setData({ submitRequestKey: key });
+    return key;
   },
 
   runBusy(fn) {
@@ -441,9 +458,13 @@ Page({
 
     return this.runBusy(async () => {
       wx.showLoading({ title: "提交中...", mask: true });
+      const idempotencyKey = this.ensureSubmitRequestKey();
       await request({
         method: "POST",
-        path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}/submit`
+        path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}/submit`,
+        header: {
+          "Idempotency-Key": idempotencyKey
+        }
       });
       await this.loadEnvelopeDetail(this.data.latestEnvelopeId);
       vibrateSuccess();
@@ -453,6 +474,32 @@ Page({
       vibrateWarning();
       wx.hideLoading();
       sayToast({ title: error.message || "提交失败", icon: "none", danger: true });
+    });
+  },
+
+  async removeAttachment(e) {
+    if (!this.canRemoveAttachment()) {
+      sayToast({ title: "仅可在提交前删除附件", icon: "none" });
+      return;
+    }
+    if (!this.data.latestEnvelopeId) {
+      sayToast({ title: "请先保存草稿", icon: "none" });
+      return;
+    }
+    const attachmentId = Number((e.currentTarget.dataset && e.currentTarget.dataset.id) || 0);
+    if (!attachmentId) return;
+
+    return this.runBusy(async () => {
+      await request({
+        method: "POST",
+        path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}/attachments/${attachmentId}/delete`
+      });
+      await this.loadEnvelopeDetail(this.data.latestEnvelopeId);
+      vibrateSuccess();
+      sayToast({ title: "附件已删除", icon: "success" });
+    }).catch((error) => {
+      vibrateWarning();
+      sayToast({ title: error.message || "删除失败", icon: "none", danger: true });
     });
   },
 

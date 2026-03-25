@@ -349,6 +349,7 @@ Page({
     }
 
     this.setData({ quickPayeeSubmitting: true });
+    wx.showLoading({ title: "添加中...", mask: true });
     try {
       const created = await request({
         method: "POST",
@@ -411,11 +412,13 @@ Page({
       }
 
       this.closeQuickPayee();
+      wx.hideLoading();
       wx.showToast({
         title: refreshFailed ? "已添加，列表已本地更新" : "外部收款人已添加",
         icon: "success"
       });
     } catch (error) {
+      wx.hideLoading();
       wx.showToast({ title: error.message || "添加失败", icon: "none" });
       this.setData({ quickPayeeSubmitting: false });
     }

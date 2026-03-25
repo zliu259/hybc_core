@@ -206,6 +206,8 @@
 - UUID 逻辑对齐 miniapp：创建态下若通道为“电子发票”，绑定 UUID 输入禁用并自动清空，创建请求不传 `preferred_envelope_uuid`，由后端自动生成。
 - 提交流程统一：`POST /api/v1/reimbursement/:id/submit` 对实物/电子通道均可执行（前提满足附件、状态、权限校验），避免电子通道点击提交时报 400。
 - 超管废止能力：报销详情新增“废止报销提交”动作（仅 `super_admin` 可见），可对 `draft/submitted/received/unregistered` 状态执行废止，废止后状态为 `cancelled`：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/api/src/routes/reimbursement.ts`
+- 办公室修正能力：办公室角色（super_admin/manager/site_manager/finance）可在报销 `submitted/received` 状态对员工提交信息进行修正并保存：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/api/src/routes/reimbursement.ts`
+- 附件预览补齐：报销详情附件区新增“预览”操作，与“下载”并列，支持办公室在详情页快速核查附件：`packages/web/src/views/finance/reimbursement/detail.vue`
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
@@ -1016,6 +1018,13 @@
 ### 4.29 Miniapp 实物报销 UUID 提交闸门加固（2026-03）
 - 小程序个人报销提交在实物信封通道下新增“有效 UUID”强校验：创建草稿与提交动作均要求 UUID 为合法格式，拦截占位符/无效值：`packages/miniapp/pages/reimbursement/index.js`
 - 扫码录入 UUID 支持从扫码结果中自动提取 `envelope_uuid` 参数或 UUID 片段，无法识别时直接阻断提交流程：`packages/miniapp/pages/reimbursement/index.js`
+
+### 4.30 Miniapp 报销与审批防重/加载兜底（2026-03）
+- 报销附件支持“提交前删除”：报销详情附件列表新增删除按钮，仅在 `draft/unregistered` 状态可用，误选图片可即时移除：`packages/miniapp/pages/reimbursement/index.{js,wxml}`、`packages/api/src/routes/reimbursement.ts`
+- 报销提交防重补强：提交请求增加 `Idempotency-Key`，且后端对已提交状态返回幂等成功，避免重复点击/网络抖动重复提交：`packages/miniapp/pages/reimbursement/index.js`、`packages/api/src/routes/reimbursement.ts`
+- 电子发票创建态修正：电子发票上传后保持 `draft`，OCR 回填不再自动推进为 `submitted`，确保员工确认后再提交并避免旧数据污染：`packages/api/src/routes/reimbursement.ts`
+- 小程序审批详情将“付款主体/付款方式”从强制改为可后续补充；审批动作仅在实例处于 `pending/in_progress` 且当前节点待办属于本人时可用：`packages/miniapp/pages/approval-detail/index.js`
+- 企业微信推送进入审批详情增加关键数据重试加载（审批详情/付款/合同/批次/选项），降低字段或选项偶发缺失：`packages/miniapp/pages/approval-detail/index.js`
 - 后端提交兜底校验：`POST /api/v1/reimbursement/:id/submit` 在 `physical` 通道下强制校验已绑定 UUID 格式，不满足则拒绝提交：`packages/api/src/routes/reimbursement.ts`
 
 ## 5. 组件与模块指向

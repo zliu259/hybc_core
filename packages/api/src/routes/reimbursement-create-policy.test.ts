@@ -67,6 +67,43 @@ describe("decideCreateRouteBranch", () => {
     });
   });
 
+  it("rejects binding when existing envelope is already submitted", () => {
+    const result = decideCreateRouteBranch({
+      ...baseInput,
+      existingEnvelope: {
+        id: 34,
+        status: "submitted",
+        applicant_userid: "operator.a",
+        channel: "electronic",
+        envelope_uuid: "uuid-preprinted-001"
+      }
+    });
+
+    expect(result).toEqual({
+      kind: "error",
+      status: 400,
+      message: "Envelope in status submitted cannot be bound during create"
+    });
+  });
+
+  it("uses requested channel when binding existing draft envelope", () => {
+    const result = decideCreateRouteBranch({
+      ...baseInput,
+      requestedChannel: "physical",
+      existingEnvelope: {
+        id: 35,
+        status: "draft",
+        applicant_userid: "operator.a",
+        channel: "electronic",
+        envelope_uuid: "uuid-preprinted-001"
+      }
+    });
+
+    expect(result.kind).toBe("bind-existing");
+    if (result.kind !== "bind-existing") return;
+    expect(result.channelToPersist).toBe("physical");
+  });
+
   it("rejects non-privileged create when assigning another applicant", () => {
     const result = decideCreateRouteBranch({
       ...baseInput,

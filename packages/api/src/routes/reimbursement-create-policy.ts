@@ -35,7 +35,7 @@ export type CreateRouteDecision =
       envelopeUuid: string;
     };
 
-const bindableStatuses = new Set(["unregistered", "draft", "submitted"]);
+const bindableStatuses = new Set(["unregistered", "draft"]);
 
 export const decideCreateRouteBranch = (
   input: CreateRouteDecisionInput
@@ -77,10 +77,7 @@ export const decideCreateRouteBranch = (
       applicantToPersist: canBindApplicant
         ? input.requestedApplicant
         : input.existingEnvelope.applicant_userid,
-      channelToPersist:
-        input.existingEnvelope.status === "unregistered"
-          ? input.requestedChannel
-          : input.existingEnvelope.channel,
+      channelToPersist: input.requestedChannel,
       nextStatus:
         input.existingEnvelope.status === "unregistered"
           ? "draft"

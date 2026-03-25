@@ -24,8 +24,8 @@ Page({
     paymentAccountList: [],
     paymentAccountLabels: ["请选择付款账户"],
     paymentAccountIndex: 0,
-    paymentMethodValueOptions: ["transfer", "cash", "bill", "other"],
-    paymentMethodLabelOptions: ["对公转账", "现金", "票据", "其他"],
+    paymentMethodValueOptions: ["", "transfer", "cash", "bill", "other"],
+    paymentMethodLabelOptions: ["可后续补充", "对公转账", "现金", "票据", "其他"],
     paymentMethodIndex: 0,
     actionComment: "",
     flowCollapsed: true,
@@ -35,12 +35,32 @@ Page({
     canReject: false,
     canReturn: false,
     canTransfer: false,
-    canMoreAction: false
+    canMoreAction: false,
+    userAlreadyActed: false
   },
 
   onLoad(options) {
     const id = Number((options && options.id) || 0);
     this.setData({ id });
+  },
+
+  delay(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  },
+
+  async requestWithRetry(options, retries = 2, delayMs = 220) {
+    let lastError = null;
+    for (let i = 0; i <= retries; i += 1) {
+      try {
+        return await request(options);
+      } catch (error) {
+        lastError = error;
+        if (i < retries) {
+          await this.delay(delayMs * (i + 1));
+        }
+      }
+    }
+    throw lastError || new Error("request failed");
   },
 
   async onShow() {
@@ -125,7 +145,7 @@ Page({
   },
 
   normalizePaymentMethodValue(value) {
-    if (!value) return "transfer";
+    if (!value) return "";
     const raw = String(value).trim();
     const map = {
       bank_transfer: "transfer",
@@ -138,7 +158,7 @@ Page({
       other: "other",
       "其他": "other"
     };
-    return map[raw] || "transfer";
+    return map[raw] || "";
   },
 
   contractDirectionLabel(value) {
@@ -380,33 +400,51 @@ Page({
   },
 
   inferAvailableActions(detail) {
+    const instanceStatus = detail && detail.instance ? detail.instance.status : "";
+    if (instanceStatus !== "pending" && instanceStatus !== "in_progress") {
+      return [];
+    }
+
     const explicit = Array.isArray(detail && detail.available_actions)
       ? detail.available_actions.filter((item) => typeof item === "string")
       : [];
-    if (explicit.length > 0) return explicit;
 
     const profile = getUserProfile() || {};
     const userId = (profile.username || profile.id || "").trim();
     const tasks = Array.isArray(detail && detail.tasks) ? detail.tasks : [];
+    const nodes = Array.isArray(detail && detail.nodes) ? detail.nodes : [];
     const pendingTasks = tasks.filter((item) => item && item.status === "pending");
     const userPending = userId
       ? pendingTasks.filter((item) => item.assignee_userid === userId)
       : [];
 
-    if (userPending.length > 0) {
+    const currentRound = Number((detail && detail.instance && detail.instance.current_round) || 0);
+    const currentNodeKey = (detail && detail.instance && detail.instance.current_node_key) || "";
+    const currentNode = nodes.find(
+      (item) =>
+        item &&
+        Number(item.round || 0) === currentRound &&
+        String(item.node_key || "") === String(currentNodeKey)
+    );
+    const currentRoundPending = currentRound
+      ? userPending.filter((item) => Number(item.round || 0) === currentRound)
+      : userPending;
+    const currentNodePending = currentNode
+      ? currentRoundPending.filter((item) => Number(item.node_instance_id || 0) === Number(currentNode.id || 0))
+      : currentRoundPending;
+
+    if (currentNodePending.length > 0) {
+      if (explicit.length > 0) {
+        return explicit;
+      }
       return ["approve", "reject", "return_initiator", "transfer"];
     }
 
-    if (
-      detail &&
-      detail.instance &&
-      (detail.instance.status === "pending" || detail.instance.status === "in_progress")
-    ) {
-      return ["approve", "reject", "return_initiator", "transfer"];
-    }
-
-    if ((detail && detail.instance && detail.instance.status) === "pending" && pendingTasks.length > 0) {
-      return ["approve", "reject", "return_initiator", "transfer"];
+    const userCompleted = userId
+      ? tasks.filter((item) => item.assignee_userid === userId && item.status === "completed")
+      : [];
+    if (userCompleted.length > 0) {
+      return [];
     }
 
     return [];
@@ -450,8 +488,8 @@ Page({
   async loadReferenceData() {
     try {
       const [projectRes, entityRes] = await Promise.all([
-        request({ method: "GET", path: "/api/v1/project?page=1&pageSize=500" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/entity?page=1&pageSize=500" }).catch(() => null)
+        this.requestWithRetry({ method: "GET", path: "/api/v1/project?page=1&pageSize=500" }, 2).catch(() => null),
+        this.requestWithRetry({ method: "GET", path: "/api/v1/entity?page=1&pageSize=500" }, 2).catch(() => null)
       ]);
 
       const projectList = projectRes && Array.isArray(projectRes.data) ? projectRes.data : [];
@@ -498,7 +536,7 @@ Page({
       });
       return;
     }
-    const res = await request({ method: "GET", path: `/api/v1/entity/${targetEntityId}/bank-accounts` }).catch(
+    const res = await this.requestWithRetry({ method: "GET", path: `/api/v1/entity/${targetEntityId}/bank-accounts` }, 2).catch(
       () => null
     );
     const rows = res && Array.isArray(res.data) ? res.data : [];
@@ -565,9 +603,7 @@ Page({
         ? this.data.paymentAccountList[this.data.paymentAccountIndex - 1]
         : null;
     const paymentMethod =
-      this.data.paymentMethodValueOptions[this.data.paymentMethodIndex] ||
-      this.data.paymentMethodValueOptions[0] ||
-      "transfer";
+      this.data.paymentMethodValueOptions[this.data.paymentMethodIndex] || "";
     return { paymentEntity, paymentAccount, paymentMethod };
   },
 
@@ -577,8 +613,25 @@ Page({
     if (!detail || !detail.instance || detail.instance.biz_type !== "payment_request" || !bizDetail) return;
 
     const { paymentEntity, paymentAccount, paymentMethod } = this.getCurrentPaymentSelection();
-    if (!paymentEntity) throw new Error("请选择付款主体");
-    if (!paymentAccount) throw new Error("请选择付款账户");
+    const payload = {};
+    if (paymentEntity && paymentEntity.id) {
+      payload.payment_entity_id = Number(paymentEntity.id);
+    }
+    if (paymentAccount && paymentAccount.id) {
+      payload.payment_entity_bank_account_id = Number(paymentAccount.id);
+      payload.payment_account = `${paymentAccount.bank_name} / ${paymentAccount.account_no}`;
+      if (!payload.payment_entity_id && paymentAccount.entity_id) {
+        payload.payment_entity_id = Number(paymentAccount.entity_id);
+      }
+    }
+    if (paymentMethod) {
+      payload.payment_method = paymentMethod;
+    }
+
+    if (Object.keys(payload).length === 0) {
+      return;
+    }
+
     const profile = getUserProfile() || {};
     const roles = Array.isArray(profile.roles) ? profile.roles : [];
     const isSuperAdmin = roles.includes("super_admin");
@@ -587,17 +640,14 @@ Page({
       method: "PUT",
       path: `/api/v1/payment/${bizDetail.id}`,
       data: {
-        payment_entity_id: Number(paymentEntity.id),
-        payment_entity_bank_account_id: Number(paymentAccount.id),
-        payment_account: `${paymentAccount.bank_name} / ${paymentAccount.account_no}`,
-        payment_method: paymentMethod,
+        ...payload,
         admin_edit_mode: isSuperAdmin ? true : undefined,
         edit_note: isSuperAdmin ? "miniapp approval payout selection update" : undefined
       }
     });
 
     if (!options.silent) {
-      sayToast({ title: "付款主体与方式已保存", icon: "success" });
+      sayToast({ title: "付款信息已保存", icon: "success" });
       await this.loadDetail();
     }
   },
@@ -618,7 +668,7 @@ Page({
     if (!this.data.id) return;
     this.setData({ loading: true });
     try {
-      const detailRes = await request({ method: "GET", path: `/api/v1/approval/${this.data.id}` });
+      const detailRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/approval/${this.data.id}` }, 2);
       const detail = detailRes && detailRes.data ? detailRes.data : null;
       if (!detail || !detail.instance) throw new Error("审批详情不存在");
 
@@ -630,7 +680,7 @@ Page({
       let audit = null;
 
       if (bizType === "payment_request") {
-        const bizRes = await request({ method: "GET", path: `/api/v1/payment/${bizId}` });
+         const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/payment/${bizId}` }, 2);
         bizDetail = bizRes && bizRes.data ? bizRes.data : null;
         if (bizDetail) {
           bizDetail = {
@@ -647,7 +697,7 @@ Page({
         const riskRes = await request({ method: "GET", path: `/api/v1/payment/${bizId}/risk-report` }).catch(() => null);
         risk = riskRes && riskRes.data ? riskRes.data : null;
       } else if (bizType === "outbound_contract" || bizType === "inbound_contract") {
-        const bizRes = await request({ method: "GET", path: `/api/v1/contract/${bizId}` });
+         const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/contract/${bizId}` }, 2);
         bizDetail = bizRes && bizRes.data ? bizRes.data : null;
         if (bizDetail) {
           bizDetail = {
@@ -663,7 +713,7 @@ Page({
         }
         attachments = this.parseAttachments(bizDetail && bizDetail.attachments_json);
       } else if (bizType === "reimbursement_batch") {
-        const bizRes = await request({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}` });
+         const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}` }, 2);
         bizDetail = bizRes && bizRes.data ? bizRes.data : null;
         if (bizDetail) {
           bizDetail = {
@@ -679,6 +729,13 @@ Page({
 
       const availableActions = this.inferAvailableActions(detail);
       const flags = this.actionFlags(availableActions);
+
+      const profile = getUserProfile() || {};
+      const userId = (profile.username || profile.id || "").trim();
+      const allTasks = Array.isArray(detail.tasks) ? detail.tasks : [];
+      const userAlreadyActed = userId
+        ? allTasks.some((t) => t.assignee_userid === userId && t.status === "completed")
+        : false;
 
       this.setData({
         detail: {
@@ -699,6 +756,7 @@ Page({
         detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
         detailTimelineNodes: this.buildTimelineNodes(detail),
         availableActions,
+        userAlreadyActed,
         flowCollapsed: true,
         ...flags
       });
@@ -716,6 +774,10 @@ Page({
 
   async runAction(action) {
     if (this.data.acting || !this.data.id) return;
+    if (!this.data.hasAnyAction) {
+      sayToast({ title: "当前节点不可操作", icon: "none" });
+      return;
+    }
     const comment = (this.data.actionComment || "").trim();
     this.setData({ acting: true });
     wx.showLoading({ title: "处理中...", mask: true });
@@ -849,5 +911,14 @@ Page({
       },
       fail: () => sayToast({ title: "附件下载失败", icon: "none", danger: true })
     });
+  },
+
+  goToPendingList() {
+    const pages = getCurrentPages();
+    if (pages.length > 1) {
+      wx.navigateBack();
+    } else {
+      wx.redirectTo({ url: "/pages/approval/index" });
+    }
   }
 });

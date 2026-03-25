@@ -117,22 +117,33 @@ type EnvelopeAttachmentDraft = {
 const attachmentItems = ref<EnvelopeAttachmentDraft[]>([]);
 const uploadingAttachment = ref(false);
 const attachmentType = ref("invoice");
+const officeRoles = ["super_admin", "manager", "site_manager", "finance"];
 
 const editableStatuses = new Set(["draft", "submitted"]);
 const canEdit = computed(() => {
   if (isCreate.value) return true;
   if (!detail.value) return false;
-  return editableStatuses.has(detail.value.status);
+  if (editableStatuses.has(detail.value.status)) return true;
+  const roles = new Set(userStore.roles ?? []);
+  const hasOfficeRole = officeRoles.some(role => roles.has(role));
+  const canSelfAudit = roles.has("super_admin") || roles.has("finance");
+  const currentUserId = String(userStore.username || "").trim();
+  const applicantId = String(
+    detail.value?.applicant_userid || form.value.applicant_userid || ""
+  ).trim();
+  const isApplicant = Boolean(
+    currentUserId && applicantId && currentUserId === applicantId
+  );
+  return (
+    hasOfficeRole &&
+    ["submitted", "received"].includes(detail.value.status) &&
+    (!isApplicant || canSelfAudit)
+  );
 });
 
 const canOfficeAudit = computed(() => {
   const roles = new Set(userStore.roles ?? []);
-  const hasOfficeRole = [
-    "super_admin",
-    "manager",
-    "site_manager",
-    "finance"
-  ].some(role => roles.has(role));
+  const hasOfficeRole = officeRoles.some(role => roles.has(role));
   const canSelfAudit = roles.has("super_admin") || roles.has("finance");
   const currentUserId = String(userStore.username || "").trim();
   const applicantId = String(
@@ -377,6 +388,12 @@ const downloadAttachment = (item: EnvelopeAttachmentDraft) => {
   document.body.appendChild(link);
   link.click();
   document.body.removeChild(link);
+};
+
+const previewAttachment = (item: EnvelopeAttachmentDraft) => {
+  if (!item.file_key) return;
+  const url = resolveUploadUrl(attachmentUrl(item.file_key));
+  window.open(url, "_blank", "noopener,noreferrer");
 };
 
 const save = async () => {
@@ -816,8 +833,15 @@ watch(
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="180" fixed="right">
+        <el-table-column label="操作" width="220" fixed="right">
           <template #default="scope">
+            <el-button
+              link
+              type="primary"
+              @click="previewAttachment(scope.row)"
+            >
+              预览
+            </el-button>
             <el-button
               link
               type="primary"
