@@ -190,6 +190,22 @@ const sha256Hex = async (value: string): Promise<string> => {
     .join("");
 };
 
+const isMissingInvoiceReviewTableError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error ?? "");
+  return message.includes("no such table") && message.includes("reimbursement_invoice_review");
+};
+
+const supportsInvoiceReviewTable = async (env: Env): Promise<boolean> => {
+  try {
+    const row = await env.DB.prepare(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reimbursement_invoice_review'"
+    ).first<{ name: string }>();
+    return Boolean(row?.name);
+  } catch {
+    return false;
+  }
+};
+
 const hasOfficeRole = (roles: string[] = []) => {
   return roles.some((role) => reimbursementOfficeRoles.includes(role));
 };
@@ -686,14 +702,50 @@ const enqueueEnvelopeAiAudit = async (
     .filter((item) => item.file_key);
   if (validAttachments.length === 0) return;
 
-  const reviewTaskState = await createInvoiceReviewTasks(env, envelope, validAttachments, {
-    forceRerun: options?.forceRerun === true
+  const hasInvoiceReviewTable = await supportsInvoiceReviewTable(env);
+  if (hasInvoiceReviewTable) {
+    try {
+      const reviewTaskState = await createInvoiceReviewTasks(env, envelope, validAttachments, {
+        forceRerun: options?.forceRerun === true
+      });
+
+      await env.DB.prepare(
+        "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
+      )
+        .bind(reviewTaskState.latestTaskId, nowIso(), envelopeId)
+        .run();
+      return;
+    } catch (error) {
+      if (!isMissingInvoiceReviewTableError(error)) {
+        throw error;
+      }
+    }
+  }
+
+  const preferredFromOption = options?.file_key?.trim();
+  const preferredAttachment =
+    (preferredFromOption && validAttachments.find((item) => item.file_key === preferredFromOption)) ||
+    validAttachments[validAttachments.length - 1];
+  if (!preferredAttachment) return;
+  const fallbackOcrTask = await createTask(env, {
+    task_type: "ocr_extract",
+    biz_type: "reimbursement_envelope",
+    biz_id: envelopeId,
+    priority: envelope.channel === "electronic" ? 5 : 4,
+    payload: {
+      envelope_id: envelopeId,
+      file_key: preferredAttachment.file_key,
+      file_name: preferredAttachment.file_name,
+      project_id: envelope.project_id,
+      channel: envelope.channel
+    },
+    timeout_seconds: 300
   });
 
   await env.DB.prepare(
     "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
   )
-    .bind(reviewTaskState.latestTaskId, nowIso(), envelopeId)
+    .bind(fallbackOcrTask.id, nowIso(), envelopeId)
     .run();
 };
 
@@ -703,13 +755,23 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
     .first<ReimbursementEnvelope>();
   if (!envelope) return;
 
-  const reviewRoundRow = await env.DB.prepare(
-    "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
-  )
-    .bind(envelopeId)
-    .first<{ max_round: number | null }>();
-  const latestReviewRound = Number(reviewRoundRow?.max_round ?? 0);
-  const hasReviewRows = latestReviewRound > 0;
+  let hasReviewRows = false;
+  let latestReviewRound = 0;
+  if (await supportsInvoiceReviewTable(env)) {
+    try {
+      const reviewRoundRow = await env.DB.prepare(
+        "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
+      )
+        .bind(envelopeId)
+        .first<{ max_round: number | null }>();
+      latestReviewRound = Number(reviewRoundRow?.max_round ?? 0);
+      hasReviewRows = latestReviewRound > 0;
+    } catch (error) {
+      if (!isMissingInvoiceReviewTableError(error)) {
+        throw error;
+      }
+    }
+  }
 
   if (hasReviewRows) {
     const reviewRows = await env.DB.prepare(
@@ -2002,12 +2064,22 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
     return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
   }
 
-  const reviewRoundRow = await c.env.DB.prepare(
-    "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
-  )
-    .bind(id)
-    .first<{ max_round: number | null }>();
-  const latestReviewRound = Number(reviewRoundRow?.max_round ?? 0);
+  let latestReviewRound = 0;
+  if (await supportsInvoiceReviewTable(c.env)) {
+    try {
+      const reviewRoundRow = await c.env.DB.prepare(
+        "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
+      )
+        .bind(id)
+        .first<{ max_round: number | null }>();
+      latestReviewRound = Number(reviewRoundRow?.max_round ?? 0);
+    } catch (error) {
+      if (!isMissingInvoiceReviewTableError(error)) {
+        throw error;
+      }
+      latestReviewRound = 0;
+    }
+  }
   if (latestReviewRound > 0) {
     await syncEnvelopeAuditState(c.env, id);
     const latestEnvelope = await c.env.DB.prepare(
@@ -2181,11 +2253,22 @@ reimbursementRoutes.post(
         .bind(id)
         .first<{ id: number }>();
 
-      const roundRow = await c.env.DB.prepare(
-        "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
-      )
-        .bind(id)
-        .first<{ max_round: number | null }>();
+      let latestReviewRound = 0;
+      if (await supportsInvoiceReviewTable(c.env)) {
+        try {
+          const roundRow = await c.env.DB.prepare(
+            "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
+          )
+            .bind(id)
+            .first<{ max_round: number | null }>();
+          latestReviewRound = Number(roundRow?.max_round ?? 0);
+        } catch (error) {
+          if (!isMissingInvoiceReviewTableError(error)) {
+            throw error;
+          }
+          latestReviewRound = 0;
+        }
+      }
 
       await c.env.DB.prepare(
         "UPDATE reimbursement_envelope SET precheck_status = 'pending', duplicate_check_status = 'pending', updated_at = ? WHERE id = ?"
@@ -2199,7 +2282,7 @@ reimbursementRoutes.post(
           task_id: latestTask?.id ?? null,
           precheck_status: "pending",
           rerun_full: body.rerun_full !== false,
-          review_round: Number(roundRow?.max_round ?? 0) || undefined
+          review_round: latestReviewRound || undefined
         }
       };
       await completeIdempotentRequest(
