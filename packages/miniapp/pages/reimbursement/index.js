@@ -74,6 +74,51 @@ const isImageByName = (name) => {
   );
 };
 
+const COMMON_ATTACHMENT_EXTENSIONS = [
+  "pdf",
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "gif",
+  "bmp",
+  "tif",
+  "tiff",
+  "heic",
+  "heif",
+  "ofd",
+  "xml",
+  "txt",
+  "doc",
+  "docx",
+  "xls",
+  "xlsx"
+];
+const ELECTRONIC_INVOICE_EXTENSIONS = [
+  "pdf",
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "gif",
+  "bmp",
+  "tif",
+  "tiff",
+  "heic",
+  "heif",
+  "ofd",
+  "xml"
+];
+const getExtName = (nameOrPath) => {
+  const source = String(nameOrPath || "").trim().toLowerCase();
+  if (!source || !source.includes(".")) return "";
+  return source.split(".").pop() || "";
+};
+const isAllowedExtension = (nameOrPath, allowlist) => {
+  const ext = getExtName(nameOrPath);
+  return ext ? allowlist.includes(ext) : false;
+};
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isValidUuid = (value) => UUID_REGEX.test(String(value || "").trim());
 const normalizeScannedUuid = (raw) => {
@@ -370,33 +415,71 @@ Page({
     return this.runBusy(async () => {
       const choose = await wxChooseMediaImage();
       const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
+      const fileName = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].name : "";
       if (!filePath) return;
-      const file = await uploadFileToR2(filePath);
-      const res = await request({
-        method: "POST",
-        path: "/api/v1/reimbursement/electronic-upload",
-        data: {
-          project_id: Number(this.data.draft.project_id || 0),
-          file_key: file.key,
-          file_name: file.key,
-          invoice_no: this.data.draft.invoice_no || undefined,
-          amount: Number(this.data.draft.amount || 0) || undefined,
-          issue_date: this.data.draft.expense_date || undefined,
-          description: this.data.draft.description || undefined
-        }
-      });
-      const envelopeId = Number((res && res.data && res.data.id) || 0);
-      this.setData({
-        mode: "detail",
-        latestEnvelopeId: envelopeId,
-        ocrStatus: "none",
-        ocrStatusText: "系统将于提交后自动处理"
-      });
-      if (envelopeId) {
-        await this.loadEnvelopeDetail(envelopeId);
+      await this.uploadElectronicInvoice(filePath, fileName || `invoice-${Date.now()}.jpg`);
+    }).catch((error) => {
+      vibrateWarning();
+      sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+    });
+  },
+
+  async uploadElectronicInvoice(filePath, fileName) {
+    if (!filePath) return;
+    const uploadName = fileName || `invoice-${Date.now()}`;
+    const file = await uploadFileToR2(filePath, {
+      fileName: uploadName,
+      category: "reimbursement"
+    });
+    const res = await request({
+      method: "POST",
+      path: "/api/v1/reimbursement/electronic-upload",
+      data: {
+        project_id: Number(this.data.draft.project_id || 0),
+        file_key: file.key,
+        file_name: uploadName,
+        invoice_no: this.data.draft.invoice_no || undefined,
+        amount: Number(this.data.draft.amount || 0) || undefined,
+        issue_date: this.data.draft.expense_date || undefined,
+        description: this.data.draft.description || undefined
       }
-      vibrateSuccess();
-      sayToast({ title: "电子发票已上传，请确认信息后提交", icon: "success" });
+    });
+    const envelopeId = Number((res && res.data && res.data.id) || 0);
+    this.setData({
+      mode: "detail",
+      latestEnvelopeId: envelopeId,
+      ocrStatus: "none",
+      ocrStatusText: "系统将于提交后自动处理"
+    });
+    if (envelopeId) {
+      await this.loadEnvelopeDetail(envelopeId);
+    }
+    vibrateSuccess();
+    sayToast({ title: "电子发票已上传，请确认信息后提交", icon: "success" });
+  },
+
+  async pickElectronicInvoiceFile() {
+    const errorText = positiveNumber(this.data.draft.project_id, "所属项目");
+    if (errorText) {
+      sayToast({ title: errorText, icon: "none", danger: true });
+      return;
+    }
+
+    return this.runBusy(async () => {
+      const choose = await wxChooseMessageFile({ count: 1, type: "file" });
+      const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      const filePath = file && file.path ? file.path : "";
+      const fileName = file && file.name ? file.name : `invoice-${Date.now()}.pdf`;
+      if (!filePath) return;
+      if (!isAllowedExtension(fileName || filePath, ELECTRONIC_INVOICE_EXTENSIONS)) {
+        sayToast({
+          title: "自动识别仅支持图片/PDF/OFD/TIFF/HEIC/XML",
+          icon: "none",
+          danger: true
+        });
+        return;
+      }
+      await this.uploadElectronicInvoice(filePath, fileName);
     }).catch((error) => {
       vibrateWarning();
       sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
@@ -430,10 +513,50 @@ Page({
       const choose = await wxChooseMessageFile({ count: 1, type: "file" });
       const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].path : "";
       const fileName = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].name : "";
+      if (filePath && !isAllowedExtension(fileName || filePath, COMMON_ATTACHMENT_EXTENSIONS)) {
+        sayToast({
+          title: "仅支持常见票据/扫描格式（PDF、图片、OFD等）",
+          icon: "none",
+          danger: true
+        });
+        return;
+      }
       await this.uploadAttachmentFromPath(filePath, fileName);
     }).catch((error) => {
       vibrateWarning();
       sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+    });
+  },
+
+  onUploadTap() {
+    if (this.data.draft.channel === "electronic") {
+      wx.showActionSheet({
+        itemList: ["上传图片（自动识别）", "上传PDF/票据文件（自动识别）"],
+        success: (res) => {
+          if (res.tapIndex === 0) {
+            this.pickInvoicePhoto();
+            return;
+          }
+          this.pickElectronicInvoiceFile();
+        }
+      });
+      return;
+    }
+
+    if (!this.data.latestEnvelopeId) {
+      sayToast({ title: "请先保存草稿", icon: "none", danger: true });
+      return;
+    }
+
+    wx.showActionSheet({
+      itemList: ["上传图片", "上传文件"],
+      success: (res) => {
+        if (res.tapIndex === 0) {
+          this.pickPhysicalInvoicePhoto();
+          return;
+        }
+        this.pickAttachmentFile();
+      }
     });
   },
 
@@ -654,9 +777,7 @@ Page({
       itemList: [
         "🎤 扫码录入UUID",
         "💾 保存草稿",
-        "📎 上传附件(图片)",
-        "📁 上传附件(文件)",
-        "🎤 上传电子发票",
+        "📎 上传文件（统一入口）",
         "📨 提交报销"
       ],
       success: async (res) => {
@@ -669,15 +790,7 @@ Page({
           return;
         }
         if (res.tapIndex === 2) {
-          this.pickPhysicalInvoicePhoto();
-          return;
-        }
-        if (res.tapIndex === 3) {
-          this.pickAttachmentFile();
-          return;
-        }
-        if (res.tapIndex === 4) {
-          this.pickInvoicePhoto();
+          this.onUploadTap();
           return;
         }
         this.submitEnvelope();

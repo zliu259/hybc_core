@@ -90,6 +90,7 @@ const pdfTagType: Record<string, TagType> = {
 
 const quickScanDialogVisible = ref(false);
 const quickScanUuid = ref("");
+const createIdempotencyKey = (scope: string) => `${scope}-${crypto.randomUUID()}`;
 
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
@@ -164,6 +165,17 @@ const submitQuickScan = async () => {
 const onTriggerAnomaly = async (id: number) => {
   await triggerEnvelopeAnomalyCheck(id);
   message("已触发智能核查", { type: "success" });
+  await loadData();
+};
+
+const onRerunSilentReview = async (id: number) => {
+  await triggerEnvelopeAnomalyCheck(id, {
+    rerun_full: true,
+    reason: "office_manual_second_silent_review"
+  }, {
+    idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review")
+  });
+  message("已触发二次静默审查", { type: "success" });
   await loadData();
 };
 
@@ -412,6 +424,13 @@ watch(workflowView, mode => {
           <template v-if="workflowView !== 'submission' && canOfficeOps">
             <el-button link @click="onTriggerAnomaly(scope.row.id)"
               >智能核查</el-button
+            >
+            <el-button
+              v-if="['submitted', 'received'].includes(scope.row.status)"
+              link
+              type="info"
+              @click="onRerunSilentReview(scope.row.id)"
+              >二次静默审查</el-button
             >
             <el-button
               v-if="scope.row.status === 'received'"

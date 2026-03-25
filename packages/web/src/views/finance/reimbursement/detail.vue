@@ -14,6 +14,7 @@ import {
   precheckEnvelope,
   scanReimbursementEnvelope,
   submitReimbursementEnvelope,
+  triggerEnvelopeAnomalyCheck,
   updateReimbursementEnvelope,
   verifyReimbursementEnvelope,
   voidReimbursementEnvelope,
@@ -292,6 +293,7 @@ const stagedAttachmentsForSubmit = () =>
 
 const verifyNote = ref("");
 const voiding = ref(false);
+const rerunningSilentReview = ref(false);
 const ocrStatusText = ref("none");
 const anomalyStatusText = ref("none");
 const auditPollingTimer = ref<number | null>(null);
@@ -643,6 +645,26 @@ const refreshOcrStatus = async () => {
   if (!detail.value) return;
   await refreshAuditStatuses();
   ensureAuditPolling();
+};
+
+const rerunSilentReview = async () => {
+  if (!detail.value) return;
+  rerunningSilentReview.value = true;
+  try {
+    await triggerEnvelopeAnomalyCheck(detail.value.id, {
+      rerun_full: true,
+      reason: "office_manual_second_silent_review"
+    }, {
+      idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review")
+    });
+    message("已触发二次静默审查（票据识别+重复校验+费用合理性）", {
+      type: "success"
+    });
+    await loadDetail();
+    ensureAuditPolling("二次静默审查已启动，系统将自动刷新进度");
+  } finally {
+    rerunningSilentReview.value = false;
+  }
 };
 
 const submitPrecheck = async (
@@ -1005,6 +1027,13 @@ watch(
             v-if="detail.channel === 'electronic' && canSeeOfficeReview"
             @click="refreshOcrStatus"
             >刷新识别状态</el-button
+          >
+          <el-button
+            v-if="canSeeOfficeReview && ['submitted', 'received'].includes(detail.status)"
+            type="info"
+            :loading="rerunningSilentReview"
+            @click="rerunSilentReview"
+            >二次静默审查</el-button
           >
           <el-button
             v-if="

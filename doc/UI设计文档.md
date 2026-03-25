@@ -1030,6 +1030,26 @@
 - 企业微信推送进入审批详情增加关键数据重试加载（审批详情/付款/合同/批次/选项），降低字段或选项偶发缺失：`packages/miniapp/pages/approval-detail/index.js`
 - 后端提交兜底校验：`POST /api/v1/reimbursement/:id/submit` 在 `physical` 通道下强制校验已绑定 UUID 格式，不满足则拒绝提交：`packages/api/src/routes/reimbursement.ts`
 
+### 4.31 Miniapp 报销提交流程去歧义（2026-03）
+- 报销提交页字段顺序调整：`报销通道` 前置到 `绑定信封 UUID` 上方，保持“先选通道、再录 UUID”的心智顺序：`packages/miniapp/pages/reimbursement/index.wxml`
+- 状态芯片简化：报销页顶部不再展示 `PDF状态` 与 `批次`，仅保留提交人必需的进度信息（报销ID/识别号/状态/核验/附件数）：`packages/miniapp/pages/reimbursement/index.wxml`
+- 上传入口统一：将“上传附件(图片/文件)”与“上传电子发票（自动识别）”收敛为单一按钮“上传文件（统一入口）”，按报销通道自动分流（电子通道走自动识别，实物通道弹出图片/文件选择）：`packages/miniapp/pages/reimbursement/index.{js,wxml}`
+- 全局助手动作同步：浮动助手中的上传动作改为统一入口，避免多上传动作并列造成误判：`packages/miniapp/pages/reimbursement/index.js`
+
+### 4.32 Miniapp 报销上传格式扩展（2026-03）
+- 统一上传入口扩展支持范围：可上传 PDF、常见图片（JPG/JPEG/PNG/WEBP/GIF/BMP）及常见票据/扫描格式（TIFF/HEIC/HEIF/OFD/XML）：`packages/miniapp/pages/reimbursement/index.{js,wxml}`
+- 电子发票通道上传细分为“图片自动识别”与“PDF/票据文件自动识别”，同一入口下按用户选择分流：`packages/miniapp/pages/reimbursement/index.js`
+- 普通附件上传增加格式白名单拦截，超出范围时给出明确提示，减少无效上传重试：`packages/miniapp/pages/reimbursement/index.js`
+- 小程序上传 MIME 识别扩展：补充 `tif/tiff/heic/heif/ofd/xml` 的 `content-type` 映射，保证上传签名与对象存储类型一致：`packages/miniapp/utils/upload.js`
+
+### 4.33 报销后台静默审查流程重构（2026-03）
+- 后端静默审查改为“按票据附件逐张识别”模式：提交或办公室手动触发后，为每张附件创建独立 OCR 任务并记录识别轮次（`review_round`），支持二次静默审查全链路重跑：`packages/api/src/routes/reimbursement.ts`、`packages/api/migrations/0037_phase27_reimbursement_invoice_review_pipeline.sql`
+- 电子发票审查策略改为二维码优先：优先从二维码文本提取发票核心字段并持久化，重复比对新增 `invoice_no + invoice_date` 与 `qr_hash` 维度（保留风险分级与证据）：`packages/api/src/routes/reimbursement.ts`
+- 实体票据审查策略强化为 OCR/Vision 冗余：识别结果不完整或失败时写入办公室可读风险提示，并在静默审查结果中输出人工复核建议：`packages/api/src/routes/reimbursement.ts`
+- 多票据金额一致性审查：静默审查结果新增“票据识别合计 vs 申报金额”对比结论（含 delta 与 mismatch 标记），用于发现员工汇总误差：`packages/api/src/routes/reimbursement.ts`
+- Web 办公室二次静默审查入口：报销列表与详情新增“二次静默审查”按钮（权限受办公室角色控制），触发全流程重跑并自动轮询刷新：`packages/web/src/views/finance/reimbursement/{list.vue,detail.vue}`、`packages/web/src/api/reimbursement.ts`
+- 手动重跑幂等兜底：二次静默审查接口支持 `Idempotency-Key`，防止重复点击导致并发重跑污染：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

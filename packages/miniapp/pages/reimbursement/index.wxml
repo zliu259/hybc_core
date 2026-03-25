@@ -10,12 +10,15 @@
       <hy-status-chip text="识别号：{{latestEnvelopeNo || latestEnvelopeUuid || '-'}}" theme="success" variant="light" />
       <hy-status-chip text="状态：{{latestEnvelopeStatusText}}" theme="warning" variant="light" />
       <hy-status-chip text="核验：{{verificationStatusText}}" theme="success" variant="light" />
-      <hy-status-chip text="PDF：{{pdfStatusText}}" theme="success" variant="light" />
       <hy-status-chip text="附件数：{{attachmentCount}}" theme="success" variant="light" />
-      <hy-status-chip text="批次：{{batchInfoText}}" theme="warning" variant="light" />
     </view>
 
     <t-notice-bar content="建议流程（与Web一致）：先绑定信封UUID（实物信封必填）并保存，再上传附件后提交；提交后系统会在后台自动核查，无需手动触发处理步骤。" theme="warning" />
+
+    <view class="label">报销通道</view>
+    <picker mode="selector" range="{{channelOptions}}" range-key="label" value="{{channelIndex}}" bindchange="onChannelChange">
+      <view class="picker-value">{{channelOptions[channelIndex].label}}</view>
+    </picker>
 
     <view class="label">绑定信封 UUID（实物信封必填）</view>
     <input class="input standard-input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy || draft.channel === 'electronic'}}" placeholder="{{draft.channel === 'electronic' ? '电子发票通道自动生成UUID' : '可扫码或粘贴 UUID'}}" />
@@ -25,11 +28,6 @@
     </view>
 
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" enableGps="{{false}}" bind:change="onProjectChange" />
-
-    <view class="label">报销通道</view>
-    <picker mode="selector" range="{{channelOptions}}" range-key="label" value="{{channelIndex}}" bindchange="onChannelChange">
-      <view class="picker-value">{{channelOptions[channelIndex].label}}</view>
-    </picker>
 
     <view class="label">发票号（可选）</view>
     <input class="input standard-input" value="{{draft.invoice_no}}" data-key="invoice_no" bindinput="onDraftInput" disabled="{{busy}}" />
@@ -58,12 +56,11 @@
     </picker>
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickPhysicalInvoicePhoto" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📎 上传附件(图片)</t-button>
-      <t-button class="btn" variant="outline" bindtap="pickAttachmentFile" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId}}">📁 上传附件(文件)</t-button>
+      <t-button class="btn" variant="outline" bindtap="onUploadTap" loading="{{busy}}" disabled="{{busy}}">📎 上传文件（统一入口）</t-button>
     </view>
+    <view class="upload-tip">支持 PDF、图片（JPG/PNG/WEBP/TIFF/HEIC）及 OFD/XML 等常见发票与扫描格式</view>
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickInvoicePhoto" loading="{{busy}}" disabled="{{busy}}">📸 上传电子发票（自动识别）</t-button>
       <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId || (latestEnvelopeStatus !== 'draft' && latestEnvelopeStatus !== 'unregistered')}}">📨 提交报销</t-button>
     </view>
 

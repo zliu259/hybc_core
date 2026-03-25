@@ -303,11 +303,20 @@ export const listPrecheckPendingEnvelopes = (params?: {
   }>("get", "/api/v1/reimbursement/precheck/pending", { params });
 };
 
-export const triggerEnvelopeAnomalyCheck = (id: number) => {
+export const triggerEnvelopeAnomalyCheck = (
+  id: number,
+  data?: { rerun_full?: boolean; reason?: string },
+  options?: { idempotencyKey?: string }
+) => {
   return http.request<{
     success: boolean;
-    data: { task_id: number; precheck_status: string };
-  }>("post", `/api/v1/reimbursement/${id}/trigger-anomaly-check`);
+    data: { task_id: number | null; precheck_status: string; rerun_full?: boolean };
+  }>("post", `/api/v1/reimbursement/${id}/trigger-anomaly-check`, {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const getEnvelopeAnomalyStatus = (id: number) => {

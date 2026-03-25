@@ -60,6 +60,13 @@
   flex: 1;
 }
 
+.upload-tip {
+  margin-top: 8rpx;
+  color: #6b7280;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
 .attachment-empty {
   color: #7b8494;
   font-size: 24rpx;
