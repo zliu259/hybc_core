@@ -1054,6 +1054,11 @@
 - 办公室“后台静默审查提示”中的“识别原始结果”改为“识别结果（可读版）”，不再直接展示 JSON 原文：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 识别结果展示内容结构化为中文摘要：审查轮次、票据识别统计、逐票据明细（发票号/日期/金额/来源/风险）、金额核对结论（申报金额 vs 识别合计 vs 差额）：`packages/web/src/views/finance/reimbursement/detail.vue`
 
+### 4.35 Workspace 个人报销进度卡片改版（2026-03）
+- Web 个人工作台“我的报销进度”卡片移除“报销编号（envelope_no）”展示，改为“项目名称 + 金额”主标题：`packages/web/src/views/welcome/index.vue`
+- 时间轴时间戳改为“申报日期”，优先展示报销 `expense_date`，缺失时回退创建/更新时间：`packages/web/src/views/welcome/index.vue`
+- 报销进度条目主标题支持点击跳转到对应报销详情（`/workspace/my-reimbursement/detail/:id`）：`packages/web/src/views/welcome/index.vue`
+
 ## 5. 组件与模块指向
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`

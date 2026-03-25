@@ -5,6 +5,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { getCurrentUser } from "@/api/user";
 import { listPendingApprovals, type PendingApprovalItem } from "@/api/approval";
+import { listProjects, type Project } from "@/api/project";
 import {
   listReimbursementEnvelopes,
   type ReimbursementEnvelope
@@ -26,6 +27,7 @@ const reimbursements = ref<ReimbursementEnvelope[]>([]);
 const pendingApprovalItems = ref<PendingApprovalItem[]>([]);
 const pendingApprovalTotal = ref(0);
 const fuelOfficePendingCount = ref(0);
+const projects = ref<Project[]>([]);
 
 type PersonalCertificate = {
   id: number;
@@ -43,6 +45,14 @@ const pendingCount = computed(
 );
 
 const pendingApprovalCount = computed(() => pendingApprovalTotal.value);
+
+const projectNameMap = computed(() => {
+  const map: Record<number, string> = {};
+  projects.value.forEach(item => {
+    map[item.id] = item.project_name;
+  });
+  return map;
+});
 
 const roleNameMap: Record<string, string> = {
   super_admin: "超级管理员",
@@ -116,18 +126,20 @@ const loadData = async () => {
     fullName.value = me.data.nickname || me.data.username;
     roles.value = me.data.roles || [];
     permissions.value = me.data.permissions || [];
-    const [reimbursementResult, pendingResult] =
+    const [reimbursementResult, pendingResult, projectResult] =
       await Promise.all([
         listReimbursementEnvelopes({
           creator_id: "me",
           page: 1,
           pageSize: 8
         }),
-        listPendingApprovals({ page: 1, pageSize: 6 })
+        listPendingApprovals({ page: 1, pageSize: 6 }),
+        listProjects({ page: 1, pageSize: 300 })
       ]);
     reimbursements.value = reimbursementResult.data;
     pendingApprovalItems.value = pendingResult.data || [];
     pendingApprovalTotal.value = pendingResult.pagination?.total || 0;
+    projects.value = projectResult.data || [];
 
     if (canHandleFuelOffice.value) {
       const fuelPendingResult = await getFuelQuotaPendingSummary();
@@ -179,6 +191,19 @@ const reimbursementStatusLabel = (status: string) => {
   if (status === "cancelled") return "已取消";
   if (status === "submitted") return "审核中";
   return "待处理";
+};
+
+const reimbursementApplyDate = (item: ReimbursementEnvelope) => {
+  const source = item.expense_date || item.created_at || item.updated_at;
+  return dayjs(source).isValid() ? dayjs(source).format("YYYY-MM-DD") : "-";
+};
+
+const reimbursementProjectLabel = (item: ReimbursementEnvelope) => {
+  return projectNameMap.value[item.project_id] || `项目#${item.project_id}`;
+};
+
+const goReimbursementDetail = (id: number) => {
+  router.push(`/workspace/my-reimbursement/detail/${id}`);
 };
 
 const formatAmount = (amount: number) => {
@@ -280,12 +305,12 @@ const onCertUpload = (file: UploadFile) => {
           <el-timeline-item
             v-for="item in reimbursements"
             :key="item.id"
-            :timestamp="item.updated_at"
+            :timestamp="`申报日期：${reimbursementApplyDate(item)}`"
           >
             <div class="timeline-item">
-              <span
-                >{{ item.envelope_no }} · ¥{{ formatAmount(item.amount) }}</span
-              >
+              <el-link type="primary" @click="goReimbursementDetail(item.id)">
+                {{ reimbursementProjectLabel(item) }} · ¥{{ formatAmount(item.amount) }}
+              </el-link>
               <el-tag :type="reimbursementTagType(item.status)">
                 {{ reimbursementStatusLabel(item.status) }}
               </el-tag>
