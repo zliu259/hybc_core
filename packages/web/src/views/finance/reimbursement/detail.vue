@@ -274,9 +274,89 @@ const recognitionHintRows = computed(() => {
   ];
 });
 
+const toNumberOrNull = (value: unknown): number | null => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
+};
+
+const formatCurrency = (value: unknown) => {
+  const num = toNumberOrNull(value);
+  if (num === null) return "-";
+  return `${num.toFixed(2)} 元`;
+};
+
 const recognitionRawText = computed(() => {
-  if (!parsedRecognitionResult.value) return "-";
-  return JSON.stringify(parsedRecognitionResult.value, null, 2);
+  const raw = parsedRecognitionResult.value;
+  if (!raw) return "-";
+
+  const round = toNumberOrNull(raw.review_round);
+  const failedCount = toNumberOrNull(raw.failed_count) ?? 0;
+  const pendingCount = toNumberOrNull(raw.pending_count) ?? 0;
+  const extractedInvoices = Array.isArray(raw.extracted_invoices)
+    ? (raw.extracted_invoices as Array<Record<string, unknown>>)
+    : [];
+
+  const amountSummary =
+    raw.amount_summary && typeof raw.amount_summary === "object"
+      ? (raw.amount_summary as Record<string, unknown>)
+      : null;
+
+  const lines: string[] = [];
+  lines.push(`审查轮次：第 ${round ?? 1} 轮`);
+  lines.push(`票据识别：共 ${extractedInvoices.length} 张，失败 ${failedCount} 张，处理中 ${pendingCount} 张`);
+
+  if (extractedInvoices.length > 0) {
+    lines.push("票据明细：");
+    extractedInvoices.forEach((item, index) => {
+      const invoiceNo =
+        (typeof item.invoice_no === "string" && item.invoice_no) ||
+        (typeof item.invoice_unique_no === "string" && item.invoice_unique_no) ||
+        "未识别";
+      const invoiceDate =
+        (typeof item.invoice_date === "string" && item.invoice_date) || "未识别";
+      const invoiceAmount = formatCurrency(item.invoice_amount);
+      const source =
+        item.source === "qr_payload"
+          ? "二维码"
+          : item.source === "ocr_text"
+            ? "OCR识别"
+            : "兜底识别";
+      const riskLevel =
+        item.risk_level === "high"
+          ? "高风险"
+          : item.risk_level === "medium"
+            ? "中风险"
+            : item.risk_level === "low"
+              ? "低风险"
+              : "未标记";
+      const riskHint =
+        typeof item.risk_hint === "string" && item.risk_hint.trim()
+          ? `；提示：${item.risk_hint.trim()}`
+          : "";
+      lines.push(
+        `${index + 1}. 发票号：${invoiceNo}；日期：${invoiceDate}；金额：${invoiceAmount}；来源：${source}；风险：${riskLevel}${riskHint}`
+      );
+    });
+  }
+
+  if (amountSummary) {
+    const declared = formatCurrency(amountSummary.declared_amount);
+    const extracted = formatCurrency(amountSummary.extracted_total);
+    const delta = formatCurrency(amountSummary.delta);
+    const mismatch = amountSummary.mismatch === true;
+    lines.push("金额核对：");
+    lines.push(
+      `申报金额 ${declared}；票据识别合计 ${extracted}；差额 ${delta}；结论：${
+        mismatch ? "存在不一致，建议办公室人工复核" : "一致"
+      }`
+    );
+  }
+
+  return lines.join("\n");
 });
 
 const createIdempotencyKey = (scope: string) => `${scope}-${crypto.randomUUID()}`;
@@ -1140,7 +1220,7 @@ watch(
         <el-descriptions-item label="智能核查摘要">
           <pre style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ reviewSummaryText }}</pre>
         </el-descriptions-item>
-        <el-descriptions-item label="识别原始结果">
+        <el-descriptions-item label="识别结果（可读版）">
           <pre style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ recognitionRawText }}</pre>
         </el-descriptions-item>
       </el-descriptions>
