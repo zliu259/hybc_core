@@ -114,6 +114,70 @@ const quickPayeeForm = ref({
 
 let checkTimer: ReturnType<typeof setTimeout> | null = null;
 
+type SubmitAttemptKeys = {
+  fingerprint: string;
+  createKey: string;
+  submitKey: string;
+};
+
+const directSubmitAttempt = ref<SubmitAttemptKeys | null>(null);
+const contractFirstPaymentAttempt = ref<SubmitAttemptKeys | null>(null);
+
+const createIdempotencyKey = (scope: string) => {
+  const fallback = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : fallback;
+  return `${scope}-${randomPart}`;
+};
+
+const resolveSubmitAttemptKeys = (
+  current: SubmitAttemptKeys | null,
+  fingerprint: string,
+  scope: string
+): SubmitAttemptKeys => {
+  if (current && current.fingerprint === fingerprint) {
+    return current;
+  }
+  return {
+    fingerprint,
+    createKey: createIdempotencyKey(`${scope}-create`),
+    submitKey: createIdempotencyKey(`${scope}-submit`)
+  };
+};
+
+const buildDirectSubmitFingerprint = () => {
+  return JSON.stringify({
+    contract_id: directForm.value.contract_id,
+    project_id: directForm.value.project_id,
+    expected_payment_date: directForm.value.expected_payment_date,
+    category: directForm.value.category,
+    payee_id: directForm.value.payee_id,
+    amount: Number(amountInput.value ?? 0),
+    content: directForm.value.content.trim(),
+    payment_method: directForm.value.payment_method,
+    attachments_json: serializeAttachments(directPaymentAttachments.value),
+    remark: directForm.value.remark?.trim() ?? ""
+  });
+};
+
+const buildContractFirstPaymentFingerprint = () => {
+  return JSON.stringify({
+    contract_project_id: contractForm.value.project_id,
+    contract_payee_id: contractForm.value.payee_id,
+    first_payment_amount: Number(firstPaymentForm.value.amount ?? 0),
+    first_payment_expected_date: firstPaymentForm.value.expected_payment_date,
+    first_payment_category: firstPaymentForm.value.category,
+    first_payment_content: firstPaymentForm.value.content.trim(),
+    first_payment_method: firstPaymentForm.value.payment_method,
+    first_payment_attachments: serializeAttachments(
+      firstPaymentAttachments.value
+    ),
+    first_payment_remark: firstPaymentForm.value.remark?.trim() ?? ""
+  });
+};
+
 const thresholdHint = computed(() =>
   exceedsThreshold.value
     ? `金额超过阈值 ${thresholdLimit.value.toLocaleString()}，请走合同流程`
@@ -370,7 +434,15 @@ const submitQuickExternalPayee = async () => {
       await loadPayees();
     } catch {
       payees.value = [
-        { id: createdId, name: payload.name, bank_name: payload.bank_name, bank_account: payload.bank_account, phone: payload.phone, type: "external", status: "active" } as any,
+        {
+          id: createdId,
+          name: payload.name,
+          bank_name: payload.bank_name,
+          bank_account: payload.bank_account,
+          phone: payload.phone,
+          type: "external",
+          status: "active"
+        } as any,
         ...payees.value
       ];
     }
@@ -389,10 +461,15 @@ const submitQuickExternalPayee = async () => {
 
 const loadMeta = async () => {
   const [thresholdRes, contractRes, entityRes] = await Promise.all([
-    listBizThresholds({ biz_type: "payment_request" }).catch((error) => {
-      message(error instanceof Error ? error.message : "付款阈值加载失败，已按默认值继续", {
-        type: "warning"
-      });
+    listBizThresholds({ biz_type: "payment_request" }).catch(error => {
+      message(
+        error instanceof Error
+          ? error.message
+          : "付款阈值加载失败，已按默认值继续",
+        {
+          type: "warning"
+        }
+      );
       return null;
     }),
     listContracts({ direction: "outbound", page: 1, pageSize: 200 }),
@@ -475,22 +552,40 @@ const submitDirectPayment = async () => {
 
   submitting.value = true;
   try {
-    const created = await createPaymentRequest({
-      contract_id: directForm.value.contract_id,
-      project_id: directForm.value.project_id,
-      expected_payment_date: directForm.value.expected_payment_date,
-      category: directForm.value.category,
-      payee_id: directForm.value.payee_id,
-      amount: amountInput.value,
-      content: directForm.value.content,
-      payment_method: directForm.value.payment_method,
-      attachments_json: serializeAttachments(directPaymentAttachments.value),
-      remark: directForm.value.remark
-    });
-    await submitPaymentApproval(created.data.id, {
-      biz_summary: "智能发单台-直接付款",
-      instance_config: { note: "阈值内直接付款" }
-    });
+    directSubmitAttempt.value = resolveSubmitAttemptKeys(
+      directSubmitAttempt.value,
+      buildDirectSubmitFingerprint(),
+      "payment-wizard-direct"
+    );
+
+    const created = await createPaymentRequest(
+      {
+        contract_id: directForm.value.contract_id,
+        project_id: directForm.value.project_id,
+        expected_payment_date: directForm.value.expected_payment_date,
+        category: directForm.value.category,
+        payee_id: directForm.value.payee_id,
+        amount: amountInput.value,
+        content: directForm.value.content,
+        payment_method: directForm.value.payment_method,
+        attachments_json: serializeAttachments(directPaymentAttachments.value),
+        remark: directForm.value.remark
+      },
+      {
+        idempotencyKey: directSubmitAttempt.value.createKey
+      }
+    );
+    await submitPaymentApproval(
+      created.data.id,
+      {
+        biz_summary: "智能发单台-直接付款",
+        instance_config: { note: "阈值内直接付款" }
+      },
+      {
+        idempotencyKey: directSubmitAttempt.value.submitKey
+      }
+    );
+    directSubmitAttempt.value = null;
     message("提交成功", { type: "success" });
     goBackAfterSubmit();
   } catch {
@@ -543,6 +638,10 @@ const submitContractFlow = async () => {
 
   submitting.value = true;
   try {
+    if (!withFirstPayment.value) {
+      contractFirstPaymentAttempt.value = null;
+    }
+
     const contract = await createContract({
       direction: "outbound",
       project_id: contractForm.value.project_id,
@@ -558,18 +657,29 @@ const submitContractFlow = async () => {
 
     let paymentId: number | null = null;
     if (withFirstPayment.value) {
-      const payment = await createPaymentRequest({
-        contract_id: contract.data.id,
-        project_id: contractForm.value.project_id,
-        expected_payment_date: firstPaymentForm.value.expected_payment_date,
-        category: firstPaymentForm.value.category,
-        payee_id: contractForm.value.payee_id,
-        amount: firstPaymentForm.value.amount,
-        content: firstPaymentForm.value.content,
-        payment_method: firstPaymentForm.value.payment_method,
-        attachments_json: serializeAttachments(firstPaymentAttachments.value),
-        remark: firstPaymentForm.value.remark
-      });
+      contractFirstPaymentAttempt.value = resolveSubmitAttemptKeys(
+        contractFirstPaymentAttempt.value,
+        buildContractFirstPaymentFingerprint(),
+        "payment-wizard-contract-first-payment"
+      );
+
+      const payment = await createPaymentRequest(
+        {
+          contract_id: contract.data.id,
+          project_id: contractForm.value.project_id,
+          expected_payment_date: firstPaymentForm.value.expected_payment_date,
+          category: firstPaymentForm.value.category,
+          payee_id: contractForm.value.payee_id,
+          amount: firstPaymentForm.value.amount,
+          content: firstPaymentForm.value.content,
+          payment_method: firstPaymentForm.value.payment_method,
+          attachments_json: serializeAttachments(firstPaymentAttachments.value),
+          remark: firstPaymentForm.value.remark
+        },
+        {
+          idempotencyKey: contractFirstPaymentAttempt.value.createKey
+        }
+      );
       paymentId = payment.data.id;
     }
 
@@ -579,12 +689,19 @@ const submitContractFlow = async () => {
     });
 
     if (paymentId) {
-      await submitPaymentApproval(paymentId, {
-        biz_summary: "智能发单台-首笔预付款",
-        instance_config: { note: "合同创建后同步发起首笔付款" }
-      });
+      await submitPaymentApproval(
+        paymentId,
+        {
+          biz_summary: "智能发单台-首笔预付款",
+          instance_config: { note: "合同创建后同步发起首笔付款" }
+        },
+        {
+          idempotencyKey: contractFirstPaymentAttempt.value?.submitKey
+        }
+      );
     }
 
+    contractFirstPaymentAttempt.value = null;
     message("提交成功", { type: "success" });
     goBackAfterSubmit();
   } catch {

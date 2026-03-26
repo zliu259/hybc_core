@@ -50,6 +50,7 @@ const loading = ref(false);
 const saving = ref(false);
 const voiding = ref(false);
 const reactivating = ref(false);
+const submitApprovalLoading = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const userNameMap = computed(() => {
@@ -240,6 +241,37 @@ const amountDisplay = computed(() => {
     maximumFractionDigits: 2
   })}（${toChineseAmount(value)}）`;
 });
+
+type SubmitSnapshot = {
+  fingerprint: string;
+  idempotencyKey: string;
+};
+
+const createDraftSnapshot = ref<SubmitSnapshot | null>(null);
+const submitApprovalSnapshot = ref<SubmitSnapshot | null>(null);
+
+const createIdempotencyKey = (scope: string) => {
+  const fallback = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : fallback;
+  return `${scope}-${randomPart}`;
+};
+
+const getOrCreateSnapshotKey = (
+  snapshot: SubmitSnapshot | null,
+  fingerprint: string,
+  scope: string
+): SubmitSnapshot => {
+  if (snapshot && snapshot.fingerprint === fingerprint) {
+    return snapshot;
+  }
+  return {
+    fingerprint,
+    idempotencyKey: createIdempotencyKey(scope)
+  };
+};
 const remainingAmountDisplay = computed(() => {
   const value = Number(remainingAmount.value || 0);
   return `${value.toLocaleString("zh-CN", {
@@ -767,18 +799,42 @@ const onSave = async () => {
   saving.value = true;
   try {
     if (isCreate.value) {
-      const result = await createPaymentRequest({
+      const createFingerprint = JSON.stringify({
         contract_id: form.value.contract_id,
         project_id: form.value.project_id,
         expected_payment_date: form.value.expected_payment_date,
         category: form.value.category,
         payee_id: form.value.payee_id,
         amount: form.value.amount,
-        content: form.value.content,
+        content: form.value.content.trim(),
         payment_method: form.value.payment_method,
         attachments_json: serializeAttachments(),
-        remark: form.value.remark
+        remark: form.value.remark?.trim() ?? ""
       });
+      createDraftSnapshot.value = getOrCreateSnapshotKey(
+        createDraftSnapshot.value,
+        createFingerprint,
+        "payment-detail-create"
+      );
+
+      const result = await createPaymentRequest(
+        {
+          contract_id: form.value.contract_id,
+          project_id: form.value.project_id,
+          expected_payment_date: form.value.expected_payment_date,
+          category: form.value.category,
+          payee_id: form.value.payee_id,
+          amount: form.value.amount,
+          content: form.value.content,
+          payment_method: form.value.payment_method,
+          attachments_json: serializeAttachments(),
+          remark: form.value.remark
+        },
+        {
+          idempotencyKey: createDraftSnapshot.value.idempotencyKey
+        }
+      );
+      createDraftSnapshot.value = null;
       message(`创建成功，金额大写：${result.data.amount_cn}`, {
         type: "success"
       });
@@ -830,7 +886,7 @@ const onSubmitApproval = async () => {
 };
 
 const confirmSubmitApproval = async () => {
-  if (isCreate.value) return;
+  if (isCreate.value || submitApprovalLoading.value) return;
 
   let instanceConfig: InstanceConfig | undefined;
   if (approvalConfigMode.value === "json") {
@@ -857,13 +913,39 @@ const confirmSubmitApproval = async () => {
     }
   }
 
-  await submitPaymentApproval(requestId.value, {
-    biz_summary: approvalSummary.value.trim() || undefined,
-    instance_config: instanceConfig
+  const summary = approvalSummary.value.trim();
+  const submitFingerprint = JSON.stringify({
+    request_id: requestId.value,
+    biz_summary: summary,
+    instance_config: instanceConfig ?? null
   });
-  approvalDialogVisible.value = false;
-  message("已提交审批", { type: "success" });
-  await loadDetail();
+  submitApprovalSnapshot.value = getOrCreateSnapshotKey(
+    submitApprovalSnapshot.value,
+    submitFingerprint,
+    "payment-detail-submit"
+  );
+
+  submitApprovalLoading.value = true;
+  try {
+    await submitPaymentApproval(
+      requestId.value,
+      {
+        biz_summary: summary || undefined,
+        instance_config: instanceConfig
+      },
+      {
+        idempotencyKey: submitApprovalSnapshot.value.idempotencyKey
+      }
+    );
+    submitApprovalSnapshot.value = null;
+    approvalDialogVisible.value = false;
+    message("已提交审批", { type: "success" });
+    await loadDetail();
+  } catch {
+    message("提交审批失败，请重试", { type: "error" });
+  } finally {
+    submitApprovalLoading.value = false;
+  }
 };
 
 const onRiskAssessment = async () => {
@@ -1065,7 +1147,13 @@ onMounted(async () => {
           >
           <el-button
             type="warning"
-            :disabled="isCreate || approvalFinishedLock || inApprovalFlow"
+            :loading="submitApprovalLoading"
+            :disabled="
+              isCreate ||
+              approvalFinishedLock ||
+              inApprovalFlow ||
+              submitApprovalLoading
+            "
             @click="onSubmitApproval"
             >提交审批</el-button
           >
@@ -1401,22 +1489,22 @@ onMounted(async () => {
                 scope.row.file_size ?? "-"
               }}</template>
             </el-table-column>
-              <el-table-column label="操作" width="220" fixed="right">
-                <template #default="scope">
-                  <el-link
-                    type="primary"
-                    @click="
-                      openAttachmentPreview(
-                        scope.row.file_key,
-                        scope.row.file_name || scope.row.file_key
-                      )
-                    "
-                  >
-                    预览
-                  </el-link>
-                  <el-link
-                    :href="fileUrl(scope.row.file_key)"
-                    target="_blank"
+            <el-table-column label="操作" width="220" fixed="right">
+              <template #default="scope">
+                <el-link
+                  type="primary"
+                  @click="
+                    openAttachmentPreview(
+                      scope.row.file_key,
+                      scope.row.file_name || scope.row.file_key
+                    )
+                  "
+                >
+                  预览
+                </el-link>
+                <el-link
+                  :href="fileUrl(scope.row.file_key)"
+                  target="_blank"
                   :download="scope.row.file_name || true"
                   rel="noopener noreferrer"
                   type="success"
@@ -1705,7 +1793,11 @@ onMounted(async () => {
       </el-form>
       <template #footer>
         <el-button @click="approvalDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSubmitApproval"
+        <el-button
+          type="primary"
+          :loading="submitApprovalLoading"
+          :disabled="submitApprovalLoading"
+          @click="confirmSubmitApproval"
           >确认提交</el-button
         >
       </template>

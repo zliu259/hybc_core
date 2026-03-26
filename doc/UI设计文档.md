@@ -1133,3 +1133,13 @@
 - 每个高风险操作都有确认与结果反馈。
 - 桌面端与移动端关键动作路径均可完成。
 - 样式 token 与状态语义一致，不出现颜色语义冲突。
+
+### 8.6 Web 付款提交流程前端防重复提交（2026-03）
+- 对外付款 API 增强可选 `Idempotency-Key` 请求头透传，覆盖“创建付款申请”“提交付款审批”两个高风险动作：`packages/web/src/api/payment.ts`
+- 智能发单台在“直接付款”“合同流首笔预付款”场景新增前端幂等键复用（同一填写指纹重试复用同 key），防止网络抖动后重复点击造成多次创建/提审：`packages/web/src/views/finance/payment/wizard.vue`
+- 付款详情页“新建保存”“确认提交审批”新增前端幂等键复用与提交中防重入 loading，避免短时重试产生重复单：`packages/web/src/views/finance/payment/detail.vue`
+
+### 8.7 Miniapp 全局防重复提交防护（2026-03）
+- 小程序请求层新增“写操作并发去重”机制：对 `POST/PUT/PATCH/DELETE` 按“方法+路径+业务载荷（或显式 dedupeKey）”合并并发请求，避免同一动作短时多次点击触发重复写入：`packages/miniapp/utils/request.js`
+- 小程序写操作默认自动补 `Idempotency-Key` 请求头，保证网络抖动与 relay fallback 场景下具备服务端幂等能力（同时保持 GET 读请求不受影响）：`packages/miniapp/utils/request.js`
+- 该策略覆盖资金流出、报销、审批、油卡、资产、库房等业务页所有通过 `request()` 发起的提交类动作：`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/approval-detail/index.js`（及其他调用 `request` 的页面）

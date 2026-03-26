@@ -8,6 +8,61 @@ const { getToken, setToken, clearToken } = require("./auth");
 
 const DEFAULT_TIMEOUT_MS = 20000;
 const LOGIN_TIMEOUT_MS = 30000;
+const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+const pendingMutationRequests = new Map();
+
+const toRequestMethod = (method) => String(method || "GET").toUpperCase();
+
+const buildRandomKey = (scope) => {
+  return `${scope}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+};
+
+const getHeaderValueCaseInsensitive = (header, targetName) => {
+  const normalizedTarget = String(targetName || "").toLowerCase();
+  const source = header || {};
+  const keys = Object.keys(source);
+  for (let i = 0; i < keys.length; i += 1) {
+    const key = keys[i];
+    if (String(key).toLowerCase() === normalizedTarget) {
+      return source[key];
+    }
+  }
+  return undefined;
+};
+
+const stableSerialize = (value) => {
+  if (value === null) return "null";
+  if (value === undefined) return "undefined";
+  const valueType = typeof value;
+  if (valueType === "string") return JSON.stringify(value);
+  if (valueType === "number" || valueType === "boolean" || valueType === "bigint") {
+    return String(value);
+  }
+  if (valueType === "function") return "[function]";
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableSerialize(item)).join(",")}]`;
+  }
+  if (value instanceof Date) {
+    return `date:${value.toISOString()}`;
+  }
+  if (valueType === "object") {
+    const keys = Object.keys(value).sort();
+    const pairs = keys.map((key) => `${JSON.stringify(key)}:${stableSerialize(value[key])}`);
+    return `{${pairs.join(",")}}`;
+  }
+  return String(value);
+};
+
+const buildMutationDedupKey = ({ method, path, data, dedupeKey, idempotencyKey }) => {
+  if (dedupeKey) {
+    return `${method}|${path}|dedupe:${String(dedupeKey)}`;
+  }
+  if (idempotencyKey) {
+    return `${method}|${path}|idem:${String(idempotencyKey)}`;
+  }
+  return `${method}|${path}|data:${stableSerialize(data)}`;
+};
 
 const isRetryableNetworkError = (error) => {
   const msg = (error && error.message) || "";
@@ -208,15 +263,50 @@ const ensureSessionReady = () => {
   });
 };
 
-const request = ({ method = "GET", path, data, header = {} }) => {
+const request = ({ method = "GET", path, data, header = {}, antiDuplicate = true, dedupeKey, idempotencyKey }) => {
+  const normalizedMethod = toRequestMethod(method);
+  const normalizedHeader = { ...(header || {}) };
+  const shouldProtectMutation = antiDuplicate !== false && MUTATION_METHODS.has(normalizedMethod);
+  const existingIdempotencyKey = getHeaderValueCaseInsensitive(normalizedHeader, "Idempotency-Key");
+  const explicitIdempotencyKey = existingIdempotencyKey || idempotencyKey;
+  const effectiveIdempotencyKey = explicitIdempotencyKey || buildRandomKey("miniapp-idem");
+
+  if (MUTATION_METHODS.has(normalizedMethod) && !existingIdempotencyKey) {
+    normalizedHeader["Idempotency-Key"] = effectiveIdempotencyKey;
+  }
+
+  const mutationDedupKey = shouldProtectMutation
+    ? buildMutationDedupKey({
+        method: normalizedMethod,
+        path,
+        data,
+        dedupeKey,
+        idempotencyKey: explicitIdempotencyKey
+      })
+    : "";
+
   return ensureSessionReady().then(() => {
-    return requestWithFallback({
-      method,
+    if (shouldProtectMutation && pendingMutationRequests.has(mutationDedupKey)) {
+      return pendingMutationRequests.get(mutationDedupKey);
+    }
+
+    const requestPromise = requestWithFallback({
+      method: normalizedMethod,
       path,
       data,
-      header,
+      header: normalizedHeader,
       timeout: DEFAULT_TIMEOUT_MS,
     });
+
+    if (shouldProtectMutation) {
+      const wrappedPromise = requestPromise.finally(() => {
+        pendingMutationRequests.delete(mutationDedupKey);
+      });
+      pendingMutationRequests.set(mutationDedupKey, wrappedPromise);
+      return wrappedPromise;
+    }
+
+    return requestPromise;
   });
 };
 

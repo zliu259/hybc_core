@@ -97,6 +97,31 @@ const getNoContractThreshold = async (env: Env): Promise<number> => {
   return typeof min === "number" && Number.isFinite(min) ? min : DEFAULT_NO_CONTRACT_THRESHOLD;
 };
 
+const normalizeTextForIdempotency = (value: string | null | undefined) => {
+  return String(value ?? "").trim().replace(/\s+/g, " ");
+};
+
+const getAutoCreatePaymentIdempotencyKey = (authSub: string, body: CreatePaymentRequestBody) => {
+  const bucket5m = Math.floor(Date.now() / 300000);
+  const contractPart = typeof body.contract_id === "number" ? String(body.contract_id) : "no-contract";
+  const attachmentPart = normalizeTextForIdempotency(body.attachments_json);
+  return [
+    "payment-create-v1",
+    authSub,
+    String(bucket5m),
+    contractPart,
+    String(body.project_id),
+    normalizeTextForIdempotency(body.expected_payment_date),
+    normalizeTextForIdempotency(body.category),
+    String(body.payee_id),
+    String(body.amount),
+    normalizeTextForIdempotency(body.content),
+    normalizeTextForIdempotency(body.payment_method),
+    normalizeTextForIdempotency(body.remark),
+    attachmentPart
+  ].join("|");
+};
+
 const enqueuePaymentRiskAssessment = async (env: Env, payment: PaymentRequest) => {
   const now = nowIso();
   await env.DB.prepare(
@@ -533,53 +558,79 @@ paymentRoutes.post(
       );
     }
 
-    const serialNo = await generateSerial(c.env.DB, "PM", "payment_request", "serial_no");
-    const amountCn = toAmountChinese(body.amount);
+    const explicitIdempotencyKey = String(c.req.header("Idempotency-Key") ?? "").trim();
+    const createIdempotencyKey =
+      explicitIdempotencyKey || getAutoCreatePaymentIdempotencyKey(auth.sub, body);
+    const createIdempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { id: number; serial_no: string; amount_cn: string };
+    }>(c.env.DB, "payment:create", auth.sub, createIdempotencyKey);
 
-    const result = await c.env.DB.prepare(
-      `INSERT INTO payment_request
-        (serial_no, contract_id, project_id, applicant_userid, expected_payment_date,
-         category, payee_id, amount, amount_cn, content, payment_method,
-         payment_entity_id, payment_entity_bank_account_id, payment_account,
-         status, ai_risk_status, attachments_json, remark, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?)`
-    )
-      .bind(
-        serialNo,
-        contractId,
-        body.project_id,
-        auth.sub,
-        body.expected_payment_date,
-        body.category,
-        body.payee_id,
-        body.amount,
-        amountCn,
-        body.content,
-        body.payment_method,
-        contract?.entity_id ?? null,
-        null,
-        null,
-        body.attachments_json ?? null,
-        body.remark ?? null,
-        now,
-        now
+    if (createIdempotency.kind === "replay") {
+      return c.json(createIdempotency.payload, {
+        status: createIdempotency.statusCode as 200 | 201
+      });
+    }
+
+    if (createIdempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Payment creation already in progress" } }, 409);
+    }
+
+    try {
+      const serialNo = await generateSerial(c.env.DB, "PM", "payment_request", "serial_no");
+      const amountCn = toAmountChinese(body.amount);
+
+      const result = await c.env.DB.prepare(
+        `INSERT INTO payment_request
+          (serial_no, contract_id, project_id, applicant_userid, expected_payment_date,
+           category, payee_id, amount, amount_cn, content, payment_method,
+           payment_entity_id, payment_entity_bank_account_id, payment_account,
+           status, ai_risk_status, attachments_json, remark, created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?)`
       )
-      .run();
+        .bind(
+          serialNo,
+          contractId,
+          body.project_id,
+          auth.sub,
+          body.expected_payment_date,
+          body.category,
+          body.payee_id,
+          body.amount,
+          amountCn,
+          body.content,
+          body.payment_method,
+          contract?.entity_id ?? null,
+          null,
+          null,
+          body.attachments_json ?? null,
+          body.remark ?? null,
+          now,
+          now
+        )
+        .run();
 
-    const prId = result.meta.last_row_id;
+      const prId = result.meta.last_row_id;
 
-    await publishEvent(c.env, "PAYMENT_REQUEST_CREATED", "payment_request", {
-      payment_request_id: prId,
-      serial_no: serialNo,
-      contract_id: contractId,
-      amount: body.amount,
-      created_by: auth.sub
-    });
+      await publishEvent(c.env, "PAYMENT_REQUEST_CREATED", "payment_request", {
+        payment_request_id: prId,
+        serial_no: serialNo,
+        contract_id: contractId,
+        amount: body.amount,
+        created_by: auth.sub
+      });
 
-    return c.json(
-      { success: true, data: { id: prId, serial_no: serialNo, amount_cn: amountCn } },
-      201
-    );
+      const payload = {
+        success: true,
+        data: { id: prId, serial_no: serialNo, amount_cn: amountCn }
+      };
+      await completeIdempotentRequest(c.env.DB, "payment:create", auth.sub, createIdempotencyKey, 201, payload);
+
+      return c.json(payload, 201);
+    } catch (error) {
+      await abandonIdempotentRequest(c.env.DB, "payment:create", auth.sub, createIdempotencyKey);
+      throw error;
+    }
   }
 );
 
@@ -842,6 +893,22 @@ paymentRoutes.post(
     }
 
     if (request.status !== "draft") {
+      if (request.status === "pending_approval" && request.approval_instance_id) {
+        const existingInstance = await c.env.DB.prepare(
+          "SELECT instance_no FROM approval_instance WHERE id = ?"
+        )
+          .bind(request.approval_instance_id)
+          .first<{ instance_no: string }>();
+        return c.json({
+          success: true,
+          data: {
+            approval_instance_id: request.approval_instance_id,
+            instance_no: existingInstance?.instance_no ?? "",
+            already_submitted: true
+          }
+        });
+      }
+
       return c.json(
         { success: false, error: { message: "Only draft requests can be submitted" } },
         400
@@ -900,6 +967,47 @@ paymentRoutes.post(
       }
     }
 
+    const claimedDraft = await c.env.DB.prepare(
+      `UPDATE payment_request
+          SET status = 'pending_approval', updated_at = ?
+        WHERE id = ? AND status = 'draft'`
+    )
+      .bind(nowIso(), id)
+      .run();
+
+    if ((claimedDraft.meta.changes ?? 0) !== 1) {
+      const latest = await c.env.DB.prepare(
+        "SELECT status, approval_instance_id FROM payment_request WHERE id = ?"
+      )
+        .bind(id)
+        .first<{ status: string; approval_instance_id: number | null }>();
+
+      if (latest?.status === "pending_approval" && latest.approval_instance_id) {
+        const currentInstance = await c.env.DB.prepare(
+          "SELECT instance_no FROM approval_instance WHERE id = ?"
+        )
+          .bind(latest.approval_instance_id)
+          .first<{ instance_no: string }>();
+
+        const payload = {
+          success: true,
+          data: {
+            approval_instance_id: latest.approval_instance_id,
+            instance_no: currentInstance?.instance_no ?? "",
+            already_submitted: true
+          }
+        };
+        await completeIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey, 200, payload);
+        return c.json(payload);
+      }
+
+      await abandonIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey);
+      return c.json(
+        { success: false, error: { message: "Payment request submission already in progress" } },
+        409
+      );
+    }
+
     const contract =
       request.contract_id !== null
         ? await c.env.DB.prepare(
@@ -928,70 +1036,96 @@ paymentRoutes.post(
     const contractAttachments = parseAttachmentMeta(contract?.attachments_json ?? null);
     const attachments = mergeAttachments(contractAttachments, paymentAttachments);
 
-    const instance = await submitForApproval(
-      c.env,
-      {
-        biz_type: "payment_request",
-        biz_id: id,
-        biz_summary:
-          body.biz_summary?.trim() ||
-          `${request.serial_no} | ${request.content} | ${request.amount}`,
-        context: {
-          amount: request.amount,
-          project_id: request.project_id,
-          entity_id: contract?.entity_id,
+    let instanceNoForPayload = "";
+    let instanceIdForPayload: number | null = null;
+    try {
+      const instance = await submitForApproval(
+        c.env,
+        {
           biz_type: "payment_request",
           biz_id: id,
-          serial_no: request.serial_no,
-          contract:
-            request.contract_id !== null && contract
-              ? {
-                  id: request.contract_id,
-                  contract_no: contract.contract_no,
-                  counterparty: contract.counterparty,
-                  total_amount: contract.total_amount,
-                  paid_amount: contract.paid_amount
-                }
-              : null,
-          payee: {
-            id: request.payee_id,
-            name: payee?.name ?? null,
-            bank_name: payee?.bank_name ?? null,
-            bank_account: payee?.bank_account ?? null
+          biz_summary:
+            body.biz_summary?.trim() ||
+            `${request.serial_no} | ${request.content} | ${request.amount}`,
+          context: {
+            amount: request.amount,
+            project_id: request.project_id,
+            entity_id: contract?.entity_id,
+            biz_type: "payment_request",
+            biz_id: id,
+            serial_no: request.serial_no,
+            contract:
+              request.contract_id !== null && contract
+                ? {
+                    id: request.contract_id,
+                    contract_no: contract.contract_no,
+                    counterparty: contract.counterparty,
+                    total_amount: contract.total_amount,
+                    paid_amount: contract.paid_amount
+                  }
+                : null,
+            payee: {
+              id: request.payee_id,
+              name: payee?.name ?? null,
+              bank_name: payee?.bank_name ?? null,
+              bank_account: payee?.bank_account ?? null
+            },
+            payment: {
+              expected_payment_date: request.expected_payment_date,
+              category: request.category,
+              payment_method: request.payment_method,
+              content: request.content,
+              amount_cn: request.amount_cn,
+              remark: request.remark ?? null
+            },
+            payment_attachments: paymentAttachments,
+            contract_attachments: contractAttachments,
+            attachments
           },
-          payment: {
-            expected_payment_date: request.expected_payment_date,
-            category: request.category,
-            payment_method: request.payment_method,
-            content: request.content,
-            amount_cn: request.amount_cn,
-            remark: request.remark ?? null
-          },
-          payment_attachments: paymentAttachments,
-          contract_attachments: contractAttachments,
-          attachments
+          instance_config: body.instance_config
         },
-        instance_config: body.instance_config
-      },
-      auth.sub,
-      createAiGateHandler()
-    );
+        auth.sub,
+        createAiGateHandler()
+      );
 
-    try {
-      await runInTransaction(c.env.DB, async () => {
-        const updateResult = await c.env.DB.prepare(
-          `UPDATE payment_request
-              SET status = 'pending_approval', approval_instance_id = ?, updated_at = ?
-            WHERE id = ? AND status = 'draft'`
+      instanceIdForPayload = instance.id;
+      instanceNoForPayload = instance.instance_no;
+
+      const attachResult = await c.env.DB.prepare(
+        `UPDATE payment_request
+            SET approval_instance_id = ?, updated_at = ?
+          WHERE id = ? AND status = 'pending_approval' AND approval_instance_id IS NULL`
+      )
+        .bind(instance.id, nowIso(), id)
+        .run();
+
+      if ((attachResult.meta.changes ?? 0) !== 1) {
+        const latest = await c.env.DB.prepare(
+          "SELECT approval_instance_id FROM payment_request WHERE id = ?"
         )
-          .bind(instance.id, nowIso(), id)
-          .run();
+          .bind(id)
+          .first<{ approval_instance_id: number | null }>();
 
-        if ((updateResult.meta.changes ?? 0) !== 1) {
-          throw new Error("Payment request is no longer submittable");
+        if (latest?.approval_instance_id) {
+          instanceIdForPayload = latest.approval_instance_id;
+          const latestInstance = await c.env.DB.prepare(
+            "SELECT instance_no FROM approval_instance WHERE id = ?"
+          )
+            .bind(latest.approval_instance_id)
+            .first<{ instance_no: string }>();
+          instanceNoForPayload = latestInstance?.instance_no ?? instanceNoForPayload;
+        } else {
+          throw new Error("Payment request lost approval binding during submission");
         }
-      });
+      }
     } catch (error) {
+      await c.env.DB.prepare(
+        `UPDATE payment_request
+            SET status = 'draft', updated_at = ?
+          WHERE id = ? AND status = 'pending_approval' AND approval_instance_id IS NULL`
+      )
+        .bind(nowIso(), id)
+        .run();
       await abandonIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey);
       throw error;
     }
@@ -1005,14 +1139,17 @@ paymentRoutes.post(
       targetType: "payment_request",
       targetId: id,
       detail: {
-        approval_instance_id: instance.id,
-        instance_no: instance.instance_no
+        approval_instance_id: instanceIdForPayload,
+        instance_no: instanceNoForPayload
       }
     });
 
     const payload = {
       success: true,
-      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+      data: {
+        approval_instance_id: instanceIdForPayload,
+        instance_no: instanceNoForPayload
+      }
     };
     await completeIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey, 200, payload);
 

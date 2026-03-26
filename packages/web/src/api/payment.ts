@@ -83,22 +83,30 @@ export const getPaymentRequest = (id: number) => {
   );
 };
 
-export const createPaymentRequest = (data: {
-  contract_id?: number | null;
-  project_id: number;
-  expected_payment_date: string;
-  category: string;
-  payee_id: number;
-  amount: number;
-  content: string;
-  payment_method: string;
-  attachments_json?: string;
-  remark?: string;
-}) => {
+export const createPaymentRequest = (
+  data: {
+    contract_id?: number | null;
+    project_id: number;
+    expected_payment_date: string;
+    category: string;
+    payee_id: number;
+    amount: number;
+    content: string;
+    payment_method: string;
+    attachments_json?: string;
+    remark?: string;
+  },
+  options?: { idempotencyKey?: string }
+) => {
   return http.request<{
     success: boolean;
     data: { id: number; serial_no: string; amount_cn: string };
-  }>("post", "/api/v1/payment", { data });
+  }>("post", "/api/v1/payment", {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const updatePaymentRequest = (
@@ -167,12 +175,18 @@ export const triggerRiskAssessment = (id: number) => {
 
 export const submitPaymentApproval = (
   id: number,
-  data?: { biz_summary?: string; instance_config?: InstanceConfig }
+  data?: { biz_summary?: string; instance_config?: InstanceConfig },
+  options?: { idempotencyKey?: string }
 ) => {
   return http.request<{
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
-  }>("post", `/api/v1/payment/${id}/submit-approval`, { data });
+  }>("post", `/api/v1/payment/${id}/submit-approval`, {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const getRiskReport = (id: number) => {
