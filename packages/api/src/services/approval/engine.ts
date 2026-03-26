@@ -690,7 +690,8 @@ export const handleResubmit = async (
 export const getInstanceDetail = async (
   env: Env,
   instanceId: number,
-  userId: string
+  userId: string,
+  userRoles: string[] = []
 ): Promise<ApprovalDetailResponse> => {
   // Load instance
   const instance = await env.DB.prepare(
@@ -803,7 +804,12 @@ export const getInstanceDetail = async (
   });
 
   // Determine available actions
-  const availableActions = determineAvailableActions(instance, tasks, userId);
+  const availableActions = determineAvailableActions(
+    instance,
+    tasks,
+    userId,
+    userRoles
+  );
 
   return {
     instance,
@@ -822,11 +828,13 @@ export const getInstanceDetail = async (
 const determineAvailableActions = (
   instance: ApprovalInstance,
   tasks: ApprovalTask[],
-  userId: string
+  userId: string,
+  userRoles: string[] = []
 ): ApprovalAction[] => {
   const actions: ApprovalAction[] = [];
 
   const isInitiator = instance.initiator_userid === userId;
+  const isSuperAdmin = userRoles.includes("super_admin");
 
   // Initiator actions
   if (isInitiator && instance.status === "in_progress") {
@@ -837,6 +845,12 @@ const determineAvailableActions = (
       actions.push("withdraw");
     }
     actions.push("cancel");
+  }
+
+  if (isSuperAdmin && instance.status === "in_progress") {
+    if (!actions.includes("cancel")) {
+      actions.push("cancel");
+    }
   }
 
   if (isInitiator && (instance.status === "pending" || instance.status === "withdrawn")) {

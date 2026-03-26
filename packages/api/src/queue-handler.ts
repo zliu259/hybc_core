@@ -5,10 +5,18 @@ import { createAiGateHandler } from "./services/ai-slot";
 import {
   resolveApplicantDisplayName,
   resolveApprovalPushMeta,
+  sendApprovalResultTemplateCard,
   sendApprovalTodoTemplateCard
 } from "./services/wecom-approval-push";
 
 const nowIso = () => new Date().toISOString();
+
+type ApprovalResultType =
+  | "returned"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "withdrawn";
 
 const getApprovalBizContext = async (
   env: Env,
@@ -426,6 +434,118 @@ const handleApprovalSubmitted = async (
     .run();
 };
 
+const logResultPushIsolationGuard = async (
+  env: Env,
+  payload: {
+    instance_id: number;
+    event_type: string;
+    error: string;
+  }
+) => {
+  await env.DB.prepare(
+    "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+  )
+    .bind(
+      "wecom_template_card_result_isolation_guard",
+      "queue-handler",
+      JSON.stringify(payload),
+      nowIso()
+    )
+    .run();
+};
+
+const pushApprovalResultToInitiator = async (
+  env: Env,
+  instanceId: number,
+  resultType: ApprovalResultType,
+  resultReason?: string
+) => {
+  const instance = await env.DB.prepare(
+    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_id, ai.biz_summary, ai.initiator_userid
+       FROM approval_instance ai
+      WHERE ai.id = ?
+      LIMIT 1`
+  )
+    .bind(instanceId)
+    .first<{
+      id: number;
+      instance_no: string;
+      biz_type: string;
+      biz_id: number;
+      biz_summary: string;
+      initiator_userid: string;
+    }>();
+
+  if (!instance) {
+    return;
+  }
+
+  const initiatorUserId = instance.initiator_userid?.trim();
+  if (!initiatorUserId) {
+    return;
+  }
+
+  const initiatorName = await resolveApplicantDisplayName(env, initiatorUserId);
+  const pushMeta = await resolveApprovalPushMeta(
+    env,
+    instance.biz_type,
+    instance.biz_id,
+    instance.biz_summary
+  );
+
+  try {
+    const result = await sendApprovalResultTemplateCard(env, {
+      instanceId,
+      instanceNo: instance.instance_no,
+      bizType: instance.biz_type,
+      bizId: instance.biz_id,
+      bizSummary: instance.biz_summary,
+      initiatorUserId,
+      initiatorName,
+      resultType,
+      resultReason,
+      requestTitle: pushMeta.requestTitle,
+      amountText: pushMeta.amountText ?? undefined
+    });
+
+    await env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "wecom_template_card_result_sent",
+        "queue-handler",
+        JSON.stringify({
+          instance_id: instanceId,
+          initiator_userid: initiatorUserId,
+          result_type: resultType,
+          msgid: result.msgid,
+          invaliduser: result.invaliduser,
+          unlicenseduser: result.unlicenseduser
+        }),
+        nowIso()
+      )
+      .run();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "send failed";
+    await env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "wecom_template_card_result_failed",
+        "queue-handler",
+        JSON.stringify({
+          instance_id: instanceId,
+          initiator_userid: initiatorUserId,
+          result_type: resultType,
+          error: message
+        }),
+        nowIso()
+      )
+      .run();
+    throw error;
+  }
+};
+
 export const queue = async (
   batch: MessageBatch<DomainEvent>,
   env: Env
@@ -528,6 +648,28 @@ export const queue = async (
                 )
                 .run();
             }
+
+            const returnTypeRaw = String(event.payload?.return_type ?? "");
+            const returnReasonMap: Record<string, string> = {
+              initiator: "流程已退回发起人",
+              prev: "流程已退回上一步节点",
+              to: "流程已退回指定节点"
+            };
+
+            try {
+              await pushApprovalResultToInitiator(
+                env,
+                instanceId,
+                "returned",
+                returnReasonMap[returnTypeRaw] ?? "流程已退回"
+              );
+            } catch (error) {
+              await logResultPushIsolationGuard(env, {
+                instance_id: instanceId,
+                event_type: "APPROVAL_RETURNED",
+                error: error instanceof Error ? error.message : "unknown error"
+              });
+            }
           }
           break;
         }
@@ -535,6 +677,20 @@ export const queue = async (
           const instanceId = Number(event.payload?.instance_id ?? 0);
           if (!Number.isNaN(instanceId) && instanceId > 0) {
             await handleApprovalApproved(env, instanceId);
+            try {
+              await pushApprovalResultToInitiator(
+                env,
+                instanceId,
+                "approved",
+                "流程审批已完成"
+              );
+            } catch (error) {
+              await logResultPushIsolationGuard(env, {
+                instance_id: instanceId,
+                event_type: "APPROVAL_APPROVED",
+                error: error instanceof Error ? error.message : "unknown error"
+              });
+            }
           }
           break;
         }
@@ -542,6 +698,60 @@ export const queue = async (
           const instanceId = Number(event.payload?.instance_id ?? 0);
           if (!Number.isNaN(instanceId) && instanceId > 0) {
             await handleApprovalRejected(env, instanceId);
+            try {
+              await pushApprovalResultToInitiator(
+                env,
+                instanceId,
+                "rejected",
+                "流程已驳回"
+              );
+            } catch (error) {
+              await logResultPushIsolationGuard(env, {
+                instance_id: instanceId,
+                event_type: "APPROVAL_REJECTED",
+                error: error instanceof Error ? error.message : "unknown error"
+              });
+            }
+          }
+          break;
+        }
+        case "APPROVAL_CANCELLED": {
+          const instanceId = Number(event.payload?.instance_id ?? 0);
+          if (!Number.isNaN(instanceId) && instanceId > 0) {
+            try {
+              await pushApprovalResultToInitiator(
+                env,
+                instanceId,
+                "cancelled",
+                "流程已终止"
+              );
+            } catch (error) {
+              await logResultPushIsolationGuard(env, {
+                instance_id: instanceId,
+                event_type: "APPROVAL_CANCELLED",
+                error: error instanceof Error ? error.message : "unknown error"
+              });
+            }
+          }
+          break;
+        }
+        case "APPROVAL_WITHDRAWN": {
+          const instanceId = Number(event.payload?.instance_id ?? 0);
+          if (!Number.isNaN(instanceId) && instanceId > 0) {
+            try {
+              await pushApprovalResultToInitiator(
+                env,
+                instanceId,
+                "withdrawn",
+                "流程已撤回"
+              );
+            } catch (error) {
+              await logResultPushIsolationGuard(env, {
+                instance_id: instanceId,
+                event_type: "APPROVAL_WITHDRAWN",
+                error: error instanceof Error ? error.message : "unknown error"
+              });
+            }
           }
           break;
         }

@@ -149,6 +149,7 @@ type PaginatedResponse<T> = {
 export const listApprovalInstances = (params?: {
   biz_type?: string;
   status?: string;
+  initiator?: string;
   keyword?: string;
   page?: number;
   pageSize?: number;

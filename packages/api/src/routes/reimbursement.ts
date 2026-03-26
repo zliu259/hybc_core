@@ -1105,6 +1105,9 @@ reimbursementRoutes.get("/", async (c) => {
   const channel = c.req.query("channel");
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
+  const excludeCancelled = ["1", "true", "yes"].includes(
+    (c.req.query("exclude_cancelled") ?? "").toLowerCase()
+  );
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
@@ -1117,6 +1120,9 @@ reimbursementRoutes.get("/", async (c) => {
     sql += " AND status = ?";
     countSql += " AND status = ?";
     params.push(status);
+  } else if (excludeCancelled) {
+    sql += " AND status != 'cancelled'";
+    countSql += " AND status != 'cancelled'";
   }
   if (projectId) {
     sql += " AND project_id = ?";

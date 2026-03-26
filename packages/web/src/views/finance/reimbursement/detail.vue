@@ -126,6 +126,29 @@ const attachmentType = ref("invoice");
 const officeRoles = ["super_admin", "manager", "site_manager", "finance"];
 
 const editableStatuses = new Set(["draft", "submitted"]);
+const submittableStatuses = new Set(["draft", "submitted", "unregistered"]);
+
+type ApiErrorShape = {
+  message?: string;
+  response?: {
+    status?: number;
+    data?: {
+      message?: string;
+      error?: string;
+      data?: {
+        require_force_submit?: boolean;
+      };
+    };
+  };
+};
+
+const resolveApiErrorMessage = (error: unknown, fallback: string) => {
+  const err = error as ApiErrorShape;
+  const backendMessage =
+    err.response?.data?.message || err.response?.data?.error || err.message;
+  return backendMessage && backendMessage.trim() ? backendMessage : fallback;
+};
+
 const canEdit = computed(() => {
   if (isCreate.value) return true;
   if (!detail.value) return false;
@@ -700,6 +723,10 @@ const save = async () => {
 
 const scanSubmit = async () => {
   if (!detail.value) return;
+  if (!submittableStatuses.has(detail.value.status)) {
+    message("当前状态不允许扫码登记", { type: "warning" });
+    return;
+  }
   const result = await scanReimbursementEnvelope({
     envelope_uuid: detail.value.envelope_uuid,
     project_id: form.value.project_id,
@@ -720,6 +747,10 @@ const scanSubmit = async () => {
 
 const submitEnvelope = async () => {
   if (!detail.value) return;
+  if (!submittableStatuses.has(detail.value.status)) {
+    message("当前状态不允许提交报销", { type: "warning" });
+    return;
+  }
   try {
     await submitReimbursementEnvelope(detail.value.id, undefined, {
       idempotencyKey: createIdempotencyKey("reimbursement-submit")
@@ -728,31 +759,35 @@ const submitEnvelope = async () => {
     await loadDetail();
     ensureAuditPolling("已提交，系统正在后台静默核查并会自动刷新进度");
   } catch (error) {
-    const err = error as {
-      response?: {
-        status?: number;
-        data?: { data?: { require_force_submit?: boolean } };
-      };
-    };
+    const err = error as ApiErrorShape;
     const requireForce =
       err.response?.status === 409 &&
       err.response?.data?.data?.require_force_submit === true;
     if (!requireForce) {
-      throw error;
+      message(resolveApiErrorMessage(error, "提交失败，请稍后重试"), {
+        type: "error"
+      });
+      return;
     }
-    await submitReimbursementEnvelope(
-      detail.value.id,
-      {
-        force_submit: true,
-        force_submit_reason: verifyNote.value || "申请人确认继续提交，办公室复核"
-      },
-      { idempotencyKey: createIdempotencyKey("reimbursement-submit") }
-    );
-    message("已按申请人坚持提交并附带审计提示，等待办公室核查", {
-      type: "warning"
-    });
-    await loadDetail();
-    ensureAuditPolling("已提交，系统正在后台静默核查并会自动刷新进度");
+    try {
+      await submitReimbursementEnvelope(
+        detail.value.id,
+        {
+          force_submit: true,
+          force_submit_reason: verifyNote.value || "申请人确认继续提交，办公室复核"
+        },
+        { idempotencyKey: createIdempotencyKey("reimbursement-submit") }
+      );
+      message("已按申请人坚持提交并附带审计提示，等待办公室核查", {
+        type: "warning"
+      });
+      await loadDetail();
+      ensureAuditPolling("已提交，系统正在后台静默核查并会自动刷新进度");
+    } catch (forceError) {
+      message(resolveApiErrorMessage(forceError, "提交失败，请稍后重试"), {
+        type: "error"
+      });
+    }
   }
 };
 
@@ -1152,7 +1187,7 @@ watch(
           <el-button
             v-if="
               detail.channel === 'physical' &&
-              ['draft', 'submitted'].includes(detail.status)
+              submittableStatuses.has(detail.status)
             "
             @click="scanSubmit"
             >扫码登记并绑定填报人</el-button
@@ -1160,7 +1195,7 @@ watch(
           <el-button
             v-if="
               detail.channel === 'physical' &&
-              ['draft', 'submitted'].includes(detail.status)
+              submittableStatuses.has(detail.status)
             "
             type="primary"
             @click="submitEnvelope"
@@ -1170,7 +1205,7 @@ watch(
           <el-button
             v-if="
               detail.channel === 'electronic' &&
-              ['draft', 'submitted'].includes(detail.status)
+              submittableStatuses.has(detail.status)
             "
             type="primary"
             @click="submitEnvelope"

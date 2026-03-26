@@ -63,6 +63,17 @@ const aiRiskLabelMap: Record<string, string> = {
   failed: "评估失败"
 };
 
+const paymentMethodLabelMap: Record<string, string> = {
+  bank_transfer: "对公转账",
+  cash: "现金",
+  bill: "票据",
+  other: "其他",
+  对公转账: "对公转账",
+  现金: "现金",
+  票据: "票据",
+  其他: "其他"
+};
+
 const toStatusLabel = (value: string | null | undefined) => {
   if (!value) return "-";
   return statusLabelMap[value] ?? value;
@@ -71,6 +82,11 @@ const toStatusLabel = (value: string | null | undefined) => {
 const toAiRiskLabel = (value: string | null | undefined) => {
   if (!value) return "-";
   return aiRiskLabelMap[value] ?? value;
+};
+
+const toPaymentMethodLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return paymentMethodLabelMap[value] ?? value;
 };
 
 const formatBeijingDateTime = (value: string | null | undefined) => {
@@ -222,7 +238,11 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column prop="amount" label="金额" width="120" />
       <el-table-column prop="amount_cn" label="金额大写" min-width="160" />
-      <el-table-column prop="payment_method" label="付款方式" width="120" />
+      <el-table-column label="付款方式" width="120">
+        <template #default="scope">{{
+          toPaymentMethodLabel(scope.row.payment_method)
+        }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="110">
         <template #default="scope">
           <el-tag :type="statusTagType[scope.row.status] || 'info'">{{

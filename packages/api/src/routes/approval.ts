@@ -48,6 +48,7 @@ approvalRoutes.get("/", async (c) => {
   const auth = c.get("auth");
   const bizType = c.req.query("biz_type");
   const status = c.req.query("status");
+  const initiator = c.req.query("initiator");
   const keyword = c.req.query("keyword");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
@@ -70,6 +71,12 @@ approvalRoutes.get("/", async (c) => {
     sql += " AND ai.status = ?";
     countSql += " AND ai.status = ?";
     params.push(status);
+  }
+  if (initiator) {
+    const initiatorFilter = initiator === "me" ? auth.sub : initiator;
+    sql += " AND ai.initiator_userid = ?";
+    countSql += " AND ai.initiator_userid = ?";
+    params.push(initiatorFilter);
   }
   if (keyword) {
     sql += " AND ai.biz_summary LIKE ?";
@@ -489,7 +496,7 @@ approvalRoutes.get("/:id", async (c) => {
   const auth = c.get("auth");
 
   try {
-    const detail = await getInstanceDetail(c.env, id, auth.sub);
+    const detail = await getInstanceDetail(c.env, id, auth.sub, auth.roles);
     return c.json({ success: true, data: detail });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Not found";

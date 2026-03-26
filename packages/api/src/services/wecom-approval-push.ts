@@ -33,6 +33,27 @@ type ApprovalPushOptions = {
   disableDuplicateCheck?: boolean;
 };
 
+type ApprovalResultType =
+  | "returned"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "withdrawn";
+
+type ApprovalResultPushPayload = {
+  instanceId: number;
+  instanceNo: string;
+  bizType: string;
+  bizId: number;
+  bizSummary: string;
+  initiatorUserId: string;
+  initiatorName: string;
+  resultType: ApprovalResultType;
+  resultReason?: string;
+  requestTitle?: string;
+  amountText?: string;
+};
+
 type WeComPushRouteConfig = {
   webBaseUrl: string | null;
   miniAppId: string | null;
@@ -209,6 +230,14 @@ const BIZ_TYPE_LABELS: Record<string, string> = {
   payment_request: "付款审批",
   reimbursement_batch: "报销审批",
   invoice_request: "开票申请"
+};
+
+const APPROVAL_RESULT_LABELS: Record<ApprovalResultType, string> = {
+  returned: "已退回",
+  approved: "已通过",
+  rejected: "已驳回",
+  cancelled: "已取消",
+  withdrawn: "已撤回"
 };
 
 const bizTypeLabel = (bizType: string): string =>
@@ -398,6 +427,119 @@ export const sendApprovalTodoTemplateCard = async (
 
   if (json.errcode !== 0) {
     throw new Error(weComErrorMessage(json.errmsg, "Failed to send WeCom template card"));
+  }
+
+  return {
+    msgid: json.msgid ?? null,
+    invaliduser: json.invaliduser ?? null,
+    unlicenseduser: json.unlicenseduser ?? null
+  };
+};
+
+const buildResultTemplateCard = async (
+  env: Env,
+  payload: ApprovalResultPushPayload
+) => {
+  const routeConfig = await resolveRouteConfig(env);
+  const webUrl = resolveWebDetailUrl(env, payload.instanceId, routeConfig);
+  const miniAppId = routeConfig.miniAppId ?? "";
+  const miniPagePath = miniAppId
+    ? resolveMiniProgramPagePath(payload.instanceId, routeConfig)
+    : "";
+  const defaultTarget = routeConfig.defaultTarget;
+
+  const jumpList: Array<Record<string, unknown>> = [];
+  if (miniAppId) {
+    jumpList.push({
+      type: 2,
+      title: "打开小程序",
+      appid: miniAppId,
+      pagepath: miniPagePath
+    });
+  }
+  if (webUrl) {
+    jumpList.push({
+      type: 1,
+      title: "打开Web",
+      url: webUrl
+    });
+  }
+
+  if (jumpList.length === 0) {
+    throw new Error(
+      "No jump target configured: set WECOM_MINIAPP_APPID or WECOM_APPROVAL_WEB_BASE_URL/WECHAT_REDIRECT_URI"
+    );
+  }
+
+  const cardAction =
+    defaultTarget === "web"
+      ? webUrl
+        ? { type: 1, url: webUrl }
+        : { type: 2, appid: miniAppId, pagepath: miniPagePath }
+      : miniAppId
+        ? { type: 2, appid: miniAppId, pagepath: miniPagePath }
+        : { type: 1, url: webUrl as string };
+
+  const resultLabel = APPROVAL_RESULT_LABELS[payload.resultType] ?? payload.resultType;
+  const reason = payload.resultReason?.trim();
+  const reasonText = reason ? ` 说明：${reason}` : "";
+
+  return {
+    card_type: "text_notice",
+    source: {
+      desc: "审批系统",
+      desc_color: 0
+    },
+    main_title: {
+      title: "审批结果通知",
+      desc: `${payload.initiatorName} 发起：${payload.requestTitle || payload.bizSummary}`
+    },
+    emphasis_content: {
+      title: resultLabel,
+      desc: "流程结果"
+    },
+    sub_title_text: `${bizTypeLabel(payload.bizType)} 已更新为「${resultLabel}」。${reasonText}`,
+    jump_list: jumpList,
+    card_action: cardAction
+  };
+};
+
+export const sendApprovalResultTemplateCard = async (
+  env: Env,
+  payload: ApprovalResultPushPayload
+): Promise<{
+  msgid: string | null;
+  invaliduser: string | null;
+  unlicenseduser: string | null;
+}> => {
+  if (!env.WECHAT_AGENT_ID) {
+    throw new Error("WECHAT_AGENT_ID is not configured");
+  }
+
+  const accessToken = await fetchWeComAccessToken(env);
+  const templateCard = await buildResultTemplateCard(env, payload);
+  const requestBody = {
+    touser: payload.initiatorUserId,
+    msgtype: "template_card",
+    agentid: Number(env.WECHAT_AGENT_ID),
+    template_card: templateCard,
+    enable_duplicate_check: 1,
+    duplicate_check_interval: 600
+  };
+
+  const json = await fetchViaBridgeStrict<WeComSendResponse>(
+    env,
+    `https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${encodeURIComponent(accessToken)}`,
+    {
+      method: "POST",
+      body: requestBody
+    }
+  );
+
+  if (json.errcode !== 0) {
+    throw new Error(
+      weComErrorMessage(json.errmsg, "Failed to send WeCom result template card")
+    );
   }
 
   return {

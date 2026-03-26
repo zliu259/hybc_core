@@ -140,7 +140,7 @@
 
 #### F. 对外付款申请列表 `views/finance/payment/index.vue`
 - 固定筛选：合同号、项目、审批状态、金额区间。
-- 表格列：申请单号、合同号、金额、申请人、状态、提交时间、支付时间。
+- 表格列：申请单号、合同号、金额、申请人、付款方式（中文）、状态、提交时间、支付时间。
 - 强约束：超额风险标红并显示剩余额度。
 - 状态筛选支持显式查看“已取消/已废止”记录（选择 `cancelled` 时返回该状态列表）。
 - API 指向：`/api/v1/payment`
@@ -151,6 +151,8 @@
 - 付款执行：`已审批`状态下登记支付日期、支付流水号、付款账户、付款备注并标记付款。
 - 底部动作：通过/拒绝/退回/转签（必须填写意见）、标记付款。
 - 审批中显示“付款主体与账户调整”操作区（随审批流展示，不再依赖 `available_actions` 才可见），避免审批人看不到付款实体/账户选择控件。
+- 支持从付款详情直接跳转到对应审批详情（`/approval/detail/:id`），用于条目状态不一致时快速核对：`packages/web/src/views/finance/payment/detail.vue`
+- 付款附件预览统一改为抽屉模式（`el-drawer`），在详情页内完成预览与下载：`packages/web/src/views/finance/payment/detail.vue`
 - API 指向：`/api/v1/payment/:id`, `/api/v1/payment/:id/mark-paid`, `/api/v1/approval/:id/*`
 
 #### H. 收款人管理 `views/finance/payee/index.vue`
@@ -160,7 +162,7 @@
 - API 指向：`/api/v1/payment/payee/*`
 
 #### F. 报销处理列表 `views/finance/reimbursement/list.vue`
-- 展示维度：信封编号、UUID、项目、填报人、金额、状态、PDF状态。
+- 展示维度：信封编号、项目、填报人（姓名）、金额、状态、PDF状态。
 - 默认打开首个标签“报销提交”，并区分入口语义：
   - 工作台入口：展示“我的提交”；
   - 财务中心入口：展示全部报销提交（办公室/领导可查看全量并代员工发起）。
@@ -173,6 +175,7 @@
 - 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
 - 功能融合：复核提示、智能核查、复核通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
 - 报销处理页（财务中心入口）常驻“信封生成器”按钮，避免因分段切换看不到入口。
+- 报销提交列表默认隐藏 `cancelled` 记录；仅在状态筛选显式选择“已废止”时展示：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
 - 员工侧不再暴露 OCR/异常检测/预审 等技术步骤名词；员工仅看到“提交后后台静默核查”的业务提示：`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/miniapp/pages/reimbursement/index.{js,wxml}`
 - API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
 
@@ -1107,6 +1110,7 @@
 - 个人工作台首页已移除“我的内部收款信息 / 添加外部收款人 / 我的收款卡”相关入口与卡片，避免员工首页出现收款信息展示逻辑混乱：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页新增“油卡办公室待办”数字提醒入口（财务/经理/超管可见）：`packages/web/src/views/welcome/index.vue`
 - 新增“我的申请”页面，聚合展示员工本人发起的对外付款申请、报销申请、油卡额度申请：`packages/web/src/views/workspace/my-applications/index.vue`
+- “我的申请”新增“我发起的审批”标签页，可查看本人发起审批并直达审批详情：`packages/web/src/views/workspace/my-applications/index.vue`、`packages/web/src/api/approval.ts`
 - “我的申请-油卡额度申请”新增处理结果展示（处理备注、处理时间、处理人、处理后余额）：`packages/web/src/views/workspace/my-applications/index.vue`
 - 个人工作台路由新增：`/workspace/my-applications`：`packages/web/src/router/modules/workspace.ts`
 - 个人工作台路由新增：`/workspace/payee`（外部收款人维护入口）：`packages/web/src/router/modules/workspace.ts`

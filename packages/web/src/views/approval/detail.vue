@@ -121,6 +121,9 @@ const hasAction = (action: string) =>
 const commentInput = ref("");
 const actionLoading = ref(false);
 const uploadingApprovalAttachment = ref(false);
+const cancelActionLabel = computed(() =>
+  isSuperAdmin.value ? "终止流程" : "取消"
+);
 
 const canUploadInApproval = computed(() => {
   if (isSuperAdmin.value) return true;
@@ -1945,7 +1948,7 @@ onMounted(async () => {
             :loading="actionLoading"
             @click="handleCancel"
           >
-            取消
+            {{ cancelActionLabel }}
           </el-button>
           <el-button
             v-if="hasAction('resubmit')"

@@ -68,6 +68,19 @@ const projectMap = computed(() => {
   return map;
 });
 
+const userNameMap = computed(() => {
+  const map = new Map<string, string>();
+  wecomUsers.value.forEach(item => {
+    map.set(item.userid, item.name || item.userid);
+  });
+  return map;
+});
+
+const toApplicantLabel = (userid: string | null | undefined) => {
+  if (!userid) return "-";
+  return userNameMap.value.get(userid) ?? userid;
+};
+
 const statusTagType: Record<string, TagType> = {
   unregistered: "info",
   draft: "info",
@@ -106,6 +119,7 @@ const loadData = async () => {
       project_id: filters.value.project_id,
       applicant_userid: filters.value.applicant_userid || undefined,
       status: filters.value.status || undefined,
+      exclude_cancelled: !filters.value.status,
       channel: filters.value.channel || undefined,
       keyword: filters.value.keyword || undefined
     });
@@ -387,13 +401,16 @@ watch(workflowView, mode => {
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="envelope_no" label="信封编号" width="150" />
-      <el-table-column prop="envelope_uuid" label="UUID" min-width="240" />
       <el-table-column label="项目" width="180">
         <template #default="scope">{{
           projectMap[scope.row.project_id] || scope.row.project_id
         }}</template>
       </el-table-column>
-      <el-table-column prop="applicant_userid" label="填报人" width="140" />
+      <el-table-column label="填报人" width="140">
+        <template #default="scope">{{
+          toApplicantLabel(scope.row.applicant_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="amount" label="金额" width="100" />
       <el-table-column prop="duplicate_count" label="复核提示" width="100" />
       <el-table-column label="复核" width="100">

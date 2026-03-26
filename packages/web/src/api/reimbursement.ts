@@ -72,6 +72,7 @@ export const listReimbursementEnvelopes = (params?: {
   project_id?: number;
   applicant_userid?: string;
   creator_id?: string;
+  exclude_cancelled?: boolean;
   channel?: string;
   keyword?: string;
   page?: number;

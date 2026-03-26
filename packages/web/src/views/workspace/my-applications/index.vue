@@ -11,6 +11,11 @@ import {
   listFuelQuotaApplications,
   type FuelQuotaApplication
 } from "@/api/fleet";
+import {
+  listApprovalInstances,
+  type ApprovalInstance
+} from "@/api/approval";
+import { toBizTypeLabel, toStatusLabel } from "@/views/approval/labels";
 
 defineOptions({ name: "WorkspaceMyApplications" });
 
@@ -19,6 +24,7 @@ const loading = ref(false);
 const paymentList = ref<PaymentRequest[]>([]);
 const reimbursementList = ref<ReimbursementEnvelope[]>([]);
 const fuelList = ref<FuelQuotaApplication[]>([]);
+const approvalList = ref<ApprovalInstance[]>([]);
 
 const paymentStatusLabel = (status: string) => {
   if (status === "draft") return "草稿";
@@ -69,14 +75,17 @@ const fuelProcessResult = (item: FuelQuotaApplication) => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const [paymentResult, reimbursementResult, fuelResult] = await Promise.all([
+    const [paymentResult, reimbursementResult, fuelResult, approvalResult] =
+      await Promise.all([
       listPaymentRequests({ mine: true, page: 1, pageSize: 8 }),
       listReimbursementEnvelopes({ creator_id: "me", page: 1, pageSize: 8 }),
-      listFuelQuotaApplications({ mine: true })
+      listFuelQuotaApplications({ mine: true }),
+      listApprovalInstances({ initiator: "me", page: 1, pageSize: 8 })
     ]);
     paymentList.value = paymentResult.data;
     reimbursementList.value = reimbursementResult.data;
     fuelList.value = fuelResult.data.slice(0, 8);
+    approvalList.value = approvalResult.data;
   } finally {
     loading.value = false;
   }
@@ -106,19 +115,24 @@ onMounted(loadData);
     </template>
 
     <el-row :gutter="12" style="margin-bottom: 12px">
-      <el-col :md="8" :xs="24"
+      <el-col :md="6" :xs="24"
         ><el-card shadow="never"
           >对外付款申请：{{ paymentList.length }}</el-card
         ></el-col
       >
-      <el-col :md="8" :xs="24"
+      <el-col :md="6" :xs="24"
         ><el-card shadow="never"
           >报销申请：{{ reimbursementList.length }}</el-card
         ></el-col
       >
-      <el-col :md="8" :xs="24"
+      <el-col :md="6" :xs="24"
         ><el-card shadow="never"
           >油卡额度申请：{{ fuelList.length }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >我发起的审批：{{ approvalList.length }}</el-card
         ></el-col
       >
     </el-row>
@@ -238,6 +252,30 @@ onMounted(loadData);
             width="140"
           />
           <el-table-column prop="requested_at" label="申请时间" width="180" />
+        </el-table>
+      </el-tab-pane>
+
+      <el-tab-pane label="我发起的审批">
+        <el-table :data="approvalList" stripe>
+          <el-table-column prop="instance_no" label="审批单号" min-width="170" />
+          <el-table-column label="业务类型" width="140">
+            <template #default="scope">{{ toBizTypeLabel(scope.row.biz_type) }}</template>
+          </el-table-column>
+          <el-table-column prop="biz_summary" label="摘要" min-width="220" />
+          <el-table-column label="状态" width="120">
+            <template #default="scope">{{ toStatusLabel(scope.row.status) }}</template>
+          </el-table-column>
+          <el-table-column prop="submitted_at" label="提交时间" width="180" />
+          <el-table-column label="操作" width="110" fixed="right">
+            <template #default="scope">
+              <el-button
+                link
+                type="primary"
+                @click="router.push(`/approval/detail/${scope.row.id}`)"
+                >查看</el-button
+              >
+            </template>
+          </el-table-column>
         </el-table>
       </el-tab-pane>
     </el-tabs>
