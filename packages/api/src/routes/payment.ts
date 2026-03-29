@@ -52,11 +52,93 @@ type VoidPaymentBody = {
   reason?: string;
 };
 
+type ApprovalInstanceLite = {
+  id: number;
+  instance_no: string;
+  status: string;
+};
+
 const isPaymentNoLongerApprovedError = (error: unknown): boolean => {
   return (
     error instanceof Error &&
     error.message === "Payment request is no longer approved"
   );
+};
+
+export const mapApprovalInstanceStatusToPaymentStatus = (
+  approvalStatus: string
+): PaymentRequest["status"] | null => {
+  if (approvalStatus === "pending" || approvalStatus === "in_progress") {
+    return "pending_approval";
+  }
+  if (approvalStatus === "approved" || approvalStatus === "completed") {
+    return "approved";
+  }
+  if (approvalStatus === "rejected") {
+    return "rejected";
+  }
+  return null;
+};
+
+export const isPaymentStatusReconcileEligible = (
+  paymentStatus: PaymentRequest["status"]
+): boolean => {
+  return paymentStatus === "draft" || paymentStatus === "pending_approval";
+};
+
+const findLatestApprovalInstanceForPayment = async (
+  db: D1Database,
+  paymentId: number
+): Promise<ApprovalInstanceLite | null> => {
+  return await db
+    .prepare(
+      `SELECT id, instance_no, status
+         FROM approval_instance
+        WHERE biz_type = 'payment_request'
+          AND biz_id = ?
+        ORDER BY id DESC
+        LIMIT 1`
+    )
+    .bind(paymentId)
+    .first<ApprovalInstanceLite>();
+};
+
+const reconcilePaymentStatusWithApproval = async (
+  db: D1Database,
+  paymentId: number,
+  payment: Pick<PaymentRequest, "status" | "approval_instance_id">,
+  now: string
+): Promise<ApprovalInstanceLite | null> => {
+  if (!isPaymentStatusReconcileEligible(payment.status)) {
+    return null;
+  }
+
+  const latestApproval = await findLatestApprovalInstanceForPayment(db, paymentId);
+  if (!latestApproval) return null;
+
+  const targetStatus = mapApprovalInstanceStatusToPaymentStatus(latestApproval.status);
+  if (!targetStatus) return null;
+
+  const hasLinkedApproval =
+    payment.approval_instance_id !== null &&
+    payment.approval_instance_id === latestApproval.id;
+  const statusAlreadyAligned = payment.status === targetStatus;
+  if (hasLinkedApproval && statusAlreadyAligned) {
+    return latestApproval;
+  }
+
+  await db
+    .prepare(
+      `UPDATE payment_request
+          SET status = ?,
+              approval_instance_id = ?,
+              updated_at = ?
+        WHERE id = ?`
+    )
+    .bind(targetStatus, latestApproval.id, now, paymentId)
+    .run();
+
+  return latestApproval;
 };
 
 const syncContractPaidAmount = async (
@@ -913,9 +995,54 @@ paymentRoutes.post(
     )
       .bind(id)
       .first<PaymentRequest>();
+    const now = nowIso();
 
     if (!request) {
       return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
+    }
+
+    const reconciledApproval = isPaymentStatusReconcileEligible(request.status)
+      ? await reconcilePaymentStatusWithApproval(
+          c.env.DB,
+          id,
+          {
+            status: request.status,
+            approval_instance_id: request.approval_instance_id
+          },
+          now
+        )
+      : null;
+
+    if (
+      reconciledApproval &&
+      (reconciledApproval.status === "pending" || reconciledApproval.status === "in_progress")
+    ) {
+      return c.json({
+        success: true,
+        data: {
+          approval_instance_id: reconciledApproval.id,
+          instance_no: reconciledApproval.instance_no,
+          already_submitted: true,
+          recovered: true
+        }
+      });
+    }
+
+    if (
+      reconciledApproval &&
+      (reconciledApproval.status === "approved" ||
+        reconciledApproval.status === "completed" ||
+        reconciledApproval.status === "rejected")
+    ) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: `Payment request already reached approval result: ${reconciledApproval.status}`
+          }
+        },
+        409
+      );
     }
 
     if (request.status !== "draft") {
@@ -998,7 +1125,7 @@ paymentRoutes.post(
           SET status = 'pending_approval', updated_at = ?
         WHERE id = ? AND status = 'draft'`
     )
-      .bind(nowIso(), id)
+      .bind(now, id)
       .run();
 
     if ((claimedDraft.meta.changes ?? 0) !== 1) {
@@ -1122,7 +1249,7 @@ paymentRoutes.post(
             SET approval_instance_id = ?, updated_at = ?
           WHERE id = ? AND status = 'pending_approval' AND approval_instance_id IS NULL`
       )
-        .bind(instance.id, nowIso(), id)
+        .bind(instance.id, now, id)
         .run();
 
       if ((attachResult.meta.changes ?? 0) !== 1) {
@@ -1145,13 +1272,26 @@ paymentRoutes.post(
         }
       }
     } catch (error) {
-      await c.env.DB.prepare(
-        `UPDATE payment_request
-            SET status = 'draft', updated_at = ?
-          WHERE id = ? AND status = 'pending_approval' AND approval_instance_id IS NULL`
-      )
-        .bind(nowIso(), id)
-        .run();
+      const recoveredApproval = await reconcilePaymentStatusWithApproval(
+        c.env.DB,
+        id,
+        {
+          status: "pending_approval",
+          approval_instance_id: null
+        },
+        now
+      );
+
+      if (!recoveredApproval) {
+        await c.env.DB.prepare(
+          `UPDATE payment_request
+              SET status = 'draft', updated_at = ?
+            WHERE id = ? AND status = 'pending_approval' AND approval_instance_id IS NULL`
+        )
+          .bind(now, id)
+          .run();
+      }
+
       await abandonIdempotentRequest(c.env.DB, `payment:submit-approval:${id}`, auth.sub, idempotencyKey);
       throw error;
     }
