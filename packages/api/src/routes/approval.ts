@@ -443,6 +443,12 @@ approvalRoutes.get("/admin/all", async (c) => {
 
   const bizType = c.req.query("biz_type");
   const status = c.req.query("status");
+  const statusFilters = status
+    ? status
+        .split(",")
+        .map(item => item.trim())
+        .filter(Boolean)
+    : [];
   const keyword = c.req.query("keyword");
   const initiator = c.req.query("initiator");
   const page = Number(c.req.query("page") ?? "1");
@@ -458,10 +464,15 @@ approvalRoutes.get("/admin/all", async (c) => {
     countSql += " AND biz_type = ?";
     params.push(bizType);
   }
-  if (status) {
+  if (statusFilters.length === 1) {
     sql += " AND status = ?";
     countSql += " AND status = ?";
-    params.push(status);
+    params.push(statusFilters[0]);
+  } else if (statusFilters.length > 1) {
+    const placeholders = statusFilters.map(() => "?").join(", ");
+    sql += ` AND status IN (${placeholders})`;
+    countSql += ` AND status IN (${placeholders})`;
+    params.push(...statusFilters);
   }
   if (initiator) {
     sql += " AND initiator_userid = ?";

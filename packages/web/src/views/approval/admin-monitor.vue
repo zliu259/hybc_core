@@ -39,14 +39,16 @@ const total = ref(0);
 
 type AdminMonitorFilterState = {
   biz_type: string;
-  status: string;
+  status: string[];
   initiator: string;
   keyword: string;
 };
 
+const defaultStatusFilter = ["in_progress", "approved", "rejected"];
+
 const defaultFilters = (): AdminMonitorFilterState => ({
   biz_type: "",
-  status: "",
+  status: [...defaultStatusFilter],
   initiator: "",
   keyword: ""
 });
@@ -61,13 +63,27 @@ const filterStorageKey = computed(() => {
 
 const restoreFilters = () => {
   if (!filterStorageKey.value) return;
-  const saved = storageLocal().getItem<Partial<AdminMonitorFilterState>>(
-    filterStorageKey.value
-  );
+  const saved = storageLocal().getItem<{
+    biz_type?: unknown;
+    status?: string | string[];
+    initiator?: unknown;
+    keyword?: unknown;
+  }>(filterStorageKey.value);
   if (!saved || typeof saved !== "object") return;
 
+  const defaults = defaultFilters();
+
   filters.biz_type = typeof saved.biz_type === "string" ? saved.biz_type : "";
-  filters.status = typeof saved.status === "string" ? saved.status : "";
+  const restoredStatus = Array.isArray(saved.status)
+    ? saved.status.filter(item => typeof item === "string" && item.trim())
+    : typeof saved.status === "string" && saved.status.trim()
+      ? saved.status
+          .split(",")
+          .map(item => item.trim())
+          .filter(Boolean)
+      : [];
+  filters.status =
+    restoredStatus.length > 0 ? restoredStatus : [...defaults.status];
   filters.initiator =
     typeof saved.initiator === "string" ? saved.initiator : "";
   filters.keyword = typeof saved.keyword === "string" ? saved.keyword : "";
@@ -77,7 +93,7 @@ const persistFilters = () => {
   if (!filterStorageKey.value) return;
   storageLocal().setItem(filterStorageKey.value, {
     biz_type: filters.biz_type,
-    status: filters.status,
+    status: [...filters.status],
     initiator: filters.initiator.trim(),
     keyword: filters.keyword.trim()
   });
@@ -142,7 +158,7 @@ const loadList = async () => {
   try {
     const result = await listAllApprovalInstances({
       biz_type: filters.biz_type || undefined,
-      status: filters.status || undefined,
+      status: filters.status.length > 0 ? filters.status.join(",") : undefined,
       initiator: filters.initiator.trim() || undefined,
       keyword: filters.keyword.trim() || undefined,
       page: page.value,
@@ -340,7 +356,15 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="状态">
-        <el-select v-model="filters.status" clearable placeholder="全部" style="width: 140px">
+        <el-select
+          v-model="filters.status"
+          multiple
+          clearable
+          collapse-tags
+          collapse-tags-tooltip
+          placeholder="默认（进行中/已通过/已驳回）"
+          style="width: 260px"
+        >
           <el-option
             v-for="item in statusOptions"
             :key="item.value"
