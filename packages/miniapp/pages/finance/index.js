@@ -63,7 +63,7 @@ Page({
     return `${yyyy}-${mm}-${dd} ${hh}:${mi}`;
   },
 
-  mapPendingItem(item) {
+  mapApprovalItem(item) {
     return {
       ...item,
       bizTypeLabel: this.bizTypeLabel(item.biz_type),
@@ -82,7 +82,7 @@ Page({
       const list = Array.isArray(res.data) ? res.data : [];
       this.setData({
         pendingCount: list.length,
-        pendingList: list.map((item) => this.mapPendingItem(item))
+        pendingList: list.map((item) => this.mapApprovalItem(item))
       });
     } catch {
       this.setData({ pendingCount: 0, pendingList: [] });

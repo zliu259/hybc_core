@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
+import { storageLocal } from "@pureadmin/utils";
 import { message } from "@/utils/message";
 import {
   forceApproveTask,
@@ -36,12 +37,51 @@ const page = ref(1);
 const pageSize = ref(30);
 const total = ref(0);
 
-const filters = reactive({
+type AdminMonitorFilterState = {
+  biz_type: string;
+  status: string;
+  initiator: string;
+  keyword: string;
+};
+
+const defaultFilters = (): AdminMonitorFilterState => ({
   biz_type: "",
   status: "",
   initiator: "",
   keyword: ""
 });
+
+const filters = reactive<AdminMonitorFilterState>(defaultFilters());
+
+const filterStorageKey = computed(() => {
+  const userIdentity = userStore.username?.trim() || userStore.nickname?.trim();
+  if (!userIdentity) return "";
+  return `approval-admin-monitor:filters:${userIdentity}`;
+});
+
+const restoreFilters = () => {
+  if (!filterStorageKey.value) return;
+  const saved = storageLocal().getItem<Partial<AdminMonitorFilterState>>(
+    filterStorageKey.value
+  );
+  if (!saved || typeof saved !== "object") return;
+
+  filters.biz_type = typeof saved.biz_type === "string" ? saved.biz_type : "";
+  filters.status = typeof saved.status === "string" ? saved.status : "";
+  filters.initiator =
+    typeof saved.initiator === "string" ? saved.initiator : "";
+  filters.keyword = typeof saved.keyword === "string" ? saved.keyword : "";
+};
+
+const persistFilters = () => {
+  if (!filterStorageKey.value) return;
+  storageLocal().setItem(filterStorageKey.value, {
+    biz_type: filters.biz_type,
+    status: filters.status,
+    initiator: filters.initiator.trim(),
+    keyword: filters.keyword.trim()
+  });
+};
 
 const statusTagType: Record<string, TagType> = {
   pending: "warning",
@@ -111,13 +151,22 @@ const handleSearch = async () => {
 };
 
 const handleReset = async () => {
-  filters.biz_type = "";
-  filters.status = "";
-  filters.initiator = "";
-  filters.keyword = "";
+  const defaults = defaultFilters();
+  filters.biz_type = defaults.biz_type;
+  filters.status = defaults.status;
+  filters.initiator = defaults.initiator;
+  filters.keyword = defaults.keyword;
   page.value = 1;
   await loadList();
 };
+
+watch(
+  filters,
+  () => {
+    persistFilters();
+  },
+  { deep: true }
+);
 
 const forceApproveDialogVisible = ref(false);
 const forceApproveLoading = ref(false);
@@ -257,6 +306,7 @@ const submitForceTransfer = async () => {
 };
 
 onMounted(async () => {
+  restoreFilters();
   await Promise.all([loadWecomUsers(), loadList()]);
 });
 </script>

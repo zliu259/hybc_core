@@ -247,6 +247,7 @@
 - 开票申请核心列：申请单号、合同号、客户名称、客户税号、价税合计、类型、状态。
 - 开票申请列表文案：类型与状态均中文化展示；提交审批后显示“查看进度”入口，直达审批详情。
 - 开票申请动作：新建申请、提交审批（draft/rejected）、审批通过后签发正式发票（approved/ready_to_issue）。
+- 支持审批详情反向跳转定位：当路由 query 传入 `keyword` 时，页面自动回填关键字并加载开票申请列表，便于从审批页按申请单号落位。
 - 正式发票签发改为“附件优先”模式：签发时仅上传发票附件，发票代码/号码/校验码/日期/金额等字段由二维码/OCR自动回填，不再要求人工逐项录入：`packages/web/src/views/finance/receipt/invoice.vue`、`packages/api/src/routes/receipt.ts`
 - 新建开票申请（行政友好模式）：
   - 对方信息支持“名录选择/手工录入”双模式，字段改为“对方名称/对方税号/对方联系方式”；
@@ -297,12 +298,16 @@
 - 上区：业务摘要（单据关键字段）。
 - 中区：流程图 + 历史操作 + 业务明细（已覆盖 `开票申请` 与 `收款退款` 明细区）。
 - 收款退款明细区（`biz_type=receipt_refund`）：展示退款单、收款记录、合同信息；当存在关联发票时展示发票信息，并提示流程含“红冲发票签发”节点。
+- 业务摘要新增“业务编号”可点击跳转：按业务类型路由到对应业务页面（付款详情/合同详情/报销批次详情/发票申请列表/收款详情）。
+- 业务明细区编号字段（付款流水号、合同号、报销批次号、开票申请号、退款单号）统一支持点击跳转对应业务页，减少审批与业务核对的页面切换成本。
+- 跳转可点击态需与财务域路由权限一致：无财务域访问权限时显示为只读文本，避免误导点击。
 - 下区：动作区（通过/拒绝/退回/转签/撤回）。
 - API 指向：`/api/v1/approval/:id/*`、`/api/v1/receipt/refund/:id`
 
 #### I-1. 审批监控台（超管） `views/approval/admin-monitor.vue`
 - 列表维度：审批单号、业务类型、摘要、发起人、当前节点、状态、提交时间、完成时间。
 - 筛选条件：业务类型、状态、发起人 userid、摘要关键字。
+- 筛选条件本地持久化：按“当前登录用户 + 当前浏览器设备”保存上次筛选值，刷新/重进页面自动恢复，重置时同步清空本地缓存。
 - 行动作：查看详情、强制通过、强制转签（仅 `in_progress` 且 `super_admin` 可见）。
 - 强制通过流程：先拉取审批详情并列出 pending 任务，再选择任务 + 填写意见后执行。
 - API 指向：`/api/v1/approval/admin/all`、`/api/v1/approval/:id/force-approve`、`/api/v1/approval/:id/force-transfer`
@@ -1044,6 +1049,8 @@
 - 电子发票通道上传细分为“图片自动识别”与“PDF/票据文件自动识别”，同一入口下按用户选择分流：`packages/miniapp/pages/reimbursement/index.js`
 - 普通附件上传增加格式白名单拦截，超出范围时给出明确提示，减少无效上传重试：`packages/miniapp/pages/reimbursement/index.js`
 - 小程序上传 MIME 识别扩展：补充 `tif/tiff/heic/heif/ofd/xml` 的 `content-type` 映射，保证上传签名与对象存储类型一致：`packages/miniapp/utils/upload.js`
+- 真机兼容加固：文件选择器兼容 `wx.chooseMessageFile` 与 `wx.qy.chooseMessageFile`，并统一兼容 `path/tempFilePath/tempPath` 路径字段，避免真机文件路径差异导致上传失败：`packages/miniapp/utils/wx.js`、`packages/miniapp/pages/reimbursement/index.js`
+- 上传命名兜底：当临时文件路径无扩展名（如 `wxfile://tmp_*`）时自动回退 `.bin`，并优先使用原文件名推断扩展名，避免签名文件名异常：`packages/miniapp/utils/upload.js`
 
 ### 4.33 报销后台静默审查流程重构（2026-03）
 - 后端静默审查改为“按票据附件逐张识别”模式：提交或办公室手动触发后，为每张附件创建独立 OCR 任务并记录识别轮次（`review_round`），支持二次静默审查全链路重跑：`packages/api/src/routes/reimbursement.ts`、`packages/api/migrations/0037_phase27_reimbursement_invoice_review_pipeline.sql`
@@ -1143,3 +1150,11 @@
 - 小程序请求层新增“写操作并发去重”机制：对 `POST/PUT/PATCH/DELETE` 按“方法+路径+业务载荷（或显式 dedupeKey）”合并并发请求，避免同一动作短时多次点击触发重复写入：`packages/miniapp/utils/request.js`
 - 小程序写操作默认自动补 `Idempotency-Key` 请求头，保证网络抖动与 relay fallback 场景下具备服务端幂等能力（同时保持 GET 读请求不受影响）：`packages/miniapp/utils/request.js`
 - 该策略覆盖资金流出、报销、审批、油卡、资产、库房等业务页所有通过 `request()` 发起的提交类动作：`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/approval-detail/index.js`（及其他调用 `request` 的页面）
+
+### 8.8 Miniapp 审批与申请-发起申请补齐“我发起的申请”（2026-03）
+- 小程序“审批与申请”页在“发起申请”分段仅保留“我发起的申请”入口卡片，不再在该页内直接摊平审批列表：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
+- 新增独立页面承载“我发起的申请”列表（审批视图，只读）：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss,json}`，并在 `packages/miniapp/app.json` 注册路由 `pages/approval-initiated/index`
+- 独立页面新增筛选能力：可按“流程类型 + 流程状态”过滤列表，默认状态筛选为“审批中（pending/in_progress）”：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
+- 列表条目统一跳转审批详情页（`/pages/approval-detail/index`），不跳转具体业务页面，满足“看审批不看业务页”路径约束：`packages/miniapp/pages/approval-initiated/index.js`
+- 审批详情页新增只读模式（`readonly=1`），只保留查看，不展示审批意见与底部操作按钮：`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxml`
+- 审批详情页加载态/错误态解耦：慢网加载中仅显示“加载审批详情中”，仅在请求结束且失败后才显示“详情不存在或无权限”等兜底文案，避免首屏误判：`packages/miniapp/pages/approval-detail/index.{js,wxml}`

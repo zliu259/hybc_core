@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import { listContracts, type Contract } from "@/api/contract";
@@ -28,6 +28,7 @@ import {
 
 defineOptions({ name: "InvoiceList" });
 const router = useRouter();
+const route = useRoute();
 
 type AttachmentDraft = {
   file_key: string;
@@ -731,6 +732,12 @@ const runVerify = async (row: Invoice) => {
 };
 
 onMounted(async () => {
+  const queryKeyword = route.query.keyword;
+  if (typeof queryKeyword === "string" && queryKeyword.trim()) {
+    filters.value.keyword = queryKeyword.trim();
+    activeTab.value = "request";
+    page.value = 1;
+  }
   await Promise.all([loadContracts(), loadMeta()]);
   await loadData();
 });

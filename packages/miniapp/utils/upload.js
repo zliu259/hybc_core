@@ -50,8 +50,17 @@ const signUpload = (fileName, contentType = "image/jpeg", category = "miniapp") 
   }).then((res) => res.data || res);
 };
 
+const getFileExtension = (fileNameOrPath) => {
+  const normalized = String(fileNameOrPath || "").trim().replace(/\\/g, "/");
+  if (!normalized) return "";
+  const tail = normalized.split("/").pop() || "";
+  const source = tail || normalized;
+  if (!source.includes(".")) return "";
+  return (source.split(".").pop() || "").toLowerCase();
+};
+
 const uploadFileToR2 = async (filePath, options = {}) => {
-  const ext = (filePath.split(".").pop() || "bin").toLowerCase();
+  const ext = getFileExtension(options.fileName) || getFileExtension(filePath) || "bin";
   const contentType = options.contentType || detectContentType(options.fileName || filePath);
   const category = options.category || "miniapp";
   const uploadName = options.fileName || `miniapp-${Date.now()}.${ext}`;

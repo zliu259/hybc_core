@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { type UploadRequestOptions } from "element-plus";
-import { useRoute, useRouter } from "vue-router";
+import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 import { message } from "@/utils/message";
 import {
   getApprovalDetail,
@@ -873,6 +873,79 @@ const goToPaymentContract = () => {
   router.push(`/finance/contract/detail/${contractId}`);
 };
 
+const bizNoLabel = computed(() => {
+  if (!detail.value) return "-";
+  const bizType = detail.value.instance.biz_type;
+  if (bizType === "payment_request") {
+    return paymentDetail.value?.serial_no ?? String(detail.value.instance.biz_id);
+  }
+  if (bizType === "outbound_contract" || bizType === "inbound_contract") {
+    return contractDetail.value?.contract_no ?? String(detail.value.instance.biz_id);
+  }
+  if (bizType === "reimbursement_batch") {
+    return (
+      reimbursementBatchDetail.value?.batch_no ??
+      String(detail.value.instance.biz_id)
+    );
+  }
+  if (bizType === "invoice_request") {
+    return (
+      invoiceRequestDetail.value?.request_no ?? String(detail.value.instance.biz_id)
+    );
+  }
+  if (bizType === "receipt_refund") {
+    return (
+      receiptRefundDetail.value?.refund_no ?? String(detail.value.instance.biz_id)
+    );
+  }
+  return String(detail.value.instance.biz_id);
+});
+
+const bizDetailRoute = computed<RouteLocationRaw | null>(() => {
+  if (!detail.value) return null;
+  const bizType = detail.value.instance.biz_type;
+  if (bizType === "payment_request" && paymentDetail.value) {
+    return `/finance/payment/detail/${paymentDetail.value.id}`;
+  }
+  if (
+    (bizType === "outbound_contract" || bizType === "inbound_contract") &&
+    contractDetail.value
+  ) {
+    return `/finance/contract/detail/${contractDetail.value.id}`;
+  }
+  if (bizType === "reimbursement_batch" && reimbursementBatchDetail.value) {
+    return `/finance/reimbursement/batch/${reimbursementBatchDetail.value.id}`;
+  }
+  if (bizType === "invoice_request") {
+    const keyword = invoiceRequestDetail.value?.request_no?.trim() || "";
+    return keyword
+      ? { path: "/finance/receipt/invoice", query: { keyword } }
+      : "/finance/receipt/invoice";
+  }
+  if (bizType === "receipt_refund" && receiptRefundDetail.value) {
+    return `/finance/receipt/detail/${receiptRefundDetail.value.receipt.id}`;
+  }
+  return null;
+});
+
+const canOpenFinanceBizPage = computed(() => {
+  const roles = userStore.roles ?? [];
+  return (
+    roles.includes("super_admin") ||
+    roles.includes("manager") ||
+    roles.includes("finance")
+  );
+});
+
+const canGoToBizDetail = computed(() => {
+  return Boolean(bizDetailRoute.value) && canOpenFinanceBizPage.value;
+});
+
+const goToBizDetail = () => {
+  if (!bizDetailRoute.value || !canGoToBizDetail.value) return;
+  router.push(bizDetailRoute.value);
+};
+
 const loadDetail = async () => {
   loading.value = true;
   try {
@@ -1156,6 +1229,16 @@ onMounted(async () => {
               <el-descriptions-item label="业务类型">{{
                 toBizTypeLabel(detail.instance.biz_type)
               }}</el-descriptions-item>
+              <el-descriptions-item label="业务编号">
+                <el-link
+                  v-if="canGoToBizDetail"
+                  type="primary"
+                  @click="goToBizDetail"
+                >
+                  {{ bizNoLabel }}
+                </el-link>
+                <template v-else>{{ bizNoLabel }}</template>
+              </el-descriptions-item>
               <el-descriptions-item label="发起人">{{
                 toUserLabel(detail.instance.initiator_userid)
               }}</el-descriptions-item>
@@ -1211,9 +1294,12 @@ onMounted(async () => {
             <template v-if="paymentDetail">
               <el-divider>申请明细（付款）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="流水号">{{
-                  paymentDetail.serial_no
-                }}</el-descriptions-item>
+                <el-descriptions-item label="流水号">
+                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                    {{ paymentDetail.serial_no }}
+                  </el-link>
+                  <template v-else>{{ paymentDetail.serial_no }}</template>
+                </el-descriptions-item>
                 <el-descriptions-item label="关联合同">
                   <el-link
                     v-if="paymentDetail.contract && paymentDetail.contract_id"
@@ -1316,9 +1402,12 @@ onMounted(async () => {
             <template v-if="contractDetail">
               <el-divider>申请明细（合同）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="合同号">{{
-                  contractDetail.contract_no
-                }}</el-descriptions-item>
+                <el-descriptions-item label="合同号">
+                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                    {{ contractDetail.contract_no }}
+                  </el-link>
+                  <template v-else>{{ contractDetail.contract_no }}</template>
+                </el-descriptions-item>
                 <el-descriptions-item label="方向">
                   <el-tag
                     :type="toContractDirectionTagType(contractDetail.direction)"
@@ -1415,9 +1504,12 @@ onMounted(async () => {
             <template v-if="reimbursementBatchDetail">
               <el-divider>申请明细（报销批次）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="批次号">{{
-                  reimbursementBatchDetail.batch_no
-                }}</el-descriptions-item>
+                <el-descriptions-item label="批次号">
+                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                    {{ reimbursementBatchDetail.batch_no }}
+                  </el-link>
+                  <template v-else>{{ reimbursementBatchDetail.batch_no }}</template>
+                </el-descriptions-item>
                 <el-descriptions-item label="状态">{{
                   reimbursementBatchDetail.status
                 }}</el-descriptions-item>
@@ -1466,9 +1558,12 @@ onMounted(async () => {
             <template v-if="invoiceRequestDetail">
               <el-divider>申请明细（开票申请）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="申请单号">{{
-                  invoiceRequestDetail.request_no
-                }}</el-descriptions-item>
+                <el-descriptions-item label="申请单号">
+                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                    {{ invoiceRequestDetail.request_no }}
+                  </el-link>
+                  <template v-else>{{ invoiceRequestDetail.request_no }}</template>
+                </el-descriptions-item>
                 <el-descriptions-item label="状态">{{
                   toStatusLabel(invoiceRequestDetail.status)
                 }}</el-descriptions-item>
@@ -1589,9 +1684,12 @@ onMounted(async () => {
             <template v-if="receiptRefundDetail">
               <el-divider>申请明细（收款退款）</el-divider>
               <el-descriptions :column="2" border>
-                <el-descriptions-item label="退款单号">{{
-                  receiptRefundDetail.refund_no
-                }}</el-descriptions-item>
+                <el-descriptions-item label="退款单号">
+                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                    {{ receiptRefundDetail.refund_no }}
+                  </el-link>
+                  <template v-else>{{ receiptRefundDetail.refund_no }}</template>
+                </el-descriptions-item>
                 <el-descriptions-item label="退款方式">
                   {{
                     receiptRefundDetail.refund_mode === "full"

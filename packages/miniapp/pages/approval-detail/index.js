@@ -6,6 +6,8 @@ Page({
   data: {
     id: 0,
     loading: false,
+    detailState: "loading",
+    detailErrorText: "",
     acting: false,
     detail: null,
     bizDetail: null,
@@ -28,6 +30,7 @@ Page({
     paymentMethodLabelOptions: ["可后续补充", "对公转账", "现金", "票据", "其他"],
     paymentMethodIndex: 0,
     actionComment: "",
+    readOnlyView: false,
     flowCollapsed: true,
     availableActions: [],
     hasAnyAction: false,
@@ -41,7 +44,8 @@ Page({
 
   onLoad(options) {
     const id = Number((options && options.id) || 0);
-    this.setData({ id });
+    const readOnlyView = Boolean(options && (options.readonly === "1" || options.mode === "readonly"));
+    this.setData({ id, readOnlyView });
   },
 
   delay(ms) {
@@ -64,6 +68,7 @@ Page({
   },
 
   async onShow() {
+    this.setData({ detailState: "loading", detailErrorText: "" });
     await Promise.all([this.loadTransferUsers(), this.loadReferenceData()]);
     await this.loadDetail();
   },
@@ -665,8 +670,16 @@ Page({
   },
 
   async loadDetail() {
-    if (!this.data.id) return;
-    this.setData({ loading: true });
+    if (!this.data.id) {
+      this.setData({
+        loading: false,
+        detail: null,
+        detailState: "error",
+        detailErrorText: "审批单ID无效，请返回列表重试"
+      });
+      return;
+    }
+    this.setData({ loading: true, detailState: "loading", detailErrorText: "" });
     try {
       const detailRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/approval/${this.data.id}` }, 2);
       const detail = detailRes && detailRes.data ? detailRes.data : null;
@@ -729,6 +742,16 @@ Page({
 
       const availableActions = this.inferAvailableActions(detail);
       const flags = this.actionFlags(availableActions);
+      const finalFlags = this.data.readOnlyView
+        ? {
+            hasAnyAction: false,
+            canApprove: false,
+            canReject: false,
+            canReturn: false,
+            canTransfer: false,
+            canMoreAction: false
+          }
+        : flags;
 
       const profile = getUserProfile() || {};
       const userId = (profile.username || profile.id || "").trim();
@@ -755,14 +778,22 @@ Page({
         detailAttachments: attachments,
         detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
         detailTimelineNodes: this.buildTimelineNodes(detail),
-        availableActions,
+        availableActions: this.data.readOnlyView ? [] : availableActions,
         userAlreadyActed,
+        detailState: "ready",
+        detailErrorText: "",
         flowCollapsed: true,
-        ...flags
+        ...finalFlags
       });
       await this.syncPaymentSelectorsFromBizDetail();
     } catch (error) {
-      sayToast({ title: error.message || "加载失败", icon: "none", danger: true });
+      const message = (error && error.message) || "";
+      const notFoundLike = /不存在|无权限|not\s*found|permission|403|404/i.test(message);
+      const detailErrorText = notFoundLike
+        ? "审批详情不存在或无权限"
+        : "审批详情加载失败，请稍后重试";
+      this.setData({ detail: null, detailState: "error", detailErrorText });
+      sayToast({ title: message || "加载失败", icon: "none", danger: true });
     } finally {
       this.setData({ loading: false });
     }
@@ -774,6 +805,10 @@ Page({
 
   async runAction(action) {
     if (this.data.acting || !this.data.id) return;
+    if (this.data.readOnlyView) {
+      sayToast({ title: "当前为只读视图，不能执行审批操作", icon: "none" });
+      return;
+    }
     if (!this.data.hasAnyAction) {
       sayToast({ title: "当前节点不可操作", icon: "none" });
       return;

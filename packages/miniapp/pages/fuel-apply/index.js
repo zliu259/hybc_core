@@ -1,5 +1,6 @@
 const { request } = require("../../utils/request");
 const { uploadFileToR2 } = require("../../utils/upload");
+const { wxChooseMediaImage } = require("../../utils/wx");
 
 const STATUS_LABELS = {
   pending: "待处理",
@@ -91,14 +92,7 @@ Page({
   async choosePhotos() {
     if (this.data.submitting) return;
     try {
-      const res = await new Promise((resolve, reject) => {
-        wx.chooseMedia({
-          count: 9,
-          mediaType: ["image"],
-          success: resolve,
-          fail: reject
-        });
-      });
+      const res = await wxChooseMediaImage({ count: 9 });
 
       const files = (res && res.tempFiles) || [];
       if (!files.length) return;
@@ -106,15 +100,28 @@ Page({
 
       const uploaded = [];
       for (const file of files) {
-        const result = await uploadFileToR2(file.tempFilePath, {
+        const filePath = String(file.path || file.tempFilePath || file.tempPath || "");
+        if (!filePath) {
+          continue;
+        }
+        const fileName =
+          (typeof file.name === "string" && file.name.trim()) ||
+          (typeof file.fileName === "string" && file.fileName.trim()) ||
+          `fuel-${Date.now()}.jpg`;
+        const result = await uploadFileToR2(filePath, {
           category: "fuel-application",
-          fileName: file.fileName || `fuel-${Date.now()}.jpg`
+          fileName
         });
         uploaded.push({
           file_key: result.key,
-          file_name: file.fileName || result.key,
-          file_size: file.size || 0
+          file_name: fileName || result.key,
+          file_size: file.size || file.fileSize || 0
         });
+      }
+
+      if (!uploaded.length) {
+        wx.showToast({ title: "未识别到可上传图片", icon: "none" });
+        return;
       }
 
       this.setData({ photoList: this.data.photoList.concat(uploaded) });

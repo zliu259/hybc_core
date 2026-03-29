@@ -56,6 +56,12 @@
   color: #1f2329;
 }
 
+.helper-text {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #b26a00;
+}
+
 .textarea {
   min-height: 128rpx;
   border: 1rpx solid #d8dce5;

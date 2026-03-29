@@ -53,6 +53,13 @@ type VoidPaymentBody = {
   reason?: string;
 };
 
+const isPaymentNoLongerApprovedError = (error: unknown): boolean => {
+  return (
+    error instanceof Error &&
+    error.message === "Payment request is no longer approved"
+  );
+};
+
 const accountToDisplayText = (account: {
   bank_name: string;
   bank_branch_no: string | null;
@@ -1159,7 +1166,7 @@ paymentRoutes.post(
 
 paymentRoutes.post(
   "/:id/mark-paid",
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
@@ -1235,29 +1242,46 @@ paymentRoutes.post(
       });
     } catch (error) {
       await abandonIdempotentRequest(c.env.DB, `payment:mark-paid:${id}`, auth.sub, idempotencyKey);
+      if (isPaymentNoLongerApprovedError(error)) {
+        return c.json(
+          {
+            success: false,
+            error: { message: "Payment request is no longer approved" }
+          },
+          409
+        );
+      }
       throw error;
     }
 
-    await publishEvent(c.env, "PAYMENT_COMPLETED", "payment_request", {
-      payment_request_id: id,
-      serial_no: pr.serial_no,
-      contract_id: pr.contract_id,
-      amount: pr.amount
-    });
-
-    await writeAuditLog(c.env.DB, {
-      actorUserId: auth.sub,
-      actorRoles: auth.roles,
-      action: "payment_request.mark_paid",
-      targetType: "payment_request",
-      targetId: id,
-      detail: {
-        paid_at: paidAt,
-        amount: pr.amount,
+    try {
+      await publishEvent(c.env, "PAYMENT_COMPLETED", "payment_request", {
+        payment_request_id: id,
+        serial_no: pr.serial_no,
         contract_id: pr.contract_id,
-        payment_reference: body.payment_reference?.trim() || null
-      }
-    });
+        amount: pr.amount
+      });
+    } catch (error) {
+      console.error("Failed to publish payment completed event", error);
+    }
+
+    try {
+      await writeAuditLog(c.env.DB, {
+        actorUserId: auth.sub,
+        actorRoles: auth.roles,
+        action: "payment_request.mark_paid",
+        targetType: "payment_request",
+        targetId: id,
+        detail: {
+          paid_at: paidAt,
+          amount: pr.amount,
+          contract_id: pr.contract_id,
+          payment_reference: body.payment_reference?.trim() || null
+        }
+      });
+    } catch (error) {
+      console.error("Failed to write payment mark-paid audit log", error);
+    }
 
     const payload = { success: true };
     await completeIdempotentRequest(c.env.DB, `payment:mark-paid:${id}`, auth.sub, idempotencyKey, 200, payload);

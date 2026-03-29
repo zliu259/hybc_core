@@ -89,6 +89,14 @@ const formatAmountDisplay = (amount) => {
   })}（${toChineseAmount(value)}）`;
 };
 
+const formatAmountNumber = (amount) => {
+  const value = Number(amount || 0);
+  return value.toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+};
+
 const normalizeAttachment = (item) => {
   return {
     file_key: item.file_key,
@@ -126,6 +134,7 @@ Page({
     submitting: false,
     thresholdLimit: 10000,
     exceedsThreshold: false,
+    shouldUseContractFlow: false,
     amountInput: "",
     amountDisplay: formatAmountDisplay(0),
 
@@ -170,6 +179,8 @@ Page({
     },
 
     directContractIndex: 0,
+    directContractRemaining: null,
+    directContractRemainingText: "",
     directPayeeIndex: 0,
     contractEntityIndex: 0,
     contractPayeeIndex: 0,
@@ -440,11 +451,35 @@ Page({
     this.setData({ checking: true });
     const amount = Number(this.data.amountInput || 0);
     const exceedsThreshold = amount > Number(this.data.thresholdLimit || 0);
+    const contractId = this.data.directForm ? this.data.directForm.contract_id : null;
     this.setData({
       exceedsThreshold,
+      shouldUseContractFlow: this.resolveShouldUseContractFlow(exceedsThreshold, contractId),
+      directContractRemaining: this.resolveDirectContractRemaining(contractId),
+      directContractRemainingText: this.resolveDirectContractRemainingText(contractId),
       amountDisplay: formatAmountDisplay(amount),
       checking: false
     });
+  },
+
+  resolveShouldUseContractFlow(exceedsThreshold, contractId) {
+    return Boolean(exceedsThreshold && !(Number(contractId || 0) > 0));
+  },
+
+  resolveDirectContractRemaining(contractId) {
+    const numericId = Number(contractId || 0);
+    if (!(numericId > 0)) return null;
+    const contract = (this.data.contracts || []).find((item) => Number(item.id) === numericId);
+    if (!contract) return null;
+    const total = Number(contract.total_amount || 0);
+    const paid = Number(contract.paid_amount || 0);
+    if (!Number.isFinite(total) || !Number.isFinite(paid)) return null;
+    return Number((total - paid).toFixed(2));
+  },
+
+  resolveDirectContractRemainingText(contractId) {
+    const remaining = this.resolveDirectContractRemaining(contractId);
+    return remaining === null ? "" : formatAmountNumber(remaining);
   },
 
   onDirectProjectChange(e) {
@@ -466,9 +501,14 @@ Page({
   onDirectContractChange(e) {
     const index = Number(e.detail.value || 0);
     const contract = index > 0 ? this.data.contracts[index - 1] : null;
+    const contractId = contract ? Number(contract.id) : null;
+    const exceedsThreshold = Boolean(this.data.exceedsThreshold);
     this.setData({
       directContractIndex: index,
-      "directForm.contract_id": contract ? Number(contract.id) : null
+      "directForm.contract_id": contractId,
+      shouldUseContractFlow: this.resolveShouldUseContractFlow(exceedsThreshold, contractId),
+      directContractRemaining: this.resolveDirectContractRemaining(contractId),
+      directContractRemainingText: this.resolveDirectContractRemainingText(contractId)
     });
   },
 
@@ -663,8 +703,12 @@ Page({
       required(form.payment_method, "付款方式")
     ]);
     if (fieldError) return fieldError;
-    if (amount > threshold) {
+    if (amount > threshold && !(Number(form.contract_id || 0) > 0)) {
       return `金额超过阈值 ${threshold.toLocaleString()}，请改走合同流程`;
+    }
+    const selectedContractRemaining = this.resolveDirectContractRemaining(form.contract_id);
+    if (selectedContractRemaining !== null && amount > selectedContractRemaining) {
+      return `当前合同可用额度为 ${formatAmountNumber(selectedContractRemaining)}，申请金额不能超过可用额度`;
     }
     if (!this.data.directPaymentAttachments.length) {
       return "请先上传付款附件";

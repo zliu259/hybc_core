@@ -49,6 +49,11 @@
         <view class="entry-top"><view class="entry-title">⛽ 油卡额度申请</view></view>
         <view class="entry-desc">填写油卡额度、车辆里程并上传现场照片</view>
       </view>
+
+      <view class="entry-card" data-path="/pages/approval-initiated/index" bindtap="goTo">
+        <view class="entry-top"><view class="entry-title">🗂️ 我发起的申请</view></view>
+        <view class="entry-desc">进入审批视图查看我发起的申请（只读）</view>
+      </view>
     </view>
   </hy-panel-card>
 

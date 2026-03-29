@@ -1,4 +1,4 @@
-<view class="page" wx:if="{{detail}}">
+<view class="page" wx:if="{{detailState === 'ready' && detail}}">
   <view class="detail-content">
     <view class="section-wrap section-summary">
       <hy-panel-card title="{{detail.instance.instance_no}}" subtitle="{{detail.instance.biz_summary}}">
@@ -129,14 +129,14 @@
       </hy-panel-card>
     </view>
 
-    <view class="section-wrap section-op" wx:if="{{hasAnyAction}}">
+    <view class="section-wrap section-op" wx:if="{{!readOnlyView && hasAnyAction}}">
       <hy-panel-card title="审批意见">
         <textarea class="comment-box" value="{{actionComment}}" bindinput="onCommentInput" placeholder="请输入审批意见（建议填写）" maxlength="1000" />
       </hy-panel-card>
     </view>
   </view>
 
-  <view class="footer-actions" wx:if="{{hasAnyAction}}">
+  <view class="footer-actions" wx:if="{{!readOnlyView && hasAnyAction}}">
     <view class="footer-row">
       <view class="footer-col col-40">
         <view class="footer-cell">
@@ -156,7 +156,7 @@
     </view>
   </view>
 
-  <view class="footer-actions footer-acted" wx:if="{{!hasAnyAction && userAlreadyActed && !loading}}">
+  <view class="footer-actions footer-acted" wx:if="{{!readOnlyView && !hasAnyAction && userAlreadyActed && !loading}}">
     <view class="acted-hint">
       <t-icon name="check-circle" size="36rpx" color="#67c23a" />
       <text class="acted-hint-text">您已完成本条审批操作</text>
@@ -165,8 +165,8 @@
   </view>
 </view>
 
-<view wx:if="{{!detail && !loading}}" class="empty-wrap">
-  <t-empty description="审批详情不存在或无权限" />
-</view>
+<view wx:if="{{detailState === 'loading'}}" class="loading-wrap">加载审批详情中...</view>
 
-<view wx:if="{{loading}}" class="loading-wrap">加载中...</view>
+<view wx:if="{{detailState === 'error'}}" class="empty-wrap">
+  <t-empty description="{{detailErrorText || '审批详情不存在或无权限'}}" />
+</view>

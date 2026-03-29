@@ -119,6 +119,23 @@ const isAllowedExtension = (nameOrPath, allowlist) => {
   return ext ? allowlist.includes(ext) : false;
 };
 
+const getPickedFilePath = (file) => {
+  if (!file || typeof file !== "object") return "";
+  return String(file.path || file.tempFilePath || file.tempPath || "");
+};
+
+const getPickedFileName = (file, fallbackPrefix = "attachment") => {
+  if (file && typeof file.name === "string" && file.name.trim()) {
+    return file.name.trim();
+  }
+  const filePath = getPickedFilePath(file);
+  const normalized = filePath.replace(/\\/g, "/");
+  const tail = normalized.split("/").pop() || "";
+  if (tail && tail.includes(".")) return tail;
+  const ext = getExtName(filePath);
+  return `${fallbackPrefix}-${Date.now()}${ext ? `.${ext}` : ""}`;
+};
+
 const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const isValidUuid = (value) => UUID_REGEX.test(String(value || "").trim());
 const normalizeScannedUuid = (raw) => {
@@ -293,7 +310,10 @@ Page({
     }
     if (!filePath) return;
 
-    const file = await uploadFileToR2(filePath);
+    const file = await uploadFileToR2(filePath, {
+      fileName: fileName || undefined,
+      category: "reimbursement"
+    });
     const attachmentType = this.getCurrentAttachmentType();
 
     await request({
@@ -414,8 +434,9 @@ Page({
 
     return this.runBusy(async () => {
       const choose = await wxChooseMediaImage();
-      const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
-      const fileName = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].name : "";
+      const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      const filePath = getPickedFilePath(picked);
+      const fileName = getPickedFileName(picked, "invoice");
       if (!filePath) return;
       await this.uploadElectronicInvoice(filePath, fileName || `invoice-${Date.now()}.jpg`);
     }).catch((error) => {
@@ -468,8 +489,8 @@ Page({
     return this.runBusy(async () => {
       const choose = await wxChooseMessageFile({ count: 1, type: "file" });
       const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
-      const filePath = file && file.path ? file.path : "";
-      const fileName = file && file.name ? file.name : `invoice-${Date.now()}.pdf`;
+      const filePath = getPickedFilePath(file);
+      const fileName = getPickedFileName(file, "invoice") || `invoice-${Date.now()}.pdf`;
       if (!filePath) return;
       if (!isAllowedExtension(fileName || filePath, ELECTRONIC_INVOICE_EXTENSIONS)) {
         sayToast({
@@ -494,8 +515,9 @@ Page({
 
     return this.runBusy(async () => {
       const choose = await wxChooseMediaImage();
-      const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].tempFilePath : "";
-      const fileName = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].name : "";
+      const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      const filePath = getPickedFilePath(picked);
+      const fileName = getPickedFileName(picked, "attachment");
       await this.uploadAttachmentFromPath(filePath, fileName);
     }).catch((error) => {
       vibrateWarning();
@@ -511,8 +533,9 @@ Page({
 
     return this.runBusy(async () => {
       const choose = await wxChooseMessageFile({ count: 1, type: "file" });
-      const filePath = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].path : "";
-      const fileName = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0].name : "";
+      const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      const filePath = getPickedFilePath(picked);
+      const fileName = getPickedFileName(picked, "attachment");
       if (filePath && !isAllowedExtension(fileName || filePath, COMMON_ATTACHMENT_EXTENSIONS)) {
         sayToast({
           title: "仅支持常见票据/扫描格式（PDF、图片、OFD等）",
