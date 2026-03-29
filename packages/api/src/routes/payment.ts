@@ -14,7 +14,6 @@ import type {
 } from "../types/contract";
 import type { InstanceConfig } from "../types/approval";
 import { writeAuditLog } from "../services/audit-log";
-import { runInTransaction } from "../services/db-transaction";
 import { generateSerial } from "../services/serial";
 import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
@@ -58,6 +57,26 @@ const isPaymentNoLongerApprovedError = (error: unknown): boolean => {
     error instanceof Error &&
     error.message === "Payment request is no longer approved"
   );
+};
+
+const syncContractPaidAmount = async (
+  db: D1Database,
+  contractId: number,
+  updatedAt: string
+) => {
+  await db.prepare(
+    `UPDATE contract
+        SET paid_amount = (
+              SELECT COALESCE(SUM(amount), 0)
+                FROM payment_request
+               WHERE contract_id = ?
+                 AND status = 'paid'
+            ),
+            updated_at = ?
+      WHERE id = ?`
+  )
+    .bind(contractId, updatedAt, contractId)
+    .run();
 };
 
 const accountToDisplayText = (account: {
@@ -1182,11 +1201,18 @@ paymentRoutes.post(
       return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
     }
 
-    if (pr.status !== "approved") {
+    if (pr.status !== "approved" && pr.status !== "paid") {
       return c.json(
         { success: false, error: { message: "Only approved requests can be marked as paid" } },
         400
       );
+    }
+
+    if (pr.status === "paid") {
+      if (pr.contract_id !== null) {
+        await syncContractPaidAmount(c.env.DB, pr.contract_id, now);
+      }
+      return c.json({ success: true });
     }
 
     const idempotencyKey = c.req.header("Idempotency-Key");
@@ -1205,41 +1231,47 @@ paymentRoutes.post(
 
     const paidAt = body.paid_at?.trim() ? body.paid_at : now;
     try {
-      await runInTransaction(c.env.DB, async () => {
-        const updateRequest = await c.env.DB.prepare(
-          `UPDATE payment_request SET
-            status = 'paid',
-            paid_at = ?,
-            paid_by_userid = ?,
-            payment_reference = COALESCE(?, payment_reference),
-            payment_account = COALESCE(?, payment_account),
-            remark = COALESCE(?, remark),
-            updated_at = ?
-          WHERE id = ? AND status = 'approved'`
+      const updateRequest = await c.env.DB.prepare(
+        `UPDATE payment_request SET
+          status = 'paid',
+          paid_at = ?,
+          paid_by_userid = ?,
+          payment_reference = COALESCE(?, payment_reference),
+          payment_account = COALESCE(?, payment_account),
+          remark = COALESCE(?, remark),
+          updated_at = ?
+        WHERE id = ? AND status = 'approved'`
+      )
+        .bind(
+          paidAt,
+          auth.sub,
+          body.payment_reference?.trim() || null,
+          body.payment_account?.trim() || null,
+          body.remark?.trim() || null,
+          now,
+          id
         )
-          .bind(
-            paidAt,
-            auth.sub,
-            body.payment_reference?.trim() || null,
-            body.payment_account?.trim() || null,
-            body.remark?.trim() || null,
-            now,
-            id
-          )
-          .run();
+        .run();
 
-        if ((updateRequest.meta.changes ?? 0) !== 1) {
+      if ((updateRequest.meta.changes ?? 0) !== 1) {
+        const latest = await c.env.DB.prepare(
+          "SELECT status, contract_id FROM payment_request WHERE id = ?"
+        )
+          .bind(id)
+          .first<{ status: string; contract_id: number | null }>();
+
+        if (latest?.status === "paid") {
+          if (latest.contract_id !== null) {
+            await syncContractPaidAmount(c.env.DB, latest.contract_id, now);
+          }
+        } else {
           throw new Error("Payment request is no longer approved");
         }
+      }
 
-        if (pr.contract_id !== null) {
-          await c.env.DB.prepare(
-            "UPDATE contract SET paid_amount = paid_amount + ?, updated_at = ? WHERE id = ?"
-          )
-            .bind(pr.amount, now, pr.contract_id)
-            .run();
-        }
-      });
+      if (pr.contract_id !== null) {
+        await syncContractPaidAmount(c.env.DB, pr.contract_id, now);
+      }
     } catch (error) {
       await abandonIdempotentRequest(c.env.DB, `payment:mark-paid:${id}`, auth.sub, idempotencyKey);
       if (isPaymentNoLongerApprovedError(error)) {

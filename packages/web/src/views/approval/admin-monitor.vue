@@ -114,6 +114,16 @@ const statusOptions = [
   { label: "已撤回", value: "withdrawn" }
 ];
 
+const initiatorOptions = computed(() => {
+  return wecomUsers.value
+    .filter(item => typeof item.userid === "string" && item.userid.trim())
+    .map(item => ({
+      value: item.userid,
+      label: item.name?.trim() || "未知成员"
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "zh-CN"));
+});
+
 const userNameMap = computed(() => {
   const map = new Map<string, string>();
   for (const item of wecomUsers.value) {
@@ -341,12 +351,20 @@ onMounted(async () => {
       </el-form-item>
 
       <el-form-item label="发起人">
-        <el-input
+        <el-select
           v-model="filters.initiator"
-          placeholder="发起人 userid"
+          filterable
+          placeholder="全部"
           clearable
           style="width: 180px"
-        />
+        >
+          <el-option
+            v-for="item in initiatorOptions"
+            :key="item.value"
+            :label="item.label"
+            :value="item.value"
+          />
+        </el-select>
       </el-form-item>
 
       <el-form-item label="关键字">
