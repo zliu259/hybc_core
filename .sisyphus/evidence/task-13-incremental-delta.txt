@@ -1,0 +1,12 @@
+Task 13 QA Evidence: Incremental schema delta rule
+
+Verified phrases in doc/库房系统升级架构设计.md:
+- incremental
+- non-destructive
+- do not replace tracked_asset / stock_order / tracked_asset_event
+
+Observed behavior:
+- The architecture explicitly requires additive, non-destructive extension of the repo baseline.
+
+Result:
+- PASS

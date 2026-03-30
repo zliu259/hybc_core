@@ -1,0 +1,11 @@
+Final QA F3: Scenario Replay QA
+
+Result:
+- Scenarios [6/6 pass]
+- Edge Cases tested: assembled outbound, modification-required outbound, return quarantine, buried shell/core recovery, special override, project freight attribution
+
+Verdict:
+- PASS
+
+Notes:
+- All six required warehouse business scenarios are replayable from documentation only.

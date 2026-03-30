@@ -16,9 +16,11 @@ import type {
   CreateWarehouseRequest,
   InventoryRow,
   ProjectEquipmentPlan,
+  ReviewStockOrderOverrideRequest,
   StocktakeLine,
   StocktakeTask,
   StockOrder,
+  StockOrderItem,
   SubmitStockOrderApprovalRequest,
   UpdateStocktakeLineRequest,
   UpdateWarehouseRequest,
@@ -45,6 +47,7 @@ const parseTaskResult = (resultJson: string | null): Record<string, unknown> | n
 };
 
 const STOCKTAKE_LINE_STATUS = new Set(["normal", "new", "damaged", "lost"]);
+const BLOCKED_TRACKED_ASSET_STATUSES = new Set(["quarantine", "inspection", "maintenance", "modification", "scrapped", "using"]);
 
 const ensureStocktakeLineStatus = (value?: string): "normal" | "new" | "damaged" | "lost" => {
   if (!value) return "normal";
@@ -185,6 +188,34 @@ const upsertInventory = async (
   return next;
 };
 
+const evaluateStockOrderGate = async (
+  env: Env,
+  order: StockOrder,
+  items: StockOrderItem[]
+): Promise<{ pass: boolean; issues: string[] }> => {
+  const issues: string[] = [];
+  const overrideApproved = order.override_status === "approved";
+
+  for (const item of items) {
+    if (item.requires_modification === 1) {
+      issues.push(`item ${item.id} requires modification before execution`);
+    }
+    if (!item.tracked_asset_id) continue;
+    const asset = await env.DB.prepare("SELECT * FROM tracked_asset WHERE id = ?")
+      .bind(item.tracked_asset_id)
+      .first<TrackedAsset>();
+    if (!asset) {
+      issues.push(`tracked asset ${item.tracked_asset_id} not found`);
+      continue;
+    }
+    if (order.order_type === "outbound" && BLOCKED_TRACKED_ASSET_STATUSES.has(asset.status) && !overrideApproved) {
+      issues.push(`tracked asset ${asset.asset_code} blocked by status=${asset.status}`);
+    }
+  }
+
+  return { pass: issues.length === 0, issues };
+};
+
 const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<void> => {
   if (order.rental_term_id) {
     const term = await env.DB.prepare("SELECT * FROM asset_rental_term WHERE id = ?")
@@ -205,12 +236,12 @@ const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<vo
 
   const items = await env.DB.prepare("SELECT * FROM stock_order_item WHERE stock_order_id = ? AND status = 'active'")
     .bind(order.id)
-    .all<{
-      id: number;
-      asset_type_id: number | null;
-      tracked_asset_id: number | null;
-      quantity: number;
-    }>();
+    .all<StockOrderItem>();
+
+  const gate = await evaluateStockOrderGate(env, order, items.results ?? []);
+  if (!gate.pass) {
+    throw new Error(`stock order gate blocked: ${gate.issues.join("; ")}`);
+  }
 
   for (const item of items.results ?? []) {
     if (item.tracked_asset_id) {
@@ -226,10 +257,11 @@ const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<vo
           .bind(order.project_id ?? null, nowIso(), asset.id)
           .run();
       } else if (order.order_type === "inbound") {
+        const inboundStatus = order.project_id ? "quarantine" : "idle";
         await env.DB.prepare(
-          "UPDATE tracked_asset SET current_project_id = NULL, current_warehouse_id = ?, current_location = 'warehouse', status = 'idle', updated_at = ? WHERE id = ?"
+          "UPDATE tracked_asset SET current_project_id = NULL, current_warehouse_id = ?, current_location = 'warehouse', status = ?, updated_at = ? WHERE id = ?"
         )
-          .bind(order.to_warehouse_id ?? order.from_warehouse_id ?? null, nowIso(), asset.id)
+          .bind(order.to_warehouse_id ?? order.from_warehouse_id ?? null, inboundStatus, nowIso(), asset.id)
           .run();
       } else if (order.order_type === "transfer") {
         await env.DB.prepare(
@@ -250,7 +282,7 @@ const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<vo
           order.applicant_userid,
           order.project_id ?? null,
           order.to_warehouse_id ?? order.from_warehouse_id ?? null,
-          `Stock order ${order.order_no} executed`,
+          `Stock order ${order.order_no} executed${order.override_status === "approved" ? " with override" : ""}`,
           nowIso()
         )
         .run();
@@ -598,11 +630,17 @@ warehouseRoutes.post(
 
     const orderNo = await generateSerial(c.env.DB, "RK", "stock_order", "order_no");
     const now = nowIso();
+    const overrideStatus = body.override_status ?? "none";
+    if (!["none", "requested", "approved"].includes(overrideStatus)) {
+      return c.json({ success: false, error: { message: "override_status must be none/requested/approved" } }, 400);
+    }
     const result = await c.env.DB.prepare(
       `INSERT INTO stock_order
         (order_no, order_type, project_id, from_warehouse_id, to_warehouse_id,
-         applicant_userid, status, approval_instance_id, rental_term_id, executed_at, remark, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, 'draft', NULL, ?, NULL, ?, ?, ?)`
+         applicant_userid, status, approval_instance_id, rental_term_id,
+         override_status, override_reason, override_approver_userid, override_risk_acknowledged,
+         executed_at, remark, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, 'draft', NULL, ?, ?, ?, NULL, ?, NULL, ?, ?, ?)`
     )
       .bind(
         orderNo,
@@ -612,6 +650,9 @@ warehouseRoutes.post(
         body.to_warehouse_id ?? null,
         auth.sub,
         body.rental_term_id ?? null,
+        overrideStatus,
+        body.override_reason ?? null,
+        body.override_risk_acknowledged ?? 0,
         body.remark ?? null,
         now,
         now
@@ -622,13 +663,17 @@ warehouseRoutes.post(
     for (const item of body.items) {
       await c.env.DB.prepare(
         `INSERT INTO stock_order_item
-          (stock_order_id, asset_type_id, tracked_asset_id, quantity, unit, remark, status, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 'active', ?)`
+          (stock_order_id, asset_type_id, tracked_asset_id, configuration_role, configuration_group_key,
+           requires_modification, quantity, unit, remark, status, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`
       )
         .bind(
           orderId,
           item.asset_type_id ?? null,
           item.tracked_asset_id ?? null,
+          item.configuration_role ?? null,
+          item.configuration_group_key ?? null,
+          item.requires_modification ?? 0,
           item.quantity,
           item.unit ?? null,
           item.remark ?? null,
@@ -638,6 +683,23 @@ warehouseRoutes.post(
     }
 
     return c.json({ success: true, data: { id: orderId, order_no: orderNo } }, 201);
+  }
+);
+
+warehouseRoutes.get(
+  "/stock-order/:id/gate-check",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const order = await c.env.DB.prepare("SELECT * FROM stock_order WHERE id = ?")
+      .bind(id)
+      .first<StockOrder>();
+    if (!order) return c.json({ success: false, error: { message: "Stock order not found" } }, 404);
+    const items = await c.env.DB.prepare("SELECT * FROM stock_order_item WHERE stock_order_id = ? AND status = 'active'")
+      .bind(id)
+      .all<StockOrderItem>();
+    const gate = await evaluateStockOrderGate(c.env, order, items.results ?? []);
+    return c.json({ success: true, data: gate });
   }
 );
 
@@ -705,6 +767,32 @@ warehouseRoutes.post(
       .run();
 
     return c.json({ success: true });
+  }
+);
+
+warehouseRoutes.post(
+  "/stock-order/:id/override",
+  requireRoles(["super_admin", "manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as ReviewStockOrderOverrideRequest;
+    if (!["request", "approve", "reject"].includes(body.action)) {
+      return c.json({ success: false, error: { message: "action must be request/approve/reject" } }, 400);
+    }
+
+    const nextStatus = body.action === "request" ? "requested" : body.action === "approve" ? "approved" : "rejected";
+    await c.env.DB.prepare(
+      `UPDATE stock_order SET
+         override_status = ?,
+         override_reason = COALESCE(?, override_reason),
+         override_approver_userid = ?,
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(nextStatus, body.override_reason ?? null, auth.sub, nowIso(), id)
+      .run();
+    return c.json({ success: true, data: { override_status: nextStatus } });
   }
 );
 

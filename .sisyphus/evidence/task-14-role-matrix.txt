@@ -1,0 +1,13 @@
+Task 14 QA Evidence: Role visibility matrix
+
+Verified role terms in doc/UI设计文档.md:
+- 项目经理
+- 办公室
+- 库房
+- 管理层
+
+Observed behavior:
+- Role visibility is explicitly described for the warehouse upgrade pages and task center mode.
+
+Result:
+- PASS

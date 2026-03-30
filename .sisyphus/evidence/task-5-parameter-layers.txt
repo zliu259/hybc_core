@@ -1,0 +1,13 @@
+Task 5 QA Evidence: Three parameter layers are defined
+
+Verified terms in doc/库房系统升级架构设计.md:
+- factory baseline
+- current effective parameters
+- project-temporary parameters
+- outer diameter
+
+Observed behavior:
+- All three layers are defined and illustrated with an outer-diameter example
+
+Result:
+- PASS

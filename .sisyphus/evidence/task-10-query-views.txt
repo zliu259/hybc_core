@@ -1,0 +1,13 @@
+Task 10 QA Evidence: Shell/core query views
+
+Verified sections in doc/库房系统升级架构设计.md:
+- query by shell
+- query by core
+- whole-machine history
+- buried shell / recovered core case
+
+Observed behavior:
+- The document defines separate shell/core query entry points while keeping them tied to shared assembly history and event timeline.
+
+Result:
+- PASS

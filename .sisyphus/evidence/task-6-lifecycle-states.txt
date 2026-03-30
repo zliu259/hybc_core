@@ -1,0 +1,17 @@
+Task 6 QA Evidence: Lifecycle state coverage
+
+Verified critical lifecycle terms in doc/库房系统升级架构设计.md:
+- returned quarantine
+- inspection
+- service
+- modification
+- scrapped
+- buried underground
+- recovered core
+
+Observed behavior:
+- Shell, core, console, whole-machine view, and configuration relation all have explicit lifecycle definitions.
+- Buried-shell and recovered-core handling is explicitly documented.
+
+Result:
+- PASS

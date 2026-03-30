@@ -1,0 +1,17 @@
+Task 3 QA Evidence: Identity layers are explicit
+
+Verified terms in doc/库房系统升级架构设计.md:
+- whole-machine number
+- shell
+- core
+- console
+- current configuration
+- Business View
+- Traceability View
+
+Observed behavior:
+- Identity responsibilities are explicitly separated
+- Whole-machine number is business-facing; component numbers are traceability-facing
+
+Result:
+- PASS

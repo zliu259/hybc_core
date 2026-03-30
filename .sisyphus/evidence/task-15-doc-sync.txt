@@ -1,0 +1,9 @@
+Task 15 QA Evidence: Cross-doc sync
+
+Verified updates:
+- doc/README.md indexes `doc/库房系统升级架构设计.md`
+- doc/开发计划.md includes `Phase 15: 库房系统升级架构设计（文档先行）`
+- doc/开发记录.md contains the `2026-03-30 22:04 (Asia/Shanghai)` architecture decision entry
+
+Result:
+- PASS

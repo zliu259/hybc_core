@@ -1,0 +1,14 @@
+Task 9 QA Evidence: Project-level freight chain
+
+Verified terms in doc/库房系统升级架构设计.md:
+- budget request
+- prepayment
+- transport arrangement
+- project allocation
+- project-level freight attribution
+
+Observed behavior:
+- The transport chain is explicitly ordered from budget request to project allocation.
+
+Result:
+- PASS

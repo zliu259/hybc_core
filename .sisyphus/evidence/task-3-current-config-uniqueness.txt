@@ -1,0 +1,12 @@
+Task 3 QA Evidence: Current configuration is unique per point in time
+
+Verified phrases in doc/库房系统升级架构设计.md:
+- point in time
+- single current configuration
+- time-bounded assembly
+
+Observed behavior:
+- Document explicitly limits runtime truth to one current configuration at a time
+
+Result:
+- PASS

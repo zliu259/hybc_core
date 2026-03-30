@@ -1,0 +1,15 @@
+Task 15 QA Evidence: Rollout roadmap focus
+
+Verified sections in doc/库房系统升级架构设计.md:
+- Stage 1: documentation lock
+- Stage 2: additive schema delta
+- Stage 3: task and gate flow
+- Stage 4: read model and UI
+- deferred decisions
+
+Observed behavior:
+- Immediate deliverables are separated from deferred decisions.
+- Future topics stay out of the current execution path.
+
+Result:
+- PASS

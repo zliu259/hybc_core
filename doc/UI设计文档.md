@@ -69,6 +69,7 @@
 - 收款统计仪表盘：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 审批中心：`packages/web/src/views/approval/index.vue`
 - 审批统一工作台：`packages/web/src/views/approval/unified-tasklist.vue`
+- 资产任务中心（复用审批统一工作台资产模式）：`packages/web/src/views/approval/unified-tasklist.vue`
 - 审批监控台（超管）：`packages/web/src/views/approval/admin-monitor.vue`
 - 审批详情：`packages/web/src/views/approval/detail.vue`
 - 审批模板配置：`packages/web/src/views/approval/template-config.vue`
@@ -348,7 +349,14 @@
 - 支持：按资产类型动态展示属性字段。
 - 支持：按资产归属筛选；新建资产可指定归属（默认自有）。
 - 交互：资产编码与资产名称支持点击进入单设备管理详情页（`/warehouse-assets/device/:id`，页面文件 `views/asset/detail.vue`）。
+- 升级要求：支持“整机业务视图 / 部件资产视图”切换，列表页默认以资产类型筛选为主，并可按 whole-machine number、shell、core、console 关键字检索。
 - API 指向：`/api/v1/asset`
+
+#### J-2. 资产详情 `views/asset/detail.vue`
+- 模块：基础信息、当前配置、Factory/Current/Project-Temporary 参数区、部件关系、事件时间线、文档库。
+- 交互：支持按 whole-machine view 查看当前 shell/core/console 组合，也支持切换到 shell 或 core 独立履历视图。
+- 升级要求：当资产为顶管机相关设备时，页面需要显式展示 `available now / available after modification / blocked by maintenance / returned quarantine` 等状态标签。
+- API 指向：`/api/v1/asset/:id`, `/api/v1/asset/:id/event`, `/api/v1/asset/:id/document`
 
 #### K. 仓库管理 `views/warehouse/index.vue`
 - 模块：仓库 KPI 总览（仓库数/待处理制单/库存预警/库存条目）、业务入口（制单/调度/库存/资产查验）、仓库档案列表。
@@ -370,12 +378,20 @@
 - 交互：草稿单可提交审批；审批通过后可执行；草稿/待审可取消。
 - 交互增强：支持“扫码值/关键字 + 数量”快速加入清单，支持预制模板一键套用后继续编辑。
 - 租赁增强：制单时可选关联 `rental_term_id`，逾期租期在出库前阻断；关联租期的入库执行会回填“已归还”。
+- 升级要求：主要设备出库项支持两种模式——已组合设备直接选取、compatible 组件组合选取并显示 `modification required` 提示；返库执行后主要设备自动进入 returned quarantine，不直接恢复可用。
 - API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
 
 #### K-5. 项目设备规划 `views/warehouse/equipment-plan.vue`
 - 模块：设备规划列表、新建规划、AI推荐触发、推荐结果查看、确认生成出库单。
 - 交互：确认时自动生成出库单并回写规划单。
+- 升级要求：规划结果需区分 `available now` 与 `available after modification`，并把 modification required 组合显式回传到出库单配置页。
 - API 指向：`/api/v1/warehouse/equipment-plan`, `/api/v1/warehouse/equipment-plan/:id/trigger-recommend`, `/api/v1/warehouse/equipment-plan/:id/recommendation`, `/api/v1/warehouse/equipment-plan/:id/confirm`
+
+#### K-5.1 出入库调度看板 `views/warehouse/dispatch.vue`
+- 模块：调度状态总览、available now / available after modification 分栏、blocked by maintenance 清单、在途 / 已预留 / 在项目 / returned quarantine 标签视图。
+- 交互：支持按 warehouse、project、whole-machine number、shell、core、task type 过滤；支持从调度行跳转到 `views/asset/detail.vue`、`views/warehouse/stock-order.vue`、`views/approval/unified-tasklist.vue`。
+- 升级要求：若对象依赖 `special override` 才可放行，调度看板必须显式展示 override 标识、审批状态与补检要求，不能与普通 `available now` 混淆。
+- API 指向：`/api/v1/warehouse/dispatch`, `/api/v1/asset/dashboard/overview`, `/api/v1/asset/dashboard/project/:projectId`
 
 #### K-6. 消耗品管理总览 `views/warehouse/consumables.vue`
 - 模块：消耗品 KPI、库存清单、消耗记录、消耗登记。
@@ -389,12 +405,30 @@
 
 #### K-8. 设备总览 `views/asset/dashboard.vue`
 - 模块：按类型/状态/位置三维统计。
+- 升级要求：增加顶管机专项统计：当前可用整机数、可改装后可用数、returned quarantine 数、buried shell 数、recovered core 数。
 - API 指向：`/api/v1/asset/dashboard/overview`
 
 #### K-9. 项目设备视图 `views/project/equipment-view.vue`
 - 模块：项目设备清单、项目维度物资消耗汇总。
 - 租赁提示：展示租赁模式、到期日、逾期天数，并在页头显示租赁设备与逾期设备汇总告警。
+- 升级要求：项目视图需显示当前 whole-machine configuration、关键部件状态、是否依赖 special override 放行、以及项目侧 freight attribution 摘要。
 - API 指向：`/api/v1/asset/dashboard/project/:projectId`
+
+#### K-10. 资产任务中心（复用） `views/approval/unified-tasklist.vue`
+- 模块：inspection / maintenance / servicing / modification / scrapping 五类资产任务筛选、责任人视图、阻塞状态标签。
+- 交互：支持按 whole-machine number、shell、core、warehouse、project、task type 过滤；支持从任务跳转到 `views/asset/detail.vue` 与 `views/warehouse/stock-order.vue`。
+- 角色可见性：
+  - 项目经理：可查看自己项目发起相关任务与阻塞原因，不可关闭库房维保任务。
+  - 办公室：可查看审核补充相关任务、资料缺失、特批流。
+  - 库房：可查看并执行 inspection / maintenance / modification / scrapping 任务。
+  - 管理层：可查看 special override 队列与高风险阻塞任务。
+- API 指向：`/api/v1/approval/*`（统一待办入口）+ 资产/仓库专题接口聚合
+
+#### K-11. 仓库升级角色可见性矩阵
+- 项目经理：发起出入库申请、查看项目设备规划与自己项目的阻塞原因。
+- 办公室：审核补充出入库单、查看资料缺口、参与特批流转。
+- 库房：执行出入库、安排运输、处理 inspection / maintenance / servicing / modification / scrapping 任务。
+- 管理层：审批 special override、查看高风险资产与关键阻塞。
 
 #### L. 系统配置 `views/admin/system.vue`
 - 配置项：审批阈值、AI 路由、字典项、角色权限。

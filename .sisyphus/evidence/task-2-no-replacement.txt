@@ -1,0 +1,13 @@
+Task 2 QA Evidence: No replacement design sneaks in
+
+Checked for replacement-style language:
+- replace tracked_asset
+- retire stock_order
+- obsolete project_equipment_plan
+
+Observed behavior:
+- No replacement wording used
+- Document explicitly states extend-not-replace
+
+Result:
+- PASS

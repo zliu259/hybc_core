@@ -30,6 +30,35 @@ export interface TrackedAsset {
   updated_at: string;
 }
 
+export interface AssetCompatibilityRule {
+  id: number;
+  left_asset_type_id: number;
+  right_asset_type_id: number;
+  relation_type: "shell_core" | "core_console";
+  status: string;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TrackedAssetConfiguration {
+  id: number;
+  configuration_code: string;
+  whole_machine_code: string | null;
+  shell_asset_id: number | null;
+  core_asset_id: number | null;
+  console_asset_id: number | null;
+  status: "planned" | "assembling" | "active" | "disassembling" | "closed";
+  project_id: number | null;
+  warehouse_id: number | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  note: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface AssetRentalTerm {
   id: number;
   rental_no: string;
@@ -115,6 +144,44 @@ export interface UpdateTrackedAssetRequest {
   properties_json?: string;
   purchased_date?: string;
   ownership_type?: "owned" | "leased_in";
+}
+
+export interface CreateAssetCompatibilityRuleRequest {
+  left_asset_type_id: number;
+  right_asset_type_id: number;
+  relation_type: "shell_core" | "core_console";
+  note?: string;
+}
+
+export interface UpdateAssetCompatibilityRuleRequest {
+  status?: string;
+  note?: string;
+}
+
+export interface CreateTrackedAssetConfigurationRequest {
+  whole_machine_code?: string;
+  shell_asset_id?: number;
+  core_asset_id?: number;
+  console_asset_id?: number;
+  status?: "planned" | "assembling" | "active" | "disassembling" | "closed";
+  project_id?: number;
+  warehouse_id?: number;
+  effective_from?: string;
+  effective_to?: string;
+  note?: string;
+}
+
+export interface UpdateTrackedAssetConfigurationRequest {
+  whole_machine_code?: string;
+  shell_asset_id?: number | null;
+  core_asset_id?: number | null;
+  console_asset_id?: number | null;
+  status?: "planned" | "assembling" | "active" | "disassembling" | "closed";
+  project_id?: number | null;
+  warehouse_id?: number | null;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  note?: string | null;
 }
 
 export interface CreateAssetRentalTermRequest {

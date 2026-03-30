@@ -1,0 +1,14 @@
+Task 7 QA Evidence: Unified task taxonomy
+
+Verified task types in doc/库房系统升级架构设计.md:
+- inspection
+- maintenance
+- servicing
+- modification
+- scrapping
+
+Observed behavior:
+- All five core work-order types are explicitly defined with triggers and close conditions.
+
+Result:
+- PASS

@@ -1,0 +1,13 @@
+Task 4 QA Evidence: Compatibility is not the same as assembly
+
+Verified terms in doc/库房系统升级架构设计.md:
+- compatibility
+- assembly
+- modification required
+
+Observed behavior:
+- The document defines all three concepts separately
+- Compatible-but-not-assembled is routed into modification-required / available-after-modification semantics
+
+Result:
+- PASS

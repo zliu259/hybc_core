@@ -1,9 +1,32 @@
 {
-  "active_plan": "/Users/zihaoliu/Documents/Code/hybc_core/.sisyphus/plans/passkey-project-based-views.md",
-  "started_at": "2026-02-20T04:41:22.273Z",
+  "active_plan": "/Users/zihaoliu/Documents/Code/hybc_core/.sisyphus/plans/warehouse-system-upgrade-architecture.md",
+  "started_at": "2026-03-30T13:52:42Z",
   "session_ids": [
-    "ses_386eb5e20ffeiDNneRCCRFelH3"
+    "ses_2c15af256ffeBAbWkEyQPlRoOE",
+    "ses_2c0ecf77bffeWm77h4AdcCzsU3",
+    "ses_2c0ecf776ffeNw3VzITv2rbjXM",
+    "ses_2c0ecf84affearpbg80rOuUnhK",
+    "ses_2c0ecf762ffei4mrh6k5sj04N3",
+    "ses_2c0e7355dffesGQEXrmLeRm42Y",
+    "ses_2c0e73490ffe0o2xKGYvf6sBbL",
+    "ses_2c0e73386ffedP5JxstO327cTz",
+    "ses_2c0e7381bffe0BEduTsoA6HBjg",
+    "ses_2c0e33584ffe4fHfNLEuGH5Cd9",
+    "ses_2c0e3356effeT45RPxUEE7589z",
+    "ses_2c0e3358effcGOrQnIROGn4Ose",
+    "ses_2c0e33592ffeJZoXND8YutEYxt",
+    "ses_2c0ddafb4ffelt45EcJCZvQkWl",
+    "ses_2c0ddafbcffab23Xo9wU0TLfDX",
+    "ses_2c0ddaf9effeNtq7iGwJigI6ck",
+    "ses_2c0ddafbeffeDA4KLZie95ePcj",
+    "ses_2c0d89bcfffc2pojN1N5gwHmkF",
+    "ses_2c0d89bceffee4yvl4QjZKe1Pn",
+    "ses_2c0d89bcbffeUepIRJqtQQko25",
+    "ses_2c0d89bb0ffeTi8hqCPcG8ynnt",
+    "ses_2c0cd59d8ffes95jCOGYSvRrxO",
+    "ses_2c0cd59e8ffes6MRKshdN6KYx1"
   ],
-  "plan_name": "passkey-project-based-views",
-  "agent": "atlas"
+  "plan_name": "warehouse-system-upgrade-architecture",
+  "agent": "atlas",
+  "task_sessions": {}
 }

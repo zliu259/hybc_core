@@ -5,26 +5,49 @@ import { requireRoles } from "../middleware/rbac";
 import { generateSerial } from "../services/serial";
 import type { Env } from "../types/env";
 import type {
+  AssetCompatibilityRule,
   AssetRentalTerm,
   AssetType,
+  CreateAssetCompatibilityRuleRequest,
   CreateAssetRentalTermRequest,
+  CreateTrackedAssetConfigurationRequest,
   CreateAssetTypeRequest,
   CreateTrackedAssetRequest,
   ReturnAssetRentalTermRequest,
+  TrackedAssetConfiguration,
   TrackedAsset,
   TrackedAssetDocument,
   TrackedAssetEvent,
+  UpdateAssetCompatibilityRuleRequest,
+  UpdateTrackedAssetConfigurationRequest,
   UpdateAssetTypeRequest,
   UpdateTrackedAssetRequest
 } from "../types/asset";
 
 const nowIso = () => new Date().toISOString();
 const todayIso = () => new Date().toISOString().slice(0, 10);
+const CONFIGURATION_STATUSES = new Set(["planned", "assembling", "active", "disassembling", "closed"]);
+const COMPATIBILITY_RELATIONS = new Set(["shell_core", "core_console"]);
 
 const ensureJsonText = (value?: string): string | null => {
   if (!value || !value.trim()) return null;
   JSON.parse(value);
   return value;
+};
+
+const ensureCompatibilityRelation = (value: string): "shell_core" | "core_console" => {
+  if (!COMPATIBILITY_RELATIONS.has(value)) {
+    throw new Error("relation_type must be shell_core or core_console");
+  }
+  return value as "shell_core" | "core_console";
+};
+
+const ensureConfigurationStatus = (value?: string): TrackedAssetConfiguration["status"] => {
+  const next = value ?? "planned";
+  if (!CONFIGURATION_STATUSES.has(next)) {
+    throw new Error("status must be planned/assembling/active/disassembling/closed");
+  }
+  return next as TrackedAssetConfiguration["status"];
 };
 
 const generateAssetCode = async (db: D1Database, typeCode: string): Promise<string> => {
@@ -35,6 +58,58 @@ const generateAssetCode = async (db: D1Database, typeCode: string): Promise<stri
     .first<{ cnt: number }>();
   const seq = (row?.cnt ?? 0) + 1;
   return `${prefix}${String(seq).padStart(4, "0")}`;
+};
+
+const generateConfigurationCode = async (db: D1Database): Promise<string> => {
+  return generateSerial(db, "CFG", "tracked_asset_configuration", "configuration_code");
+};
+
+const validateTrackedAssetIds = async (
+  db: D1Database,
+  ids: Array<number | null | undefined>
+): Promise<Map<number, TrackedAsset>> => {
+  const validIds = [...new Set(ids.filter((id): id is number => typeof id === "number" && Number.isFinite(id)))];
+  const map = new Map<number, TrackedAsset>();
+  for (const id of validIds) {
+    const asset = await db.prepare("SELECT * FROM tracked_asset WHERE id = ?").bind(id).first<TrackedAsset>();
+    if (!asset) {
+      throw new Error(`tracked asset not found: ${id}`);
+    }
+    map.set(id, asset);
+  }
+  return map;
+};
+
+const ensureNoActiveConfigurationConflict = async (
+  db: D1Database,
+  payload: {
+    id?: number;
+    shell_asset_id?: number | null;
+    core_asset_id?: number | null;
+    console_asset_id?: number | null;
+    status: TrackedAssetConfiguration["status"];
+  }
+) => {
+  if (payload.status !== "active") return;
+  const checks = [
+    { field: "shell_asset_id", value: payload.shell_asset_id },
+    { field: "core_asset_id", value: payload.core_asset_id },
+    { field: "console_asset_id", value: payload.console_asset_id }
+  ];
+  for (const check of checks) {
+    if (!check.value) continue;
+    const row = await db
+      .prepare(
+        `SELECT id FROM tracked_asset_configuration
+         WHERE status = 'active' AND ${check.field} = ? AND (? IS NULL OR id != ?)
+         LIMIT 1`
+      )
+      .bind(check.value, payload.id ?? null, payload.id ?? null)
+      .first<{ id: number }>();
+    if (row) {
+      throw new Error(`${check.field} already belongs to another active configuration`);
+    }
+  }
 };
 
 export const assetRoutes = new Hono<{
@@ -156,6 +231,227 @@ assetRoutes.delete(
     await c.env.DB.prepare("UPDATE asset_type SET status = 'deleted', updated_at = ? WHERE id = ?")
       .bind(nowIso(), id)
       .run();
+    return c.json({ success: true });
+  }
+);
+
+assetRoutes.get(
+  "/compatibility",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const relationType = c.req.query("relation_type");
+    const assetTypeId = c.req.query("asset_type_id");
+    let sql = "SELECT * FROM asset_compatibility_rule WHERE status != 'deleted'";
+    const params: Array<string | number> = [];
+
+    if (relationType) {
+      sql += " AND relation_type = ?";
+      params.push(relationType);
+    }
+    if (assetTypeId) {
+      sql += " AND (left_asset_type_id = ? OR right_asset_type_id = ?)";
+      params.push(Number(assetTypeId), Number(assetTypeId));
+    }
+    sql += " ORDER BY id DESC";
+
+    const rows = await c.env.DB.prepare(sql).bind(...params).all<AssetCompatibilityRule>();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+assetRoutes.post(
+  "/compatibility",
+  requireRoles(["super_admin", "manager"]),
+  async (c) => {
+    const body = (await c.req.json()) as CreateAssetCompatibilityRuleRequest;
+    if (!body.left_asset_type_id || !body.right_asset_type_id || !body.relation_type) {
+      return c.json({ success: false, error: { message: "left_asset_type_id, right_asset_type_id and relation_type are required" } }, 400);
+    }
+
+    let relationType: AssetCompatibilityRule["relation_type"];
+    try {
+      relationType = ensureCompatibilityRelation(body.relation_type);
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO asset_compatibility_rule
+        (left_asset_type_id, right_asset_type_id, relation_type, status, note, created_at, updated_at)
+       VALUES (?, ?, ?, 'active', ?, ?, ?)`
+    )
+      .bind(body.left_asset_type_id, body.right_asset_type_id, relationType, body.note ?? null, now, now)
+      .run();
+
+    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  }
+);
+
+assetRoutes.put(
+  "/compatibility/:id",
+  requireRoles(["super_admin", "manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json()) as UpdateAssetCompatibilityRuleRequest;
+    await c.env.DB.prepare(
+      `UPDATE asset_compatibility_rule SET
+         status = COALESCE(?, status),
+         note = COALESCE(?, note),
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(body.status ?? null, body.note ?? null, nowIso(), id)
+      .run();
+    return c.json({ success: true });
+  }
+);
+
+assetRoutes.get(
+  "/configuration",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const status = c.req.query("status");
+    const assetId = c.req.query("tracked_asset_id");
+    const wholeMachineCode = c.req.query("whole_machine_code");
+    let sql = "SELECT * FROM tracked_asset_configuration WHERE 1=1";
+    const params: Array<string | number> = [];
+    if (status) {
+      sql += " AND status = ?";
+      params.push(status);
+    }
+    if (assetId) {
+      sql += " AND (shell_asset_id = ? OR core_asset_id = ? OR console_asset_id = ?)";
+      params.push(Number(assetId), Number(assetId), Number(assetId));
+    }
+    if (wholeMachineCode) {
+      sql += " AND whole_machine_code = ?";
+      params.push(wholeMachineCode);
+    }
+    sql += " ORDER BY id DESC";
+
+    const rows = await c.env.DB.prepare(sql).bind(...params).all<TrackedAssetConfiguration>();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+assetRoutes.post(
+  "/configuration",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as CreateTrackedAssetConfigurationRequest;
+    let status: TrackedAssetConfiguration["status"];
+    try {
+      status = ensureConfigurationStatus(body.status);
+      await validateTrackedAssetIds(c.env.DB, [body.shell_asset_id, body.core_asset_id, body.console_asset_id]);
+      await ensureNoActiveConfigurationConflict(c.env.DB, {
+        shell_asset_id: body.shell_asset_id ?? null,
+        core_asset_id: body.core_asset_id ?? null,
+        console_asset_id: body.console_asset_id ?? null,
+        status
+      });
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    const now = nowIso();
+    const configurationCode = await generateConfigurationCode(c.env.DB);
+    const result = await c.env.DB.prepare(
+      `INSERT INTO tracked_asset_configuration
+        (configuration_code, whole_machine_code, shell_asset_id, core_asset_id, console_asset_id,
+         status, project_id, warehouse_id, effective_from, effective_to, note, created_by, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        configurationCode,
+        body.whole_machine_code ?? null,
+        body.shell_asset_id ?? null,
+        body.core_asset_id ?? null,
+        body.console_asset_id ?? null,
+        status,
+        body.project_id ?? null,
+        body.warehouse_id ?? null,
+        body.effective_from ?? null,
+        body.effective_to ?? null,
+        body.note ?? null,
+        auth.sub,
+        now,
+        now
+      )
+      .run();
+
+    return c.json({ success: true, data: { id: result.meta.last_row_id, configuration_code: configurationCode } }, 201);
+  }
+);
+
+assetRoutes.put(
+  "/configuration/:id",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json()) as UpdateTrackedAssetConfigurationRequest;
+    const existing = await c.env.DB.prepare("SELECT * FROM tracked_asset_configuration WHERE id = ?")
+      .bind(id)
+      .first<TrackedAssetConfiguration>();
+    if (!existing) {
+      return c.json({ success: false, error: { message: "configuration not found" } }, 404);
+    }
+
+    let status: TrackedAssetConfiguration["status"];
+    try {
+      status = ensureConfigurationStatus(body.status ?? existing.status);
+      await validateTrackedAssetIds(c.env.DB, [body.shell_asset_id, body.core_asset_id, body.console_asset_id]);
+      await ensureNoActiveConfigurationConflict(c.env.DB, {
+        id,
+        shell_asset_id: body.shell_asset_id === undefined ? existing.shell_asset_id : body.shell_asset_id,
+        core_asset_id: body.core_asset_id === undefined ? existing.core_asset_id : body.core_asset_id,
+        console_asset_id: body.console_asset_id === undefined ? existing.console_asset_id : body.console_asset_id,
+        status
+      });
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE tracked_asset_configuration SET
+         whole_machine_code = COALESCE(?, whole_machine_code),
+         shell_asset_id = CASE WHEN ? IS NULL THEN shell_asset_id ELSE ? END,
+         core_asset_id = CASE WHEN ? IS NULL THEN core_asset_id ELSE ? END,
+         console_asset_id = CASE WHEN ? IS NULL THEN console_asset_id ELSE ? END,
+         status = ?,
+         project_id = CASE WHEN ? IS NULL THEN project_id ELSE ? END,
+         warehouse_id = CASE WHEN ? IS NULL THEN warehouse_id ELSE ? END,
+         effective_from = CASE WHEN ? IS NULL THEN effective_from ELSE ? END,
+         effective_to = CASE WHEN ? IS NULL THEN effective_to ELSE ? END,
+         note = CASE WHEN ? IS NULL THEN note ELSE ? END,
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(
+        body.whole_machine_code ?? null,
+        body.shell_asset_id === undefined ? null : body.shell_asset_id,
+        body.shell_asset_id ?? null,
+        body.core_asset_id === undefined ? null : body.core_asset_id,
+        body.core_asset_id ?? null,
+        body.console_asset_id === undefined ? null : body.console_asset_id,
+        body.console_asset_id ?? null,
+        status,
+        body.project_id === undefined ? null : body.project_id,
+        body.project_id ?? null,
+        body.warehouse_id === undefined ? null : body.warehouse_id,
+        body.warehouse_id ?? null,
+        body.effective_from === undefined ? null : body.effective_from,
+        body.effective_from ?? null,
+        body.effective_to === undefined ? null : body.effective_to,
+        body.effective_to ?? null,
+        body.note === undefined ? null : body.note,
+        body.note ?? null,
+        nowIso(),
+        id
+      )
+      .run();
+
     return c.json({ success: true });
   }
 );
@@ -350,7 +646,23 @@ assetRoutes.get(
       .bind(id)
       .all<TrackedAssetEvent>();
 
-    return c.json({ success: true, data: { ...asset, documents: docs.results ?? [], events: events.results ?? [] } });
+    const configurations = await c.env.DB.prepare(
+      `SELECT * FROM tracked_asset_configuration
+       WHERE shell_asset_id = ? OR core_asset_id = ? OR console_asset_id = ?
+       ORDER BY id DESC`
+    )
+      .bind(id, id, id)
+      .all<TrackedAssetConfiguration>();
+
+    return c.json({
+      success: true,
+      data: {
+        ...asset,
+        documents: docs.results ?? [],
+        events: events.results ?? [],
+        configurations: configurations.results ?? []
+      }
+    });
   }
 );
 

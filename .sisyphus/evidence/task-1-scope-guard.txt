@@ -1,0 +1,13 @@
+Task 1 QA Evidence: Scope guardrails are explicit
+
+Checked terms in doc/库房系统升级架构设计.md:
+- rules engine
+- device-level freight
+- external audit
+
+Observed behavior:
+- All three appear in Non-goals or Future Decisions / internal-traceability context
+- No term is presented as a v1 deliverable
+
+Result:
+- PASS

@@ -1,0 +1,13 @@
+Task 12 QA Evidence: Composite vs generic equipment boundary
+
+Verified terms in doc/库房系统升级架构设计.md:
+- composite-asset special case
+- generic equipment task / event model
+- single-asset + task/event + optional parameter change
+
+Observed behavior:
+- Pipe-jacking machines are explicitly treated as the composite-asset special case.
+- Generic equipment remains on a simpler single-asset model.
+
+Result:
+- PASS

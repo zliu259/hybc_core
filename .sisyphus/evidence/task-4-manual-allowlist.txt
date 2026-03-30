@@ -1,0 +1,13 @@
+Task 4 QA Evidence: Manual allow-list remains the v1 source of truth
+
+Checked phrases:
+- manual allow-list
+- automatic compatibility rules engine
+- parameter-derived compatibility inference
+
+Observed behavior:
+- Manual allow-list is the stated v1 source of truth
+- Automatic rule-engine options are explicitly non-goals
+
+Result:
+- PASS

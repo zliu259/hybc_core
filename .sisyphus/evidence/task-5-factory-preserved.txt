@@ -1,0 +1,9 @@
+Task 5 QA Evidence: Factory baseline is preserved
+
+Checked statements in doc/库房系统升级架构设计.md:
+- factory baseline 永远保留
+- modification 完成后，current effective parameters 可以被覆盖
+- project-temporary parameters 不直接抹除 factory baseline
+
+Result:
+- PASS

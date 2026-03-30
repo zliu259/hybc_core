@@ -1,0 +1,12 @@
+Task 9 QA Evidence: Device-level freight exclusion
+
+Verified exclusion terms in doc/库房系统升级架构设计.md:
+- device-level freight allocation
+- 对单台设备的精细成本摊销
+- 承运商结算平台化
+
+Observed behavior:
+- These items are explicitly marked as non-goals / excluded in v1.
+
+Result:
+- PASS

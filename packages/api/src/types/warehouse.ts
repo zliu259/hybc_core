@@ -33,6 +33,10 @@ export interface StockOrder {
   status: string;
   approval_instance_id: number | null;
   rental_term_id: number | null;
+  override_status: "none" | "requested" | "approved" | "rejected";
+  override_reason: string | null;
+  override_approver_userid: string | null;
+  override_risk_acknowledged: number;
   executed_at: string | null;
   remark: string | null;
   created_at: string;
@@ -44,6 +48,9 @@ export interface StockOrderItem {
   stock_order_id: number;
   asset_type_id: number | null;
   tracked_asset_id: number | null;
+  configuration_role: "whole_machine" | "shell" | "core" | "console" | "generic" | null;
+  configuration_group_key: string | null;
+  requires_modification: number;
   quantity: number;
   unit: string | null;
   remark: string | null;
@@ -99,14 +106,25 @@ export interface CreateStockOrderRequest {
   from_warehouse_id?: number;
   to_warehouse_id?: number;
   rental_term_id?: number;
+  override_status?: "none" | "requested" | "approved";
+  override_reason?: string;
+  override_risk_acknowledged?: number;
   remark?: string;
   items: {
     asset_type_id?: number;
     tracked_asset_id?: number;
+    configuration_role?: "whole_machine" | "shell" | "core" | "console" | "generic";
+    configuration_group_key?: string;
+    requires_modification?: number;
     quantity: number;
     unit?: string;
     remark?: string;
   }[];
+}
+
+export interface ReviewStockOrderOverrideRequest {
+  action: "approve" | "reject" | "request";
+  override_reason?: string;
 }
 
 export interface SubmitStockOrderApprovalRequest {

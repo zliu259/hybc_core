@@ -1,0 +1,13 @@
+Task 11 QA Evidence: Availability formula includes blockers
+
+Verified formula and blocker terms in doc/库房系统升级架构设计.md:
+- availability = state + blocking work + configuration completeness + compatibility + reservation + transit + override
+- blocking work
+- returned quarantine
+- special override
+
+Observed behavior:
+- Availability is explicitly computed from multiple factors, including blocking work and return quarantine.
+
+Result:
+- PASS

@@ -1,0 +1,10 @@
+Task 12 QA Evidence: No global composite-asset mandate
+
+Checked phrase in doc/库房系统升级架构设计.md:
+- composite-asset model
+
+Observed behavior:
+- The document explicitly says not all equipment should be upgraded into the composite-asset model.
+
+Result:
+- PASS

@@ -6,6 +6,7 @@
 - 业务背景：`doc/background_inv.md`
 - 本地开发指南：`doc/local-dev-setup.md`
 - UI 页面级设计：`doc/UI设计文档.md`
+- 库房系统升级架构设计：`doc/库房系统升级架构设计.md`
 - 统一开发记录：`doc/开发记录.md`
 - 岗位培训手册目录：`doc/guide/`
 - 培训总览：`doc/guide/00-总览与快速开始.md`
@@ -23,11 +24,12 @@
 - Azure 企业微信桥接设计：`bridge/README.md`
 - 大陆访问优化方案：`doc/大陆访问优化-Worker主入口与AzureHKBridge兜底方案.md`
 
-## 当前执行主线（2026-02）
+## 当前执行主线（2026-03）
 - Phase 12（Passkey + 项目化视图）：`doc/开发计划.md`
 - Phase 13（Azure 企业微信桥接）：`doc/开发计划.md`
 - 大陆访问优化（Worker 主入口 + Azure HK bridge 兜底）：`doc/大陆访问优化-Worker主入口与AzureHKBridge兜底方案.md`
 - Phase 14（CosmosDB + 机器学习，后续规划）：`doc/开发计划.md`
+- 库房系统升级架构设计（文档先行）：`doc/库房系统升级架构设计.md`
 - Web 项目工作区 IA 设计：`doc/UI设计文档.md`（3.4）
 - 小程序项目模块重构约束：`doc/UI设计文档.md`（4.4）
 - WeCom-first + Passkey 安全边界：`doc/CLAUDE.md`（认证模型章节）

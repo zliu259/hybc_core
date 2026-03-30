@@ -1,0 +1,14 @@
+Task 14 QA Evidence: UI page-path mapping
+
+Verified paths in doc/UI设计文档.md:
+- packages/web/src/views/approval/unified-tasklist.vue
+- packages/web/src/views/asset/detail.vue
+- packages/web/src/views/warehouse/stock-order.vue
+- packages/web/src/views/warehouse/dispatch.vue
+- packages/web/src/views/project/equipment-view.vue
+
+Observed behavior:
+- All affected warehouse/asset/task-center pages have concrete file-path mappings.
+
+Result:
+- PASS

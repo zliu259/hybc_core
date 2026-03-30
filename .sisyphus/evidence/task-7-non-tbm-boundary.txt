@@ -1,0 +1,13 @@
+Task 7 QA Evidence: Non-TBM simplification boundary
+
+Verified phrases in doc/库房系统升级架构设计.md:
+- 顶管机 composite task
+- generic equipment task
+- composite-asset fields
+- generic equipment can use the same task center without composite-asset fields
+
+Observed behavior:
+- Generic equipment reuses the task center without inheriting the full TBM composite model.
+
+Result:
+- PASS

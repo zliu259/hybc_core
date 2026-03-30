@@ -1,0 +1,13 @@
+Task 8 QA Evidence: Override controls
+
+Verified override-control terms in doc/库房系统升级架构设计.md:
+- management approval
+- reason
+- risk acknowledgement
+- audit trail
+
+Observed behavior:
+- Special override is documented as a controlled exception flow, not a freeform status change.
+
+Result:
+- PASS

@@ -1,0 +1,13 @@
+Task 11 QA Evidence: Dispatch-board categories
+
+Verified dispatch-board labels in doc/库房系统升级架构设计.md:
+- available now
+- available after modification
+- blocked by maintenance
+- reserved
+- in transit
+- on project
+- scrapped
+
+Result:
+- PASS

@@ -1,0 +1,14 @@
+Task 8 QA Evidence: Standard dispatch/return flow
+
+Verified workflow terms in doc/库房系统升级架构设计.md:
+- site PM initiation
+- office review and supplement
+- warehouse execution
+- returned quarantine
+
+Observed behavior:
+- Standard outbound flow and standard return flow are both explicitly documented.
+- Returned equipment is forced through returned quarantine before release.
+
+Result:
+- PASS

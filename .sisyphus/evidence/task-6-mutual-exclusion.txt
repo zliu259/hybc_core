@@ -1,0 +1,14 @@
+Task 6 QA Evidence: Mutually exclusive dispatch states
+
+Verified dispatch-state rules in doc/库房系统升级架构设计.md:
+- available
+- on project
+- in transit
+- mutually exclusive dispatch states
+
+Observed behavior:
+- The document explicitly states that available / on project / in transit are mutually exclusive.
+- Returned quarantine, inspection, service, and modification all remove availability.
+
+Result:
+- PASS
