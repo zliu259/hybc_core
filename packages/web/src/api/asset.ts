@@ -32,6 +32,75 @@ export type TrackedAsset = {
   updated_at: string;
 };
 
+export type TrackedAssetConfiguration = {
+  id: number;
+  configuration_code: string;
+  whole_machine_code: string | null;
+  shell_asset_id: number | null;
+  core_asset_id: number | null;
+  console_asset_id: number | null;
+  status: "planned" | "assembling" | "active" | "disassembling" | "closed";
+  project_id: number | null;
+  warehouse_id: number | null;
+  effective_from: string | null;
+  effective_to: string | null;
+  note: string | null;
+  created_by: string;
+  created_at: string;
+  updated_at: string;
+};
+
+export type DispatchBoardState =
+  | "available_now"
+  | "available_after_modification"
+  | "blocked"
+  | "reserved"
+  | "in_transit"
+  | "on_project"
+  | "scrapped";
+
+export type DispatchBoardItem = {
+  id: number;
+  asset_code: string;
+  asset_name: string;
+  asset_type_id: number;
+  asset_type_code: string | null;
+  asset_type_name: string | null;
+  status: string;
+  current_project_id: number | null;
+  current_warehouse_id: number | null;
+  current_location: string | null;
+  dispatch_state: DispatchBoardState;
+  reasons: string[];
+  configurations: Array<{
+    id: number;
+    configuration_code: string;
+    whole_machine_code: string | null;
+    status: TrackedAssetConfiguration["status"];
+  }>;
+  blocking_work_orders: Array<{ work_order_no: string; status: string }>;
+  reservations: Array<{
+    order_no: string;
+    status: string;
+    requires_modification: number;
+  }>;
+};
+
+export type DispatchBoardResponse = {
+  summary: Record<DispatchBoardState, number>;
+  by_type: Array<{
+    asset_type_id: number;
+    type_code: string | null;
+    type_name: string | null;
+    count: number;
+  }>;
+  by_warehouse: Array<{
+    warehouse_id: number;
+    count: number;
+  }>;
+  items: DispatchBoardItem[];
+};
+
 export type AssetRentalTerm = {
   id: number;
   rental_no: string;
@@ -151,8 +220,20 @@ export const getTrackedAsset = (id: number) =>
         operator_userid: string;
         detail: string | null;
       }[];
+      configurations: TrackedAssetConfiguration[];
     };
   }>("get", `/api/v1/asset/${id}`);
+
+export const listTrackedAssetConfigurations = (params?: {
+  status?: TrackedAssetConfiguration["status"];
+  tracked_asset_id?: number;
+  whole_machine_code?: string;
+}) =>
+  http.request<{ success: boolean; data: TrackedAssetConfiguration[] }>(
+    "get",
+    "/api/v1/asset/configuration",
+    { params }
+  );
 
 export const updateTrackedAsset = (
   id: number,
@@ -273,4 +354,16 @@ export const getAssetProjectView = (projectId: number) =>
   http.request<{ success: boolean; data: Record<string, unknown> }>(
     "get",
     `/api/v1/asset/dashboard/project/${projectId}`
+  );
+
+export const getDispatchBoard = (params?: {
+  warehouse_id?: number;
+  asset_type_id?: number;
+  project_id?: number;
+  dispatch_state?: DispatchBoardState;
+}) =>
+  http.request<{ success: boolean; data: DispatchBoardResponse }>(
+    "get",
+    "/api/v1/asset/dashboard/dispatch-board",
+    { params }
   );

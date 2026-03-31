@@ -1,185 +1,245 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { message } from "@/utils/message";
+import { useRouter } from "vue-router";
 import {
-  executeStockOrder,
-  listStockOrders,
-  type StockOrder
-} from "@/api/warehouse";
+  getDispatchBoard,
+  listAssetTypes,
+  type AssetType,
+  type DispatchBoardItem,
+  type DispatchBoardState
+} from "@/api/asset";
+import { listProjects, type Project } from "@/api/project";
+import { listWarehouses, type Warehouse } from "@/api/warehouse";
 
 defineOptions({ name: "WarehouseDispatch" });
 
+const router = useRouter();
 const loading = ref(false);
-const actionLoading = ref(false);
-const rows = ref<StockOrder[]>([]);
-const confirmVisible = ref(false);
-const confirmOrder = ref<StockOrder | null>(null);
-const receiveStatus = ref("good");
-const receivedQty = ref(1);
+const assetTypes = ref<AssetType[]>([]);
+const warehouses = ref<Warehouse[]>([]);
+const projects = ref<Project[]>([]);
+const board = ref<{
+  summary: Record<DispatchBoardState, number>;
+  by_type: Array<{
+    asset_type_id: number;
+    type_code: string | null;
+    type_name: string | null;
+    count: number;
+  }>;
+  by_warehouse: Array<{
+    warehouse_id: number;
+    count: number;
+  }>;
+  items: DispatchBoardItem[];
+} | null>(null);
 
-const columns = [
-  { key: "inbound_pending", title: "待处理入库" },
-  { key: "outbound_pending", title: "待处理出库" },
-  { key: "executing", title: "调拨执行中" },
-  { key: "done", title: "已完成" }
-] as const;
+const filters = ref<{
+  warehouse_id?: number;
+  asset_type_id?: number;
+  project_id?: number;
+  dispatch_state?: DispatchBoardState;
+}>({});
 
-const loadData = async () => {
+const columns: Array<{ key: DispatchBoardState; title: string }> = [
+  { key: "available_now", title: "可立即调度" },
+  { key: "available_after_modification", title: "改装后可用" },
+  { key: "blocked", title: "阻塞中" },
+  { key: "reserved", title: "已预留" },
+  { key: "in_transit", title: "运输中" },
+  { key: "on_project", title: "项目占用" },
+  { key: "scrapped", title: "已报废" }
+];
+
+const groupedItems = computed<Record<DispatchBoardState, DispatchBoardItem[]>>(() => {
+  const initial = {
+    available_now: [],
+    available_after_modification: [],
+    blocked: [],
+    reserved: [],
+    in_transit: [],
+    on_project: [],
+    scrapped: []
+  } satisfies Record<DispatchBoardState, DispatchBoardItem[]>;
+
+  for (const item of board.value?.items ?? []) {
+    initial[item.dispatch_state].push(item);
+  }
+  return initial;
+});
+
+const warehouseNameMap = computed(() => {
+  return Object.fromEntries(
+    warehouses.value.map(item => [item.id, item.warehouse_name])
+  ) as Record<number, string>;
+});
+
+const loadMeta = async () => {
+  const [warehouseRes, assetTypeRes, projectRes] = await Promise.all([
+    listWarehouses(),
+    listAssetTypes({ tracked_flag: 1 }),
+    listProjects({ page: 1, pageSize: 500 })
+  ]);
+  warehouses.value = warehouseRes.data;
+  assetTypes.value = assetTypeRes.data;
+  projects.value = projectRes.data;
+};
+
+const loadBoard = async () => {
   loading.value = true;
   try {
-    const result = await listStockOrders();
-    rows.value = result.data;
+    const result = await getDispatchBoard(filters.value);
+    board.value = result.data;
   } finally {
     loading.value = false;
   }
 };
 
-const grouped = computed(() => {
-  const result: Record<string, StockOrder[]> = {
-    inbound_pending: [],
-    outbound_pending: [],
-    executing: [],
-    done: []
-  };
+const resetFilters = async () => {
+  filters.value = {};
+  await loadBoard();
+};
 
-  rows.value.forEach(row => {
-    if (row.status === "approved") {
-      result.executing.push(row);
-      return;
-    }
+const goToAsset = (id: number) => router.push(`/warehouse-assets/device/${id}`);
 
-    if (["executed", "cancelled", "rejected"].includes(row.status)) {
-      result.done.push(row);
-      return;
-    }
-
-    if (row.order_type === "inbound") result.inbound_pending.push(row);
-    else result.outbound_pending.push(row);
-  });
-
-  return result;
+onMounted(async () => {
+  await loadMeta();
+  await loadBoard();
 });
-
-const onDragStart = (event: DragEvent, row: StockOrder) => {
-  event.dataTransfer?.setData("text/plain", String(row.id));
-};
-
-const onDrop = async (event: DragEvent, columnKey: string) => {
-  event.preventDefault();
-  const value = event.dataTransfer?.getData("text/plain");
-  const orderId = Number(value);
-  const row = rows.value.find(item => item.id === orderId);
-  if (!row) return;
-
-  if (columnKey === "done" && row.status === "approved") {
-    confirmOrder.value = row;
-    receiveStatus.value = "good";
-    receivedQty.value = 1;
-    confirmVisible.value = true;
-    return;
-  }
-
-  message("当前拖拽仅支持将已审批单据拖入“已完成”并执行", { type: "info" });
-};
-
-const confirmReceive = async () => {
-  if (!confirmOrder.value) return;
-  if (receivedQty.value <= 0) {
-    message("实际送达数量必须大于 0", { type: "warning" });
-    return;
-  }
-
-  actionLoading.value = true;
-  try {
-    await executeStockOrder(confirmOrder.value.id);
-    message(
-      `单据 ${confirmOrder.value.order_no} 已签收（状态: ${receiveStatus.value}，数量: ${receivedQty.value}）`,
-      { type: "success" }
-    );
-    confirmVisible.value = false;
-    confirmOrder.value = null;
-    await loadData();
-  } finally {
-    actionLoading.value = false;
-  }
-};
-
-const onDragOver = (event: DragEvent) => {
-  event.preventDefault();
-};
-
-onMounted(loadData);
 </script>
 
 <template>
-  <el-card v-loading="loading || actionLoading" shadow="never" class="dispatch">
+  <el-card v-loading="loading" shadow="never" class="dispatch">
     <template #header>
-      <div>
-        <div class="dispatch__title">出入库调度</div>
-        <div class="dispatch__sub">拖拽已审批单据到“已完成”即执行确认</div>
+      <div class="dispatch__header">
+        <div>
+          <div class="dispatch__title">可用资产调度台</div>
+          <div class="dispatch__sub">按资产实时状态、工单阻塞、预留与改装需求聚合展示</div>
+        </div>
       </div>
     </template>
 
-    <div class="kanban">
-      <div
-        v-for="col in columns"
-        :key="col.key"
-        class="kanban-col"
-        @drop="(e: DragEvent) => onDrop(e, col.key)"
-        @dragover="onDragOver"
-      >
-        <div class="kanban-col__title">{{ col.title }}</div>
-        <div class="kanban-col__list">
-          <div
-            v-for="item in grouped[col.key]"
+    <el-form inline class="dispatch__filters">
+      <el-form-item label="仓库">
+        <el-select v-model="filters.warehouse_id" clearable filterable style="width: 180px">
+          <el-option
+            v-for="item in warehouses"
             :key="item.id"
-            class="kanban-card"
-            draggable="true"
-            @dragstart="(e: DragEvent) => onDragStart(e, item)"
-          >
-            <div class="kanban-card__no">{{ item.order_no }}</div>
-            <div class="kanban-card__meta">类型：{{ item.order_type }}</div>
-            <div class="kanban-card__meta">状态：{{ item.status }}</div>
+            :label="item.warehouse_name"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="资产类型">
+        <el-select v-model="filters.asset_type_id" clearable filterable style="width: 220px">
+          <el-option
+            v-for="item in assetTypes"
+            :key="item.id"
+            :label="`${item.type_name} (${item.type_code})`"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="项目">
+        <el-select v-model="filters.project_id" clearable filterable style="width: 220px">
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="`${item.project_name} (${item.project_code})`"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="调度状态">
+        <el-select v-model="filters.dispatch_state" clearable style="width: 180px">
+          <el-option v-for="item in columns" :key="item.key" :label="item.title" :value="item.key" />
+        </el-select>
+      </el-form-item>
+      <el-button type="primary" @click="loadBoard">查询</el-button>
+      <el-button @click="resetFilters">重置</el-button>
+    </el-form>
+
+    <el-row :gutter="12" class="dispatch__summary">
+      <el-col v-for="item in columns" :key="item.key" :lg="3" :md="6" :sm="8" :xs="12">
+        <div class="summary-card">
+          <div class="summary-card__title">{{ item.title }}</div>
+          <div class="summary-card__value">{{ board?.summary[item.key] ?? 0 }}</div>
+        </div>
+      </el-col>
+    </el-row>
+
+    <div class="kanban">
+      <div v-for="col in columns" :key="col.key" class="kanban-col">
+        <div class="kanban-col__title">
+          <span>{{ col.title }}</span>
+          <el-tag type="info">{{ groupedItems[col.key].length }}</el-tag>
+        </div>
+
+        <div class="kanban-col__list">
+          <div v-for="item in groupedItems[col.key]" :key="item.id" class="kanban-card">
+            <div class="kanban-card__head">
+              <div>
+                <div class="kanban-card__no">{{ item.asset_code }}</div>
+                <div class="kanban-card__name">{{ item.asset_name }}</div>
+              </div>
+              <el-button link type="primary" @click="goToAsset(item.id)">详情</el-button>
+            </div>
+
+            <div class="kanban-card__meta">类型：{{ item.asset_type_name || item.asset_type_code || "-" }}</div>
+            <div class="kanban-card__meta">资产状态：{{ item.status }}</div>
             <div class="kanban-card__meta">
-              项目：{{ item.project_id || "-" }}
+              仓库：{{ item.current_warehouse_id ? warehouseNameMap[item.current_warehouse_id] || `#${item.current_warehouse_id}` : "-" }}
+            </div>
+            <div class="kanban-card__meta">项目：{{ item.current_project_id || "-" }}</div>
+
+            <div v-if="item.configurations.length" class="kanban-card__section">
+              <div class="kanban-card__section-title">组合配置</div>
+              <el-tag
+                v-for="config in item.configurations"
+                :key="config.id"
+                size="small"
+                class="kanban-card__tag"
+              >
+                {{ config.configuration_code }} / {{ config.status }}
+              </el-tag>
+            </div>
+
+            <div v-if="item.blocking_work_orders.length" class="kanban-card__section">
+              <div class="kanban-card__section-title">阻塞工单</div>
+              <div v-for="workOrder in item.blocking_work_orders" :key="workOrder.work_order_no" class="kanban-card__reason">
+                {{ workOrder.work_order_no }} · {{ workOrder.status }}
+              </div>
+            </div>
+
+            <div v-if="item.reservations.length" class="kanban-card__section">
+              <div class="kanban-card__section-title">预留记录</div>
+              <div v-for="reservation in item.reservations" :key="reservation.order_no" class="kanban-card__reason">
+                {{ reservation.order_no }} · {{ reservation.status }}
+                <span v-if="reservation.requires_modification === 1"> · 需改装</span>
+              </div>
+            </div>
+
+            <div v-if="item.reasons.length" class="kanban-card__section">
+              <div class="kanban-card__section-title">调度原因</div>
+              <div v-for="reason in item.reasons" :key="reason" class="kanban-card__reason">
+                {{ reason }}
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
   </el-card>
-
-  <el-dialog v-model="confirmVisible" title="签收核验" width="460px">
-    <el-form label-width="120px" label-position="left">
-      <el-form-item label="单据编号">
-        <span>{{ confirmOrder?.order_no }}</span>
-      </el-form-item>
-      <el-form-item label="调拨类型">
-        <span>{{ confirmOrder?.order_type }}</span>
-      </el-form-item>
-      <el-form-item label="设备状态复核">
-        <el-select v-model="receiveStatus" style="width: 100%">
-          <el-option label="良好" value="good" />
-          <el-option label="需维修" value="repair" />
-          <el-option label="报废" value="scrap" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="实际送达数量">
-        <el-input-number v-model="receivedQty" :min="0.01" :precision="2" />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="confirmVisible = false">取消</el-button>
-      <el-button type="primary" :loading="actionLoading" @click="confirmReceive"
-        >确认签收</el-button
-      >
-    </template>
-  </el-dialog>
 </template>
 
 <style scoped>
 .dispatch {
   background: #fffaf2;
+}
+
+.dispatch__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .dispatch__title {
@@ -194,9 +254,34 @@ onMounted(loadData);
   color: #6e6458;
 }
 
+.dispatch__filters,
+.dispatch__summary {
+  margin-bottom: 12px;
+}
+
+.summary-card {
+  border: 1px solid #e8ddc8;
+  border-radius: 10px;
+  background: #fffcf7;
+  padding: 12px;
+  margin-bottom: 12px;
+}
+
+.summary-card__title {
+  font-size: 13px;
+  color: #6e6458;
+}
+
+.summary-card__value {
+  margin-top: 8px;
+  font-size: 24px;
+  font-weight: 700;
+  color: #2a241d;
+}
+
 .kanban {
   display: grid;
-  grid-template-columns: repeat(4, minmax(220px, 1fr));
+  grid-template-columns: repeat(7, minmax(240px, 1fr));
   gap: 10px;
   overflow-x: auto;
 }
@@ -210,6 +295,10 @@ onMounted(loadData);
 }
 
 .kanban-col__title {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
   font-size: 14px;
   font-weight: 600;
   color: #2a241d;
@@ -227,7 +316,12 @@ onMounted(loadData);
   border-radius: 8px;
   padding: 10px;
   background: #fffcf7;
-  cursor: grab;
+}
+
+.kanban-card__head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
 }
 
 .kanban-card__no {
@@ -235,15 +329,38 @@ onMounted(loadData);
   color: #2a241d;
 }
 
-.kanban-card__meta {
+.kanban-card__name {
   margin-top: 4px;
   font-size: 12px;
   color: #6e6458;
 }
 
+.kanban-card__meta,
+.kanban-card__reason {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6e6458;
+}
+
+.kanban-card__section {
+  margin-top: 8px;
+}
+
+.kanban-card__section-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #2a241d;
+  margin-bottom: 4px;
+}
+
+.kanban-card__tag {
+  margin-right: 6px;
+  margin-bottom: 6px;
+}
+
 @media (max-width: 1200px) {
   .kanban {
-    grid-template-columns: repeat(2, minmax(240px, 1fr));
+    grid-template-columns: repeat(3, minmax(240px, 1fr));
   }
 }
 

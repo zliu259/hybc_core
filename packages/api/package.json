@@ -7,7 +7,7 @@
     "dev": "wrangler dev src/index.ts --local --persist-to .wrangler/state",
     "deploy": "wrangler deploy",
     "db:migrate:local": "wrangler d1 migrations apply hybcdg-prod-db --local",
-    "db:seed:mock:local": "wrangler d1 execute hengyue-db --local --file ./scripts/mock-data.sql",
+    "db:seed:mock:local": "wrangler d1 execute hybcdg-prod-db --local --file ./scripts/mock-data.sql",
     "legacy:fin:gen-mapping": "python3 scripts/legacy_fin_generate_mapping.py",
     "legacy:fin:dry-run": "python3 scripts/legacy_fin_import.py --mode dry-run",
     "legacy:fin:apply:local:base": "python3 scripts/legacy_fin_import.py --mode apply --tables payee,entity",
@@ -31,6 +31,6 @@
     "prettier": "^3.6.2",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4",
-    "wrangler": "^4.77.0"
+    "wrangler": "^4.78.0"
   }
 }

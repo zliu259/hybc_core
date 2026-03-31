@@ -6,7 +6,8 @@ const bizTypeLabelMap: Record<string, string> = {
   payment_request: "付款审批",
   reimbursement_batch: "报销审批",
   stock_order: "出入库审批",
-  contract_amount_change: "合同金额变更"
+  contract_amount_change: "合同金额变更",
+  warehouse_asset_work_order: "资产工单审批"
 };
 
 const statusLabelMap: Record<string, string> = {

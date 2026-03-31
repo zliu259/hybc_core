@@ -8,6 +8,7 @@ import {
   addAssetDocument,
   addAssetEvent,
   getTrackedAsset,
+  type TrackedAssetConfiguration,
   type TrackedAsset,
   updateTrackedAsset
 } from "@/api/asset";
@@ -38,7 +39,11 @@ const id = computed(() => Number(route.params.id));
 const loading = ref(false);
 const saving = ref(false);
 const asset = ref<
-  (TrackedAsset & { documents: AssetDocument[]; events: AssetEvent[] }) | null
+  (TrackedAsset & {
+    documents: AssetDocument[];
+    events: AssetEvent[];
+    configurations: TrackedAssetConfiguration[];
+  }) | null
 >(null);
 
 type LocationOption = {
@@ -75,7 +80,22 @@ const eventTypeLabelMap: Record<string, string> = {
   repair: "维修",
   transfer: "调拨",
   check: "查验",
-  incident: "事件"
+  incident: "事件",
+  configuration_created: "组合配置创建",
+  configuration_updated: "组合配置更新",
+  work_order_created: "工单创建",
+  work_order_submitted: "工单提审",
+  work_order_started: "工单开始",
+  work_order_completed: "工单完成",
+  work_order_cancelled: "工单取消"
+};
+
+const configurationStatusLabelMap: Record<TrackedAssetConfiguration["status"], string> = {
+  planned: "待组装",
+  assembling: "组装中",
+  active: "生效中",
+  disassembling: "拆解中",
+  closed: "已关闭"
 };
 
 const docTypeOptions = [
@@ -434,6 +454,23 @@ onMounted(async () => {
       </el-col>
 
       <el-col :md="12" :xs="24">
+        <el-card shadow="never" header="组合配置历史" style="background: #fffaf2; margin-bottom: 16px">
+          <el-empty v-if="!(asset?.configurations?.length ?? 0)" description="暂无组合配置记录" />
+          <el-table v-else :data="asset?.configurations ?? []">
+            <el-table-column prop="configuration_code" label="配置编号" min-width="150" />
+            <el-table-column prop="whole_machine_code" label="整机编号" min-width="140" />
+            <el-table-column label="状态" width="110">
+              <template #default="scope">
+                {{ configurationStatusLabelMap[scope.row.status] || scope.row.status }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="project_id" label="项目ID" width="100" />
+            <el-table-column prop="warehouse_id" label="仓库ID" width="100" />
+            <el-table-column prop="effective_from" label="生效开始" width="160" />
+            <el-table-column prop="effective_to" label="生效结束" width="160" />
+          </el-table>
+        </el-card>
+
         <el-card shadow="never" header="文档库" style="background: #fffaf2">
           <el-button type="primary" plain @click="docDialogVisible = true"
             >添加文档</el-button

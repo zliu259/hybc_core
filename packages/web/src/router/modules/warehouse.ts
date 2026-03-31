@@ -57,6 +57,15 @@ export default {
       }
     },
     {
+      path: "/warehouse/work-order",
+      name: "WarehouseWorkOrder",
+      redirect: "/warehouse-assets/work-order",
+      meta: {
+        title: "资产工单(旧路径)",
+        showLink: false
+      }
+    },
+    {
       path: "/warehouse/equipment-plan",
       name: "WarehouseEquipmentPlan",
       redirect: "/warehouse-assets/templates",

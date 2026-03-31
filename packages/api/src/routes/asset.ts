@@ -2,6 +2,10 @@ import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
+import {
+  collectConfigurationParticipants,
+  emitTrackedAssetEvents
+} from "../services/asset-event";
 import { generateSerial } from "../services/serial";
 import type { Env } from "../types/env";
 import type {
@@ -28,6 +32,14 @@ const nowIso = () => new Date().toISOString();
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const CONFIGURATION_STATUSES = new Set(["planned", "assembling", "active", "disassembling", "closed"]);
 const COMPATIBILITY_RELATIONS = new Set(["shell_core", "core_console"]);
+const DISPATCH_BLOCKED_ASSET_STATUSES = new Set([
+  "quarantine",
+  "inspection",
+  "maintenance",
+  "servicing",
+  "modification",
+  "scrapped"
+]);
 
 const ensureJsonText = (value?: string): string | null => {
   if (!value || !value.trim()) return null;
@@ -62,6 +74,62 @@ const generateAssetCode = async (db: D1Database, typeCode: string): Promise<stri
 
 const generateConfigurationCode = async (db: D1Database): Promise<string> => {
   return generateSerial(db, "CFG", "tracked_asset_configuration", "configuration_code");
+};
+
+type DispatchBoardState =
+  | "available_now"
+  | "available_after_modification"
+  | "blocked"
+  | "reserved"
+  | "in_transit"
+  | "on_project"
+  | "scrapped";
+
+const countBy = <T>(items: T[], keyFn: (item: T) => string | number) => {
+  const map = new Map<string | number, number>();
+  for (const item of items) {
+    const key = keyFn(item);
+    map.set(key, (map.get(key) ?? 0) + 1);
+  }
+  return map;
+};
+
+const emitConfigurationTimelineEvent = async (
+  db: D1Database,
+  payload: {
+    shell_asset_id?: number | null;
+    core_asset_id?: number | null;
+    console_asset_id?: number | null;
+    configuration_code: string;
+    whole_machine_code?: string | null;
+    status: TrackedAssetConfiguration["status"];
+    project_id?: number | null;
+    warehouse_id?: number | null;
+    note?: string | null;
+  },
+  operatorUserid: string,
+  eventType: "configuration_created" | "configuration_updated",
+  previousStatus?: string | null
+) => {
+  const participants = collectConfigurationParticipants(payload);
+  if (participants.length === 0) return;
+  const eventTime = nowIso();
+  await emitTrackedAssetEvents(
+    db,
+    participants.map((participant) => ({
+      tracked_asset_id: participant.tracked_asset_id,
+      event_type: eventType,
+      event_time: eventTime,
+      operator_userid: operatorUserid,
+      project_id: payload.project_id ?? null,
+      warehouse_id: payload.warehouse_id ?? null,
+      detail:
+        `configuration_code=${payload.configuration_code}; role=${participant.role}; status=${payload.status}` +
+        `${payload.whole_machine_code ? `; whole_machine_code=${payload.whole_machine_code}` : ""}` +
+        `${previousStatus ? `; previous_status=${previousStatus}` : ""}` +
+        `${payload.note ? `; note=${payload.note}` : ""}`
+    }))
+  );
 };
 
 const validateTrackedAssetIds = async (
@@ -381,6 +449,23 @@ assetRoutes.post(
       )
       .run();
 
+    await emitConfigurationTimelineEvent(
+      c.env.DB,
+      {
+        configuration_code: configurationCode,
+        whole_machine_code: body.whole_machine_code ?? null,
+        shell_asset_id: body.shell_asset_id ?? null,
+        core_asset_id: body.core_asset_id ?? null,
+        console_asset_id: body.console_asset_id ?? null,
+        status,
+        project_id: body.project_id ?? null,
+        warehouse_id: body.warehouse_id ?? null,
+        note: body.note ?? null
+      },
+      auth.sub,
+      "configuration_created"
+    );
+
     return c.json({ success: true, data: { id: result.meta.last_row_id, configuration_code: configurationCode } }, 201);
   }
 );
@@ -451,6 +536,24 @@ assetRoutes.put(
         id
       )
       .run();
+
+    await emitConfigurationTimelineEvent(
+      c.env.DB,
+      {
+        configuration_code: existing.configuration_code,
+        whole_machine_code: body.whole_machine_code ?? existing.whole_machine_code,
+        shell_asset_id: body.shell_asset_id === undefined ? existing.shell_asset_id : body.shell_asset_id,
+        core_asset_id: body.core_asset_id === undefined ? existing.core_asset_id : body.core_asset_id,
+        console_asset_id: body.console_asset_id === undefined ? existing.console_asset_id : body.console_asset_id,
+        status,
+        project_id: body.project_id === undefined ? existing.project_id : body.project_id,
+        warehouse_id: body.warehouse_id === undefined ? existing.warehouse_id : body.warehouse_id,
+        note: body.note === undefined ? existing.note : body.note
+      },
+      c.get("auth").sub,
+      "configuration_updated",
+      existing.status
+    );
 
     return c.json({ success: true });
   }
@@ -548,6 +651,217 @@ assetRoutes.get(
         by_type: byType.results ?? [],
         by_status: byStatus.results ?? [],
         by_location: byLocation.results ?? []
+      }
+    });
+  }
+);
+
+assetRoutes.get(
+  "/dashboard/dispatch-board",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const warehouseId = c.req.query("warehouse_id");
+    const assetTypeId = c.req.query("asset_type_id");
+    const projectId = c.req.query("project_id");
+    const dispatchStateFilter = c.req.query("dispatch_state");
+
+    let sql = "SELECT * FROM tracked_asset WHERE 1=1";
+    const params: Array<string | number> = [];
+    if (warehouseId) {
+      sql += " AND current_warehouse_id = ?";
+      params.push(Number(warehouseId));
+    }
+    if (assetTypeId) {
+      sql += " AND asset_type_id = ?";
+      params.push(Number(assetTypeId));
+    }
+    if (projectId) {
+      sql += " AND current_project_id = ?";
+      params.push(Number(projectId));
+    }
+    sql += " ORDER BY id DESC";
+
+    const assetRows = await c.env.DB.prepare(sql).bind(...params).all<TrackedAsset>();
+    const assets = assetRows.results ?? [];
+    const assetIds = new Set(assets.map((item) => item.id));
+
+    const activeConfigurations = await c.env.DB.prepare(
+      `SELECT * FROM tracked_asset_configuration
+       WHERE status IN ('planned', 'assembling', 'active', 'disassembling')`
+    ).all<TrackedAssetConfiguration>();
+
+    const activeWorkOrders = await c.env.DB.prepare(
+      `SELECT * FROM warehouse_asset_work_order
+       WHERE blocking_flag = 1 AND status IN ('pending_approval', 'approved', 'in_progress')`
+    ).all<{
+      id: number;
+      work_order_no: string;
+      tracked_asset_id: number | null;
+      tracked_asset_configuration_id: number | null;
+      status: string;
+    }>();
+
+    const stockReservations = await c.env.DB.prepare(
+      `SELECT soi.tracked_asset_id, soi.requires_modification, so.order_no, so.order_type, so.status
+       FROM stock_order_item soi
+       JOIN stock_order so ON so.id = soi.stock_order_id
+       WHERE soi.tracked_asset_id IS NOT NULL
+         AND soi.status = 'active'
+         AND so.order_type IN ('outbound', 'transfer')
+         AND so.status IN ('draft', 'pending_approval', 'approved')`
+    ).all<{
+      tracked_asset_id: number;
+      requires_modification: number;
+      order_no: string;
+      order_type: string;
+      status: string;
+    }>();
+
+    const typeRows = await c.env.DB.prepare(
+      "SELECT id, type_code, type_name FROM asset_type WHERE status != 'deleted'"
+    ).all<Pick<AssetType, "id" | "type_code" | "type_name">>();
+    const typeMap = new Map((typeRows.results ?? []).map((item) => [item.id, item]));
+
+    const configurationMap = new Map<number, Array<TrackedAssetConfiguration>>();
+    for (const config of activeConfigurations.results ?? []) {
+      const candidateIds = [config.shell_asset_id, config.core_asset_id, config.console_asset_id].filter(
+        (id): id is number => typeof id === "number" && assetIds.has(id)
+      );
+      for (const assetIdValue of candidateIds) {
+        const list = configurationMap.get(assetIdValue) ?? [];
+        list.push(config);
+        configurationMap.set(assetIdValue, list);
+      }
+    }
+
+    const blockingWorkOrderMap = new Map<number, Array<{ work_order_no: string; status: string }>>();
+    for (const workOrder of activeWorkOrders.results ?? []) {
+      if (workOrder.tracked_asset_id && assetIds.has(workOrder.tracked_asset_id)) {
+        const list = blockingWorkOrderMap.get(workOrder.tracked_asset_id) ?? [];
+        list.push({ work_order_no: workOrder.work_order_no, status: workOrder.status });
+        blockingWorkOrderMap.set(workOrder.tracked_asset_id, list);
+      }
+    }
+
+    const reservationMap = new Map<
+      number,
+      Array<{ order_no: string; status: string; requires_modification: number }>
+    >();
+    for (const reservation of stockReservations.results ?? []) {
+      if (!assetIds.has(reservation.tracked_asset_id)) continue;
+      const list = reservationMap.get(reservation.tracked_asset_id) ?? [];
+      list.push({
+        order_no: reservation.order_no,
+        status: reservation.status,
+        requires_modification: reservation.requires_modification
+      });
+      reservationMap.set(reservation.tracked_asset_id, list);
+    }
+
+    const items = assets.map((asset) => {
+      const configurations = configurationMap.get(asset.id) ?? [];
+      const blockingWorkOrders = blockingWorkOrderMap.get(asset.id) ?? [];
+      const reservations = reservationMap.get(asset.id) ?? [];
+      const hasApprovedReservation = reservations.some((item) => item.status === "approved");
+      const hasPendingReservation = reservations.some((item) => item.status === "draft" || item.status === "pending_approval");
+      const hasModificationReservation = reservations.some((item) => item.requires_modification === 1);
+      const hasModificationConfiguration = configurations.some((item) =>
+        ["planned", "assembling", "disassembling"].includes(item.status)
+      );
+
+      let dispatchState: DispatchBoardState;
+      const reasons: string[] = [];
+      if (asset.status === "scrapped") {
+        dispatchState = "scrapped";
+        reasons.push("asset status is scrapped");
+      } else if (asset.current_project_id) {
+        dispatchState = "on_project";
+        reasons.push("asset is currently assigned to a project");
+      } else if (DISPATCH_BLOCKED_ASSET_STATUSES.has(asset.status) || blockingWorkOrders.length > 0) {
+        dispatchState = "blocked";
+        if (DISPATCH_BLOCKED_ASSET_STATUSES.has(asset.status)) {
+          reasons.push(`asset status is ${asset.status}`);
+        }
+        if (blockingWorkOrders.length > 0) {
+          reasons.push(`blocking work orders: ${blockingWorkOrders.map((item) => item.work_order_no).join(", ")}`);
+        }
+      } else if (hasApprovedReservation) {
+        dispatchState = "in_transit";
+        reasons.push(`approved stock order: ${reservations.filter((item) => item.status === "approved").map((item) => item.order_no).join(", ")}`);
+      } else if (hasPendingReservation) {
+        dispatchState = "reserved";
+        reasons.push(`reserved by stock order: ${reservations.map((item) => item.order_no).join(", ")}`);
+      } else if (hasModificationReservation || hasModificationConfiguration) {
+        dispatchState = "available_after_modification";
+        if (hasModificationReservation) {
+          reasons.push("stock order requires modification");
+        }
+        if (hasModificationConfiguration) {
+          reasons.push(`configuration status: ${configurations.map((item) => item.status).join(", ")}`);
+        }
+      } else {
+        dispatchState = "available_now";
+      }
+
+      return {
+        id: asset.id,
+        asset_code: asset.asset_code,
+        asset_name: asset.asset_name,
+        asset_type_id: asset.asset_type_id,
+        asset_type_code: typeMap.get(asset.asset_type_id)?.type_code ?? null,
+        asset_type_name: typeMap.get(asset.asset_type_id)?.type_name ?? null,
+        status: asset.status,
+        current_project_id: asset.current_project_id,
+        current_warehouse_id: asset.current_warehouse_id,
+        current_location: asset.current_location,
+        dispatch_state: dispatchState,
+        reasons,
+        configurations: configurations.map((item) => ({
+          id: item.id,
+          configuration_code: item.configuration_code,
+          whole_machine_code: item.whole_machine_code,
+          status: item.status
+        })),
+        blocking_work_orders: blockingWorkOrders,
+        reservations
+      };
+    });
+
+    const filteredItems = dispatchStateFilter
+      ? items.filter((item) => item.dispatch_state === dispatchStateFilter)
+      : items;
+
+    const summary = {
+      available_now: filteredItems.filter((item) => item.dispatch_state === "available_now").length,
+      available_after_modification: filteredItems.filter((item) => item.dispatch_state === "available_after_modification").length,
+      blocked: filteredItems.filter((item) => item.dispatch_state === "blocked").length,
+      reserved: filteredItems.filter((item) => item.dispatch_state === "reserved").length,
+      in_transit: filteredItems.filter((item) => item.dispatch_state === "in_transit").length,
+      on_project: filteredItems.filter((item) => item.dispatch_state === "on_project").length,
+      scrapped: filteredItems.filter((item) => item.dispatch_state === "scrapped").length
+    };
+
+    const byType = Array.from(countBy(filteredItems, (item) => item.asset_type_id).entries()).map(([typeId, count]) => ({
+      asset_type_id: Number(typeId),
+      type_code: typeMap.get(Number(typeId))?.type_code ?? null,
+      type_name: typeMap.get(Number(typeId))?.type_name ?? null,
+      count
+    }));
+
+    const byWarehouse = Array.from(
+      countBy(filteredItems.filter((item) => item.current_warehouse_id !== null), (item) => item.current_warehouse_id ?? 0).entries()
+    ).map(([currentWarehouseId, count]) => ({
+      warehouse_id: Number(currentWarehouseId),
+      count
+    }));
+
+    return c.json({
+      success: true,
+      data: {
+        summary,
+        by_type: byType,
+        by_warehouse: byWarehouse,
+        items: filteredItems
       }
     });
   }

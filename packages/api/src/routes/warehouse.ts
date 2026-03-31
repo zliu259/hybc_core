@@ -47,7 +47,7 @@ const parseTaskResult = (resultJson: string | null): Record<string, unknown> | n
 };
 
 const STOCKTAKE_LINE_STATUS = new Set(["normal", "new", "damaged", "lost"]);
-const BLOCKED_TRACKED_ASSET_STATUSES = new Set(["quarantine", "inspection", "maintenance", "modification", "scrapped", "using"]);
+const BLOCKED_TRACKED_ASSET_STATUSES = new Set(["quarantine", "inspection", "maintenance", "servicing", "modification", "scrapped", "using"]);
 
 const ensureStocktakeLineStatus = (value?: string): "normal" | "new" | "damaged" | "lost" => {
   if (!value) return "normal";
@@ -210,6 +210,20 @@ const evaluateStockOrderGate = async (
     }
     if (order.order_type === "outbound" && BLOCKED_TRACKED_ASSET_STATUSES.has(asset.status) && !overrideApproved) {
       issues.push(`tracked asset ${asset.asset_code} blocked by status=${asset.status}`);
+    }
+
+    const blockingWorkOrder = await env.DB.prepare(
+      `SELECT work_order_no FROM warehouse_asset_work_order
+       WHERE tracked_asset_id = ?
+         AND blocking_flag = 1
+         AND status IN ('pending_approval', 'approved', 'in_progress')
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+      .bind(asset.id)
+      .first<{ work_order_no: string }>();
+    if (blockingWorkOrder && !overrideApproved) {
+      issues.push(`tracked asset ${asset.asset_code} blocked by work order ${blockingWorkOrder.work_order_no}`);
     }
   }
 

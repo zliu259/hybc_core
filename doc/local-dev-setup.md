@@ -49,9 +49,11 @@
 cd packages/api
 npm install
 cp .dev.vars.example .dev.vars
-npx wrangler d1 migrations apply hybc-local --local
+npm run db:migrate:local
 npm run dev
 ```
+
+- 本地 Worker 运行时需使用支持 `compatibility_date = 2026-02-11` 的 Wrangler 版本；当前仓库已对齐到 `wrangler@^4.78.0`。
 
 关键接口：
 
@@ -70,6 +72,13 @@ npm run db:seed:mock:local
 
 - `scripts/mock-data.sql` 会先清理同前缀 `MOCK-*` 的旧测试数据，再写入新一批完整业务链路数据。
 - 覆盖模块：实体、项目、合同、付款、收款/发票、报销（含查重/批次）、资产仓库、施工日志、勘查、审批实例、AI任务样例。
+- 库房升级专项样例已包含：
+  - `shell / core / console` 组件资产
+  - `asset_compatibility_rule` 兼容关系
+  - `tracked_asset_configuration` 组合配置（`active` / `planned`）
+  - `warehouse_asset_work_order` 工单样例（`pending_approval` / `in_progress` / `completed`）
+  - 带 `configuration_role`、`configuration_group_key`、`requires_modification` 的 `stock_order_item`
+  - `configuration_created / configuration_updated / work_order_completed` 等资产时间线样例
 - 该脚本只清理 `MOCK-*` 范围内数据，不会删除业务真实数据。
 
 ## Web（PureAdmin Thin）

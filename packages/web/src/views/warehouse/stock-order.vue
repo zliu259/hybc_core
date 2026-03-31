@@ -70,9 +70,22 @@ const form = ref({
   remark: "",
   items: [] as Array<{
     asset_type_id: number;
+    configuration_role?: StockOrderItemInput["configuration_role"];
+    requires_modification: number;
     quantity: number;
   }>
 });
+
+const configurationRoleOptions: Array<{
+  label: string;
+  value: NonNullable<StockOrderItemInput["configuration_role"]>;
+}> = [
+  { label: "整机", value: "whole_machine" },
+  { label: "机壳", value: "shell" },
+  { label: "机芯", value: "core" },
+  { label: "操作台", value: "console" },
+  { label: "通用", value: "generic" }
+];
 
 const filteredAssetTypes = computed(() => {
   const q = assetKeyword.value.trim().toLowerCase();
@@ -161,7 +174,12 @@ const addAssetToCart = (assetTypeId: number) => {
     message("该资产类型已在制单清单中", { type: "info" });
     return;
   }
-  form.value.items.push({ asset_type_id: assetTypeId, quantity: 1 });
+  form.value.items.push({
+    asset_type_id: assetTypeId,
+    configuration_role: "generic",
+    requires_modification: 0,
+    quantity: 1
+  });
 };
 
 const addAssetToCartWithQty = (assetTypeId: number, qty: number) => {
@@ -172,7 +190,12 @@ const addAssetToCartWithQty = (assetTypeId: number, qty: number) => {
     hit.quantity = Number(hit.quantity || 0) + safeQty;
     return;
   }
-  form.value.items.push({ asset_type_id: assetTypeId, quantity: safeQty });
+  form.value.items.push({
+    asset_type_id: assetTypeId,
+    configuration_role: "generic",
+    requires_modification: 0,
+    quantity: safeQty
+  });
 };
 
 const matchAssetTypeByKeyword = (keyword: string) => {
@@ -282,6 +305,8 @@ const submit = async () => {
 
   const items: StockOrderItemInput[] = form.value.items.map(item => ({
     asset_type_id: item.asset_type_id,
+    configuration_role: item.configuration_role,
+    requires_modification: item.requires_modification,
     quantity: item.quantity
   }));
 
@@ -525,6 +550,29 @@ onMounted(async () => {
                 :min="0.01"
                 :precision="2"
                 :controls="true"
+              />
+            </template>
+          </el-table-column>
+          <el-table-column label="组合角色" width="170">
+            <template #default="scope">
+              <el-select
+                v-model="scope.row.configuration_role"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in configurationRoleOptions"
+                  :key="item.value"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </template>
+          </el-table-column>
+          <el-table-column label="需改装" width="110" align="center">
+            <template #default="scope">
+              <el-switch
+                :model-value="scope.row.requires_modification === 1"
+                @update:model-value="scope.row.requires_modification = $event ? 1 : 0"
               />
             </template>
           </el-table-column>

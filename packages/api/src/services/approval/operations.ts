@@ -16,7 +16,29 @@ const BIZ_TYPE_TABLE_MAP: Record<string, string> = {
   outbound_contract: "contract",
   inbound_contract: "contract",
   reimbursement_batch: "reimbursement_batch",
-  invoice_request: "invoice_request"
+  invoice_request: "invoice_request",
+  stock_order: "stock_order",
+  warehouse_asset_work_order: "warehouse_asset_work_order"
+};
+
+const WITHDRAW_CANCEL_RESET_BIZ_TYPES = new Set<string>([
+  "stock_order",
+  "warehouse_asset_work_order"
+]);
+
+const resetBizRecordToDraftIfNeeded = async (
+  env: Env,
+  instance: ApprovalInstance,
+  now: string
+): Promise<void> => {
+  if (!WITHDRAW_CANCEL_RESET_BIZ_TYPES.has(instance.biz_type)) return;
+  const bizTable = BIZ_TYPE_TABLE_MAP[instance.biz_type];
+  if (!bizTable) return;
+  await env.DB.prepare(
+    `UPDATE ${bizTable} SET status = 'draft', updated_at = ? WHERE id = ?`
+  )
+    .bind(now, instance.biz_id)
+    .run();
 };
 
 // ─── Helper: Load and validate task ──────────
@@ -489,6 +511,8 @@ export const withdraw = async (
     .bind(now, instanceId)
     .run();
 
+  await resetBizRecordToDraftIfNeeded(env, instance, now);
+
   // Record action
   await env.DB.prepare(
     `INSERT INTO approval_initiator_action
@@ -539,6 +563,8 @@ export const cancel = async (
   )
     .bind(now, now, instanceId)
     .run();
+
+  await resetBizRecordToDraftIfNeeded(env, instance, now);
 
   // Record action
   await env.DB.prepare(

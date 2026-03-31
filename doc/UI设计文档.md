@@ -88,6 +88,7 @@
 - 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
 - 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`
 - 出入库调度看板：`packages/web/src/views/warehouse/dispatch.vue`
+- 资产工单中心：`packages/web/src/views/warehouse/work-order.vue`
 - 消耗品管理总览：`packages/web/src/views/warehouse/consumables.vue`
 - 公司资产盘库：`packages/web/src/views/warehouse/stocktake.vue`
 - 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
@@ -378,6 +379,7 @@
 - 交互：草稿单可提交审批；审批通过后可执行；草稿/待审可取消。
 - 交互增强：支持“扫码值/关键字 + 数量”快速加入清单，支持预制模板一键套用后继续编辑。
 - 租赁增强：制单时可选关联 `rental_term_id`，逾期租期在出库前阻断；关联租期的入库执行会回填“已归还”。
+- 组合增强：清单行支持直接标记 `configuration_role`（整机 / 机壳 / 机芯 / 操作台 / 通用）与 `requires_modification`，用于把“已组合设备直接出库”与“兼容组合但需改装”两类方案在同一制单页内表达。
 - 升级要求：主要设备出库项支持两种模式——已组合设备直接选取、compatible 组件组合选取并显示 `modification required` 提示；返库执行后主要设备自动进入 returned quarantine，不直接恢复可用。
 - API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
 
@@ -388,10 +390,10 @@
 - API 指向：`/api/v1/warehouse/equipment-plan`, `/api/v1/warehouse/equipment-plan/:id/trigger-recommend`, `/api/v1/warehouse/equipment-plan/:id/recommendation`, `/api/v1/warehouse/equipment-plan/:id/confirm`
 
 #### K-5.1 出入库调度看板 `views/warehouse/dispatch.vue`
-- 模块：调度状态总览、available now / available after modification 分栏、blocked by maintenance 清单、在途 / 已预留 / 在项目 / returned quarantine 标签视图。
-- 交互：支持按 warehouse、project、whole-machine number、shell、core、task type 过滤；支持从调度行跳转到 `views/asset/detail.vue`、`views/warehouse/stock-order.vue`、`views/approval/unified-tasklist.vue`。
+- 模块：调度状态总览、`available_now / available_after_modification / blocked / reserved / in_transit / on_project / scrapped` 七状态分栏、组合配置标签、阻塞工单与预留记录聚合视图。
+- 交互：支持按 warehouse / asset_type / project / dispatch_state 过滤；支持从资产卡片跳转到 `views/asset/detail.vue`，在卡片内直接查看调度原因、组合配置、阻塞工单与预留记录。
 - 升级要求：若对象依赖 `special override` 才可放行，调度看板必须显式展示 override 标识、审批状态与补检要求，不能与普通 `available now` 混淆。
-- API 指向：`/api/v1/warehouse/dispatch`, `/api/v1/asset/dashboard/overview`, `/api/v1/asset/dashboard/project/:projectId`
+- API 指向：`/api/v1/asset/dashboard/dispatch-board`, `/api/v1/asset/:id`
 
 #### K-6. 消耗品管理总览 `views/warehouse/consumables.vue`
 - 模块：消耗品 KPI、库存清单、消耗记录、消耗登记。
@@ -414,15 +416,15 @@
 - 升级要求：项目视图需显示当前 whole-machine configuration、关键部件状态、是否依赖 special override 放行、以及项目侧 freight attribution 摘要。
 - API 指向：`/api/v1/asset/dashboard/project/:projectId`
 
-#### K-10. 资产任务中心（复用） `views/approval/unified-tasklist.vue`
-- 模块：inspection / maintenance / servicing / modification / scrapping 五类资产任务筛选、责任人视图、阻塞状态标签。
-- 交互：支持按 whole-machine number、shell、core、warehouse、project、task type 过滤；支持从任务跳转到 `views/asset/detail.vue` 与 `views/warehouse/stock-order.vue`。
+#### K-10. 资产工单中心 `views/warehouse/work-order.vue`
+- 模块：inspection / maintenance / servicing / modification / scrapping 五类资产工单列表、创建表单、负责人分配、阻塞开关联动、结果摘要编辑。
+- 交互：支持按资产、组合配置、出入库单三类对象发起工单；支持草稿提审、审批通过后开始、进行中完成、非终态取消；支持在页内编辑负责人、计划日期、阻塞标记与结果摘要。
 - 角色可见性：
   - 项目经理：可查看自己项目发起相关任务与阻塞原因，不可关闭库房维保任务。
   - 办公室：可查看审核补充相关任务、资料缺失、特批流。
   - 库房：可查看并执行 inspection / maintenance / modification / scrapping 任务。
   - 管理层：可查看 special override 队列与高风险阻塞任务。
-- API 指向：`/api/v1/approval/*`（统一待办入口）+ 资产/仓库专题接口聚合
+- API 指向：`/api/v1/warehouse/work-order`, `/api/v1/warehouse/work-order/:id/submit-approval`, `/api/v1/warehouse/work-order/:id/start`, `/api/v1/warehouse/work-order/:id/complete`, `/api/v1/warehouse/work-order/:id/cancel`
 
 #### K-11. 仓库升级角色可见性矩阵
 - 项目经理：发起出入库申请、查看项目设备规划与自己项目的阻塞原因。
@@ -492,7 +494,8 @@
   - 排序规则调整为：状态优先（施工中 > 筹备中 > 规划中 > 收尾中 > 已归档），同状态按开工时间倒序
   - 交互补充：支持分页、按状态筛选、按位置筛选
 - 出入库制单台重构为“左检索 + 右购物车”模式：`packages/web/src/views/warehouse/stock-order.vue`。
-- 双向对冲调度看板补齐签收核验对话框：`packages/web/src/views/warehouse/dispatch.vue`，签收前必须完成设备状态复核与实际送达数量确认。
+- 库房调度台升级为“资产状态读模型看板”：`packages/web/src/views/warehouse/dispatch.vue`，按七种调度状态分栏展示，并在卡片内聚合调度原因、配置关系、阻塞工单与预留记录。
+- 新增资产工单中心页面：`packages/web/src/views/warehouse/work-order.vue`，承接 inspection / maintenance / servicing / modification / scrapping 五类工单的创建、提审、开始、完成、取消。
 - 项目工作区详情交互改为抽屉优先：
   - `packages/web/src/views/project/workspace/project-panel.vue`：标段详情由 `Dialog` 改为 `Drawer`；文件详情新增右侧抽屉。
 - `packages/web/src/views/project/workspace/equipment-panel.vue`：设备行新增详情入口并使用右侧抽屉承载详情。

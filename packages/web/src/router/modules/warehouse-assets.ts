@@ -61,8 +61,17 @@ export default {
       name: "WarehouseAssetsDispatch",
       component: () => import("@/views/warehouse/dispatch.vue"),
       meta: {
-        title: "双向对冲调度看板",
+        title: "可用资产调度台",
         roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
+      path: "/warehouse-assets/work-order",
+      name: "WarehouseAssetsWorkOrder",
+      component: () => import("@/views/warehouse/work-order.vue"),
+      meta: {
+        title: "资产工单中心",
+        roles: ["super_admin", "manager", "site_manager", "operator"]
       }
     },
     {

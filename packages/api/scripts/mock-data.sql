@@ -25,7 +25,7 @@ SET approval_instance_id = NULL, updated_at = datetime('now')
 WHERE batch_no LIKE 'MOCK-RB-%';
 
 UPDATE reimbursement_envelope
-SET approval_instance_id = NULL, updated_at = datetime('now')
+SET approval_instance_id = NULL, batch_id = NULL, updated_at = datetime('now')
 WHERE envelope_no LIKE 'MOCK-RM-%';
 
 UPDATE stock_order
@@ -60,10 +60,43 @@ DELETE FROM envelope_attachment
 WHERE envelope_id IN (SELECT id FROM reimbursement_envelope WHERE envelope_no LIKE 'MOCK-RM-%');
 
 DELETE FROM stock_order_item
-WHERE stock_order_id IN (SELECT id FROM stock_order WHERE order_no LIKE 'MOCK-SO-%');
+WHERE stock_order_id IN (
+  SELECT id FROM stock_order
+  WHERE order_no LIKE 'MOCK-SO-%'
+     OR project_id IN (SELECT id FROM project WHERE project_code LIKE 'MOCK-%')
+     OR from_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%')
+     OR to_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%')
+)
+   OR tracked_asset_id IN (SELECT id FROM tracked_asset WHERE asset_code LIKE 'MOCK-AT-%');
+
+DELETE FROM warehouse_asset_work_order
+WHERE work_order_no LIKE 'MOCK-WO-%'
+   OR tracked_asset_id IN (SELECT id FROM tracked_asset WHERE asset_code LIKE 'MOCK-AT-%')
+   OR tracked_asset_configuration_id IN (
+     SELECT id FROM tracked_asset_configuration WHERE configuration_code LIKE 'MOCK-CONF-%'
+   )
+   OR stock_order_id IN (SELECT id FROM stock_order WHERE order_no LIKE 'MOCK-SO-%');
+
+DELETE FROM tracked_asset_configuration
+WHERE configuration_code LIKE 'MOCK-CONF-%';
+
+DELETE FROM asset_compatibility_rule
+WHERE left_asset_type_id IN (SELECT id FROM asset_type WHERE type_code LIKE 'MOCK-TYPE-%')
+   OR right_asset_type_id IN (SELECT id FROM asset_type WHERE type_code LIKE 'MOCK-TYPE-%');
 
 DELETE FROM project_equipment_plan_item
-WHERE plan_id IN (SELECT id FROM project_equipment_plan WHERE plan_no LIKE 'MOCK-EP-%');
+WHERE plan_id IN (
+  SELECT id FROM project_equipment_plan
+  WHERE plan_no LIKE 'MOCK-EP-%'
+     OR project_id IN (SELECT id FROM project WHERE project_code LIKE 'MOCK-%')
+     OR stock_order_id IN (
+       SELECT id FROM stock_order
+       WHERE order_no LIKE 'MOCK-SO-%'
+          OR project_id IN (SELECT id FROM project WHERE project_code LIKE 'MOCK-%')
+          OR from_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%')
+          OR to_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%')
+     )
+);
 
 DELETE FROM tracked_asset_document
 WHERE tracked_asset_id IN (
@@ -111,8 +144,21 @@ DELETE FROM payee WHERE created_by_userid = 'mock-seed';
 DELETE FROM reimbursement_batch WHERE batch_no LIKE 'MOCK-RB-%';
 DELETE FROM reimbursement_envelope WHERE envelope_no LIKE 'MOCK-RM-%';
 
-DELETE FROM project_equipment_plan WHERE plan_no LIKE 'MOCK-EP-%';
-DELETE FROM stock_order WHERE order_no LIKE 'MOCK-SO-%';
+DELETE FROM project_equipment_plan
+WHERE plan_no LIKE 'MOCK-EP-%'
+   OR project_id IN (SELECT id FROM project WHERE project_code LIKE 'MOCK-%')
+   OR stock_order_id IN (
+     SELECT id FROM stock_order
+     WHERE order_no LIKE 'MOCK-SO-%'
+        OR project_id IN (SELECT id FROM project WHERE project_code LIKE 'MOCK-%')
+        OR from_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%')
+        OR to_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%')
+   );
+DELETE FROM stock_order
+WHERE order_no LIKE 'MOCK-SO-%'
+   OR project_id IN (SELECT id FROM project WHERE project_code LIKE 'MOCK-%')
+   OR from_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%')
+   OR to_warehouse_id IN (SELECT id FROM warehouse WHERE warehouse_code LIKE 'MOCK-WH-%');
 
 DELETE FROM tracked_asset WHERE asset_code LIKE 'MOCK-AT-%';
 DELETE FROM asset_type WHERE type_code LIKE 'MOCK-TYPE-%';
@@ -412,7 +458,10 @@ INSERT INTO asset_type (type_code, type_name, tracked_flag, unit, property_schem
 VALUES
 ('MOCK-TYPE-TBM', 'Mock 盾构设备', 1, '台', '{"fields":[{"key":"power","label":"功率(kW)","type":"number"},{"key":"diameter","label":"管径(mm)","type":"number"}]}', 1, 'active', datetime('now'), datetime('now')),
 ('MOCK-TYPE-PIPE', 'Mock 管材', 0, '根', NULL, 80, 'active', datetime('now'), datetime('now')),
-('MOCK-TYPE-OIL', 'Mock 液压油', 0, '桶', NULL, 25, 'active', datetime('now'), datetime('now'));
+('MOCK-TYPE-OIL', 'Mock 液压油', 0, '桶', NULL, 25, 'active', datetime('now'), datetime('now')),
+('MOCK-TYPE-SHELL', 'Mock 机壳', 1, '件', '{"fields":[{"key":"diameter","label":"外径(mm)","type":"number"},{"key":"shield_level","label":"护盾等级","type":"text"}]}', 1, 'active', datetime('now'), datetime('now')),
+('MOCK-TYPE-CORE', 'Mock 机芯', 1, '件', '{"fields":[{"key":"power","label":"功率(kW)","type":"number"},{"key":"life_hours","label":"寿命小时","type":"number"}]}', 1, 'active', datetime('now'), datetime('now')),
+('MOCK-TYPE-CONSOLE', 'Mock 操作台', 1, '件', '{"fields":[{"key":"screen_size","label":"屏幕尺寸(inch)","type":"number"},{"key":"control_mode","label":"控制模式","type":"text"}]}', 1, 'active', datetime('now'), datetime('now'));
 
 INSERT INTO tracked_asset (
   asset_code, asset_type_id, asset_name, brand, model, serial_no, status,
@@ -429,18 +478,123 @@ INSERT INTO tracked_asset (
   'Mock 盾构机2号', 'HY-MOCK', 'TBM-2200', 'TBM-MOCK-0002',
   'idle', NULL,
   (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'warehouse', '{"power":620,"diameter":2200}', '2025-10-20', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-TBM-0003', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-TBM'),
+  'Mock 盾构机3号', 'HY-MOCK', 'TBM-2000', 'TBM-MOCK-0003',
+  'idle', NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'warehouse', '{"power":600,"diameter":2000}', '2025-11-10', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-TBM-0004', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-TBM'),
+  'Mock 盾构机4号', 'HY-MOCK', 'TBM-2100', 'TBM-MOCK-0004',
+  'idle', NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'warehouse', '{"power":610,"diameter":2100}', '2025-12-01', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-TBM-0005', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-TBM'),
+  'Mock 盾构机5号', 'HY-MOCK', 'TBM-2300', 'TBM-MOCK-0005',
+  'scrapped', NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-SUB'), 'warehouse', '{"power":640,"diameter":2300}', '2024-12-18', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-SHELL-0001', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-SHELL'),
+  'Mock 机壳1号', 'HY-MOCK', 'SHELL-1800', 'SHELL-MOCK-0001',
+  'using', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'),
+  NULL, 'project', '{"diameter":1800,"shield_level":"A"}', '2025-09-05', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-CORE-0001', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-CORE'),
+  'Mock 机芯1号', 'HY-MOCK', 'CORE-1800', 'CORE-MOCK-0001',
+  'using', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'),
+  NULL, 'project', '{"power":580,"life_hours":1200}', '2025-09-12', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-CONSOLE-0001', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-CONSOLE'),
+  'Mock 操作台1号', 'HY-MOCK', 'CONSOLE-A', 'CONSOLE-MOCK-0001',
+  'using', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'),
+  NULL, 'project', '{"screen_size":15.6,"control_mode":"dual-stick"}', '2025-09-18', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-SHELL-0002', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-SHELL'),
+  'Mock 机壳2号', 'HY-MOCK', 'SHELL-2200', 'SHELL-MOCK-0002',
+  'idle', NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'warehouse', '{"diameter":2200,"shield_level":"B"}', '2025-12-08', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-CORE-0002', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-CORE'),
+  'Mock 机芯2号', 'HY-MOCK', 'CORE-2200', 'CORE-MOCK-0002',
+  'idle', NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'warehouse', '{"power":630,"life_hours":600}', '2025-12-12', datetime('now'), datetime('now')
+),
+(
+  'MOCK-AT-CONSOLE-0002', (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-CONSOLE'),
+  'Mock 操作台2号', 'HY-MOCK', 'CONSOLE-B', 'CONSOLE-MOCK-0002',
+  'idle', NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'warehouse', '{"screen_size":17.3,"control_mode":"touch"}', '2025-12-15', datetime('now'), datetime('now')
+);
+
+INSERT INTO asset_compatibility_rule (
+  left_asset_type_id, right_asset_type_id, relation_type, status, note, created_at, updated_at
+) VALUES
+(
+  (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-SHELL'),
+  (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-CORE'),
+  'shell_core', 'active', '[mock-seed] 机壳与机芯兼容关系', datetime('now'), datetime('now')
+),
+(
+  (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-CORE'),
+  (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-CONSOLE'),
+  'core_console', 'active', '[mock-seed] 机芯与操作台兼容关系', datetime('now'), datetime('now')
+);
+
+INSERT INTO tracked_asset_configuration (
+  configuration_code, whole_machine_code, shell_asset_id, core_asset_id, console_asset_id,
+  status, project_id, warehouse_id, effective_from, effective_to, note, created_by, created_at, updated_at
+) VALUES
+(
+  'MOCK-CONF-20260220-0001', 'MOCK-WM-1800-001',
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-SHELL-0001'),
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-CORE-0001'),
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-CONSOLE-0001'),
+  'active',
+  (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'),
+  NULL,
+  '2026-02-01T09:00:00.000Z',
+  NULL,
+  '[mock-seed] 项目现场正在使用的整机组合',
+  'site_manager', datetime('now'), datetime('now')
+),
+(
+  'MOCK-CONF-20260220-0002', 'MOCK-WM-2200-001',
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-SHELL-0002'),
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-CORE-0002'),
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-CONSOLE-0002'),
+  'planned',
+  NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'),
+  '2026-03-01T09:00:00.000Z',
+  NULL,
+  '[mock-seed] 待改装后可出库的组合方案',
+  'site_manager', datetime('now'), datetime('now')
 );
 
 INSERT INTO tracked_asset_document (tracked_asset_id, doc_type, file_key, file_name, remark, status, created_at)
 VALUES
 ((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0001'), 'manual', 'mock/assets/tbm-0001-manual.pdf', 'tbm-0001-manual.pdf', '设备说明书', 'active', datetime('now')),
-((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0001'), 'maintenance', 'mock/assets/tbm-0001-maintenance.pdf', 'tbm-0001-maintenance.pdf', '维保记录', 'active', datetime('now'));
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0001'), 'maintenance', 'mock/assets/tbm-0001-maintenance.pdf', 'tbm-0001-maintenance.pdf', '维保记录', 'active', datetime('now')),
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-SHELL-0002'), 'drawing', 'mock/assets/shell-0002-upgrade.pdf', 'shell-0002-upgrade.pdf', '机壳改装图纸', 'active', datetime('now'));
 
 INSERT INTO tracked_asset_event (
   tracked_asset_id, event_type, event_time, operator_userid, project_id, warehouse_id, detail, created_at
 ) VALUES
 ((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0001'), 'assign_project', '2026-02-01T09:00:00.000Z', 'site_manager', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'), NULL, '调拨至项目现场', datetime('now')),
-((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0001'), 'maintenance', '2026-02-14T13:30:00.000Z', 'site_manager', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'), NULL, '保养检修完成', datetime('now'));
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0001'), 'maintenance', '2026-02-14T13:30:00.000Z', 'site_manager', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'), NULL, '保养检修完成', datetime('now')),
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-SHELL-0001'), 'configuration_created', '2026-02-01T09:10:00.000Z', 'site_manager', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'), NULL, 'configuration_code=MOCK-CONF-20260220-0001; whole_machine_code=MOCK-WM-1800-001; status=active', datetime('now')),
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-CORE-0001'), 'configuration_created', '2026-02-01T09:10:00.000Z', 'site_manager', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'), NULL, 'configuration_code=MOCK-CONF-20260220-0001; whole_machine_code=MOCK-WM-1800-001; status=active', datetime('now')),
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-CONSOLE-0001'), 'configuration_created', '2026-02-01T09:10:00.000Z', 'site_manager', (SELECT id FROM project WHERE project_code = 'MOCK-PJ-001'), NULL, 'configuration_code=MOCK-CONF-20260220-0001; whole_machine_code=MOCK-WM-1800-001; status=active', datetime('now')),
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-SHELL-0002'), 'configuration_updated', '2026-03-01T09:15:00.000Z', 'site_manager', NULL, (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'configuration_code=MOCK-CONF-20260220-0002; whole_machine_code=MOCK-WM-2200-001; status=planned', datetime('now')),
+((SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0003'), 'work_order_completed', '2026-02-20T14:00:00.000Z', 'manager', NULL, (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), 'work_order_no=MOCK-WO-20260220-0003; type=maintenance; status=completed; result=设备检修归档', datetime('now'));
 
 INSERT INTO inventory (warehouse_id, asset_type_id, quantity, min_stock, status, updated_at)
 VALUES
@@ -464,20 +618,84 @@ INSERT INTO stock_order (
   (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'),
   (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-SUB'),
   'site_manager', 'pending_approval', NULL, NULL, '[mock-seed] 待审批调拨单', datetime('now'), datetime('now')
+),
+(
+  'MOCK-SO-20260220-0003', 'outbound',
+  (SELECT id FROM project WHERE project_code = 'MOCK-PJ-002'),
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), NULL,
+  'manager', 'approved', NULL, NULL, '[mock-seed] 已审批待执行的整机出库单', datetime('now'), datetime('now')
+),
+(
+  'MOCK-SO-20260220-0004', 'outbound',
+  (SELECT id FROM project WHERE project_code = 'MOCK-PJ-003'),
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'), NULL,
+  'manager', 'draft', NULL, NULL, '[mock-seed] 草稿态整机预留单', datetime('now'), datetime('now')
 );
 
 INSERT INTO stock_order_item (
-  stock_order_id, asset_type_id, tracked_asset_id, quantity, unit, remark, status, created_at
+  stock_order_id, asset_type_id, tracked_asset_id, configuration_role, configuration_group_key,
+  requires_modification, quantity, unit, remark, status, created_at
 ) VALUES
 (
   (SELECT id FROM stock_order WHERE order_no = 'MOCK-SO-20260220-0001'),
   (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-PIPE'),
-  NULL, 24, '根', '项目一出库', 'active', datetime('now')
+  NULL, NULL, NULL, 0, 24, '根', '项目一出库', 'active', datetime('now')
 ),
 (
   (SELECT id FROM stock_order WHERE order_no = 'MOCK-SO-20260220-0002'),
   (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-OIL'),
-  NULL, 8, '桶', '主仓调拨到分仓', 'active', datetime('now')
+  NULL, NULL, NULL, 0, 8, '桶', '主仓调拨到分仓', 'active', datetime('now')
+),
+(
+  (SELECT id FROM stock_order WHERE order_no = 'MOCK-SO-20260220-0003'),
+  (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-TBM'),
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0003'),
+  'whole_machine', 'MOCK-GRP-2200-A', 0, 1, '台', '已审批待发运整机', 'active', datetime('now')
+),
+(
+  (SELECT id FROM stock_order WHERE order_no = 'MOCK-SO-20260220-0004'),
+  (SELECT id FROM asset_type WHERE type_code = 'MOCK-TYPE-SHELL'),
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-SHELL-0002'),
+  'shell', 'MOCK-GRP-2200-B', 1, 1, '件', '需改装后才能执行的机壳预留', 'active', datetime('now')
+);
+
+INSERT INTO warehouse_asset_work_order (
+  work_order_no, work_order_type, tracked_asset_id, tracked_asset_configuration_id, stock_order_id,
+  project_id, warehouse_id, applicant_userid, assignee_userid, blocking_flag, status,
+  approval_instance_id, scheduled_date, started_at, completed_at, result_summary, remark, created_at, updated_at
+) VALUES
+(
+  'MOCK-WO-20260220-0001', 'inspection',
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0002'),
+  NULL,
+  NULL,
+  NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'),
+  'manager', 'site_manager', 1, 'pending_approval',
+  NULL, '2026-02-21', NULL, NULL, NULL,
+  '[mock-seed] 待审批的入库前检查工单', datetime('now'), datetime('now')
+),
+(
+  'MOCK-WO-20260220-0002', 'modification',
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0004'),
+  (SELECT id FROM tracked_asset_configuration WHERE configuration_code = 'MOCK-CONF-20260220-0002'),
+  (SELECT id FROM stock_order WHERE order_no = 'MOCK-SO-20260220-0004'),
+  (SELECT id FROM project WHERE project_code = 'MOCK-PJ-003'),
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'),
+  'manager', 'site_manager', 1, 'in_progress',
+  NULL, '2026-02-22', '2026-02-22T09:00:00.000Z', NULL, NULL,
+  '[mock-seed] 改装进行中，阻塞出库', datetime('now'), datetime('now')
+),
+(
+  'MOCK-WO-20260220-0003', 'maintenance',
+  (SELECT id FROM tracked_asset WHERE asset_code = 'MOCK-AT-TBM-0003'),
+  NULL,
+  NULL,
+  NULL,
+  (SELECT id FROM warehouse WHERE warehouse_code = 'MOCK-WH-MAIN'),
+  'manager', 'site_manager', 0, 'completed',
+  NULL, '2026-02-20', '2026-02-20T10:00:00.000Z', '2026-02-20T14:00:00.000Z', '设备检修归档',
+  '[mock-seed] 已完成维保工单', datetime('now'), datetime('now')
 );
 
 INSERT INTO project_equipment_plan (
