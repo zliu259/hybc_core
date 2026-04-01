@@ -39,6 +39,37 @@ const route = useRoute();
 const router = useRouter();
 const loading = ref(false);
 const saving = ref(false);
+const submitApprovalLoading = ref(false);
+
+type SubmitSnapshot = {
+  fingerprint: string;
+  idempotencyKey: string;
+};
+
+const submitApprovalSnapshot = ref<SubmitSnapshot | null>(null);
+
+const createIdempotencyKey = (scope: string) => {
+  const fallback = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+  const randomPart =
+    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : fallback;
+  return `${scope}-${randomPart}`;
+};
+
+const getOrCreateSnapshotKey = (
+  snapshot: SubmitSnapshot | null,
+  fingerprint: string,
+  scope: string
+): SubmitSnapshot => {
+  if (snapshot && snapshot.fingerprint === fingerprint) {
+    return snapshot;
+  }
+  return {
+    fingerprint,
+    idempotencyKey: createIdempotencyKey(scope)
+  };
+};
 
 const { projects, loadProjects } = useProjectOptions();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
@@ -465,7 +496,7 @@ const onSubmitApproval = async () => {
 };
 
 const confirmSubmitApproval = async () => {
-  if (isCreate.value) return;
+  if (isCreate.value || submitApprovalLoading.value) return;
 
   let instanceConfig: InstanceConfig | undefined;
   if (approvalConfigMode.value === "json") {
@@ -492,13 +523,40 @@ const confirmSubmitApproval = async () => {
     }
   }
 
-  await submitContractApproval(contractId.value, {
-    biz_summary: approvalSummary.value.trim() || undefined,
-    instance_config: instanceConfig
+  const summary = approvalSummary.value.trim();
+  const submitFingerprint = JSON.stringify({
+    contract_id: contractId.value,
+    biz_summary: summary,
+    instance_config: instanceConfig ?? null
   });
-  approvalDialogVisible.value = false;
-  message("已提交审批", { type: "success" });
-  await loadDetail();
+  const snapshot = getOrCreateSnapshotKey(
+    submitApprovalSnapshot.value,
+    submitFingerprint,
+    "contract-detail-submit"
+  );
+  submitApprovalSnapshot.value = snapshot;
+
+  submitApprovalLoading.value = true;
+  try {
+    await submitContractApproval(
+      contractId.value,
+      {
+        biz_summary: summary || undefined,
+        instance_config: instanceConfig
+      },
+      {
+        idempotencyKey: snapshot.idempotencyKey
+      }
+    );
+    submitApprovalSnapshot.value = null;
+    approvalDialogVisible.value = false;
+    message("已提交审批", { type: "success" });
+    await loadDetail();
+  } catch {
+    message("提交审批失败，请重试", { type: "error" });
+  } finally {
+    submitApprovalLoading.value = false;
+  }
 };
 
 const onTriggerAiReview = async () => {
@@ -1012,8 +1070,16 @@ onMounted(async () => {
         </el-form-item>
       </el-form>
       <template #footer>
-        <el-button @click="approvalDialogVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmSubmitApproval"
+        <el-button
+          :disabled="submitApprovalLoading"
+          @click="approvalDialogVisible = false"
+          >取消</el-button
+        >
+        <el-button
+          type="primary"
+          :loading="submitApprovalLoading"
+          :disabled="submitApprovalLoading"
+          @click="confirmSubmitApproval"
           >确认提交</el-button
         >
       </template>

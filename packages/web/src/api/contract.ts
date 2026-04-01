@@ -169,10 +169,16 @@ export const triggerAiReview = (contractId: number) => {
 
 export const submitContractApproval = (
   contractId: number,
-  data?: { biz_summary?: string; instance_config?: InstanceConfig }
+  data?: { biz_summary?: string; instance_config?: InstanceConfig },
+  options?: { idempotencyKey?: string }
 ) => {
   return http.request<{
     success: boolean;
     data: { approval_instance_id: number; instance_no: string };
-  }>("post", `/api/v1/contract/${contractId}/submit-approval`, { data });
+  }>("post", `/api/v1/contract/${contractId}/submit-approval`, {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };

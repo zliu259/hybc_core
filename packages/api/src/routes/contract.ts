@@ -12,7 +12,6 @@ import type {
 } from "../types/contract";
 import type { InstanceConfig } from "../types/approval";
 import { writeAuditLog } from "../services/audit-log";
-import { runInTransaction } from "../services/db-transaction";
 import { generateSerial } from "../services/serial";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
@@ -36,6 +35,12 @@ type AttachmentMeta = {
   file_name: string;
   file_size?: number | null;
   file_url: string;
+};
+
+type ApprovalInstanceLite = {
+  id: number;
+  instance_no: string;
+  status: string;
 };
 
 const parseAttachmentMeta = (raw: string | null): AttachmentMeta[] => {
@@ -76,6 +81,94 @@ const parseAttachmentMeta = (raw: string | null): AttachmentMeta[] => {
   } catch {
     return [];
   }
+};
+
+const mapApprovalInstanceStatusToContractStatus = (
+  approvalStatus: string
+): Contract["status"] | null => {
+  if (approvalStatus === "pending" || approvalStatus === "in_progress") {
+    return "pending_approval";
+  }
+  if (approvalStatus === "approved" || approvalStatus === "completed") {
+    return "active";
+  }
+  if (approvalStatus === "rejected") {
+    return "draft";
+  }
+  return null;
+};
+
+const isContractStatusReconcileEligible = (
+  contractStatus: Contract["status"]
+): boolean => {
+  return (
+    contractStatus === "draft" ||
+    contractStatus === "pending_review" ||
+    contractStatus === "pending_approval"
+  );
+};
+
+const findLatestApprovalInstanceForContract = async (
+  db: D1Database,
+  contractId: number,
+  bizType: "outbound_contract" | "inbound_contract"
+): Promise<ApprovalInstanceLite | null> => {
+  return await db
+    .prepare(
+      `SELECT id, instance_no, status
+         FROM approval_instance
+        WHERE biz_type = ?
+          AND biz_id = ?
+        ORDER BY id DESC
+        LIMIT 1`
+    )
+    .bind(bizType, contractId)
+    .first<ApprovalInstanceLite>();
+};
+
+const reconcileContractStatusWithApproval = async (
+  db: D1Database,
+  contractId: number,
+  bizType: "outbound_contract" | "inbound_contract",
+  contract: Pick<Contract, "status" | "approval_instance_id">,
+  now: string
+): Promise<ApprovalInstanceLite | null> => {
+  if (!isContractStatusReconcileEligible(contract.status)) {
+    return null;
+  }
+
+  const latestApproval = await findLatestApprovalInstanceForContract(
+    db,
+    contractId,
+    bizType
+  );
+  if (!latestApproval) return null;
+
+  const targetStatus = mapApprovalInstanceStatusToContractStatus(
+    latestApproval.status
+  );
+  if (!targetStatus) return null;
+
+  const hasLinkedApproval =
+    contract.approval_instance_id !== null &&
+    contract.approval_instance_id === latestApproval.id;
+  const statusAlreadyAligned = contract.status === targetStatus;
+  if (hasLinkedApproval && statusAlreadyAligned) {
+    return latestApproval;
+  }
+
+  await db
+    .prepare(
+      `UPDATE contract
+          SET status = ?,
+              approval_instance_id = ?,
+              updated_at = ?
+        WHERE id = ?`
+    )
+    .bind(targetStatus, latestApproval.id, now, contractId)
+    .run();
+
+  return latestApproval;
 };
 
 export const contractRoutes = new Hono<{
@@ -457,7 +550,54 @@ contractRoutes.post(
       );
     }
 
-    if (contract.status !== "draft" && contract.status !== "pending_review") {
+    const now = nowIso();
+    const bizType =
+      contract.direction === "outbound" ? "outbound_contract" : "inbound_contract";
+
+    let effectiveStatus = contract.status;
+    let effectiveApprovalInstanceId = contract.approval_instance_id;
+
+    const reconciledApproval = await reconcileContractStatusWithApproval(
+      c.env.DB,
+      id,
+      bizType,
+      {
+        status: contract.status,
+        approval_instance_id: contract.approval_instance_id
+      },
+      now
+    );
+
+    if (reconciledApproval) {
+      const mappedStatus = mapApprovalInstanceStatusToContractStatus(
+        reconciledApproval.status
+      );
+      if (mappedStatus) {
+        effectiveStatus = mappedStatus;
+        effectiveApprovalInstanceId = reconciledApproval.id;
+      }
+    }
+
+    if (effectiveStatus === "pending_approval" && effectiveApprovalInstanceId) {
+      const existingInstance = await c.env.DB.prepare(
+        "SELECT instance_no FROM approval_instance WHERE id = ?"
+      )
+        .bind(effectiveApprovalInstanceId)
+        .first<{ instance_no: string }>();
+
+      return c.json({
+        success: true,
+        data: {
+          approval_instance_id: effectiveApprovalInstanceId,
+          instance_no:
+            existingInstance?.instance_no ?? reconciledApproval?.instance_no ?? "",
+          already_submitted: true,
+          recovered: Boolean(reconciledApproval)
+        }
+      });
+    }
+
+    if (effectiveStatus !== "draft" && effectiveStatus !== "pending_review") {
       return c.json(
         { success: false, error: { message: "Only draft/pending_review contracts can be submitted" } },
         400
@@ -476,33 +616,58 @@ contractRoutes.post(
       return c.json({ success: false, error: { message: "Approval submission already in progress" } }, 409);
     }
 
-    if (contract.approval_instance_id) {
+    if (effectiveApprovalInstanceId) {
       const existing = await c.env.DB.prepare(
         "SELECT status FROM approval_instance WHERE id = ?"
       )
-        .bind(contract.approval_instance_id)
+        .bind(effectiveApprovalInstanceId)
         .first<{ status: string }>();
 
       if (existing && existing.status === "in_progress") {
-        return c.json(
-          { success: false, error: { message: "Approval instance already in progress" } },
-          400
+        const currentInstance = await c.env.DB.prepare(
+          "SELECT instance_no FROM approval_instance WHERE id = ?"
+        )
+          .bind(effectiveApprovalInstanceId)
+          .first<{ instance_no: string }>();
+        const payload = {
+          success: true,
+          data: {
+            approval_instance_id: effectiveApprovalInstanceId,
+            instance_no: currentInstance?.instance_no ?? "",
+            already_submitted: true
+          }
+        };
+        await completeIdempotentRequest(
+          c.env.DB,
+          `contract:submit-approval:${id}`,
+          auth.sub,
+          idempotencyKey,
+          200,
+          payload
         );
+        return c.json(payload);
       }
 
       if (existing && (existing.status === "pending" || existing.status === "withdrawn")) {
         try {
-          await resubmitOp(c.env, contract.approval_instance_id, auth.sub);
+          await resubmitOp(c.env, effectiveApprovalInstanceId, auth.sub);
           await c.env.DB.prepare(
-            "UPDATE contract SET status = 'pending_approval', updated_at = ? WHERE id = ?"
+            "UPDATE contract SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
           )
-            .bind(nowIso(), id)
+            .bind(effectiveApprovalInstanceId, now, id)
             .run();
+
+          const existingInstance = await c.env.DB.prepare(
+            "SELECT instance_no FROM approval_instance WHERE id = ?"
+          )
+            .bind(effectiveApprovalInstanceId)
+            .first<{ instance_no: string }>();
+
           const payload = {
             success: true,
             data: {
-              approval_instance_id: contract.approval_instance_id,
-              instance_no: "",
+              approval_instance_id: effectiveApprovalInstanceId,
+              instance_no: existingInstance?.instance_no ?? "",
               resubmitted: true
             }
           };
@@ -516,58 +681,166 @@ contractRoutes.post(
       }
     }
 
+    const claimedDraft = await c.env.DB.prepare(
+      `UPDATE contract
+          SET status = 'pending_approval', approval_instance_id = NULL, updated_at = ?
+        WHERE id = ? AND status IN ('draft', 'pending_review')`
+    )
+      .bind(now, id)
+      .run();
+
+    if ((claimedDraft.meta.changes ?? 0) !== 1) {
+      const latest = await c.env.DB.prepare(
+        "SELECT status, approval_instance_id FROM contract WHERE id = ?"
+      )
+        .bind(id)
+        .first<{ status: string; approval_instance_id: number | null }>();
+
+      if (latest?.status === "pending_approval" && latest.approval_instance_id) {
+        const currentInstance = await c.env.DB.prepare(
+          "SELECT instance_no FROM approval_instance WHERE id = ?"
+        )
+          .bind(latest.approval_instance_id)
+          .first<{ instance_no: string }>();
+
+        const payload = {
+          success: true,
+          data: {
+            approval_instance_id: latest.approval_instance_id,
+            instance_no: currentInstance?.instance_no ?? "",
+            already_submitted: true
+          }
+        };
+        await completeIdempotentRequest(
+          c.env.DB,
+          `contract:submit-approval:${id}`,
+          auth.sub,
+          idempotencyKey,
+          200,
+          payload
+        );
+        return c.json(payload);
+      }
+
+      await abandonIdempotentRequest(
+        c.env.DB,
+        `contract:submit-approval:${id}`,
+        auth.sub,
+        idempotencyKey
+      );
+      return c.json(
+        { success: false, error: { message: "Contract submission already in progress" } },
+        409
+      );
+    }
+
     const attachments = parseAttachmentMeta(contract.attachments_json);
 
-    const instance = await submitForApproval(
-      c.env,
-      {
-        biz_type: contract.direction === "outbound" ? "outbound_contract" : "inbound_contract",
-        biz_id: id,
-        biz_summary:
-          body.biz_summary?.trim() ||
-          `${contract.contract_no} | ${contract.counterparty} | ${contract.total_amount}`,
-        context: {
-          amount: contract.total_amount,
-          entity_id: contract.entity_id,
-          project_id: contract.project_id,
-          biz_type: contract.direction === "outbound" ? "outbound_contract" : "inbound_contract",
-          biz_id: id,
-          contract: {
-            contract_no: contract.contract_no,
-            direction: contract.direction,
-            counterparty: contract.counterparty,
-            contract_type: contract.contract_type,
-            handler_userid: contract.handler_userid,
-            contract_date: contract.contract_date,
-            total_amount: contract.total_amount,
-            paid_amount: contract.paid_amount,
-            remark: contract.remark ?? null
-          },
-          attachments
-        },
-        instance_config: body.instance_config
-      },
-      auth.sub,
-      createAiGateHandler()
-    );
-
+    let instanceNoForPayload = "";
+    let instanceIdForPayload: number | null = null;
     try {
-      await runInTransaction(c.env.DB, async () => {
-        const updateResult = await c.env.DB.prepare(
-          `UPDATE contract
-              SET status = 'pending_approval', approval_instance_id = ?, updated_at = ?
-            WHERE id = ? AND status IN ('draft', 'pending_review')`
-        )
-          .bind(instance.id, nowIso(), id)
-          .run();
+      const instance = await submitForApproval(
+        c.env,
+        {
+          biz_type: bizType,
+          biz_id: id,
+          biz_summary:
+            body.biz_summary?.trim() ||
+            `${contract.contract_no} | ${contract.counterparty} | ${contract.total_amount}`,
+          context: {
+            amount: contract.total_amount,
+            entity_id: contract.entity_id,
+            project_id: contract.project_id,
+            biz_type: bizType,
+            biz_id: id,
+            contract: {
+              contract_no: contract.contract_no,
+              direction: contract.direction,
+              counterparty: contract.counterparty,
+              contract_type: contract.contract_type,
+              handler_userid: contract.handler_userid,
+              contract_date: contract.contract_date,
+              total_amount: contract.total_amount,
+              paid_amount: contract.paid_amount,
+              remark: contract.remark ?? null
+            },
+            attachments
+          },
+          instance_config: body.instance_config
+        },
+        auth.sub,
+        createAiGateHandler()
+      );
 
-        if ((updateResult.meta.changes ?? 0) !== 1) {
-          throw new Error("Contract is no longer submittable");
+      instanceIdForPayload = instance.id;
+      instanceNoForPayload = instance.instance_no;
+
+      const attachResult = await c.env.DB.prepare(
+        `UPDATE contract
+            SET approval_instance_id = ?, updated_at = ?
+          WHERE id = ? AND status = 'pending_approval' AND approval_instance_id IS NULL`
+      )
+        .bind(instance.id, now, id)
+        .run();
+
+      if ((attachResult.meta.changes ?? 0) !== 1) {
+        const latest = await c.env.DB.prepare(
+          "SELECT approval_instance_id FROM contract WHERE id = ?"
+        )
+          .bind(id)
+          .first<{ approval_instance_id: number | null }>();
+
+        if (latest?.approval_instance_id) {
+          instanceIdForPayload = latest.approval_instance_id;
+          const latestInstance = await c.env.DB.prepare(
+            "SELECT instance_no FROM approval_instance WHERE id = ?"
+          )
+            .bind(latest.approval_instance_id)
+            .first<{ instance_no: string }>();
+          instanceNoForPayload = latestInstance?.instance_no ?? instanceNoForPayload;
+        } else {
+          throw new Error("Contract lost approval binding during submission");
         }
-      });
+      }
     } catch (error) {
-      await abandonIdempotentRequest(c.env.DB, `contract:submit-approval:${id}`, auth.sub, idempotencyKey);
+      const recoveredApproval = await reconcileContractStatusWithApproval(
+        c.env.DB,
+        id,
+        bizType,
+        {
+          status: "pending_approval",
+          approval_instance_id: null
+        },
+        now
+      );
+
+      if (!recoveredApproval) {
+        await c.env.DB.prepare(
+          `UPDATE contract
+              SET status = 'draft', updated_at = ?
+            WHERE id = ? AND status = 'pending_approval' AND approval_instance_id IS NULL`
+        )
+          .bind(now, id)
+          .run();
+      }
+
+      await abandonIdempotentRequest(
+        c.env.DB,
+        `contract:submit-approval:${id}`,
+        auth.sub,
+        idempotencyKey
+      );
       throw error;
+    }
+
+    if (instanceIdForPayload === null) {
+      await abandonIdempotentRequest(
+        c.env.DB,
+        `contract:submit-approval:${id}`,
+        auth.sub,
+        idempotencyKey
+      );
+      throw new Error("Contract missing approval binding after submission");
     }
 
     await writeAuditLog(c.env.DB, {
@@ -577,14 +850,17 @@ contractRoutes.post(
       targetType: "contract",
       targetId: id,
       detail: {
-        approval_instance_id: instance.id,
-        instance_no: instance.instance_no
+        approval_instance_id: instanceIdForPayload,
+        instance_no: instanceNoForPayload
       }
     });
 
     const payload = {
       success: true,
-      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+      data: {
+        approval_instance_id: instanceIdForPayload,
+        instance_no: instanceNoForPayload
+      }
     };
     await completeIdempotentRequest(c.env.DB, `contract:submit-approval:${id}`, auth.sub, idempotencyKey, 200, payload);
 
