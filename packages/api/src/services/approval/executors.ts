@@ -67,6 +67,18 @@ export const executorFactory = (nodeType: NodeType): NodeExecutor => {
 
 // ─── Helper: Create tasks for assignees ──────────
 
+/**
+ * Filter tasks to only "active" ones — excludes cancelled, transferred,
+ * and return-type actions that are left over from previous return_to cycles.
+ */
+const getActiveTasks = (tasks: ApprovalTask[]): ApprovalTask[] =>
+  tasks.filter(
+    (t) =>
+      t.status === "pending" ||
+      (t.status === "completed" &&
+        (t.action === "approve" || t.action === "reject"))
+  );
+
 const createTasksForAssignees = async (
   env: Env,
   nodeInstance: ApprovalNodeInstance,
@@ -252,7 +264,8 @@ class SequentialExecutor implements NodeExecutor {
       .bind(nodeInstanceId)
       .all<ApprovalTask>();
 
-    const allTasks = tasks.results ?? [];
+    // Filter out cancelled/transferred/return tasks left over from return_to cycles
+    const allTasks = getActiveTasks(tasks.results ?? []);
 
     // Check for any rejection
     const rejected = allTasks.find(
@@ -324,7 +337,8 @@ class CountersignExecutor implements NodeExecutor {
       .bind(nodeInstanceId)
       .all<ApprovalTask>();
 
-    const allTasks = tasks.results ?? [];
+    // Filter out cancelled/transferred/return tasks left over from return_to cycles
+    const allTasks = getActiveTasks(tasks.results ?? []);
 
     // Any rejection → node rejected
     const rejected = allTasks.find(
@@ -385,12 +399,15 @@ class OrSignExecutor implements NodeExecutor {
     nodeInstanceId: number
   ): Promise<NodeCompletionResult> {
     const tasks = await env.DB.prepare(
-      "SELECT * FROM approval_task WHERE node_instance_id = ? AND status = 'completed'"
+      "SELECT * FROM approval_task WHERE node_instance_id = ?"
     )
       .bind(nodeInstanceId)
       .all<ApprovalTask>();
 
-    const completed = tasks.results ?? [];
+    // Filter to active approve/reject decisions only
+    const completed = getActiveTasks(tasks.results ?? []).filter(
+      (t) => t.status === "completed"
+    );
 
     if (completed.length > 0) {
       const firstAction = completed[0];
