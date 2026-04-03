@@ -2,7 +2,7 @@
 import Motion from "./utils/motion";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
-import { onBeforeUnmount, onMounted, ref, toRaw } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, toRaw } from "vue";
 import { useNav } from "@/layout/hooks/useNav";
 import { useLayout } from "@/layout/hooks/useLayout";
 import { bg, avatar, illustration } from "./utils/static";
@@ -36,6 +36,7 @@ const panelElId = "wecom-login-panel";
 const weComButtonSrc = "/login_white_big_2x.png";
 const panelUnmount = ref<null | (() => void)>(null);
 const autoRedirecting = ref(false);
+const authInFlight = computed(() => loading.value || passkeyLoading.value);
 const { initStorage } = useLayout();
 initStorage();
 
@@ -44,6 +45,7 @@ dataThemeChange(overallStyle.value);
 const { title } = useNav();
 
 const loginByCode = async (code: string) => {
+  if (authInFlight.value) return;
   loading.value = true;
   try {
     const result = await useUserStoreHook().loginByWeComCode(code);
@@ -121,6 +123,7 @@ const parseAuthOptions = (options: Record<string, any>) => {
 };
 
 const loginByPasskey = async () => {
+  if (authInFlight.value) return;
   if (
     !("credentials" in navigator) ||
     typeof window.PublicKeyCredential === "undefined" ||
@@ -177,6 +180,7 @@ const loginByPasskey = async () => {
 };
 
 const startWeComScan = async () => {
+  if (authInFlight.value) return;
   loading.value = true;
   try {
     const redirectUri = `${window.location.origin}${window.location.pathname}`;
@@ -291,7 +295,7 @@ onBeforeUnmount(() => {
             <button
               type="button"
               class="w-full mt-6! wecom-login-btn"
-              :disabled="loading"
+              :disabled="authInFlight"
               @click="startWeComScan"
             >
               <img
@@ -317,6 +321,7 @@ onBeforeUnmount(() => {
               <el-button
                 class="w-full mt-3!"
                 :loading="passkeyLoading"
+                :disabled="authInFlight"
                 @click="loginByPasskey"
               >
                 使用 Passkey 登录
