@@ -42,6 +42,56 @@ export const approvalRoutes = new Hono<{
 
 approvalRoutes.use("*", authMiddleware);
 
+const initiatedBuckets = [
+  "returned_needs_action",
+  "in_progress",
+  "done"
+] as const;
+
+type InitiatedBucket = (typeof initiatedBuckets)[number];
+
+const doneStatusesSql = "'approved', 'rejected', 'cancelled', 'withdrawn', 'completed'";
+
+const isInitiatedBucket = (value: string): value is InitiatedBucket => {
+  return (initiatedBuckets as readonly string[]).includes(value);
+};
+
+const buildReturnedNeedsActionSql = (instanceAlias: string): string => {
+  return `EXISTS (
+    SELECT 1
+    FROM approval_task at_init
+    WHERE at_init.instance_id = ${instanceAlias}.id
+      AND at_init.status = 'pending'
+      AND at_init.assignee_userid = ${instanceAlias}.initiator_userid
+  )`;
+};
+
+const buildInitiatedBucketWhereSql = (
+  instanceAlias: string,
+  initiatedBucket: InitiatedBucket
+): string => {
+  const returnedNeedsActionSql = buildReturnedNeedsActionSql(instanceAlias);
+  if (initiatedBucket === "returned_needs_action") {
+    return `(${instanceAlias}.status = 'returned' AND ${returnedNeedsActionSql})`;
+  }
+  if (initiatedBucket === "done") {
+    return `${instanceAlias}.status IN (${doneStatusesSql})`;
+  }
+  return `(
+    ${instanceAlias}.status IN ('pending', 'in_progress', 'transferred')
+    OR (${instanceAlias}.status = 'returned' AND NOT ${returnedNeedsActionSql})
+  )`;
+};
+
+const buildInitiatedBucketCaseSql = (instanceAlias: string): string => {
+  const returnedNeedsActionSql = buildReturnedNeedsActionSql(instanceAlias);
+  return `CASE
+    WHEN ${instanceAlias}.status = 'returned' AND ${returnedNeedsActionSql} THEN 'returned_needs_action'
+    WHEN ${instanceAlias}.status IN (${doneStatusesSql}) THEN 'done'
+    ELSE 'in_progress'
+  END`;
+};
+
 // ─── GET / — List all instances for current user ──────────
 
 approvalRoutes.get("/", async (c) => {
@@ -49,12 +99,49 @@ approvalRoutes.get("/", async (c) => {
   const bizType = c.req.query("biz_type");
   const status = c.req.query("status");
   const initiator = c.req.query("initiator");
+  const initiatedBucketRaw = c.req.query("initiatedBucket");
   const keyword = c.req.query("keyword");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
-  let sql = `SELECT DISTINCT ai.* FROM approval_instance ai
+  let initiatedBucket: InitiatedBucket | undefined;
+  if (initiatedBucketRaw) {
+    if (!isInitiatedBucket(initiatedBucketRaw)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message:
+              "Invalid initiatedBucket. Allowed values: returned_needs_action, in_progress, done"
+          }
+        },
+        400
+      );
+    }
+    initiatedBucket = initiatedBucketRaw;
+  }
+  const returnedNeedsActionSql = buildReturnedNeedsActionSql("ai");
+  const initiatedBucketCaseSql = buildInitiatedBucketCaseSql("ai");
+
+  let sql = `SELECT DISTINCT ai.*,
+    ${initiatedBucketCaseSql} as initiated_bucket,
+    CASE WHEN ${returnedNeedsActionSql} THEN 1 ELSE 0 END as has_pending_task_for_initiator,
+    CASE
+      WHEN ai.initiator_userid = ?
+        AND ai.status IN ('pending', 'in_progress')
+        AND EXISTS (
+          SELECT 1 FROM approval_task at_remind
+          WHERE at_remind.instance_id = ai.id
+            AND at_remind.status = 'pending'
+            AND at_remind.assignee_userid IS NOT NULL
+            AND at_remind.assignee_userid != ''
+        )
+      THEN 1
+      ELSE 0
+    END as can_remind,
+    ai.updated_at as last_updated_at
+    FROM approval_instance ai
     LEFT JOIN approval_task at2 ON at2.instance_id = ai.id
     WHERE (ai.initiator_userid = ? OR at2.assignee_userid = ?)`;
   let countSql = `SELECT COUNT(DISTINCT ai.id) as total FROM approval_instance ai
@@ -78,6 +165,14 @@ approvalRoutes.get("/", async (c) => {
     countSql += " AND ai.initiator_userid = ?";
     params.push(initiatorFilter);
   }
+  if (initiatedBucket) {
+    const initiatedBucketWhereSql = buildInitiatedBucketWhereSql(
+      "ai",
+      initiatedBucket
+    );
+    sql += ` AND ${initiatedBucketWhereSql}`;
+    countSql += ` AND ${initiatedBucketWhereSql}`;
+  }
   if (keyword) {
     sql += " AND ai.biz_summary LIKE ?";
     countSql += " AND ai.biz_summary LIKE ?";
@@ -91,12 +186,28 @@ approvalRoutes.get("/", async (c) => {
   sql += " ORDER BY ai.created_at DESC LIMIT ? OFFSET ?";
 
   const rows = await c.env.DB.prepare(sql)
-    .bind(...params, pageSize, offset)
-    .all<ApprovalInstance>();
+    .bind(auth.sub, ...params, pageSize, offset)
+    .all<ApprovalInstance & {
+      initiated_bucket?: InitiatedBucket;
+      has_pending_task_for_initiator?: number;
+      can_remind?: number;
+      last_updated_at?: string;
+    }>();
+
+  const normalizedRows = (rows.results ?? []).map((row) => ({
+    ...row,
+    initiated_bucket:
+      row.initiated_bucket && isInitiatedBucket(row.initiated_bucket)
+        ? row.initiated_bucket
+        : "in_progress",
+    has_pending_task_for_initiator: Boolean(row.has_pending_task_for_initiator),
+    can_remind: Boolean(row.can_remind),
+    last_updated_at: row.last_updated_at || row.updated_at
+  }));
 
   return c.json({
     success: true,
-    data: rows.results ?? [],
+    data: normalizedRows,
     pagination: { page, pageSize, total: countResult?.total ?? 0 }
   });
 });
@@ -432,6 +543,65 @@ approvalRoutes.get("/remindable", async (c) => {
     success: true,
     data: Array.from(grouped.values()),
     pagination: { page, pageSize, total: countResult?.total ?? 0 }
+  });
+});
+
+approvalRoutes.get("/initiated/summary", async (c) => {
+  const auth = c.get("auth");
+  const initiatorRaw = c.req.query("initiator");
+  const initiator =
+    !initiatorRaw || initiatorRaw === "me" ? auth.sub : initiatorRaw;
+
+  if (initiator !== auth.sub && !auth.roles.includes("super_admin")) {
+    return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+  }
+
+  const returnedNeedsActionSql = buildInitiatedBucketWhereSql(
+    "ai",
+    "returned_needs_action"
+  );
+  const inProgressSql = buildInitiatedBucketWhereSql("ai", "in_progress");
+  const doneSql = buildInitiatedBucketWhereSql("ai", "done");
+
+  const summary = await c.env.DB.prepare(
+    `SELECT
+      COUNT(*) as total,
+      SUM(CASE WHEN ${returnedNeedsActionSql} THEN 1 ELSE 0 END) as returned_needs_action_count,
+      SUM(CASE WHEN ${inProgressSql} THEN 1 ELSE 0 END) as in_progress_count,
+      SUM(CASE WHEN ${doneSql} THEN 1 ELSE 0 END) as done_count
+     FROM approval_instance ai
+     WHERE ai.initiator_userid = ?`
+  )
+    .bind(initiator)
+    .first<{
+      total: number;
+      returned_needs_action_count: number;
+      in_progress_count: number;
+      done_count: number;
+    }>();
+
+  const remindable = await c.env.DB.prepare(
+    `SELECT COUNT(DISTINCT ai.id) as total
+     FROM approval_instance ai
+     JOIN approval_task at2 ON at2.instance_id = ai.id
+     WHERE ai.initiator_userid = ?
+       AND ai.status IN ('pending', 'in_progress')
+       AND at2.status = 'pending'
+       AND at2.assignee_userid IS NOT NULL
+       AND at2.assignee_userid != ''`
+  )
+    .bind(initiator)
+    .first<{ total: number }>();
+
+  return c.json({
+    success: true,
+    data: {
+      total: summary?.total ?? 0,
+      returned_needs_action: summary?.returned_needs_action_count ?? 0,
+      in_progress: summary?.in_progress_count ?? 0,
+      done: summary?.done_count ?? 0,
+      remindable: remindable?.total ?? 0
+    }
   });
 });
 

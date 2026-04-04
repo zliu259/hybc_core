@@ -13,7 +13,10 @@ import {
 } from "@/api/fleet";
 import {
   listApprovalInstances,
-  type ApprovalInstance
+  getInitiatedApprovalSummary,
+  type ApprovalInstance,
+  type InitiatedApprovalSummary,
+  type InitiatedBucket
 } from "@/api/approval";
 import { toBizTypeLabel, toStatusLabel } from "@/views/approval/labels";
 
@@ -25,6 +28,37 @@ const paymentList = ref<PaymentRequest[]>([]);
 const reimbursementList = ref<ReimbursementEnvelope[]>([]);
 const fuelList = ref<FuelQuotaApplication[]>([]);
 const approvalList = ref<ApprovalInstance[]>([]);
+const approvalBucket = ref<InitiatedBucket>("returned_needs_action");
+const approvalSummary = ref<InitiatedApprovalSummary>({
+  total: 0,
+  returned_needs_action: 0,
+  in_progress: 0,
+  done: 0,
+  remindable: 0
+});
+
+const initiatedBucketLabel = (bucket: InitiatedBucket) => {
+  if (bucket === "returned_needs_action") return "被退回（待处理）";
+  if (bucket === "done") return "已完成";
+  return "审批中";
+};
+
+const initiatedBucketTagType = (bucket: InitiatedBucket) => {
+  if (bucket === "returned_needs_action") return "danger" as const;
+  if (bucket === "done") return "success" as const;
+  return "warning" as const;
+};
+
+const refreshInitiatedApprovalList = async (bucket: InitiatedBucket) => {
+  approvalBucket.value = bucket;
+  const approvalResult = await listApprovalInstances({
+    initiator: "me",
+    initiatedBucket: bucket,
+    page: 1,
+    pageSize: 8
+  });
+  approvalList.value = approvalResult.data;
+};
 
 const paymentStatusLabel = (status: string) => {
   if (status === "draft") return "草稿";
@@ -75,16 +109,29 @@ const fuelProcessResult = (item: FuelQuotaApplication) => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const [paymentResult, reimbursementResult, fuelResult, approvalResult] =
+    const [
+      paymentResult,
+      reimbursementResult,
+      fuelResult,
+      approvalSummaryResult,
+      approvalResult
+    ] =
       await Promise.all([
       listPaymentRequests({ mine: true, page: 1, pageSize: 8 }),
       listReimbursementEnvelopes({ creator_id: "me", page: 1, pageSize: 8 }),
       listFuelQuotaApplications({ mine: true }),
-      listApprovalInstances({ initiator: "me", page: 1, pageSize: 8 })
+      getInitiatedApprovalSummary({ initiator: "me" }),
+      listApprovalInstances({
+        initiator: "me",
+        initiatedBucket: approvalBucket.value,
+        page: 1,
+        pageSize: 8
+      })
     ]);
     paymentList.value = paymentResult.data;
     reimbursementList.value = reimbursementResult.data;
     fuelList.value = fuelResult.data.slice(0, 8);
+    approvalSummary.value = approvalSummaryResult.data;
     approvalList.value = approvalResult.data;
   } finally {
     loading.value = false;
@@ -132,7 +179,7 @@ onMounted(loadData);
       >
       <el-col :md="6" :xs="24"
         ><el-card shadow="never"
-          >我发起的审批：{{ approvalList.length }}</el-card
+          >我发起的审批：{{ approvalSummary.total }}</el-card
         ></el-col
       >
     </el-row>
@@ -256,16 +303,70 @@ onMounted(loadData);
       </el-tab-pane>
 
       <el-tab-pane label="我发起的审批">
+        <el-row :gutter="12" style="margin-bottom: 12px">
+          <el-col :md="8" :xs="24">
+            <el-card shadow="never">
+              <div style="font-size: 13px; color: #f56c6c">被退回（待处理）</div>
+              <div style="font-size: 24px; font-weight: 700">
+                {{ approvalSummary.returned_needs_action }}
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :md="8" :xs="24">
+            <el-card shadow="never">
+              <div style="font-size: 13px; color: #e6a23c">审批中</div>
+              <div style="font-size: 24px; font-weight: 700">
+                {{ approvalSummary.in_progress }}
+              </div>
+            </el-card>
+          </el-col>
+          <el-col :md="8" :xs="24">
+            <el-card shadow="never">
+              <div style="font-size: 13px; color: #67c23a">已完成</div>
+              <div style="font-size: 24px; font-weight: 700">
+                {{ approvalSummary.done }}
+              </div>
+            </el-card>
+          </el-col>
+        </el-row>
+
+        <el-space style="margin-bottom: 12px" wrap>
+          <el-button
+            :type="approvalBucket === 'returned_needs_action' ? 'danger' : 'default'"
+            @click="refreshInitiatedApprovalList('returned_needs_action')"
+            >被退回（待处理）</el-button
+          >
+          <el-button
+            :type="approvalBucket === 'in_progress' ? 'warning' : 'default'"
+            @click="refreshInitiatedApprovalList('in_progress')"
+            >审批中</el-button
+          >
+          <el-button
+            :type="approvalBucket === 'done' ? 'success' : 'default'"
+            @click="refreshInitiatedApprovalList('done')"
+            >已完成</el-button
+          >
+        </el-space>
+
         <el-table :data="approvalList" stripe>
           <el-table-column prop="instance_no" label="审批单号" min-width="170" />
           <el-table-column label="业务类型" width="140">
             <template #default="scope">{{ toBizTypeLabel(scope.row.biz_type) }}</template>
           </el-table-column>
           <el-table-column prop="biz_summary" label="摘要" min-width="220" />
+          <el-table-column label="监管分组" width="150">
+            <template #default="scope">
+              <el-tag
+                :type="initiatedBucketTagType(scope.row.initiated_bucket || 'in_progress')"
+              >
+                {{ initiatedBucketLabel(scope.row.initiated_bucket || "in_progress") }}
+              </el-tag>
+            </template>
+          </el-table-column>
           <el-table-column label="状态" width="120">
             <template #default="scope">{{ toStatusLabel(scope.row.status) }}</template>
           </el-table-column>
-          <el-table-column prop="submitted_at" label="提交时间" width="180" />
+          <el-table-column prop="last_updated_at" label="更新时间" width="180" />
           <el-table-column label="操作" width="110" fixed="right">
             <template #default="scope">
               <el-button

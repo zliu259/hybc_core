@@ -1,3 +1,35 @@
+.bucket-row {
+  display: flex;
+  gap: 10rpx;
+  margin-bottom: 14rpx;
+}
+
+.bucket-chip {
+  flex: 1;
+  border: 1rpx solid #d9e4f3;
+  background: #f5f8fc;
+  border-radius: 14rpx;
+  padding: 12rpx;
+  box-sizing: border-box;
+}
+
+.bucket-chip--active {
+  border-color: #3f7af8;
+  background: #ecf3ff;
+}
+
+.bucket-chip__title {
+  color: #42526b;
+  font-size: 22rpx;
+}
+
+.bucket-chip__count {
+  margin-top: 4rpx;
+  color: #1e2a3a;
+  font-size: 30rpx;
+  font-weight: 700;
+}
+
 .count-tip {
   margin-bottom: 12rpx;
   color: #5f6f86;

@@ -15,6 +15,23 @@ export type ApprovalInstance = {
   completed_at: string | null;
   created_at: string;
   updated_at: string;
+  initiated_bucket?: InitiatedBucket;
+  has_pending_task_for_initiator?: boolean;
+  can_remind?: boolean;
+  last_updated_at?: string;
+};
+
+export type InitiatedBucket =
+  | "returned_needs_action"
+  | "in_progress"
+  | "done";
+
+export type InitiatedApprovalSummary = {
+  total: number;
+  returned_needs_action: number;
+  in_progress: number;
+  done: number;
+  remindable: number;
 };
 
 export type PendingApprovalItem = {
@@ -150,6 +167,7 @@ export const listApprovalInstances = (params?: {
   biz_type?: string;
   status?: string;
   initiator?: string;
+  initiatedBucket?: InitiatedBucket;
   keyword?: string;
   page?: number;
   pageSize?: number;
@@ -157,6 +175,16 @@ export const listApprovalInstances = (params?: {
   return http.request<PaginatedResponse<ApprovalInstance>>(
     "get",
     "/api/v1/approval",
+    { params }
+  );
+};
+
+export const getInitiatedApprovalSummary = (params?: {
+  initiator?: string;
+}) => {
+  return http.request<{ success: boolean; data: InitiatedApprovalSummary }>(
+    "get",
+    "/api/v1/approval/initiated/summary",
     { params }
   );
 };

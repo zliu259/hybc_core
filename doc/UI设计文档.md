@@ -1195,3 +1195,9 @@
 - 列表条目统一跳转审批详情页（`/pages/approval-detail/index`），不跳转具体业务页面，满足“看审批不看业务页”路径约束：`packages/miniapp/pages/approval-initiated/index.js`
 - 审批详情页新增只读模式（`readonly=1`），只保留查看，不展示审批意见与底部操作按钮：`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxml`
 - 审批详情页加载态/错误态解耦：慢网加载中仅显示“加载审批详情中”，仅在请求结束且失败后才显示“详情不存在或无权限”等兜底文案，避免首屏误判：`packages/miniapp/pages/approval-detail/index.{js,wxml}`
+
+### 8.9 发起人流程监管（三分桶）补齐（2026-04）
+- Web「我的申请-我发起的审批」改造为发起人监管视图：按“被退回（待处理）/审批中/已完成”三分桶查看，并展示每个分组数量与当前分组列表：`packages/web/src/views/workspace/my-applications/index.vue`
+- Web 审批 API 封装新增发起人监管参数与汇总接口：`initiatedBucket` 参数、`GET /api/v1/approval/initiated/summary` 调用与类型：`packages/web/src/api/approval.ts`
+- Miniapp「我发起的申请」页面改造为同口径三分桶监管，支持按流程类型进一步筛选，列表项保留只读跳转审批详情：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
+- API 侧对发起人列表做增量兼容扩展：`GET /api/v1/approval` 新增可选 `initiatedBucket` 过滤与派生字段（`initiated_bucket`/`last_updated_at` 等），并新增 `GET /api/v1/approval/initiated/summary`：`packages/api/src/routes/approval.ts`

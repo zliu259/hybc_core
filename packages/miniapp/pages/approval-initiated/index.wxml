@@ -1,5 +1,20 @@
 <view class="page">
   <hy-panel-card title="🗂️ 我发起的申请" subtitle="审批视图（只读）">
+    <view class="bucket-row">
+      <block wx:for="{{bucketFilterOptions}}" wx:key="value">
+        <view
+          class="bucket-chip {{bucketFilterIndex === index ? 'bucket-chip--active' : ''}}"
+          data-index="{{index}}"
+          bindtap="onBucketFilterChange"
+        >
+          <view class="bucket-chip__title">{{item.label}}</view>
+          <view class="bucket-chip__count">
+            {{item.value === 'returned_needs_action' ? summary.returned_needs_action : (item.value === 'in_progress' ? summary.in_progress : summary.done)}}
+          </view>
+        </view>
+      </block>
+    </view>
+
     <view class="filter-row">
       <view class="filter-item">
         <view class="filter-label">流程类型</view>
@@ -13,23 +28,11 @@
           <view class="filter-value">{{typeFilterOptions[typeFilterIndex].label}}</view>
         </picker>
       </view>
-      <view class="filter-item">
-        <view class="filter-label">流程状态</view>
-        <picker
-          mode="selector"
-          range="{{statusFilterOptions}}"
-          range-key="label"
-          value="{{statusFilterIndex}}"
-          bindchange="onStatusFilterChange"
-        >
-          <view class="filter-value">{{statusFilterOptions[statusFilterIndex].label}}</view>
-        </picker>
-      </view>
     </view>
 
-    <view class="count-tip">筛选结果 {{count}} 条（总 {{totalCount}} 条）</view>
+    <view class="count-tip">当前分组 {{count}} 条（我发起总计 {{summary.total}} 条）</view>
     <view class="row">
-      <t-button theme="primary" block bindtap="loadList" loading="{{loading}}" disabled="{{loading}}">
+      <t-button theme="primary" block bindtap="reloadAll" loading="{{loading}}" disabled="{{loading}}">
         刷新列表
       </t-button>
     </view>
@@ -41,8 +44,10 @@
     <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
       <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary || '-'}}">
         <view class="sub">类型：{{item.bizTypeLabel}}</view>
+        <view class="sub">监管分组：{{item.initiatedBucketText}}</view>
         <view class="sub">状态：{{item.statusText}}</view>
         <view class="sub">提交时间：{{item.submittedAtText}}</view>
+        <view class="sub">更新时间：{{item.updatedAtText}}</view>
       </hy-panel-card>
     </view>
   </block>
