@@ -108,30 +108,38 @@ export const resolveReimbursementEnvelopeByUuid = (envelope_uuid: string) => {
   });
 };
 
-export const createReimbursementEnvelope = (data: {
-  project_id: number;
-  applicant_userid?: string;
-  preferred_envelope_uuid?: string;
-  channel?: "physical" | "electronic";
-  invoice_no?: string;
-  expense_date?: string;
-  amount?: number;
-  category?: string;
-  description?: string;
-  attachments?: {
-    attachment_type?: string;
-    file_key: string;
-    file_name?: string;
-    file_size?: number;
+export const createReimbursementEnvelope = (
+  data: {
+    project_id: number;
+    applicant_userid?: string;
+    preferred_envelope_uuid?: string;
+    channel?: "physical" | "electronic";
     invoice_no?: string;
+    expense_date?: string;
     amount?: number;
-    issue_date?: string;
-  }[];
-}) => {
+    category?: string;
+    description?: string;
+    attachments?: {
+      attachment_type?: string;
+      file_key: string;
+      file_name?: string;
+      file_size?: number;
+      invoice_no?: string;
+      amount?: number;
+      issue_date?: string;
+    }[];
+  },
+  options?: { idempotencyKey?: string }
+) => {
   return http.request<{
     success: boolean;
     data: { id: number; envelope_no: string; envelope_uuid: string };
-  }>("post", "/api/v1/reimbursement", { data });
+  }>("post", "/api/v1/reimbursement", {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const updateReimbursementEnvelope = (
@@ -258,17 +266,20 @@ export const getEnvelopePdfStatus = (id: number) => {
   }>("get", `/api/v1/reimbursement/${id}/pdf-status`);
 };
 
-export const uploadElectronicInvoice = (data: {
-  project_id: number;
-  applicant_userid?: string;
-  file_key: string;
-  file_name?: string;
-  file_size?: number;
-  invoice_no?: string;
-  amount?: number;
-  issue_date?: string;
-  description?: string;
-}) => {
+export const uploadElectronicInvoice = (
+  data: {
+    project_id: number;
+    applicant_userid?: string;
+    file_key: string;
+    file_name?: string;
+    file_size?: number;
+    invoice_no?: string;
+    amount?: number;
+    issue_date?: string;
+    description?: string;
+  },
+  options?: { idempotencyKey?: string }
+) => {
   return http.request<{
     success: boolean;
     data: {
@@ -277,7 +288,12 @@ export const uploadElectronicInvoice = (data: {
       envelope_uuid: string;
       ocr_task_id: number;
     };
-  }>("post", "/api/v1/reimbursement/electronic-upload", { data });
+  }>("post", "/api/v1/reimbursement/electronic-upload", {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const getEnvelopeOcrStatus = (id: number) => {

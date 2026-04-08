@@ -39,6 +39,7 @@ const baseDataLoading = ref(false);
 const detailLoading = ref(false);
 const loading = computed(() => baseDataLoading.value || detailLoading.value);
 const saving = ref(false);
+const submitting = ref(false);
 const detail = ref<ReimbursementEnvelopeDetail | null>(null);
 const { projects, loadProjects } = useProjectOptions();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
@@ -682,20 +683,23 @@ const save = async () => {
   saving.value = true;
   try {
     if (isCreate.value) {
-      const result = await createReimbursementEnvelope({
-        project_id: form.value.project_id,
-        applicant_userid: form.value.applicant_userid || undefined,
-        channel: form.value.channel,
-        preferred_envelope_uuid:
-          form.value.channel === "physical"
-            ? form.value.bind_envelope_uuid || undefined
-            : undefined,
-        expense_date: form.value.expense_date || undefined,
-        amount: form.value.amount,
-        category: form.value.category || undefined,
-        description: form.value.description || undefined,
-        attachments: attachments.length > 0 ? attachments : undefined
-      });
+      const result = await createReimbursementEnvelope(
+        {
+          project_id: form.value.project_id,
+          applicant_userid: form.value.applicant_userid || undefined,
+          channel: form.value.channel,
+          preferred_envelope_uuid:
+            form.value.channel === "physical"
+              ? form.value.bind_envelope_uuid || undefined
+              : undefined,
+          expense_date: form.value.expense_date || undefined,
+          amount: form.value.amount,
+          category: form.value.category || undefined,
+          description: form.value.description || undefined,
+          attachments: attachments.length > 0 ? attachments : undefined
+        },
+        { idempotencyKey: createIdempotencyKey("reimbursement-create") }
+      );
       message("创建成功", { type: "success" });
       if (route.path.startsWith("/workspace/")) {
         router.replace(`/workspace/my-reimbursement/detail/${result.data.id}`);
@@ -747,10 +751,12 @@ const scanSubmit = async () => {
 
 const submitEnvelope = async () => {
   if (!detail.value) return;
+  if (submitting.value) return;
   if (!submittableStatuses.has(detail.value.status)) {
     message("当前状态不允许提交报销", { type: "warning" });
     return;
   }
+  submitting.value = true;
   try {
     await submitReimbursementEnvelope(detail.value.id, undefined, {
       idempotencyKey: createIdempotencyKey("reimbursement-submit")
@@ -788,6 +794,8 @@ const submitEnvelope = async () => {
         type: "error"
       });
     }
+  } finally {
+    submitting.value = false;
   }
 };
 
@@ -1198,6 +1206,8 @@ watch(
               submittableStatuses.has(detail.status)
             "
             type="primary"
+            :loading="submitting"
+            :disabled="submitting"
             @click="submitEnvelope"
           >
             提交报销并寄送实物信封
@@ -1208,6 +1218,8 @@ watch(
               submittableStatuses.has(detail.status)
             "
             type="primary"
+            :loading="submitting"
+            :disabled="submitting"
             @click="submitEnvelope"
           >
             提交电子发票报销

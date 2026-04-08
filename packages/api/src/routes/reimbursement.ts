@@ -46,6 +46,19 @@ const isValidUuid = (value: string | null | undefined): boolean => {
   return Boolean(trimmed && UUID_REGEX.test(trimmed));
 };
 
+/**
+ * Sanitize invoice_unique_no: reject descriptive text like "电子发票", "收据", "支出凭证".
+ * Only allow values that look like actual invoice numbers (alphanumeric, dashes, dots).
+ */
+const INVOICE_NO_PATTERN = /^[A-Za-z0-9\-._]{4,}$/;
+const sanitizeInvoiceUniqueNo = (value: string | null | undefined): string | null => {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  if (!INVOICE_NO_PATTERN.test(trimmed)) return null;
+  return trimmed;
+};
+
 const parseTaskResult = (resultJson: string | null): Record<string, unknown> | null => {
   if (!resultJson) {
     return null;
@@ -1997,6 +2010,7 @@ reimbursementRoutes.post(
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as ElectronicUploadRequest;
+    const idempotencyKey = c.req.header("Idempotency-Key");
 
     if (!body.project_id || body.project_id <= 0) {
       return c.json({ success: false, error: { message: "project_id is required" } }, 400);
@@ -2005,59 +2019,88 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "file_key is required" } }, 400);
     }
 
-    const now = nowIso();
-    const envelopeUuid = crypto.randomUUID();
-    const envelopeNo = envelopeUuid;
+    const idempotencyScope = `reimbursement:electronic-upload:${body.project_id}:${body.file_key}`;
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { id: number; envelope_no: string; envelope_uuid: string; ocr_task_id: number | null };
+    }>(c.env.DB, idempotencyScope, auth.sub, idempotencyKey);
 
-    const insertResult = await c.env.DB.prepare(
-      `INSERT INTO reimbursement_envelope
-        (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
-         invoice_unique_no, invoice_no, expense_date, amount, description,
-         status, precheck_status, verification_status, ocr_status,
-         duplicate_check_status, received_at, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, ?, 'draft', 'none', 'pending', 'none', 'none', NULL, ?, ?)`
-    )
-      .bind(
-        envelopeNo,
-        envelopeUuid,
-        body.project_id,
-        body.applicant_userid ?? auth.sub,
-        body.invoice_no ?? null,
-        body.invoice_no ?? null,
-        body.issue_date ?? null,
-        body.amount ?? 0,
-        body.description ?? null,
-        now,
-        now
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload, { status: idempotency.statusCode as 201 });
+    }
+    if (idempotency.kind === "pending") {
+      return c.json(
+        { success: false, error: { message: "Electronic upload already in progress" } },
+        409
+      );
+    }
+
+    try {
+      const now = nowIso();
+      const envelopeUuid = crypto.randomUUID();
+      const envelopeNo = envelopeUuid;
+
+      const insertResult = await c.env.DB.prepare(
+        `INSERT INTO reimbursement_envelope
+          (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
+           invoice_unique_no, invoice_no, expense_date, amount, description,
+           status, precheck_status, verification_status, ocr_status,
+           duplicate_check_status, received_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'electronic', ?, ?, ?, ?, ?, 'draft', 'none', 'pending', 'none', 'none', NULL, ?, ?)`
       )
-      .run();
+        .bind(
+          envelopeNo,
+          envelopeUuid,
+          body.project_id,
+          body.applicant_userid ?? auth.sub,
+          sanitizeInvoiceUniqueNo(body.invoice_no),
+          body.invoice_no ?? null,
+          body.issue_date ?? null,
+          body.amount ?? 0,
+          body.description ?? null,
+          now,
+          now
+        )
+        .run();
 
-    const envelopeId = insertResult.meta.last_row_id as number;
+      const envelopeId = insertResult.meta.last_row_id as number;
 
-    await insertAttachments(c.env.DB, envelopeId, [
-      {
-        attachment_type: "invoice",
-        file_key: body.file_key,
-        file_name: body.file_name,
-        file_size: body.file_size,
-        invoice_no: body.invoice_no,
-        amount: body.amount,
-        issue_date: body.issue_date
+      await insertAttachments(c.env.DB, envelopeId, [
+        {
+          attachment_type: "invoice",
+          file_key: body.file_key,
+          file_name: body.file_name,
+          file_size: body.file_size,
+          invoice_no: body.invoice_no,
+          amount: body.amount,
+          issue_date: body.issue_date
         }
-    ]);
+      ]);
 
-    return c.json(
-      {
-        success: true,
+      const payload = {
+        success: true as const,
         data: {
           id: envelopeId,
           envelope_no: envelopeNo,
           envelope_uuid: envelopeUuid,
           ocr_task_id: null
         }
-      },
-      201
-    );
+      };
+
+      await completeIdempotentRequest(
+        c.env.DB,
+        idempotencyScope,
+        auth.sub,
+        idempotencyKey,
+        201,
+        payload
+      );
+
+      return c.json(payload, 201);
+    } catch (err) {
+      await abandonIdempotentRequest(c.env.DB, idempotencyScope, auth.sub, idempotencyKey);
+      throw err;
+    }
   }
 );
 
@@ -2632,7 +2675,7 @@ reimbursementRoutes.post(
           body.project_id ?? null,
           decision.applicantToPersist,
           decision.channelToPersist,
-          body.invoice_no ?? null,
+          sanitizeInvoiceUniqueNo(body.invoice_no),
           body.invoice_no ?? null,
           body.expense_date ?? null,
           body.amount ?? null,
@@ -2684,7 +2727,7 @@ reimbursementRoutes.post(
         body.project_id,
         requestedApplicant,
         requestedChannel,
-        body.invoice_no ?? null,
+        sanitizeInvoiceUniqueNo(body.invoice_no),
         body.invoice_no ?? null,
         body.expense_date ?? null,
         body.amount ?? 0,
@@ -2774,7 +2817,7 @@ reimbursementRoutes.put(
         body.project_id ?? null,
         body.applicant_userid ?? null,
         body.channel ?? null,
-        body.invoice_no ?? null,
+        sanitizeInvoiceUniqueNo(body.invoice_no),
         body.invoice_no ?? null,
         body.expense_date ?? null,
         body.amount ?? null,
@@ -2958,7 +3001,7 @@ reimbursementRoutes.post("/scan", async (c) => {
       body.project_id ?? null,
       shouldBindApplicant ? 1 : 0,
       auth.sub,
-      body.invoice_no ?? null,
+      sanitizeInvoiceUniqueNo(body.invoice_no),
       body.invoice_no ?? null,
       body.expense_date ?? null,
       body.amount ?? null,
