@@ -23,6 +23,7 @@ import type {
   ElectronicUploadRequest,
   EnvelopeAttachment,
   MarkBatchPaidRequest,
+  RebindEnvelopeUuidRequest,
   PrecheckEnvelopeRequest,
   ReimbursementBatch,
   ReimbursementDuplicateCheck,
@@ -1125,45 +1126,70 @@ reimbursementRoutes.get("/", async (c) => {
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
-  let sql = "SELECT * FROM reimbursement_envelope WHERE status != 'deleted'";
-  let countSql = "SELECT COUNT(*) as total FROM reimbursement_envelope WHERE status != 'deleted'";
+  let sql = `SELECT
+      e.*,
+      (
+        SELECT COUNT(*)
+          FROM reimbursement_duplicate_check d
+         WHERE d.envelope_id = e.id
+      ) AS duplicate_count,
+      (
+        SELECT CASE MAX(
+          CASE d.risk_level
+            WHEN 'high' THEN 3
+            WHEN 'medium' THEN 2
+            WHEN 'low' THEN 1
+            ELSE 0
+          END
+        )
+          WHEN 3 THEN 'high'
+          WHEN 2 THEN 'medium'
+          WHEN 1 THEN 'low'
+          ELSE NULL
+        END
+          FROM reimbursement_duplicate_check d
+         WHERE d.envelope_id = e.id
+      ) AS duplicate_risk_level
+    FROM reimbursement_envelope e
+    WHERE e.status != 'deleted'`;
+  let countSql = "SELECT COUNT(*) as total FROM reimbursement_envelope e WHERE e.status != 'deleted'";
   const params: (string | number)[] = [];
 
   if (status) {
-    sql += " AND status = ?";
-    countSql += " AND status = ?";
+    sql += " AND e.status = ?";
+    countSql += " AND e.status = ?";
     params.push(status);
   } else if (excludeCancelled) {
-    sql += " AND status != 'cancelled'";
-    countSql += " AND status != 'cancelled'";
+    sql += " AND e.status != 'cancelled'";
+    countSql += " AND e.status != 'cancelled'";
   }
   if (projectId) {
-    sql += " AND project_id = ?";
-    countSql += " AND project_id = ?";
+    sql += " AND e.project_id = ?";
+    countSql += " AND e.project_id = ?";
     params.push(Number(projectId));
   }
   if (applicantFilter) {
-    sql += " AND applicant_userid = ?";
-    countSql += " AND applicant_userid = ?";
+    sql += " AND e.applicant_userid = ?";
+    countSql += " AND e.applicant_userid = ?";
     params.push(applicantFilter);
   }
   if (channel) {
-    sql += " AND channel = ?";
-    countSql += " AND channel = ?";
+    sql += " AND e.channel = ?";
+    countSql += " AND e.channel = ?";
     params.push(channel);
   }
   if (keyword) {
-    sql += " AND (envelope_no LIKE ? OR envelope_uuid LIKE ? OR IFNULL(invoice_no, '') LIKE ? OR IFNULL(description, '') LIKE ?)";
-    countSql += " AND (envelope_no LIKE ? OR envelope_uuid LIKE ? OR IFNULL(invoice_no, '') LIKE ? OR IFNULL(description, '') LIKE ?)";
+    sql += " AND (e.envelope_no LIKE ? OR e.envelope_uuid LIKE ? OR IFNULL(e.invoice_no, '') LIKE ? OR IFNULL(e.description, '') LIKE ?)";
+    countSql += " AND (e.envelope_no LIKE ? OR e.envelope_uuid LIKE ? OR IFNULL(e.invoice_no, '') LIKE ? OR IFNULL(e.description, '') LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
   if (legacyDataId) {
-    sql += " AND legacy_data_id = ?";
-    countSql += " AND legacy_data_id = ?";
+    sql += " AND e.legacy_data_id = ?";
+    countSql += " AND e.legacy_data_id = ?";
     params.push(legacyDataId);
   }
 
-  sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
+  sql += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
 
   const countResult = await c.env.DB.prepare(countSql)
     .bind(...params)
@@ -2714,6 +2740,162 @@ reimbursementRoutes.get("/resolve/by-uuid", async (c) => {
 });
 
 reimbursementRoutes.post(
+  "/:id/rebind-uuid",
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as RebindEnvelopeUuidRequest;
+    const nextUuid = body.envelope_uuid?.trim();
+    const reason = body.reason?.trim();
+
+    if (!nextUuid) {
+      return c.json({ success: false, error: { message: "envelope_uuid is required" } }, 400);
+    }
+    if (!isValidUuid(nextUuid)) {
+      return c.json({ success: false, error: { message: "envelope_uuid must be a valid UUID" } }, 400);
+    }
+    if (!reason) {
+      return c.json({ success: false, error: { message: "reason is required" } }, 400);
+    }
+
+    const envelope = await c.env.DB.prepare(
+      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<ReimbursementEnvelope>();
+
+    if (!envelope) {
+      return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+    if (envelope.channel !== "physical") {
+      return c.json({ success: false, error: { message: "Only physical envelopes support UUID rebind" } }, 400);
+    }
+    if (!["draft", "submitted", "received", "unregistered"].includes(envelope.status)) {
+      return c.json(
+        {
+          success: false,
+          error: { message: `Envelope in status ${envelope.status} cannot rebind UUID` }
+        },
+        400
+      );
+    }
+
+    if (nextUuid === envelope.envelope_uuid) {
+      return c.json({
+        success: true,
+        data: {
+          id: envelope.id,
+          envelope_uuid: envelope.envelope_uuid,
+          envelope_no: envelope.envelope_no,
+          unchanged: true
+        }
+      });
+    }
+
+    const occupied = await c.env.DB.prepare(
+      "SELECT id, status, applicant_userid FROM reimbursement_envelope WHERE envelope_uuid = ? AND status != 'deleted'"
+    )
+      .bind(nextUuid)
+      .first<{ id: number; status: string; applicant_userid: string }>();
+
+    let swappedPlaceholderId: number | null = null;
+    const now = nowIso();
+
+    if (occupied && occupied.id !== envelope.id) {
+      const canSwapPlaceholder =
+        (occupied.status === "unregistered" || occupied.applicant_userid === UNASSIGNED_APPLICANT) &&
+        !["batched", "pending_approval", "approved", "paid"].includes(occupied.status);
+      if (!canSwapPlaceholder) {
+        return c.json(
+          {
+            success: false,
+            error: { message: "Target UUID is already occupied by an active envelope" }
+          },
+          409
+        );
+      }
+
+      const occupiedAttachmentRow = await c.env.DB.prepare(
+        "SELECT COUNT(*) AS cnt FROM envelope_attachment WHERE envelope_id = ? AND status = 'active'"
+      )
+        .bind(occupied.id)
+        .first<{ cnt: number }>();
+      if ((occupiedAttachmentRow?.cnt ?? 0) > 0) {
+        return c.json(
+          {
+            success: false,
+            error: { message: "Target UUID is attached to an envelope with active attachments" }
+          },
+          409
+        );
+      }
+
+      const tempUuid = crypto.randomUUID();
+      await runInTransaction(c.env.DB, async () => {
+        await c.env.DB.prepare(
+          "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(tempUuid, tempUuid, now, occupied.id)
+          .run();
+
+        await c.env.DB.prepare(
+          "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(nextUuid, nextUuid, now, envelope.id)
+          .run();
+
+        await c.env.DB.prepare(
+          "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(envelope.envelope_uuid, envelope.envelope_uuid, now, occupied.id)
+          .run();
+      });
+      swappedPlaceholderId = occupied.id;
+    } else {
+      await c.env.DB.prepare(
+        "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?"
+      )
+        .bind(nextUuid, nextUuid, now, envelope.id)
+        .run();
+    }
+
+    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_UUID_REBOUND", "reimbursement_envelope", {
+      envelope_id: envelope.id,
+      old_uuid: envelope.envelope_uuid,
+      new_uuid: nextUuid,
+      swapped_placeholder_id: swappedPlaceholderId,
+      reason,
+      rebound_by: auth.sub
+    });
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.envelope.rebind_uuid",
+      targetType: "reimbursement_envelope",
+      targetId: envelope.id,
+      detail: {
+        old_uuid: envelope.envelope_uuid,
+        new_uuid: nextUuid,
+        swapped_placeholder_id: swappedPlaceholderId,
+        reason
+      }
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        id: envelope.id,
+        envelope_uuid: nextUuid,
+        envelope_no: nextUuid,
+        swapped_placeholder_id: swappedPlaceholderId
+      }
+    });
+  }
+);
+
+reimbursementRoutes.post(
   "/",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
@@ -2732,6 +2914,16 @@ reimbursementRoutes.post(
 
     if (!validChannelSet.has(requestedChannel)) {
       return c.json({ success: false, error: { message: "Invalid reimbursement channel" } }, 400);
+    }
+
+    if (requestedChannel === "electronic" && preferredEnvelopeUuid) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Electronic reimbursement cannot bind preferred envelope UUID" }
+        },
+        400
+      );
     }
 
     if (requestedChannel === "physical" && !preferredEnvelopeUuid) {
@@ -2927,6 +3119,16 @@ reimbursementRoutes.put(
 
     if (body.channel && !validChannelSet.has(body.channel)) {
       return c.json({ success: false, error: { message: "Invalid reimbursement channel" } }, 400);
+    }
+
+    if (body.channel && body.channel !== existing.channel) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Envelope channel cannot be changed after creation" }
+        },
+        400
+      );
     }
 
     await c.env.DB.prepare(

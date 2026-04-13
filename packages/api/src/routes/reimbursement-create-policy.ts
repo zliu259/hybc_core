@@ -69,6 +69,14 @@ export const decideCreateRouteBranch = (
       };
     }
 
+    if (input.existingEnvelope.channel !== input.requestedChannel) {
+      return {
+        kind: "error",
+        status: 400,
+        message: "Envelope channel mismatch; cannot bind"
+      };
+    }
+
     return {
       kind: "bind-existing",
       envelopeId: input.existingEnvelope.id,
@@ -77,7 +85,7 @@ export const decideCreateRouteBranch = (
       applicantToPersist: canBindApplicant
         ? input.requestedApplicant
         : input.existingEnvelope.applicant_userid,
-      channelToPersist: input.requestedChannel,
+      channelToPersist: input.existingEnvelope.channel,
       nextStatus:
         input.existingEnvelope.status === "unregistered"
           ? "draft"

@@ -1215,3 +1215,10 @@
 - 报销批次详情 API 增强为“审批抽查可用”结构：`GET /api/v1/reimbursement/batch/:id` 在 item 级返回附件列表、单项合理性摘要、票据识别风险提示，供 Web/Miniapp 审批台统一消费：`packages/api/src/routes/reimbursement.ts`
 - AI Gate 语义调整为“批次阶段以单项结论汇总与合理性判断为主，不再把缺少可读附件正文作为单独拒绝条件”；并为线上模板提供同步 SQL：`packages/api/src/routes/admin.ts`、`packages/api/scripts/sql/update-approval-ai-gate-prompt.sql`
 - 审批 AI 载荷补齐报销批次单项审查上下文（`reimbursement_item_reviews`），使模型在批次阶段可直接基于单项历史结论输出汇总意见：`packages/api/src/services/ai-slot.ts`
+
+### 8.11 报销列表风险可视化与办公室 UUID 纠偏（2026-04）
+- 报销列表页移除 PDF 列，新增“通道类型”列（实物信封/电子发票），并把异常提示改为标签化展示（重复票据风险、收件核对异常、待补充材料、复核驳回）：`packages/web/src/views/finance/reimbursement/list.vue`
+- 报销列表高风险行增加行级高亮（浅红底），便于办公室人员快速锁定需优先核查条目：`packages/web/src/views/finance/reimbursement/list.vue`
+- 列表接口增强重复风险摘要字段，支持前端直接渲染风险标签：`duplicate_count` 与 `duplicate_risk_level`：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
+- 报销详情新增办公室“换绑UUID”入口（仅实物信封），允许对错误 UUID 进行人工纠偏并保留审计理由：`packages/web/src/views/finance/reimbursement/detail.vue`
+- 新增后端办公室换绑接口 `POST /api/v1/reimbursement/:id/rebind-uuid`，并对通道稳定性加约束（创建绑定与更新流程均禁止跨通道漂移），避免实物信封被误改成电子发票：`packages/api/src/routes/reimbursement.ts`、`packages/api/src/routes/reimbursement-create-policy.ts`

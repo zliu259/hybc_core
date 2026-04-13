@@ -12,6 +12,7 @@ import {
   getEnvelopeOcrStatus,
   getReimbursementEnvelope,
   precheckEnvelope,
+  rebindReimbursementEnvelopeUuid,
   scanReimbursementEnvelope,
   submitReimbursementEnvelope,
   triggerEnvelopeAnomalyCheck,
@@ -185,7 +186,9 @@ const canOfficeAudit = computed(() => {
   return hasOfficeRole && (!isApplicant || canSelfAudit);
 });
 
-const canSeeOfficeReview = computed(() => canOfficeAudit.value && !isWorkspaceView.value);
+const canSeeOfficeReview = computed(
+  () => canOfficeAudit.value && !isWorkspaceView.value
+);
 
 const isSuperAdmin = computed(() => roleSet.value.has("super_admin"));
 
@@ -265,14 +268,13 @@ const parseReviewResult = (value?: string | null) => {
 const parsedSilentReviewResult = computed(() =>
   parseReviewResult(detail.value?.silent_review_result)
 );
-const parsedRecognitionResult = computed(() => parseReviewResult(detail.value?.ocr_result_json));
+const parsedRecognitionResult = computed(() =>
+  parseReviewResult(detail.value?.ocr_result_json)
+);
 
 const normalizeDisplayText = (value: unknown) => {
   if (typeof value !== "string") return "";
-  return value
-    .replace(/[“”]/g, '"')
-    .replace(/[‘’]/g, "'")
-    .trim();
+  return value.replace(/[“”]/g, '"').replace(/[‘’]/g, "'").trim();
 };
 
 const reviewSummaryText = computed(() => {
@@ -332,13 +334,15 @@ const reviewSummaryText = computed(() => {
               ? "低"
               : "未标注";
       const detailText = normalizeDisplayText(item.detail);
-      lines.push(`${index + 1}. [${level}] ${type}${detailText ? `：${detailText}` : ""}`);
+      lines.push(
+        `${index + 1}. [${level}] ${type}${detailText ? `：${detailText}` : ""}`
+      );
     });
   }
 
   const recommendations = Array.isArray(aiReasonability?.recommendation)
     ? (aiReasonability?.recommendation as unknown[])
-        .map((item) => normalizeDisplayText(item))
+        .map(item => normalizeDisplayText(item))
         .filter(Boolean)
     : [];
   if (recommendations.length > 0) {
@@ -405,17 +409,21 @@ const recognitionRawText = computed(() => {
 
   const lines: string[] = [];
   lines.push(`审查轮次：第 ${round ?? 1} 轮`);
-  lines.push(`票据识别：共 ${extractedInvoices.length} 张，失败 ${failedCount} 张，处理中 ${pendingCount} 张`);
+  lines.push(
+    `票据识别：共 ${extractedInvoices.length} 张，失败 ${failedCount} 张，处理中 ${pendingCount} 张`
+  );
 
   if (extractedInvoices.length > 0) {
     lines.push("票据明细：");
     extractedInvoices.forEach((item, index) => {
       const invoiceNo =
         (typeof item.invoice_no === "string" && item.invoice_no) ||
-        (typeof item.invoice_unique_no === "string" && item.invoice_unique_no) ||
+        (typeof item.invoice_unique_no === "string" &&
+          item.invoice_unique_no) ||
         "未识别";
       const invoiceDate =
-        (typeof item.invoice_date === "string" && item.invoice_date) || "未识别";
+        (typeof item.invoice_date === "string" && item.invoice_date) ||
+        "未识别";
       const invoiceAmount = formatCurrency(item.invoice_amount);
       const source =
         item.source === "qr_payload"
@@ -457,7 +465,8 @@ const recognitionRawText = computed(() => {
   return lines.join("\n");
 });
 
-const createIdempotencyKey = (scope: string) => `${scope}-${crypto.randomUUID()}`;
+const createIdempotencyKey = (scope: string) =>
+  `${scope}-${crypto.randomUUID()}`;
 
 const stagedAttachmentsForSubmit = () =>
   attachmentItems.value
@@ -470,6 +479,7 @@ const stagedAttachmentsForSubmit = () =>
     }));
 
 const verifyNote = ref("");
+const rebindEnvelopeUuid = ref("");
 const voiding = ref(false);
 const rerunningSilentReview = ref(false);
 const ocrStatusText = ref("none");
@@ -547,6 +557,7 @@ const loadDetail = async (options?: { showLoading?: boolean }) => {
     detail.value = null;
     form.value = createDefaultForm();
     attachmentItems.value = [];
+    rebindEnvelopeUuid.value = "";
     ocrStatusText.value = "none";
     anomalyStatusText.value = "none";
     return;
@@ -580,12 +591,38 @@ const loadDetail = async (options?: { showLoading?: boolean }) => {
 
     ocrStatusText.value = result.data.ocr_status || "none";
     anomalyStatusText.value = result.data.duplicate_check_status || "none";
+    rebindEnvelopeUuid.value = "";
     ensureAuditPolling();
   } finally {
     if (showLoading) {
       detailLoading.value = false;
     }
   }
+};
+
+const canRebindUuid = computed(() => {
+  if (!detail.value) return false;
+  if (!canSeeOfficeReview.value) return false;
+  if (detail.value.channel !== "physical") return false;
+  return ["unregistered", "draft", "submitted", "received"].includes(
+    detail.value.status
+  );
+});
+
+const submitRebindEnvelopeUuid = async () => {
+  if (!detail.value || !canRebindUuid.value) return;
+  const targetUuid = rebindEnvelopeUuid.value.trim();
+  if (!targetUuid) {
+    message("请输入新的信封UUID", { type: "warning" });
+    return;
+  }
+  await rebindReimbursementEnvelopeUuid(detail.value.id, {
+    envelope_uuid: targetUuid,
+    reason: verifyNote.value || "办公室人工修正错误实体信封UUID"
+  });
+  message("信封UUID换绑成功", { type: "success" });
+  rebindEnvelopeUuid.value = "";
+  await loadDetail();
 };
 
 const uploadAttachment = async (options: UploadRequestOptions) => {
@@ -780,7 +817,8 @@ const submitEnvelope = async () => {
         detail.value.id,
         {
           force_submit: true,
-          force_submit_reason: verifyNote.value || "申请人确认继续提交，办公室复核"
+          force_submit_reason:
+            verifyNote.value || "申请人确认继续提交，办公室复核"
         },
         { idempotencyKey: createIdempotencyKey("reimbursement-submit") }
       );
@@ -848,12 +886,18 @@ const rerunSilentReview = async () => {
   if (!detail.value) return;
   rerunningSilentReview.value = true;
   try {
-    await triggerEnvelopeAnomalyCheck(detail.value.id, {
-      rerun_full: true,
-      reason: "office_manual_second_silent_review"
-    }, {
-      idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review")
-    });
+    await triggerEnvelopeAnomalyCheck(
+      detail.value.id,
+      {
+        rerun_full: true,
+        reason: "office_manual_second_silent_review"
+      },
+      {
+        idempotencyKey: createIdempotencyKey(
+          "reimbursement-rerun-silent-review"
+        )
+      }
+    );
     message("已触发二次静默审查（票据识别+重复校验+费用合理性）", {
       type: "success"
     });
@@ -1056,6 +1100,27 @@ watch(
             <el-descriptions-item label="信封UUID">{{
               detail?.envelope_uuid || "保存后生成"
             }}</el-descriptions-item>
+            <el-descriptions-item
+              v-if="!isCreate && canRebindUuid"
+              label="办公室换绑UUID"
+            >
+              <el-space
+                direction="vertical"
+                alignment="stretch"
+                style="width: 100%"
+              >
+                <el-input
+                  v-model="rebindEnvelopeUuid"
+                  placeholder="输入正确的实体信封UUID"
+                />
+                <el-button
+                  type="warning"
+                  plain
+                  @click="submitRebindEnvelopeUuid"
+                  >确认换绑</el-button
+                >
+              </el-space>
+            </el-descriptions-item>
             <el-descriptions-item v-if="isCreate" label="绑定现有信封UUID">
               <el-input
                 v-model="form.bind_envelope_uuid"
@@ -1230,7 +1295,10 @@ watch(
             >刷新识别状态</el-button
           >
           <el-button
-            v-if="canSeeOfficeReview && ['submitted', 'received'].includes(detail.status)"
+            v-if="
+              canSeeOfficeReview &&
+              ['submitted', 'received'].includes(detail.status)
+            "
             type="info"
             :loading="rerunningSilentReview"
             @click="rerunSilentReview"
@@ -1339,10 +1407,16 @@ watch(
           {{ item.value }}
         </el-descriptions-item>
         <el-descriptions-item label="智能核查摘要">
-          <pre style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ reviewSummaryText }}</pre>
+          <pre
+            style="white-space: pre-wrap; word-break: break-word; margin: 0"
+            >{{ reviewSummaryText }}</pre
+          >
         </el-descriptions-item>
         <el-descriptions-item label="识别结果（可读版）">
-          <pre style="white-space: pre-wrap; word-break: break-word; margin: 0">{{ recognitionRawText }}</pre>
+          <pre
+            style="white-space: pre-wrap; word-break: break-word; margin: 0"
+            >{{ recognitionRawText }}</pre
+          >
         </el-descriptions-item>
       </el-descriptions>
     </el-card>

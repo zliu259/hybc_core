@@ -189,6 +189,11 @@ export interface VerifyEnvelopeRequest {
   note?: string;
 }
 
+export interface RebindEnvelopeUuidRequest {
+  envelope_uuid: string;
+  reason?: string;
+}
+
 export interface SubmitEnvelopeRequest {
   force_submit?: boolean;
   force_submit_reason?: string;

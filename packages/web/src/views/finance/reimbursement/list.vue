@@ -3,7 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
-  pdfStatusLabel,
+  channelLabel,
   precheckStatusLabel,
   statusLabel
 } from "@/utils/enum-labels";
@@ -94,16 +94,71 @@ const statusTagType: Record<string, TagType> = {
   cancelled: "info"
 };
 
-const pdfTagType: Record<string, TagType> = {
-  none: "info",
-  pending: "warning",
-  completed: "success",
-  failed: "danger"
+const riskTagTypeMap: Record<string, TagType> = {
+  high: "danger",
+  medium: "warning",
+  low: "success"
+};
+
+const toDuplicateCount = (value: unknown) => {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
+};
+
+const duplicateRiskLabel = (level: unknown) => {
+  if (level === "high") return "高风险重复";
+  if (level === "medium") return "中风险重复";
+  if (level === "low") return "低风险重复";
+  return "重复风险";
+};
+
+const toDuplicateRiskTagType = (level: unknown): TagType => {
+  if (typeof level !== "string") return "warning";
+  return riskTagTypeMap[level] ?? "warning";
+};
+
+const rowAnomalyTags = (row: ReimbursementEnvelope) => {
+  const tags: Array<{ label: string; type: TagType }> = [];
+  const duplicateCount = toDuplicateCount(row.duplicate_count);
+  if (duplicateCount > 0) {
+    tags.push({
+      label: `${duplicateRiskLabel(row.duplicate_risk_level)} x${duplicateCount}`,
+      type: toDuplicateRiskTagType(row.duplicate_risk_level)
+    });
+  }
+  if (row.verification_status === "mismatch") {
+    tags.push({ label: "收件核对异常", type: "danger" });
+  }
+  if (row.precheck_status === "supplement") {
+    tags.push({ label: "待补充材料", type: "warning" });
+  }
+  if (row.precheck_status === "rejected") {
+    tags.push({ label: "复核驳回", type: "danger" });
+  }
+  return tags;
+};
+
+const isHighRiskRow = (row: ReimbursementEnvelope) => {
+  const duplicateCount = toDuplicateCount(row.duplicate_count);
+  return (
+    (duplicateCount > 0 && row.duplicate_risk_level === "high") ||
+    row.verification_status === "mismatch" ||
+    row.precheck_status === "rejected"
+  );
+};
+
+const tableRowClassName = ({ row }: { row: ReimbursementEnvelope }) => {
+  return isHighRiskRow(row) ? "reimbursement-row-high-risk" : "";
 };
 
 const quickScanDialogVisible = ref(false);
 const quickScanUuid = ref("");
-const createIdempotencyKey = (scope: string) => `${scope}-${crypto.randomUUID()}`;
+const createIdempotencyKey = (scope: string) =>
+  `${scope}-${crypto.randomUUID()}`;
 
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
@@ -183,12 +238,16 @@ const onTriggerAnomaly = async (id: number) => {
 };
 
 const onRerunSilentReview = async (id: number) => {
-  await triggerEnvelopeAnomalyCheck(id, {
-    rerun_full: true,
-    reason: "office_manual_second_silent_review"
-  }, {
-    idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review")
-  });
+  await triggerEnvelopeAnomalyCheck(
+    id,
+    {
+      rerun_full: true,
+      reason: "office_manual_second_silent_review"
+    },
+    {
+      idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review")
+    }
+  );
   message("已触发二次静默审查", { type: "success" });
   await loadData();
 };
@@ -296,7 +355,7 @@ watch(workflowView, mode => {
       v-if="workflowView === 'office'"
       type="warning"
       :closable="false"
-        title="办公室处理台：重点处理 submitted/received 单据，执行收件核查、智能核查和复核动作。"
+      title="办公室处理台：重点处理 submitted/received 单据，执行收件核查、智能核查和复核动作。"
       style="margin-bottom: 12px"
     />
     <el-alert
@@ -399,7 +458,12 @@ watch(workflowView, mode => {
       >
     </el-form>
 
-    <el-table :data="list" :loading="loading" style="margin-top: 12px">
+    <el-table
+      :data="list"
+      :loading="loading"
+      :row-class-name="tableRowClassName"
+      style="margin-top: 12px"
+    >
       <el-table-column prop="envelope_no" label="信封编号" width="150" />
       <el-table-column label="项目" width="180">
         <template #default="scope">{{
@@ -411,8 +475,33 @@ watch(workflowView, mode => {
           toApplicantLabel(scope.row.applicant_userid)
         }}</template>
       </el-table-column>
+      <el-table-column label="通道类型" width="120">
+        <template #default="scope">
+          <el-tag
+            :type="scope.row.channel === 'physical' ? 'info' : 'success'"
+            effect="light"
+          >
+            {{ channelLabel(scope.row.channel) }}
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="amount" label="金额" width="100" />
-      <el-table-column prop="duplicate_count" label="复核提示" width="100" />
+      <el-table-column label="异常提示" min-width="220">
+        <template #default="scope">
+          <el-space wrap>
+            <el-tag
+              v-for="tag in rowAnomalyTags(scope.row)"
+              :key="tag.label"
+              :type="tag.type"
+              size="small"
+              effect="light"
+            >
+              {{ tag.label }}
+            </el-tag>
+            <span v-if="rowAnomalyTags(scope.row).length === 0">-</span>
+          </el-space>
+        </template>
+      </el-table-column>
       <el-table-column label="复核" width="100">
         <template #default="scope">{{
           precheckStatusLabel(scope.row.precheck_status)
@@ -422,13 +511,6 @@ watch(workflowView, mode => {
         <template #default="scope">
           <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
             statusLabel(scope.row.status)
-          }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="PDF" width="110">
-        <template #default="scope">
-          <el-tag :type="pdfTagType[scope.row.pdf_status] || 'info'">{{
-            pdfStatusLabel(scope.row.pdf_status)
           }}</el-tag>
         </template>
       </el-table-column>
@@ -452,10 +534,10 @@ watch(workflowView, mode => {
             <el-button
               v-if="scope.row.status === 'received'"
               link
-                type="success"
-                @click="onPrecheck(scope.row.id, 'approved')"
-                >复核通过</el-button
-              >
+              type="success"
+              @click="onPrecheck(scope.row.id, 'approved')"
+              >复核通过</el-button
+            >
             <el-button
               v-if="scope.row.status === 'received'"
               link
@@ -466,10 +548,10 @@ watch(workflowView, mode => {
             <el-button
               v-if="scope.row.status === 'received'"
               link
-                type="danger"
-                @click="onPrecheck(scope.row.id, 'rejected')"
-                >复核驳回</el-button
-              >
+              type="danger"
+              @click="onPrecheck(scope.row.id, 'rejected')"
+              >复核驳回</el-button
+            >
           </template>
         </template>
       </el-table-column>
@@ -510,3 +592,9 @@ watch(workflowView, mode => {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+:deep(.el-table .reimbursement-row-high-risk > td) {
+  background: #fff2f0 !important;
+}
+</style>

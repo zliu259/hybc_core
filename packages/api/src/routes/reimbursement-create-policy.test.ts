@@ -86,7 +86,7 @@ describe("decideCreateRouteBranch", () => {
     });
   });
 
-  it("uses requested channel when binding existing draft envelope", () => {
+  it("rejects bind-existing when requested channel mismatches envelope channel", () => {
     const result = decideCreateRouteBranch({
       ...baseInput,
       requestedChannel: "physical",
@@ -99,9 +99,11 @@ describe("decideCreateRouteBranch", () => {
       }
     });
 
-    expect(result.kind).toBe("bind-existing");
-    if (result.kind !== "bind-existing") return;
-    expect(result.channelToPersist).toBe("physical");
+    expect(result).toEqual({
+      kind: "error",
+      status: 400,
+      message: "Envelope channel mismatch; cannot bind"
+    });
   });
 
   it("rejects non-privileged create when assigning another applicant", () => {

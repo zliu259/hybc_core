@@ -33,6 +33,7 @@ export type ReimbursementEnvelope = {
   created_at: string;
   updated_at: string;
   duplicate_count?: number;
+  duplicate_risk_level?: "high" | "medium" | "low" | null;
 };
 
 export type EnvelopeAttachment = {
@@ -106,6 +107,16 @@ export const resolveReimbursementEnvelopeByUuid = (envelope_uuid: string) => {
   }>("get", "/api/v1/reimbursement/resolve/by-uuid", {
     params: { envelope_uuid }
   });
+};
+
+export const rebindReimbursementEnvelopeUuid = (
+  id: number,
+  data: { envelope_uuid: string; reason?: string }
+) => {
+  return http.request<{
+    success: boolean;
+    data: { id: number; envelope_uuid: string; envelope_no: string };
+  }>("post", `/api/v1/reimbursement/${id}/rebind-uuid`, { data });
 };
 
 export const createReimbursementEnvelope = (
