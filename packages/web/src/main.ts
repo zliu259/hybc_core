@@ -22,33 +22,86 @@ import "element-plus/dist/index.css";
 import "./assets/iconfont/iconfont.js";
 import "./assets/iconfont/iconfont.css";
 
-const dynamicImportReloadKey = "hybc:dynamic-import-reload-once";
+const dynamicImportReloadKey = "hybc:dynamic-import-reload-state";
+const currentRouteToken = () =>
+  `${window.location.pathname}${window.location.search}${window.location.hash}`;
 
-const reloadOnDynamicImportError = (): void => {
-  const token = `${window.location.pathname}${window.location.search}`;
-  const reloaded =
-    window.sessionStorage.getItem(dynamicImportReloadKey) === token;
-  if (reloaded) return;
-  window.sessionStorage.setItem(dynamicImportReloadKey, token);
+type DynamicImportReloadState = {
+  token: string;
+  count: number;
+  message?: string;
+};
+
+const readReloadState = (): DynamicImportReloadState | null => {
+  const raw = window.sessionStorage.getItem(dynamicImportReloadKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as DynamicImportReloadState;
+    if (!parsed || typeof parsed !== "object") return null;
+    if (typeof parsed.token !== "string") return null;
+    const count =
+      typeof parsed.count === "number" && Number.isFinite(parsed.count)
+        ? parsed.count
+        : 0;
+    return { ...parsed, count };
+  } catch {
+    return null;
+  }
+};
+
+const writeReloadState = (state: DynamicImportReloadState) => {
+  window.sessionStorage.setItem(dynamicImportReloadKey, JSON.stringify(state));
+};
+
+const clearReloadState = () => {
+  window.sessionStorage.removeItem(dynamicImportReloadKey);
+};
+
+const shouldHandleDynamicImportError = (message: string): boolean => {
+  if (!message.trim()) return false;
+  return (
+    message.includes("Failed to fetch dynamically imported module") ||
+    message.includes("Importing a module script failed") ||
+    message.includes("Expected a JavaScript-or-Wasm module script")
+  );
+};
+
+const reloadOnDynamicImportError = (message: string): void => {
+  const token = currentRouteToken();
+  const prev = readReloadState();
+  const count = prev?.token === token ? prev.count : 0;
+  if (count >= 1) {
+    console.error(
+      "[dynamic-import] reload skipped to avoid loop",
+      message || "unknown dynamic import error"
+    );
+    return;
+  }
+  writeReloadState({
+    token,
+    count: count + 1,
+    message: message.slice(0, 300)
+  });
   window.location.reload();
 };
 
 window.addEventListener("vite:preloadError", event => {
+  const payload = (event as Event & { payload?: unknown }).payload;
+  const message =
+    payload instanceof Error ? payload.message : String(payload ?? "");
+  if (!shouldHandleDynamicImportError(message)) return;
   event.preventDefault();
-  reloadOnDynamicImportError();
+  reloadOnDynamicImportError(message);
 });
 
 window.addEventListener("unhandledrejection", event => {
   const reason = event.reason;
   const message =
     reason instanceof Error ? reason.message : String(reason ?? "");
-  if (message.includes("Failed to fetch dynamically imported module")) {
-    event.preventDefault();
-    reloadOnDynamicImportError();
-  }
+  if (!shouldHandleDynamicImportError(message)) return;
+  event.preventDefault();
+  reloadOnDynamicImportError(message);
 });
-
-window.sessionStorage.removeItem(dynamicImportReloadKey);
 
 const app = createApp(App);
 
@@ -89,4 +142,5 @@ getPlatformConfig(app).then(async config => {
   // .use(PureDescriptions)
   // .use(useEcharts);
   app.mount("#app");
+  clearReloadState();
 });
