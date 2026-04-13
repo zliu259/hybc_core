@@ -1208,3 +1208,10 @@
 - Web 审批 API 封装新增发起人监管参数与汇总接口：`initiatedBucket` 参数、`GET /api/v1/approval/initiated/summary` 调用与类型：`packages/web/src/api/approval.ts`
 - Miniapp「我发起的申请」页面改造为同口径三分桶监管，支持按流程类型进一步筛选，列表项保留只读跳转审批详情：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
 - API 侧对发起人列表做增量兼容扩展：`GET /api/v1/approval` 新增可选 `initiatedBucket` 过滤与派生字段（`initiated_bucket`/`last_updated_at` 等），并新增 `GET /api/v1/approval/initiated/summary`：`packages/api/src/routes/approval.ts`
+
+### 8.10 报销批次审批改为“合理性汇总 + 抽查附件”模式（2026-04）
+- 审批台（Web）报销批次详情新增单项 AI 结论与抽查附件能力：每条报销单可直接预览/下载附件，并展示单项合理性结论与票据识别风险，方便审批人按单抽查：`packages/web/src/views/approval/detail.vue`
+- 审批台（Miniapp）报销批次详情同步补齐单项审查信息：展示每条报销单的单项 AI 结论与附件列表，支持在审批详情页直接查看附件：`packages/miniapp/pages/approval-detail/index.{js,wxml}`
+- 报销批次详情 API 增强为“审批抽查可用”结构：`GET /api/v1/reimbursement/batch/:id` 在 item 级返回附件列表、单项合理性摘要、票据识别风险提示，供 Web/Miniapp 审批台统一消费：`packages/api/src/routes/reimbursement.ts`
+- AI Gate 语义调整为“批次阶段以单项结论汇总与合理性判断为主，不再把缺少可读附件正文作为单独拒绝条件”；并为线上模板提供同步 SQL：`packages/api/src/routes/admin.ts`、`packages/api/scripts/sql/update-approval-ai-gate-prompt.sql`
+- 审批 AI 载荷补齐报销批次单项审查上下文（`reimbursement_item_reviews`），使模型在批次阶段可直接基于单项历史结论输出汇总意见：`packages/api/src/services/ai-slot.ts`

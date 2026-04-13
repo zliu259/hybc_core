@@ -202,6 +202,106 @@ const loadBizContextFromInstance = async (
     }
   }
 
+  if (instance.biz_type === "reimbursement_batch") {
+    const itemRows = await env.DB.prepare(
+      `SELECT e.id, e.envelope_no, e.invoice_no, e.amount, e.category, e.description,
+              e.precheck_status, e.precheck_comment, e.silent_review_result, e.ocr_status
+         FROM reimbursement_batch_item bi
+         JOIN reimbursement_envelope e ON e.id = bi.envelope_id
+        WHERE bi.batch_id = ?
+          AND bi.status = 'active'
+        ORDER BY bi.id ASC`
+    )
+      .bind(instance.biz_id)
+      .all<{
+        id: number;
+        envelope_no: string;
+        invoice_no: string | null;
+        amount: number;
+        category: string | null;
+        description: string | null;
+        precheck_status: string;
+        precheck_comment: string | null;
+        silent_review_result: string | null;
+        ocr_status: string;
+      }>();
+
+    const attachmentRows = await env.DB.prepare(
+      `SELECT ea.file_key, ea.file_name, ea.file_size
+         FROM reimbursement_batch_item bi
+         JOIN envelope_attachment ea ON ea.envelope_id = bi.envelope_id
+        WHERE bi.batch_id = ?
+          AND bi.status = 'active'
+          AND ea.status = 'active'
+          AND ea.file_key IS NOT NULL
+        ORDER BY ea.id ASC`
+    )
+      .bind(instance.biz_id)
+      .all<{
+        file_key: string;
+        file_name: string | null;
+        file_size: number | null;
+      }>();
+
+    const attachments = mergeAttachments(
+      (attachmentRows.results ?? []).reduce<AttachmentMeta[]>((acc, row) => {
+        const fileKey = row.file_key.trim();
+        if (!fileKey) return acc;
+        acc.push({
+          file_key: fileKey,
+          file_name: row.file_name?.trim() || fileKey,
+          file_size: row.file_size,
+          file_url: `/api/v1/upload/object/${encodeURIComponent(fileKey)}`
+        });
+        return acc;
+      }, [])
+    );
+
+    if (attachments.length > 0) {
+      context = {
+        ...context,
+        attachments
+      };
+    }
+
+    const itemReviewSummary = (itemRows.results ?? []).map((row) => {
+      let silentReviewSummary: string | null = null;
+      if (row.silent_review_result) {
+        try {
+          const parsed = JSON.parse(row.silent_review_result) as Record<string, unknown>;
+          const summary =
+            typeof parsed.ai_reasonability_summary === "string"
+              ? parsed.ai_reasonability_summary
+              : typeof parsed.summary === "string"
+                ? parsed.summary
+                : null;
+          silentReviewSummary = summary?.trim() || null;
+        } catch {
+          silentReviewSummary = null;
+        }
+      }
+
+      return {
+        envelope_id: row.id,
+        envelope_no: row.envelope_no,
+        invoice_no: row.invoice_no,
+        amount: row.amount,
+        category: row.category,
+        description: row.description,
+        precheck_status: row.precheck_status,
+        precheck_comment: row.precheck_comment,
+        ocr_status: row.ocr_status,
+        ai_reasonability_summary: silentReviewSummary
+      };
+    });
+
+    context = {
+      ...context,
+      reimbursement_item_reviews: itemReviewSummary,
+      review_focus: "reasonability_summary"
+    };
+  }
+
   if (instance.biz_type === "outbound_contract" || instance.biz_type === "inbound_contract") {
     const contract = await env.DB.prepare(
       `SELECT id, contract_no, project_id, entity_id, direction, counterparty,
@@ -283,9 +383,12 @@ const enrichAiGatePayload = async (
       })
       .map((item) => ({
         file_key: item.file_key,
-        file_name: item.file_name,
+        file_name: item.file_name || item.file_key,
         file_size: item.file_size,
-        file_url: item.file_url
+        file_url:
+          typeof item.file_url === "string" && item.file_url.trim().length > 0
+            ? item.file_url
+            : `/api/v1/upload/object/${encodeURIComponent(item.file_key)}`
       }));
     const loadedList = loadedAttachments
       .filter((item): item is AttachmentMeta => {
@@ -293,9 +396,12 @@ const enrichAiGatePayload = async (
       })
       .map((item) => ({
         file_key: item.file_key,
-        file_name: item.file_name,
+        file_name: item.file_name || item.file_key,
         file_size: item.file_size,
-        file_url: item.file_url
+        file_url:
+          typeof item.file_url === "string" && item.file_url.trim().length > 0
+            ? item.file_url
+            : `/api/v1/upload/object/${encodeURIComponent(item.file_key)}`
       }));
     mergedContext.attachments = mergeAttachments(loadedList, currentList);
   }

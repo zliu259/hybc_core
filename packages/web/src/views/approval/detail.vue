@@ -271,6 +271,13 @@ const riskLevelTagTypeMap: Record<string, TagType> = {
   low: "success"
 };
 
+const toInvoiceReviewRiskLabel = (value: unknown) => {
+  if (value === "high") return "高风险";
+  if (value === "medium") return "中风险";
+  if (value === "low") return "低风险";
+  return "-";
+};
+
 const toRiskLevelLabel = (level: unknown) => {
   if (typeof level !== "string" || !level) return "-";
   return riskLevelLabelMap[level] ?? level;
@@ -877,10 +884,14 @@ const bizNoLabel = computed(() => {
   if (!detail.value) return "-";
   const bizType = detail.value.instance.biz_type;
   if (bizType === "payment_request") {
-    return paymentDetail.value?.serial_no ?? String(detail.value.instance.biz_id);
+    return (
+      paymentDetail.value?.serial_no ?? String(detail.value.instance.biz_id)
+    );
   }
   if (bizType === "outbound_contract" || bizType === "inbound_contract") {
-    return contractDetail.value?.contract_no ?? String(detail.value.instance.biz_id);
+    return (
+      contractDetail.value?.contract_no ?? String(detail.value.instance.biz_id)
+    );
   }
   if (bizType === "reimbursement_batch") {
     return (
@@ -890,12 +901,14 @@ const bizNoLabel = computed(() => {
   }
   if (bizType === "invoice_request") {
     return (
-      invoiceRequestDetail.value?.request_no ?? String(detail.value.instance.biz_id)
+      invoiceRequestDetail.value?.request_no ??
+      String(detail.value.instance.biz_id)
     );
   }
   if (bizType === "receipt_refund") {
     return (
-      receiptRefundDetail.value?.refund_no ?? String(detail.value.instance.biz_id)
+      receiptRefundDetail.value?.refund_no ??
+      String(detail.value.instance.biz_id)
     );
   }
   return String(detail.value.instance.biz_id);
@@ -1295,7 +1308,11 @@ onMounted(async () => {
               <el-divider>申请明细（付款）</el-divider>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="流水号">
-                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                  <el-link
+                    v-if="canGoToBizDetail"
+                    type="primary"
+                    @click="goToBizDetail"
+                  >
                     {{ paymentDetail.serial_no }}
                   </el-link>
                   <template v-else>{{ paymentDetail.serial_no }}</template>
@@ -1403,7 +1420,11 @@ onMounted(async () => {
               <el-divider>申请明细（合同）</el-divider>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="合同号">
-                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                  <el-link
+                    v-if="canGoToBizDetail"
+                    type="primary"
+                    @click="goToBizDetail"
+                  >
                     {{ contractDetail.contract_no }}
                   </el-link>
                   <template v-else>{{ contractDetail.contract_no }}</template>
@@ -1505,10 +1526,16 @@ onMounted(async () => {
               <el-divider>申请明细（报销批次）</el-divider>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="批次号">
-                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                  <el-link
+                    v-if="canGoToBizDetail"
+                    type="primary"
+                    @click="goToBizDetail"
+                  >
                     {{ reimbursementBatchDetail.batch_no }}
                   </el-link>
-                  <template v-else>{{ reimbursementBatchDetail.batch_no }}</template>
+                  <template v-else>{{
+                    reimbursementBatchDetail.batch_no
+                  }}</template>
                 </el-descriptions-item>
                 <el-descriptions-item label="状态">{{
                   reimbursementBatchDetail.status
@@ -1552,6 +1579,82 @@ onMounted(async () => {
                   label="说明"
                   min-width="220"
                 />
+                <el-table-column label="单项AI结论" min-width="260">
+                  <template #default="scope">
+                    {{ scope.row.ai_reasonability_summary || "-" }}
+                  </template>
+                </el-table-column>
+                <el-table-column label="票据识别风险" width="120">
+                  <template #default="scope">
+                    <el-tag
+                      v-if="scope.row.invoice_review_highest_risk"
+                      :type="
+                        toRiskLevelTagType(
+                          scope.row.invoice_review_highest_risk
+                        )
+                      "
+                      size="small"
+                    >
+                      {{
+                        toInvoiceReviewRiskLabel(
+                          scope.row.invoice_review_highest_risk
+                        )
+                      }}
+                    </el-tag>
+                    <template v-else>-</template>
+                  </template>
+                </el-table-column>
+                <el-table-column label="抽查附件" min-width="280">
+                  <template #default="scope">
+                    <template
+                      v-if="
+                        Array.isArray(scope.row.attachments) &&
+                        scope.row.attachments.length
+                      "
+                    >
+                      <div
+                        v-for="attachment in scope.row.attachments"
+                        :key="`${scope.row.id}-${attachment.id}`"
+                        style="
+                          display: flex;
+                          gap: 8px;
+                          align-items: center;
+                          margin-bottom: 4px;
+                        "
+                      >
+                        <span
+                          style="
+                            max-width: 140px;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            white-space: nowrap;
+                          "
+                        >
+                          {{ attachment.file_name || attachment.file_key }}
+                        </span>
+                        <el-link
+                          type="primary"
+                          @click="
+                            openAttachmentPreview(
+                              attachment.file_key,
+                              attachment.file_name || attachment.file_key
+                            )
+                          "
+                        >
+                          预览
+                        </el-link>
+                        <el-link
+                          :href="fileUrl(attachment.file_key)"
+                          target="_blank"
+                          type="primary"
+                        >
+                          下载
+                        </el-link>
+                      </div>
+                    </template>
+                    <template v-else>-</template>
+                  </template>
+                </el-table-column>
               </el-table>
             </template>
 
@@ -1559,10 +1662,16 @@ onMounted(async () => {
               <el-divider>申请明细（开票申请）</el-divider>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="申请单号">
-                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                  <el-link
+                    v-if="canGoToBizDetail"
+                    type="primary"
+                    @click="goToBizDetail"
+                  >
                     {{ invoiceRequestDetail.request_no }}
                   </el-link>
-                  <template v-else>{{ invoiceRequestDetail.request_no }}</template>
+                  <template v-else>{{
+                    invoiceRequestDetail.request_no
+                  }}</template>
                 </el-descriptions-item>
                 <el-descriptions-item label="状态">{{
                   toStatusLabel(invoiceRequestDetail.status)
@@ -1685,10 +1794,16 @@ onMounted(async () => {
               <el-divider>申请明细（收款退款）</el-divider>
               <el-descriptions :column="2" border>
                 <el-descriptions-item label="退款单号">
-                  <el-link v-if="canGoToBizDetail" type="primary" @click="goToBizDetail">
+                  <el-link
+                    v-if="canGoToBizDetail"
+                    type="primary"
+                    @click="goToBizDetail"
+                  >
                     {{ receiptRefundDetail.refund_no }}
                   </el-link>
-                  <template v-else>{{ receiptRefundDetail.refund_no }}</template>
+                  <template v-else>{{
+                    receiptRefundDetail.refund_no
+                  }}</template>
                 </el-descriptions-item>
                 <el-descriptions-item label="退款方式">
                   {{

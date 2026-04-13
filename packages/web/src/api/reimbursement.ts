@@ -327,7 +327,11 @@ export const triggerEnvelopeAnomalyCheck = (
 ) => {
   return http.request<{
     success: boolean;
-    data: { task_id: number | null; precheck_status: string; rerun_full?: boolean };
+    data: {
+      task_id: number | null;
+      precheck_status: string;
+      rerun_full?: boolean;
+    };
   }>("post", `/api/v1/reimbursement/${id}/trigger-anomaly-check`, {
     data,
     headers: options?.idempotencyKey
@@ -413,6 +417,18 @@ export type ReimbursementBatchDetail = ReimbursementBatch & {
     batch_item_id: number;
     batch_amount: number;
     batch_item_status: string;
+    attachments?: EnvelopeAttachment[];
+    ai_reasonability_summary?: string | null;
+    invoice_review_highest_risk?: "high" | "medium" | "low" | null;
+    invoice_review_hints?: Array<{
+      risk_level: string;
+      risk_hint: string | null;
+      invoice_no: string | null;
+      invoice_date: string | null;
+      invoice_amount: number | null;
+      source: string | null;
+      confidence: number | null;
+    }>;
   })[];
   duplicate_summary: { risk_level: string; cnt: number }[];
 };
@@ -438,11 +454,14 @@ export const getReimbursementBatch = (id: number) => {
   }>("get", `/api/v1/reimbursement/batch/${id}`);
 };
 
-export const createReimbursementBatch = (data: {
-  project_id: number;
-  applicant_userid: string;
-  envelope_ids?: number[];
-}, options?: { idempotencyKey?: string }) => {
+export const createReimbursementBatch = (
+  data: {
+    project_id: number;
+    applicant_userid: string;
+    envelope_ids?: number[];
+  },
+  options?: { idempotencyKey?: string }
+) => {
   return http.request<{
     success: boolean;
     data: {

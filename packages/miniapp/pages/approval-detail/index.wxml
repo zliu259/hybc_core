@@ -70,6 +70,31 @@
         <view class="kv-row"><text class="dot dot-green">•</text><text class="k">申请人</text><text class="v">{{bizDetail.applicantLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">总金额</text><text class="v v-strong">{{bizDetail.totalAmountDisplay}}</text></view>
         <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">单据数</text><text class="v">{{bizDetail.item_count}}</text></view>
+
+        <view class="section-divider" wx:if="{{reimbursementItemRows.length > 0}}"></view>
+        <block wx:for="{{reimbursementItemRows}}" wx:key="id">
+          <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">报销单号</text><text class="v">{{item.envelope_no}}</text></view>
+          <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">发票号</text><text class="v">{{item.invoice_no || '-'}}</text></view>
+          <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">金额</text><text class="v">{{item.amount}}</text></view>
+          <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">单项AI结论</text><text class="v">{{item.aiReasonabilitySummary}}</text></view>
+          <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">抽查附件</text></view>
+          <block wx:if="{{item.attachments && item.attachments.length}}">
+            <block wx:for="{{item.attachments}}" wx:key="id">
+              <view class="attach-row">
+                <view class="attach-name">{{item.file_name || item.file_key}}</view>
+                <t-button
+                  size="small"
+                  variant="outline"
+                  data-key="{{item.file_key}}"
+                  data-name="{{item.file_name || item.file_key}}"
+                  bindtap="openAttachment"
+                >查看</t-button>
+              </view>
+            </block>
+          </block>
+          <view class="kv-row" wx:else><text class="dot dot-gray">•</text><text class="k">-</text></view>
+          <view class="section-divider"></view>
+        </block>
       </hy-panel-card>
     </view>
 

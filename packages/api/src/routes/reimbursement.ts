@@ -1344,7 +1344,138 @@ reimbursementRoutes.get(
        ORDER BY bi.id ASC`
     )
       .bind(id)
-      .all();
+      .all<
+        ReimbursementEnvelope & {
+          batch_item_id: number;
+          batch_amount: number;
+          batch_item_status: string;
+        }
+      >();
+
+    const envelopeIds = Array.from(
+      new Set((items.results ?? []).map((item) => item.id).filter((value) => Number.isFinite(value)))
+    );
+
+    let attachmentRows: EnvelopeAttachment[] = [];
+    let reviewRows: Array<{
+      envelope_id: number;
+      risk_level: string;
+      risk_hint: string | null;
+      invoice_no: string | null;
+      invoice_date: string | null;
+      invoice_amount: number | null;
+      source: string | null;
+      confidence: number | null;
+    }> = [];
+
+    if (envelopeIds.length > 0) {
+      const placeholders = envelopeIds.map(() => "?").join(", ");
+      const attachmentResult = await c.env.DB.prepare(
+        `SELECT *
+           FROM envelope_attachment
+          WHERE envelope_id IN (${placeholders})
+            AND status = 'active'
+          ORDER BY envelope_id ASC, id ASC`
+      )
+        .bind(...envelopeIds)
+        .all<EnvelopeAttachment>();
+      attachmentRows = attachmentResult.results ?? [];
+
+      if (await supportsInvoiceReviewTable(c.env)) {
+        const reviewResult = await c.env.DB.prepare(
+          `SELECT rir.envelope_id, rir.risk_level, rir.risk_hint, rir.invoice_no,
+                  rir.invoice_date, rir.invoice_amount, rir.source, rir.confidence
+             FROM reimbursement_invoice_review rir
+             JOIN (
+               SELECT envelope_id, MAX(review_round) AS latest_round
+                 FROM reimbursement_invoice_review
+                WHERE envelope_id IN (${placeholders})
+                GROUP BY envelope_id
+             ) latest
+               ON latest.envelope_id = rir.envelope_id
+              AND latest.latest_round = rir.review_round
+            WHERE rir.envelope_id IN (${placeholders})
+            ORDER BY rir.envelope_id ASC, rir.id DESC`
+        )
+          .bind(...envelopeIds, ...envelopeIds)
+          .all<{
+            envelope_id: number;
+            risk_level: string;
+            risk_hint: string | null;
+            invoice_no: string | null;
+            invoice_date: string | null;
+            invoice_amount: number | null;
+            source: string | null;
+            confidence: number | null;
+          }>();
+        reviewRows = reviewResult.results ?? [];
+      }
+    }
+
+    const attachmentsByEnvelope = new Map<number, EnvelopeAttachment[]>();
+    for (const row of attachmentRows) {
+      const bucket = attachmentsByEnvelope.get(row.envelope_id) ?? [];
+      bucket.push(row);
+      attachmentsByEnvelope.set(row.envelope_id, bucket);
+    }
+
+    const reviewsByEnvelope = new Map<
+      number,
+      Array<{
+        risk_level: string;
+        risk_hint: string | null;
+        invoice_no: string | null;
+        invoice_date: string | null;
+        invoice_amount: number | null;
+        source: string | null;
+        confidence: number | null;
+      }>
+    >();
+    for (const row of reviewRows) {
+      const bucket = reviewsByEnvelope.get(row.envelope_id) ?? [];
+      bucket.push({
+        risk_level: row.risk_level,
+        risk_hint: row.risk_hint,
+        invoice_no: row.invoice_no,
+        invoice_date: row.invoice_date,
+        invoice_amount: row.invoice_amount,
+        source: row.source,
+        confidence: row.confidence
+      });
+      reviewsByEnvelope.set(row.envelope_id, bucket);
+    }
+
+    const riskOrder = { high: 3, medium: 2, low: 1 } as const;
+    const normalizeRisk = (value: string | null | undefined): "high" | "medium" | "low" | null => {
+      if (value === "high" || value === "medium" || value === "low") return value;
+      return null;
+    };
+
+    const enrichedItems = (items.results ?? []).map((item) => {
+      const envelopeAttachments = attachmentsByEnvelope.get(item.id) ?? [];
+      const envelopeReviews = reviewsByEnvelope.get(item.id) ?? [];
+      const highestRisk = envelopeReviews.reduce<"high" | "medium" | "low" | null>((max, row) => {
+        const current = normalizeRisk(row.risk_level);
+        if (!current) return max;
+        if (!max || riskOrder[current] > riskOrder[max]) return current;
+        return max;
+      }, null);
+      const silentReview = parseStoredJson(item.silent_review_result);
+      const reasonabilitySummary =
+        (typeof silentReview?.ai_reasonability_summary === "string" &&
+        (silentReview.ai_reasonability_summary as string).trim()) ||
+        (typeof silentReview?.summary === "string" && (silentReview.summary as string).trim()) ||
+        item.precheck_comment ||
+        null;
+
+      return {
+        ...item,
+        attachments: envelopeAttachments,
+        ai_reasonability_summary: reasonabilitySummary,
+        invoice_review_highest_risk: highestRisk,
+        invoice_review_hints: envelopeReviews.slice(0, 3)
+      };
+    });
 
     const duplicateSummary = await c.env.DB.prepare(
       `SELECT d.risk_level, COUNT(*) as cnt
@@ -1360,7 +1491,7 @@ reimbursementRoutes.get(
       success: true,
       data: {
         ...batch,
-        items: items.results ?? [],
+        items: enrichedItems,
         duplicate_summary: duplicateSummary.results ?? []
       }
     });

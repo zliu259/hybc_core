@@ -12,6 +12,7 @@ Page({
     detail: null,
     bizDetail: null,
     detailAttachments: [],
+    reimbursementItemRows: [],
     detailAiReviews: [],
     detailTimelineNodes: [],
     detailRisk: null,
@@ -689,6 +690,7 @@ Page({
       const bizId = detail.instance.biz_id;
       let bizDetail = null;
       let attachments = [];
+      let reimbursementItemRows = [];
       let risk = null;
       let audit = null;
 
@@ -729,11 +731,32 @@ Page({
          const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}` }, 2);
         bizDetail = bizRes && bizRes.data ? bizRes.data : null;
         if (bizDetail) {
+          reimbursementItemRows = Array.isArray(bizDetail.items)
+            ? bizDetail.items.map((item) => ({
+                ...item,
+                attachments: Array.isArray(item.attachments) ? item.attachments : [],
+                aiReasonabilitySummary:
+                  typeof item.ai_reasonability_summary === "string" && item.ai_reasonability_summary.trim()
+                    ? item.ai_reasonability_summary.trim()
+                    : "-"
+              }))
+            : [];
+
+          attachments = reimbursementItemRows.flatMap((item) =>
+            (item.attachments || []).map((attachment) => ({
+              file_key: attachment.file_key,
+              file_name: attachment.file_name || attachment.file_key,
+              file_size: attachment.file_size,
+              envelope_no: item.envelope_no
+            }))
+          );
+
           bizDetail = {
             ...bizDetail,
             projectLabel: this.projectLabel(bizDetail.project_id),
             applicantLabel: this.userLabel(bizDetail.applicant_userid),
-            totalAmountDisplay: this.amountDisplay(bizDetail.total_amount, null)
+            totalAmountDisplay: this.amountDisplay(bizDetail.total_amount, null),
+            items: reimbursementItemRows
           };
         }
         const auditRes = await request({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}/audit-report` }).catch(() => null);
@@ -776,6 +799,7 @@ Page({
         detailRisk: risk,
         detailAudit: audit,
         detailAttachments: attachments,
+        reimbursementItemRows,
         detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
         detailTimelineNodes: this.buildTimelineNodes(detail),
         availableActions: this.data.readOnlyView ? [] : availableActions,
