@@ -1103,7 +1103,7 @@
 
 ### 4.35 Workspace 个人报销进度卡片改版（2026-03）
 - Web 个人工作台“我的报销进度”卡片移除“报销编号（envelope_no）”展示，改为“项目名称 + 金额”主标题：`packages/web/src/views/welcome/index.vue`
-- 时间轴时间戳改为“申报日期”，优先展示报销 `expense_date`，缺失时回退创建/更新时间：`packages/web/src/views/welcome/index.vue`
+- 展示形态由时间线改为点状条目列表，仅保留“审核中/待处理”条目，并在条目中展示“申报日期”：`packages/web/src/views/welcome/index.vue`
 - 报销进度条目主标题支持点击跳转到对应报销详情（`/workspace/my-reimbursement/detail/:id`）：`packages/web/src/views/welcome/index.vue`
 
 ### 4.36 小程序文件上传入口改为“本地文件优先”（2026-04）

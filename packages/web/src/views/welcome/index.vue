@@ -118,6 +118,13 @@ const reimbursementTagType = (status: string) => {
   return "warning";
 };
 
+const reimbursementProgressItems = computed(() =>
+  reimbursements.value.filter(item => {
+    const statusLabel = reimbursementStatusLabel(item.status);
+    return statusLabel === "审核中" || statusLabel === "待处理";
+  })
+);
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -300,23 +307,34 @@ const onCertUpload = (file: UploadFile) => {
         <template #header>
           <div class="card-header">我的报销进度</div>
         </template>
-        <el-empty v-if="!reimbursements.length" description="暂无报销记录" />
-        <el-timeline v-else>
-          <el-timeline-item
-            v-for="item in reimbursements"
+        <el-empty
+          v-if="!reimbursementProgressItems.length"
+          description="暂无审核中或待处理报销"
+        />
+        <ul v-else class="reimbursement-progress-list">
+          <li
+            v-for="item in reimbursementProgressItems"
             :key="item.id"
-            :timestamp="`申报日期：${reimbursementApplyDate(item)}`"
+            class="reimbursement-progress-list__item"
           >
-            <div class="timeline-item">
-              <el-link type="primary" @click="goReimbursementDetail(item.id)">
-                {{ reimbursementProjectLabel(item) }} · ¥{{ formatAmount(item.amount) }}
-              </el-link>
-              <el-tag :type="reimbursementTagType(item.status)">
-                {{ reimbursementStatusLabel(item.status) }}
-              </el-tag>
+            <span class="reimbursement-progress-list__dot" />
+            <div class="reimbursement-progress-list__content">
+              <div class="reimbursement-progress-list__main">
+                <el-link type="primary" @click="goReimbursementDetail(item.id)">
+                  {{ reimbursementProjectLabel(item) }} · ¥{{
+                    formatAmount(item.amount)
+                  }}
+                </el-link>
+                <el-tag :type="reimbursementTagType(item.status)">
+                  {{ reimbursementStatusLabel(item.status) }}
+                </el-tag>
+              </div>
+              <div class="reimbursement-progress-list__meta">
+                申报日期：{{ reimbursementApplyDate(item) }}
+              </div>
             </div>
-          </el-timeline-item>
-        </el-timeline>
+          </li>
+        </ul>
       </el-card>
     </div>
 
@@ -495,10 +513,49 @@ const onCertUpload = (file: UploadFile) => {
   color: #6e6458;
 }
 
-.timeline-item {
+.reimbursement-progress-list {
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  list-style: none;
+}
+
+.reimbursement-progress-list__item {
   display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid #e4d8c8;
+  border-radius: 10px;
+  background: #fff;
+}
+
+.reimbursement-progress-list__dot {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: #e6a23c;
+  flex-shrink: 0;
+}
+
+.reimbursement-progress-list__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.reimbursement-progress-list__main {
+  display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.reimbursement-progress-list__meta {
+  margin-top: 6px;
+  color: #9b8f82;
+  font-size: 12px;
 }
 
 .cert-grid {
