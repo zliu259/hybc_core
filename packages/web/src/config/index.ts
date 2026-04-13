@@ -2,7 +2,7 @@ import axios from "axios";
 import type { App } from "vue";
 
 let config: object = {};
-const { VITE_PUBLIC_PATH } = import.meta.env;
+const { VITE_PUBLIC_PATH, BASE_URL } = import.meta.env;
 
 const setConfig = (cfg?: unknown) => {
   config = Object.assign(config, cfg);
@@ -29,9 +29,10 @@ const getConfig = (key?: string): PlatformConfigs => {
 /** 获取项目动态全局配置 */
 export const getPlatformConfig = async (app: App): Promise<undefined> => {
   app.config.globalProperties.$config = getConfig();
+  const configUrl = `${VITE_PUBLIC_PATH || BASE_URL || "/"}platform-config.json`;
   return axios({
     method: "get",
-    url: `${VITE_PUBLIC_PATH}platform-config.json`
+    url: configUrl
   })
     .then(({ data: config }) => {
       let $config = app.config.globalProperties.$config;
@@ -44,8 +45,15 @@ export const getPlatformConfig = async (app: App): Promise<undefined> => {
       }
       return $config;
     })
-    .catch(() => {
-      throw "请在public文件夹下添加platform-config.json配置文件";
+    .catch((error: unknown) => {
+      console.warn(
+        `[platform-config] load failed from ${configUrl}, fallback to built-in defaults`,
+        error
+      );
+      const $config = app.config.globalProperties.$config;
+      setConfig($config);
+      app.config.globalProperties.$config = $config;
+      return $config;
     });
 };
 
