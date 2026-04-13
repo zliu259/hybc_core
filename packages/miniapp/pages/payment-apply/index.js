@@ -1,10 +1,42 @@
 const { request } = require("../../utils/request");
 const { uploadFileToR2 } = require("../../utils/upload");
-const { wxChooseMediaImage, wxChooseMessageFile } = require("../../utils/wx");
+const {
+  wxChooseMediaImage,
+  wxChooseLocalFile,
+  wxChooseMessageFile,
+  isMessageFilePickerSupported
+} = require("../../utils/wx");
 const { firstError, required, positiveNumber } = require("../../utils/validation");
 const { getUserProfile } = require("../../utils/auth");
 
 const today = () => new Date().toISOString().slice(0, 10);
+
+const extractErrorMessage = (error, fallback = "上传失败") => {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error && typeof error === "object") {
+    const errMsg = error.errMsg || error.message;
+    if (typeof errMsg === "string" && errMsg.trim()) return errMsg.trim();
+  }
+  return fallback;
+};
+
+const isLocalFilePickerUnsupportedError = (error) => {
+  const message = extractErrorMessage(error, "").toLowerCase();
+  return message.includes("不支持本地文件选择") || message.includes("local file") || message.includes("choosefile");
+};
+
+const confirmMessageFileFallback = () =>
+  new Promise((resolve) => {
+    wx.showModal({
+      title: "本地文件不可用",
+      content: "当前客户端不支持本地文件选择，是否改为“从会话文件选择”继续上传？",
+      confirmText: "继续选择",
+      cancelText: "取消",
+      success: (res) => resolve(Boolean(res && res.confirm)),
+      fail: () => resolve(false)
+    });
+  });
 
 const canLaunchPayment = (roles) => {
   return (
@@ -669,7 +701,29 @@ Page({
     if (this.data.busy) return;
     this.setData({ busy: true });
     try {
-      const choose = await wxChooseMessageFile({ count: 1, type: "file" });
+      const choose = await wxChooseLocalFile({
+        count: 1,
+        extension: [
+          ".pdf",
+          ".jpg",
+          ".jpeg",
+          ".png",
+          ".webp",
+          ".gif",
+          ".bmp",
+          ".tif",
+          ".tiff",
+          ".heic",
+          ".heif",
+          ".ofd",
+          ".xml",
+          ".txt",
+          ".doc",
+          ".docx",
+          ".xls",
+          ".xlsx"
+        ]
+      });
       const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
       if (!file || !file.path) return;
       const uploaded = await uploadFileToR2(file.path, {
@@ -683,10 +737,35 @@ Page({
       });
       wx.showToast({ title: "附件上传成功", icon: "success" });
     } catch (error) {
-      wx.showToast({ title: error.message || "上传失败", icon: "none" });
+      if (isLocalFilePickerUnsupportedError(error) && isMessageFilePickerSupported()) {
+        const confirmed = await confirmMessageFileFallback();
+        if (!confirmed) {
+          wx.showToast({ title: "已取消", icon: "none" });
+          return;
+        }
+        await this.chooseMessageFileAttachment(group);
+        return;
+      }
+      wx.showToast({ title: extractErrorMessage(error), icon: "none" });
     } finally {
       this.setData({ busy: false });
     }
+  },
+
+  async chooseMessageFileAttachment(group) {
+    const choose = await wxChooseMessageFile({ count: 1, type: "file" });
+    const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+    if (!file || !file.path) return;
+    const uploaded = await uploadFileToR2(file.path, {
+      category: group === "contract" ? "contract" : "payment",
+      fileName: file.name || `miniapp-${Date.now()}.bin`
+    });
+    await this.appendAttachment(group, {
+      file_key: uploaded.key,
+      file_name: file.name || uploaded.key,
+      file_size: file.size || undefined
+    });
+    wx.showToast({ title: "附件上传成功", icon: "success" });
   },
 
   validateDirect() {

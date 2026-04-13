@@ -1,6 +1,12 @@
 const { request, buildUrl } = require("../../utils/request");
 const { uploadFileToR2 } = require("../../utils/upload");
-const { wxScanCode, wxChooseMediaImage, wxChooseMessageFile } = require("../../utils/wx");
+const {
+  wxScanCode,
+  wxChooseMediaImage,
+  wxChooseLocalFile,
+  wxChooseMessageFile,
+  isMessageFilePickerSupported
+} = require("../../utils/wx");
 const { positiveNumber, firstError } = require("../../utils/validation");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
 
@@ -148,6 +154,81 @@ const normalizeScannedUuid = (raw) => {
   return uuidMatch && isValidUuid(uuidMatch[0]) ? uuidMatch[0] : "";
 };
 
+const UPLOAD_DEBUG_STORAGE_KEY = "reimbursement-upload-debug-trace";
+
+const extractErrorMessage = (error, fallback = "上传失败") => {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error) return error;
+  if (error && typeof error === "object") {
+    const errMsg = error.errMsg || error.message;
+    if (typeof errMsg === "string" && errMsg.trim()) return errMsg.trim();
+  }
+  return fallback;
+};
+
+const sanitizeUploadDebugValue = (value) => {
+  if (value === null || value === undefined) return "";
+  if (typeof value === "string") return value;
+  if (typeof value === "number" || typeof value === "boolean") return String(value);
+  if (Array.isArray(value)) return value.map((item) => sanitizeUploadDebugValue(item)).join(",");
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+};
+
+const buildUploadDebugMetaSuffix = (meta = {}) => {
+  const pairs = Object.entries(meta)
+    .filter(([, value]) => value !== undefined && value !== null && value !== "")
+    .map(([key, value]) => `${key}=${sanitizeUploadDebugValue(value)}`);
+  return pairs.length ? ` | ${pairs.join(" | ")}` : "";
+};
+
+const buildUploadDebugStageError = (stage, errorOrMessage, meta = {}) => {
+  const wrapped = new Error(
+    `[upload-debug:reimbursement:${stage}] ${extractErrorMessage(errorOrMessage)}${buildUploadDebugMetaSuffix(meta)}`
+  );
+  wrapped.__uploadDebugStage = stage;
+  wrapped.__uploadDebugMeta = meta;
+  return wrapped;
+};
+
+const summarizePickedFile = (file) => {
+  if (!file || typeof file !== "object") return { exists: false };
+  return {
+    exists: true,
+    keys: Object.keys(file).sort().join(","),
+    name: typeof file.name === "string" ? file.name : "",
+    fileName: typeof file.fileName === "string" ? file.fileName : "",
+    path: typeof file.path === "string" ? file.path : "",
+    tempFilePath: typeof file.tempFilePath === "string" ? file.tempFilePath : "",
+    tempPath: typeof file.tempPath === "string" ? file.tempPath : "",
+    size: Number.isFinite(file.size) ? String(file.size) : "",
+    fileSize: Number.isFinite(file.fileSize) ? String(file.fileSize) : ""
+  };
+};
+
+const formatUploadDebugLine = (entry) => {
+  const detail = entry && entry.detail ? buildUploadDebugMetaSuffix(entry.detail) : "";
+  return `${entry.time || ""} ${entry.stage || "unknown"}${detail}`.trim();
+};
+
+const trimDebugContent = (value, maxLength = 980) => {
+  const text = String(value || "");
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+};
+
+const isUserCancelError = (error) => {
+  const message = extractErrorMessage(error, "").toLowerCase();
+  return message.includes("cancel") || message.includes("取消");
+};
+
+const isLocalFilePickerUnsupportedError = (error) => {
+  const message = extractErrorMessage(error, "").toLowerCase();
+  return message.includes("不支持本地文件选择") || message.includes("local file") || message.includes("choosefile");
+};
+
 Page({
   data: {
     mode: "create",
@@ -213,6 +294,7 @@ Page({
   },
 
   resetDraft() {
+    this.resetUploadDebugTrace();
     this.setData({
       mode: "create",
       sharedProjectId: 0,
@@ -265,6 +347,105 @@ Page({
       .finally(() => this.setData({ busy: false }));
   },
 
+  resetUploadDebugTrace() {
+    this.uploadDebugTrace = [];
+    try {
+      wx.removeStorageSync(UPLOAD_DEBUG_STORAGE_KEY);
+    } catch {
+      // ignore storage failures during debug tracing
+    }
+  },
+
+  appendUploadDebugTrace(stage, detail = {}, level = "info") {
+    const entry = {
+      time: new Date().toISOString().slice(11, 19),
+      stage,
+      level,
+      detail: Object.keys(detail || {}).reduce((acc, key) => {
+        acc[key] = sanitizeUploadDebugValue(detail[key]);
+        return acc;
+      }, {})
+    };
+    const next = (Array.isArray(this.uploadDebugTrace) ? this.uploadDebugTrace : [])
+      .concat([entry])
+      .slice(-12);
+    this.uploadDebugTrace = next;
+
+    try {
+      wx.setStorageSync(UPLOAD_DEBUG_STORAGE_KEY, next);
+    } catch {
+      // ignore storage failures during debug tracing
+    }
+
+    try {
+      const logger =
+        typeof wx.getRealtimeLogManager === "function" ? wx.getRealtimeLogManager() : null;
+      const line = `[rm-upload][${level}] ${formatUploadDebugLine(entry)}`;
+      if (logger) {
+        const method = typeof logger[level] === "function" ? level : "info";
+        logger[method](line);
+      }
+    } catch {
+      // ignore realtime log manager failures during debug tracing
+    }
+
+    return entry;
+  },
+
+  beginUploadDebugTrace(flow, detail = {}) {
+    this.resetUploadDebugTrace();
+    this.appendUploadDebugTrace(`${flow}.begin`, detail);
+  },
+
+  showUploadDebugFailure(error, fallbackTitle = "上传失败") {
+    if (isUserCancelError(error)) {
+      sayToast({ title: "已取消", icon: "none" });
+      return;
+    }
+
+    const message = extractErrorMessage(error, fallbackTitle);
+    this.appendUploadDebugTrace("failure", { message }, "error");
+    const lines = (Array.isArray(this.uploadDebugTrace) ? this.uploadDebugTrace : [])
+      .slice(-6)
+      .map((entry) => formatUploadDebugLine(entry));
+    const content = trimDebugContent(
+      [`失败信息：${message}`, "", "最近阶段：", ...lines].join("\n")
+    );
+
+    sayToast({ title: fallbackTitle, icon: "none", danger: true });
+    wx.showModal({
+      title: "上传调试信息",
+      content,
+      showCancel: false
+    });
+  },
+
+  promptMessageFileFallback(scene) {
+    if (!isMessageFilePickerSupported()) {
+      sayToast({ title: "当前客户端不支持文件上传，请升级企业微信后重试", icon: "none", danger: true });
+      return;
+    }
+    const content =
+      scene === "electronic"
+        ? "当前客户端不支持本地文件选择。是否改为“从会话文件选择”继续上传电子票据？"
+        : "当前客户端不支持本地文件选择。是否改为“从会话文件选择”继续上传附件？";
+
+    wx.showModal({
+      title: "本地文件不可用",
+      content,
+      confirmText: "继续选择",
+      cancelText: "取消",
+      success: (res) => {
+        if (!res.confirm) return;
+        if (scene === "electronic") {
+          this.pickElectronicInvoiceMessageFile();
+          return;
+        }
+        this.pickAttachmentMessageFile();
+      }
+    });
+  },
+
   onDraftInput(e) {
     const key = e.currentTarget.dataset.key;
     this.setData({ [`draft.${key}`]: e.detail.value });
@@ -310,29 +491,54 @@ Page({
     }
     if (!filePath) return;
 
+    const attachmentType = this.getCurrentAttachmentType();
+    this.appendUploadDebugTrace("attachment.upload.start", {
+      envelopeId: this.data.latestEnvelopeId,
+      attachmentType,
+      filePath,
+      fileName
+    });
+
     const file = await uploadFileToR2(filePath, {
       fileName: fileName || undefined,
-      category: "reimbursement"
+      category: "reimbursement",
+      debugContext: "reimbursement-attachment"
     });
-    const attachmentType = this.getCurrentAttachmentType();
+    this.appendUploadDebugTrace("attachment.upload.r2.success", {
+      fileKey: file.key,
+      fileName: fileName || file.key
+    });
 
-    await request({
-      method: "PUT",
-      path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}`,
-      data: {
-        invoice_no: this.data.draft.invoice_no || undefined,
-        amount: Number(this.data.draft.amount || 0) || undefined,
-        expense_date: this.data.draft.expense_date || undefined,
-        category: this.data.draft.category || undefined,
-        description: this.data.draft.description || undefined,
-        attachments: [
-          {
-            attachment_type: attachmentType,
-            file_key: file.key,
-            file_name: fileName || file.key
-          }
-        ]
-      }
+    try {
+      await request({
+        method: "PUT",
+        path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}`,
+        data: {
+          invoice_no: this.data.draft.invoice_no || undefined,
+          amount: Number(this.data.draft.amount || 0) || undefined,
+          expense_date: this.data.draft.expense_date || undefined,
+          category: this.data.draft.category || undefined,
+          description: this.data.draft.description || undefined,
+          attachments: [
+            {
+              attachment_type: attachmentType,
+              file_key: file.key,
+              file_name: fileName || file.key
+            }
+          ]
+        }
+      });
+    } catch (error) {
+      throw buildUploadDebugStageError("attachment-bind", error, {
+        envelopeId: this.data.latestEnvelopeId,
+        attachmentType,
+        fileKey: file.key
+      });
+    }
+    this.appendUploadDebugTrace("attachment.bind.success", {
+      envelopeId: this.data.latestEnvelopeId,
+      attachmentType,
+      fileKey: file.key
     });
 
     await this.loadEnvelopeDetail(this.data.latestEnvelopeId);
@@ -433,39 +639,73 @@ Page({
     }
 
     return this.runBusy(async () => {
-      const choose = await wxChooseMediaImage();
+      this.beginUploadDebugTrace("pickInvoicePhoto", {
+        channel: this.data.draft.channel,
+        projectId: this.data.draft.project_id
+      });
+      const choose = await wxChooseMediaImage().catch((error) => {
+        throw buildUploadDebugStageError("choose-image", error);
+      });
       const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      this.appendUploadDebugTrace("choose-image.result", summarizePickedFile(picked));
       const filePath = getPickedFilePath(picked);
       const fileName = getPickedFileName(picked, "invoice");
-      if (!filePath) return;
+      this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
+      if (!filePath) {
+        throw buildUploadDebugStageError("path-empty", "图片路径为空", summarizePickedFile(picked));
+      }
       await this.uploadElectronicInvoice(filePath, fileName || `invoice-${Date.now()}.jpg`);
     }).catch((error) => {
       vibrateWarning();
-      sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+      this.showUploadDebugFailure(error, "上传失败");
     });
   },
 
   async uploadElectronicInvoice(filePath, fileName) {
     if (!filePath) return;
     const uploadName = fileName || `invoice-${Date.now()}`;
+    this.appendUploadDebugTrace("electronic.upload.start", {
+      projectId: this.data.draft.project_id,
+      filePath,
+      fileName: uploadName
+    });
     const file = await uploadFileToR2(filePath, {
       fileName: uploadName,
-      category: "reimbursement"
+      category: "reimbursement",
+      debugContext: "reimbursement-electronic"
     });
-    const res = await request({
-      method: "POST",
-      path: "/api/v1/reimbursement/electronic-upload",
-      data: {
-        project_id: Number(this.data.draft.project_id || 0),
-        file_key: file.key,
-        file_name: uploadName,
-        invoice_no: this.data.draft.invoice_no || undefined,
-        amount: Number(this.data.draft.amount || 0) || undefined,
-        issue_date: this.data.draft.expense_date || undefined,
-        description: this.data.draft.description || undefined
-      }
+    this.appendUploadDebugTrace("electronic.upload.r2.success", {
+      fileKey: file.key,
+      fileName: uploadName
     });
+    let res;
+    try {
+      res = await request({
+        method: "POST",
+        path: "/api/v1/reimbursement/electronic-upload",
+        data: {
+          project_id: Number(this.data.draft.project_id || 0),
+          file_key: file.key,
+          file_name: uploadName,
+          invoice_no: this.data.draft.invoice_no || undefined,
+          amount: Number(this.data.draft.amount || 0) || undefined,
+          issue_date: this.data.draft.expense_date || undefined,
+          description: this.data.draft.description || undefined
+        }
+      });
+    } catch (error) {
+      throw buildUploadDebugStageError("electronic-bind", error, {
+        projectId: this.data.draft.project_id,
+        fileKey: file.key,
+        fileName: uploadName
+      });
+    }
     const envelopeId = Number((res && res.data && res.data.id) || 0);
+    this.appendUploadDebugTrace("electronic.bind.success", {
+      envelopeId,
+      fileKey: file.key,
+      fileName: uploadName
+    });
     this.setData({
       mode: "detail",
       latestEnvelopeId: envelopeId,
@@ -487,12 +727,26 @@ Page({
     }
 
     return this.runBusy(async () => {
-      const choose = await wxChooseMessageFile({ count: 1, type: "file" });
+      this.beginUploadDebugTrace("pickElectronicInvoiceFile", {
+        channel: this.data.draft.channel,
+        projectId: this.data.draft.project_id
+      });
+      const choose = await wxChooseLocalFile({
+        count: 1,
+        extension: ELECTRONIC_INVOICE_EXTENSIONS.map((ext) => `.${ext}`)
+      }).catch((error) => {
+        throw buildUploadDebugStageError("choose-local-file", error);
+      });
       const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      this.appendUploadDebugTrace("choose-local-file.result", summarizePickedFile(file));
       const filePath = getPickedFilePath(file);
       const fileName = getPickedFileName(file, "invoice") || `invoice-${Date.now()}.pdf`;
-      if (!filePath) return;
+      this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
+      if (!filePath) {
+        throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(file));
+      }
       if (!isAllowedExtension(fileName || filePath, ELECTRONIC_INVOICE_EXTENSIONS)) {
+        this.appendUploadDebugTrace("extension-rejected", { filePath, fileName }, "warn");
         sayToast({
           title: "自动识别仅支持图片/PDF/OFD/TIFF/HEIC/XML",
           icon: "none",
@@ -503,7 +757,53 @@ Page({
       await this.uploadElectronicInvoice(filePath, fileName);
     }).catch((error) => {
       vibrateWarning();
-      sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+      if (isLocalFilePickerUnsupportedError(error)) {
+        this.appendUploadDebugTrace("choose-local-file.unsupported", {
+          message: extractErrorMessage(error)
+        }, "warn");
+        this.promptMessageFileFallback("electronic");
+        return;
+      }
+      this.showUploadDebugFailure(error, "上传失败");
+    });
+  },
+
+  async pickElectronicInvoiceMessageFile() {
+    const errorText = positiveNumber(this.data.draft.project_id, "所属项目");
+    if (errorText) {
+      sayToast({ title: errorText, icon: "none", danger: true });
+      return;
+    }
+
+    return this.runBusy(async () => {
+      this.beginUploadDebugTrace("pickElectronicInvoiceMessageFile", {
+        channel: this.data.draft.channel,
+        projectId: this.data.draft.project_id
+      });
+      const choose = await wxChooseMessageFile({ count: 1, type: "file" }).catch((error) => {
+        throw buildUploadDebugStageError("choose-message-file.fallback", error);
+      });
+      const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      this.appendUploadDebugTrace("choose-message-file.fallback.result", summarizePickedFile(file));
+      const filePath = getPickedFilePath(file);
+      const fileName = getPickedFileName(file, "invoice") || `invoice-${Date.now()}.pdf`;
+      this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
+      if (!filePath) {
+        throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(file));
+      }
+      if (!isAllowedExtension(fileName || filePath, ELECTRONIC_INVOICE_EXTENSIONS)) {
+        this.appendUploadDebugTrace("extension-rejected", { filePath, fileName }, "warn");
+        sayToast({
+          title: "自动识别仅支持图片/PDF/OFD/TIFF/HEIC/XML",
+          icon: "none",
+          danger: true
+        });
+        return;
+      }
+      await this.uploadElectronicInvoice(filePath, fileName);
+    }).catch((error) => {
+      vibrateWarning();
+      this.showUploadDebugFailure(error, "上传失败");
     });
   },
 
@@ -514,14 +814,25 @@ Page({
     }
 
     return this.runBusy(async () => {
-      const choose = await wxChooseMediaImage();
+      this.beginUploadDebugTrace("pickPhysicalInvoicePhoto", {
+        channel: this.data.draft.channel,
+        envelopeId: this.data.latestEnvelopeId
+      });
+      const choose = await wxChooseMediaImage().catch((error) => {
+        throw buildUploadDebugStageError("choose-image", error);
+      });
       const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      this.appendUploadDebugTrace("choose-image.result", summarizePickedFile(picked));
       const filePath = getPickedFilePath(picked);
       const fileName = getPickedFileName(picked, "attachment");
+      this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
+      if (!filePath) {
+        throw buildUploadDebugStageError("path-empty", "图片路径为空", summarizePickedFile(picked));
+      }
       await this.uploadAttachmentFromPath(filePath, fileName);
     }).catch((error) => {
       vibrateWarning();
-      sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+      this.showUploadDebugFailure(error, "上传失败");
     });
   },
 
@@ -532,11 +843,27 @@ Page({
     }
 
     return this.runBusy(async () => {
-      const choose = await wxChooseMessageFile({ count: 1, type: "file" });
+      this.beginUploadDebugTrace("pickAttachmentFile", {
+        channel: this.data.draft.channel,
+        envelopeId: this.data.latestEnvelopeId,
+        attachmentType: this.getCurrentAttachmentType()
+      });
+      const choose = await wxChooseLocalFile({
+        count: 1,
+        extension: COMMON_ATTACHMENT_EXTENSIONS.map((ext) => `.${ext}`)
+      }).catch((error) => {
+        throw buildUploadDebugStageError("choose-local-file", error);
+      });
       const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      this.appendUploadDebugTrace("choose-local-file.result", summarizePickedFile(picked));
       const filePath = getPickedFilePath(picked);
       const fileName = getPickedFileName(picked, "attachment");
+      this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
+      if (!filePath) {
+        throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(picked));
+      }
       if (filePath && !isAllowedExtension(fileName || filePath, COMMON_ATTACHMENT_EXTENSIONS)) {
+        this.appendUploadDebugTrace("extension-rejected", { filePath, fileName }, "warn");
         sayToast({
           title: "仅支持常见票据/扫描格式（PDF、图片、OFD等）",
           icon: "none",
@@ -547,14 +874,60 @@ Page({
       await this.uploadAttachmentFromPath(filePath, fileName);
     }).catch((error) => {
       vibrateWarning();
-      sayToast({ title: error.message || "上传失败", icon: "none", danger: true });
+      if (isLocalFilePickerUnsupportedError(error)) {
+        this.appendUploadDebugTrace("choose-local-file.unsupported", {
+          message: extractErrorMessage(error)
+        }, "warn");
+        this.promptMessageFileFallback("attachment");
+        return;
+      }
+      this.showUploadDebugFailure(error, "上传失败");
+    });
+  },
+
+  async pickAttachmentMessageFile() {
+    if (!this.data.latestEnvelopeId) {
+      sayToast({ title: "请先保存草稿", icon: "none", danger: true });
+      return;
+    }
+
+    return this.runBusy(async () => {
+      this.beginUploadDebugTrace("pickAttachmentMessageFile", {
+        channel: this.data.draft.channel,
+        envelopeId: this.data.latestEnvelopeId,
+        attachmentType: this.getCurrentAttachmentType()
+      });
+      const choose = await wxChooseMessageFile({ count: 1, type: "file" }).catch((error) => {
+        throw buildUploadDebugStageError("choose-message-file.fallback", error);
+      });
+      const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
+      this.appendUploadDebugTrace("choose-message-file.fallback.result", summarizePickedFile(picked));
+      const filePath = getPickedFilePath(picked);
+      const fileName = getPickedFileName(picked, "attachment");
+      this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
+      if (!filePath) {
+        throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(picked));
+      }
+      if (filePath && !isAllowedExtension(fileName || filePath, COMMON_ATTACHMENT_EXTENSIONS)) {
+        this.appendUploadDebugTrace("extension-rejected", { filePath, fileName }, "warn");
+        sayToast({
+          title: "仅支持常见票据/扫描格式（PDF、图片、OFD等）",
+          icon: "none",
+          danger: true
+        });
+        return;
+      }
+      await this.uploadAttachmentFromPath(filePath, fileName);
+    }).catch((error) => {
+      vibrateWarning();
+      this.showUploadDebugFailure(error, "上传失败");
     });
   },
 
   onUploadTap() {
     if (this.data.draft.channel === "electronic") {
       wx.showActionSheet({
-        itemList: ["上传图片（自动识别）", "上传PDF/票据文件（自动识别）"],
+        itemList: ["上传图片（自动识别）", "上传本地PDF/票据文件（自动识别）"],
         success: (res) => {
           if (res.tapIndex === 0) {
             this.pickInvoicePhoto();
@@ -572,7 +945,7 @@ Page({
     }
 
     wx.showActionSheet({
-      itemList: ["上传图片", "上传文件"],
+      itemList: ["上传图片", "上传本地文件"],
       success: (res) => {
         if (res.tapIndex === 0) {
           this.pickPhysicalInvoicePhoto();

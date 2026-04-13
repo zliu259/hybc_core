@@ -127,27 +127,119 @@ const wxChooseMediaImage = ({ count = 1 } = {}) =>
     });
   });
 
-const wxChooseMessageFile = ({ count = 1, type = "file" } = {}) =>
-  new Promise((resolve, reject) => {
-    const chooseMessageFileApi =
-      typeof wx.chooseMessageFile === "function"
-        ? wx.chooseMessageFile
-        : wx?.qy && typeof wx.qy.chooseMessageFile === "function"
-          ? wx.qy.chooseMessageFile
-          : null;
+const isChooseMessageFileCapabilityError = (err) => {
+  const message = String((err && err.errMsg) || (err && err.message) || "").toLowerCase();
+  return (
+    message.includes("function not exist") ||
+    message.includes("not support") ||
+    message.includes("not supported") ||
+    message.includes("api not found") ||
+    message.includes("no such function") ||
+    message.includes("接口不存在") ||
+    message.includes("不支持")
+  );
+};
 
-    if (!chooseMessageFileApi) {
-      reject(new Error("当前客户端不支持文件选择，请升级企业微信后重试或改用图片上传"));
+const isLocalFilePickerSupported = () => {
+  return typeof wx.chooseFile === "function" || Boolean(wx?.miniapp && typeof wx.miniapp.chooseFile === "function");
+};
+
+const isMessageFilePickerSupported = () => {
+  return typeof wx.chooseMessageFile === "function" || Boolean(wx?.qy && typeof wx.qy.chooseMessageFile === "function");
+};
+
+const invokeFilePickerCandidates = ({
+  candidates,
+  count,
+  type,
+  extension,
+  resolve,
+  reject,
+  unsupportedMessage = "当前客户端不支持文件选择，请升级企业微信后重试"
+}) => {
+  if (!Array.isArray(candidates) || !candidates.length) {
+    reject(new Error(unsupportedMessage));
+    return;
+  }
+
+  const invokeCandidate = (index = 0, lastError = null) => {
+    if (index >= candidates.length) {
+      if (lastError) {
+        reject(lastError);
+        return;
+      }
+      reject(new Error(unsupportedMessage));
       return;
     }
 
-    chooseMessageFileApi({
+    const candidate = candidates[index];
+    const tryNextCandidate = (error) => {
+      if (isChooseMessageFileCapabilityError(error)) {
+        invokeCandidate(index + 1, error);
+        return;
+      }
+      reject(error);
+    };
+
+    try {
+      candidate({
+        count,
+        type,
+        extension,
+        success(res) {
+          resolve(normalizeTempFileResult(res, "file"));
+        },
+        fail(err) {
+          tryNextCandidate(err);
+        }
+      });
+    } catch (error) {
+      tryNextCandidate(error);
+    }
+  };
+
+  invokeCandidate();
+};
+
+const wxChooseLocalFile = ({ count = 1, extension = [] } = {}) =>
+  new Promise((resolve, reject) => {
+    const candidates = [];
+    if (typeof wx.chooseFile === "function") {
+      candidates.push(wx.chooseFile);
+    }
+    if (wx?.miniapp && typeof wx.miniapp.chooseFile === "function") {
+      candidates.push(wx.miniapp.chooseFile);
+    }
+
+    invokeFilePickerCandidates({
+      candidates,
+      count,
+      type: "file",
+      extension,
+      unsupportedMessage: "当前客户端不支持本地文件选择，请升级企业微信后重试",
+      resolve,
+      reject
+    });
+  });
+
+const wxChooseMessageFile = ({ count = 1, type = "file" } = {}) =>
+  new Promise((resolve, reject) => {
+    const chooseMessageFileCandidates = [];
+    if (wx?.qy && typeof wx.qy.chooseMessageFile === "function") {
+      chooseMessageFileCandidates.push(wx.qy.chooseMessageFile);
+    }
+    if (typeof wx.chooseMessageFile === "function") {
+      chooseMessageFileCandidates.push(wx.chooseMessageFile);
+    }
+
+    invokeFilePickerCandidates({
+      candidates: chooseMessageFileCandidates,
       count,
       type,
-      success(res) {
-        resolve(normalizeTempFileResult(res, "file"));
-      },
-      fail: reject
+      extension: [],
+      unsupportedMessage: "当前客户端不支持会话文件选择，请升级企业微信后重试",
+      resolve,
+      reject
     });
   });
 
@@ -203,7 +295,10 @@ module.exports = {
   wxLogin,
   wxScanCode,
   wxChooseMediaImage,
+  wxChooseLocalFile,
   wxChooseMessageFile,
+  isLocalFilePickerSupported,
+  isMessageFilePickerSupported,
   wxGetLocation,
   wxRecordAudioOnce
 };

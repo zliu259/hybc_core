@@ -56,7 +56,7 @@
     </picker>
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="onUploadTap" loading="{{busy}}" disabled="{{busy}}">📎 上传文件（统一入口）</t-button>
+      <t-button class="btn" variant="outline" bindtap="onUploadTap" loading="{{busy}}" disabled="{{busy}}">📎 上传本地文件（统一入口）</t-button>
     </view>
     <view class="upload-tip">支持 PDF、图片（JPG/PNG/WEBP/TIFF/HEIC）及 OFD/XML 等常见发票与扫描格式</view>
 

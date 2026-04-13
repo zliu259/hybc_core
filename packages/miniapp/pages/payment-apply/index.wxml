@@ -130,7 +130,7 @@
       <view class="label required">付款附件</view>
       <view class="row">
         <t-button class="btn" variant="outline" data-group="direct" bindtap="chooseImageAttachment" disabled="{{busy || submitting}}">上传图片</t-button>
-        <t-button class="btn" variant="outline" data-group="direct" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传文件</t-button>
+        <t-button class="btn" variant="outline" data-group="direct" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传本地文件</t-button>
       </view>
 
       <view wx:if="{{directPaymentAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
@@ -212,7 +212,7 @@
       <view class="label required">合同附件</view>
       <view class="row">
         <t-button class="btn" variant="outline" data-group="contract" bindtap="chooseImageAttachment" disabled="{{busy || submitting}}">上传图片</t-button>
-        <t-button class="btn" variant="outline" data-group="contract" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传文件</t-button>
+        <t-button class="btn" variant="outline" data-group="contract" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传本地文件</t-button>
       </view>
 
       <view wx:if="{{contractAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
@@ -255,7 +255,7 @@
         <view class="label required">首笔付款附件</view>
         <view class="row">
           <t-button class="btn" variant="outline" data-group="first" bindtap="chooseImageAttachment" disabled="{{busy || submitting}}">上传图片</t-button>
-          <t-button class="btn" variant="outline" data-group="first" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传文件</t-button>
+          <t-button class="btn" variant="outline" data-group="first" bindtap="chooseFileAttachment" disabled="{{busy || submitting}}">上传本地文件</t-button>
         </view>
 
         <view wx:if="{{firstPaymentAttachments.length === 0}}" class="attachment-empty">暂无附件</view>

@@ -1106,6 +1106,13 @@
 - 时间轴时间戳改为“申报日期”，优先展示报销 `expense_date`，缺失时回退创建/更新时间：`packages/web/src/views/welcome/index.vue`
 - 报销进度条目主标题支持点击跳转到对应报销详情（`/workspace/my-reimbursement/detail/:id`）：`packages/web/src/views/welcome/index.vue`
 
+### 4.36 小程序文件上传入口改为“本地文件优先”（2026-04）
+- 报销页统一上传入口文案调整为“上传本地文件（统一入口）”，电子/实物通道动作项对应改为“上传本地PDF/票据文件（自动识别）”与“上传本地文件”，减少“会话文件”误解：`packages/miniapp/pages/reimbursement/index.{js,wxml}`
+- 智能发单台（对外付款）三处附件按钮文案统一调整为“上传本地文件”，与业务诉求一致：`packages/miniapp/pages/payment-apply/index.wxml`
+- 小程序文件选择封装新增本地文件选择能力 `wxChooseLocalFile`（优先 `wx.chooseFile` / `wx.miniapp.chooseFile`），并保留 `wxChooseMessageFile` 兼容实现用于会话文件场景：`packages/miniapp/utils/wx.js`
+- 报销与智能发单台文件上传逻辑改为调用 `wxChooseLocalFile`，不再默认拉起会话文件选择器：`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/payment-apply/index.js`
+- 客户端能力降级补偿：当本地文件选择能力不可用时，报销与智能发单台提供“从会话文件选择”兼容路径（需用户确认），避免上传流程硬失败：`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/utils/wx.js`
+
 ### 4.36 报销智能核查摘要防JSON泄露（2026-03）
 - 报销详情“智能核查摘要”优先解析 `ai_reasonability_summary` 与 `ai_reasonability.summary`，并输出办公室可读文本，不再以 JSON 兜底回显：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 摘要格式统一为：风险等级、结论、主要异常（分级）与建议动作（列表），避免多附件场景下暴露结构化原始对象：`packages/web/src/views/finance/reimbursement/detail.vue`
