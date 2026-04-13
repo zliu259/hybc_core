@@ -19,10 +19,11 @@ export const runInTransaction = async <T>(
   work: () => Promise<T>,
   options: RunInTransactionOptions = {}
 ): Promise<T> => {
+  const allowFallback = options.allowUnsupportedFallback ?? true;
   try {
     await db.exec("BEGIN IMMEDIATE TRANSACTION");
   } catch (error) {
-    if (isSqlTransactionUnsupportedError(error) && options.allowUnsupportedFallback) {
+    if (isSqlTransactionUnsupportedError(error) && allowFallback) {
       if (!hasWarnedUnsupportedSqlTransaction) {
         console.warn(
           "SQL BEGIN/COMMIT transactions are unsupported in this runtime; fallback to non-transactional execution"
