@@ -70,7 +70,7 @@ const reloadOnDynamicImportError = (message: string): void => {
   const token = currentRouteToken();
   const prev = readReloadState();
   const count = prev?.token === token ? prev.count : 0;
-  if (count >= 1) {
+  if (count >= 2) {
     console.error(
       "[dynamic-import] reload skipped to avoid loop",
       message || "unknown dynamic import error"

@@ -1,3 +1,2 @@
-/static/* /404 404
-/assets/* /404 404
-/* /index.html 200
+/login /index.html 200
+/login/ /index.html 200
