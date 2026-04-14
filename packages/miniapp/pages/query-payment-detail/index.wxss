@@ -1,0 +1,62 @@
+.detail-card {
+  background: #fff;
+  border: 1rpx solid #e7eaf0;
+  border-radius: 14rpx;
+  padding: 16rpx;
+  margin-bottom: 14rpx;
+}
+
+.sub-card {
+  background: #fff;
+  border: 1rpx solid #e7eaf0;
+  border-radius: 14rpx;
+  padding: 16rpx;
+  margin-bottom: 14rpx;
+}
+
+.row-between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8rpx;
+}
+
+.title {
+  font-size: 30rpx;
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.item {
+  margin-top: 6rpx;
+  color: #4b5563;
+  font-size: 24rpx;
+}
+
+.amount {
+  color: #174ea6;
+  font-weight: 700;
+}
+
+.section-title {
+  margin: 16rpx 0 8rpx;
+  color: #1f2937;
+  font-size: 26rpx;
+  font-weight: 600;
+}
+
+.tap-tip {
+  margin-top: 8rpx;
+  color: #174ea6;
+  font-size: 22rpx;
+}
+
+.action-row {
+  margin-top: 16rpx;
+}
+
+.empty {
+  text-align: center;
+  color: #7b8494;
+  padding: 20rpx 0;
+}

@@ -485,10 +485,13 @@ paymentRoutes.get("/", async (c) => {
   const auth = c.get("auth");
   const contractId = c.req.query("contract_id");
   const projectId = c.req.query("project_id");
+  const projectName = c.req.query("project_name");
   const status = c.req.query("status")?.trim().toLowerCase() || "";
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
   const applicantUserid = c.req.query("applicant_userid");
+  const dateFrom = c.req.query("date_from");
+  const dateTo = c.req.query("date_to");
   const mine = c.req.query("mine") === "true";
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
@@ -513,6 +516,11 @@ paymentRoutes.get("/", async (c) => {
     countSql += " AND project_id = ?";
     params.push(Number(projectId));
   }
+  if (projectName) {
+    sql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+    countSql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+    params.push(`%${projectName}%`, `%${projectName}%`);
+  }
   if (status) {
     sql += " AND status = ?";
     countSql += " AND status = ?";
@@ -536,6 +544,16 @@ paymentRoutes.get("/", async (c) => {
     sql += " AND applicant_userid = ?";
     countSql += " AND applicant_userid = ?";
     params.push(applicantUserid);
+  }
+  if (dateFrom) {
+    sql += " AND expected_payment_date >= ?";
+    countSql += " AND expected_payment_date >= ?";
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    sql += " AND expected_payment_date <= ?";
+    countSql += " AND expected_payment_date <= ?";
+    params.push(dateTo);
   }
 
   sql += " ORDER BY id DESC LIMIT ? OFFSET ?";

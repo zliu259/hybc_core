@@ -181,9 +181,13 @@ contractRoutes.use("*", authMiddleware);
 contractRoutes.get("/", async (c) => {
   const direction = c.req.query("direction");
   const projectId = c.req.query("project_id");
+  const projectName = c.req.query("project_name");
   const entityId = c.req.query("entity_id");
   const status = c.req.query("status");
   const keyword = c.req.query("keyword");
+  const applicantUserid = c.req.query("applicant_userid");
+  const dateFrom = c.req.query("date_from");
+  const dateTo = c.req.query("date_to");
   const legacyDataId = c.req.query("legacy_data_id");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
@@ -203,6 +207,11 @@ contractRoutes.get("/", async (c) => {
     countSql += " AND project_id = ?";
     params.push(Number(projectId));
   }
+  if (projectName) {
+    sql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+    countSql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+    params.push(`%${projectName}%`, `%${projectName}%`);
+  }
   if (entityId) {
     sql += " AND entity_id = ?";
     countSql += " AND entity_id = ?";
@@ -217,6 +226,21 @@ contractRoutes.get("/", async (c) => {
     sql += " AND (contract_no LIKE ? OR counterparty LIKE ? OR remark LIKE ?)";
     countSql += " AND (contract_no LIKE ? OR counterparty LIKE ? OR remark LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+  }
+  if (applicantUserid) {
+    sql += " AND handler_userid = ?";
+    countSql += " AND handler_userid = ?";
+    params.push(applicantUserid);
+  }
+  if (dateFrom) {
+    sql += " AND contract_date >= ?";
+    countSql += " AND contract_date >= ?";
+    params.push(dateFrom);
+  }
+  if (dateTo) {
+    sql += " AND contract_date <= ?";
+    countSql += " AND contract_date <= ?";
+    params.push(dateTo);
   }
   if (legacyDataId) {
     sql += " AND legacy_data_id = ?";

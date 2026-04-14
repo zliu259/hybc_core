@@ -304,6 +304,7 @@
 - 业务明细区编号字段（付款流水号、合同号、报销批次号、开票申请号、退款单号）统一支持点击跳转对应业务页，减少审批与业务核对的页面切换成本。
 - 跳转可点击态需与财务域路由权限一致：无财务域访问权限时显示为只读文本，避免误导点击。
 - 下区：动作区（通过/拒绝/退回/转签/撤回）。
+- Web 端审批动作完成（通过/驳回/退回/转办）后，先显示成功提示，再自动跳转到“待我审批”列表（`/approval/index`），与 miniapp `pages/approval-detail/index.js` 行为对齐：`packages/web/src/views/approval/detail.vue`
 - API 指向：`/api/v1/approval/:id/*`、`/api/v1/receipt/refund/:id`
 
 #### I-1. 审批监控台（超管） `views/approval/admin-monitor.vue`
@@ -630,6 +631,13 @@
 - 员工加油申请：`packages/miniapp/pages/fuel-apply/index`
 - 我的报销提交（列表）：`packages/miniapp/pages/reimbursement-list/index`
 - 报销提交详情/新建：`packages/miniapp/pages/reimbursement/index`
+- 查询中心（高权限入口）：`packages/miniapp/pages/query/index`
+- 合同查询（高权限）：`packages/miniapp/pages/query-contract/index`
+- 付款查询（高权限）：`packages/miniapp/pages/query-payment/index`
+- 收款查询（高权限）：`packages/miniapp/pages/query-receipt/index`
+- 合同查询详情（高权限）：`packages/miniapp/pages/query-contract-detail/index`
+- 付款查询详情（高权限）：`packages/miniapp/pages/query-payment-detail/index`
+- 收款查询详情（高权限）：`packages/miniapp/pages/query-receipt-detail/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
 - 现场勘查：`packages/miniapp/pages/survey/index`
 - 项目进度概览：`packages/miniapp/pages/progress/index`
@@ -648,6 +656,16 @@
 - 管理员日志页：支持拍照上传 + 结构化提交。
 - 审批页：移动端单手可完成通过/拒绝/退回/转签，危险动作前需确认弹窗。
 - 报销页：支持个人报销草稿创建/编辑、绑定 UUID、附件上传（实物/电子）、提交与 OCR 状态追踪。
+- 查询中心（仅 `super_admin/finance/manager`）：
+  - 工作台新增“查询”入口，进入后以卡片展示“合同查询/付款查询/收款查询”。
+  - 三个查询页统一支持：申请人、时间范围、项目名称筛选。
+  - 列表统一分页口径：每页 10 条，上一页/下一页切换。
+  - 列表条目支持点击进入详情页；详情页以只读卡片形式展示关键字段。
+  - 申请人显示规则统一为“仅姓名”，若姓名缺失显示 `-`。
+  - 付款查询列表需展示“所属项目名称”，避免仅凭项目ID识别。
+  - 合同详情支持附件查看，并支持从“关联付款/关联收款”点击跳转到对应详情页。
+  - 付款详情支持附件查看、审批记录展示，并支持点击跳转到审批详情页。
+  - 查询列表中的状态标签按状态语义着色（例如待审批=橙色、生效/已付款=绿色、废止/拒绝=红色）。
 - 报销详情页补齐附件全链路能力：
   - 可按类型上传附件（发票/收据/合同/其他）
   - 支持图片上传与文件上传双路径
@@ -750,6 +768,17 @@
 - 管理员日志 `packages/miniapp/pages/manager-log/index.wxml`：`hy-project-picker`、日期选择、拍照上传、`hy-status-chip`。
 - 审批 `packages/miniapp/pages/approval/index.wxml`：`t-button`、`t-empty`，用于动作一致性与无数据空态。
 - 报销 `packages/miniapp/pages/reimbursement/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，用于链路状态可视化（OCR/PDF）。
+- 查询中心 `packages/miniapp/pages/query/index.wxml`：`hy-panel-card` + 入口卡片网格，统一承接高权限查询入口。
+- 合同/付款/收款查询：
+  - `packages/miniapp/pages/query-contract/index.wxml`
+  - `packages/miniapp/pages/query-payment/index.wxml`
+  - `packages/miniapp/pages/query-receipt/index.wxml`
+  - 统一使用 `picker + input + t-button + hy-status-chip` 组合完成筛选、分页与状态展示。
+- 合同/付款/收款查询详情：
+  - `packages/miniapp/pages/query-contract-detail/index.wxml`
+  - `packages/miniapp/pages/query-payment-detail/index.wxml`
+  - `packages/miniapp/pages/query-receipt-detail/index.wxml`
+  - 统一使用 `hy-panel-card + status-chip + 只读字段卡片` 展示详情，保持与列表页视觉一致。
 - 勘查 `packages/miniapp/pages/survey/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，突出定位与图片采集流程。
 - 设备 `packages/miniapp/pages/asset/index.wxml`：`t-notice-bar`、`t-empty`、`t-button`，突出扫码与状态查看。
 - 进度 `packages/miniapp/pages/progress/index.wxml`：`t-cell`、`t-empty`、`t-button`，提升指标与预警信息扫描效率。

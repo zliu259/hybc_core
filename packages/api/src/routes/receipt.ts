@@ -198,6 +198,7 @@ receiptRoutes.get(
   async (c) => {
     const contractId = c.req.query("contract_id");
     const projectId = c.req.query("project_id");
+    const projectName = c.req.query("project_name");
     const status = c.req.query("status");
     const keyword = c.req.query("keyword");
     const page = Number(c.req.query("page") ?? "1");
@@ -217,6 +218,11 @@ receiptRoutes.get(
       sql += " AND project_id = ?";
       countSql += " AND project_id = ?";
       params.push(Number(projectId));
+    }
+    if (projectName) {
+      sql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+      countSql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+      params.push(`%${projectName}%`, `%${projectName}%`);
     }
     if (status) {
       sql += " AND status = ?";
@@ -1468,7 +1474,12 @@ receiptRoutes.get(
   async (c) => {
     const contractId = c.req.query("contract_id");
     const projectId = c.req.query("project_id");
+    const projectName = c.req.query("project_name");
     const invoiceId = c.req.query("invoice_id");
+    const applicantUserid = c.req.query("applicant_userid");
+    const dateFrom = c.req.query("date_from");
+    const dateTo = c.req.query("date_to");
+    const keyword = c.req.query("keyword");
     const page = Number(c.req.query("page") ?? "1");
     const pageSize = Number(c.req.query("pageSize") ?? "20");
     const offset = (page - 1) * pageSize;
@@ -1487,10 +1498,35 @@ receiptRoutes.get(
       countSql += " AND project_id = ?";
       params.push(Number(projectId));
     }
+    if (projectName) {
+      sql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+      countSql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+      params.push(`%${projectName}%`, `%${projectName}%`);
+    }
     if (invoiceId) {
       sql += " AND invoice_id = ?";
       countSql += " AND invoice_id = ?";
       params.push(Number(invoiceId));
+    }
+    if (applicantUserid) {
+      sql += " AND receiver_userid = ?";
+      countSql += " AND receiver_userid = ?";
+      params.push(applicantUserid);
+    }
+    if (dateFrom) {
+      sql += " AND received_date >= ?";
+      countSql += " AND received_date >= ?";
+      params.push(dateFrom);
+    }
+    if (dateTo) {
+      sql += " AND received_date <= ?";
+      countSql += " AND received_date <= ?";
+      params.push(dateTo);
+    }
+    if (keyword) {
+      sql += " AND (receipt_no LIKE ? OR IFNULL(payment_account, '') LIKE ? OR IFNULL(remark, '') LIKE ?)";
+      countSql += " AND (receipt_no LIKE ? OR IFNULL(payment_account, '') LIKE ? OR IFNULL(remark, '') LIKE ?)";
+      params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
     }
 
     sql += " ORDER BY id DESC LIMIT ? OFFSET ?";

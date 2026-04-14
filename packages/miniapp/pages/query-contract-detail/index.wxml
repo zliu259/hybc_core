@@ -1,0 +1,59 @@
+<view class="page">
+  <hy-panel-card title="📄 合同详情" subtitle="查询详情（只读）">
+    <view wx:if="{{!detail && !loading}}" class="empty">暂无详情数据</view>
+
+    <view wx:if="{{detail}}" class="detail-card">
+      <view class="row-between">
+        <view class="title">{{detail.contractNo}}</view>
+        <hy-status-chip text="{{detail.statusText}}" theme="{{detail.statusTheme}}" variant="light" />
+      </view>
+      <view class="item">合同方向：{{detail.directionText}}</view>
+      <view class="item">所属项目：{{detail.projectName}}</view>
+      <view class="item">申请人：{{detail.applicant}}</view>
+      <view class="item">合同日期：{{detail.contractDate}}</view>
+      <view class="item">合同类型：{{detail.contractType}}</view>
+      <view class="item">对方单位：{{detail.counterparty}}</view>
+      <view class="item amount">合同总额：¥{{detail.totalAmountText}}</view>
+      <view class="item">已付款：¥{{detail.paidAmountText}}</view>
+      <view class="item">已收款：¥{{detail.receivedAmountText}}</view>
+      <view class="item">备注：{{detail.remark}}</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="section-title">附件（{{detail.attachments.length}}）</view>
+    <view wx:if="{{detail && !detail.attachments.length}}" class="empty">暂无附件</view>
+    <view wx:for="{{detail.attachments}}" wx:key="file_key" class="sub-card" data-key="{{item.file_key}}" data-url="{{item.file_url}}" data-name="{{item.file_name}}" bindtap="openAttachment">
+      <view class="item">{{item.file_name}}</view>
+      <view class="tap-tip">点击查看附件</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="section-title">金额变更记录（{{detail.amountChanges.length}}）</view>
+    <view wx:if="{{detail && !detail.amountChanges.length}}" class="empty">暂无金额变更记录</view>
+    <view wx:for="{{detail.amountChanges}}" wx:key="id" class="sub-card">
+      <view class="item">变更类型：{{item.change_type}}</view>
+      <view class="item">变更金额：{{item.old_amount}} → {{item.new_amount}}</view>
+      <view class="item">状态：{{item.status_text}}</view>
+      <view class="item">发起人：{{item.applicant_text}}</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="section-title">关联付款（{{detail.paymentRequests.length}}）</view>
+    <view wx:if="{{detail && !detail.paymentRequests.length}}" class="empty">暂无关联付款</view>
+    <view wx:for="{{detail.paymentRequests}}" wx:key="id" class="sub-card" data-id="{{item.id}}" bindtap="openPaymentDetail">
+      <view class="item">流水号：{{item.serial_no}}</view>
+      <view class="item">金额：¥{{item.amount}}</view>
+      <view class="item">状态：{{item.status_text}}</view>
+      <view class="item">创建时间：{{item.created_at}}</view>
+      <view class="tap-tip">点击查看付款详情</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="section-title">关联收款（{{detail.receipts.length}}）</view>
+    <view wx:if="{{detail && !detail.receipts.length}}" class="empty">暂无关联收款</view>
+    <view wx:for="{{detail.receipts}}" wx:key="id" class="sub-card" data-id="{{item.id}}" bindtap="openReceiptDetail">
+      <view class="item">收款单号：{{item.receiptNo}}</view>
+      <view class="item">收款金额：¥{{item.amountText}}</view>
+      <view class="item">申请人：{{item.applicant_text}}</view>
+      <view class="item">收款日期：{{item.receivedDate}}</view>
+      <view class="item">状态：{{item.status_text}}</view>
+      <view class="tap-tip">点击查看收款详情</view>
+    </view>
+  </hy-panel-card>
+</view>

@@ -27,7 +27,14 @@
     "pages/asset/index",
     "pages/survey/index",
     "pages/progress/index",
-    "pages/notice/index"
+    "pages/notice/index",
+    "pages/query/index",
+    "pages/query-contract/index",
+    "pages/query-payment/index",
+    "pages/query-receipt/index",
+    "pages/query-contract-detail/index",
+    "pages/query-payment-detail/index",
+    "pages/query-receipt-detail/index"
   ],
   "window": {
     "navigationBarTitleText": "恒越百川",

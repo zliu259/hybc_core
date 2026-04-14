@@ -1,0 +1,54 @@
+<view class="page">
+  <hy-panel-card title="💸 付款查询" subtitle="每页10条，支持申请人/时间/项目筛选">
+    <view class="toolbar">
+      <picker mode="selector" range="{{applicantOptions}}" range-key="label" value="{{applicantIndex}}" bindchange="onApplicantChange">
+        <view class="picker-value">{{applicantOptions[applicantIndex].label}}</view>
+      </picker>
+      <picker mode="selector" range="{{projectOptions}}" range-key="label" value="{{projectIndex}}" bindchange="onProjectChange">
+        <view class="picker-value">{{projectOptions[projectIndex].label}}</view>
+      </picker>
+    </view>
+
+    <view class="toolbar">
+      <picker mode="date" value="{{dateFrom}}" bindchange="onDateFromChange">
+        <view class="picker-value">{{dateFrom || '开始日期'}}</view>
+      </picker>
+      <picker mode="date" value="{{dateTo}}" bindchange="onDateToChange">
+        <view class="picker-value">{{dateTo || '结束日期'}}</view>
+      </picker>
+    </view>
+
+    <view class="toolbar">
+      <t-button class="btn" variant="outline" bindtap="search" loading="{{loading}}">查询</t-button>
+      <t-button class="btn" variant="outline" bindtap="resetFilters" disabled="{{loading}}">重置</t-button>
+    </view>
+
+    <view wx:if="{{!list.length && !loading}}" class="empty">暂无付款数据</view>
+
+    <view wx:for="{{list}}" wx:key="id" class="item-card" data-id="{{item.id}}" bindtap="openDetail">
+      <view class="item-row">
+        <text class="item-no">{{item.serialNo}}</text>
+        <hy-status-chip text="{{item.statusText}}" theme="{{item.statusTheme}}" variant="light" />
+      </view>
+      <view class="item-sub">申请人：{{item.applicant}}</view>
+      <view class="item-sub">项目：{{item.projectName}}</view>
+      <view class="item-sub">付款日期：{{item.expectDate}}</view>
+      <view class="item-sub">付款事由：{{item.content}}</view>
+      <view class="item-amount">¥{{item.amountText}}</view>
+    </view>
+
+    <view class="pager">
+      <t-button class="pager-btn" size="small" variant="outline" disabled="{{loading || page <= 1}}" bindtap="prevPage">上一页</t-button>
+      <view class="pager-text">第{{page}}页 · 共{{total}}条</view>
+      <t-button
+        class="pager-btn"
+        size="small"
+        variant="outline"
+        disabled="{{loading || !hasNext}}"
+        bindtap="nextPage"
+      >
+        下一页
+      </t-button>
+    </view>
+  </hy-panel-card>
+</view>

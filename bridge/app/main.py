@@ -65,14 +65,20 @@ class RelayRuntimeStats:
                 overloaded, reason = self._is_overloaded_no_lock(now)
                 total = len(self.window_total)
                 timeout_rate = (len(self.window_timeout) / total) if total > 0 else 0.0
-                error_rate = (len(self.window_upstream_error) / total) if total > 0 else 0.0
+                error_rate = (
+                    (len(self.window_upstream_error) / total) if total > 0 else 0.0
+                )
                 cooldown_left = max(0, int(self.cooldown_until - now))
                 return {
                     "overloaded": overloaded,
                     "reason": reason,
                     "inflight_requests": self.inflight,
-                    "max_inflight": _safe_positive_int(settings.relay_max_inflight, 120),
-                    "window_seconds": _safe_positive_int(settings.relay_error_window_seconds, 60),
+                    "max_inflight": _safe_positive_int(
+                        settings.relay_max_inflight, 120
+                    ),
+                    "window_seconds": _safe_positive_int(
+                        settings.relay_error_window_seconds, 60
+                    ),
                     "sample_size": total,
                     "timeout_rate": round(timeout_rate, 4),
                     "upstream_error_rate": round(error_rate, 4),
@@ -85,7 +91,9 @@ class RelayRuntimeStats:
                 "reason": "status_error",
                 "inflight_requests": 0,
                 "max_inflight": _safe_positive_int(settings.relay_max_inflight, 120),
-                "window_seconds": _safe_positive_int(settings.relay_error_window_seconds, 60),
+                "window_seconds": _safe_positive_int(
+                    settings.relay_error_window_seconds, 60
+                ),
                 "sample_size": 0,
                 "timeout_rate": 0.0,
                 "upstream_error_rate": 0.0,
@@ -117,7 +125,11 @@ class RelayRuntimeStats:
                 if upstream_error:
                     self.window_upstream_error.append(now)
                 overloaded, reason = self._is_overloaded_no_lock(now)
-                if overloaded and reason in {"inflight_limit", "timeout_rate", "error_rate"}:
+                if overloaded and reason in {
+                    "inflight_limit",
+                    "timeout_rate",
+                    "error_rate",
+                }:
                     self.cooldown_until = max(
                         self.cooldown_until,
                         now + _safe_positive_int(settings.relay_cooldown_seconds, 20),
@@ -196,7 +208,9 @@ async def wecom_verify(
     nonce: str = "",
     echostr: str = "",
 ) -> Response:
-    if not verify_wecom_signature(settings.wecom_verify_token, msg_signature, timestamp, nonce):
+    if not verify_wecom_signature(
+        settings.wecom_verify_token, msg_signature, timestamp, nonce
+    ):
         raise HTTPException(status_code=403, detail="invalid signature")
     return Response(content=echostr, media_type="text/plain")
 
@@ -212,7 +226,9 @@ async def wecom_callback(request: Request) -> dict[str, Any]:
     timestamp = query.get("timestamp", "")
     nonce = query.get("nonce", "")
 
-    if not verify_wecom_signature(settings.wecom_verify_token, msg_signature, timestamp, nonce):
+    if not verify_wecom_signature(
+        settings.wecom_verify_token, msg_signature, timestamp, nonce
+    ):
         raise HTTPException(status_code=403, detail="invalid signature")
 
     payload = {
@@ -228,14 +244,18 @@ async def wecom_callback(request: Request) -> dict[str, Any]:
         },
     }
 
-    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    body = json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+        "utf-8"
+    )
     ts = str(int(time.time()))
     forward_nonce = uuid.uuid4().hex
 
     if nonce_cache.seen(forward_nonce):
         raise HTTPException(status_code=409, detail="duplicate nonce")
 
-    signature = build_bridge_signature(settings.bridge_hmac_secret, ts, forward_nonce, body)
+    signature = build_bridge_signature(
+        settings.bridge_hmac_secret, ts, forward_nonce, body
+    )
     forward_headers = {
         "Content-Type": "application/json",
         "X-Bridge-Source": settings.bridge_source,
@@ -253,8 +273,14 @@ async def wecom_callback(request: Request) -> dict[str, Any]:
     try:
         for attempt in range(retries):
             try:
-                async with httpx.AsyncClient(timeout=settings.worker_timeout_seconds) as client:
-                    resp = await client.post(settings.worker_ingest_url, content=body, headers=forward_headers)
+                async with httpx.AsyncClient(
+                    timeout=settings.worker_timeout_seconds
+                ) as client:
+                    resp = await client.post(
+                        settings.worker_ingest_url,
+                        content=body,
+                        headers=forward_headers,
+                    )
                     if 200 <= resp.status_code < 300:
                         return {"success": True, "trace_id": payload["trace_id"]}
                     upstream_error = True
@@ -311,7 +337,9 @@ def _append_forwarded_for(existing: str, client_host: str) -> str:
     return existing or client_host
 
 
-def _inject_forward_headers(request: Request, headers: dict[str, str]) -> dict[str, str]:
+def _inject_forward_headers(
+    request: Request, headers: dict[str, str]
+) -> dict[str, str]:
     forwarded_headers = dict(headers)
     client_host = request.client.host if request.client else ""
     forwarded_headers["X-Forwarded-For"] = _append_forwarded_for(
@@ -321,13 +349,16 @@ def _inject_forward_headers(request: Request, headers: dict[str, str]) -> dict[s
     host_header = request.headers.get("host", "")
     if host_header:
         forwarded_headers["X-Forwarded-Host"] = host_header
-    forwarded_headers["X-Request-Id"] = request.headers.get("x-request-id", uuid.uuid4().hex)
+    forwarded_headers["X-Request-Id"] = request.headers.get(
+        "x-request-id", uuid.uuid4().hex
+    )
     return forwarded_headers
 
 
 def _filter_response_headers(headers: Any) -> dict[str, str]:
     blocked = {
         "connection",
+        "content-encoding",
         "content-length",
         "keep-alive",
         "proxy-authenticate",
@@ -355,9 +386,13 @@ async def _relay_api_request(request: Request, full_path: str) -> Response:
         target_url = _build_target_url(settings.worker_api_base_url, full_path, query)
         method = request.method.upper()
         body = await request.body()
-        headers = _inject_forward_headers(request, _filter_request_headers(request.headers))
+        headers = _inject_forward_headers(
+            request, _filter_request_headers(request.headers)
+        )
 
-        async with httpx.AsyncClient(timeout=settings.relay_api_timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=settings.relay_api_timeout_seconds
+        ) as client:
             upstream = await client.request(
                 method=method,
                 url=target_url,
@@ -384,7 +419,10 @@ async def _relay_api_request(request: Request, full_path: str) -> Response:
         relay_stats.finish_request(timeout=timeout_error, upstream_error=upstream_error)
 
 
-@app.api_route("/api/{full_path:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"])
+@app.api_route(
+    "/api/{full_path:path}",
+    methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD"],
+)
 async def relay_api(full_path: str, request: Request) -> Response:
     return await _relay_api_request(request, full_path)
 
@@ -393,7 +431,9 @@ async def relay_api(full_path: str, request: Request) -> Response:
 @app.post("/wecom/proxy/")
 async def wecom_proxy(request: Request) -> Response:
     await reject_when_overloaded()
-    token_required = bool(settings.bridge_proxy_token and settings.bridge_proxy_token != "replace-me")
+    token_required = bool(
+        settings.bridge_proxy_token and settings.bridge_proxy_token != "replace-me"
+    )
     if token_required:
         token = request.headers.get("x-bridge-token", "")
         if token != settings.bridge_proxy_token:
@@ -403,7 +443,9 @@ async def wecom_proxy(request: Request) -> Response:
     target_url = str(body.get("url") or "")
     method = str(body.get("method") or "GET").upper()
     request_body = body.get("body")
-    request_headers = body.get("headers") if isinstance(body.get("headers"), dict) else {}
+    request_headers = (
+        body.get("headers") if isinstance(body.get("headers"), dict) else {}
+    )
 
     if not target_url:
         raise HTTPException(status_code=400, detail="missing url")
@@ -418,7 +460,9 @@ async def wecom_proxy(request: Request) -> Response:
 
     outbound_headers = {"User-Agent": "HYBC-Azure-Bridge/0.1"}
     if isinstance(request_headers, dict):
-        content_type = request_headers.get("content-type") or request_headers.get("Content-Type")
+        content_type = request_headers.get("content-type") or request_headers.get(
+            "Content-Type"
+        )
         if isinstance(content_type, str) and content_type:
             outbound_headers["Content-Type"] = content_type
 

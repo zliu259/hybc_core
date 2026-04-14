@@ -1,0 +1,33 @@
+<view class="page">
+  <hy-panel-card title="🧾 收款详情" subtitle="查询详情（只读）">
+    <view wx:if="{{!detail && !loading}}" class="empty">暂无详情数据</view>
+
+    <view wx:if="{{detail}}" class="detail-card">
+      <view class="row-between">
+        <view class="title">{{detail.receiptNo}}</view>
+        <hy-status-chip text="{{detail.statusText}}" theme="{{detail.statusTheme}}" variant="light" />
+      </view>
+      <view class="item">申请人：{{detail.applicant}}</view>
+      <view class="item">所属项目：{{detail.projectName}}</view>
+      <view class="item">收款日期：{{detail.receivedDate}}</view>
+      <view class="item amount">收款金额：¥{{detail.amountText}}</view>
+      <view class="item">收款账户：{{detail.paymentAccount}}</view>
+      <view class="item">关联合同：{{detail.contractNo}}</view>
+      <view class="item">对方单位：{{detail.counterparty}}</view>
+      <view class="item">关联发票号：{{detail.invoiceNo}}</view>
+      <view class="item">备注：{{detail.remark}}</view>
+      <view class="item">创建时间：{{detail.createdAt}}</view>
+      <view class="item">更新时间：{{detail.updatedAt}}</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="section-title">退款记录（{{detail.refunds.length}}）</view>
+    <view wx:if="{{detail && !detail.refunds.length}}" class="empty">暂无退款记录</view>
+    <view wx:for="{{detail.refunds}}" wx:key="id" class="sub-card">
+      <view class="item">退款单号：{{item.refund_no}}</view>
+      <view class="item">退款模式：{{item.refund_mode}}</view>
+      <view class="item">金额：¥{{item.amount}}</view>
+      <view class="item">状态：{{item.status_text}}</view>
+      <view class="item">申请人：{{item.applicant_text}}</view>
+    </view>
+  </hy-panel-card>
+</view>

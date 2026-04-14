@@ -11,6 +11,10 @@ const canLaunchPayment = (roles) => {
   );
 };
 
+const canAccessQuery = (roles) => {
+  return roles.includes("super_admin") || roles.includes("finance") || roles.includes("manager");
+};
+
 const DEFAULT_ENTRIES = [
   { title: "🏗️ 项目中心", desc: "进入项目列表页", path: "/pages/project-list/index" },
   { title: "🚜 设备查验", desc: "扫码看设备状态", path: "/pages/asset/index" },
@@ -28,6 +32,7 @@ const DEFAULT_ENTRIES = [
   },
   { title: "💰 我的报销提交", desc: "发起报销并跟踪进度", path: "/pages/reimbursement-list/index" },
   { title: "✅ 待办审批", desc: "进入审批中心查看详情", path: "/pages/approval/index" },
+  { title: "🔎 查询", desc: "合同/付款/收款统一查询", path: "/pages/query/index" },
   { title: "📈 进度看板", desc: "查看进度预警", path: "/pages/progress/index" },
   { title: "🔔 消息通知", desc: "查看催办提醒", path: "/pages/notice/index" }
 ];
@@ -54,6 +59,7 @@ Page({
       const profile = getUserProfile() || {};
       const roles = Array.isArray(profile.roles) ? profile.roles : [];
       const paymentAllowed = canLaunchPayment(roles);
+      const queryAllowed = canAccessQuery(roles);
       const pending = await request({
         method: "GET",
         path: "/api/v1/approval/pending?page=1&pageSize=20"
@@ -64,7 +70,9 @@ Page({
         roles.includes("manager") ||
         roles.includes("site_manager");
       const baseEntries = DEFAULT_ENTRIES.filter(
-        item => paymentAllowed || item.path !== "/pages/payment-apply/index"
+        item =>
+          (paymentAllowed || item.path !== "/pages/payment-apply/index") &&
+          (queryAllowed || item.path !== "/pages/query/index")
       );
       const entries = showCreateProject
         ? baseEntries.concat([

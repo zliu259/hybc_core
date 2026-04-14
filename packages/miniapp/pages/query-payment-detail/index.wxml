@@ -1,0 +1,50 @@
+<view class="page">
+  <hy-panel-card title="💸 付款详情" subtitle="查询详情（只读）">
+    <view wx:if="{{!detail && !loading}}" class="empty">暂无详情数据</view>
+
+    <view wx:if="{{detail}}" class="detail-card">
+      <view class="row-between">
+        <view class="title">{{detail.serialNo}}</view>
+        <hy-status-chip text="{{detail.statusText}}" theme="{{detail.statusTheme}}" variant="light" />
+      </view>
+      <view class="item">申请人：{{detail.applicant}}</view>
+      <view class="item">所属项目：{{detail.projectName}}</view>
+      <view class="item">付款日期：{{detail.expectDate}}</view>
+      <view class="item amount">付款金额：¥{{detail.amountText}}</view>
+      <view class="item">大写金额：{{detail.amountCn}}</view>
+      <view class="item">付款类别：{{detail.category}}</view>
+      <view class="item">付款方式：{{detail.paymentMethod}}</view>
+      <view class="item">付款事由：{{detail.content}}</view>
+      <view class="item">付款账户：{{detail.paymentAccount}}</view>
+      <view class="item">关联合同：{{detail.contractNo}}</view>
+      <view class="item">收款方：{{detail.payeeName}}</view>
+      <view class="item">收款银行：{{detail.payeeBank}}</view>
+      <view class="item">收款账号：{{detail.payeeAccount}}</view>
+      <view class="item">备注：{{detail.remark}}</view>
+      <view class="item">创建时间：{{detail.createdAt}}</view>
+      <view class="item">更新时间：{{detail.updatedAt}}</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="section-title">附件（{{detail.attachments.length}}）</view>
+    <view wx:if="{{detail && !detail.attachments.length}}" class="empty">暂无附件</view>
+    <view wx:for="{{detail.attachments}}" wx:key="file_key" class="sub-card" data-key="{{item.file_key}}" data-url="{{item.file_url}}" data-name="{{item.file_name}}" bindtap="openAttachment">
+      <view class="item">{{item.file_name}}</view>
+      <view class="tap-tip">点击查看附件</view>
+    </view>
+
+    <view wx:if="{{detail}}" class="section-title">审批记录（{{approvalRecords.length}}）</view>
+    <view wx:if="{{detail && !approvalRecords.length}}" class="empty">暂无审批记录</view>
+    <view wx:for="{{approvalRecords}}" wx:key="id" class="sub-card" bindtap="openApprovalDetail">
+      <view class="item">审批人：{{item.assignee}}</view>
+      <view class="item">任务状态：{{item.statusText}}</view>
+      <view class="item">审批动作：{{item.actionText}}</view>
+      <view class="item">处理时间：{{item.actedAt}}</view>
+      <view class="item">审批意见：{{item.comment}}</view>
+      <view class="tap-tip">点击查看审批详情</view>
+    </view>
+
+    <view wx:if="{{detail && detail.approvalInstanceId}}" class="action-row">
+      <t-button variant="outline" bindtap="openApprovalDetail">查看审批详情</t-button>
+    </view>
+  </hy-panel-card>
+</view>

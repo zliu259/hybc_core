@@ -54,6 +54,7 @@ defineOptions({ name: "ApprovalDetail" });
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStoreHook();
+const pendingApprovalRoute: RouteLocationRaw = { path: "/approval/index" };
 const loading = ref(false);
 const detail = ref<ApprovalDetailResponse | null>(null);
 const selectedRound = ref(1);
@@ -1041,6 +1042,20 @@ const loadDetail = async () => {
   }
 };
 
+const sleep = (ms: number) =>
+  new Promise<void>(resolve => {
+    setTimeout(resolve, ms);
+  });
+
+const notifySuccessAndGoPending = async (successText: string) => {
+  message(`${successText}，正在返回待我审批`, {
+    type: "success",
+    duration: 800
+  });
+  await sleep(800);
+  await router.push(pendingApprovalRoute);
+};
+
 const handleApprove = async () => {
   if (!commentInput.value.trim()) {
     message("请输入审批意见", { type: "warning" });
@@ -1050,9 +1065,8 @@ const handleApprove = async () => {
   try {
     await syncPayoutSelection();
     await approveApproval(instanceId.value, { comment: commentInput.value });
-    message("审批通过", { type: "success" });
     commentInput.value = "";
-    await loadDetail();
+    await notifySuccessAndGoPending("审批通过");
   } catch {
     message("操作失败", { type: "error" });
   } finally {
@@ -1068,9 +1082,8 @@ const handleReject = async () => {
   actionLoading.value = true;
   try {
     await rejectApproval(instanceId.value, { comment: commentInput.value });
-    message("已驳回", { type: "success" });
     commentInput.value = "";
-    await loadDetail();
+    await notifySuccessAndGoPending("审批已驳回");
   } catch {
     message("操作失败", { type: "error" });
   } finally {
@@ -1094,9 +1107,8 @@ const handleReturn = async () => {
         returnType.value === "to" ? returnTargetNodeKey.value : undefined,
       comment: returnComment.value || undefined
     });
-    message("已退回", { type: "success" });
     returnDialogVisible.value = false;
-    await loadDetail();
+    await notifySuccessAndGoPending("审批已退回");
   } catch {
     message("操作失败", { type: "error" });
   } finally {
@@ -1129,9 +1141,8 @@ const handleTransfer = async () => {
       to_userid: transferToUserid.value,
       reason: transferReason.value
     });
-    message("已转办", { type: "success" });
     transferDialogVisible.value = false;
-    await loadDetail();
+    await notifySuccessAndGoPending("审批已转办");
   } catch {
     message("操作失败", { type: "error" });
   } finally {
@@ -1212,7 +1223,7 @@ const handleResubmit = async () => {
   }
 };
 
-const goBack = () => router.push("/approval/index");
+const goBack = () => router.push(pendingApprovalRoute);
 
 onMounted(async () => {
   await Promise.all([loadWecomUsers(), loadMetaOptions()]);
