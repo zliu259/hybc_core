@@ -10,7 +10,8 @@ const statusText = (status) => {
     pending_approval: "待审批",
     approved: "已审批",
     paid: "已打款",
-    rejected: "已拒绝"
+    rejected: "已拒绝",
+    cancelled: "已废止"
   };
   return map[status] || "未知";
 };
@@ -49,7 +50,8 @@ Page({
       { label: "待审批", value: "pending_approval" },
       { label: "已审批", value: "approved" },
       { label: "已打款", value: "paid" },
-      { label: "已拒绝", value: "rejected" }
+      { label: "已拒绝", value: "rejected" },
+      { label: "已废止", value: "cancelled" }
     ],
     statusIndex: 0,
     summary: {
@@ -93,6 +95,7 @@ Page({
         "creator_id=me"
       ];
       if (status) query.push(`status=${encodeURIComponent(status)}`);
+      if (!status) query.push("exclude_cancelled=true");
       if (keyword) query.push(`keyword=${encodeURIComponent(keyword)}`);
       const res = await request({
         method: "GET",

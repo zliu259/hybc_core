@@ -79,6 +79,7 @@ const reimbursementStatusLabel = (status: string) => {
   if (status === "approved") return "已审批";
   if (status === "paid") return "已打款";
   if (status === "rejected") return "已拒绝";
+  if (status === "cancelled") return "已废止";
   return status;
 };
 
@@ -118,7 +119,12 @@ const loadData = async () => {
     ] =
       await Promise.all([
       listPaymentRequests({ mine: true, page: 1, pageSize: 8 }),
-      listReimbursementEnvelopes({ creator_id: "me", page: 1, pageSize: 8 }),
+      listReimbursementEnvelopes({
+        creator_id: "me",
+        exclude_cancelled: true,
+        page: 1,
+        pageSize: 8
+      }),
       listFuelQuotaApplications({ mine: true }),
       getInitiatedApprovalSummary({ initiator: "me" }),
       listApprovalInstances({
