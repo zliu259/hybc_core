@@ -2047,7 +2047,7 @@ onMounted(async () => {
                     >
                     <div
                       v-if="task.comment && task.assignee_userid !== 'AI_GATE'"
-                      style="margin-top: 2px; color: #888; font-style: italic"
+                      style="margin-top: 2px; color: #f56c6c; font-style: italic"
                     >
                       {{ task.comment }}
                     </div>
