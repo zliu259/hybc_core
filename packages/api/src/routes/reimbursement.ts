@@ -768,6 +768,7 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
     .bind(envelopeId)
     .first<ReimbursementEnvelope>();
   if (!envelope) return;
+  if (envelope.status === "cancelled") return;
 
   let hasReviewRows = false;
   let latestReviewRound = 0;
@@ -2639,6 +2640,16 @@ reimbursementRoutes.post(
           400
         );
       }
+    }
+
+    if (envelope.status === "cancelled") {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Cancelled envelope cannot be prechecked" }
+        },
+        400
+      );
     }
 
     const nextStatus = body.action === "approved" ? "received" : "submitted";
