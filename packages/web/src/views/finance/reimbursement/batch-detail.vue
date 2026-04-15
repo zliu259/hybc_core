@@ -2,26 +2,61 @@
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
-import { precheckStatusLabel, statusLabel } from "@/utils/enum-labels";
+import { aiAuditStatusLabel, precheckStatusLabel, statusLabel } from "@/utils/enum-labels";
 import {
   getBatchAuditReport,
   getReimbursementBatch,
   submitBatchApproval,
   triggerBatchAudit,
+  updateBatchPayoutPlan,
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
+import { useUserStoreHook } from "@/store/modules/user";
+import { listProjects, type Project } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import {
+  listEntities,
+  listEntityBankAccounts,
+  type Entity,
+  type EntityBankAccount
+} from "@/api/entity";
+import { resolveUploadUrl } from "@/api/upload";
+import { formatBeijingDateTime } from "@/utils/datetime";
 
 defineOptions({ name: "ReimbursementBatchDetail" });
 
 const route = useRoute();
 const router = useRouter();
+const userStore = useUserStoreHook();
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+
 const batchId = computed(() => Number(route.params.id));
+const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
 
 const loading = ref(false);
 const actionLoading = ref(false);
+const savingPayout = ref(false);
 const detail = ref<ReimbursementBatchDetail | null>(null);
 const auditResult = ref<Record<string, unknown> | string | null>(null);
 const auditStatus = ref("none");
+const projects = ref<Project[]>([]);
+const entities = ref<Entity[]>([]);
+const bankAccounts = ref<EntityBankAccount[]>([]);
+
+const payoutEdit = ref({
+  payment_method: "",
+  payment_entity_id: undefined as number | undefined,
+  payment_entity_bank_account_id: undefined as number | undefined,
+  payment_account: ""
+});
+
+const paymentMethodOptions = [
+  { label: "可后续补充", value: "" },
+  { label: "对公转账", value: "transfer" },
+  { label: "现金", value: "cash" },
+  { label: "票据", value: "bill" },
+  { label: "其他", value: "other" }
+];
 
 const paymentMethodLabelMap: Record<string, string> = {
   transfer: "对公转账",
@@ -35,9 +70,224 @@ const paymentMethodLabelMap: Record<string, string> = {
   其他: "其他"
 };
 
+const invoiceRiskTagMap: Record<string, "success" | "warning" | "danger" | "info"> = {
+  low: "success",
+  medium: "warning",
+  high: "danger"
+};
+
+const projectNameMap = computed(() => {
+  const map = new Map<number, string>();
+  for (const item of projects.value) {
+    map.set(item.id, item.project_name);
+  }
+  return map;
+});
+
+const userNameMap = computed(() => {
+  const map = new Map<string, string>();
+  for (const item of wecomUsers.value) {
+    map.set(item.userid, item.name || item.userid);
+  }
+  return map;
+});
+
+const entityNameMap = computed(() => {
+  const map = new Map<number, string>();
+  for (const item of entities.value) {
+    map.set(item.id, item.entity_name);
+  }
+  return map;
+});
+
+const activeEntities = computed(() =>
+  entities.value.filter(item => item.status === "active")
+);
+
+const activeBankAccounts = computed(() =>
+  bankAccounts.value.filter(item => item.status === "active")
+);
+
+const fileUrl = (fileKey: string) =>
+  resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
+
+const toProjectLabel = (projectId: number | null | undefined) => {
+  if (typeof projectId !== "number") return "-";
+  return projectNameMap.value.get(projectId) ?? String(projectId);
+};
+
+const toUserLabel = (userid: string | null | undefined) => {
+  if (!userid) return "-";
+  return userNameMap.value.get(userid) ?? userid;
+};
+
+const toEntityLabel = (entityId: number | null | undefined) => {
+  if (typeof entityId !== "number") return "-";
+  return entityNameMap.value.get(entityId) ?? String(entityId);
+};
+
 const toPaymentMethodLabel = (value: string | null | undefined) => {
   if (!value) return "-";
   return paymentMethodLabelMap[value] ?? value;
+};
+
+const toInvoiceRiskLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  if (value === "high") return "高风险";
+  if (value === "medium") return "中风险";
+  if (value === "low") return "低风险";
+  return value;
+};
+
+const normalizePaymentMethodValue = (value: string | null | undefined) => {
+  if (!value) return "";
+  if (value === "transfer" || value === "bank_transfer" || value === "对公转账") return "transfer";
+  if (value === "cash" || value === "现金") return "cash";
+  if (value === "bill" || value === "票据") return "bill";
+  if (value === "other" || value === "其他") return "other";
+  return "";
+};
+
+const toAccountLabel = (item: EntityBankAccount) => {
+  const branch = item.bank_branch_no?.trim();
+  return `${item.bank_name}${branch ? `-${branch}` : ""} / ${item.account_no}`;
+};
+
+const parsePaymentVouchers = (
+  paymentVouchers: ReimbursementBatchDetail["payment_vouchers"],
+  paymentVouchersJson: string | null | undefined
+) => {
+  if (Array.isArray(paymentVouchers)) {
+    return paymentVouchers.filter(
+      item => Boolean(item && typeof item.file_key === "string" && item.file_key.trim())
+    );
+  }
+  if (!paymentVouchersJson) return [];
+  try {
+    const parsed = JSON.parse(paymentVouchersJson) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    const rows = parsed
+      .map(item => {
+        if (!item || typeof item !== "object") return null;
+        const row = item as {
+          file_key?: string;
+          file_name?: string;
+          file_size?: number;
+        };
+        if (!row.file_key || !row.file_key.trim()) return null;
+        return {
+          file_key: row.file_key.trim(),
+          file_name: row.file_name,
+          file_size: row.file_size
+        };
+      })
+      .filter(item => item !== null);
+    return rows as Array<{ file_key: string; file_name?: string; file_size?: number }>;
+  } catch {
+    return [];
+  }
+};
+
+const voucherRows = computed(() =>
+  parsePaymentVouchers(detail.value?.payment_vouchers, detail.value?.payment_vouchers_json)
+);
+
+const loadBankAccounts = async (entityId: number | undefined, preferredAccountId?: number) => {
+  if (!entityId) {
+    bankAccounts.value = [];
+    payoutEdit.value.payment_entity_bank_account_id = undefined;
+    return;
+  }
+  const result = await listEntityBankAccounts(entityId);
+  bankAccounts.value = result.data;
+  if (preferredAccountId) {
+    payoutEdit.value.payment_entity_bank_account_id = preferredAccountId;
+  }
+};
+
+const syncEditFormFromDetail = async () => {
+  if (!detail.value) return;
+  payoutEdit.value.payment_method = normalizePaymentMethodValue(detail.value.payment_method);
+  payoutEdit.value.payment_entity_id = detail.value.payment_entity_id ?? undefined;
+  payoutEdit.value.payment_entity_bank_account_id =
+    detail.value.payment_entity_bank_account_id ?? undefined;
+  payoutEdit.value.payment_account = detail.value.payment_account ?? "";
+
+  await loadBankAccounts(
+    payoutEdit.value.payment_entity_id,
+    payoutEdit.value.payment_entity_bank_account_id
+  );
+};
+
+const onEditEntityChange = async () => {
+  payoutEdit.value.payment_entity_bank_account_id = undefined;
+  payoutEdit.value.payment_account = "";
+  await loadBankAccounts(payoutEdit.value.payment_entity_id);
+};
+
+const onEditAccountChange = () => {
+  const accountId = payoutEdit.value.payment_entity_bank_account_id;
+  if (!accountId) {
+    payoutEdit.value.payment_account = "";
+    return;
+  }
+  const target = activeBankAccounts.value.find(item => item.id === accountId);
+  payoutEdit.value.payment_account = target ? toAccountLabel(target) : "";
+};
+
+const saveSecondaryEdit = async () => {
+  if (!detail.value) return;
+  if (!isSuperAdmin.value) {
+    message("仅超级管理员可执行二次编辑", { type: "warning" });
+    return;
+  }
+
+  const payload: {
+    payment_method?: string;
+    payment_entity_id?: number;
+    payment_entity_bank_account_id?: number;
+    payment_account?: string;
+  } = {};
+
+  if (payoutEdit.value.payment_method) {
+    payload.payment_method = payoutEdit.value.payment_method;
+  }
+  if (payoutEdit.value.payment_entity_id) {
+    payload.payment_entity_id = payoutEdit.value.payment_entity_id;
+  }
+  if (payoutEdit.value.payment_entity_bank_account_id) {
+    payload.payment_entity_bank_account_id =
+      payoutEdit.value.payment_entity_bank_account_id;
+  }
+  if (payoutEdit.value.payment_account.trim()) {
+    payload.payment_account = payoutEdit.value.payment_account.trim();
+  }
+
+  if (Object.keys(payload).length === 0) {
+    message("请至少填写一个可更新字段", { type: "warning" });
+    return;
+  }
+
+  savingPayout.value = true;
+  try {
+    await updateBatchPayoutPlan(detail.value.id, payload);
+    message("二次编辑保存成功", { type: "success" });
+    await loadDetail();
+  } finally {
+    savingPayout.value = false;
+  }
+};
+
+const loadMeta = async () => {
+  await Promise.all([
+    listProjects({ page: 1, pageSize: 500 }).then(result => {
+      projects.value = result.data;
+    }),
+    listEntities().then(result => {
+      entities.value = result.data;
+    }),
+    loadWecomUsers()
+  ]);
 };
 
 const loadDetail = async () => {
@@ -49,6 +299,10 @@ const loadDetail = async () => {
     const report = await getBatchAuditReport(batchId.value);
     auditStatus.value = report.data.status;
     auditResult.value = report.data.result;
+
+    if (isSuperAdmin.value) {
+      await syncEditFormFromDetail();
+    }
   } finally {
     loading.value = false;
   }
@@ -89,56 +343,62 @@ const doMarkPaid = async () => {
   router.push(`/finance/reimbursement/payout?batch_id=${batchId.value}`);
 };
 
-onMounted(loadDetail);
+onMounted(async () => {
+  await loadMeta();
+  await loadDetail();
+});
 </script>
 
 <template>
   <el-card shadow="never" :loading="loading" style="background: #fffaf2">
     <template #header>
-      <div
-        style="
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        "
-      >
+      <div class="header-row">
         <span>批次详情 - {{ detail?.batch_no || "" }}</span>
-        <el-button @click="router.push('/finance/reimbursement/batch')"
-          >返回</el-button
-        >
+        <el-button @click="router.push('/finance/reimbursement/batch')">返回</el-button>
       </div>
     </template>
 
-    <el-descriptions v-if="detail" :column="2" border>
-      <el-descriptions-item label="批次号">{{
-        detail.batch_no
-      }}</el-descriptions-item>
-      <el-descriptions-item label="状态">{{
-        detail.status
-      }}</el-descriptions-item>
-      <el-descriptions-item label="项目ID">{{
-        detail.project_id
-      }}</el-descriptions-item>
-      <el-descriptions-item label="被报销人">{{
-        detail.applicant_userid
-      }}</el-descriptions-item>
-      <el-descriptions-item label="收款方式">{{
+    <el-descriptions v-if="detail" :column="3" border>
+      <el-descriptions-item label="批次号">{{ detail.batch_no }}</el-descriptions-item>
+      <el-descriptions-item label="业务状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
+      <el-descriptions-item label="智能审核状态">{{ aiAuditStatusLabel(detail.ai_audit_status) }}</el-descriptions-item>
+
+      <el-descriptions-item label="所属项目">{{ toProjectLabel(detail.project_id) }}</el-descriptions-item>
+      <el-descriptions-item label="被报销人">{{ toUserLabel(detail.applicant_userid) }}</el-descriptions-item>
+      <el-descriptions-item label="单据数">{{ detail.item_count }}</el-descriptions-item>
+
+      <el-descriptions-item label="总金额">{{ detail.total_amount }}</el-descriptions-item>
+      <el-descriptions-item label="收款/付款方式">{{
         toPaymentMethodLabel(detail.payment_method)
       }}</el-descriptions-item>
-      <el-descriptions-item label="付款账户">{{
-        detail.payment_account || "-"
+      <el-descriptions-item label="付款账户">{{ detail.payment_account || "-" }}</el-descriptions-item>
+
+      <el-descriptions-item label="出款实体">{{
+        detail.payment_entity
+          ? `${detail.payment_entity.entity_name} (${detail.payment_entity.entity_code})`
+          : toEntityLabel(detail.payment_entity_id)
       }}</el-descriptions-item>
-      <el-descriptions-item label="信封数">{{
-        detail.item_count
+      <el-descriptions-item label="出款账户">{{
+        detail.payment_bank_account
+          ? `${detail.payment_bank_account.bank_name}${
+              detail.payment_bank_account.bank_branch_no
+                ? `-${detail.payment_bank_account.bank_branch_no}`
+                : ""
+            } / ${detail.payment_bank_account.account_no}`
+          : "-"
       }}</el-descriptions-item>
-      <el-descriptions-item label="总金额">{{
-        detail.total_amount
+      <el-descriptions-item label="支付流水号">{{ detail.payment_reference || "-" }}</el-descriptions-item>
+
+      <el-descriptions-item label="打款日期">{{ detail.paid_at || "-" }}</el-descriptions-item>
+      <el-descriptions-item label="创建时间">{{
+        formatBeijingDateTime(detail.created_at)
       }}</el-descriptions-item>
-      <el-descriptions-item label="智能审核状态">{{
-        detail.ai_audit_status
+      <el-descriptions-item label="更新时间">{{
+        formatBeijingDateTime(detail.updated_at)
       }}</el-descriptions-item>
+
       <el-descriptions-item label="审批实例">{{
-        detail.approval_instance_id || "-"
+        detail.approval_instance?.instance_no || detail.approval_instance_id || "-"
       }}</el-descriptions-item>
       <el-descriptions-item label="审批状态">{{
         detail.approval_instance
@@ -150,66 +410,198 @@ onMounted(loadDetail);
       }}</el-descriptions-item>
     </el-descriptions>
 
+    <el-card
+      v-if="isSuperAdmin && detail"
+      shadow="never"
+      style="margin-top: 16px; background: #f8fafc"
+      header="超级管理员二次编辑（批次详情）"
+    >
+      <el-form inline>
+        <el-form-item label="付款方式">
+          <el-select
+            v-model="payoutEdit.payment_method"
+            style="min-width: 160px"
+            placeholder="选择付款方式"
+          >
+            <el-option
+              v-for="item in paymentMethodOptions"
+              :key="item.value || 'empty'"
+              :label="item.label"
+              :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="付款实体">
+          <el-select
+            v-model="payoutEdit.payment_entity_id"
+            filterable
+            clearable
+            style="min-width: 240px"
+            placeholder="选择付款实体"
+            @change="onEditEntityChange"
+          >
+            <el-option
+              v-for="item in activeEntities"
+              :key="item.id"
+              :label="item.entity_name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="付款账户">
+          <el-select
+            v-model="payoutEdit.payment_entity_bank_account_id"
+            filterable
+            clearable
+            style="min-width: 320px"
+            placeholder="选择付款账户"
+            @change="onEditAccountChange"
+          >
+            <el-option
+              v-for="item in activeBankAccounts"
+              :key="item.id"
+              :label="toAccountLabel(item)"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="付款账户显示">
+          <el-input
+            v-model="payoutEdit.payment_account"
+            style="min-width: 320px"
+            placeholder="可手工修正展示文本"
+          />
+        </el-form-item>
+
+        <el-form-item>
+          <el-button :loading="savingPayout" type="primary" @click="saveSecondaryEdit">
+            保存二次编辑
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </el-card>
+
     <div style="margin-top: 12px">
-        <el-space>
-          <el-button type="primary" :loading="actionLoading" @click="runAudit"
-          >触发智能审核</el-button
-        >
-        <el-button :loading="actionLoading" @click="refreshAudit"
-          >刷新审核状态</el-button
-        >
-        <el-button
-          type="success"
-          :loading="actionLoading"
-          @click="submitApproval"
-          >提交集中审批</el-button
-        >
-        <el-button type="warning" :loading="actionLoading" @click="doMarkPaid"
-          >去集中打款登记</el-button
-        >
+      <el-space>
+        <el-button type="primary" :loading="actionLoading" @click="runAudit">
+          触发智能审核
+        </el-button>
+        <el-button :loading="actionLoading" @click="refreshAudit">刷新审核状态</el-button>
+        <el-button type="success" :loading="actionLoading" @click="submitApproval">
+          提交集中审批
+        </el-button>
+        <el-button type="warning" :loading="actionLoading" @click="doMarkPaid">
+          去集中打款登记
+        </el-button>
         <el-button
           v-if="detail?.approval_instance_id"
-          @click="
-            router.push(`/approval/detail/${detail.approval_instance_id}`)
-          "
+          @click="router.push(`/approval/detail/${detail.approval_instance_id}`)"
         >
           查看审批详情
         </el-button>
       </el-space>
     </div>
 
+    <el-card shadow="never" style="margin-top: 16px" header="支付凭证">
+      <el-table v-if="voucherRows.length > 0" :data="voucherRows" size="small" border>
+        <el-table-column prop="file_name" label="文件名" min-width="240">
+          <template #default="scope">
+            {{ scope.row.file_name || scope.row.file_key }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="file_size" label="大小" width="120" />
+        <el-table-column label="操作" width="180">
+          <template #default="scope">
+            <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+              下载
+            </el-link>
+            <el-link
+              style="margin-left: 12px"
+              :href="fileUrl(scope.row.file_key)"
+              target="_blank"
+              type="primary"
+            >
+              预览
+            </el-link>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="暂无支付凭证" />
+    </el-card>
+
+    <el-card shadow="never" style="margin-top: 16px" header="查重风险汇总">
+      <el-table :data="detail?.duplicate_summary || []" size="small" border>
+        <el-table-column label="风险级别" width="140">
+          <template #default="scope">
+            <el-tag :type="invoiceRiskTagMap[scope.row.risk_level] || 'info'" size="small">
+              {{ toInvoiceRiskLabel(scope.row.risk_level) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="cnt" label="数量" width="120" />
+      </el-table>
+    </el-card>
+
     <el-card shadow="never" style="margin-top: 16px" header="智能审核报告">
-      <div style="margin-bottom: 8px">状态：{{ auditStatus }}</div>
+      <div style="margin-bottom: 8px">状态：{{ aiAuditStatusLabel(auditStatus) }}</div>
       <pre style="white-space: pre-wrap; word-break: break-word">{{
         auditResult || "-"
       }}</pre>
     </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px" header="批次信封明细">
-      <el-table :data="detail?.items || []">
+    <el-card shadow="never" style="margin-top: 16px" header="批次信封明细（全量）">
+      <el-table :data="detail?.items || []" border>
         <el-table-column prop="id" label="信封ID" width="90" />
-        <el-table-column prop="envelope_no" label="信封编号" width="160" />
-        <el-table-column prop="invoice_no" label="发票号" width="180" />
+        <el-table-column prop="envelope_no" label="信封编号" width="170" />
+        <el-table-column prop="invoice_no" label="发票号" width="170" />
+        <el-table-column prop="expense_date" label="费用日期" width="120" />
         <el-table-column prop="amount" label="金额" width="120" />
-        <el-table-column label="复核" width="120">
-          <template #default="scope">{{
-            precheckStatusLabel(scope.row.precheck_status)
-          }}</template>
+        <el-table-column prop="category" label="类别" width="120" />
+        <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
+        <el-table-column label="复核状态" width="120">
+          <template #default="scope">{{ precheckStatusLabel(scope.row.precheck_status) }}</template>
         </el-table-column>
-        <el-table-column label="状态" width="120">
-          <template #default="scope">{{
-            statusLabel(scope.row.status)
-          }}</template>
+        <el-table-column label="信封状态" width="120">
+          <template #default="scope">{{ statusLabel(scope.row.status) }}</template>
+        </el-table-column>
+        <el-table-column label="单项AI结论" min-width="220" show-overflow-tooltip>
+          <template #default="scope">{{ scope.row.ai_reasonability_summary || "-" }}</template>
+        </el-table-column>
+        <el-table-column label="票据风险" width="120">
+          <template #default="scope">
+            <el-tag
+              v-if="scope.row.invoice_review_highest_risk"
+              :type="invoiceRiskTagMap[scope.row.invoice_review_highest_risk] || 'info'"
+              size="small"
+            >
+              {{ toInvoiceRiskLabel(scope.row.invoice_review_highest_risk) }}
+            </el-tag>
+            <template v-else>-</template>
+          </template>
+        </el-table-column>
+        <el-table-column label="附件" min-width="220">
+          <template #default="scope">
+            <template v-if="Array.isArray(scope.row.attachments) && scope.row.attachments.length">
+              <div
+                v-for="attachment in scope.row.attachments"
+                :key="`${scope.row.id}-${attachment.id}`"
+                class="attachment-row"
+              >
+                <span class="attachment-name">{{ attachment.file_name || attachment.file_key }}</span>
+                <el-link :href="fileUrl(attachment.file_key)" target="_blank" type="primary">
+                  查看
+                </el-link>
+              </div>
+            </template>
+            <template v-else>-</template>
+          </template>
         </el-table-column>
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="scope">
-            <el-button
-              link
-              type="primary"
-              @click="
-                router.push(`/finance/reimbursement/detail/${scope.row.id}`)
-              "
-            >
+            <el-button link type="primary" @click="router.push(`/finance/reimbursement/detail/${scope.row.id}`)">
               详情
             </el-button>
           </template>
@@ -218,3 +610,26 @@ onMounted(loadDetail);
     </el-card>
   </el-card>
 </template>
+
+<style scoped>
+.header-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.attachment-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.attachment-name {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+</style>

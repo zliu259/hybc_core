@@ -13,6 +13,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
+import { canUpdateBatchPayoutPlan } from "./reimbursement-batch-payout-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import type { Env } from "../types/env";
 import { reimbursementChannels } from "../types/reimbursement";
@@ -1649,6 +1650,61 @@ reimbursementRoutes.get(
       .bind(id)
       .all<{ risk_level: string; cnt: number }>();
 
+    const paymentEntity = batch.payment_entity_id
+      ? await c.env.DB.prepare(
+          "SELECT id, entity_code, entity_name FROM entity WHERE id = ?"
+        )
+          .bind(batch.payment_entity_id)
+          .first<{ id: number; entity_code: string; entity_name: string }>()
+      : null;
+
+    const paymentBankAccount = batch.payment_entity_bank_account_id
+      ? await c.env.DB.prepare(
+          "SELECT id, entity_id, bank_name, bank_branch_no, account_no, account_name FROM entity_bank_account WHERE id = ?"
+        )
+          .bind(batch.payment_entity_bank_account_id)
+          .first<{
+            id: number;
+            entity_id: number;
+            bank_name: string;
+            bank_branch_no: string | null;
+            account_no: string;
+            account_name: string;
+          }>()
+      : null;
+
+    let paymentVouchers: ReimbursementPaymentVoucherInput[] = [];
+    if (batch.payment_vouchers_json) {
+      try {
+        const parsed = JSON.parse(batch.payment_vouchers_json) as unknown;
+        if (Array.isArray(parsed)) {
+          paymentVouchers = parsed
+            .map((item): ReimbursementPaymentVoucherInput | null => {
+              if (!item || typeof item !== "object") return null;
+              const row = item as {
+                file_key?: unknown;
+                file_name?: unknown;
+                file_size?: unknown;
+              };
+              if (typeof row.file_key !== "string" || !row.file_key.trim()) return null;
+              const normalized: ReimbursementPaymentVoucherInput = {
+                file_key: row.file_key.trim()
+              };
+              if (typeof row.file_name === "string" && row.file_name.trim()) {
+                normalized.file_name = row.file_name.trim();
+              }
+              if (typeof row.file_size === "number" && Number.isFinite(row.file_size)) {
+                normalized.file_size = row.file_size;
+              }
+              return normalized;
+            })
+            .filter((item): item is ReimbursementPaymentVoucherInput => item !== null);
+        }
+      } catch {
+        paymentVouchers = [];
+      }
+    }
+
     const approvalInstance = batch.approval_instance_id
       ? await c.env.DB.prepare(
           `SELECT ai.id, ai.instance_no, ai.status, ai.current_node_key, ai.current_round,
@@ -1680,7 +1736,10 @@ reimbursementRoutes.get(
         ...batch,
         items: enrichedItems,
         duplicate_summary: duplicateSummary.results ?? [],
-        approval_instance: approvalInstance
+        approval_instance: approvalInstance,
+        payment_entity: paymentEntity,
+        payment_bank_account: paymentBankAccount,
+        payment_vouchers: paymentVouchers
       }
     });
   }
@@ -2408,26 +2467,16 @@ reimbursementRoutes.put(
       return c.json({ success: false, error: { message: "Batch not found" } }, 404);
     }
 
-    if (!isSuperAdmin) {
-      if (batch.status === "draft") {
-        // allowed for office roles
-      } else if (batch.status === "pending_approval" && batch.approval_instance_id) {
-        const approval = await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
-          .bind(batch.approval_instance_id)
-          .first<{ status: string }>();
-        const approvalInProgress = approval
-          ? approval.status === "pending" || approval.status === "in_progress"
-          : false;
-        if (!approvalInProgress) {
-          return c.json(
-            {
-              success: false,
-              error: { message: "Batch payout plan can only be changed while approval is in progress" }
-            },
-            400
-          );
-        }
+    let approvalStatus: string | null = null;
+    let hasCurrentApproverTask = false;
+    if (!isSuperAdmin && batch.status === "pending_approval" && batch.approval_instance_id) {
+      const approval = await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+        .bind(batch.approval_instance_id)
+        .first<{ status: string }>();
+      approvalStatus = approval?.status ?? null;
 
+      const approvalInProgress = approvalStatus === "pending" || approvalStatus === "in_progress";
+      if (approvalInProgress) {
         const approverTask = await c.env.DB.prepare(
           `SELECT id FROM approval_task
              WHERE instance_id = ?
@@ -2437,29 +2486,25 @@ reimbursementRoutes.put(
         )
           .bind(batch.approval_instance_id, auth.sub)
           .first<{ id: number }>();
-
-        if (!approverTask) {
-          return c.json(
-            {
-              success: false,
-              error: {
-                message: "Only current approver can adjust payout plan during approval"
-              }
-            },
-            400
-          );
-        }
-      } else {
-        return c.json(
-          {
-            success: false,
-            error: {
-              message: "Batch payout plan can only be changed in draft or in-progress approval state"
-            }
-          },
-          400
-        );
+        hasCurrentApproverTask = Boolean(approverTask);
       }
+    }
+
+    const payoutAccess = canUpdateBatchPayoutPlan({
+      isSuperAdmin,
+      batchStatus: batch.status,
+      approvalInstanceId: batch.approval_instance_id,
+      approvalStatus,
+      hasCurrentApproverTask
+    });
+    if (!payoutAccess.allowed) {
+      return c.json(
+        {
+          success: false,
+          error: { message: payoutAccess.message }
+        },
+        400
+      );
     }
 
     const payoutPlan = await resolveReimbursementPayoutPlan(c.env, body, {

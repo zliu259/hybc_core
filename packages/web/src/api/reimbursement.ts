@@ -453,6 +453,24 @@ export type ReimbursementBatchDetail = ReimbursementBatch & {
     completed_at: string | null;
     current_node_name: string | null;
   } | null;
+  payment_entity?: {
+    id: number;
+    entity_code: string;
+    entity_name: string;
+  } | null;
+  payment_bank_account?: {
+    id: number;
+    entity_id: number;
+    bank_name: string;
+    bank_branch_no: string | null;
+    account_no: string;
+    account_name: string;
+  } | null;
+  payment_vouchers?: Array<{
+    file_key: string;
+    file_name?: string;
+    file_size?: number;
+  }>;
 };
 
 export const listReimbursementBatches = (params?: {
