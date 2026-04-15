@@ -106,6 +106,58 @@ const buildUrl = (path) => {
   return `${getBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
 };
 
+const isArrayBuffer = (value) => {
+  return typeof ArrayBuffer !== "undefined" && value instanceof ArrayBuffer;
+};
+
+const decodeArrayBufferToText = (buffer) => {
+  if (!isArrayBuffer(buffer)) return "";
+  try {
+    if (typeof TextDecoder === "function") {
+      return new TextDecoder("utf-8").decode(buffer);
+    }
+  } catch (_error) {
+    // fallback below
+  }
+  const bytes = new Uint8Array(buffer);
+  let ascii = "";
+  for (let i = 0; i < bytes.length; i += 1) {
+    ascii += String.fromCharCode(bytes[i]);
+  }
+  try {
+    return decodeURIComponent(escape(ascii));
+  } catch (_error) {
+    return ascii;
+  }
+};
+
+const parseResponseData = (data, header = {}) => {
+  if (!isArrayBuffer(data)) {
+    return data;
+  }
+
+  const decodedText = decodeArrayBufferToText(data).trim();
+  if (!decodedText) {
+    return {};
+  }
+
+  const contentType = String(getHeaderValueCaseInsensitive(header, "content-type") || "").toLowerCase();
+  const shouldTryJson =
+    contentType.includes("application/json") ||
+    decodedText.startsWith("{") ||
+    decodedText.startsWith("[");
+
+  if (!shouldTryJson) {
+    return decodedText;
+  }
+
+  try {
+    return JSON.parse(decodedText);
+  } catch (_error) {
+    return decodedText;
+  }
+};
+
 const probeRelayStatus = (candidate) => {
   if (!candidate || !candidate.isRelay) return Promise.resolve(true);
   const statusPath =
@@ -152,6 +204,7 @@ const executeRequest = ({
   data,
   timeout,
   header,
+  responseType,
 }) =>
   new Promise((resolve, reject) => {
     wx.request({
@@ -160,8 +213,9 @@ const executeRequest = ({
       data,
       timeout,
       header,
+      responseType,
       success(res) {
-        const body = res.data || {};
+        const body = parseResponseData(res.data, res.header) || {};
         if (res.statusCode >= 200 && res.statusCode < 300 && body.success !== false) {
           resolve({ body, url });
           return;
@@ -398,12 +452,18 @@ const loginRequest = ({
           method: "POST",
           data: typeof payload === "string" ? { code: payload } : payload,
           timeout: LOGIN_TIMEOUT_MS,
+          responseType: "arraybuffer",
           header: {
             "content-type": "application/json",
             ...(candidate.isRelay ? { "X-Relay-Fallback": "1" } : {})
           },
         }).then(({ body }) => {
           const responseBody = body && body.data ? body.data : body;
+          if (!responseBody || typeof responseBody !== "object") {
+            throw new Error(
+              `登录响应格式异常，请检查服务端是否返回 UTF-8 JSON (${url})`
+            );
+          }
           if (responseBody && responseBody.accessToken) {
             setToken(responseBody.accessToken);
           }

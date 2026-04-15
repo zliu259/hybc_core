@@ -310,6 +310,7 @@ def _build_target_url(base_url: str, full_path: str, query: str) -> str:
 
 def _filter_request_headers(headers: Any) -> dict[str, str]:
     blocked = {
+        "accept-encoding",
         "connection",
         "content-length",
         "host",
@@ -327,6 +328,10 @@ def _filter_request_headers(headers: Any) -> dict[str, str]:
         if lk in blocked:
             continue
         safe_headers[str(k)] = str(v)
+    # Force identity encoding on bridge relay requests so upstream returns
+    # plain bytes. This avoids miniapp UTF-8 decoding failures when upstream
+    # responds with brotli-compressed payloads.
+    safe_headers["Accept-Encoding"] = "identity"
     safe_headers["X-Relay-Source"] = settings.bridge_source
     return safe_headers
 
