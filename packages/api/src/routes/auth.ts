@@ -413,9 +413,41 @@ const buildIdentityByCode = async (
   role?: UserRole;
 }> => {
   const accessToken = await fetchWeComAccessToken(env);
-  const userId = preferMiniProgram
-    ? await fetchWeComMiniProgramUserId(env, accessToken, code)
-    : await fetchWeComUserId(env, accessToken, code);
+  const resolvePrimaryUserId = async (): Promise<string> => {
+    if (preferMiniProgram) {
+      return fetchWeComMiniProgramUserId(env, accessToken, code);
+    }
+    return fetchWeComUserId(env, accessToken, code);
+  };
+
+  let userId: string | null = null;
+  let primaryErrorMessage = "";
+
+  try {
+    userId = await resolvePrimaryUserId();
+  } catch (error) {
+    primaryErrorMessage = error instanceof Error ? error.message : "Failed to resolve WeCom user from login code";
+  }
+
+  // Hotfix: keep miniapp login compatible with qy.login code variants by
+  // allowing one fallback attempt to getuserinfo when jscode2session fails.
+  // We intentionally keep this to a single fallback path (miniapp -> web only)
+  // to avoid unnecessary multi-endpoint retries on the same one-time code.
+  if (!userId && preferMiniProgram) {
+    try {
+      userId = await fetchWeComUserId(env, accessToken, code);
+    } catch (error) {
+      const fallbackErrorMessage =
+        error instanceof Error ? error.message : "Failed to fetch WeCom user";
+      throw new Error(
+        `Miniapp code exchange failed: ${primaryErrorMessage || "unknown error"}; web fallback failed: ${fallbackErrorMessage}`
+      );
+    }
+  }
+
+  if (!userId) {
+    throw new Error(primaryErrorMessage || "Failed to resolve WeCom user from login code");
+  }
 
   const profile = await fetchWeComProfile(env, accessToken, userId);
   return {
