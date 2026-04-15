@@ -169,11 +169,14 @@ const executeRequest = ({
         if (res.statusCode === 401) {
           clearToken();
         }
+        const requestError = new Error(
+          (body && body.error && body.error.message) ||
+            `Request failed (${res.statusCode}) (${url})`
+        );
+        requestError.__statusCode = res.statusCode;
+        requestError.__responseBody = body;
         reject(
-          new Error(
-            (body && body.error && body.error.message) ||
-              `Request failed (${res.statusCode}) (${url})`
-          )
+          requestError
         );
       },
       fail(err) {
@@ -193,7 +196,29 @@ const canAutoFallback = (method, header = {}) => {
   return keys.some((k) => k.toLowerCase() === "idempotency-key");
 };
 
-const requestWithFallback = ({ method, path, data, header = {}, timeout }) => {
+const isUnauthorizedError = (error) => {
+  if (!error) return false;
+  if (Number(error.__statusCode) === 401) return true;
+  const message = String(error.message || "");
+  return (
+    message.includes("Request failed (401)") ||
+    message.includes("Missing authorization header") ||
+    message.includes("Invalid bearer token") ||
+    message.includes("Session expired") ||
+    message.includes("Unauthorized")
+  );
+};
+
+const canRetryAfterReauth = ({ method, path }) => {
+  const normalizedMethod = String(method || "GET").toUpperCase();
+  if (!(normalizedMethod === "GET" || normalizedMethod === "HEAD" || normalizedMethod === "OPTIONS")) {
+    return false;
+  }
+  const requestPath = String(path || "");
+  return !requestPath.startsWith("/api/v1/auth/login");
+};
+
+const requestWithFallback = ({ method, path, data, header = {}, timeout, authToken = "" }) => {
   const currentBase = getBaseUrl();
   const candidates = buildFallbackCandidates(currentBase, {
     includeLocal: false,
@@ -215,7 +240,8 @@ const requestWithFallback = ({ method, path, data, header = {}, timeout }) => {
         return doRequest(index + 1);
       }
       const url = buildUrlWithBase(candidate.baseUrl, path);
-      const authHeader = getToken() ? { Authorization: `Bearer ${getToken()}` } : {};
+      const activeToken = authToken || getToken();
+      const authHeader = activeToken ? { Authorization: `Bearer ${activeToken}` } : {};
       return executeRequest({
         url,
         method,
@@ -257,10 +283,23 @@ const ensureSessionReady = () => {
     return Promise.resolve("");
   }
 
-  return app.ensureSession().catch((error) => {
-    clearToken();
-    throw error;
-  });
+  return app.ensureSession()
+    .then((resolvedToken) => {
+      const tokenFromSession =
+        typeof resolvedToken === "string" && resolvedToken.trim()
+          ? resolvedToken.trim()
+          : "";
+      const tokenFromStorage = getToken();
+      const effectiveToken = tokenFromSession || tokenFromStorage;
+      if (effectiveToken) {
+        setToken(effectiveToken);
+      }
+      return effectiveToken;
+    })
+    .catch((error) => {
+      clearToken();
+      throw error;
+    });
 };
 
 const request = ({ method = "GET", path, data, header = {}, antiDuplicate = true, dedupeKey, idempotencyKey }) => {
@@ -285,18 +324,43 @@ const request = ({ method = "GET", path, data, header = {}, antiDuplicate = true
       })
     : "";
 
-  return ensureSessionReady().then(() => {
-    if (shouldProtectMutation && pendingMutationRequests.has(mutationDedupKey)) {
-      return pendingMutationRequests.get(mutationDedupKey);
-    }
+  const resolveAuthToken = (candidateToken) => {
+    const normalizedCandidate =
+      typeof candidateToken === "string" ? candidateToken.trim() : "";
+    if (normalizedCandidate) return normalizedCandidate;
+    const stored = getToken();
+    return typeof stored === "string" ? stored.trim() : "";
+  };
 
-    const requestPromise = requestWithFallback({
+  const executeWithAuthRecovery = (enableRetry = true, candidateToken = "") => {
+    const authToken = resolveAuthToken(candidateToken);
+    return requestWithFallback({
       method: normalizedMethod,
       path,
       data,
       header: normalizedHeader,
       timeout: DEFAULT_TIMEOUT_MS,
+      authToken,
+    }).catch((error) => {
+      if (
+        !enableRetry ||
+        !canRetryAfterReauth({ method: normalizedMethod, path }) ||
+        !isUnauthorizedError(error)
+      ) {
+        throw error;
+      }
+
+      clearToken();
+      return ensureSessionReady().then((renewedToken) => executeWithAuthRecovery(false, renewedToken));
     });
+  };
+
+  return ensureSessionReady().then((sessionToken) => {
+    if (shouldProtectMutation && pendingMutationRequests.has(mutationDedupKey)) {
+      return pendingMutationRequests.get(mutationDedupKey);
+    }
+
+    const requestPromise = executeWithAuthRecovery(true, sessionToken);
 
     if (shouldProtectMutation) {
       const wrappedPromise = requestPromise.finally(() => {
@@ -315,6 +379,7 @@ const loginRequest = ({
   endpoint = "/api/v1/auth/login/web",
   includeLocalFallback = false
 }) => {
+  const isOneTimeCodePayload = typeof payload === "string";
   const fallbackCandidates = buildFallbackCandidates(getBaseUrl(), {
     includeLocal: includeLocalFallback
   });
@@ -348,13 +413,24 @@ const loginRequest = ({
       });
     }).catch((error) => {
       if (
+        !isOneTimeCodePayload &&
         baseIndex + 1 < fallbackCandidates.length &&
         (isConnectionRefusedError(error) || isNetworkLayerFailure(error))
       ) {
         return doRequest(attempt, baseIndex + 1);
       }
-      if (attempt < 2 && isRetryableNetworkError(error)) {
+      if (!isOneTimeCodePayload && attempt < 2 && isRetryableNetworkError(error)) {
         return doRequest(attempt + 1, baseIndex);
+      }
+      if (
+        isOneTimeCodePayload &&
+        (isConnectionRefusedError(error) ||
+          isNetworkLayerFailure(error) ||
+          isRetryableNetworkError(error))
+      ) {
+        throw new Error(
+          `${(error && error.message) || "登录请求失败"}\n企业微信 code 为一次性凭证，请重新发起登录获取新 code。`
+        );
       }
       throw error;
     });

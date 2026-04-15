@@ -58,15 +58,9 @@ const normalizeUser = (data) => {
 const LOCAL_FALLBACK_USERNAME = "operator";
 
 const buildCodeLoginEndpoints = (options = {}) => {
-  const shouldFallbackToWeb =
-    typeof options.allowCodeFallbackToWeb === "boolean"
-      ? options.allowCodeFallbackToWeb
-      : false;
-  const endpoints = [options.endpoint || "/api/v1/auth/login/miniapp"];
-  if (shouldFallbackToWeb) {
-    endpoints.push("/api/v1/auth/login/web");
-  }
-  return endpoints.filter((item, index, arr) => arr.indexOf(item) === index);
+  // WeCom login code is one-time and short-lived.
+  // Do not reuse the same code across multiple login endpoints.
+  return [options.endpoint || "/api/v1/auth/login/miniapp"];
 };
 
 const loginWithWeComCode = (code, options = {}) => {

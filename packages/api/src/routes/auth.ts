@@ -413,37 +413,9 @@ const buildIdentityByCode = async (
   role?: UserRole;
 }> => {
   const accessToken = await fetchWeComAccessToken(env);
-
-  let userId: string | null = null;
-  const errors: string[] = [];
-
-  const tryMiniProgram = async () => {
-    try {
-      userId = await fetchWeComMiniProgramUserId(env, accessToken, code);
-    } catch (error) {
-      if (error instanceof Error) errors.push(error.message);
-    }
-  };
-
-  const tryGetUserInfo = async () => {
-    try {
-      userId = await fetchWeComUserId(env, accessToken, code);
-    } catch (error) {
-      if (error instanceof Error) errors.push(error.message);
-    }
-  };
-
-  if (preferMiniProgram) {
-    await tryMiniProgram();
-    if (!userId) await tryGetUserInfo();
-  } else {
-    await tryGetUserInfo();
-    if (!userId) await tryMiniProgram();
-  }
-
-  if (!userId) {
-    throw new Error(errors[0] ?? "Failed to resolve WeCom user from login code");
-  }
+  const userId = preferMiniProgram
+    ? await fetchWeComMiniProgramUserId(env, accessToken, code)
+    : await fetchWeComUserId(env, accessToken, code);
 
   const profile = await fetchWeComProfile(env, accessToken, userId);
   return {

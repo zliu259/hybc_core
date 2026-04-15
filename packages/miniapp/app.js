@@ -15,7 +15,8 @@ App({
       nodes: [],
     },
     sessionReady: false,
-    authError: ""
+    authError: "",
+    sessionPromise: null
   },
 
   onLaunch: function () {
@@ -25,10 +26,16 @@ App({
   ensureSession: function () {
     const token = getToken();
     if (token) {
+      this.globalData.sessionReady = true;
+      this.globalData.authError = "";
       return Promise.resolve(token);
     }
 
-    return wxLogin()
+    if (this.globalData.sessionPromise) {
+      return this.globalData.sessionPromise;
+    }
+
+    const sessionPromise = wxLogin()
       .then((loginRes) => {
         if (!loginRes || !loginRes.code) {
           throw new Error("wx.login failed");
@@ -56,6 +63,12 @@ App({
         });
         wx.reLaunch({ url: "/pages/login/index" });
         throw error;
+      })
+      .finally(() => {
+        this.globalData.sessionPromise = null;
       });
+
+    this.globalData.sessionPromise = sessionPromise;
+    return sessionPromise;
   }
 });
