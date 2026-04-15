@@ -8,6 +8,7 @@ export type ApprovalInstance = {
   biz_id: number;
   biz_summary: string;
   initiator_userid: string;
+  biz_applicant_userid?: string | null;
   current_node_key: string | null;
   status: string;
   current_round: number;
@@ -45,6 +46,7 @@ export type PendingApprovalItem = {
   project_name?: string | null;
   project_code?: string | null;
   initiator_userid: string;
+  biz_applicant_userid?: string | null;
   current_node_key: string | null;
   current_node_name: string | null;
   status: string;
@@ -64,6 +66,7 @@ export type ProcessedApprovalItem = {
   project_name?: string | null;
   project_code?: string | null;
   initiator_userid: string;
+  biz_applicant_userid?: string | null;
   status: string;
   submitted_at: string;
   action: string | null;

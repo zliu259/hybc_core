@@ -104,6 +104,7 @@ export interface ReimbursementBatch {
   ai_audit_status: string;
   ai_audit_result: string | null;
   approval_instance_id: number | null;
+  payment_method: string | null;
   paid_at: string | null;
   payment_reference: string | null;
   payment_account: string | null;
@@ -220,9 +221,24 @@ export interface CreateReimbursementBatchRequest {
   project_id: number;
   applicant_userid: string;
   envelope_ids?: number[];
+  payment_method?: string;
+  payment_entity_id?: number;
+  payment_entity_bank_account_id?: number;
+  payment_account?: string;
 }
 
 export interface SubmitReimbursementBatchApprovalRequest {
   biz_summary?: string;
   instance_config?: InstanceConfig;
+  payment_method?: string;
+  payment_entity_id?: number;
+  payment_entity_bank_account_id?: number;
+  payment_account?: string;
+}
+
+export interface UpdateReimbursementBatchPayoutPlanRequest {
+  payment_method?: string;
+  payment_entity_id?: number;
+  payment_entity_bank_account_id?: number;
+  payment_account?: string;
 }

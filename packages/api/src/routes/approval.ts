@@ -246,9 +246,13 @@ approvalRoutes.get("/pending", async (c) => {
     .bind(...params)
     .first<{ total: number }>();
 
-  const rows = await c.env.DB.prepare(
-    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
+   const rows = await c.env.DB.prepare(
+     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
        ai.initiator_userid, ai.current_node_key, ai.status, ai.submitted_at,
+       CASE ai.biz_type
+         WHEN 'reimbursement_batch' THEN (SELECT rb.applicant_userid FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_applicant_userid,
        at2.id as task_id, at2.status as task_status,
        ani.node_name as current_node_name,
        CASE ai.biz_type
@@ -341,9 +345,13 @@ approvalRoutes.get("/processed", async (c) => {
     .bind(...params)
     .first<{ total: number }>();
 
-  const rows = await c.env.DB.prepare(
-    `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
+   const rows = await c.env.DB.prepare(
+     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
        ai.initiator_userid, ai.status, ai.submitted_at,
+       CASE ai.biz_type
+         WHEN 'reimbursement_batch' THEN (SELECT rb.applicant_userid FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+         ELSE NULL
+       END AS biz_applicant_userid,
        at2.action, at2.acted_at, at2.comment,
        CASE ai.biz_type
          WHEN 'payment_request' THEN (SELECT pr.amount FROM payment_request pr WHERE pr.id = ai.biz_id)
@@ -435,7 +443,12 @@ approvalRoutes.get("/cc", async (c) => {
     .first<{ total: number }>();
 
   const rows = await c.env.DB.prepare(
-    `SELECT DISTINCT ai.* FROM approval_instance ai
+    `SELECT DISTINCT ai.*,
+            CASE ai.biz_type
+              WHEN 'reimbursement_batch' THEN (SELECT rb.applicant_userid FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
+              ELSE NULL
+            END AS biz_applicant_userid
+     FROM approval_instance ai
      JOIN approval_node_instance ani ON ani.instance_id = ai.id
      JOIN approval_task at2 ON at2.node_instance_id = ani.id
      ${whereSql}

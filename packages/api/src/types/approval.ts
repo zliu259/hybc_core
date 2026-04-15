@@ -115,6 +115,7 @@ export interface ApprovalInstance {
   biz_id: number;
   biz_summary: string;
   initiator_userid: string;
+  biz_applicant_userid?: string | null;
   current_node_key: string | null;
   status: InstanceStatus;
   current_round: number;
@@ -257,6 +258,7 @@ export interface PendingApprovalItem {
   project_name?: string | null;
   project_code?: string | null;
   initiator_userid: string;
+  biz_applicant_userid?: string | null;
   current_node_key: string | null;
   current_node_name: string | null;
   status: InstanceStatus;
@@ -276,6 +278,7 @@ export interface ProcessedApprovalItem {
   project_name?: string | null;
   project_code?: string | null;
   initiator_userid: string;
+  biz_applicant_userid?: string | null;
   status: InstanceStatus;
   submitted_at: string;
   action: string | null;

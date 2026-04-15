@@ -39,8 +39,26 @@ const total = ref(0);
 const filters = ref({
   project_id: undefined as number | undefined,
   applicant_userid: "",
-  status: ""
+  status: "",
+  payment_method: ""
 });
+
+const paymentMethodLabelMap: Record<string, string> = {
+  transfer: "对公转账",
+  bank_transfer: "对公转账",
+  对公转账: "对公转账",
+  cash: "现金",
+  现金: "现金",
+  bill: "票据",
+  票据: "票据",
+  other: "其他",
+  其他: "其他"
+};
+
+const toPaymentMethodLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return paymentMethodLabelMap[value] ?? value;
+};
 
 const projectMap = computed(() => {
   const map: Record<number, string> = {};
@@ -136,13 +154,16 @@ const submitCreateAndApproval = async () => {
     const result = await createReimbursementBatch({
       project_id: filters.value.project_id,
       applicant_userid: filters.value.applicant_userid.trim(),
+      payment_method: filters.value.payment_method || undefined,
       envelope_ids:
         candidateSelectedIds.value.length > 0
           ? candidateSelectedIds.value
           : undefined
     }, { idempotencyKey: createKey });
 
-    await submitBatchApproval(result.data.id, undefined, {
+    await submitBatchApproval(result.data.id, {
+      payment_method: filters.value.payment_method || undefined
+    }, {
       idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
     });
     message(`批次已创建并送审：${result.data.batch_no}`, { type: "success" });
@@ -203,7 +224,7 @@ watch(
     <el-alert
       type="info"
       :closable="false"
-      title="按“项目 + 申请人”筛选后，系统自动列出未完成报销条目；勾选可送审条目后可一键创建并集中送审。"
+      title="按“项目 + 被报销人”筛选后，系统自动列出未完成报销条目；可选择收款方式并一键创建集中送审。"
       style="margin-bottom: 12px"
     />
 
@@ -223,13 +244,13 @@ watch(
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="申请人">
+      <el-form-item label="被报销人">
         <el-select
           v-model="filters.applicant_userid"
           clearable
           filterable
           style="width: 240px"
-          placeholder="请选择申请人"
+          placeholder="请选择被报销人"
         >
           <el-option
             v-for="item in wecomUsers"
@@ -246,6 +267,14 @@ watch(
           <el-option label="已审批" value="approved" />
           <el-option label="已拒绝" value="rejected" />
           <el-option label="已付款" value="paid" />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="收款方式">
+        <el-select v-model="filters.payment_method" clearable style="width: 160px">
+          <el-option label="对公转账" value="transfer" />
+          <el-option label="现金" value="cash" />
+          <el-option label="票据" value="bill" />
+          <el-option label="其他" value="other" />
         </el-select>
       </el-form-item>
       <el-button type="primary" @click="loadData">查询批次</el-button>
@@ -305,7 +334,12 @@ watch(
           projectMap[scope.row.project_id] || scope.row.project_id
         }}</template>
       </el-table-column>
-      <el-table-column prop="applicant_userid" label="申报人" width="140" />
+      <el-table-column prop="applicant_userid" label="被报销人" width="140" />
+      <el-table-column label="收款方式" width="120">
+        <template #default="scope">{{
+          toPaymentMethodLabel(scope.row.payment_method)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="item_count" label="信封数" width="100" />
       <el-table-column prop="total_amount" label="总金额" width="120" />
       <el-table-column label="智能审核" width="120">
@@ -352,7 +386,12 @@ watch(
           projectMap[scope.row.project_id] || scope.row.project_id
         }}</template>
       </el-table-column>
-      <el-table-column prop="applicant_userid" label="申报人" width="140" />
+      <el-table-column prop="applicant_userid" label="被报销人" width="140" />
+      <el-table-column label="收款方式" width="120">
+        <template #default="scope">{{
+          toPaymentMethodLabel(scope.row.payment_method)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="item_count" label="信封数" width="100" />
       <el-table-column prop="total_amount" label="总金额" width="120" />
       <el-table-column label="结果状态" width="120">

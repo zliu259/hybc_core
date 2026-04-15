@@ -1252,3 +1252,11 @@
 - 列表接口增强重复风险摘要字段，支持前端直接渲染风险标签：`duplicate_count` 与 `duplicate_risk_level`：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
 - 报销详情新增办公室“换绑UUID”入口（仅实物信封），允许对错误 UUID 进行人工纠偏并保留审计理由：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 新增后端办公室换绑接口 `POST /api/v1/reimbursement/:id/rebind-uuid`，并对通道稳定性加约束（创建绑定与更新流程均禁止跨通道漂移），避免实物信封被误改成电子发票：`packages/api/src/routes/reimbursement.ts`、`packages/api/src/routes/reimbursement-create-policy.ts`
+
+### 8.12 报销集中审批“被报销人+支付方案”联动补齐（2026-04）
+- 审批中心列表（Web）在待审批/已处理/抄送三栏新增“被报销人”列，报销批次场景优先展示 `biz_applicant_userid`，用于替代仅看发起人的歧义：`packages/web/src/views/approval/index.vue`、`packages/web/src/api/approval.ts`、`packages/api/src/routes/approval.ts`
+- 审批详情（Web）报销批次明细将“申请人”文案统一为“被报销人”，并新增“支付方式/付款账户/审批状态/审批节点”展示：`packages/web/src/views/approval/detail.vue`、`packages/web/src/api/reimbursement.ts`
+- 审批详情（Web）操作区扩展为“审批台支付方案”（支付方式 + 付款主体 + 付款账户），审批人可在审批前保存支付方案；报销批次走 `PUT /api/v1/reimbursement/batch/:id/payout-plan`，对外付款保持原路径：`packages/web/src/views/approval/detail.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
+- 报销批次列表/详情（Web）补齐“被报销人/收款方式”展示，并在批次详情绑定并显示审批实例状态与当前节点信息：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/views/finance/reimbursement/batch-detail.vue`、`packages/web/src/api/reimbursement.ts`
+- 报销批次创建与送审（Web）支持同步传入收款方式，避免创建后再补录导致信息割裂：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/api/reimbursement.ts`
+- 小程序审批列表新增“被报销人”展示；审批详情在报销批次场景新增支付方式/付款账户展示与审批人可编辑支付方案（同样走批次 payout-plan 接口）：`packages/miniapp/pages/approval/index.{js,wxml}`、`packages/miniapp/pages/approval-detail/index.{js,wxml}`、`packages/api/src/routes/reimbursement.ts`

@@ -153,6 +153,16 @@ const projectLabel = (
   return row.project_name || row.project_code || "-";
 };
 
+const reimbursementApplicantLabel = (
+  row:
+    | Pick<PendingApprovalItem, "biz_type" | "biz_applicant_userid">
+    | Pick<ProcessedApprovalItem, "biz_type" | "biz_applicant_userid">
+    | Pick<ApprovalInstance, "biz_type" | "biz_applicant_userid">
+) => {
+  if (row.biz_type !== "reimbursement_batch") return "-";
+  return toUserLabel(row.biz_applicant_userid);
+};
+
 onMounted(async () => {
   await loadWecomUsers();
   await loadPending();
@@ -234,6 +244,11 @@ onMounted(async () => {
               toUserLabel(row.initiator_userid)
             }}</template>
           </el-table-column>
+          <el-table-column label="被报销人" width="140">
+            <template #default="{ row }">{{
+              reimbursementApplicantLabel(row)
+            }}</template>
+          </el-table-column>
           <el-table-column
             prop="current_node_name"
             label="当前节点"
@@ -313,6 +328,11 @@ onMounted(async () => {
               toUserLabel(row.initiator_userid)
             }}</template>
           </el-table-column>
+          <el-table-column label="被报销人" width="140">
+            <template #default="{ row }">{{
+              reimbursementApplicantLabel(row)
+            }}</template>
+          </el-table-column>
           <el-table-column label="实例状态" width="110">
             <template #default="{ row }">
               <el-tag :type="statusTagType[row.status] ?? 'info'" size="small">
@@ -379,6 +399,11 @@ onMounted(async () => {
           <el-table-column label="发起人" width="140">
             <template #default="{ row }">{{
               toUserLabel(row.initiator_userid)
+            }}</template>
+          </el-table-column>
+          <el-table-column label="被报销人" width="140">
+            <template #default="{ row }">{{
+              reimbursementApplicantLabel(row)
             }}</template>
           </el-table-column>
           <el-table-column label="状态" width="100">

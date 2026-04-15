@@ -413,6 +413,7 @@ export type ReimbursementBatch = {
   ai_audit_status: string;
   ai_audit_result: string | null;
   approval_instance_id: number | null;
+  payment_method: string | null;
   paid_at: string | null;
   payment_reference: string | null;
   payment_account: string | null;
@@ -442,6 +443,16 @@ export type ReimbursementBatchDetail = ReimbursementBatch & {
     }>;
   })[];
   duplicate_summary: { risk_level: string; cnt: number }[];
+  approval_instance?: {
+    id: number;
+    instance_no: string;
+    status: string;
+    current_node_key: string | null;
+    current_round: number;
+    submitted_at: string;
+    completed_at: string | null;
+    current_node_name: string | null;
+  } | null;
 };
 
 export const listReimbursementBatches = (params?: {
@@ -470,6 +481,10 @@ export const createReimbursementBatch = (
     project_id: number;
     applicant_userid: string;
     envelope_ids?: number[];
+    payment_method?: string;
+    payment_entity_id?: number;
+    payment_entity_bank_account_id?: number;
+    payment_account?: string;
   },
   options?: { idempotencyKey?: string }
 ) => {
@@ -510,7 +525,14 @@ export const getBatchAuditReport = (id: number) => {
 
 export const submitBatchApproval = (
   id: number,
-  data?: { biz_summary?: string; instance_config?: Record<string, unknown> },
+  data?: {
+    biz_summary?: string;
+    instance_config?: Record<string, unknown>;
+    payment_method?: string;
+    payment_entity_id?: number;
+    payment_entity_bank_account_id?: number;
+    payment_account?: string;
+  },
   options?: { idempotencyKey?: string }
 ) => {
   return http.request<{
@@ -522,6 +544,26 @@ export const submitBatchApproval = (
       ? { "Idempotency-Key": options.idempotencyKey }
       : undefined
   });
+};
+
+export const updateBatchPayoutPlan = (
+  id: number,
+  data: {
+    payment_method?: string;
+    payment_entity_id?: number;
+    payment_entity_bank_account_id?: number;
+    payment_account?: string;
+  }
+) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      payment_method: string | null;
+      payment_entity_id: number | null;
+      payment_entity_bank_account_id: number | null;
+      payment_account: string | null;
+    };
+  }>("put", `/api/v1/reimbursement/batch/${id}/payout-plan`, { data });
 };
 
 export const markBatchPaid = (

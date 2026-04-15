@@ -23,6 +23,23 @@ const detail = ref<ReimbursementBatchDetail | null>(null);
 const auditResult = ref<Record<string, unknown> | string | null>(null);
 const auditStatus = ref("none");
 
+const paymentMethodLabelMap: Record<string, string> = {
+  transfer: "对公转账",
+  bank_transfer: "对公转账",
+  对公转账: "对公转账",
+  cash: "现金",
+  现金: "现金",
+  bill: "票据",
+  票据: "票据",
+  other: "其他",
+  其他: "其他"
+};
+
+const toPaymentMethodLabel = (value: string | null | undefined) => {
+  if (!value) return "-";
+  return paymentMethodLabelMap[value] ?? value;
+};
+
 const loadDetail = async () => {
   loading.value = true;
   try {
@@ -102,8 +119,14 @@ onMounted(loadDetail);
       <el-descriptions-item label="项目ID">{{
         detail.project_id
       }}</el-descriptions-item>
-      <el-descriptions-item label="申报人">{{
+      <el-descriptions-item label="被报销人">{{
         detail.applicant_userid
+      }}</el-descriptions-item>
+      <el-descriptions-item label="收款方式">{{
+        toPaymentMethodLabel(detail.payment_method)
+      }}</el-descriptions-item>
+      <el-descriptions-item label="付款账户">{{
+        detail.payment_account || "-"
       }}</el-descriptions-item>
       <el-descriptions-item label="信封数">{{
         detail.item_count
@@ -116,6 +139,14 @@ onMounted(loadDetail);
       }}</el-descriptions-item>
       <el-descriptions-item label="审批实例">{{
         detail.approval_instance_id || "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="审批状态">{{
+        detail.approval_instance
+          ? statusLabel(detail.approval_instance.status)
+          : "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="审批节点">{{
+        detail.approval_instance?.current_node_name || "-"
       }}</el-descriptions-item>
     </el-descriptions>
 

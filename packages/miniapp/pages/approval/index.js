@@ -71,13 +71,18 @@ Page({
   },
 
   mapListItem(item) {
+    const reimbursementApplicantLabel =
+      item && item.biz_type === "reimbursement_batch"
+        ? item.biz_applicant_userid || "-"
+        : "-";
     return {
       ...item,
       bizTypeLabel: this.bizTypeLabel(item.biz_type),
       cardClass: this.cardClassByType(item.biz_type),
       statusText: this.statusLabel(item.status),
       submittedAtText: this.formatBeijingTime(item.submitted_at),
-      actedAtText: this.formatBeijingTime(item.acted_at)
+      actedAtText: this.formatBeijingTime(item.acted_at),
+      reimbursementApplicantLabel
     };
   },
 

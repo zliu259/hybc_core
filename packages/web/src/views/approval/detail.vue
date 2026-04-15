@@ -26,6 +26,7 @@ import {
 import {
   getBatchAuditReport,
   getReimbursementBatch,
+  updateBatchPayoutPlan,
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
 import {
@@ -156,14 +157,28 @@ const entities = ref<Entity[]>([]);
 const entityBankAccountMap = ref<Record<number, EntityBankAccount[]>>({});
 
 const payoutForm = ref({
+  payment_method: "" as string,
   payment_entity_id: undefined as number | undefined,
   payment_entity_bank_account_id: undefined as number | undefined,
   payment_account: ""
 });
 
+const payoutMethodOptions = [
+  { label: "可后续补充", value: "" },
+  { label: "对公转账", value: "transfer" },
+  { label: "现金", value: "cash" },
+  { label: "票据", value: "bill" },
+  { label: "其他", value: "other" }
+];
+
+const payoutBizType = computed(() => detail.value?.instance.biz_type ?? "");
+
 const canAdjustPayoutInApprovalWorkbench = computed(() => {
-  if (!detail.value || !paymentDetail.value) return false;
-  if (detail.value.instance.biz_type !== "payment_request") return false;
+  if (!detail.value) return false;
+  const isSupportedBiz =
+    (payoutBizType.value === "payment_request" && Boolean(paymentDetail.value)) ||
+    (payoutBizType.value === "reimbursement_batch" && Boolean(reimbursementBatchDetail.value));
+  if (!isSupportedBiz) return false;
   return (
     hasAction("approve") || hasAction("reject") || hasAction("return_prev")
   );
@@ -206,35 +221,51 @@ const onPayoutAccountChange = (accountId: number | undefined) => {
 };
 
 const syncPayoutSelection = async () => {
-  if (!paymentDetail.value) return;
   if (!canAdjustPayoutInApprovalWorkbench.value) return;
-  if (
-    !payoutForm.value.payment_entity_id ||
-    !payoutForm.value.payment_entity_bank_account_id
-  ) {
-    message("请先选择付款主体和付款账户", { type: "warning" });
+
+  const selectedMethod = payoutForm.value.payment_method || undefined;
+  const selectedEntityId = payoutForm.value.payment_entity_id;
+  const selectedAccountId = payoutForm.value.payment_entity_bank_account_id;
+  if (!selectedMethod && !selectedEntityId && !selectedAccountId) {
+    message("请至少选择支付方式或付款主体账户", { type: "warning" });
     throw new Error("payout selection required");
   }
-  await updatePaymentRequest(paymentDetail.value.id, {
-    payment_entity_id: payoutForm.value.payment_entity_id,
-    payment_entity_bank_account_id:
-      payoutForm.value.payment_entity_bank_account_id,
-    payment_account: payoutForm.value.payment_account || null,
-    admin_edit_mode: isSuperAdmin.value ? true : undefined,
-    edit_note: isSuperAdmin.value
-      ? "approval workbench payout selection update"
-      : undefined
-  });
+
+  if (payoutBizType.value === "payment_request" && paymentDetail.value) {
+    await updatePaymentRequest(paymentDetail.value.id, {
+      payment_method: selectedMethod,
+      payment_entity_id: selectedEntityId,
+      payment_entity_bank_account_id: selectedAccountId,
+      payment_account: payoutForm.value.payment_account || null,
+      admin_edit_mode: isSuperAdmin.value ? true : undefined,
+      edit_note: isSuperAdmin.value
+        ? "approval workbench payout selection update"
+        : undefined
+    });
+    return;
+  }
+
+  if (
+    payoutBizType.value === "reimbursement_batch" &&
+    reimbursementBatchDetail.value
+  ) {
+    await updateBatchPayoutPlan(reimbursementBatchDetail.value.id, {
+      payment_method: selectedMethod,
+      payment_entity_id: selectedEntityId,
+      payment_entity_bank_account_id: selectedAccountId,
+      payment_account: payoutForm.value.payment_account || undefined
+    });
+  }
 };
 
 const savePayoutSelection = async () => {
   actionLoading.value = true;
   try {
     await syncPayoutSelection();
-    message("付款主体与账户已保存", { type: "success" });
+    message("支付方案已保存", { type: "success" });
     await loadDetail();
   } catch {
-    message("保存付款主体与账户失败", { type: "error" });
+    message("保存支付方案失败", { type: "error" });
   } finally {
     actionLoading.value = false;
   }
@@ -433,6 +464,11 @@ const paymentCategoryLabelMap: Record<string, string> = {
 };
 
 const paymentMethodLabelMap: Record<string, string> = {
+  bank_transfer: "对公转账",
+  transfer: "对公转账",
+  cash: "现金",
+  bill: "票据",
+  other: "其他",
   对公转账: "对公转账",
   现金: "现金",
   票据: "票据",
@@ -447,6 +483,16 @@ const toPaymentCategoryLabel = (value: string | null | undefined) => {
 const toPaymentMethodLabel = (value: string | null | undefined) => {
   if (!value) return "-";
   return paymentMethodLabelMap[value] ?? value;
+};
+
+const normalizePaymentMethodValue = (value: string | null | undefined) => {
+  if (!value) return "";
+  if (value === "transfer" || value === "bank_transfer" || value === "对公转账")
+    return "transfer";
+  if (value === "cash" || value === "现金") return "cash";
+  if (value === "bill" || value === "票据") return "bill";
+  if (value === "other" || value === "其他") return "other";
+  return "";
 };
 
 const parseJsonObject = (
@@ -972,6 +1018,12 @@ const loadDetail = async () => {
     invoiceRequestDetail.value = null;
     invoiceLinkedContract.value = null;
     receiptRefundDetail.value = null;
+    payoutForm.value = {
+      payment_method: "",
+      payment_entity_id: undefined,
+      payment_entity_bank_account_id: undefined,
+      payment_account: ""
+    };
 
     const bizType = result.data.instance.biz_type;
     const bizId = result.data.instance.biz_id;
@@ -980,6 +1032,7 @@ const loadDetail = async () => {
       const paymentRes = await getPaymentRequest(bizId);
       paymentDetail.value = paymentRes.data;
       payoutForm.value = {
+        payment_method: normalizePaymentMethodValue(paymentRes.data.payment_method),
         payment_entity_id: paymentRes.data.payment_entity_id ?? undefined,
         payment_entity_bank_account_id:
           paymentRes.data.payment_entity_bank_account_id ?? undefined,
@@ -1007,6 +1060,28 @@ const loadDetail = async () => {
     } else if (bizType === "reimbursement_batch") {
       const reimbursementRes = await getReimbursementBatch(bizId);
       reimbursementBatchDetail.value = reimbursementRes.data;
+      payoutForm.value = {
+        payment_method: normalizePaymentMethodValue(
+          reimbursementRes.data.payment_method
+        ),
+        payment_entity_id: reimbursementRes.data.payment_entity_id ?? undefined,
+        payment_entity_bank_account_id:
+          reimbursementRes.data.payment_entity_bank_account_id ?? undefined,
+        payment_account: reimbursementRes.data.payment_account ?? ""
+      };
+      if (
+        payoutForm.value.payment_entity_id &&
+        !payoutForm.value.payment_entity_bank_account_id
+      ) {
+        const accounts =
+          entityBankAccountMap.value[
+            payoutForm.value.payment_entity_id
+          ]?.filter(item => item.status === "active") ?? [];
+        if (accounts.length > 0) {
+          payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
+          payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
+        }
+      }
     } else if (bizType === "invoice_request") {
       const invoiceRequestRes = await getInvoiceRequest(bizId);
       invoiceRequestDetail.value = invoiceRequestRes.data;
@@ -1554,7 +1629,7 @@ onMounted(async () => {
                 <el-descriptions-item label="所属项目">{{
                   toProjectLabel(reimbursementBatchDetail.project_id)
                 }}</el-descriptions-item>
-                <el-descriptions-item label="申请人">{{
+                <el-descriptions-item label="被报销人">{{
                   toUserLabel(reimbursementBatchDetail.applicant_userid)
                 }}</el-descriptions-item>
                 <el-descriptions-item label="总金额">
@@ -1565,6 +1640,22 @@ onMounted(async () => {
                 </el-descriptions-item>
                 <el-descriptions-item label="单据数">{{
                   reimbursementBatchDetail.item_count
+                }}</el-descriptions-item>
+                <el-descriptions-item label="支付方式">{{
+                  toPaymentMethodLabel(reimbursementBatchDetail.payment_method)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="付款账户">{{
+                  reimbursementBatchDetail.payment_account || "-"
+                }}</el-descriptions-item>
+                <el-descriptions-item label="审批状态">{{
+                  reimbursementBatchDetail.approval_instance
+                    ? toStatusLabel(reimbursementBatchDetail.approval_instance.status)
+                    : reimbursementBatchDetail.approval_instance_id
+                      ? "处理中"
+                      : "-"
+                }}</el-descriptions-item>
+                <el-descriptions-item label="审批节点">{{
+                  reimbursementBatchDetail.approval_instance?.current_node_name || "-"
                 }}</el-descriptions-item>
               </el-descriptions>
               <el-table
@@ -2071,9 +2162,23 @@ onMounted(async () => {
           style="margin-bottom: 12px; background: #f8fafc"
         >
           <template #header>
-            <span>审批台付款主体与账户</span>
+            <span>审批台支付方案</span>
           </template>
           <el-form inline>
+            <el-form-item label="支付方式">
+              <el-select
+                v-model="payoutForm.payment_method"
+                style="min-width: 140px"
+                placeholder="选择支付方式"
+              >
+                <el-option
+                  v-for="item in payoutMethodOptions"
+                  :key="item.value || 'empty'"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
             <el-form-item label="付款主体">
               <el-select
                 v-model="payoutForm.payment_entity_id"
@@ -2110,7 +2215,7 @@ onMounted(async () => {
             </el-form-item>
             <el-form-item>
               <el-button :loading="actionLoading" @click="savePayoutSelection"
-                >保存付款选择</el-button
+                >保存支付方案</el-button
               >
             </el-form-item>
           </el-form>

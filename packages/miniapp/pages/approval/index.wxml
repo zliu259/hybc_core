@@ -27,6 +27,7 @@
     <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
       <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
         <view class="sub">类型：{{item.bizTypeLabel}}</view>
+        <view class="sub">被报销人：{{item.reimbursementApplicantLabel}}</view>
         <view class="sub">节点：{{item.current_node_name || '-'}}</view>
         <view class="sub">状态：{{item.statusText}}</view>
         <view class="sub">提交时间：{{item.submittedAtText}}</view>
@@ -38,6 +39,7 @@
     <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
       <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
         <view class="sub">类型：{{item.bizTypeLabel}}</view>
+        <view class="sub">被报销人：{{item.reimbursementApplicantLabel}}</view>
         <view class="sub">状态：{{item.statusText}}</view>
         <view class="sub">处理时间：{{item.actedAtText}}</view>
       </hy-panel-card>
@@ -48,6 +50,7 @@
     <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
       <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
         <view class="sub">类型：{{item.bizTypeLabel}}</view>
+        <view class="sub">被报销人：{{item.reimbursementApplicantLabel}}</view>
         <view class="sub">发起人：{{item.initiator_userid}}</view>
         <view class="sub">状态：{{item.statusText}}</view>
         <view class="sub">提交时间：{{item.submittedAtText}}</view>

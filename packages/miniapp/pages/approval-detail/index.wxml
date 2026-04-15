@@ -7,6 +7,7 @@
           <t-tag theme="{{detail.instance.status === 'approved' ? 'success' : detail.instance.status === 'rejected' ? 'danger' : detail.instance.status === 'pending' ? 'warning' : 'default'}}" variant="light">{{detail.instance.statusText}}</t-tag>
         </view>
         <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">发起人</text><text class="v">{{detail.instance.initiatorLabel}}</text></view>
+        <view class="kv-row" wx:if="{{detail.instance.biz_type === 'reimbursement_batch'}}"><text class="dot dot-blue">•</text><text class="k">被报销人</text><text class="v">{{detail.instance.bizApplicantLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">提交时间</text><text class="v">{{detail.instance.submittedAtText}}</text></view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成时间</text><text class="v">{{detail.instance.completedAtText}}</text></view>
       </hy-panel-card>
@@ -67,9 +68,28 @@
       <hy-panel-card title="申请明细（报销批次）">
         <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">批次号</text><text class="v">{{bizDetail.batch_no}}</text></view>
         <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">申请人</text><text class="v">{{bizDetail.applicantLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">被报销人</text><text class="v">{{bizDetail.applicantLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">总金额</text><text class="v v-strong">{{bizDetail.totalAmountDisplay}}</text></view>
         <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">单据数</text><text class="v">{{bizDetail.item_count}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">支付方式</text><text class="v">{{bizDetail.paymentMethodLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">付款账户</text><text class="v">{{bizDetail.paymentAccountLabel}}</text></view>
+
+        <view wx:if="{{canApprove}}" class="section-divider"></view>
+        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款主体</text></view>
+        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentEntityLabels}}" value="{{paymentEntityIndex}}" bindchange="onPaymentEntityChange">
+          <view class="picker-value">{{paymentEntityLabels[paymentEntityIndex]}}</view>
+        </picker>
+        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款账户</text></view>
+        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentAccountLabels}}" value="{{paymentAccountIndex}}" bindchange="onPaymentAccountChange">
+          <view class="picker-value">{{paymentAccountLabels[paymentAccountIndex]}}</view>
+        </picker>
+        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">支付方式</text></view>
+        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentMethodLabelOptions}}" value="{{paymentMethodIndex}}" bindchange="onPaymentMethodChange">
+          <view class="picker-value">{{paymentMethodLabelOptions[paymentMethodIndex]}}</view>
+        </picker>
+        <view wx:if="{{canApprove}}" class="kv-row" style="margin-top: 8px">
+          <t-button size="small" variant="outline" loading="{{acting}}" bindtap="onSavePaymentSelection">保存支付设置</t-button>
+        </view>
 
         <view class="section-divider" wx:if="{{reimbursementItemRows.length > 0}}"></view>
         <block wx:for="{{reimbursementItemRows}}" wx:key="id">

@@ -140,14 +140,19 @@ Page({
   },
 
   paymentMethodLabel(value) {
+    if (!value) return "-";
     const map = {
       bank_transfer: "对公转账",
       transfer: "对公转账",
+      "对公转账": "对公转账",
       cash: "现金",
+      "现金": "现金",
       bill: "票据",
-      other: "其他"
+      "票据": "票据",
+      other: "其他",
+      "其他": "其他"
     };
-    return map[value] || "未知";
+    return map[value] || value;
   },
 
   normalizePaymentMethodValue(value) {
@@ -561,7 +566,9 @@ Page({
   async syncPaymentSelectorsFromBizDetail() {
     const detail = this.data.detail;
     const bizDetail = this.data.bizDetail;
-    if (!detail || !detail.instance || detail.instance.biz_type !== "payment_request" || !bizDetail) return;
+    if (!detail || !detail.instance || !bizDetail) return;
+    const bizType = detail.instance.biz_type;
+    if (bizType !== "payment_request" && bizType !== "reimbursement_batch") return;
 
     const entityId = Number(bizDetail.payment_entity_id || 0);
     const accountId = Number(bizDetail.payment_entity_bank_account_id || 0);
@@ -616,7 +623,9 @@ Page({
   async savePaymentSelection(options = {}) {
     const detail = this.data.detail;
     const bizDetail = this.data.bizDetail;
-    if (!detail || !detail.instance || detail.instance.biz_type !== "payment_request" || !bizDetail) return;
+    if (!detail || !detail.instance || !bizDetail) return;
+    const bizType = detail.instance.biz_type;
+    if (bizType !== "payment_request" && bizType !== "reimbursement_batch") return;
 
     const { paymentEntity, paymentAccount, paymentMethod } = this.getCurrentPaymentSelection();
     const payload = {};
@@ -638,22 +647,30 @@ Page({
       return;
     }
 
-    const profile = getUserProfile() || {};
-    const roles = Array.isArray(profile.roles) ? profile.roles : [];
-    const isSuperAdmin = roles.includes("super_admin");
+    if (bizType === "payment_request") {
+      const profile = getUserProfile() || {};
+      const roles = Array.isArray(profile.roles) ? profile.roles : [];
+      const isSuperAdmin = roles.includes("super_admin");
 
-    await request({
-      method: "PUT",
-      path: `/api/v1/payment/${bizDetail.id}`,
-      data: {
-        ...payload,
-        admin_edit_mode: isSuperAdmin ? true : undefined,
-        edit_note: isSuperAdmin ? "miniapp approval payout selection update" : undefined
-      }
-    });
+      await request({
+        method: "PUT",
+        path: `/api/v1/payment/${bizDetail.id}`,
+        data: {
+          ...payload,
+          admin_edit_mode: isSuperAdmin ? true : undefined,
+          edit_note: isSuperAdmin ? "miniapp approval payout selection update" : undefined
+        }
+      });
+    } else {
+      await request({
+        method: "PUT",
+        path: `/api/v1/reimbursement/batch/${bizDetail.id}/payout-plan`,
+        data: payload
+      });
+    }
 
     if (!options.silent) {
-      sayToast({ title: "付款信息已保存", icon: "success" });
+      sayToast({ title: "支付信息已保存", icon: "success" });
       await this.loadDetail();
     }
   },
@@ -755,6 +772,8 @@ Page({
             ...bizDetail,
             projectLabel: this.projectLabel(bizDetail.project_id),
             applicantLabel: this.userLabel(bizDetail.applicant_userid),
+            paymentMethodLabel: this.paymentMethodLabel(bizDetail.payment_method),
+            paymentAccountLabel: bizDetail.payment_account || "-",
             totalAmountDisplay: this.amountDisplay(bizDetail.total_amount, null),
             items: reimbursementItemRows
           };
@@ -791,6 +810,10 @@ Page({
             bizTypeLabel: this.bizTypeLabel(detail.instance.biz_type),
             statusText: this.statusLabel(detail.instance.status),
             initiatorLabel: this.userLabel(detail.instance.initiator_userid),
+            bizApplicantLabel:
+              detail.instance.biz_type === "reimbursement_batch"
+                ? this.userLabel(detail.instance.biz_applicant_userid)
+                : "-",
             submittedAtText: this.formatBeijingTime(detail.instance.submitted_at),
             completedAtText: this.formatBeijingTime(detail.instance.completed_at)
           }
@@ -845,7 +868,8 @@ Page({
         if (
           this.data.detail &&
           this.data.detail.instance &&
-          this.data.detail.instance.biz_type === "payment_request"
+          (this.data.detail.instance.biz_type === "payment_request" ||
+            this.data.detail.instance.biz_type === "reimbursement_batch")
         ) {
           await this.savePaymentSelection({ silent: true });
         }

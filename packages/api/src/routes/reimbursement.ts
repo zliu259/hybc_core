@@ -32,6 +32,7 @@ import type {
   ScanEnvelopeRequest,
   SubmitEnvelopeRequest,
   SubmitReimbursementBatchApprovalRequest,
+  UpdateReimbursementBatchPayoutPlanRequest,
   UpdateEnvelopeRequest,
   VerifyEnvelopeRequest
 } from "../types/reimbursement";
@@ -222,6 +223,140 @@ const supportsInvoiceReviewTable = async (env: Env): Promise<boolean> => {
 
 const hasOfficeRole = (roles: string[] = []) => {
   return roles.some((role) => reimbursementOfficeRoles.includes(role));
+};
+
+const paymentMethodAliasMap: Record<string, "transfer" | "cash" | "bill" | "other"> = {
+  transfer: "transfer",
+  bank_transfer: "transfer",
+  对公转账: "transfer",
+  cash: "cash",
+  现金: "cash",
+  bill: "bill",
+  票据: "bill",
+  other: "other",
+  其他: "other"
+};
+
+const normalizePaymentMethodValue = (
+  value: string | null | undefined
+): { normalized: "transfer" | "cash" | "bill" | "other" | null; invalid: boolean } => {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) {
+    return { normalized: null, invalid: false };
+  }
+  const mapped = paymentMethodAliasMap[trimmed];
+  if (!mapped) {
+    return { normalized: null, invalid: true };
+  }
+  return { normalized: mapped, invalid: false };
+};
+
+const accountToDisplayText = (account: {
+  bank_name: string;
+  bank_branch_no: string | null;
+  account_no: string;
+}) => {
+  const branch = account.bank_branch_no?.trim();
+  return `${account.bank_name}${branch ? `-${branch}` : ""} / ${account.account_no}`;
+};
+
+type ReimbursementPayoutPlanInput = {
+  payment_method?: string;
+  payment_entity_id?: number;
+  payment_entity_bank_account_id?: number;
+  payment_account?: string;
+};
+
+type ReimbursementPayoutPlanResolved = {
+  payment_method: "transfer" | "cash" | "bill" | "other" | null;
+  payment_entity_id: number | null;
+  payment_entity_bank_account_id: number | null;
+  payment_account: string | null;
+};
+
+const resolveReimbursementPayoutPlan = async (
+  env: Env,
+  input: ReimbursementPayoutPlanInput,
+  current: ReimbursementPayoutPlanResolved = {
+    payment_method: null,
+    payment_entity_id: null,
+    payment_entity_bank_account_id: null,
+    payment_account: null
+  }
+): Promise<{ value: ReimbursementPayoutPlanResolved } | { error: string }> => {
+  let paymentMethod = current.payment_method;
+  let paymentEntityId = current.payment_entity_id;
+  let paymentEntityBankAccountId = current.payment_entity_bank_account_id;
+  let paymentAccount = current.payment_account;
+  let bankAccountDisplay: string | null = null;
+
+  if (input.payment_method !== undefined) {
+    const normalized = normalizePaymentMethodValue(input.payment_method);
+    if (normalized.invalid) {
+      return { error: "payment_method must be one of transfer/cash/bill/other (or 对公转账/现金/票据/其他)" };
+    }
+    paymentMethod = normalized.normalized;
+  }
+
+  if (input.payment_entity_id !== undefined) {
+    if (!Number.isInteger(input.payment_entity_id) || input.payment_entity_id <= 0) {
+      return { error: "payment_entity_id must be a positive integer" };
+    }
+    const entity = await env.DB.prepare("SELECT id FROM entity WHERE id = ? AND status = 'active'")
+      .bind(input.payment_entity_id)
+      .first<{ id: number }>();
+    if (!entity) {
+      return { error: "payment entity not found or inactive" };
+    }
+    paymentEntityId = entity.id;
+  }
+
+  if (input.payment_entity_bank_account_id !== undefined) {
+    if (
+      !Number.isInteger(input.payment_entity_bank_account_id) ||
+      input.payment_entity_bank_account_id <= 0
+    ) {
+      return { error: "payment_entity_bank_account_id must be a positive integer" };
+    }
+
+    const bankAccount = await env.DB.prepare(
+      "SELECT id, entity_id, bank_name, bank_branch_no, account_no FROM entity_bank_account WHERE id = ? AND status = 'active'"
+    )
+      .bind(input.payment_entity_bank_account_id)
+      .first<{
+        id: number;
+        entity_id: number;
+        bank_name: string;
+        bank_branch_no: string | null;
+        account_no: string;
+      }>();
+
+    if (!bankAccount) {
+      return { error: "payment bank account not found or inactive" };
+    }
+    if (paymentEntityId !== null && bankAccount.entity_id !== paymentEntityId) {
+      return { error: "payment bank account does not belong to payment entity" };
+    }
+
+    paymentEntityBankAccountId = bankAccount.id;
+    paymentEntityId = bankAccount.entity_id;
+    bankAccountDisplay = accountToDisplayText(bankAccount);
+  }
+
+  if (input.payment_account !== undefined) {
+    paymentAccount = input.payment_account?.trim() || null;
+  } else if (bankAccountDisplay) {
+    paymentAccount = bankAccountDisplay;
+  }
+
+  return {
+    value: {
+      payment_method: paymentMethod,
+      payment_entity_id: paymentEntityId,
+      payment_entity_bank_account_id: paymentEntityBankAccountId,
+      payment_account: paymentAccount
+    }
+  };
 };
 
 const assertEnvelopeAccess = async (
@@ -1514,12 +1649,38 @@ reimbursementRoutes.get(
       .bind(id)
       .all<{ risk_level: string; cnt: number }>();
 
+    const approvalInstance = batch.approval_instance_id
+      ? await c.env.DB.prepare(
+          `SELECT ai.id, ai.instance_no, ai.status, ai.current_node_key, ai.current_round,
+                  ai.submitted_at, ai.completed_at,
+                  COALESCE(ani.node_name, ai.current_node_key) AS current_node_name
+             FROM approval_instance ai
+             LEFT JOIN approval_node_instance ani
+               ON ani.instance_id = ai.id
+              AND ani.node_key = ai.current_node_key
+              AND ani.round = ai.current_round
+            WHERE ai.id = ?`
+        )
+          .bind(batch.approval_instance_id)
+          .first<{
+            id: number;
+            instance_no: string;
+            status: string;
+            current_node_key: string | null;
+            current_round: number;
+            submitted_at: string;
+            completed_at: string | null;
+            current_node_name: string | null;
+          }>()
+      : null;
+
     return c.json({
       success: true,
       data: {
         ...batch,
         items: enrichedItems,
-        duplicate_summary: duplicateSummary.results ?? []
+        duplicate_summary: duplicateSummary.results ?? [],
+        approval_instance: approvalInstance
       }
     });
   }
@@ -1537,6 +1698,11 @@ reimbursementRoutes.post(
     }
     if (!body.applicant_userid?.trim()) {
       return c.json({ success: false, error: { message: "applicant_userid is required" } }, 400);
+    }
+
+    const payoutPlan = await resolveReimbursementPayoutPlan(c.env, body);
+    if ("error" in payoutPlan) {
+      return c.json({ success: false, error: { message: payoutPlan.error } }, 400);
     }
 
     const baseEnvelopeSql =
@@ -1600,8 +1766,10 @@ reimbursementRoutes.post(
       await runInTransaction(c.env.DB, async () => {
         const insertBatch = await c.env.DB.prepare(
           `INSERT INTO reimbursement_batch
-            (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?)`
+            (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status,
+             payment_method, payment_entity_id, payment_entity_bank_account_id, payment_account,
+             created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?)`
         )
           .bind(
             batchNo,
@@ -1609,6 +1777,10 @@ reimbursementRoutes.post(
             body.applicant_userid.trim(),
             totalAmount,
             selected.length,
+            payoutPlan.value.payment_method,
+            payoutPlan.value.payment_entity_id,
+            payoutPlan.value.payment_entity_bank_account_id,
+            payoutPlan.value.payment_account,
             now,
             now
           )
@@ -1657,7 +1829,10 @@ reimbursementRoutes.post(
       project_id: body.project_id,
       applicant_userid: body.applicant_userid.trim(),
       item_count: selected.length,
-      total_amount: totalAmount
+      total_amount: totalAmount,
+      payment_method: payoutPlan.value.payment_method,
+      payment_entity_id: payoutPlan.value.payment_entity_id,
+      payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id
     });
 
     await writeAuditLog(c.env.DB, {
@@ -1671,7 +1846,10 @@ reimbursementRoutes.post(
         project_id: body.project_id,
         applicant_userid: body.applicant_userid.trim(),
         item_count: selected.length,
-        total_amount: totalAmount
+        total_amount: totalAmount,
+        payment_method: payoutPlan.value.payment_method,
+        payment_entity_id: payoutPlan.value.payment_entity_id,
+        payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id
       }
     });
 
@@ -1846,6 +2024,16 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "Only draft batch can submit approval" } }, 400);
     }
 
+    const payoutPlan = await resolveReimbursementPayoutPlan(c.env, body, {
+      payment_method: normalizePaymentMethodValue(batch.payment_method).normalized,
+      payment_entity_id: batch.payment_entity_id,
+      payment_entity_bank_account_id: batch.payment_entity_bank_account_id,
+      payment_account: batch.payment_account
+    });
+    if ("error" in payoutPlan) {
+      return c.json({ success: false, error: { message: payoutPlan.error } }, 400);
+    }
+
     const idempotencyKey = c.req.header("Idempotency-Key");
     const idempotency = await beginIdempotentRequest<{
       success: boolean;
@@ -1907,7 +2095,11 @@ reimbursementRoutes.post(
               applicant_userid: batch.applicant_userid,
               total_amount: batch.total_amount,
               item_count: batch.item_count,
-              status: batch.status
+              status: batch.status,
+              payment_method: payoutPlan.value.payment_method,
+              payment_entity_id: payoutPlan.value.payment_entity_id,
+              payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
+              payment_account: payoutPlan.value.payment_account
             },
             items: (batchItems.results ?? []).map(item => ({
               envelope_id: item.id,
@@ -1929,10 +2121,24 @@ reimbursementRoutes.post(
       await runInTransaction(c.env.DB, async () => {
         const batchUpdate = await c.env.DB.prepare(
           `UPDATE reimbursement_batch
-              SET status = 'pending_approval', approval_instance_id = ?, updated_at = ?
-            WHERE id = ? AND status = 'draft'`
+              SET status = 'pending_approval',
+                  approval_instance_id = ?,
+                  payment_method = ?,
+                  payment_entity_id = ?,
+                  payment_entity_bank_account_id = ?,
+                  payment_account = ?,
+                  updated_at = ?
+             WHERE id = ? AND status = 'draft'`
         )
-          .bind(instance.id, now, id)
+          .bind(
+            instance.id,
+            payoutPlan.value.payment_method,
+            payoutPlan.value.payment_entity_id,
+            payoutPlan.value.payment_entity_bank_account_id,
+            payoutPlan.value.payment_account,
+            now,
+            id
+          )
           .run();
         if ((batchUpdate.meta.changes ?? 0) !== 1) {
           throw new Error("Batch is no longer in draft status");
@@ -1964,7 +2170,10 @@ reimbursementRoutes.post(
       targetId: id,
       detail: {
         approval_instance_id: instance.id,
-        batch_no: batch.batch_no
+        batch_no: batch.batch_no,
+        payment_method: payoutPlan.value.payment_method,
+        payment_entity_id: payoutPlan.value.payment_entity_id,
+        payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id
       }
     });
 
@@ -2159,6 +2368,144 @@ reimbursementRoutes.post(
     );
 
     return c.json(payload);
+  }
+);
+
+reimbursementRoutes.put(
+  "/batch/:id/payout-plan",
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as UpdateReimbursementBatchPayoutPlanRequest;
+    const now = nowIso();
+    const isSuperAdmin = auth.roles.includes("super_admin");
+
+    const hasPayoutMutation =
+      body.payment_method !== undefined ||
+      body.payment_entity_id !== undefined ||
+      body.payment_entity_bank_account_id !== undefined ||
+      body.payment_account !== undefined;
+
+    if (!hasPayoutMutation) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message:
+              "At least one payout field is required (payment_method/payment_entity_id/payment_entity_bank_account_id/payment_account)"
+          }
+        },
+        400
+      );
+    }
+
+    const batch = await c.env.DB.prepare("SELECT * FROM reimbursement_batch WHERE id = ?")
+      .bind(id)
+      .first<ReimbursementBatch>();
+
+    if (!batch) {
+      return c.json({ success: false, error: { message: "Batch not found" } }, 404);
+    }
+
+    if (!isSuperAdmin) {
+      if (batch.status === "draft") {
+        // allowed for office roles
+      } else if (batch.status === "pending_approval" && batch.approval_instance_id) {
+        const approval = await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+          .bind(batch.approval_instance_id)
+          .first<{ status: string }>();
+        const approvalInProgress = approval
+          ? approval.status === "pending" || approval.status === "in_progress"
+          : false;
+        if (!approvalInProgress) {
+          return c.json(
+            {
+              success: false,
+              error: { message: "Batch payout plan can only be changed while approval is in progress" }
+            },
+            400
+          );
+        }
+
+        const approverTask = await c.env.DB.prepare(
+          `SELECT id FROM approval_task
+             WHERE instance_id = ?
+               AND assignee_userid = ?
+               AND status IN ('pending', 'in_progress')
+             ORDER BY id DESC LIMIT 1`
+        )
+          .bind(batch.approval_instance_id, auth.sub)
+          .first<{ id: number }>();
+
+        if (!approverTask) {
+          return c.json(
+            {
+              success: false,
+              error: {
+                message: "Only current approver can adjust payout plan during approval"
+              }
+            },
+            400
+          );
+        }
+      } else {
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: "Batch payout plan can only be changed in draft or in-progress approval state"
+            }
+          },
+          400
+        );
+      }
+    }
+
+    const payoutPlan = await resolveReimbursementPayoutPlan(c.env, body, {
+      payment_method: normalizePaymentMethodValue(batch.payment_method).normalized,
+      payment_entity_id: batch.payment_entity_id,
+      payment_entity_bank_account_id: batch.payment_entity_bank_account_id,
+      payment_account: batch.payment_account
+    });
+    if ("error" in payoutPlan) {
+      return c.json({ success: false, error: { message: payoutPlan.error } }, 400);
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE reimbursement_batch
+          SET payment_method = ?,
+              payment_entity_id = ?,
+              payment_entity_bank_account_id = ?,
+              payment_account = ?,
+              updated_at = ?
+        WHERE id = ?`
+    )
+      .bind(
+        payoutPlan.value.payment_method,
+        payoutPlan.value.payment_entity_id,
+        payoutPlan.value.payment_entity_bank_account_id,
+        payoutPlan.value.payment_account,
+        now,
+        id
+      )
+      .run();
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.batch.update_payout_plan",
+      targetType: "reimbursement_batch",
+      targetId: id,
+      detail: {
+        payment_method: payoutPlan.value.payment_method,
+        payment_entity_id: payoutPlan.value.payment_entity_id,
+        payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
+        payment_account: payoutPlan.value.payment_account
+      }
+    });
+
+    return c.json({ success: true, data: payoutPlan.value });
   }
 );
 
