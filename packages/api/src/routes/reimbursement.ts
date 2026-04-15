@@ -16,7 +16,7 @@ import { generateSerial } from "../services/serial";
 import { canUpdateBatchPayoutPlan } from "./reimbursement-batch-payout-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import type { Env } from "../types/env";
-import { reimbursementChannels } from "../types/reimbursement";
+import { reimbursementChannels, reimbursementStatuses } from "../types/reimbursement";
 import type {
   BatchGenerateEnvelopeRequest,
   CreateReimbursementBatchRequest,
@@ -41,6 +41,7 @@ import type {
 const nowIso = () => new Date().toISOString();
 const UNASSIGNED_APPLICANT = "__UNASSIGNED__";
 const validChannelSet = new Set<string>(reimbursementChannels);
+const reimbursementStatusSet = new Set<string>(reimbursementStatuses);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const reimbursementOfficeRoles = ["super_admin", "manager", "site_manager", "finance"];
@@ -1243,7 +1244,11 @@ reimbursementRoutes.use("*", authMiddleware);
 
 reimbursementRoutes.get("/", async (c) => {
   const auth = c.get("auth");
-  const status = c.req.query("status");
+  const rawStatus = c.req.query("status") ?? "";
+  const statusFilters = rawStatus
+    .split(",")
+    .map((item) => item.trim())
+    .filter((item) => Boolean(item) && reimbursementStatusSet.has(item));
   const projectId = c.req.query("project_id");
   const creatorId = c.req.query("creator_id");
   const applicantUserid = c.req.query("applicant_userid");
@@ -1292,10 +1297,11 @@ reimbursementRoutes.get("/", async (c) => {
   let countSql = "SELECT COUNT(*) as total FROM reimbursement_envelope e WHERE e.status != 'deleted'";
   const params: (string | number)[] = [];
 
-  if (status) {
-    sql += " AND e.status = ?";
-    countSql += " AND e.status = ?";
-    params.push(status);
+  if (statusFilters.length > 0) {
+    const placeholders = statusFilters.map(() => "?").join(", ");
+    sql += ` AND e.status IN (${placeholders})`;
+    countSql += ` AND e.status IN (${placeholders})`;
+    params.push(...statusFilters);
   } else if (excludeCancelled) {
     sql += " AND e.status != 'cancelled'";
     countSql += " AND e.status != 'cancelled'";

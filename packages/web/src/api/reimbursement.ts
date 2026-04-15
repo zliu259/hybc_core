@@ -69,7 +69,7 @@ export type ReimbursementEnvelopeDetail = ReimbursementEnvelope & {
 type Pagination = { page: number; pageSize: number; total: number };
 
 export const listReimbursementEnvelopes = (params?: {
-  status?: string;
+  status?: string | string[];
   project_id?: number;
   applicant_userid?: string;
   creator_id?: string;

@@ -37,7 +37,7 @@ const total = ref(0);
 const filters = ref({
   project_id: undefined as number | undefined,
   applicant_userid: "",
-  status: "",
+  status: [] as string[],
   channel: "",
   keyword: ""
 });
@@ -173,8 +173,10 @@ const loadData = async () => {
       pageSize: pageSize.value,
       project_id: filters.value.project_id,
       applicant_userid: filters.value.applicant_userid || undefined,
-      status: filters.value.status || undefined,
-      exclude_cancelled: !filters.value.status,
+      status: filters.value.status.length
+        ? filters.value.status.join(",")
+        : undefined,
+      exclude_cancelled: filters.value.status.length === 0,
       channel: filters.value.channel || undefined,
       keyword: filters.value.keyword || undefined
     });
@@ -285,20 +287,20 @@ const applyWorkflowPreset = (mode: WorkflowView) => {
     filters.value.applicant_userid = isWorkspaceRoute.value
       ? currentUserid.value
       : "";
-    filters.value.status = "";
+    filters.value.status = [];
     filters.value.channel = "";
     return;
   }
 
   if (mode === "office") {
     filters.value.applicant_userid = "";
-    filters.value.status = "submitted";
+    filters.value.status = ["submitted"];
     filters.value.channel = "";
     return;
   }
 
   filters.value.applicant_userid = "";
-  filters.value.status = "";
+  filters.value.status = [];
   filters.value.channel = "";
 };
 
@@ -383,7 +385,15 @@ watch(workflowView, mode => {
         </el-select>
       </el-form-item>
       <el-form-item label="状态">
-        <el-select v-model="filters.status" clearable style="width: 170px">
+        <el-select
+          v-model="filters.status"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          style="width: 250px"
+          placeholder="可多选状态"
+        >
           <el-option label="草稿" value="draft" />
           <el-option label="未登记" value="unregistered" />
           <el-option label="已填报" value="submitted" />

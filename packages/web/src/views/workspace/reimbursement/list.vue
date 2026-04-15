@@ -21,7 +21,7 @@ const pageSize = ref(20);
 const total = ref(0);
 
 const filters = ref({
-  status: "",
+  status: [] as string[],
   channel: "",
   keyword: ""
 });
@@ -71,7 +71,9 @@ const loadData = async () => {
       page: page.value,
       pageSize: pageSize.value,
       applicant_userid: currentUserid.value,
-      status: filters.value.status || undefined,
+      status: filters.value.status.length
+        ? filters.value.status.join(",")
+        : undefined,
       channel: filters.value.channel || undefined,
       keyword: filters.value.keyword || undefined
     });
@@ -124,7 +126,15 @@ onMounted(async () => {
 
     <el-form inline>
       <el-form-item label="状态">
-        <el-select v-model="filters.status" clearable style="width: 170px">
+        <el-select
+          v-model="filters.status"
+          multiple
+          collapse-tags
+          collapse-tags-tooltip
+          clearable
+          style="width: 250px"
+          placeholder="可多选状态"
+        >
           <el-option label="草稿" value="draft" />
           <el-option label="未登记" value="unregistered" />
           <el-option label="已填报" value="submitted" />

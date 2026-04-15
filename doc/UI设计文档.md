@@ -178,6 +178,7 @@
 - 功能融合：复核提示、智能核查、复核通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
 - 报销处理页（财务中心入口）常驻“信封生成器”按钮，避免因分段切换看不到入口。
 - 报销提交列表默认隐藏 `cancelled` 记录；仅在状态筛选显式选择“已废止”时展示：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
+- 报销提交列表“状态”筛选支持多选，前端将多选状态合并为逗号参数传递，后端按 `IN` 条件过滤，避免多选后筛选报错：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
 - 员工侧不再暴露 OCR/异常检测/预审 等技术步骤名词；员工仅看到“提交后后台静默核查”的业务提示：`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/miniapp/pages/reimbursement/index.{js,wxml}`
 - API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
 
@@ -1266,3 +1267,8 @@
 - 报销批次详情页基础信息扩展为“全量业务视图”：批次状态、项目/被报销人、付款方式、付款账户、出款实体、出款银行账户、支付流水号、打款日期、创建/更新时间、审批实例状态/当前节点：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 报销批次详情页新增支付凭证区（读取并展示 `payment_vouchers`），支持直接预览/下载凭证文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 报销批次详情接口补齐聚合字段，返回 `payment_entity`、`payment_bank_account`、`payment_vouchers`，减少前端二次拼接成本并保证详情一致性：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
+
+### 8.14 报销提交状态筛选多选与报错修复（2026-04）
+- 报销提交列表（财务中心）状态筛选改为多选控件，支持一次筛选多个状态并折叠标签展示：`packages/web/src/views/finance/reimbursement/list.vue`
+- 工作台“我的报销提交”状态筛选同步改为多选，保持 Web 两个入口口径一致：`packages/web/src/views/workspace/reimbursement/list.vue`
+- 报销列表接口参数 `status` 扩展为可传逗号拼接状态集合，后端按 `status IN (...)` 执行过滤，兼容单状态与多状态筛选：`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
