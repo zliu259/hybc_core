@@ -139,6 +139,15 @@ const weComErrorMessage = (errmsg: string | undefined, fallback: string): string
   return errmsg;
 };
 
+const isInvalidWeComCodeError = (message: string): boolean => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("invalid code") ||
+    normalized.includes("e=40029") ||
+    normalized.includes("40029")
+  );
+};
+
 const normalizeBridgeProxyUrl = (env: Env): string | null => {
   const explicit = env.WECHAT_BRIDGE_PROXY_URL?.trim();
   if (explicit) {
@@ -422,18 +431,20 @@ const buildIdentityByCode = async (
 
   let userId: string | null = null;
   let primaryErrorMessage = "";
+  let primaryErrorIsInvalidCode = false;
 
   try {
     userId = await resolvePrimaryUserId();
   } catch (error) {
     primaryErrorMessage = error instanceof Error ? error.message : "Failed to resolve WeCom user from login code";
+    primaryErrorIsInvalidCode = isInvalidWeComCodeError(primaryErrorMessage);
   }
 
   // Hotfix: keep miniapp login compatible with qy.login code variants by
   // allowing one fallback attempt to getuserinfo when jscode2session fails.
   // We intentionally keep this to a single fallback path (miniapp -> web only)
   // to avoid unnecessary multi-endpoint retries on the same one-time code.
-  if (!userId && preferMiniProgram) {
+  if (!userId && preferMiniProgram && !primaryErrorIsInvalidCode) {
     try {
       userId = await fetchWeComUserId(env, accessToken, code);
     } catch (error) {
@@ -446,7 +457,10 @@ const buildIdentityByCode = async (
   }
 
   if (!userId) {
-    throw new Error(primaryErrorMessage || "Failed to resolve WeCom user from login code");
+    if (primaryErrorMessage) {
+      throw new Error(primaryErrorMessage);
+    }
+    throw new Error("Failed to resolve WeCom user from login code");
   }
 
   const profile = await fetchWeComProfile(env, accessToken, userId);
