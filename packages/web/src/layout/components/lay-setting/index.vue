@@ -456,7 +456,7 @@ onBeforeMount(() => {
   void loadPasskeys();
 });
 
-onUnmounted(() => removeMatchMedia);
+onUnmounted(() => removeMatchMedia());
 </script>
 
 <template>

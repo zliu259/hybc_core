@@ -90,7 +90,9 @@ export const useUserStore = defineStore("pure-user", {
     },
     /** 前端登出（不调用接口） */
     logOut() {
+      this.avatar = "";
       this.username = "";
+      this.nickname = "";
       this.roles = [];
       this.permissions = [];
       removeToken();
