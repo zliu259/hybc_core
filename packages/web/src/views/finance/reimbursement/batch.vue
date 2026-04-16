@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import { ElMessageBox } from "element-plus";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
@@ -11,8 +12,14 @@ import {
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
+  listEntities,
+  listEntityBankAccounts,
+  type Entity,
+  type EntityBankAccount
+} from "@/api/entity";
+import {
   createReimbursementBatch,
-  listReimbursementEnvelopes,
+  listReimbursementBatchCandidates,
   listReimbursementBatches,
   submitBatchApproval,
   type ReimbursementEnvelope,
@@ -31,6 +38,8 @@ const historyLoading = ref(false);
 const candidates = ref<ReimbursementEnvelope[]>([]);
 const candidateSelectedIds = ref<number[]>([]);
 const historyRows = ref<ReimbursementBatch[]>([]);
+const entities = ref<Entity[]>([]);
+const bankAccounts = ref<EntityBankAccount[]>([]);
 
 const page = ref(1);
 const pageSize = ref(20);
@@ -40,7 +49,10 @@ const filters = ref({
   project_id: undefined as number | undefined,
   applicant_userid: "",
   status: "",
-  payment_method: ""
+  payment_method: "",
+  payment_entity_id: undefined as number | undefined,
+  payment_entity_bank_account_id: undefined as number | undefined,
+  payment_account: ""
 });
 
 const paymentMethodLabelMap: Record<string, string> = {
@@ -67,6 +79,22 @@ const projectMap = computed(() => {
   });
   return map;
 });
+
+const entityNameMap = computed(() => {
+  const map = new Map<number, string>();
+  for (const item of entities.value) {
+    map.set(item.id, item.entity_name);
+  }
+  return map;
+});
+
+const activeEntities = computed(() =>
+  entities.value.filter(item => item.status === "active")
+);
+
+const activeBankAccounts = computed(() =>
+  bankAccounts.value.filter(item => item.status === "active")
+);
 
 const creatingAndSubmitting = ref(false);
 
@@ -116,19 +144,47 @@ const loadCandidates = async () => {
 
   candidateLoading.value = true;
   try {
-    const result = await listReimbursementEnvelopes({
-      page: 1,
-      pageSize: 500,
+    const result = await listReimbursementBatchCandidates({
       project_id: filters.value.project_id,
       applicant_userid: filters.value.applicant_userid.trim()
     });
-    candidates.value = result.data.filter(
-      item => !["paid", "rejected", "deleted"].includes(item.status)
-    );
+    candidates.value = result.data;
     candidateSelectedIds.value = [];
   } finally {
     candidateLoading.value = false;
   }
+};
+
+const loadEntities = async () => {
+  const result = await listEntities();
+  entities.value = result.data;
+};
+
+const toBankAccountLabel = (item: EntityBankAccount) => {
+  const branch = item.bank_branch_no?.trim();
+  return `${item.bank_name}${branch ? `-${branch}` : ""} / ${item.account_no}`;
+};
+
+const onPaymentEntityChange = async () => {
+  filters.value.payment_entity_bank_account_id = undefined;
+  filters.value.payment_account = "";
+  if (!filters.value.payment_entity_id) {
+    bankAccounts.value = [];
+    return;
+  }
+  const result = await listEntityBankAccounts(filters.value.payment_entity_id);
+  bankAccounts.value = result.data;
+};
+
+const onPaymentBankAccountChange = () => {
+  if (!filters.value.payment_entity_bank_account_id) {
+    filters.value.payment_account = "";
+    return;
+  }
+  const target = activeBankAccounts.value.find(
+    item => item.id === filters.value.payment_entity_bank_account_id
+  );
+  filters.value.payment_account = target ? toBankAccountLabel(target) : "";
 };
 
 const autoSelectSubmittable = () => {
@@ -148,6 +204,52 @@ const submitCreateAndApproval = async () => {
     return;
   }
 
+  if (!filters.value.payment_method) {
+    message("请选择收款方式", { type: "warning" });
+    return;
+  }
+  if (!filters.value.payment_entity_id || !filters.value.payment_entity_bank_account_id) {
+    message("请选择付款实体和付款账户", { type: "warning" });
+    return;
+  }
+  if (!filters.value.payment_account.trim()) {
+    message("请补全付款账户显示信息", { type: "warning" });
+    return;
+  }
+  if (candidateSelectedIds.value.length === 0) {
+    message("请先从候选条目中勾选要送审的报销单", { type: "warning" });
+    return;
+  }
+
+  const selectedRows = candidates.value.filter(item =>
+    candidateSelectedIds.value.includes(item.id)
+  );
+  const selectedTotalAmount = selectedRows.reduce(
+    (sum, item) => sum + Number(item.amount || 0),
+    0
+  );
+  const paymentEntityLabel = entityNameMap.value.get(filters.value.payment_entity_id) || "-";
+  const paymentAccountLabel =
+    activeBankAccounts.value.find(
+      item => item.id === filters.value.payment_entity_bank_account_id
+    )?.account_no || "-";
+
+  try {
+    await ElMessageBox.confirm(
+      `即将创建并送审：${selectedRows.length} 条报销，合计 ¥${selectedTotalAmount.toFixed(
+        2
+      )}。\n收款方式：${toPaymentMethodLabel(filters.value.payment_method)}\n付款实体：${paymentEntityLabel}\n付款账号：${paymentAccountLabel}\n\n请确认信息无误后继续。`,
+      "二次确认：创建并送审",
+      {
+        type: "warning",
+        confirmButtonText: "确认送审",
+        cancelButtonText: "取消"
+      }
+    );
+  } catch {
+    return;
+  }
+
   creatingAndSubmitting.value = true;
   try {
     const createKey = `reimbursement-batch-create-${crypto.randomUUID()}`;
@@ -155,6 +257,9 @@ const submitCreateAndApproval = async () => {
       project_id: filters.value.project_id,
       applicant_userid: filters.value.applicant_userid.trim(),
       payment_method: filters.value.payment_method || undefined,
+      payment_entity_id: filters.value.payment_entity_id,
+      payment_entity_bank_account_id: filters.value.payment_entity_bank_account_id,
+      payment_account: filters.value.payment_account.trim(),
       envelope_ids:
         candidateSelectedIds.value.length > 0
           ? candidateSelectedIds.value
@@ -162,7 +267,10 @@ const submitCreateAndApproval = async () => {
     }, { idempotencyKey: createKey });
 
     await submitBatchApproval(result.data.id, {
-      payment_method: filters.value.payment_method || undefined
+      payment_method: filters.value.payment_method || undefined,
+      payment_entity_id: filters.value.payment_entity_id,
+      payment_entity_bank_account_id: filters.value.payment_entity_bank_account_id,
+      payment_account: filters.value.payment_account.trim()
     }, {
       idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
     });
@@ -186,7 +294,7 @@ const openDetail = (id: number) => {
 };
 
 onMounted(async () => {
-  await Promise.all([loadProjects(), loadWecomUsers()]);
+  await Promise.all([loadProjects(), loadWecomUsers(), loadEntities()]);
   await Promise.all([loadData(), loadHistory()]);
 });
 
@@ -276,6 +384,47 @@ watch(
           <el-option label="票据" value="bill" />
           <el-option label="其他" value="other" />
         </el-select>
+      </el-form-item>
+      <el-form-item label="付款实体">
+        <el-select
+          v-model="filters.payment_entity_id"
+          filterable
+          clearable
+          style="width: 220px"
+          placeholder="请选择付款实体"
+          @change="onPaymentEntityChange"
+        >
+          <el-option
+            v-for="item in activeEntities"
+            :key="item.id"
+            :label="item.entity_name"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="付款账户">
+        <el-select
+          v-model="filters.payment_entity_bank_account_id"
+          filterable
+          clearable
+          style="width: 260px"
+          placeholder="请选择付款账户"
+          @change="onPaymentBankAccountChange"
+        >
+          <el-option
+            v-for="item in activeBankAccounts"
+            :key="item.id"
+            :label="toBankAccountLabel(item)"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="账户显示">
+        <el-input
+          v-model="filters.payment_account"
+          style="width: 240px"
+          placeholder="可手工修正"
+        />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询批次</el-button>
       <el-button @click="loadCandidates">查询候选报销</el-button>

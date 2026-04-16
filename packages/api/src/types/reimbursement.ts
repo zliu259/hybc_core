@@ -242,3 +242,15 @@ export interface UpdateReimbursementBatchPayoutPlanRequest {
   payment_entity_bank_account_id?: number;
   payment_account?: string;
 }
+
+export interface UpdateReimbursementBatchPaymentVouchersRequest {
+  payment_vouchers?: ReimbursementPaymentVoucherInput[];
+}
+
+export interface UpdateReimbursementBatchItemBasicInfoRequest {
+  invoice_no?: string;
+  expense_date?: string;
+  amount?: number;
+  category?: string;
+  description?: string;
+}

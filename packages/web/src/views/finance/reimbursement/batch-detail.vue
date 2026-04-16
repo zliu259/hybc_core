@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
@@ -8,6 +9,8 @@ import {
   getReimbursementBatch,
   submitBatchApproval,
   triggerBatchAudit,
+  updateBatchItemBasicInfo,
+  updateBatchPaymentVouchers,
   updateBatchPayoutPlan,
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
@@ -20,7 +23,8 @@ import {
   type Entity,
   type EntityBankAccount
 } from "@/api/entity";
-import { resolveUploadUrl } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import { formatToken, getToken } from "@/utils/auth";
 import { formatBeijingDateTime } from "@/utils/datetime";
 
 defineOptions({ name: "ReimbursementBatchDetail" });
@@ -32,10 +36,15 @@ const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const batchId = computed(() => Number(route.params.id));
 const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
+const canMaintainBatchDetail = computed(() =>
+  (userStore.roles ?? []).some(role => ["super_admin", "manager", "finance"].includes(role))
+);
 
 const loading = ref(false);
 const actionLoading = ref(false);
 const savingPayout = ref(false);
+const savingVouchers = ref(false);
+const uploadingVoucher = ref(false);
 const detail = ref<ReimbursementBatchDetail | null>(null);
 const auditResult = ref<Record<string, unknown> | string | null>(null);
 const auditStatus = ref("none");
@@ -48,6 +57,26 @@ const payoutEdit = ref({
   payment_entity_id: undefined as number | undefined,
   payment_entity_bank_account_id: undefined as number | undefined,
   payment_account: ""
+});
+
+const voucherEditorRows = ref<
+  Array<{
+    file_key: string;
+    file_name: string;
+    file_size?: number;
+    is_new: boolean;
+  }>
+>([]);
+
+const editItemDialogVisible = ref(false);
+const savingItemBasic = ref(false);
+const editItemForm = ref({
+  envelope_id: 0,
+  invoice_no: "",
+  expense_date: "",
+  amount: 0,
+  category: "",
+  description: ""
 });
 
 const paymentMethodOptions = [
@@ -192,6 +221,104 @@ const voucherRows = computed(() =>
   parsePaymentVouchers(detail.value?.payment_vouchers, detail.value?.payment_vouchers_json)
 );
 
+const syncVoucherEditorFromDetail = () => {
+  voucherEditorRows.value = voucherRows.value.map(item => ({
+    file_key: item.file_key,
+    file_name: item.file_name || item.file_key,
+    file_size: item.file_size,
+    is_new: false
+  }));
+};
+
+const uploadVoucher = async (options: UploadRequestOptions) => {
+  const rawFile = options.file;
+  uploadingVoucher.value = true;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "reimbursement"
+    });
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+    voucherEditorRows.value.unshift({
+      file_key: signRes.data.key,
+      file_name: rawFile.name,
+      file_size: rawFile.size,
+      is_new: true
+    });
+    message("支付凭证上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("支付凭证上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    uploadingVoucher.value = false;
+  }
+};
+
+const removeVoucherRow = (index: number) => {
+  voucherEditorRows.value.splice(index, 1);
+};
+
+const savePaymentVouchers = async () => {
+  if (!detail.value) return;
+  savingVouchers.value = true;
+  try {
+    await updateBatchPaymentVouchers(detail.value.id, {
+      payment_vouchers: voucherEditorRows.value.map(item => ({
+        file_key: item.file_key,
+        file_name: item.file_name,
+        file_size: item.file_size
+      }))
+    });
+    message("支付凭证已保存", { type: "success" });
+    await loadDetail();
+  } finally {
+    savingVouchers.value = false;
+  }
+};
+
+const openEditItemDialog = (item: ReimbursementBatchDetail["items"][number]) => {
+  editItemForm.value = {
+    envelope_id: item.id,
+    invoice_no: item.invoice_no ?? "",
+    expense_date: item.expense_date ?? "",
+    amount: Number(item.amount || 0),
+    category: item.category ?? "",
+    description: item.description ?? ""
+  };
+  editItemDialogVisible.value = true;
+};
+
+const saveItemBasicInfo = async () => {
+  if (!detail.value || !editItemForm.value.envelope_id) return;
+  savingItemBasic.value = true;
+  try {
+    await updateBatchItemBasicInfo(detail.value.id, editItemForm.value.envelope_id, {
+      invoice_no: editItemForm.value.invoice_no || undefined,
+      expense_date: editItemForm.value.expense_date || undefined,
+      amount: Number(editItemForm.value.amount),
+      category: editItemForm.value.category || undefined,
+      description: editItemForm.value.description || undefined
+    });
+    message("报销基础信息已更新", { type: "success" });
+    editItemDialogVisible.value = false;
+    await loadDetail();
+  } finally {
+    savingItemBasic.value = false;
+  }
+};
+
 const loadBankAccounts = async (entityId: number | undefined, preferredAccountId?: number) => {
   if (!entityId) {
     bankAccounts.value = [];
@@ -299,6 +426,7 @@ const loadDetail = async () => {
     const report = await getBatchAuditReport(batchId.value);
     auditStatus.value = report.data.status;
     auditResult.value = report.data.result;
+    syncVoucherEditorFromDetail();
 
     if (isSuperAdmin.value) {
       await syncEditFormFromDetail();
@@ -506,7 +634,25 @@ onMounted(async () => {
     </div>
 
     <el-card shadow="never" style="margin-top: 16px" header="支付凭证">
-      <el-table v-if="voucherRows.length > 0" :data="voucherRows" size="small" border>
+      <el-upload
+        v-if="canMaintainBatchDetail"
+        drag
+        :show-file-list="false"
+        :multiple="true"
+        :disabled="uploadingVoucher"
+        :http-request="uploadVoucher"
+      >
+        <div class="el-upload__text">拖拽凭证到这里，或 <em>点击上传</em></div>
+        <div class="el-upload__tip">支持上传打款截图、回单等凭证</div>
+      </el-upload>
+
+      <el-table
+        v-if="voucherEditorRows.length > 0"
+        :data="voucherEditorRows"
+        size="small"
+        border
+        style="margin-top: 8px"
+      >
         <el-table-column prop="file_name" label="文件名" min-width="240">
           <template #default="scope">
             {{ scope.row.file_name || scope.row.file_key }}
@@ -526,10 +672,24 @@ onMounted(async () => {
             >
               预览
             </el-link>
+            <el-button
+              v-if="canMaintainBatchDetail"
+              link
+              type="danger"
+              style="margin-left: 12px"
+              @click="removeVoucherRow(scope.$index)"
+            >
+              移除
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
       <el-empty v-else description="暂无支付凭证" />
+      <div v-if="canMaintainBatchDetail" style="margin-top: 10px">
+        <el-button type="primary" :loading="savingVouchers" @click="savePaymentVouchers">
+          保存支付凭证
+        </el-button>
+      </div>
     </el-card>
 
     <el-card shadow="never" style="margin-top: 16px" header="查重风险汇总">
@@ -604,10 +764,60 @@ onMounted(async () => {
             <el-button link type="primary" @click="router.push(`/finance/reimbursement/detail/${scope.row.id}`)">
               详情
             </el-button>
+            <el-button
+              v-if="canMaintainBatchDetail"
+              link
+              type="warning"
+              @click="openEditItemDialog(scope.row)"
+            >
+              编辑基础信息
+            </el-button>
           </template>
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-dialog
+      v-model="editItemDialogVisible"
+      title="编辑报销基础信息"
+      width="560px"
+      destroy-on-close
+    >
+      <el-form label-width="110px">
+        <el-form-item label="发票号">
+          <el-input v-model="editItemForm.invoice_no" clearable />
+        </el-form-item>
+        <el-form-item label="费用日期">
+          <el-date-picker
+            v-model="editItemForm.expense_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+            clearable
+          />
+        </el-form-item>
+        <el-form-item label="金额">
+          <el-input-number
+            v-model="editItemForm.amount"
+            :precision="2"
+            :min="0"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="类别">
+          <el-input v-model="editItemForm.category" clearable />
+        </el-form-item>
+        <el-form-item label="说明">
+          <el-input v-model="editItemForm.description" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="editItemDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="savingItemBasic" @click="saveItemBasicInfo">
+          保存
+        </el-button>
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 

@@ -33,6 +33,8 @@ import type {
   ScanEnvelopeRequest,
   SubmitEnvelopeRequest,
   SubmitReimbursementBatchApprovalRequest,
+  UpdateReimbursementBatchItemBasicInfoRequest,
+  UpdateReimbursementBatchPaymentVouchersRequest,
   UpdateReimbursementBatchPayoutPlanRequest,
   UpdateEnvelopeRequest,
   VerifyEnvelopeRequest
@@ -274,6 +276,26 @@ type ReimbursementPayoutPlanResolved = {
   payment_entity_id: number | null;
   payment_entity_bank_account_id: number | null;
   payment_account: string | null;
+};
+
+const normalizePaymentVoucherInputs = (value: unknown): ReimbursementPaymentVoucherInput[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item): ReimbursementPaymentVoucherInput | null => {
+      if (!item || typeof item !== "object") return null;
+      const row = item as {
+        file_key?: string;
+        file_name?: string;
+        file_size?: number;
+      };
+      if (!row.file_key || !row.file_key.trim()) return null;
+      return {
+        file_key: row.file_key.trim(),
+        file_name: row.file_name?.trim() || undefined,
+        file_size: row.file_size
+      };
+    })
+    .filter((item): item is ReimbursementPaymentVoucherInput => Boolean(item));
 };
 
 const resolveReimbursementPayoutPlan = async (
@@ -1491,6 +1513,40 @@ reimbursementRoutes.get(
 );
 
 reimbursementRoutes.get(
+  "/batch/candidates",
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  async (c) => {
+    const projectId = Number(c.req.query("project_id") ?? "0");
+    const applicantUserid = c.req.query("applicant_userid")?.trim() ?? "";
+
+    if (!projectId || projectId <= 0) {
+      return c.json({ success: false, error: { message: "project_id is required" } }, 400);
+    }
+    if (!applicantUserid) {
+      return c.json({ success: false, error: { message: "applicant_userid is required" } }, 400);
+    }
+
+    const rows = await c.env.DB.prepare(
+      `SELECT *
+         FROM reimbursement_envelope
+        WHERE status = 'received'
+          AND precheck_status = 'approved'
+          AND batch_id IS NULL
+          AND project_id = ?
+          AND applicant_userid = ?
+        ORDER BY updated_at DESC, id DESC`
+    )
+      .bind(projectId, applicantUserid)
+      .all<ReimbursementEnvelope>();
+
+    return c.json({
+      success: true,
+      data: rows.results ?? []
+    });
+  }
+);
+
+reimbursementRoutes.get(
   "/batch/:id",
   requireRoles(["super_admin", "manager", "site_manager", "finance"]),
   async (c) => {
@@ -1777,7 +1833,9 @@ reimbursementRoutes.post(
              AND id IN (${body.envelope_ids.map(() => "?").join(",")})`
         : `SELECT * FROM reimbursement_envelope
            WHERE status = 'received' AND precheck_status = 'approved'
-             AND batch_id IS NULL AND project_id = ? AND applicant_userid = ?`;
+             AND batch_id IS NULL
+             AND approval_instance_id IS NULL
+             AND project_id = ? AND applicant_userid = ?`;
 
     const envelopeQuery = c.env.DB.prepare(baseEnvelopeSql);
     const envelopes =
@@ -1792,6 +1850,7 @@ reimbursementRoutes.post(
         item.project_id === body.project_id &&
         item.applicant_userid === body.applicant_userid.trim() &&
         item.batch_id === null &&
+        item.approval_instance_id === null &&
         item.status === "received" &&
         item.precheck_status === "approved"
     );
@@ -1802,7 +1861,7 @@ reimbursementRoutes.post(
           success: false,
           error: {
             message:
-              "No eligible envelopes. Require status=received, precheck_status=approved, same project/applicant, and not batched."
+              "No eligible envelopes. Require status=received, precheck_status=approved, same project/applicant, and not batched/submitted."
           }
         },
         400
@@ -2099,6 +2158,24 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: payoutPlan.error } }, 400);
     }
 
+    if (
+      !payoutPlan.value.payment_method ||
+      !payoutPlan.value.payment_entity_id ||
+      !payoutPlan.value.payment_entity_bank_account_id ||
+      !payoutPlan.value.payment_account
+    ) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message:
+              "payment_method, payment_entity_id, payment_entity_bank_account_id and payment_account are required before approval submission"
+          }
+        },
+        400
+      );
+    }
+
     const idempotencyKey = c.req.header("Idempotency-Key");
     const idempotency = await beginIdempotentRequest<{
       success: boolean;
@@ -2311,18 +2388,7 @@ reimbursementRoutes.post(
       );
     }
 
-    const vouchers = Array.isArray(body.payment_vouchers)
-      ? body.payment_vouchers
-          .map((item): ReimbursementPaymentVoucherInput | null => {
-            if (!item || typeof item.file_key !== "string" || !item.file_key.trim()) return null;
-            return {
-              file_key: item.file_key.trim(),
-              file_name: item.file_name?.trim() || undefined,
-              file_size: item.file_size
-            };
-          })
-          .filter((item): item is ReimbursementPaymentVoucherInput => Boolean(item))
-      : [];
+    const vouchers = normalizePaymentVoucherInputs(body.payment_vouchers);
 
     const batch = await c.env.DB.prepare("SELECT * FROM reimbursement_batch WHERE id = ?")
       .bind(id)
@@ -2557,6 +2623,206 @@ reimbursementRoutes.put(
     });
 
     return c.json({ success: true, data: payoutPlan.value });
+  }
+);
+
+reimbursementRoutes.put(
+  "/batch/:id/payment-vouchers",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = Number(c.req.param("id"));
+    const body =
+      (await c.req.json().catch(() => ({}))) as UpdateReimbursementBatchPaymentVouchersRequest;
+
+    const batch = await c.env.DB.prepare("SELECT * FROM reimbursement_batch WHERE id = ?")
+      .bind(id)
+      .first<ReimbursementBatch>();
+    if (!batch) {
+      return c.json({ success: false, error: { message: "Batch not found" } }, 404);
+    }
+
+    const vouchers = normalizePaymentVoucherInputs(body.payment_vouchers);
+
+    await c.env.DB.prepare(
+      `UPDATE reimbursement_batch
+          SET payment_vouchers_json = ?,
+              updated_at = ?
+        WHERE id = ?`
+    )
+      .bind(vouchers.length > 0 ? JSON.stringify(vouchers) : null, nowIso(), id)
+      .run();
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.batch.update_payment_vouchers",
+      targetType: "reimbursement_batch",
+      targetId: id,
+      detail: {
+        voucher_count: vouchers.length
+      }
+    });
+
+    return c.json({ success: true, data: { payment_vouchers: vouchers } });
+  }
+);
+
+reimbursementRoutes.put(
+  "/batch/:id/items/:envelopeId/basic-info",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = Number(c.req.param("id"));
+    const envelopeId = Number(c.req.param("envelopeId"));
+    const body =
+      (await c.req.json().catch(() => ({}))) as UpdateReimbursementBatchItemBasicInfoRequest;
+
+    const hasBasicMutation =
+      body.invoice_no !== undefined ||
+      body.expense_date !== undefined ||
+      body.amount !== undefined ||
+      body.category !== undefined ||
+      body.description !== undefined;
+    if (!hasBasicMutation) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message:
+              "At least one basic field is required (invoice_no/expense_date/amount/category/description)"
+          }
+        },
+        400
+      );
+    }
+
+    if (body.amount !== undefined && (typeof body.amount !== "number" || body.amount < 0)) {
+      return c.json({ success: false, error: { message: "amount must be a non-negative number" } }, 400);
+    }
+
+    const batch = await c.env.DB.prepare("SELECT * FROM reimbursement_batch WHERE id = ?")
+      .bind(id)
+      .first<ReimbursementBatch>();
+    if (!batch) {
+      return c.json({ success: false, error: { message: "Batch not found" } }, 404);
+    }
+
+    const boundItem = await c.env.DB.prepare(
+      `SELECT bi.id AS batch_item_id, e.id, e.project_id, e.applicant_userid, e.invoice_no,
+              e.expense_date, e.amount, e.category, e.description
+         FROM reimbursement_batch_item bi
+         JOIN reimbursement_envelope e ON e.id = bi.envelope_id
+        WHERE bi.batch_id = ?
+          AND bi.envelope_id = ?
+          AND bi.status = 'active'
+        LIMIT 1`
+    )
+      .bind(id, envelopeId)
+      .first<{
+        batch_item_id: number;
+        id: number;
+        project_id: number;
+        applicant_userid: string;
+        invoice_no: string | null;
+        expense_date: string | null;
+        amount: number;
+        category: string | null;
+        description: string | null;
+      }>();
+
+    if (!boundItem) {
+      return c.json({ success: false, error: { message: "Envelope is not part of this batch" } }, 404);
+    }
+
+    const nextInvoiceNo = body.invoice_no === undefined ? boundItem.invoice_no : body.invoice_no?.trim() || null;
+    const nextExpenseDate =
+      body.expense_date === undefined ? boundItem.expense_date : body.expense_date?.trim() || null;
+    const nextAmount = body.amount === undefined ? boundItem.amount : body.amount;
+    const nextCategory = body.category === undefined ? boundItem.category : body.category?.trim() || null;
+    const nextDescription =
+      body.description === undefined ? boundItem.description : body.description?.trim() || null;
+
+    const now = nowIso();
+    await runInTransaction(c.env.DB, async () => {
+      await c.env.DB.prepare(
+        `UPDATE reimbursement_envelope
+            SET invoice_unique_no = ?,
+                invoice_no = ?,
+                expense_date = ?,
+                amount = ?,
+                category = ?,
+                description = ?,
+                updated_at = ?
+          WHERE id = ?`
+      )
+        .bind(
+          sanitizeInvoiceUniqueNo(nextInvoiceNo),
+          nextInvoiceNo,
+          nextExpenseDate,
+          nextAmount,
+          nextCategory,
+          nextDescription,
+          now,
+          envelopeId
+        )
+        .run();
+
+      await c.env.DB.prepare(
+        `UPDATE reimbursement_batch_item
+            SET amount = ?
+          WHERE batch_id = ? AND envelope_id = ?`
+      )
+        .bind(nextAmount, id, envelopeId)
+        .run();
+
+      const totalRow = await c.env.DB.prepare(
+        `SELECT COALESCE(SUM(amount), 0) AS total_amount,
+                COUNT(*) AS item_count
+           FROM reimbursement_batch_item
+          WHERE batch_id = ?
+            AND status = 'active'`
+      )
+        .bind(id)
+        .first<{ total_amount: number; item_count: number }>();
+
+      await c.env.DB.prepare(
+        `UPDATE reimbursement_batch
+            SET total_amount = ?,
+                item_count = ?,
+                updated_at = ?
+          WHERE id = ?`
+      )
+        .bind(totalRow?.total_amount ?? 0, totalRow?.item_count ?? 0, now, id)
+        .run();
+    });
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.batch.update_item_basic_info",
+      targetType: "reimbursement_batch",
+      targetId: id,
+      detail: {
+        envelope_id: envelopeId,
+        invoice_no: nextInvoiceNo,
+        expense_date: nextExpenseDate,
+        amount: nextAmount,
+        category: nextCategory
+      }
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        envelope_id: envelopeId,
+        invoice_no: nextInvoiceNo,
+        expense_date: nextExpenseDate,
+        amount: nextAmount,
+        category: nextCategory,
+        description: nextDescription
+      }
+    });
   }
 );
 

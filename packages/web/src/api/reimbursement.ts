@@ -473,6 +473,8 @@ export type ReimbursementBatchDetail = ReimbursementBatch & {
   }>;
 };
 
+export type ReimbursementBatchCandidateEnvelope = ReimbursementEnvelope;
+
 export const listReimbursementBatches = (params?: {
   status?: string;
   project_id?: number;
@@ -492,6 +494,16 @@ export const getReimbursementBatch = (id: number) => {
     success: boolean;
     data: ReimbursementBatchDetail;
   }>("get", `/api/v1/reimbursement/batch/${id}`);
+};
+
+export const listReimbursementBatchCandidates = (params: {
+  project_id: number;
+  applicant_userid: string;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: ReimbursementBatchCandidateEnvelope[];
+  }>("get", "/api/v1/reimbursement/batch/candidates", { params });
 };
 
 export const createReimbursementBatch = (
@@ -610,4 +622,54 @@ export const markBatchPaid = (
         : undefined
     }
   );
+};
+
+export const updateBatchPaymentVouchers = (
+  id: number,
+  data: {
+    payment_vouchers?: {
+      file_key: string;
+      file_name?: string;
+      file_size?: number;
+    }[];
+  }
+) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      payment_vouchers: {
+        file_key: string;
+        file_name?: string;
+        file_size?: number;
+      }[];
+    };
+  }>("put", `/api/v1/reimbursement/batch/${id}/payment-vouchers`, {
+    data
+  });
+};
+
+export const updateBatchItemBasicInfo = (
+  batchId: number,
+  envelopeId: number,
+  data: {
+    invoice_no?: string;
+    expense_date?: string;
+    amount?: number;
+    category?: string;
+    description?: string;
+  }
+) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      envelope_id: number;
+      invoice_no: string | null;
+      expense_date: string | null;
+      amount: number;
+      category: string | null;
+      description: string | null;
+    };
+  }>("put", `/api/v1/reimbursement/batch/${batchId}/items/${envelopeId}/basic-info`, {
+    data
+  });
 };
