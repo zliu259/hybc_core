@@ -118,11 +118,19 @@ const reimbursementTagType = (status: string) => {
   return "warning";
 };
 
+const reimbursementProgressStatusSet = new Set([
+  "unregistered",
+  "draft",
+  "submitted",
+  "received",
+  "batched",
+  "pending_approval"
+]);
+
 const reimbursementProgressItems = computed(() =>
-  reimbursements.value.filter(item => {
-    const statusLabel = reimbursementStatusLabel(item.status);
-    return statusLabel === "审核中" || statusLabel === "待处理";
-  })
+  reimbursements.value.filter(item =>
+    reimbursementProgressStatusSet.has(item.status)
+  )
 );
 
 const loadData = async () => {
@@ -192,12 +200,14 @@ const goApprovalItem = (item: PendingApprovalItem) => {
 };
 
 const reimbursementStatusLabel = (status: string) => {
+  if (["submitted", "received", "batched", "pending_approval"].includes(status))
+    return "审核中";
+  if (["unregistered", "draft"].includes(status)) return "待处理";
   if (status === "paid") return "已打款";
   if (status === "approved") return "审核通过";
   if (status === "rejected") return "已驳回";
   if (status === "cancelled") return "已取消";
-  if (status === "submitted") return "审核中";
-  return "待处理";
+  return status;
 };
 
 const reimbursementApplyDate = (item: ReimbursementEnvelope) => {
