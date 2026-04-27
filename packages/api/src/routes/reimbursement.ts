@@ -2208,18 +2208,12 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: payoutPlan.error } }, 400);
     }
 
-    if (
-      !payoutPlan.value.payment_method ||
-      !payoutPlan.value.payment_entity_id ||
-      !payoutPlan.value.payment_entity_bank_account_id ||
-      !payoutPlan.value.payment_account
-    ) {
+    if (!payoutPlan.value.payment_method) {
       return c.json(
         {
           success: false,
           error: {
-            message:
-              "payment_method, payment_entity_id, payment_entity_bank_account_id and payment_account are required before approval submission"
+            message: "payment_method is required before approval submission"
           }
         },
         400

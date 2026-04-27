@@ -227,6 +227,7 @@
 #### F-5. 报销集中审批批次列表 `views/finance/reimbursement/batch.vue`
 - 新增“候选报销条目”工作区：按项目 + 申请人自动列出未完成报销，可一键自动勾选“已收件+复核通过”并创建后立即送审。
 - 展示维度：批次号、项目、申报人、信封数、总金额、智能审核状态、审批状态。
+- 创建并送审要求项目、被报销人、收款方式与候选条目；付款实体、付款账户、账户显示为可选项，可由审批人员在审批详情页补充。
 - 新增“历史完成（财务/领导）”区域：展示已付款/已拒绝等过往批次，支持进入批次详情追踪。
 - API 指向：`/api/v1/reimbursement/batch`
 
@@ -1277,6 +1278,6 @@
 
 ### 8.15 报销集中审批中心候选清单收敛 + 批次详情可维护增强（2026-04）
 - 报销集中审批中心新增候选查询接口 `GET /api/v1/reimbursement/batch/candidates`，候选仅保留“可直接送审”条目（已收件 + 复核通过 + 未入批次），从源头消除不合格条目与重复批次风险：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/batch.vue`
-- 创建并送审动作新增二次确认弹窗，展示送审条目数、总金额、收款方式、付款实体与付款账户；同时要求付款信息完整（付款方式/实体/账户/账户显示）后才允许提交：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/api/src/routes/reimbursement.ts`
+- 创建并送审动作新增二次确认弹窗，展示送审条目数、总金额、收款方式、付款实体与付款账户；送审仅强制收款方式，付款实体/付款账户/账户显示允许为空并由审批人员在审批详情页补充：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/api/src/routes/reimbursement.ts`
 - 批次详情新增“支付凭证上传与保存”能力，可在详情页直接上传/移除并持久化支付凭证：`PUT /api/v1/reimbursement/batch/:id/payment-vouchers`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 批次详情新增“报销基础信息编辑”能力（发票号、费用日期、金额、类别、说明），支持对批次内单条报销做修正并自动回写批次合计：`PUT /api/v1/reimbursement/batch/:id/items/:envelopeId/basic-info`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`

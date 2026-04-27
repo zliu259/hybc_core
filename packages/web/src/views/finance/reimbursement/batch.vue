@@ -283,14 +283,6 @@ const submitCreateAndApproval = async () => {
     message("请选择收款方式", { type: "warning" });
     return;
   }
-  if (!filters.value.payment_entity_id || !filters.value.payment_entity_bank_account_id) {
-    message("请选择付款实体和付款账户", { type: "warning" });
-    return;
-  }
-  if (!filters.value.payment_account.trim()) {
-    message("请补全付款账户显示信息", { type: "warning" });
-    return;
-  }
   if (candidateSelectedIds.value.length === 0) {
     message("请先从候选条目中勾选要送审的报销单", { type: "warning" });
     return;
@@ -313,7 +305,7 @@ const submitCreateAndApproval = async () => {
     await ElMessageBox.confirm(
       `即将创建并送审：${selectedRows.length} 条报销，合计 ¥${selectedTotalAmount.toFixed(
         2
-      )}。\n收款方式：${toPaymentMethodLabel(filters.value.payment_method)}\n付款实体：${paymentEntityLabel}\n付款账号：${paymentAccountLabel}\n\n请确认信息无误后继续。`,
+      )}。\n收款方式：${toPaymentMethodLabel(filters.value.payment_method)}\n付款实体：${paymentEntityLabel}\n付款账号：${paymentAccountLabel}\n\n付款实体与付款账号可由审批人员在审批时补充。\n请确认信息无误后继续。`,
       "二次确认：创建并送审",
       {
         type: "warning",
@@ -495,7 +487,7 @@ watch(
           filterable
           clearable
           style="width: 220px"
-          placeholder="请选择付款实体"
+          placeholder="可选，审批时可补充"
           @change="onPaymentEntityChange"
         >
           <el-option
@@ -512,7 +504,7 @@ watch(
           filterable
           clearable
           style="width: 260px"
-          placeholder="请选择付款账户"
+          placeholder="可选，审批时可补充"
           @change="onPaymentBankAccountChange"
         >
           <el-option
@@ -527,7 +519,7 @@ watch(
         <el-input
           v-model="filters.payment_account"
           style="width: 240px"
-          placeholder="可手工修正"
+          placeholder="可选，审批时可补充"
         />
       </el-form-item>
       <el-button type="primary" @click="loadData">查询批次</el-button>
