@@ -1279,6 +1279,7 @@
 
 ### 8.15 报销集中审批中心候选清单收敛 + 批次详情可维护增强（2026-04）
 - 报销集中审批中心新增候选查询接口 `GET /api/v1/reimbursement/batch/candidates`，候选仅保留“可直接送审”条目（已收件 + 复核通过 + 未入批次），从源头消除不合格条目与重复批次风险：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/batch.vue`
+- 报销集中审批中心页面布局收敛为“顶部摘要 + 创建批次面板 + 候选清单 + 批次 Tab”，付款实体/付款账户移动到“可选付款信息”折叠区，进行中与历史完成批次合并为 Tab，减少首屏复杂度：`packages/web/src/views/finance/reimbursement/batch.vue`
 - 创建并送审动作新增二次确认弹窗，展示送审条目数、总金额、付款方式、被报销人收款账户、付款实体与付款账户；送审仅强制付款方式，付款实体/付款账户/账户显示允许为空并由审批人员在审批详情页补充：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/api/src/routes/reimbursement.ts`
 - 报销批次付款方式新增“转账”（独立于“对公转账”），覆盖创建并送审、审批详情支付方案、批次详情超管二次编辑：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/views/approval/detail.vue`、`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 批次详情新增“支付凭证上传与保存”能力，可在详情页直接上传/移除并持久化支付凭证：`PUT /api/v1/reimbursement/batch/:id/payment-vouchers`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`

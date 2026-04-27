@@ -174,6 +174,13 @@ const activeBankAccounts = computed(() =>
 );
 
 const creatingAndSubmitting = ref(false);
+const activeBatchTab = ref("active");
+
+const selectedCandidateTotal = computed(() => {
+  return candidates.value
+    .filter(item => candidateSelectedIds.value.includes(item.id))
+    .reduce((sum, item) => sum + Number(item.amount || 0), 0);
+});
 
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
@@ -385,166 +392,176 @@ watch(
 </script>
 
 <template>
-  <el-card shadow="never" style="background: #fffaf2">
-    <template #header>
-      <div
-        style="
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        "
-      >
-        <span>报销集中审批与历史中心</span>
-        <el-space>
-          <el-button @click="loadCandidates">刷新候选条目</el-button>
-          <el-button
-            type="primary"
-            :loading="creatingAndSubmitting"
-            @click="submitCreateAndApproval"
-            >创建并送审</el-button
-          >
-        </el-space>
+  <div class="batch-center-page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">报销集中审批与历史中心</div>
+        <div class="page-subtitle">按项目和被报销人汇总候选报销，确认后创建批次并送审。</div>
       </div>
-    </template>
-
-    <el-alert
-      type="info"
-      :closable="false"
-      title="按“项目 + 被报销人”筛选后，系统自动列出未完成报销条目；可选择收款方式并一键创建集中送审。"
-      style="margin-bottom: 12px"
-    />
-
-    <el-form inline>
-      <el-form-item label="所属项目">
-        <el-select
-          v-model="filters.project_id"
-          clearable
-          filterable
-          style="width: 220px"
-        >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="被报销人">
-        <el-select
-          v-model="filters.applicant_userid"
-          clearable
-          filterable
-          style="width: 240px"
-          placeholder="请选择被报销人"
-        >
-          <el-option
-            v-for="item in wecomUsers"
-            :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
-            :value="item.userid"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="收款账户">
-        <el-select
-          v-model="filters.payee_id"
-          filterable
-          clearable
-          :loading="internalPayeesLoading"
-          :disabled="!filters.applicant_userid"
-          style="width: 280px"
-          placeholder="选择内部收款人（按被报销人匹配）"
-        >
-          <el-option
-            v-for="p in internalPayees"
-            :key="p.id"
-            :label="`${p.name} | ${p.bank_name} | ${p.bank_account}`"
-            :value="p.id"
-          />
-        </el-select>
+      <el-space wrap>
+        <el-button @click="loadCandidates">刷新候选</el-button>
         <el-button
           type="primary"
-          link
-          style="margin-left: 8px"
-          :disabled="!filters.applicant_userid"
-          @click="openNewPayee"
-          >新建</el-button
+          :loading="creatingAndSubmitting"
+          @click="submitCreateAndApproval"
         >
-      </el-form-item>
-      <el-form-item label="批次状态">
-        <el-select v-model="filters.status" clearable style="width: 160px">
-          <el-option label="草稿" value="draft" />
-          <el-option label="待审批" value="pending_approval" />
-          <el-option label="已审批" value="approved" />
-          <el-option label="已拒绝" value="rejected" />
-          <el-option label="已付款" value="paid" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="收款方式">
-        <el-select v-model="filters.payment_method" clearable style="width: 160px">
-          <el-option label="对公转账" value="transfer" />
-          <el-option label="转账" value="personal_transfer" />
-          <el-option label="现金" value="cash" />
-          <el-option label="票据" value="bill" />
-          <el-option label="其他" value="other" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="付款实体">
-        <el-select
-          v-model="filters.payment_entity_id"
-          filterable
-          clearable
-          style="width: 220px"
-          placeholder="可选，审批时可补充"
-          @change="onPaymentEntityChange"
-        >
-          <el-option
-            v-for="item in activeEntities"
-            :key="item.id"
-            :label="item.entity_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="付款账户">
-        <el-select
-          v-model="filters.payment_entity_bank_account_id"
-          filterable
-          clearable
-          style="width: 260px"
-          placeholder="可选，审批时可补充"
-          @change="onPaymentBankAccountChange"
-        >
-          <el-option
-            v-for="item in activeBankAccounts"
-            :key="item.id"
-            :label="toBankAccountLabel(item)"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="账户显示">
-        <el-input
-          v-model="filters.payment_account"
-          style="width: 240px"
-          placeholder="可选，审批时可补充"
-        />
-      </el-form-item>
-      <el-button type="primary" @click="loadData">查询批次</el-button>
-      <el-button @click="loadCandidates">查询候选报销</el-button>
-      <el-button @click="autoSelectSubmittable"
-        >自动勾选可送审（已收件+复核通过）</el-button
-      >
-    </el-form>
+          创建并送审
+        </el-button>
+      </el-space>
+    </div>
 
-    <el-table
-      :data="candidates"
-      :loading="candidateLoading"
-      stripe
-      style="margin-top: 12px"
-      @selection-change="onCandidateSelectionChange"
-    >
+    <div class="summary-grid">
+      <div class="summary-tile">
+        <span>候选条目</span>
+        <strong>{{ candidates.length }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>已勾选</span>
+        <strong>{{ candidateSelectedIds.length }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>勾选合计</span>
+        <strong>¥{{ selectedCandidateTotal.toFixed(2) }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>进行中批次</span>
+        <strong>{{ total }}</strong>
+      </div>
+    </div>
+
+    <section class="work-panel">
+      <div class="section-heading">
+        <div>
+          <div class="section-title">创建集中审批批次</div>
+          <div class="section-subtitle">必填项目、被报销人和付款方式；付款实体与付款账户可在审批时补充。</div>
+        </div>
+        <el-button @click="autoSelectSubmittable">自动勾选可送审</el-button>
+      </div>
+
+      <el-form class="compact-form" label-width="86px">
+        <div class="form-grid">
+          <el-form-item label="所属项目">
+            <el-select v-model="filters.project_id" clearable filterable placeholder="选择项目">
+              <el-option
+                v-for="item in projects"
+                :key="item.id"
+                :label="item.project_name"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="被报销人">
+            <el-select
+              v-model="filters.applicant_userid"
+              clearable
+              filterable
+              placeholder="选择被报销人"
+            >
+              <el-option
+                v-for="item in wecomUsers"
+                :key="item.userid"
+                :label="`${item.name} (${item.userid})`"
+                :value="item.userid"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="付款方式">
+            <el-select v-model="filters.payment_method" clearable placeholder="选择付款方式">
+              <el-option label="对公转账" value="transfer" />
+              <el-option label="转账" value="personal_transfer" />
+              <el-option label="现金" value="cash" />
+              <el-option label="票据" value="bill" />
+              <el-option label="其他" value="other" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="收款账户">
+            <div class="payee-row">
+              <el-select
+                v-model="filters.payee_id"
+                filterable
+                clearable
+                :loading="internalPayeesLoading"
+                :disabled="!filters.applicant_userid"
+                placeholder="按被报销人匹配"
+              >
+                <el-option
+                  v-for="p in internalPayees"
+                  :key="p.id"
+                  :label="`${p.name} | ${p.bank_name} | ${p.bank_account}`"
+                  :value="p.id"
+                />
+              </el-select>
+              <el-button
+                type="primary"
+                link
+                :disabled="!filters.applicant_userid"
+                @click="openNewPayee"
+              >
+                新建
+              </el-button>
+            </div>
+          </el-form-item>
+        </div>
+
+        <el-collapse class="optional-collapse">
+          <el-collapse-item title="可选付款信息" name="payout">
+            <div class="form-grid">
+              <el-form-item label="付款实体">
+                <el-select
+                  v-model="filters.payment_entity_id"
+                  filterable
+                  clearable
+                  placeholder="可选，审批时可补充"
+                  @change="onPaymentEntityChange"
+                >
+                  <el-option
+                    v-for="item in activeEntities"
+                    :key="item.id"
+                    :label="item.entity_name"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="付款账户">
+                <el-select
+                  v-model="filters.payment_entity_bank_account_id"
+                  filterable
+                  clearable
+                  placeholder="可选，审批时可补充"
+                  @change="onPaymentBankAccountChange"
+                >
+                  <el-option
+                    v-for="item in activeBankAccounts"
+                    :key="item.id"
+                    :label="toBankAccountLabel(item)"
+                    :value="item.id"
+                  />
+                </el-select>
+              </el-form-item>
+              <el-form-item label="账户显示">
+                <el-input v-model="filters.payment_account" placeholder="可选，审批时可补充" />
+              </el-form-item>
+            </div>
+          </el-collapse-item>
+        </el-collapse>
+      </el-form>
+    </section>
+
+    <section class="table-panel">
+      <div class="section-heading">
+        <div>
+          <div class="section-title">候选报销条目</div>
+          <div class="section-subtitle">仅展示已收件、复核通过、未入批次的报销。</div>
+        </div>
+        <el-button @click="loadCandidates">查询候选报销</el-button>
+      </div>
+
+      <el-table
+        :data="candidates"
+        :loading="candidateLoading"
+        stripe
+        @selection-change="onCandidateSelectionChange"
+      >
       <el-table-column type="selection" width="52" />
       <el-table-column prop="envelope_no" label="信封编号" width="160" />
       <el-table-column label="状态" width="130">
@@ -577,91 +594,108 @@ watch(
           >
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
+    </section>
 
-    <el-divider content-position="left">审批批次（进行中）</el-divider>
+    <section class="table-panel">
+      <div class="section-heading">
+        <div>
+          <div class="section-title">审批批次</div>
+          <div class="section-subtitle">进行中与历史完成批次集中查看。</div>
+        </div>
+        <div class="batch-filter">
+          <el-select v-model="filters.status" clearable placeholder="批次状态" style="width: 160px">
+            <el-option label="草稿" value="draft" />
+            <el-option label="待审批" value="pending_approval" />
+            <el-option label="已审批" value="approved" />
+            <el-option label="已拒绝" value="rejected" />
+            <el-option label="已付款" value="paid" />
+          </el-select>
+          <el-button type="primary" @click="loadData">查询批次</el-button>
+        </div>
+      </div>
 
-    <el-table :data="list" :loading="loading" style="margin-top: 12px">
-      <el-table-column prop="batch_no" label="批次号" width="160" />
-      <el-table-column label="项目" width="180">
-        <template #default="scope">{{
-          projectMap[scope.row.project_id] || scope.row.project_id
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="applicant_userid" label="被报销人" width="140" />
-      <el-table-column label="收款方式" width="120">
-        <template #default="scope">{{
-          toPaymentMethodLabel(scope.row.payment_method)
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="item_count" label="信封数" width="100" />
-      <el-table-column prop="total_amount" label="总金额" width="120" />
-      <el-table-column label="智能审核" width="120">
-        <template #default="scope">{{
-          aiAuditStatusLabel(scope.row.ai_audit_status)
-        }}</template>
-      </el-table-column>
-      <el-table-column label="审批状态" width="120">
-        <template #default="scope">{{
-          statusLabel(scope.row.status)
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="120" fixed="right">
-        <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row.id)"
-            >详情</el-button
-          >
-        </template>
-      </el-table-column>
-    </el-table>
+      <el-tabs v-model="activeBatchTab">
+        <el-tab-pane label="进行中" name="active">
+          <el-table :data="list" :loading="loading">
+            <el-table-column prop="batch_no" label="批次号" width="160" />
+            <el-table-column label="项目" width="180">
+              <template #default="scope">{{
+                projectMap[scope.row.project_id] || scope.row.project_id
+              }}</template>
+            </el-table-column>
+            <el-table-column prop="applicant_userid" label="被报销人" width="140" />
+            <el-table-column label="付款方式" width="120">
+              <template #default="scope">{{
+                toPaymentMethodLabel(scope.row.payment_method)
+              }}</template>
+            </el-table-column>
+            <el-table-column prop="item_count" label="信封数" width="100" />
+            <el-table-column prop="total_amount" label="总金额" width="120" />
+            <el-table-column label="智能审核" width="120">
+              <template #default="scope">{{
+                aiAuditStatusLabel(scope.row.ai_audit_status)
+              }}</template>
+            </el-table-column>
+            <el-table-column label="审批状态" width="120">
+              <template #default="scope">{{ statusLabel(scope.row.status) }}</template>
+            </el-table-column>
+            <el-table-column prop="created_at" label="创建时间" width="180" />
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="scope">
+                <el-button link type="primary" @click="openDetail(scope.row.id)">
+                  详情
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
 
-    <el-pagination
-      style="margin-top: 12px; justify-content: flex-end"
-      background
-      layout="prev, pager, next, total"
-      :current-page="page"
-      :page-size="pageSize"
-      :total="total"
-      @current-change="
-        (val: number) => {
-          page = val;
-          loadData();
-        }
-      "
-    />
-
-    <el-divider content-position="left">历史完成（财务/领导）</el-divider>
-
-    <el-table :data="historyRows" :loading="historyLoading" stripe>
-      <el-table-column prop="batch_no" label="批次号" width="170" />
-      <el-table-column label="项目" width="180">
-        <template #default="scope">{{
-          projectMap[scope.row.project_id] || scope.row.project_id
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="applicant_userid" label="被报销人" width="140" />
-      <el-table-column label="收款方式" width="120">
-        <template #default="scope">{{
-          toPaymentMethodLabel(scope.row.payment_method)
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="item_count" label="信封数" width="100" />
-      <el-table-column prop="total_amount" label="总金额" width="120" />
-      <el-table-column label="结果状态" width="120">
-        <template #default="scope">{{
-          statusLabel(scope.row.status)
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="updated_at" label="最近更新时间" width="180" />
-      <el-table-column label="操作" width="120" fixed="right">
-        <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row.id)"
-            >详情</el-button
-          >
-        </template>
-      </el-table-column>
-    </el-table>
+          <el-pagination
+            class="pagination"
+            background
+            layout="prev, pager, next, total"
+            :current-page="page"
+            :page-size="pageSize"
+            :total="total"
+            @current-change="
+              (val: number) => {
+                page = val;
+                loadData();
+              }
+            "
+          />
+        </el-tab-pane>
+        <el-tab-pane label="历史完成" name="history">
+          <el-table :data="historyRows" :loading="historyLoading" stripe>
+            <el-table-column prop="batch_no" label="批次号" width="170" />
+            <el-table-column label="项目" width="180">
+              <template #default="scope">{{
+                projectMap[scope.row.project_id] || scope.row.project_id
+              }}</template>
+            </el-table-column>
+            <el-table-column prop="applicant_userid" label="被报销人" width="140" />
+            <el-table-column label="付款方式" width="120">
+              <template #default="scope">{{
+                toPaymentMethodLabel(scope.row.payment_method)
+              }}</template>
+            </el-table-column>
+            <el-table-column prop="item_count" label="信封数" width="100" />
+            <el-table-column prop="total_amount" label="总金额" width="120" />
+            <el-table-column label="结果状态" width="120">
+              <template #default="scope">{{ statusLabel(scope.row.status) }}</template>
+            </el-table-column>
+            <el-table-column prop="updated_at" label="最近更新时间" width="180" />
+            <el-table-column label="操作" width="120" fixed="right">
+              <template #default="scope">
+                <el-button link type="primary" @click="openDetail(scope.row.id)">
+                  详情
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+        </el-tab-pane>
+      </el-tabs>
+    </section>
 
     <el-dialog
       v-model="newPayeeVisible"
@@ -698,5 +732,140 @@ watch(
         >
       </template>
     </el-dialog>
-  </el-card>
+  </div>
 </template>
+
+<style scoped>
+.batch-center-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-header,
+.work-panel,
+.table-panel {
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.page-subtitle,
+.section-subtitle {
+  margin-top: 4px;
+  color: #6b7280;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-tile {
+  min-height: 78px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.summary-tile span {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.summary-tile strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  font-size: 20px;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 14px;
+}
+
+.section-title {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.compact-form {
+  max-width: 1180px;
+}
+
+.form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(280px, 1fr));
+  gap: 0 20px;
+}
+
+.form-grid :deep(.el-select),
+.form-grid :deep(.el-input) {
+  width: 100%;
+}
+
+.payee-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+}
+
+.optional-collapse {
+  margin-top: 2px;
+  border-top: 0;
+  border-bottom: 0;
+}
+
+.batch-filter {
+  display: flex;
+  gap: 8px;
+}
+
+.pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+@media (max-width: 960px) {
+  .page-header,
+  .section-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .summary-grid,
+  .form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .batch-filter {
+    width: 100%;
+  }
+}
+</style>
