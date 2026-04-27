@@ -1735,6 +1735,21 @@ reimbursementRoutes.get(
           }>()
       : null;
 
+    const payee = batch.payee_id
+      ? await c.env.DB.prepare(
+          "SELECT id, name, bank_name, bank_account, phone, type FROM payee WHERE id = ?"
+        )
+          .bind(batch.payee_id)
+          .first<{
+            id: number;
+            name: string;
+            bank_name: string;
+            bank_account: string;
+            phone: string | null;
+            type: string;
+          }>()
+      : null;
+
     let paymentVouchers: ReimbursementPaymentVoucherInput[] = [];
     if (batch.payment_vouchers_json) {
       try {
@@ -1801,6 +1816,7 @@ reimbursementRoutes.get(
         approval_instance: approvalInstance,
         payment_entity: paymentEntity,
         payment_bank_account: paymentBankAccount,
+        payee,
         payment_vouchers: paymentVouchers
       }
     });
@@ -1868,6 +1884,38 @@ reimbursementRoutes.post(
       );
     }
 
+    if (typeof body.payee_id === "number" && body.payee_id > 0) {
+      const payeeRow = await c.env.DB.prepare(
+        "SELECT id, type, status, linked_userid FROM payee WHERE id = ?"
+      )
+        .bind(body.payee_id)
+        .first<{ id: number; type: string; status: string; linked_userid: string | null }>();
+      if (!payeeRow || payeeRow.status !== "active") {
+        return c.json(
+          { success: false, error: { message: "payee_id not found or inactive" } },
+          400
+        );
+      }
+      if (payeeRow.type !== "internal") {
+        return c.json(
+          { success: false, error: { message: "payee_id must reference an internal payee" } },
+          400
+        );
+      }
+      if (
+        payeeRow.linked_userid &&
+        payeeRow.linked_userid !== body.applicant_userid.trim()
+      ) {
+        return c.json(
+          {
+            success: false,
+            error: { message: "payee linked_userid does not match applicant_userid" }
+          },
+          400
+        );
+      }
+    }
+
     const idempotencyKey = c.req.header("Idempotency-Key");
     const actorKey = auth.sub;
     const idempotency = await beginIdempotentRequest<{
@@ -1892,8 +1940,9 @@ reimbursementRoutes.post(
           `INSERT INTO reimbursement_batch
             (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status,
              payment_method, payment_entity_id, payment_entity_bank_account_id, payment_account,
+             payee_id,
              created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?, ?)`
         )
           .bind(
             batchNo,
@@ -1905,6 +1954,7 @@ reimbursementRoutes.post(
             payoutPlan.value.payment_entity_id,
             payoutPlan.value.payment_entity_bank_account_id,
             payoutPlan.value.payment_account,
+            body.payee_id ?? null,
             now,
             now
           )
@@ -2176,6 +2226,55 @@ reimbursementRoutes.post(
       );
     }
 
+    let payeeIdUpdate: number | undefined;
+    if (typeof body.payee_id === "number" && body.payee_id > 0) {
+      const payeeRow = await c.env.DB.prepare(
+        "SELECT id, type, status, linked_userid FROM payee WHERE id = ?"
+      )
+        .bind(body.payee_id)
+        .first<{ id: number; type: string; status: string; linked_userid: string | null }>();
+      if (!payeeRow || payeeRow.status !== "active") {
+        return c.json(
+          { success: false, error: { message: "payee_id not found or inactive" } },
+          400
+        );
+      }
+      if (payeeRow.type !== "internal") {
+        return c.json(
+          { success: false, error: { message: "payee_id must reference an internal payee" } },
+          400
+        );
+      }
+      if (
+        payeeRow.linked_userid &&
+        payeeRow.linked_userid !== batch.applicant_userid
+      ) {
+        return c.json(
+          {
+            success: false,
+            error: { message: "payee linked_userid does not match batch applicant" }
+          },
+          400
+        );
+      }
+      payeeIdUpdate = body.payee_id;
+    }
+
+    const requirePayee = (c.env.REIMBURSEMENT_REQUIRE_PAYEE ?? "false").toLowerCase() === "true";
+    const effectivePayeeId = payeeIdUpdate ?? batch.payee_id ?? null;
+    if (requirePayee && !effectivePayeeId) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message:
+              "payee_id is required (REIMBURSEMENT_REQUIRE_PAYEE=true). Select an internal payee for the reimbursee."
+          }
+        },
+        400
+      );
+    }
+
     const idempotencyKey = c.req.header("Idempotency-Key");
     const idempotency = await beginIdempotentRequest<{
       success: boolean;
@@ -2218,6 +2317,22 @@ reimbursementRoutes.post(
 
     let instance: Awaited<ReturnType<typeof submitForApproval>>;
 
+    const effectivePayeeIdForContext = payeeIdUpdate ?? batch.payee_id ?? null;
+    let payeeSnapshot: {
+      id: number;
+      name: string;
+      bank_name: string;
+      bank_account: string;
+      type: string;
+    } | null = null;
+    if (effectivePayeeIdForContext) {
+      payeeSnapshot = await c.env.DB.prepare(
+        "SELECT id, name, bank_name, bank_account, type FROM payee WHERE id = ?"
+      )
+        .bind(effectivePayeeIdForContext)
+        .first();
+    }
+
     try {
       instance = await submitForApproval(
         c.env,
@@ -2243,6 +2358,7 @@ reimbursementRoutes.post(
               payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
               payment_account: payoutPlan.value.payment_account
             },
+            payee: payeeSnapshot,
             items: (batchItems.results ?? []).map(item => ({
               envelope_id: item.id,
               envelope_no: item.envelope_no,
@@ -2269,6 +2385,7 @@ reimbursementRoutes.post(
                   payment_entity_id = ?,
                   payment_entity_bank_account_id = ?,
                   payment_account = ?,
+                  payee_id = COALESCE(?, payee_id),
                   updated_at = ?
              WHERE id = ? AND status = 'draft'`
         )
@@ -2278,6 +2395,7 @@ reimbursementRoutes.post(
             payoutPlan.value.payment_entity_id,
             payoutPlan.value.payment_entity_bank_account_id,
             payoutPlan.value.payment_account,
+            payeeIdUpdate ?? null,
             now,
             id
           )

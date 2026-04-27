@@ -346,6 +346,7 @@ paymentRoutes.get("/payee/list", async (c) => {
   const type = c.req.query("type");
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
+  const linkedUserid = c.req.query("linked_userid");
   const mine = c.req.query("mine") === "true";
 
   let sql = "SELECT * FROM payee WHERE status = 'active'";
@@ -362,6 +363,10 @@ paymentRoutes.get("/payee/list", async (c) => {
   if (legacyDataId) {
     sql += " AND legacy_data_id = ?";
     params.push(legacyDataId);
+  }
+  if (linkedUserid) {
+    sql += " AND linked_userid = ?";
+    params.push(linkedUserid);
   }
 
   if (mine) {
@@ -415,8 +420,8 @@ paymentRoutes.post(
     }
 
     const result = await c.env.DB.prepare(
-      `INSERT INTO payee (name, bank_name, bank_account, phone, type, status, created_by_userid, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`
+      `INSERT INTO payee (name, bank_name, bank_account, phone, type, status, created_by_userid, linked_userid, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`
     )
       .bind(
         body.name,
@@ -425,6 +430,7 @@ paymentRoutes.post(
         body.phone ?? null,
         body.type,
         auth.sub,
+        body.type === "internal" ? body.linked_userid ?? null : null,
         now,
         now
       )
@@ -441,6 +447,7 @@ paymentRoutes.put(
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdatePayeeRequest;
 
+    const linkedUseridProvided = Object.prototype.hasOwnProperty.call(body, "linked_userid");
     await c.env.DB.prepare(
       `UPDATE payee SET
         name = COALESCE(?, name),
@@ -448,6 +455,7 @@ paymentRoutes.put(
         bank_account = COALESCE(?, bank_account),
         phone = COALESCE(?, phone),
         type = COALESCE(?, type),
+        linked_userid = CASE WHEN ? = 1 THEN ? ELSE linked_userid END,
         updated_at = ?
         WHERE id = ?`
     )
@@ -457,6 +465,8 @@ paymentRoutes.put(
         body.bank_account ?? null,
         body.phone ?? null,
         body.type ?? null,
+        linkedUseridProvided ? 1 : 0,
+        body.linked_userid ?? null,
         nowIso(),
         id
       )

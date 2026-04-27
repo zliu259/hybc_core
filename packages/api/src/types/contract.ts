@@ -205,6 +205,7 @@ export interface Payee {
   type: PayeeType;
   status: PayeeStatus;
   created_by_userid: string;
+  linked_userid: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -215,6 +216,7 @@ export interface CreatePayeeRequest {
   bank_account: string;
   phone?: string;
   type: PayeeType;
+  linked_userid?: string;
 }
 
 export interface UpdatePayeeRequest {
@@ -223,6 +225,7 @@ export interface UpdatePayeeRequest {
   bank_account?: string;
   phone?: string;
   type?: PayeeType;
+  linked_userid?: string | null;
 }
 
 // ─── AI Review Report (structured output from contract_review task) ──────────
@@ -301,4 +304,5 @@ export interface PaymentRequestListParams {
 export interface PayeeListParams {
   type?: PayeeType;
   keyword?: string;
+  linked_userid?: string;
 }

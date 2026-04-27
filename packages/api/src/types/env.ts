@@ -26,4 +26,5 @@ export interface Env {
   WECOM_APPROVAL_DEFAULT_TARGET?: "web" | "miniapp";
   PASSKEY_RP_ID: string;
   PASSKEY_RP_NAME: string;
+  REIMBURSEMENT_REQUIRE_PAYEE?: string;
 }

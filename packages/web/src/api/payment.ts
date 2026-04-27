@@ -53,6 +53,7 @@ export type Payee = {
   type: "internal" | "external";
   status: string;
   created_by_userid: string;
+  linked_userid: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -200,6 +201,7 @@ export const listPayees = (params?: {
   type?: string;
   keyword?: string;
   mine?: boolean;
+  linked_userid?: string;
 }) => {
   return http.request<{ success: boolean; data: Payee[] }>(
     "get",
@@ -221,6 +223,7 @@ export const createPayee = (data: {
   bank_account: string;
   phone?: string;
   type: "internal" | "external";
+  linked_userid?: string;
 }) => {
   return http.request<{ success: boolean; data: { id: number } }>(
     "post",

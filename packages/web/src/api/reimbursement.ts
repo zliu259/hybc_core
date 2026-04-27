@@ -420,6 +420,7 @@ export type ReimbursementBatch = {
   payment_entity_id: number | null;
   payment_entity_bank_account_id: number | null;
   payment_vouchers_json: string | null;
+  payee_id: number | null;
   created_at: string;
   updated_at: string;
 };
@@ -465,6 +466,14 @@ export type ReimbursementBatchDetail = ReimbursementBatch & {
     bank_branch_no: string | null;
     account_no: string;
     account_name: string;
+  } | null;
+  payee?: {
+    id: number;
+    name: string;
+    bank_name: string;
+    bank_account: string;
+    phone: string | null;
+    type: string;
   } | null;
   payment_vouchers?: Array<{
     file_key: string;
@@ -515,6 +524,7 @@ export const createReimbursementBatch = (
     payment_entity_id?: number;
     payment_entity_bank_account_id?: number;
     payment_account?: string;
+    payee_id?: number;
   },
   options?: { idempotencyKey?: string }
 ) => {
@@ -562,6 +572,7 @@ export const submitBatchApproval = (
     payment_entity_id?: number;
     payment_entity_bank_account_id?: number;
     payment_account?: string;
+    payee_id?: number;
   },
   options?: { idempotencyKey?: string }
 ) => {

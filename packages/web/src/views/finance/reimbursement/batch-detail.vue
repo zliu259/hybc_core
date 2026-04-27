@@ -515,6 +515,11 @@ onMounted(async () => {
             } / ${detail.payment_bank_account.account_no}`
           : "-"
       }}</el-descriptions-item>
+      <el-descriptions-item label="收款账户（被报销人）">{{
+        detail.payee
+          ? `${detail.payee.name} · ${detail.payee.bank_name} · ${detail.payee.bank_account}`
+          : "-"
+      }}</el-descriptions-item>
       <el-descriptions-item label="支付流水号">{{ detail.payment_reference || "-" }}</el-descriptions-item>
 
       <el-descriptions-item label="打款日期">{{ detail.paid_at || "-" }}</el-descriptions-item>

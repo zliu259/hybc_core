@@ -111,6 +111,7 @@ export interface ReimbursementBatch {
   payment_entity_id: number | null;
   payment_entity_bank_account_id: number | null;
   payment_vouchers_json: string | null;
+  payee_id: number | null;
   created_at: string;
   updated_at: string;
 }
@@ -225,6 +226,7 @@ export interface CreateReimbursementBatchRequest {
   payment_entity_id?: number;
   payment_entity_bank_account_id?: number;
   payment_account?: string;
+  payee_id?: number;
 }
 
 export interface SubmitReimbursementBatchApprovalRequest {
@@ -234,6 +236,7 @@ export interface SubmitReimbursementBatchApprovalRequest {
   payment_entity_id?: number;
   payment_entity_bank_account_id?: number;
   payment_account?: string;
+  payee_id?: number;
 }
 
 export interface UpdateReimbursementBatchPayoutPlanRequest {

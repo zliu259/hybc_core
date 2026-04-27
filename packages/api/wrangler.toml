@@ -52,6 +52,7 @@ WECOM_APPROVAL_MINI_PAGE_PATH = "pages/approval-detail/index?id={id}"
 WECOM_APPROVAL_DEFAULT_TARGET = "miniapp"
 PASSKEY_RP_ID = "web.hybcdg.com"
 PASSKEY_RP_NAME = "HYBC"
+REIMBURSEMENT_REQUIRE_PAYEE = "false"
 
 [triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
@@ -111,6 +112,7 @@ WECOM_APPROVAL_MINI_PAGE_PATH = "pages/approval-detail/index?id={id}"
 WECOM_APPROVAL_DEFAULT_TARGET = "miniapp"
 PASSKEY_RP_ID = "web.hybcdg.com"
 PASSKEY_RP_NAME = "HYBC"
+REIMBURSEMENT_REQUIRE_PAYEE = "false"
 
 [env.prod.triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]

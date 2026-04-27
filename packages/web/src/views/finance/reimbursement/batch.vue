@@ -25,6 +25,7 @@ import {
   type ReimbursementEnvelope,
   type ReimbursementBatch
 } from "@/api/reimbursement";
+import { listPayees, createPayee, type Payee } from "@/api/payment";
 
 defineOptions({ name: "ReimbursementBatchList" });
 
@@ -52,8 +53,82 @@ const filters = ref({
   payment_method: "",
   payment_entity_id: undefined as number | undefined,
   payment_entity_bank_account_id: undefined as number | undefined,
-  payment_account: ""
+  payment_account: "",
+  payee_id: undefined as number | undefined
 });
+
+const internalPayees = ref<Payee[]>([]);
+const internalPayeesLoading = ref(false);
+const newPayeeVisible = ref(false);
+const newPayeeSubmitting = ref(false);
+const newPayeeForm = ref({
+  name: "",
+  bank_name: "",
+  bank_account: "",
+  phone: ""
+});
+
+const loadInternalPayees = async () => {
+  const userid = filters.value.applicant_userid.trim();
+  if (!userid) {
+    internalPayees.value = [];
+    return;
+  }
+  internalPayeesLoading.value = true;
+  try {
+    const res = await listPayees({ type: "internal", linked_userid: userid });
+    internalPayees.value = res.data;
+    if (
+      filters.value.payee_id &&
+      !res.data.some(p => p.id === filters.value.payee_id)
+    ) {
+      filters.value.payee_id = undefined;
+    }
+  } finally {
+    internalPayeesLoading.value = false;
+  }
+};
+
+const openNewPayee = () => {
+  if (!filters.value.applicant_userid.trim()) {
+    message("请先选择被报销人", { type: "warning" });
+    return;
+  }
+  newPayeeForm.value = { name: "", bank_name: "", bank_account: "", phone: "" };
+  newPayeeVisible.value = true;
+};
+
+const submitNewPayee = async () => {
+  const userid = filters.value.applicant_userid.trim();
+  if (!userid) return;
+  if (
+    !newPayeeForm.value.name.trim() ||
+    !newPayeeForm.value.bank_name.trim() ||
+    !newPayeeForm.value.bank_account.trim()
+  ) {
+    message("请填写姓名/开户行/银行卡号", { type: "warning" });
+    return;
+  }
+  newPayeeSubmitting.value = true;
+  try {
+    const res = await createPayee({
+      name: newPayeeForm.value.name.trim(),
+      bank_name: newPayeeForm.value.bank_name.trim(),
+      bank_account: newPayeeForm.value.bank_account.trim(),
+      phone: newPayeeForm.value.phone.trim() || undefined,
+      type: "internal",
+      linked_userid: userid
+    });
+    await loadInternalPayees();
+    filters.value.payee_id = res.data.id;
+    newPayeeVisible.value = false;
+    message("内部收款人已创建并选中", { type: "success" });
+  } catch {
+    message("创建失败", { type: "error" });
+  } finally {
+    newPayeeSubmitting.value = false;
+  }
+};
 
 const paymentMethodLabelMap: Record<string, string> = {
   transfer: "对公转账",
@@ -260,6 +335,7 @@ const submitCreateAndApproval = async () => {
       payment_entity_id: filters.value.payment_entity_id,
       payment_entity_bank_account_id: filters.value.payment_entity_bank_account_id,
       payment_account: filters.value.payment_account.trim(),
+      payee_id: filters.value.payee_id,
       envelope_ids:
         candidateSelectedIds.value.length > 0
           ? candidateSelectedIds.value
@@ -270,7 +346,8 @@ const submitCreateAndApproval = async () => {
       payment_method: filters.value.payment_method || undefined,
       payment_entity_id: filters.value.payment_entity_id,
       payment_entity_bank_account_id: filters.value.payment_entity_bank_account_id,
-      payment_account: filters.value.payment_account.trim()
+      payment_account: filters.value.payment_account.trim(),
+      payee_id: filters.value.payee_id
     }, {
       idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
     });
@@ -302,6 +379,7 @@ watch(
   () => [filters.value.project_id, filters.value.applicant_userid],
   () => {
     loadCandidates();
+    loadInternalPayees();
   }
 );
 </script>
@@ -367,6 +445,32 @@ watch(
             :value="item.userid"
           />
         </el-select>
+      </el-form-item>
+      <el-form-item label="收款账户">
+        <el-select
+          v-model="filters.payee_id"
+          filterable
+          clearable
+          :loading="internalPayeesLoading"
+          :disabled="!filters.applicant_userid"
+          style="width: 280px"
+          placeholder="选择内部收款人（按被报销人匹配）"
+        >
+          <el-option
+            v-for="p in internalPayees"
+            :key="p.id"
+            :label="`${p.name} | ${p.bank_name} | ${p.bank_account}`"
+            :value="p.id"
+          />
+        </el-select>
+        <el-button
+          type="primary"
+          link
+          style="margin-left: 8px"
+          :disabled="!filters.applicant_userid"
+          @click="openNewPayee"
+          >新建</el-button
+        >
       </el-form-item>
       <el-form-item label="批次状态">
         <el-select v-model="filters.status" clearable style="width: 160px">
@@ -557,5 +661,41 @@ watch(
         </template>
       </el-table-column>
     </el-table>
+
+    <el-dialog
+      v-model="newPayeeVisible"
+      title="新建内部收款人"
+      width="480px"
+      append-to-body
+    >
+      <el-form label-width="100px">
+        <el-form-item label="姓名" required>
+          <el-input v-model="newPayeeForm.name" />
+        </el-form-item>
+        <el-form-item label="开户行" required>
+          <el-input v-model="newPayeeForm.bank_name" />
+        </el-form-item>
+        <el-form-item label="银行卡号" required>
+          <el-input v-model="newPayeeForm.bank_account" />
+        </el-form-item>
+        <el-form-item label="手机号">
+          <el-input v-model="newPayeeForm.phone" />
+        </el-form-item>
+        <el-form-item label="关联 userid">
+          <span style="color: #555">{{
+            filters.applicant_userid || "—"
+          }}</span>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="newPayeeVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="newPayeeSubmitting"
+          @click="submitNewPayee"
+          >保存</el-button
+        >
+      </template>
+    </el-dialog>
   </el-card>
 </template>
