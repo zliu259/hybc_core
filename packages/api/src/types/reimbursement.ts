@@ -244,6 +244,7 @@ export interface UpdateReimbursementBatchPayoutPlanRequest {
   payment_entity_id?: number;
   payment_entity_bank_account_id?: number;
   payment_account?: string;
+  payee_id?: number;
 }
 
 export interface UpdateReimbursementBatchPaymentVouchersRequest {

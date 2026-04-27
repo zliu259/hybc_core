@@ -23,6 +23,7 @@ import {
   type Entity,
   type EntityBankAccount
 } from "@/api/entity";
+import { listPayees, type Payee } from "@/api/payment";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { formatToken, getToken } from "@/utils/auth";
 import { formatBeijingDateTime } from "@/utils/datetime";
@@ -51,12 +52,14 @@ const auditStatus = ref("none");
 const projects = ref<Project[]>([]);
 const entities = ref<Entity[]>([]);
 const bankAccounts = ref<EntityBankAccount[]>([]);
+const internalPayees = ref<Payee[]>([]);
 
 const payoutEdit = ref({
   payment_method: "",
   payment_entity_id: undefined as number | undefined,
   payment_entity_bank_account_id: undefined as number | undefined,
-  payment_account: ""
+  payment_account: "",
+  payee_id: undefined as number | undefined
 });
 
 const voucherEditorRows = ref<
@@ -82,6 +85,7 @@ const editItemForm = ref({
 const paymentMethodOptions = [
   { label: "可后续补充", value: "" },
   { label: "对公转账", value: "transfer" },
+  { label: "转账", value: "personal_transfer" },
   { label: "现金", value: "cash" },
   { label: "票据", value: "bill" },
   { label: "其他", value: "other" }
@@ -91,6 +95,8 @@ const paymentMethodLabelMap: Record<string, string> = {
   transfer: "对公转账",
   bank_transfer: "对公转账",
   对公转账: "对公转账",
+  personal_transfer: "转账",
+  转账: "转账",
   cash: "现金",
   现金: "现金",
   bill: "票据",
@@ -171,6 +177,7 @@ const toInvoiceRiskLabel = (value: string | null | undefined) => {
 const normalizePaymentMethodValue = (value: string | null | undefined) => {
   if (!value) return "";
   if (value === "transfer" || value === "bank_transfer" || value === "对公转账") return "transfer";
+  if (value === "personal_transfer" || value === "转账") return "personal_transfer";
   if (value === "cash" || value === "现金") return "cash";
   if (value === "bill" || value === "票据") return "bill";
   if (value === "other" || value === "其他") return "other";
@@ -332,6 +339,19 @@ const loadBankAccounts = async (entityId: number | undefined, preferredAccountId
   }
 };
 
+const loadInternalPayees = async (applicantUserid: string | undefined, preferredPayeeId?: number | null) => {
+  if (!applicantUserid) {
+    internalPayees.value = [];
+    payoutEdit.value.payee_id = undefined;
+    return;
+  }
+  const result = await listPayees({ type: "internal", linked_userid: applicantUserid });
+  internalPayees.value = result.data;
+  if (preferredPayeeId) {
+    payoutEdit.value.payee_id = preferredPayeeId;
+  }
+};
+
 const syncEditFormFromDetail = async () => {
   if (!detail.value) return;
   payoutEdit.value.payment_method = normalizePaymentMethodValue(detail.value.payment_method);
@@ -339,11 +359,15 @@ const syncEditFormFromDetail = async () => {
   payoutEdit.value.payment_entity_bank_account_id =
     detail.value.payment_entity_bank_account_id ?? undefined;
   payoutEdit.value.payment_account = detail.value.payment_account ?? "";
+  payoutEdit.value.payee_id = detail.value.payee_id ?? undefined;
 
-  await loadBankAccounts(
-    payoutEdit.value.payment_entity_id,
-    payoutEdit.value.payment_entity_bank_account_id
-  );
+  await Promise.all([
+    loadBankAccounts(
+      payoutEdit.value.payment_entity_id,
+      payoutEdit.value.payment_entity_bank_account_id
+    ),
+    loadInternalPayees(detail.value.applicant_userid, detail.value.payee_id)
+  ]);
 };
 
 const onEditEntityChange = async () => {
@@ -374,6 +398,7 @@ const saveSecondaryEdit = async () => {
     payment_entity_id?: number;
     payment_entity_bank_account_id?: number;
     payment_account?: string;
+    payee_id?: number;
   } = {};
 
   if (payoutEdit.value.payment_method) {
@@ -388,6 +413,9 @@ const saveSecondaryEdit = async () => {
   }
   if (payoutEdit.value.payment_account.trim()) {
     payload.payment_account = payoutEdit.value.payment_account.trim();
+  }
+  if (payoutEdit.value.payee_id) {
+    payload.payee_id = payoutEdit.value.payee_id;
   }
 
   if (Object.keys(payload).length === 0) {
@@ -561,6 +589,23 @@ onMounted(async () => {
               :key="item.value || 'empty'"
               :label="item.label"
               :value="item.value"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="收款账户">
+          <el-select
+            v-model="payoutEdit.payee_id"
+            filterable
+            clearable
+            style="min-width: 360px"
+            placeholder="选择被报销人收款账户"
+          >
+            <el-option
+              v-for="item in internalPayees"
+              :key="item.id"
+              :label="`${item.name} / ${item.bank_name} / ${item.bank_account}`"
+              :value="item.id"
             />
           </el-select>
         </el-form-item>

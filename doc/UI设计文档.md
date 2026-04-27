@@ -1266,7 +1266,7 @@
 - 小程序审批列表新增“被报销人”展示；审批详情在报销批次场景新增支付方式/付款账户展示与审批人可编辑支付方案（同样走批次 payout-plan 接口）：`packages/miniapp/pages/approval/index.{js,wxml}`、`packages/miniapp/pages/approval-detail/index.{js,wxml}`、`packages/api/src/routes/reimbursement.ts`
 
 ### 8.13 报销批次详情“超管二次编辑 + 全量信息展示”补齐（2026-04）
-- 报销批次详情页新增“超级管理员二次编辑”区域，允许超管在批次详情直接二次调整付款方式、付款实体、付款账户及展示文本（调用 `PUT /api/v1/reimbursement/batch/:id/payout-plan`）：`packages/web/src/views/finance/reimbursement/batch-detail.vue`、`packages/web/src/api/reimbursement.ts`
+- 报销批次详情页新增“超级管理员二次编辑”区域，允许超管在批次详情直接二次调整付款方式、被报销人收款账户、付款实体、付款账户及展示文本（调用 `PUT /api/v1/reimbursement/batch/:id/payout-plan`）：`packages/web/src/views/finance/reimbursement/batch-detail.vue`、`packages/web/src/api/reimbursement.ts`
 - 报销批次详情页基础信息扩展为“全量业务视图”：批次状态、项目/被报销人、付款方式、付款账户、出款实体、出款银行账户、支付流水号、打款日期、创建/更新时间、审批实例状态/当前节点：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 报销批次详情页新增支付凭证区（读取并展示 `payment_vouchers`），支持直接预览/下载凭证文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 报销批次详情接口补齐聚合字段，返回 `payment_entity`、`payment_bank_account`、`payment_vouchers`，减少前端二次拼接成本并保证详情一致性：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
@@ -1278,6 +1278,7 @@
 
 ### 8.15 报销集中审批中心候选清单收敛 + 批次详情可维护增强（2026-04）
 - 报销集中审批中心新增候选查询接口 `GET /api/v1/reimbursement/batch/candidates`，候选仅保留“可直接送审”条目（已收件 + 复核通过 + 未入批次），从源头消除不合格条目与重复批次风险：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/batch.vue`
-- 创建并送审动作新增二次确认弹窗，展示送审条目数、总金额、收款方式、付款实体与付款账户；送审仅强制收款方式，付款实体/付款账户/账户显示允许为空并由审批人员在审批详情页补充：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/api/src/routes/reimbursement.ts`
+- 创建并送审动作新增二次确认弹窗，展示送审条目数、总金额、付款方式、被报销人收款账户、付款实体与付款账户；送审仅强制付款方式，付款实体/付款账户/账户显示允许为空并由审批人员在审批详情页补充：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/api/src/routes/reimbursement.ts`
+- 报销批次付款方式新增“转账”（独立于“对公转账”），覆盖创建并送审、审批详情支付方案、批次详情超管二次编辑：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/views/approval/detail.vue`、`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 批次详情新增“支付凭证上传与保存”能力，可在详情页直接上传/移除并持久化支付凭证：`PUT /api/v1/reimbursement/batch/:id/payment-vouchers`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 批次详情新增“报销基础信息编辑”能力（发票号、费用日期、金额、类别、说明），支持对批次内单条报销做修正并自动回写批次合计：`PUT /api/v1/reimbursement/batch/:id/items/:envelopeId/basic-info`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`

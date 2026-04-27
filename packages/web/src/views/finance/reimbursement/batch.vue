@@ -134,6 +134,8 @@ const paymentMethodLabelMap: Record<string, string> = {
   transfer: "对公转账",
   bank_transfer: "对公转账",
   对公转账: "对公转账",
+  personal_transfer: "转账",
+  转账: "转账",
   cash: "现金",
   现金: "现金",
   bill: "票据",
@@ -300,12 +302,18 @@ const submitCreateAndApproval = async () => {
     activeBankAccounts.value.find(
       item => item.id === filters.value.payment_entity_bank_account_id
     )?.account_no || "-";
+  const selectedPayee = internalPayees.value.find(
+    item => item.id === filters.value.payee_id
+  );
+  const payeeAccountLabel = selectedPayee
+    ? `${selectedPayee.name} / ${selectedPayee.bank_name} / ${selectedPayee.bank_account}`
+    : "-";
 
   try {
     await ElMessageBox.confirm(
       `即将创建并送审：${selectedRows.length} 条报销，合计 ¥${selectedTotalAmount.toFixed(
         2
-      )}。\n收款方式：${toPaymentMethodLabel(filters.value.payment_method)}\n付款实体：${paymentEntityLabel}\n付款账号：${paymentAccountLabel}\n\n付款实体与付款账号可由审批人员在审批时补充。\n请确认信息无误后继续。`,
+      )}。\n付款方式：${toPaymentMethodLabel(filters.value.payment_method)}\n收款账户：${payeeAccountLabel}\n付款实体：${paymentEntityLabel}\n付款账号：${paymentAccountLabel}\n\n付款实体与付款账号可由审批人员在审批时补充。\n请确认信息无误后继续。`,
       "二次确认：创建并送审",
       {
         type: "warning",
@@ -476,6 +484,7 @@ watch(
       <el-form-item label="收款方式">
         <el-select v-model="filters.payment_method" clearable style="width: 160px">
           <el-option label="对公转账" value="transfer" />
+          <el-option label="转账" value="personal_transfer" />
           <el-option label="现金" value="cash" />
           <el-option label="票据" value="bill" />
           <el-option label="其他" value="other" />

@@ -594,6 +594,7 @@ export const updateBatchPayoutPlan = (
     payment_entity_id?: number;
     payment_entity_bank_account_id?: number;
     payment_account?: string;
+    payee_id?: number;
   }
 ) => {
   return http.request<{
@@ -603,6 +604,7 @@ export const updateBatchPayoutPlan = (
       payment_entity_id: number | null;
       payment_entity_bank_account_id: number | null;
       payment_account: string | null;
+      payee_id: number | null;
     };
   }>("put", `/api/v1/reimbursement/batch/${id}/payout-plan`, { data });
 };

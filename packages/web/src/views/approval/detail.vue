@@ -166,6 +166,7 @@ const payoutForm = ref({
 const payoutMethodOptions = [
   { label: "可后续补充", value: "" },
   { label: "对公转账", value: "transfer" },
+  { label: "转账", value: "personal_transfer" },
   { label: "现金", value: "cash" },
   { label: "票据", value: "bill" },
   { label: "其他", value: "other" }
@@ -466,10 +467,12 @@ const paymentCategoryLabelMap: Record<string, string> = {
 const paymentMethodLabelMap: Record<string, string> = {
   bank_transfer: "对公转账",
   transfer: "对公转账",
+  personal_transfer: "转账",
   cash: "现金",
   bill: "票据",
   other: "其他",
   对公转账: "对公转账",
+  转账: "转账",
   现金: "现金",
   票据: "票据",
   其他: "其他"
@@ -489,6 +492,7 @@ const normalizePaymentMethodValue = (value: string | null | undefined) => {
   if (!value) return "";
   if (value === "transfer" || value === "bank_transfer" || value === "对公转账")
     return "transfer";
+  if (value === "personal_transfer" || value === "转账") return "personal_transfer";
   if (value === "cash" || value === "现金") return "cash";
   if (value === "bill" || value === "票据") return "bill";
   if (value === "other" || value === "其他") return "other";

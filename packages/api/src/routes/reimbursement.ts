@@ -229,10 +229,14 @@ const hasOfficeRole = (roles: string[] = []) => {
   return roles.some((role) => reimbursementOfficeRoles.includes(role));
 };
 
-const paymentMethodAliasMap: Record<string, "transfer" | "cash" | "bill" | "other"> = {
+type ReimbursementPaymentMethod = "transfer" | "personal_transfer" | "cash" | "bill" | "other";
+
+const paymentMethodAliasMap: Record<string, ReimbursementPaymentMethod> = {
   transfer: "transfer",
   bank_transfer: "transfer",
   对公转账: "transfer",
+  personal_transfer: "personal_transfer",
+  转账: "personal_transfer",
   cash: "cash",
   现金: "cash",
   bill: "bill",
@@ -243,7 +247,7 @@ const paymentMethodAliasMap: Record<string, "transfer" | "cash" | "bill" | "othe
 
 const normalizePaymentMethodValue = (
   value: string | null | undefined
-): { normalized: "transfer" | "cash" | "bill" | "other" | null; invalid: boolean } => {
+): { normalized: ReimbursementPaymentMethod | null; invalid: boolean } => {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) {
     return { normalized: null, invalid: false };
@@ -272,7 +276,7 @@ type ReimbursementPayoutPlanInput = {
 };
 
 type ReimbursementPayoutPlanResolved = {
-  payment_method: "transfer" | "cash" | "bill" | "other" | null;
+  payment_method: ReimbursementPaymentMethod | null;
   payment_entity_id: number | null;
   payment_entity_bank_account_id: number | null;
   payment_account: string | null;
@@ -317,7 +321,10 @@ const resolveReimbursementPayoutPlan = async (
   if (input.payment_method !== undefined) {
     const normalized = normalizePaymentMethodValue(input.payment_method);
     if (normalized.invalid) {
-      return { error: "payment_method must be one of transfer/cash/bill/other (or 对公转账/现金/票据/其他)" };
+      return {
+        error:
+          "payment_method must be one of transfer/personal_transfer/cash/bill/other (or 对公转账/转账/现金/票据/其他)"
+      };
     }
     paymentMethod = normalized.normalized;
   }
@@ -1886,10 +1893,16 @@ reimbursementRoutes.post(
 
     if (typeof body.payee_id === "number" && body.payee_id > 0) {
       const payeeRow = await c.env.DB.prepare(
-        "SELECT id, type, status, linked_userid FROM payee WHERE id = ?"
+        "SELECT id, type, status, linked_userid, created_by_userid FROM payee WHERE id = ?"
       )
         .bind(body.payee_id)
-        .first<{ id: number; type: string; status: string; linked_userid: string | null }>();
+        .first<{
+          id: number;
+          type: string;
+          status: string;
+          linked_userid: string | null;
+          created_by_userid: string;
+        }>();
       if (!payeeRow || payeeRow.status !== "active") {
         return c.json(
           { success: false, error: { message: "payee_id not found or inactive" } },
@@ -2223,10 +2236,16 @@ reimbursementRoutes.post(
     let payeeIdUpdate: number | undefined;
     if (typeof body.payee_id === "number" && body.payee_id > 0) {
       const payeeRow = await c.env.DB.prepare(
-        "SELECT id, type, status, linked_userid FROM payee WHERE id = ?"
+        "SELECT id, type, status, linked_userid, created_by_userid FROM payee WHERE id = ?"
       )
         .bind(body.payee_id)
-        .first<{ id: number; type: string; status: string; linked_userid: string | null }>();
+        .first<{
+          id: number;
+          type: string;
+          status: string;
+          linked_userid: string | null;
+          created_by_userid: string;
+        }>();
       if (!payeeRow || payeeRow.status !== "active") {
         return c.json(
           { success: false, error: { message: "payee_id not found or inactive" } },
@@ -2628,7 +2647,8 @@ reimbursementRoutes.put(
       body.payment_method !== undefined ||
       body.payment_entity_id !== undefined ||
       body.payment_entity_bank_account_id !== undefined ||
-      body.payment_account !== undefined;
+      body.payment_account !== undefined ||
+      body.payee_id !== undefined;
 
     if (!hasPayoutMutation) {
       return c.json(
@@ -2636,7 +2656,7 @@ reimbursementRoutes.put(
           success: false,
           error: {
             message:
-              "At least one payout field is required (payment_method/payment_entity_id/payment_entity_bank_account_id/payment_account)"
+              "At least one payout field is required (payment_method/payment_entity_id/payment_entity_bank_account_id/payment_account/payee_id)"
           }
         },
         400
@@ -2691,6 +2711,13 @@ reimbursementRoutes.put(
       );
     }
 
+    if (body.payee_id !== undefined && !isSuperAdmin) {
+      return c.json(
+        { success: false, error: { message: "Only super_admin can update batch payee_id" } },
+        403
+      );
+    }
+
     const payoutPlan = await resolveReimbursementPayoutPlan(c.env, body, {
       payment_method: normalizePaymentMethodValue(batch.payment_method).normalized,
       payment_entity_id: batch.payment_entity_id,
@@ -2701,12 +2728,50 @@ reimbursementRoutes.put(
       return c.json({ success: false, error: { message: payoutPlan.error } }, 400);
     }
 
+    let payeeId = batch.payee_id;
+    if (body.payee_id !== undefined) {
+      if (!Number.isInteger(body.payee_id) || body.payee_id <= 0) {
+        return c.json({ success: false, error: { message: "payee_id must be a positive integer" } }, 400);
+      }
+      const payeeRow = await c.env.DB.prepare(
+        "SELECT id, type, status, linked_userid, created_by_userid FROM payee WHERE id = ?"
+      )
+        .bind(body.payee_id)
+        .first<{
+          id: number;
+          type: string;
+          status: string;
+          linked_userid: string | null;
+          created_by_userid: string;
+        }>();
+      if (!payeeRow || payeeRow.status !== "active") {
+        return c.json({ success: false, error: { message: "payee_id not found or inactive" } }, 400);
+      }
+      if (payeeRow.type !== "internal") {
+        return c.json(
+          { success: false, error: { message: "payee_id must reference an internal payee" } },
+          400
+        );
+      }
+      const payeeBelongsToApplicant = payeeRow.linked_userid
+        ? payeeRow.linked_userid === batch.applicant_userid
+        : payeeRow.created_by_userid === batch.applicant_userid;
+      if (!payeeBelongsToApplicant) {
+        return c.json(
+          { success: false, error: { message: "payee linked_userid does not match batch applicant" } },
+          400
+        );
+      }
+      payeeId = payeeRow.id;
+    }
+
     await c.env.DB.prepare(
       `UPDATE reimbursement_batch
           SET payment_method = ?,
               payment_entity_id = ?,
               payment_entity_bank_account_id = ?,
               payment_account = ?,
+              payee_id = ?,
               updated_at = ?
         WHERE id = ?`
     )
@@ -2715,6 +2780,7 @@ reimbursementRoutes.put(
         payoutPlan.value.payment_entity_id,
         payoutPlan.value.payment_entity_bank_account_id,
         payoutPlan.value.payment_account,
+        payeeId,
         now,
         id
       )
@@ -2730,11 +2796,12 @@ reimbursementRoutes.put(
         payment_method: payoutPlan.value.payment_method,
         payment_entity_id: payoutPlan.value.payment_entity_id,
         payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
-        payment_account: payoutPlan.value.payment_account
+        payment_account: payoutPlan.value.payment_account,
+        payee_id: payeeId
       }
     });
 
-    return c.json({ success: true, data: payoutPlan.value });
+    return c.json({ success: true, data: { ...payoutPlan.value, payee_id: payeeId } });
   }
 );
 
