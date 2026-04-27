@@ -346,7 +346,7 @@ paymentRoutes.get("/payee/list", async (c) => {
   const type = c.req.query("type");
   const keyword = c.req.query("keyword");
   const legacyDataId = c.req.query("legacy_data_id");
-  const linkedUserid = c.req.query("linked_userid");
+  const linkedUserid = c.req.query("linked_userid")?.trim();
   const mine = c.req.query("mine") === "true";
 
   let sql = "SELECT * FROM payee WHERE status = 'active'";
@@ -365,8 +365,8 @@ paymentRoutes.get("/payee/list", async (c) => {
     params.push(legacyDataId);
   }
   if (linkedUserid) {
-    sql += " AND linked_userid = ?";
-    params.push(linkedUserid);
+    sql += " AND (linked_userid = ? OR (linked_userid IS NULL AND created_by_userid = ?))";
+    params.push(linkedUserid, linkedUserid);
   }
 
   if (mine) {
