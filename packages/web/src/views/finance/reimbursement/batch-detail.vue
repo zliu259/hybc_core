@@ -506,263 +506,276 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card shadow="never" :loading="loading" style="background: #fffaf2">
-    <template #header>
-      <div class="header-row">
-        <span>批次详情 - {{ detail?.batch_no || "" }}</span>
-        <el-button @click="router.push('/finance/reimbursement/batch')">返回</el-button>
+  <div class="batch-detail-page" v-loading="loading">
+    <div class="page-header">
+      <div>
+        <div class="page-title">批次详情</div>
+        <div class="page-subtitle">{{ detail?.batch_no || "加载中" }}</div>
       </div>
-    </template>
-
-    <el-descriptions v-if="detail" :column="3" border>
-      <el-descriptions-item label="批次号">{{ detail.batch_no }}</el-descriptions-item>
-      <el-descriptions-item label="业务状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
-      <el-descriptions-item label="智能审核状态">{{ aiAuditStatusLabel(detail.ai_audit_status) }}</el-descriptions-item>
-
-      <el-descriptions-item label="所属项目">{{ toProjectLabel(detail.project_id) }}</el-descriptions-item>
-      <el-descriptions-item label="被报销人">{{ toUserLabel(detail.applicant_userid) }}</el-descriptions-item>
-      <el-descriptions-item label="单据数">{{ detail.item_count }}</el-descriptions-item>
-
-      <el-descriptions-item label="总金额">{{ detail.total_amount }}</el-descriptions-item>
-      <el-descriptions-item label="收款/付款方式">{{
-        toPaymentMethodLabel(detail.payment_method)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="付款账户">{{ detail.payment_account || "-" }}</el-descriptions-item>
-
-      <el-descriptions-item label="出款实体">{{
-        detail.payment_entity
-          ? `${detail.payment_entity.entity_name} (${detail.payment_entity.entity_code})`
-          : toEntityLabel(detail.payment_entity_id)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="出款账户">{{
-        detail.payment_bank_account
-          ? `${detail.payment_bank_account.bank_name}${
-              detail.payment_bank_account.bank_branch_no
-                ? `-${detail.payment_bank_account.bank_branch_no}`
-                : ""
-            } / ${detail.payment_bank_account.account_no}`
-          : "-"
-      }}</el-descriptions-item>
-      <el-descriptions-item label="收款账户（被报销人）">{{
-        detail.payee
-          ? `${detail.payee.name} · ${detail.payee.bank_name} · ${detail.payee.bank_account}`
-          : "-"
-      }}</el-descriptions-item>
-      <el-descriptions-item label="支付流水号">{{ detail.payment_reference || "-" }}</el-descriptions-item>
-
-      <el-descriptions-item label="打款日期">{{ detail.paid_at || "-" }}</el-descriptions-item>
-      <el-descriptions-item label="创建时间">{{
-        formatBeijingDateTime(detail.created_at)
-      }}</el-descriptions-item>
-      <el-descriptions-item label="更新时间">{{
-        formatBeijingDateTime(detail.updated_at)
-      }}</el-descriptions-item>
-
-      <el-descriptions-item label="审批实例">{{
-        detail.approval_instance?.instance_no || detail.approval_instance_id || "-"
-      }}</el-descriptions-item>
-      <el-descriptions-item label="审批状态">{{
-        detail.approval_instance
-          ? statusLabel(detail.approval_instance.status)
-          : "-"
-      }}</el-descriptions-item>
-      <el-descriptions-item label="审批节点">{{
-        detail.approval_instance?.current_node_name || "-"
-      }}</el-descriptions-item>
-    </el-descriptions>
-
-    <el-card
-      v-if="isSuperAdmin && detail"
-      shadow="never"
-      style="margin-top: 16px; background: #f8fafc"
-      header="超级管理员二次编辑（批次详情）"
-    >
-      <el-form inline>
-        <el-form-item label="付款方式">
-          <el-select
-            v-model="payoutEdit.payment_method"
-            style="min-width: 160px"
-            placeholder="选择付款方式"
-          >
-            <el-option
-              v-for="item in paymentMethodOptions"
-              :key="item.value || 'empty'"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="收款账户">
-          <el-select
-            v-model="payoutEdit.payee_id"
-            filterable
-            clearable
-            style="min-width: 360px"
-            placeholder="选择被报销人收款账户"
-          >
-            <el-option
-              v-for="item in internalPayees"
-              :key="item.id"
-              :label="`${item.name} / ${item.bank_name} / ${item.bank_account}`"
-              :value="item.id"
-            />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="付款实体">
-          <el-select
-            v-model="payoutEdit.payment_entity_id"
-            filterable
-            clearable
-            style="min-width: 240px"
-            placeholder="选择付款实体"
-            @change="onEditEntityChange"
-          >
-            <el-option
-              v-for="item in activeEntities"
-              :key="item.id"
-              :label="item.entity_name"
-              :value="item.id"
-            />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="付款账户">
-          <el-select
-            v-model="payoutEdit.payment_entity_bank_account_id"
-            filterable
-            clearable
-            style="min-width: 320px"
-            placeholder="选择付款账户"
-            @change="onEditAccountChange"
-          >
-            <el-option
-              v-for="item in activeBankAccounts"
-              :key="item.id"
-              :label="toAccountLabel(item)"
-              :value="item.id"
-            />
-          </el-select>
-        </el-form-item>
-
-        <el-form-item label="付款账户显示">
-          <el-input
-            v-model="payoutEdit.payment_account"
-            style="min-width: 320px"
-            placeholder="可手工修正展示文本"
-          />
-        </el-form-item>
-
-        <el-form-item>
-          <el-button :loading="savingPayout" type="primary" @click="saveSecondaryEdit">
-            保存二次编辑
-          </el-button>
-        </el-form-item>
-      </el-form>
-    </el-card>
-
-    <div style="margin-top: 12px">
-      <el-space>
-        <el-button type="primary" :loading="actionLoading" @click="runAudit">
-          触发智能审核
-        </el-button>
-        <el-button :loading="actionLoading" @click="refreshAudit">刷新审核状态</el-button>
-        <el-button type="success" :loading="actionLoading" @click="submitApproval">
-          提交集中审批
-        </el-button>
-        <el-button type="warning" :loading="actionLoading" @click="doMarkPaid">
-          去集中打款登记
-        </el-button>
-        <el-button
-          v-if="detail?.approval_instance_id"
-          @click="router.push(`/approval/detail/${detail.approval_instance_id}`)"
-        >
-          查看审批详情
-        </el-button>
-      </el-space>
+      <el-button @click="router.push('/finance/reimbursement/batch')">返回</el-button>
     </div>
 
-    <el-card shadow="never" style="margin-top: 16px" header="支付凭证">
-      <el-upload
-        v-if="canMaintainBatchDetail"
-        drag
-        :show-file-list="false"
-        :multiple="true"
-        :disabled="uploadingVoucher"
-        :http-request="uploadVoucher"
-      >
-        <div class="el-upload__text">拖拽凭证到这里，或 <em>点击上传</em></div>
-        <div class="el-upload__tip">支持上传打款截图、回单等凭证</div>
-      </el-upload>
-
-      <el-table
-        v-if="voucherEditorRows.length > 0"
-        :data="voucherEditorRows"
-        size="small"
-        border
-        style="margin-top: 8px"
-      >
-        <el-table-column prop="file_name" label="文件名" min-width="240">
-          <template #default="scope">
-            {{ scope.row.file_name || scope.row.file_key }}
-          </template>
-        </el-table-column>
-        <el-table-column prop="file_size" label="大小" width="120" />
-        <el-table-column label="操作" width="180">
-          <template #default="scope">
-            <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
-              下载
-            </el-link>
-            <el-link
-              style="margin-left: 12px"
-              :href="fileUrl(scope.row.file_key)"
-              target="_blank"
-              type="primary"
-            >
-              预览
-            </el-link>
-            <el-button
-              v-if="canMaintainBatchDetail"
-              link
-              type="danger"
-              style="margin-left: 12px"
-              @click="removeVoucherRow(scope.$index)"
-            >
-              移除
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
-      <el-empty v-else description="暂无支付凭证" />
-      <div v-if="canMaintainBatchDetail" style="margin-top: 10px">
-        <el-button type="primary" :loading="savingVouchers" @click="savePaymentVouchers">
-          保存支付凭证
-        </el-button>
+    <template v-if="detail">
+      <div class="summary-grid">
+        <div class="summary-tile">
+          <span class="tile-label">业务状态</span>
+          <strong>{{ statusLabel(detail.status) }}</strong>
+        </div>
+        <div class="summary-tile">
+          <span class="tile-label">总金额</span>
+          <strong>¥{{ Number(detail.total_amount || 0).toFixed(2) }}</strong>
+        </div>
+        <div class="summary-tile">
+          <span class="tile-label">单据数</span>
+          <strong>{{ detail.item_count }}</strong>
+        </div>
+        <div class="summary-tile">
+          <span class="tile-label">审批节点</span>
+          <strong>{{ detail.approval_instance?.current_node_name || "-" }}</strong>
+        </div>
       </div>
-    </el-card>
 
-    <el-card shadow="never" style="margin-top: 16px" header="查重风险汇总">
-      <el-table :data="detail?.duplicate_summary || []" size="small" border>
-        <el-table-column label="风险级别" width="140">
-          <template #default="scope">
-            <el-tag :type="invoiceRiskTagMap[scope.row.risk_level] || 'info'" size="small">
-              {{ toInvoiceRiskLabel(scope.row.risk_level) }}
-            </el-tag>
-          </template>
-        </el-table-column>
-        <el-table-column prop="cnt" label="数量" width="120" />
-      </el-table>
-    </el-card>
+      <div class="action-panel">
+        <el-space wrap>
+          <el-button type="primary" :loading="actionLoading" @click="runAudit">
+            触发智能审核
+          </el-button>
+          <el-button :loading="actionLoading" @click="refreshAudit">刷新审核状态</el-button>
+          <el-button type="success" :loading="actionLoading" @click="submitApproval">
+            提交集中审批
+          </el-button>
+          <el-button type="warning" :loading="actionLoading" @click="doMarkPaid">
+            去集中打款登记
+          </el-button>
+          <el-button
+            v-if="detail.approval_instance_id"
+            @click="router.push(`/approval/detail/${detail.approval_instance_id}`)"
+          >
+            查看审批详情
+          </el-button>
+        </el-space>
+      </div>
 
-    <el-card shadow="never" style="margin-top: 16px" header="智能审核报告">
-      <div style="margin-bottom: 8px">状态：{{ aiAuditStatusLabel(auditStatus) }}</div>
-      <pre style="white-space: pre-wrap; word-break: break-word">{{
-        auditResult || "-"
-      }}</pre>
-    </el-card>
+      <div class="info-grid">
+        <section class="detail-section">
+          <div class="section-title">基础信息</div>
+          <el-descriptions :column="2" border>
+            <el-descriptions-item label="所属项目">{{
+              toProjectLabel(detail.project_id)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="被报销人">{{
+              toUserLabel(detail.applicant_userid)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="智能审核">{{
+              aiAuditStatusLabel(detail.ai_audit_status)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="审批状态">{{
+              detail.approval_instance ? statusLabel(detail.approval_instance.status) : "-"
+            }}</el-descriptions-item>
+            <el-descriptions-item label="创建时间">{{
+              formatBeijingDateTime(detail.created_at)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="更新时间">{{
+              formatBeijingDateTime(detail.updated_at)
+            }}</el-descriptions-item>
+          </el-descriptions>
+        </section>
 
-    <el-card shadow="never" style="margin-top: 16px" header="批次信封明细（全量）">
+        <section class="detail-section">
+          <div class="section-title">收付款信息</div>
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="付款方式">{{
+              toPaymentMethodLabel(detail.payment_method)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="收款账户">{{
+              detail.payee
+                ? `${detail.payee.name} · ${detail.payee.bank_name} · ${detail.payee.bank_account}`
+                : "-"
+            }}</el-descriptions-item>
+            <el-descriptions-item label="付款实体">{{
+              detail.payment_entity
+                ? `${detail.payment_entity.entity_name} (${detail.payment_entity.entity_code})`
+                : toEntityLabel(detail.payment_entity_id)
+            }}</el-descriptions-item>
+            <el-descriptions-item label="付款账户">{{
+              detail.payment_bank_account
+                ? `${detail.payment_bank_account.bank_name}${
+                    detail.payment_bank_account.bank_branch_no
+                      ? `-${detail.payment_bank_account.bank_branch_no}`
+                      : ""
+                  } / ${detail.payment_bank_account.account_no}`
+                : detail.payment_account || "-"
+            }}</el-descriptions-item>
+            <el-descriptions-item label="流水/打款">{{
+              `${detail.payment_reference || "-"} / ${detail.paid_at || "-"}`
+            }}</el-descriptions-item>
+          </el-descriptions>
+        </section>
+      </div>
+
+      <el-collapse class="maintenance-collapse">
+        <el-collapse-item v-if="isSuperAdmin" title="超级管理员二次编辑" name="admin-edit">
+          <el-form class="compact-form" label-width="110px">
+            <el-form-item label="付款方式">
+              <el-select
+                v-model="payoutEdit.payment_method"
+                style="width: 220px"
+                placeholder="选择付款方式"
+              >
+                <el-option
+                  v-for="item in paymentMethodOptions"
+                  :key="item.value || 'empty'"
+                  :label="item.label"
+                  :value="item.value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="收款账户">
+              <el-select
+                v-model="payoutEdit.payee_id"
+                filterable
+                clearable
+                style="width: min(560px, 100%)"
+                placeholder="选择被报销人收款账户"
+              >
+                <el-option
+                  v-for="item in internalPayees"
+                  :key="item.id"
+                  :label="`${item.name} / ${item.bank_name} / ${item.bank_account}`"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="付款实体">
+              <el-select
+                v-model="payoutEdit.payment_entity_id"
+                filterable
+                clearable
+                style="width: 320px"
+                placeholder="选择付款实体"
+                @change="onEditEntityChange"
+              >
+                <el-option
+                  v-for="item in activeEntities"
+                  :key="item.id"
+                  :label="item.entity_name"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="付款账户">
+              <el-select
+                v-model="payoutEdit.payment_entity_bank_account_id"
+                filterable
+                clearable
+                style="width: min(560px, 100%)"
+                placeholder="选择付款账户"
+                @change="onEditAccountChange"
+              >
+                <el-option
+                  v-for="item in activeBankAccounts"
+                  :key="item.id"
+                  :label="toAccountLabel(item)"
+                  :value="item.id"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="账户显示">
+              <el-input
+                v-model="payoutEdit.payment_account"
+                style="width: min(560px, 100%)"
+                placeholder="可手工修正展示文本"
+              />
+            </el-form-item>
+            <el-form-item>
+              <el-button :loading="savingPayout" type="primary" @click="saveSecondaryEdit">
+                保存二次编辑
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </el-collapse-item>
+
+        <el-collapse-item title="支付凭证" name="vouchers">
+          <el-upload
+            v-if="canMaintainBatchDetail"
+            drag
+            :show-file-list="false"
+            :multiple="true"
+            :disabled="uploadingVoucher"
+            :http-request="uploadVoucher"
+          >
+            <div class="el-upload__text">拖拽凭证到这里，或 <em>点击上传</em></div>
+            <div class="el-upload__tip">支持上传打款截图、回单等凭证</div>
+          </el-upload>
+
+          <el-table
+            v-if="voucherEditorRows.length > 0"
+            :data="voucherEditorRows"
+            size="small"
+            border
+            style="margin-top: 8px"
+          >
+            <el-table-column prop="file_name" label="文件名" min-width="240">
+              <template #default="scope">
+                {{ scope.row.file_name || scope.row.file_key }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="file_size" label="大小" width="120" />
+            <el-table-column label="操作" width="180">
+              <template #default="scope">
+                <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                  下载
+                </el-link>
+                <el-link
+                  style="margin-left: 12px"
+                  :href="fileUrl(scope.row.file_key)"
+                  target="_blank"
+                  type="primary"
+                >
+                  预览
+                </el-link>
+                <el-button
+                  v-if="canMaintainBatchDetail"
+                  link
+                  type="danger"
+                  style="margin-left: 12px"
+                  @click="removeVoucherRow(scope.$index)"
+                >
+                  移除
+                </el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <el-empty v-else description="暂无支付凭证" />
+          <div v-if="canMaintainBatchDetail" style="margin-top: 10px">
+            <el-button type="primary" :loading="savingVouchers" @click="savePaymentVouchers">
+              保存支付凭证
+            </el-button>
+          </div>
+        </el-collapse-item>
+
+        <el-collapse-item title="查重风险与智能审核" name="audit">
+          <div class="audit-grid">
+            <el-table :data="detail.duplicate_summary || []" size="small" border>
+              <el-table-column label="风险级别" width="140">
+                <template #default="scope">
+                  <el-tag :type="invoiceRiskTagMap[scope.row.risk_level] || 'info'" size="small">
+                    {{ toInvoiceRiskLabel(scope.row.risk_level) }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column prop="cnt" label="数量" width="120" />
+            </el-table>
+            <div class="audit-report">
+              <div class="audit-status">状态：{{ aiAuditStatusLabel(auditStatus) }}</div>
+              <pre>{{ auditResult || "-" }}</pre>
+            </div>
+          </div>
+        </el-collapse-item>
+      </el-collapse>
+
+      <section class="detail-section">
+        <div class="section-title">批次信封明细</div>
       <el-table :data="detail?.items || []" border>
         <el-table-column prop="id" label="信封ID" width="90" />
         <el-table-column prop="envelope_no" label="信封编号" width="170" />
@@ -825,7 +838,8 @@ onMounted(async () => {
           </template>
         </el-table-column>
       </el-table>
-    </el-card>
+      </section>
+    </template>
 
     <el-dialog
       v-model="editItemDialogVisible"
@@ -868,14 +882,117 @@ onMounted(async () => {
         </el-button>
       </template>
     </el-dialog>
-  </el-card>
+  </div>
 </template>
 
 <style scoped>
-.header-row {
+.batch-detail-page {
   display: flex;
-  justify-content: space-between;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-header {
+  display: flex;
   align-items: center;
+  justify-content: space-between;
+  padding: 16px 18px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.page-subtitle {
+  margin-top: 4px;
+  color: #6b7280;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-tile {
+  min-height: 82px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.summary-tile strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  font-size: 20px;
+  font-weight: 600;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tile-label {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.action-panel,
+.detail-section,
+.maintenance-collapse {
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.info-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 16px;
+}
+
+.section-title {
+  margin-bottom: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.compact-form {
+  max-width: 760px;
+}
+
+.audit-grid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr);
+  gap: 16px;
+}
+
+.audit-report {
+  min-width: 0;
+}
+
+.audit-status {
+  margin-bottom: 8px;
+  color: #4b5563;
+}
+
+.audit-report pre {
+  max-height: 320px;
+  padding: 12px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
 }
 
 .attachment-row {
@@ -891,5 +1008,13 @@ onMounted(async () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 1200px) {
+  .summary-grid,
+  .info-grid,
+  .audit-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

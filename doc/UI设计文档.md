@@ -1268,6 +1268,7 @@
 ### 8.13 报销批次详情“超管二次编辑 + 全量信息展示”补齐（2026-04）
 - 报销批次详情页新增“超级管理员二次编辑”区域，允许超管在批次详情直接二次调整付款方式、被报销人收款账户、付款实体、付款账户及展示文本（调用 `PUT /api/v1/reimbursement/batch/:id/payout-plan`）：`packages/web/src/views/finance/reimbursement/batch-detail.vue`、`packages/web/src/api/reimbursement.ts`
 - 报销批次详情页基础信息扩展为“全量业务视图”：批次状态、项目/被报销人、付款方式、付款账户、出款实体、出款银行账户、支付流水号、打款日期、创建/更新时间、审批实例状态/当前节点：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
+- 报销批次详情页布局收敛为“顶部摘要 + 关键动作 + 基础/收付款信息 + 折叠维护区 + 信封明细”，将超管编辑、支付凭证、查重/AI 报告默认收纳在折叠区，降低首屏复杂度：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 报销批次详情页新增支付凭证区（读取并展示 `payment_vouchers`），支持直接预览/下载凭证文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 报销批次详情接口补齐聚合字段，返回 `payment_entity`、`payment_bank_account`、`payment_vouchers`，减少前端二次拼接成本并保证详情一致性：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
 
