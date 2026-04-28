@@ -1194,6 +1194,7 @@
 
 ### 8.3 个人工作台员工闭环（2026-03）
 - 个人工作台首页保留入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
+- 个人工作台首页布局收敛为“个人概览 + 关键数字 + 常用操作 + 待办/报销/证书内容区”，统一白底面板、8px 圆角与灰蓝文字体系，避免欢迎卡、待办卡、证书卡视觉风格割裂：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页已移除“我的内部收款信息 / 添加外部收款人 / 我的收款卡”相关入口与卡片，避免员工首页出现收款信息展示逻辑混乱：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页新增“油卡办公室待办”数字提醒入口（财务/经理/超管可见）：`packages/web/src/views/welcome/index.vue`
 - 新增“我的申请”页面，聚合展示员工本人发起的对外付款申请、报销申请、油卡额度申请：`packages/web/src/views/workspace/my-applications/index.vue`

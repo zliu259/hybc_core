@@ -40,10 +40,6 @@ type PersonalCertificate = {
 
 const certificates = ref<PersonalCertificate[]>([]);
 
-const pendingCount = computed(
-  () => reimbursements.value.filter(item => item.status !== "paid").length
-);
-
 const pendingApprovalCount = computed(() => pendingApprovalTotal.value);
 
 const projectNameMap = computed(() => {
@@ -86,6 +82,13 @@ const certStatus = (expireDate: string) => {
   if (remainDays <= 30) return { type: "warning", text: "即将到期" } as const;
   return { type: "success", text: "有效" } as const;
 };
+
+const certificateWarningCount = computed(
+  () =>
+    certificates.value.filter(
+      cert => certStatus(cert.expireDate).type !== "success"
+    ).length
+);
 
 const certHasFile = (cert: PersonalCertificate) => Boolean(cert.fileUrl);
 
@@ -131,6 +134,10 @@ const reimbursementProgressItems = computed(() =>
   reimbursements.value.filter(item =>
     reimbursementProgressStatusSet.has(item.status)
   )
+);
+
+const activeReimbursementCount = computed(
+  () => reimbursementProgressItems.value.length
 );
 
 const loadData = async () => {
@@ -250,49 +257,83 @@ const onCertUpload = (file: UploadFile) => {
 
 <template>
   <div v-loading="loading" class="workspace">
-    <el-card shadow="never" class="welcome-card">
-      <div class="welcome-card__title">
-        你好，{{ fullName || username || "同事" }}
+    <section class="workspace-hero">
+      <div class="workspace-hero__main">
+        <div class="workspace-hero__title">
+          你好，{{ fullName || username || "同事" }}
+        </div>
+        <div class="workspace-hero__subtitle">
+          集中处理报销、付款、审批与个人资质事项。
+        </div>
+        <div class="workspace-hero__identity">
+          <el-tag size="small" type="info">账号：{{ username || "-" }}</el-tag>
+          <el-tag
+            v-for="role in roleLabels"
+            :key="role"
+            size="small"
+            type="warning"
+          >
+            {{ role }}
+          </el-tag>
+          <el-tag
+            v-for="perm in permissionLabels.slice(0, 4)"
+            :key="perm"
+            size="small"
+            effect="plain"
+          >
+            {{ perm }}
+          </el-tag>
+          <el-tag v-if="permissionLabels.length > 4" size="small" effect="plain">
+            +{{ permissionLabels.length - 4 }}
+          </el-tag>
+        </div>
       </div>
-      <div class="welcome-card__identity">
-        <el-tag size="small" type="info">账号：{{ username || "-" }}</el-tag>
-        <el-tag
-          v-for="role in roleLabels"
-          :key="role"
-          size="small"
-          type="warning"
+
+      <div class="workspace-stats">
+        <button class="workspace-stat" type="button" @click="goApprovalDesk">
+          <span>待我审批</span>
+          <strong>{{ pendingApprovalCount }}</strong>
+        </button>
+        <button
+          class="workspace-stat"
+          type="button"
+          @click="router.push('/workspace/my-reimbursement')"
         >
-          {{ role }}
-        </el-tag>
+          <span>报销待处理</span>
+          <strong>{{ activeReimbursementCount }}</strong>
+        </button>
+        <button
+          v-if="canHandleFuelOffice"
+          class="workspace-stat"
+          type="button"
+          @click="goFuelOfficeDesk"
+        >
+          <span>油卡待办</span>
+          <strong>{{ fuelOfficePendingCount }}</strong>
+        </button>
+        <div class="workspace-stat">
+          <span>证书预警</span>
+          <strong>{{ certificateWarningCount }}</strong>
+        </div>
       </div>
-      <div class="welcome-card__permissions">
-        <el-tag size="small" type="primary">权限</el-tag>
-        <el-tag
-          v-for="perm in permissionLabels"
-          :key="perm"
-          size="small"
-          effect="plain"
-          >{{ perm }}</el-tag
-        >
-        <el-tag v-if="permissionLabels.length === 0" size="small" effect="plain"
-          >无显式权限标识</el-tag
-        >
+    </section>
+
+    <section class="action-panel">
+      <div>
+        <div class="section-title">常用操作</div>
+        <div class="section-subtitle">发起、查看和处理个人高频事项。</div>
       </div>
-      <div class="welcome-card__sub">今天待处理事项 {{ pendingCount }} 条</div>
-      <div class="welcome-card__actions">
-        <el-button type="primary" @click="goCreateReimbursement"
-          >发起报销</el-button
-        >
-        <el-button @click="router.push('/workspace/my-reimbursement')"
-          >我的报销提交</el-button
-        >
-        <el-button
-          :disabled="!canLaunchOutboundPayment"
-          @click="goPaymentWizard"
-          >发起对外付款</el-button
-        >
+      <div class="action-grid">
+        <el-button type="primary" @click="goCreateReimbursement">发起报销</el-button>
+        <el-button @click="router.push('/workspace/my-reimbursement')">
+          我的报销提交
+        </el-button>
+        <el-button :disabled="!canLaunchOutboundPayment" @click="goPaymentWizard">
+          发起对外付款
+        </el-button>
         <el-button @click="goFuelApplication">油卡额度申请</el-button>
         <el-button @click="goMyApplications">我的申请</el-button>
+        <el-button @click="router.push('/project/hub')">进入项目大厅</el-button>
         <el-badge
           v-if="canHandleFuelOffice"
           :value="fuelOfficePendingCount"
@@ -301,7 +342,6 @@ const onCertUpload = (file: UploadFile) => {
         >
           <el-button @click="goFuelOfficeDesk">油卡办公室待办</el-button>
         </el-badge>
-        <el-button @click="router.push('/project/hub')">进入项目大厅</el-button>
         <el-badge
           :value="pendingApprovalCount"
           :hidden="pendingApprovalCount <= 0"
@@ -310,144 +350,152 @@ const onCertUpload = (file: UploadFile) => {
           <el-button @click="goApprovalDesk">待我审批</el-button>
         </el-badge>
       </div>
-    </el-card>
+    </section>
 
-    <div class="workspace__row">
-      <el-card shadow="never" class="timeline-card">
-        <template #header>
-          <div class="card-header">我的报销进度</div>
-        </template>
-        <el-empty
-          v-if="!reimbursementProgressItems.length"
-          description="暂无审核中或待处理报销"
-        />
-        <ul v-else class="reimbursement-progress-list">
-          <li
-            v-for="item in reimbursementProgressItems"
-            :key="item.id"
-            class="reimbursement-progress-list__item"
-          >
-            <span class="reimbursement-progress-list__dot" />
-            <div class="reimbursement-progress-list__content">
-              <div class="reimbursement-progress-list__main">
-                <el-link type="primary" @click="goReimbursementDetail(item.id)">
-                  {{ reimbursementProjectLabel(item) }} · ¥{{
-                    formatAmount(item.amount)
-                  }}
-                </el-link>
-                <el-tag :type="reimbursementTagType(item.status)">
-                  {{ reimbursementStatusLabel(item.status) }}
-                </el-tag>
-              </div>
-              <div class="reimbursement-progress-list__meta">
-                申报日期：{{ reimbursementApplyDate(item) }}
-              </div>
+    <div class="workspace-content">
+      <div class="workspace-content__main">
+        <el-card shadow="never" class="workspace-card todo-card">
+          <template #header>
+            <div class="card-header card-header--with-action">
+              <span>我的待办提醒（{{ pendingApprovalCount }}）</span>
+              <el-space>
+                <el-badge
+                  v-if="canHandleFuelOffice"
+                  :value="fuelOfficePendingCount"
+                  :hidden="fuelOfficePendingCount <= 0"
+                  :max="99"
+                >
+                  <el-button link type="primary" @click="goFuelOfficeDesk">
+                    油卡办公室待办
+                  </el-button>
+                </el-badge>
+                <el-button link type="primary" @click="goApprovalDesk">
+                  进入统一审批台
+                </el-button>
+              </el-space>
             </div>
-          </li>
-        </ul>
-      </el-card>
-    </div>
-
-    <el-card shadow="never" class="cert-card">
-      <template #header>
-        <div class="card-header">个人资质与证书</div>
-      </template>
-
-      <el-upload
-        drag
-        :auto-upload="false"
-        :show-file-list="false"
-        :on-change="onCertUpload"
-      >
-        <div>拖拽证书文件到此处，或点击上传（PDF/图片）</div>
-      </el-upload>
-
-      <div class="cert-grid">
-        <el-card
-          v-for="cert in certificates"
-          :key="cert.id"
-          shadow="never"
-          class="cert-item"
-        >
-          <div class="cert-item__name">{{ cert.name }}</div>
-          <div class="cert-item__meta">颁发：{{ cert.issueDate }}</div>
-          <div class="cert-item__meta">有效期：{{ cert.expireDate }}</div>
-          <el-tag :type="certStatus(cert.expireDate).type">
-            {{ certStatus(cert.expireDate).text }}
-          </el-tag>
-          <div class="cert-item__file">{{ cert.fileName || "未上传附件" }}</div>
-          <div class="cert-item__actions">
-            <el-button
-              size="small"
-              text
-              type="primary"
-              :disabled="!certHasFile(cert)"
-              @click="openCertFile(cert)"
+          </template>
+          <el-empty
+            v-if="!pendingApprovalItems.length"
+            description="当前没有待办审批"
+          />
+          <div v-else class="todo-cards">
+            <div
+              v-for="item in pendingApprovalItems"
+              :key="item.task_id"
+              class="todo-item"
+              @click="goApprovalItem(item)"
             >
-              查看
-            </el-button>
-            <el-button
-              size="small"
-              text
-              type="primary"
-              :disabled="!certHasFile(cert)"
-              @click="downloadCertFile(cert)"
-            >
-              下载
-            </el-button>
+              <div class="todo-item__title-row">
+                <span class="todo-item__dot" />
+                <div class="todo-item__title">{{ todoSummaryLabel(item) }}</div>
+              </div>
+              <div class="todo-item__meta-row">
+                <div class="todo-item__meta">
+                  当前节点：{{
+                    item.current_node_name || item.current_node_key || "待处理"
+                  }}
+                </div>
+                <el-tag size="small" type="warning">待审批</el-tag>
+              </div>
+              <div class="todo-item__time">{{ item.submitted_at }}</div>
+            </div>
           </div>
         </el-card>
-      </div>
-    </el-card>
 
-    <el-card shadow="never" class="todo-card">
-      <template #header>
-        <div class="card-header card-header--with-action">
-          <span>我的待办提醒（{{ pendingApprovalCount }}）</span>
-          <el-space>
-            <el-badge
-              v-if="canHandleFuelOffice"
-              :value="fuelOfficePendingCount"
-              :hidden="fuelOfficePendingCount <= 0"
-              :max="99"
+        <el-card shadow="never" class="workspace-card timeline-card">
+          <template #header>
+            <div class="card-header">我的报销进度</div>
+          </template>
+          <el-empty
+            v-if="!reimbursementProgressItems.length"
+            description="暂无审核中或待处理报销"
+          />
+          <ul v-else class="reimbursement-progress-list">
+            <li
+              v-for="item in reimbursementProgressItems"
+              :key="item.id"
+              class="reimbursement-progress-list__item"
             >
-              <el-button link type="primary" @click="goFuelOfficeDesk"
-                >油卡办公室待办</el-button
-              >
-            </el-badge>
-            <el-button link type="primary" @click="goApprovalDesk"
-              >进入统一审批台</el-button
-            >
-          </el-space>
-        </div>
-      </template>
-      <el-empty
-        v-if="!pendingApprovalItems.length"
-        description="当前没有待办审批"
-      />
-      <div v-else class="todo-cards">
-        <div
-          v-for="item in pendingApprovalItems"
-          :key="item.task_id"
-          class="todo-item"
-          @click="goApprovalItem(item)"
-        >
-          <div class="todo-item__title-row">
-            <span class="todo-item__dot" />
-            <div class="todo-item__title">{{ todoSummaryLabel(item) }}</div>
-          </div>
-          <div class="todo-item__meta-row">
-            <div class="todo-item__meta">
-              当前节点：{{
-                item.current_node_name || item.current_node_key || "待处理"
-              }}
-            </div>
-            <el-tag size="small" type="warning">待审批</el-tag>
-          </div>
-          <div class="todo-item__time">{{ item.submitted_at }}</div>
-        </div>
+              <span class="reimbursement-progress-list__dot" />
+              <div class="reimbursement-progress-list__content">
+                <div class="reimbursement-progress-list__main">
+                  <el-link type="primary" @click="goReimbursementDetail(item.id)">
+                    {{ reimbursementProjectLabel(item) }} · ¥{{
+                      formatAmount(item.amount)
+                    }}
+                  </el-link>
+                  <el-tag :type="reimbursementTagType(item.status)">
+                    {{ reimbursementStatusLabel(item.status) }}
+                  </el-tag>
+                </div>
+                <div class="reimbursement-progress-list__meta">
+                  申报日期：{{ reimbursementApplyDate(item) }}
+                </div>
+              </div>
+            </li>
+          </ul>
+        </el-card>
       </div>
-    </el-card>
+
+      <aside class="workspace-content__side">
+        <el-card shadow="never" class="workspace-card cert-card">
+          <template #header>
+            <div class="card-header card-header--with-action">
+              <span>个人资质与证书</span>
+              <el-tag size="small" type="info">{{ certificates.length }} 项</el-tag>
+            </div>
+          </template>
+
+          <el-upload
+            drag
+            :auto-upload="false"
+            :show-file-list="false"
+            :on-change="onCertUpload"
+          >
+            <div class="cert-upload-text">拖拽证书文件到此处，或点击上传</div>
+            <div class="cert-upload-hint">支持 PDF/图片，上传后可查看和下载</div>
+          </el-upload>
+
+          <div class="cert-grid">
+            <el-card
+              v-for="cert in certificates"
+              :key="cert.id"
+              shadow="never"
+              class="cert-item"
+            >
+              <div class="cert-item__name">{{ cert.name }}</div>
+              <div class="cert-item__meta">颁发：{{ cert.issueDate }}</div>
+              <div class="cert-item__meta">有效期：{{ cert.expireDate }}</div>
+              <el-tag :type="certStatus(cert.expireDate).type">
+                {{ certStatus(cert.expireDate).text }}
+              </el-tag>
+              <div class="cert-item__file">{{ cert.fileName || "未上传附件" }}</div>
+              <div class="cert-item__actions">
+                <el-button
+                  size="small"
+                  text
+                  type="primary"
+                  :disabled="!certHasFile(cert)"
+                  @click="openCertFile(cert)"
+                >
+                  查看
+                </el-button>
+                <el-button
+                  size="small"
+                  text
+                  type="primary"
+                  :disabled="!certHasFile(cert)"
+                  @click="downloadCertFile(cert)"
+                >
+                  下载
+                </el-button>
+              </div>
+            </el-card>
+          </div>
+        </el-card>
+      </aside>
+    </div>
   </div>
 </template>
 
@@ -455,72 +503,154 @@ const onCertUpload = (file: UploadFile) => {
 .workspace {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 12px;
+  gap: 16px;
 }
 
-.welcome-card {
-  border-color: #d9ceb9;
-  background: #fffaf2;
+.workspace-hero,
+.action-panel,
+.workspace-card {
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
 }
 
-.welcome-card__title {
+.workspace-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 520px);
+  gap: 20px;
+  padding: 20px;
+}
+
+.workspace-hero__main {
+  min-width: 0;
+}
+
+.workspace-hero__title {
   font-size: 22px;
   font-weight: 700;
-  color: #2a241d;
+  color: #1f2937;
 }
 
-.welcome-card__sub {
+.workspace-hero__subtitle {
   margin-top: 6px;
-  color: #6e6458;
+  color: #6b7280;
 }
 
-.welcome-card__identity {
+.workspace-hero__identity {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 8px;
-}
-
-.welcome-card__permissions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 8px;
-}
-
-.welcome-card__actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
   margin-top: 12px;
 }
 
-.workspace__row {
+.workspace-stats {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 12px;
+  gap: 10px;
+}
+
+.workspace-stat {
+  min-height: 82px;
+  padding: 14px 16px;
+  text-align: left;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+button.workspace-stat {
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    box-shadow 0.15s ease;
+}
+
+button.workspace-stat:hover {
+  border-color: #409eff;
+  box-shadow: 0 4px 14px rgb(64 158 255 / 12%);
+}
+
+.workspace-stat span {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.workspace-stat strong {
+  display: block;
+  margin-top: 8px;
+  font-size: 24px;
+  line-height: 1;
+  color: #111827;
+}
+
+.action-panel {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 16px;
+  align-items: center;
+  padding: 16px;
+}
+
+.section-title {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.section-subtitle {
+  margin-top: 4px;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.action-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.action-grid :deep(.el-button + .el-button) {
+  margin-left: 0;
+}
+
+.workspace-content {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(320px, 0.85fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.workspace-content__main,
+.workspace-content__side {
+  display: grid;
+  gap: 16px;
 }
 
 .card-header {
   font-weight: 700;
-  color: #2a241d;
+  color: #1f2937;
 }
 
 .card-header--with-action {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 12px;
 }
 
-.timeline-card,
-.cert-card,
-.todo-card {
-  border-color: #d9ceb9;
+.cert-upload-text {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.cert-upload-hint {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #6b7280;
 }
 
 .cert-item__meta {
   margin-top: 6px;
-  color: #6e6458;
+  color: #6b7280;
 }
 
 .reimbursement-progress-list {
@@ -536,9 +666,9 @@ const onCertUpload = (file: UploadFile) => {
   align-items: flex-start;
   gap: 8px;
   padding: 10px 12px;
-  border: 1px solid #e4d8c8;
-  border-radius: 10px;
-  background: #fff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #ffffff;
 }
 
 .reimbursement-progress-list__dot {
@@ -564,31 +694,31 @@ const onCertUpload = (file: UploadFile) => {
 
 .reimbursement-progress-list__meta {
   margin-top: 6px;
-  color: #9b8f82;
   font-size: 12px;
+  color: #6b7280;
 }
 
 .cert-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: 1fr;
   gap: 12px;
   margin-top: 14px;
 }
 
 .cert-item {
-  border-color: #d9ceb9;
+  border-color: #ebeef5;
 }
 
 .cert-item__name {
   margin-bottom: 8px;
   font-weight: 700;
-  color: #2a241d;
+  color: #1f2937;
 }
 
 .cert-item__file {
   margin-top: 8px;
   font-size: 12px;
-  color: #8b7f72;
+  color: #6b7280;
 }
 
 .cert-item__actions {
@@ -603,17 +733,17 @@ const onCertUpload = (file: UploadFile) => {
 }
 
 .todo-item {
-  border: 1px solid #e4d8c8;
-  border-radius: 10px;
-  background: #fff;
   padding: 10px 12px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .todo-item:hover {
-  border-color: #c8b49a;
-  box-shadow: 0 2px 10px rgb(0 0 0 / 6%);
+  border-color: #409eff;
+  box-shadow: 0 4px 14px rgb(64 158 255 / 10%);
 }
 
 .todo-item__title-row {
@@ -632,7 +762,7 @@ const onCertUpload = (file: UploadFile) => {
 
 .todo-item__title {
   font-weight: 600;
-  color: #2a241d;
+  color: #1f2937;
 }
 
 .todo-item__meta-row {
@@ -644,20 +774,32 @@ const onCertUpload = (file: UploadFile) => {
 }
 
 .todo-item__meta {
-  color: #6e6458;
   font-size: 12px;
+  color: #6b7280;
 }
 
 .todo-item__time {
   margin-top: 6px;
-  color: #9b8f82;
   font-size: 12px;
+  color: #6b7280;
 }
 
-@media (max-width: 980px) {
-  .workspace__row,
-  .cert-grid {
+@media (max-width: 1080px) {
+  .workspace-hero,
+  .action-panel,
+  .workspace-content {
     grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 640px) {
+  .workspace-stats {
+    grid-template-columns: 1fr;
+  }
+
+  .card-header--with-action {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
 </style>
