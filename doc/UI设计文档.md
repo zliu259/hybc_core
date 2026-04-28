@@ -177,6 +177,7 @@
 - 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
 - 功能融合：复核提示、智能核查、复核通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
 - 报销处理页（财务中心入口）常驻“信封生成器”按钮，避免因分段切换看不到入口。
+- 页面信息架构收敛为“顶部标题/动作 + 摘要指标 + 筛选面板 + 表格区”，将角色说明并入页面副标题，避免提示条、筛选项、动作按钮混排造成首屏复杂：`packages/web/src/views/finance/reimbursement/list.vue`
 - 报销提交列表默认隐藏 `cancelled` 记录；仅在状态筛选显式选择“已废止”时展示：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
 - 报销提交列表“状态”筛选支持多选，前端将多选状态合并为逗号参数传递，后端按 `IN` 条件过滤，避免多选后筛选报错：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
 - 报销集中审批中心候选条目改为“后端强约束可送审清单”：仅返回 `status=received + precheck_status=approved + batch_id IS NULL` 且项目/被报销人匹配的条目，避免草稿/待审批/已提交条目混入候选并导致重复批次审批：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
@@ -218,6 +219,7 @@
 - 附件预览补齐：报销详情附件区新增“预览”操作，与“下载”并列，预览统一使用右侧抽屉（`el-drawer`）承载，不再打开新页面，支持办公室在详情页快速核查附件：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 详情页加载反馈：进入报销详情时，基础选项数据与详情数据回填阶段统一显示 loading，避免空白等待与旧数据残留感知：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 后台静默审查提示：办公室详情页新增“后台静默审查提示”区，展示识别建议与智能核查摘要，供办公室签收处理参考：`packages/web/src/views/finance/reimbursement/detail.vue`
+- 详情页首屏新增状态摘要（当前状态、报销金额、报销通道、后台核查），后台静默审查与重复风险合并进折叠区，降低基础表单与审查信息同时展示的阅读压力：`packages/web/src/views/finance/reimbursement/detail.vue`
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
@@ -1283,4 +1285,8 @@
 - 创建并送审动作新增二次确认弹窗，展示送审条目数、总金额、付款方式、被报销人收款账户、付款实体与付款账户；送审仅强制付款方式，付款实体/付款账户/账户显示允许为空并由审批人员在审批详情页补充：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/api/src/routes/reimbursement.ts`
 - 报销批次付款方式新增“转账”（独立于“对公转账”），覆盖创建并送审、审批详情支付方案、批次详情超管二次编辑：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/views/approval/detail.vue`、`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 批次详情新增“支付凭证上传与保存”能力，可在详情页直接上传/移除并持久化支付凭证：`PUT /api/v1/reimbursement/batch/:id/payment-vouchers`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
+
+### 8.16 报销提交与详情页面信息架构收敛（2026-04）
+- 报销提交/处理列表页面改为“顶部标题与角色动作 + 摘要指标 + 筛选面板 + 表格区”，角色说明从多条提示条收敛到页面副标题，降低报销提交入口的首屏复杂度：`packages/web/src/views/finance/reimbursement/list.vue`
+- 报销详情页面新增顶部状态摘要，并将后台静默审查与重复风险合并收纳到折叠区；基础信息、附件和操作区保持原业务位置，减少详情页一次性展开的信息量：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 批次详情新增“报销基础信息编辑”能力（发票号、费用日期、金额、类别、说明），支持对批次内单条报销做修正并自动回写批次合计：`PUT /api/v1/reimbursement/batch/:id/items/:envelopeId/basic-info`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`

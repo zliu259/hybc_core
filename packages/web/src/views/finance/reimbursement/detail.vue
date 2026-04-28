@@ -974,7 +974,12 @@ watch(
 </script>
 
 <template>
-  <el-card shadow="never" :loading="loading" style="background: #fffaf2">
+  <el-card
+    shadow="never"
+    :loading="loading"
+    class="reimbursement-detail-page"
+    style="background: #fffaf2"
+  >
     <template #header>
       <div
         style="
@@ -998,6 +1003,25 @@ watch(
         >
       </div>
     </template>
+
+    <div class="detail-summary-grid">
+      <div class="summary-tile">
+        <span>当前状态</span>
+        <strong>{{ toStatusLabel(detail?.status) }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>报销金额</span>
+        <strong>¥{{ Number(form.amount || 0).toFixed(2) }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>报销通道</span>
+        <strong>{{ form.channel === "physical" ? "实物信封" : "电子发票" }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>后台核查</span>
+        <strong>{{ toTaskStatusLabel(anomalyStatusText) }}</strong>
+      </div>
+    </div>
 
     <el-row :gutter="16">
       <el-col :xs="24" :md="16">
@@ -1392,56 +1416,47 @@ watch(
       }}</el-descriptions-item>
     </el-descriptions>
 
-    <el-card
+    <el-collapse
       v-if="detail && canSeeOfficeReview"
-      shadow="never"
-      header="后台静默审查提示"
+      class="review-collapse"
       style="margin-top: 16px"
     >
-      <el-descriptions :column="1" border>
-        <el-descriptions-item
-          v-for="item in recognitionHintRows"
-          :key="item.label"
-          :label="item.label"
-        >
-          {{ item.value }}
-        </el-descriptions-item>
-        <el-descriptions-item label="智能核查摘要">
-          <pre
-            style="white-space: pre-wrap; word-break: break-word; margin: 0"
-            >{{ reviewSummaryText }}</pre
+      <el-collapse-item title="后台静默审查与重复风险" name="review">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item
+            v-for="item in recognitionHintRows"
+            :key="item.label"
+            :label="item.label"
           >
-        </el-descriptions-item>
-        <el-descriptions-item label="识别结果（可读版）">
-          <pre
-            style="white-space: pre-wrap; word-break: break-word; margin: 0"
-            >{{ recognitionRawText }}</pre
-          >
-        </el-descriptions-item>
-      </el-descriptions>
-    </el-card>
+            {{ item.value }}
+          </el-descriptions-item>
+          <el-descriptions-item label="智能核查摘要">
+            <pre class="review-pre">{{ reviewSummaryText }}</pre>
+          </el-descriptions-item>
+          <el-descriptions-item label="识别结果（可读版）">
+            <pre class="review-pre">{{ recognitionRawText }}</pre>
+          </el-descriptions-item>
+        </el-descriptions>
 
-    <el-table
-      v-if="detail && detail.duplicate_checks.length > 0"
-      :data="detail.duplicate_checks"
-      style="margin-top: 16px"
-      size="small"
-    >
-      <el-table-column prop="match_type" label="匹配类型" width="120" />
-      <el-table-column prop="risk_level" label="风险等级" width="120">
-        <template #default="scope">
-          <el-tag :type="toRiskLevelTagType(scope.row.risk_level)" size="small">
-            {{ toRiskLevelLabel(scope.row.risk_level) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column
-        prop="matched_invoice_no"
-        label="匹配发票号"
-        width="200"
-      />
-      <el-table-column prop="summary" label="说明" min-width="240" />
-    </el-table>
+        <el-table
+          v-if="detail.duplicate_checks.length > 0"
+          :data="detail.duplicate_checks"
+          style="margin-top: 12px"
+          size="small"
+        >
+          <el-table-column prop="match_type" label="匹配类型" width="120" />
+          <el-table-column prop="risk_level" label="风险等级" width="120">
+            <template #default="scope">
+              <el-tag :type="toRiskLevelTagType(scope.row.risk_level)" size="small">
+                {{ toRiskLevelLabel(scope.row.risk_level) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="matched_invoice_no" label="匹配发票号" width="200" />
+          <el-table-column prop="summary" label="说明" min-width="240" />
+        </el-table>
+      </el-collapse-item>
+    </el-collapse>
 
     <el-drawer v-model="previewDrawerVisible" title="附件预览" size="70%">
       <div style="height: calc(100vh - 120px)">
@@ -1468,3 +1483,56 @@ watch(
     </el-drawer>
   </el-card>
 </template>
+
+<style scoped>
+.detail-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.summary-tile {
+  min-height: 78px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.summary-tile span {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.summary-tile strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  font-size: 20px;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.review-collapse {
+  padding: 0 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.review-pre {
+  max-height: 260px;
+  margin: 0;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+@media (max-width: 960px) {
+  .detail-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

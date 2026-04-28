@@ -155,6 +155,30 @@ const tableRowClassName = ({ row }: { row: ReimbursementEnvelope }) => {
   return isHighRiskRow(row) ? "reimbursement-row-high-risk" : "";
 };
 
+const currentViewTitle = computed(() => {
+  if (workflowView.value === "office") return "办公室处理与审查";
+  if (workflowView.value === "finance") return "财务集中审批与历史";
+  return "报销提交";
+});
+
+const currentViewHint = computed(() => {
+  if (workflowView.value === "office") {
+    return "重点处理已提交/已收件单据，执行收件核查、智能核查和复核动作。";
+  }
+  if (workflowView.value === "finance") {
+    return "进入集中送审、打款登记，并查看历史完成批次。";
+  }
+  return isWorkspaceRoute.value
+    ? "查看我的报销提交，并可继续发起报销。"
+    : "查看全部报销提交；办公室/领导可在此代员工发起报销。";
+});
+
+const listedAmountTotal = computed(() =>
+  list.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
+);
+
+const highRiskCount = computed(() => list.value.filter(isHighRiskRow).length);
+
 const quickScanDialogVisible = ref(false);
 const quickScanUuid = ref("");
 const createIdempotencyKey = (scope: string) =>
@@ -327,152 +351,144 @@ watch(workflowView, mode => {
 </script>
 
 <template>
-  <el-card shadow="never" style="background: #fffaf2">
-    <el-tabs v-model="workflowView">
-      <el-tab-pane label="报销提交" name="submission" />
-      <el-tab-pane
-        v-if="canOfficeOps && !isWorkspaceRoute"
-        label="办公室处理与审查"
-        name="office"
-      />
-      <el-tab-pane
-        v-if="canFinanceCenter && !isWorkspaceRoute"
-        label="财务集中审批与历史"
-        name="finance"
-      />
-    </el-tabs>
+  <div class="reimbursement-list-page">
+    <div class="page-header">
+      <div>
+        <div class="page-title">{{ currentViewTitle }}</div>
+        <div class="page-subtitle">{{ currentViewHint }}</div>
+      </div>
+      <el-space wrap>
+        <el-button
+          v-if="workflowView === 'submission'"
+          type="success"
+          @click="goCreate"
+        >
+          {{ !isWorkspaceRoute && canOfficeOps ? "代员工发起报销" : "发起报销" }}
+        </el-button>
+        <el-button v-if="workflowView === 'office'" @click="openQuickScan">
+          扫码/输入UUID
+        </el-button>
+        <el-button v-if="workflowView === 'finance'" @click="goBatchCenter">
+          集中审批台
+        </el-button>
+        <el-button v-if="workflowView === 'finance'" @click="goPayoutCenter">
+          集中打款台
+        </el-button>
+        <el-button
+          v-if="!isWorkspaceRoute && canFinanceCenter"
+          type="primary"
+          plain
+          @click="goEnvelopeGenerator"
+        >
+          信封生成器
+        </el-button>
+      </el-space>
+    </div>
 
-    <el-alert
-      v-if="workflowView === 'submission'"
-      type="info"
-      :closable="false"
-      :title="
-        isWorkspaceRoute
-          ? '在这里查看我的报销提交，并可继续发起报销。'
-          : '在这里查看全部报销提交；办公室/领导可在此代员工发起报销。'
-      "
-      style="margin-bottom: 12px"
-    />
-    <el-alert
-      v-if="workflowView === 'office'"
-      type="warning"
-      :closable="false"
-      title="办公室处理台：重点处理 submitted/received 单据，执行收件核查、智能核查和复核动作。"
-      style="margin-bottom: 12px"
-    />
-    <el-alert
-      v-if="workflowView === 'finance'"
-      type="success"
-      :closable="false"
-      title="财务集中审批台：按项目+申请人进入集中送审与打款，并查看历史完成批次。"
-      style="margin-bottom: 12px"
-    />
+    <div class="summary-grid">
+      <div class="summary-tile">
+        <span>当前列表</span>
+        <strong>{{ total }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>本页金额</span>
+        <strong>¥{{ listedAmountTotal.toFixed(2) }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>风险提示</span>
+        <strong>{{ highRiskCount }}</strong>
+      </div>
+    </div>
 
-    <el-form inline>
-      <el-form-item label="所属项目">
-        <el-select
-          v-model="filters.project_id"
-          clearable
-          filterable
-          style="width: 220px"
-        >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select
-          v-model="filters.status"
-          multiple
-          collapse-tags
-          collapse-tags-tooltip
-          clearable
-          style="width: 250px"
-          placeholder="可多选状态"
-        >
-          <el-option label="草稿" value="draft" />
-          <el-option label="未登记" value="unregistered" />
-          <el-option label="已填报" value="submitted" />
-          <el-option label="已收件" value="received" />
-          <el-option label="已成批" value="batched" />
-          <el-option label="待审批" value="pending_approval" />
-          <el-option label="已审批" value="approved" />
-          <el-option label="已放款" value="paid" />
-          <el-option label="已拒绝" value="rejected" />
-          <el-option label="已废止" value="cancelled" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="通道">
-        <el-select v-model="filters.channel" clearable style="width: 160px">
-          <el-option label="实物信封" value="physical" />
-          <el-option label="电子发票" value="electronic" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="申请人">
-        <el-select
-          v-model="filters.applicant_userid"
-          clearable
-          filterable
-          style="width: 220px"
-          :disabled="isWorkspaceRoute && workflowView === 'submission'"
-          :placeholder="
-            isWorkspaceRoute && workflowView === 'submission'
-              ? '我的提交'
-              : '全部申请人'
-          "
-        >
-          <el-option
-            v-for="item in wecomUsers"
-            :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
-            :value="item.userid"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="关键字">
-        <el-input
-          v-model="filters.keyword"
-          clearable
-          placeholder="编号/UUID/发票号"
+    <section class="filter-panel">
+      <el-tabs v-model="workflowView">
+        <el-tab-pane label="报销提交" name="submission" />
+        <el-tab-pane
+          v-if="canOfficeOps && !isWorkspaceRoute"
+          label="办公室处理与审查"
+          name="office"
         />
-      </el-form-item>
-      <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button
-        v-if="workflowView === 'submission'"
-        type="success"
-        @click="goCreate"
-      >
-        {{ !isWorkspaceRoute && canOfficeOps ? "代员工发起报销" : "发起报销" }}
-      </el-button>
+        <el-tab-pane
+          v-if="canFinanceCenter && !isWorkspaceRoute"
+          label="财务集中审批与历史"
+          name="finance"
+        />
+      </el-tabs>
 
-      <el-button v-if="workflowView === 'office'" @click="openQuickScan"
-        >扫码/输入UUID打开信封</el-button
-      >
+      <el-form class="filter-form" label-width="72px">
+        <div class="filter-grid">
+          <el-form-item label="所属项目">
+            <el-select v-model="filters.project_id" clearable filterable placeholder="全部项目">
+              <el-option
+                v-for="item in projects"
+                :key="item.id"
+                :label="item.project_name"
+                :value="item.id"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="状态">
+            <el-select
+              v-model="filters.status"
+              multiple
+              collapse-tags
+              collapse-tags-tooltip
+              clearable
+              placeholder="可多选状态"
+            >
+              <el-option label="草稿" value="draft" />
+              <el-option label="未登记" value="unregistered" />
+              <el-option label="已填报" value="submitted" />
+              <el-option label="已收件" value="received" />
+              <el-option label="已成批" value="batched" />
+              <el-option label="待审批" value="pending_approval" />
+              <el-option label="已审批" value="approved" />
+              <el-option label="已放款" value="paid" />
+              <el-option label="已拒绝" value="rejected" />
+              <el-option label="已废止" value="cancelled" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="通道">
+            <el-select v-model="filters.channel" clearable placeholder="全部通道">
+              <el-option label="实物信封" value="physical" />
+              <el-option label="电子发票" value="electronic" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="申请人">
+            <el-select
+              v-model="filters.applicant_userid"
+              clearable
+              filterable
+              :disabled="isWorkspaceRoute && workflowView === 'submission'"
+              :placeholder="
+                isWorkspaceRoute && workflowView === 'submission'
+                  ? '我的提交'
+                  : '全部申请人'
+              "
+            >
+              <el-option
+                v-for="item in wecomUsers"
+                :key="item.userid"
+                :label="`${item.name} (${item.userid})`"
+                :value="item.userid"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="关键字">
+            <el-input v-model="filters.keyword" clearable placeholder="编号/UUID/发票号" />
+          </el-form-item>
+          <el-form-item>
+            <el-button type="primary" @click="loadData">查询</el-button>
+          </el-form-item>
+        </div>
+      </el-form>
+    </section>
 
-      <el-button v-if="workflowView === 'finance'" @click="goBatchCenter"
-        >进入集中审批台</el-button
-      >
-      <el-button v-if="workflowView === 'finance'" @click="goPayoutCenter"
-        >进入集中打款台</el-button
-      >
-      <el-button
-        v-if="!isWorkspaceRoute && canFinanceCenter"
-        type="primary"
-        plain
-        @click="goEnvelopeGenerator"
-        >信封生成器</el-button
-      >
-    </el-form>
-
-    <el-table
+    <section class="table-panel">
+      <el-table
       :data="list"
       :loading="loading"
       :row-class-name="tableRowClassName"
-      style="margin-top: 12px"
     >
       <el-table-column prop="envelope_no" label="信封编号" width="150" />
       <el-table-column label="项目" width="180">
@@ -565,23 +581,24 @@ watch(workflowView, mode => {
           </template>
         </template>
       </el-table-column>
-    </el-table>
+      </el-table>
 
-    <el-pagination
-      style="margin-top: 12px; justify-content: flex-end"
-      background
-      layout="prev, pager, next, total"
-      :current-page="page"
-      :page-size="pageSize"
-      :total="total"
-      @current-change="
-        (val: number) => {
-          page = val;
-          loadData();
-        }
-      "
-    />
-  </el-card>
+      <el-pagination
+        class="pagination"
+        background
+        layout="prev, pager, next, total"
+        :current-page="page"
+        :page-size="pageSize"
+        :total="total"
+        @current-change="
+          (val: number) => {
+            page = val;
+            loadData();
+          }
+        "
+      />
+    </section>
+  </div>
 
   <el-dialog
     v-model="quickScanDialogVisible"
@@ -604,7 +621,97 @@ watch(workflowView, mode => {
 </template>
 
 <style scoped>
+.reimbursement-list-page {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.page-header,
+.filter-panel,
+.table-panel {
+  padding: 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.page-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.page-subtitle {
+  margin-top: 4px;
+  color: #6b7280;
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.summary-tile {
+  min-height: 78px;
+  padding: 14px 16px;
+  background: #ffffff;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+}
+
+.summary-tile span {
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.summary-tile strong {
+  display: block;
+  margin-top: 8px;
+  overflow: hidden;
+  font-size: 20px;
+  color: #111827;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.filter-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(220px, 1fr));
+  gap: 0 20px;
+}
+
+.filter-grid :deep(.el-select),
+.filter-grid :deep(.el-input) {
+  width: 100%;
+}
+
+.pagination {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 :deep(.el-table .reimbursement-row-high-risk > td) {
   background: #fff2f0 !important;
+}
+
+@media (max-width: 960px) {
+  .page-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .summary-grid,
+  .filter-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
