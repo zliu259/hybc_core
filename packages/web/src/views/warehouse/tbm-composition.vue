@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import {
+  createTrackedAssetConfiguration,
   getDispatchBoard,
   listTrackedAssetConfigurations,
   type DispatchBoardItem,
@@ -15,6 +16,9 @@ const loading = ref(false);
 const items = ref<DispatchBoardItem[]>([]);
 const configurations = ref<TrackedAssetConfiguration[]>([]);
 const selectedCoreId = ref<number | null>(null);
+const selectedConsoleId = ref<number | null>(null);
+const selectedShellId = ref<number | null>(null);
+const wholeMachineCode = ref("");
 
 const coreOptions = computed(() =>
   items.value.filter(item => {
@@ -27,6 +31,13 @@ const consoleOptions = computed(() =>
   items.value.filter(item => {
     const text = `${item.asset_type_code || ""} ${item.asset_type_name || ""} ${item.asset_name}`;
     return text.includes("操作台") || text.toLowerCase().includes("console");
+  })
+);
+
+const shellOptions = computed(() =>
+  items.value.filter(item => {
+    const text = `${item.asset_type_code || ""} ${item.asset_type_name || ""} ${item.asset_name}`;
+    return text.includes("壳") || text.toLowerCase().includes("shell");
   })
 );
 
@@ -61,6 +72,30 @@ const createModificationTask = async (assetId: number) => {
   message(`改装任务已创建：${result.data.work_order_no}`, { type: "success" });
 };
 
+const createCompositionPlan = async () => {
+  if (!selectedCoreId.value) {
+    message("请选择机芯", { type: "warning" });
+    return;
+  }
+
+  const result = await createTrackedAssetConfiguration({
+    whole_machine_code: wholeMachineCode.value || undefined,
+    shell_asset_id: selectedShellId.value,
+    core_asset_id: selectedCoreId.value,
+    console_asset_id: selectedConsoleId.value,
+    status: "planned",
+    note: "Web 顶管机组合方案台创建，后续改装动作进入库房任务队列。"
+  });
+  message(`组合方案已创建：${result.data.configuration_code}`, {
+    type: "success"
+  });
+  wholeMachineCode.value = "";
+  selectedShellId.value = null;
+  selectedCoreId.value = null;
+  selectedConsoleId.value = null;
+  await loadData();
+};
+
 onMounted(loadData);
 </script>
 
@@ -78,6 +113,29 @@ onMounted(loadData);
     </template>
 
     <el-form inline>
+      <el-form-item label="整机号">
+        <el-input
+          v-model="wholeMachineCode"
+          clearable
+          placeholder="可选"
+          style="width: 180px"
+        />
+      </el-form-item>
+      <el-form-item label="壳体">
+        <el-select
+          v-model="selectedShellId"
+          clearable
+          filterable
+          style="width: 260px"
+        >
+          <el-option
+            v-for="item in shellOptions"
+            :key="item.id"
+            :label="`${item.asset_code} · ${item.asset_name}`"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
       <el-form-item label="机芯">
         <el-select
           v-model="selectedCoreId"
@@ -93,6 +151,24 @@ onMounted(loadData);
           />
         </el-select>
       </el-form-item>
+      <el-form-item label="操作台">
+        <el-select
+          v-model="selectedConsoleId"
+          clearable
+          filterable
+          style="width: 260px"
+        >
+          <el-option
+            v-for="item in consoleOptions"
+            :key="item.id"
+            :label="`${item.asset_code} · ${item.asset_name}`"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-button type="primary" @click="createCompositionPlan"
+        >创建组合方案</el-button
+      >
     </el-form>
 
     <div class="layout">

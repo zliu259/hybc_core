@@ -21,7 +21,8 @@ import type {
   SubmitWarehouseAssetWorkOrderApprovalRequest,
   UpdateWarehouseAssetWorkOrderRequest,
   WarehouseAssetWorkOrder,
-  WarehouseAssetWorkOrderType
+  WarehouseAssetWorkOrderType,
+  WarehouseTaskEvidence
 } from "../types/work-order";
 
 const nowIso = () => new Date().toISOString();
@@ -213,6 +214,31 @@ warehouseAssetWorkOrderRoutes.get(
   }
 );
 
+warehouseAssetWorkOrderRoutes.get(
+  "/:id/evidence",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const row = await c.env.DB.prepare("SELECT id FROM warehouse_asset_work_order WHERE id = ?")
+      .bind(id)
+      .first<{ id: number }>();
+    if (!row) {
+      return c.json({ success: false, error: { message: "work order not found" } }, 404);
+    }
+
+    const evidence = await c.env.DB.prepare(
+      `SELECT *
+       FROM warehouse_task_evidence
+       WHERE work_order_id = ?
+       ORDER BY captured_at DESC, id DESC`
+    )
+      .bind(id)
+      .all<WarehouseTaskEvidence>();
+
+    return c.json({ success: true, data: evidence.results ?? [] });
+  }
+);
+
 warehouseAssetWorkOrderRoutes.post(
   "/",
   requireRoles(["super_admin", "manager", "site_manager"]),
@@ -294,6 +320,7 @@ warehouseAssetWorkOrderRoutes.post(
       assignee_userid?: string;
       package_id?: number | null;
       scheduled_date?: string | null;
+      manual_version_id?: number | null;
     };
     if (!body.assignee_userid?.trim()) {
       return c.json({ success: false, error: { message: "assignee_userid is required" } }, 400);
@@ -310,7 +337,8 @@ warehouseAssetWorkOrderRoutes.post(
         assignee_userid: body.assignee_userid.trim(),
         assigned_by_userid: auth.sub,
         package_id: body.package_id,
-        scheduled_date: body.scheduled_date
+        scheduled_date: body.scheduled_date,
+        manual_version_id: body.manual_version_id
       });
     } catch (error) {
       return c.json({ success: false, error: { message: (error as Error).message } }, 400);

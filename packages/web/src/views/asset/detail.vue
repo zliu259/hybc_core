@@ -3,7 +3,12 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { listProjects } from "@/api/project";
-import { listWarehouses, type Warehouse } from "@/api/warehouse";
+import {
+  listWarehouses,
+  type Warehouse,
+  type WarehouseAssetWorkOrder,
+  type WarehouseTaskEvidence
+} from "@/api/warehouse";
 import {
   addAssetDocument,
   addAssetEvent,
@@ -39,11 +44,28 @@ const id = computed(() => Number(route.params.id));
 const loading = ref(false);
 const saving = ref(false);
 const asset = ref<
-  (TrackedAsset & {
-    documents: AssetDocument[];
-    events: AssetEvent[];
-    configurations: TrackedAssetConfiguration[];
-  }) | null
+  | (TrackedAsset & {
+      documents: AssetDocument[];
+      events: AssetEvent[];
+      configurations: TrackedAssetConfiguration[];
+      warehouse_tasks: Array<
+        WarehouseAssetWorkOrder & {
+          manual_title: string | null;
+          manual_version_no: number | null;
+        }
+      >;
+      task_evidence: Array<
+        WarehouseTaskEvidence & {
+          work_order_no: string;
+          work_order_type: string;
+          work_order_status: string;
+          result_summary: string | null;
+          manual_title: string | null;
+          manual_version_no: number | null;
+        }
+      >;
+    })
+  | null
 >(null);
 
 type LocationOption = {
@@ -62,6 +84,11 @@ const activeProjects = ref<
 const statusOptions = [
   { label: "在库", value: "idle" },
   { label: "出库中", value: "using" },
+  { label: "返库待检", value: "returned_quarantine" },
+  { label: "检查中", value: "inspection" },
+  { label: "维护中", value: "maintenance" },
+  { label: "保养中", value: "servicing" },
+  { label: "改装中", value: "modification" },
   { label: "维修", value: "repair" },
   { label: "报废", value: "scrapped" }
 ];
@@ -69,6 +96,12 @@ const statusOptions = [
 const statusLabelMap: Record<string, string> = {
   idle: "在库",
   using: "出库中",
+  returned_quarantine: "返库待检",
+  quarantine: "返库待检",
+  inspection: "检查中",
+  maintenance: "维护中",
+  servicing: "保养中",
+  modification: "改装中",
   repair: "维修",
   scrapped: "报废"
 };
@@ -85,12 +118,47 @@ const eventTypeLabelMap: Record<string, string> = {
   configuration_updated: "组合配置更新",
   work_order_created: "工单创建",
   work_order_submitted: "工单提审",
+  work_order_assigned: "工单派工",
   work_order_started: "工单开始",
   work_order_completed: "工单完成",
+  work_order_rejected: "工单退回",
+  work_order_evidence: "任务证据",
   work_order_cancelled: "工单取消"
 };
 
-const configurationStatusLabelMap: Record<TrackedAssetConfiguration["status"], string> = {
+const taskStatusLabelMap: Record<string, string> = {
+  draft: "草稿",
+  pending_assignment: "待派工",
+  assigned: "已派工",
+  pending_approval: "审批中",
+  approved: "已批准",
+  in_progress: "执行中",
+  submitted: "待复核",
+  completed: "已完成",
+  rejected: "已退回",
+  cancelled: "已取消"
+};
+
+const workOrderTypeLabelMap: Record<string, string> = {
+  inspection: "检查",
+  maintenance: "维修",
+  servicing: "保养",
+  modification: "改装",
+  scrapping: "报废"
+};
+
+const evidenceTypeLabelMap: Record<string, string> = {
+  photo: "照片",
+  video: "视频",
+  voice: "语音",
+  brief: "简报",
+  document: "文档"
+};
+
+const configurationStatusLabelMap: Record<
+  TrackedAssetConfiguration["status"],
+  string
+> = {
   planned: "待组装",
   assembling: "组装中",
   active: "生效中",
@@ -454,20 +522,148 @@ onMounted(async () => {
       </el-col>
 
       <el-col :md="12" :xs="24">
-        <el-card shadow="never" header="组合配置历史" style="background: #fffaf2; margin-bottom: 16px">
-          <el-empty v-if="!(asset?.configurations?.length ?? 0)" description="暂无组合配置记录" />
+        <el-card
+          shadow="never"
+          header="组合配置历史"
+          style="background: #fffaf2; margin-bottom: 16px"
+        >
+          <el-empty
+            v-if="!(asset?.configurations?.length ?? 0)"
+            description="暂无组合配置记录"
+          />
           <el-table v-else :data="asset?.configurations ?? []">
-            <el-table-column prop="configuration_code" label="配置编号" min-width="150" />
-            <el-table-column prop="whole_machine_code" label="整机编号" min-width="140" />
+            <el-table-column
+              prop="configuration_code"
+              label="配置编号"
+              min-width="150"
+            />
+            <el-table-column
+              prop="whole_machine_code"
+              label="整机编号"
+              min-width="140"
+            />
             <el-table-column label="状态" width="110">
               <template #default="scope">
-                {{ configurationStatusLabelMap[scope.row.status] || scope.row.status }}
+                {{
+                  configurationStatusLabelMap[scope.row.status] ||
+                  scope.row.status
+                }}
               </template>
             </el-table-column>
             <el-table-column prop="project_id" label="项目ID" width="100" />
             <el-table-column prop="warehouse_id" label="仓库ID" width="100" />
-            <el-table-column prop="effective_from" label="生效开始" width="160" />
+            <el-table-column
+              prop="effective_from"
+              label="生效开始"
+              width="160"
+            />
             <el-table-column prop="effective_to" label="生效结束" width="160" />
+          </el-table>
+        </el-card>
+
+        <el-card
+          shadow="never"
+          header="库房任务追溯"
+          style="background: #fffaf2; margin-bottom: 16px"
+        >
+          <el-empty
+            v-if="!(asset?.warehouse_tasks?.length ?? 0)"
+            description="暂无库房任务记录"
+          />
+          <el-table v-else :data="asset?.warehouse_tasks ?? []">
+            <el-table-column
+              prop="work_order_no"
+              label="任务号"
+              min-width="150"
+            />
+            <el-table-column label="类型" width="90">
+              <template #default="scope">
+                {{
+                  workOrderTypeLabelMap[scope.row.work_order_type] ||
+                  scope.row.work_order_type
+                }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="100">
+              <template #default="scope">
+                {{ taskStatusLabelMap[scope.row.status] || scope.row.status }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="assignee_userid"
+              label="执行人"
+              width="120"
+            />
+            <el-table-column label="手册" min-width="160" show-overflow-tooltip>
+              <template #default="scope">
+                <span v-if="scope.row.manual_title">
+                  {{ scope.row.manual_title }} v{{
+                    scope.row.manual_version_no || "-"
+                  }}
+                </span>
+                <span v-else>-</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="result_summary"
+              label="简报"
+              min-width="180"
+              show-overflow-tooltip
+            />
+          </el-table>
+        </el-card>
+
+        <el-card
+          shadow="never"
+          header="任务照片与简报"
+          style="background: #fffaf2; margin-bottom: 16px"
+        >
+          <el-empty
+            v-if="!(asset?.task_evidence?.length ?? 0)"
+            description="暂无任务证据"
+          />
+          <el-table v-else :data="asset?.task_evidence ?? []">
+            <el-table-column
+              prop="work_order_no"
+              label="任务号"
+              min-width="150"
+            />
+            <el-table-column label="证据类型" width="100">
+              <template #default="scope">
+                {{
+                  evidenceTypeLabelMap[scope.row.evidence_type] ||
+                  scope.row.evidence_type
+                }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="file_name"
+              label="文件名"
+              min-width="140"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="file_key"
+              label="文件Key"
+              min-width="170"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="summary"
+              label="说明"
+              min-width="180"
+              show-overflow-tooltip
+            />
+            <el-table-column
+              prop="operator_userid"
+              label="提交人"
+              width="120"
+            />
+            <el-table-column label="采集时间" width="180">
+              <template #default="scope">{{
+                toDisplayTime(scope.row.captured_at)
+              }}</template>
+            </el-table-column>
           </el-table>
         </el-card>
 

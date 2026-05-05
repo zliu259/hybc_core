@@ -302,6 +302,7 @@ export const assignWarehouseTask = async (
     assigned_by_userid: string;
     package_id?: number | null;
     scheduled_date?: string | null;
+    manual_version_id?: number | null;
   }
 ): Promise<void> => {
   const row = await env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
@@ -318,6 +319,7 @@ export const assignWarehouseTask = async (
        assigned_by_userid = ?,
        package_id = COALESCE(?, package_id),
        scheduled_date = COALESCE(?, scheduled_date),
+       manual_version_id = COALESCE(?, manual_version_id),
        status = 'assigned',
        updated_at = ?
      WHERE id = ?`
@@ -327,6 +329,7 @@ export const assignWarehouseTask = async (
       payload.assigned_by_userid,
       payload.package_id ?? null,
       payload.scheduled_date ?? null,
+      payload.manual_version_id ?? null,
       nowIso(),
       payload.id
     )

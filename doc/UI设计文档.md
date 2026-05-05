@@ -82,6 +82,7 @@
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 资产运维看板：`packages/web/src/views/asset/ledger.vue`
 - 资产详情：`packages/web/src/views/asset/detail.vue`
+  - 详情页展示基础信息、组合配置历史、库房任务追溯、任务照片与简报、文档库和事件时间线。
 - 设备总览：`packages/web/src/views/asset/dashboard.vue`
 - 仓库管理：`packages/web/src/views/warehouse/index.vue`
 - 库房总控台：`packages/web/src/views/warehouse/control-center.vue`

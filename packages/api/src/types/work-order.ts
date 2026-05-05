@@ -141,3 +141,17 @@ export interface WarehouseTaskEvidenceInput {
   summary?: string | null;
   captured_at?: string | null;
 }
+
+export interface WarehouseTaskEvidence {
+  id: number;
+  work_order_id: number;
+  step_id: number | null;
+  tracked_asset_id: number | null;
+  evidence_type: "photo" | "video" | "voice" | "brief" | "document";
+  file_key: string | null;
+  file_name: string | null;
+  summary: string | null;
+  operator_userid: string;
+  captured_at: string;
+  created_at: string;
+}

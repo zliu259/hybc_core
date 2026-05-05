@@ -137,6 +137,20 @@ export type WarehouseAssetWorkOrder = {
   updated_at: string;
 };
 
+export type WarehouseTaskEvidence = {
+  id: number;
+  work_order_id: number;
+  step_id: number | null;
+  tracked_asset_id: number | null;
+  evidence_type: "photo" | "video" | "voice" | "brief" | "document";
+  file_key: string | null;
+  file_name: string | null;
+  summary: string | null;
+  operator_userid: string;
+  captured_at: string;
+  created_at: string;
+};
+
 export type EquipmentPlan = {
   id: number;
   plan_no: string;
@@ -479,6 +493,12 @@ export const getWarehouseAssetWorkOrder = (id: number) =>
     `/api/v1/warehouse/work-order/${id}`
   );
 
+export const listWarehouseTaskEvidence = (id: number) =>
+  http.request<{ success: boolean; data: WarehouseTaskEvidence[] }>(
+    "get",
+    `/api/v1/warehouse/work-order/${id}/evidence`
+  );
+
 export const createWarehouseAssetWorkOrder = (data: {
   work_order_type: WarehouseAssetWorkOrder["work_order_type"];
   tracked_asset_id?: number;
@@ -531,6 +551,7 @@ export const assignWarehouseAssetWorkOrder = (
     assignee_userid: string;
     package_id?: number | null;
     scheduled_date?: string | null;
+    manual_version_id?: number | null;
   }
 ) =>
   http.request<{ success: boolean }>(

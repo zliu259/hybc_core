@@ -1,4 +1,8 @@
 import { http } from "@/utils/http";
+import type {
+  WarehouseAssetWorkOrder,
+  WarehouseTaskEvidence
+} from "@/api/warehouse";
 
 export type AssetType = {
   id: number;
@@ -221,6 +225,22 @@ export const getTrackedAsset = (id: number) =>
         detail: string | null;
       }[];
       configurations: TrackedAssetConfiguration[];
+      warehouse_tasks: Array<
+        WarehouseAssetWorkOrder & {
+          manual_title: string | null;
+          manual_version_no: number | null;
+        }
+      >;
+      task_evidence: Array<
+        WarehouseTaskEvidence & {
+          work_order_no: string;
+          work_order_type: string;
+          work_order_status: string;
+          result_summary: string | null;
+          manual_title: string | null;
+          manual_version_no: number | null;
+        }
+      >;
     };
   }>("get", `/api/v1/asset/${id}`);
 
@@ -233,6 +253,44 @@ export const listTrackedAssetConfigurations = (params?: {
     "get",
     "/api/v1/asset/configuration",
     { params }
+  );
+
+export const createTrackedAssetConfiguration = (data: {
+  whole_machine_code?: string;
+  shell_asset_id?: number | null;
+  core_asset_id?: number | null;
+  console_asset_id?: number | null;
+  status?: TrackedAssetConfiguration["status"];
+  project_id?: number | null;
+  warehouse_id?: number | null;
+  effective_from?: string | null;
+  effective_to?: string | null;
+  note?: string | null;
+}) =>
+  http.request<{
+    success: boolean;
+    data: { id: number; configuration_code: string };
+  }>("post", "/api/v1/asset/configuration", { data });
+
+export const updateTrackedAssetConfiguration = (
+  id: number,
+  data: {
+    whole_machine_code?: string;
+    shell_asset_id?: number | null;
+    core_asset_id?: number | null;
+    console_asset_id?: number | null;
+    status?: TrackedAssetConfiguration["status"];
+    project_id?: number | null;
+    warehouse_id?: number | null;
+    effective_from?: string | null;
+    effective_to?: string | null;
+    note?: string | null;
+  }
+) =>
+  http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/asset/configuration/${id}`,
+    { data }
   );
 
 export const updateTrackedAsset = (

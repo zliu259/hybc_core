@@ -3,12 +3,18 @@ import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import {
   assignWarehouseAssetWorkOrder,
+  listWarehouseTaskEvidence,
   listWarehouseAssetWorkOrders,
   reviewWarehouseAssetWorkOrder,
   startWarehouseAssetWorkOrder,
-  type WarehouseAssetWorkOrder
+  type WarehouseAssetWorkOrder,
+  type WarehouseTaskEvidence
 } from "@/api/warehouse";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import {
+  listWarehouseManuals,
+  type WarehouseManual
+} from "@/api/warehouse-manual";
 
 defineOptions({ name: "WarehouseTaskDispatch" });
 
@@ -16,7 +22,17 @@ const loading = ref(false);
 const actionId = ref<number | null>(null);
 const rows = ref<WarehouseAssetWorkOrder[]>([]);
 const assignVisible = ref(false);
-const assignForm = ref({ id: 0, assignee_userid: "", scheduled_date: "" });
+const evidenceVisible = ref(false);
+const evidenceRows = ref<WarehouseTaskEvidence[]>([]);
+const evidenceLoading = ref(false);
+const activeTaskNo = ref("");
+const manuals = ref<WarehouseManual[]>([]);
+const assignForm = ref({
+  id: 0,
+  assignee_userid: "",
+  scheduled_date: "",
+  manual_version_id: undefined as number | undefined
+});
 const filters = ref<{
   status?: WarehouseAssetWorkOrder["status"];
   source?: WarehouseAssetWorkOrder["source"];
@@ -61,6 +77,14 @@ const priorityTag = (priority: WarehouseAssetWorkOrder["priority"]) => {
   return "success";
 };
 
+const evidenceTypeText: Record<string, string> = {
+  photo: "照片",
+  video: "视频",
+  voice: "语音",
+  brief: "简报",
+  document: "文档"
+};
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -75,9 +99,22 @@ const openAssign = (row: WarehouseAssetWorkOrder) => {
   assignForm.value = {
     id: row.id,
     assignee_userid: row.assignee_userid || "",
-    scheduled_date: row.scheduled_date || ""
+    scheduled_date: row.scheduled_date || "",
+    manual_version_id: row.manual_version_id || undefined
   };
   assignVisible.value = true;
+};
+
+const openEvidence = async (row: WarehouseAssetWorkOrder) => {
+  activeTaskNo.value = row.work_order_no;
+  evidenceVisible.value = true;
+  evidenceLoading.value = true;
+  try {
+    const result = await listWarehouseTaskEvidence(row.id);
+    evidenceRows.value = result.data;
+  } finally {
+    evidenceLoading.value = false;
+  }
 };
 
 const submitAssign = async () => {
@@ -87,7 +124,8 @@ const submitAssign = async () => {
   }
   await assignWarehouseAssetWorkOrder(assignForm.value.id, {
     assignee_userid: assignForm.value.assignee_userid,
-    scheduled_date: assignForm.value.scheduled_date || null
+    scheduled_date: assignForm.value.scheduled_date || null,
+    manual_version_id: assignForm.value.manual_version_id || null
   });
   assignVisible.value = false;
   message("任务已派工", { type: "success" });
@@ -126,7 +164,12 @@ const reviewTask = async (
 };
 
 onMounted(async () => {
-  await Promise.all([loadWecomUsers(), loadData()]);
+  const [manualRes] = await Promise.all([
+    listWarehouseManuals({ status: "active" }),
+    loadWecomUsers(),
+    loadData()
+  ]);
+  manuals.value = manualRes.data;
 });
 </script>
 
@@ -190,10 +233,13 @@ onMounted(async () => {
         min-width="260"
         show-overflow-tooltip
       />
-      <el-table-column label="操作" width="260" fixed="right">
+      <el-table-column label="操作" width="310" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openAssign(row)"
             >派工</el-button
+          >
+          <el-button link type="primary" @click="openEvidence(row)"
+            >证据</el-button
           >
           <el-button
             link
@@ -246,11 +292,62 @@ onMounted(async () => {
             style="width: 100%"
           />
         </el-form-item>
+        <el-form-item label="操作手册">
+          <el-select
+            v-model="assignForm.manual_version_id"
+            filterable
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in manuals"
+              :key="item.id"
+              :label="`${item.manual_title} v${item.latest_version_no || '-'}`"
+              :value="
+                item.active_version_id || item.latest_version_no || undefined
+              "
+              :disabled="!item.active_version_id"
+            />
+          </el-select>
+        </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="assignVisible = false">取消</el-button>
         <el-button type="primary" @click="submitAssign">确认派工</el-button>
       </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="evidenceVisible"
+      :title="`任务证据：${activeTaskNo}`"
+      width="760px"
+    >
+      <el-table v-loading="evidenceLoading" :data="evidenceRows" border>
+        <el-table-column label="类型" width="90">
+          <template #default="{ row }">
+            {{ evidenceTypeText[row.evidence_type] || row.evidence_type }}
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="file_name"
+          label="文件名"
+          min-width="140"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="file_key"
+          label="文件Key"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column
+          prop="summary"
+          label="说明"
+          min-width="180"
+          show-overflow-tooltip
+        />
+        <el-table-column prop="operator_userid" label="提交人" width="120" />
+      </el-table>
     </el-dialog>
   </el-card>
 </template>
