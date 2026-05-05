@@ -654,6 +654,13 @@ export const reviewWarehouseTask = async (
           result_summary: payload.result_summary
         })
       : null;
+  if (followupTask) {
+    await env.DB.prepare(
+      "UPDATE warehouse_asset_work_order SET blocking_flag = 0, updated_at = ? WHERE id = ?"
+    )
+      .bind(now, row.id)
+      .run();
+  }
 
   await emitWarehouseTaskTimelineEvent(
     env,

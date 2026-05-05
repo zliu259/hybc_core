@@ -205,7 +205,7 @@ const upsertInventory = async (
   return next;
 };
 
-const evaluateStockOrderGate = async (
+export const evaluateStockOrderGate = async (
   env: Env,
   order: StockOrder,
   items: StockOrderItem[]
@@ -244,7 +244,7 @@ const evaluateStockOrderGate = async (
   return { pass: issues.length === 0, issues };
 };
 
-const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<void> => {
+export const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<void> => {
   if (order.rental_term_id) {
     const term = await env.DB.prepare("SELECT * FROM asset_rental_term WHERE id = ?")
       .bind(order.rental_term_id)
