@@ -4,8 +4,13 @@ import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
+import { generateSerial } from "../services/serial";
 import {
   assignWarehouseTask,
+  buildWarehouseTaskWorkloadSummary,
+  buildWarehouseMobileTaskConfig,
+  canAttachTaskToPackage,
+  canSubmitWarehouseTaskFromMobile,
   cancelWarehouseTask,
   createWarehouseTask,
   emitWarehouseTaskTimelineEvent,
@@ -17,12 +22,14 @@ import type { Env } from "../types/env";
 import type { AuthTokenPayload } from "../types/auth";
 import type {
   CompleteWarehouseAssetWorkOrderRequest,
+  CreateWarehouseTaskPackageRequest,
   CreateWarehouseAssetWorkOrderRequest,
   SubmitWarehouseAssetWorkOrderApprovalRequest,
   UpdateWarehouseAssetWorkOrderRequest,
   WarehouseAssetWorkOrder,
   WarehouseAssetWorkOrderType,
-  WarehouseTaskEvidence
+  WarehouseTaskEvidence,
+  WarehouseTaskPackage
 } from "../types/work-order";
 
 const nowIso = () => new Date().toISOString();
@@ -135,6 +142,62 @@ const ensureWarehouseTaskOwnerAuthority = async (
   return { ok: true };
 };
 
+const parseJsonObject = (value: string | null): Record<string, unknown> | null => {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+};
+
+const loadMobileTaskDetail = async (env: Env, id: number) => {
+  const task = await env.DB.prepare(
+    `SELECT wao.*,
+            wm.manual_title,
+            wmv.version_no AS manual_version_no,
+            wmv.content_json AS manual_content_json
+     FROM warehouse_asset_work_order wao
+     LEFT JOIN warehouse_manual_version wmv ON wmv.id = wao.manual_version_id
+     LEFT JOIN warehouse_manual wm ON wm.id = wmv.manual_id
+     WHERE wao.id = ?`
+  )
+    .bind(id)
+    .first<
+      WarehouseAssetWorkOrder & {
+        manual_title: string | null;
+        manual_version_no: number | null;
+        manual_content_json: string | null;
+      }
+    >();
+  if (!task) return null;
+
+  const steps = await env.DB.prepare(
+    "SELECT * FROM warehouse_task_step WHERE work_order_id = ? ORDER BY step_no ASC, id ASC"
+  )
+    .bind(id)
+    .all();
+  const evidence = await env.DB.prepare(
+    `SELECT *
+     FROM warehouse_task_evidence
+     WHERE work_order_id = ?
+     ORDER BY captured_at DESC, id DESC`
+  )
+    .bind(id)
+    .all<WarehouseTaskEvidence>();
+
+  return {
+    ...task,
+    manual_content: parseJsonObject(task.manual_content_json),
+    steps: steps.results ?? [],
+    evidence: evidence.results ?? []
+  };
+};
+
 export const warehouseAssetWorkOrderRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -196,6 +259,376 @@ warehouseAssetWorkOrderRoutes.get(
       .bind(...params)
       .all<WarehouseAssetWorkOrder>();
     return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.get(
+  "/workload",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const warehouseId = c.req.query("warehouse_id");
+    const projectId = c.req.query("project_id");
+    const source = c.req.query("source");
+    const assigneeUserid = c.req.query("assignee_userid");
+
+    let sql =
+      "SELECT assignee_userid, status, priority FROM warehouse_asset_work_order WHERE status NOT IN ('completed', 'cancelled')";
+    const params: Array<string | number> = [];
+    if (warehouseId) {
+      sql += " AND warehouse_id = ?";
+      params.push(Number(warehouseId));
+    }
+    if (projectId) {
+      sql += " AND project_id = ?";
+      params.push(Number(projectId));
+    }
+    if (source) {
+      sql += " AND source = ?";
+      params.push(source);
+    }
+    if (assigneeUserid) {
+      sql += " AND assignee_userid = ?";
+      params.push(assigneeUserid);
+    }
+    sql += " ORDER BY id DESC";
+
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<{ assignee_userid: string | null; status: string; priority: string }>();
+
+    return c.json({
+      success: true,
+      data: buildWarehouseTaskWorkloadSummary(rows.results ?? [])
+    });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.get(
+  "/package",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const status = c.req.query("status");
+    const assigneeUserid = c.req.query("assignee_userid");
+    const warehouseId = c.req.query("warehouse_id");
+    let sql = "SELECT * FROM warehouse_task_package WHERE 1=1";
+    const params: Array<string | number> = [];
+    if (status) {
+      sql += " AND status = ?";
+      params.push(status);
+    }
+    if (assigneeUserid) {
+      sql += " AND assignee_userid = ?";
+      params.push(assigneeUserid);
+    }
+    if (warehouseId) {
+      sql += " AND warehouse_id = ?";
+      params.push(Number(warehouseId));
+    }
+    sql += " ORDER BY id DESC";
+
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<WarehouseTaskPackage>();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/package",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as CreateWarehouseTaskPackageRequest;
+    if (!body.package_title?.trim()) {
+      return c.json({ success: false, error: { message: "package_title is required" } }, 400);
+    }
+
+    const packageNo = await generateSerial(c.env.DB, "TP", "warehouse_task_package", "package_no");
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO warehouse_task_package
+        (package_no, package_title, package_type, warehouse_id, project_id, priority, status,
+         assignee_userid, assigned_by_userid, planned_start_date, due_date, source,
+         source_biz_type, source_biz_id, remark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, 'open', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        packageNo,
+        body.package_title.trim(),
+        body.package_type?.trim() || "daily",
+        body.warehouse_id ?? null,
+        body.project_id ?? null,
+        body.priority ?? "normal",
+        body.assignee_userid ?? null,
+        auth.sub,
+        body.planned_start_date ?? null,
+        body.due_date ?? null,
+        body.source ?? "manual",
+        body.source_biz_type ?? null,
+        body.source_biz_id ?? null,
+        body.remark ?? null,
+        now,
+        now
+      )
+      .run();
+
+    return c.json(
+      { success: true, data: { id: result.meta.last_row_id, package_no: packageNo } },
+      201
+    );
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/package/:id/assign-tasks",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const packageId = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      task_ids?: number[];
+      assignee_userid?: string | null;
+      scheduled_date?: string | null;
+      manual_version_id?: number | null;
+    };
+    const taskIds = [...new Set(body.task_ids ?? [])].filter((id) => Number.isInteger(id));
+    if (taskIds.length === 0) {
+      return c.json({ success: false, error: { message: "task_ids is required" } }, 400);
+    }
+
+    const taskPackage = await c.env.DB.prepare("SELECT * FROM warehouse_task_package WHERE id = ?")
+      .bind(packageId)
+      .first<WarehouseTaskPackage>();
+    if (!taskPackage) {
+      return c.json({ success: false, error: { message: "task package not found" } }, 404);
+    }
+
+    const explicitAssignee = body.assignee_userid?.trim() || null;
+    const effectiveAssignee = explicitAssignee || taskPackage.assignee_userid;
+    const scheduledDate = body.scheduled_date ?? taskPackage.due_date;
+    const now = nowIso();
+    let updated = 0;
+
+    for (const taskId of taskIds) {
+      const authority = await ensureWarehouseTaskOwnerAuthority(c.env, auth, taskId);
+      if (!authority.ok) {
+        return c.json({ success: false, error: { message: authority.message } }, authority.status);
+      }
+
+      const task = await c.env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
+        .bind(taskId)
+        .first<WarehouseAssetWorkOrder>();
+      if (!task) {
+        return c.json({ success: false, error: { message: "work order not found" } }, 404);
+      }
+      if (!canAttachTaskToPackage(task)) {
+        return c.json(
+          {
+            success: false,
+            error: { message: "completed or cancelled work order cannot attach to package" }
+          },
+          400
+        );
+      }
+
+      await c.env.DB.prepare(
+        `UPDATE warehouse_asset_work_order SET
+           package_id = ?,
+           assignee_userid = CASE WHEN ? IS NULL THEN assignee_userid ELSE ? END,
+           assigned_by_userid = CASE WHEN ? IS NULL THEN assigned_by_userid ELSE ? END,
+           scheduled_date = COALESCE(?, scheduled_date),
+           manual_version_id = COALESCE(?, manual_version_id),
+           status = CASE
+             WHEN ? IS NOT NULL AND status IN ('draft', 'pending_assignment', 'rejected') THEN 'assigned'
+             ELSE status
+           END,
+           updated_at = ?
+         WHERE id = ?`
+      )
+        .bind(
+          packageId,
+          effectiveAssignee,
+          effectiveAssignee,
+          effectiveAssignee,
+          auth.sub,
+          scheduledDate,
+          body.manual_version_id ?? null,
+          effectiveAssignee,
+          now,
+          taskId
+        )
+        .run();
+
+      await emitWarehouseTaskTimelineEvent(
+        c.env,
+        task,
+        auth.sub,
+        "work_order_assigned",
+        `package_id=${packageId}${effectiveAssignee ? `; assignee=${effectiveAssignee}` : ""}`
+      );
+      updated += 1;
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE warehouse_task_package SET
+         assignee_userid = COALESCE(?, assignee_userid),
+         assigned_by_userid = ?,
+         status = CASE WHEN status = 'open' THEN 'in_progress' ELSE status END,
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(effectiveAssignee, auth.sub, now, packageId)
+      .run();
+
+    return c.json({ success: true, data: { updated } });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.get(
+  "/mobile/config",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    return c.json({ success: true, data: buildWarehouseMobileTaskConfig() });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.get(
+  "/mobile/package",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const rows = await c.env.DB.prepare(
+      `SELECT *
+       FROM warehouse_task_package
+       WHERE assignee_userid = ?
+         AND status IN ('open', 'in_progress', 'exception')
+       ORDER BY due_date IS NULL, due_date ASC, id DESC`
+    )
+      .bind(auth.sub)
+      .all<WarehouseTaskPackage>();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.get(
+  "/mobile/my-tasks",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const config = buildWarehouseMobileTaskConfig();
+    const rows = await c.env.DB.prepare(
+      `SELECT *
+       FROM warehouse_asset_work_order
+       WHERE mobile_enabled = 1
+         AND assignee_userid = ?
+         AND status IN (${config.visible_statuses.map(() => "?").join(", ")})
+       ORDER BY
+         CASE priority
+           WHEN 'urgent' THEN 1
+           WHEN 'high' THEN 2
+           WHEN 'normal' THEN 3
+           ELSE 4
+         END,
+         scheduled_date IS NULL,
+         scheduled_date ASC,
+         id DESC`
+    )
+      .bind(auth.sub, ...config.visible_statuses)
+      .all<WarehouseAssetWorkOrder>();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.get(
+  "/mobile/task/:id",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const detail = await loadMobileTaskDetail(c.env, id);
+    if (!detail) {
+      return c.json({ success: false, error: { message: "work order not found" } }, 404);
+    }
+    if (!auth.roles.includes("super_admin") && detail.assignee_userid !== auth.sub) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    return c.json({ success: true, data: detail });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/mobile/task/:id/start",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const task = await c.env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
+      .bind(id)
+      .first<WarehouseAssetWorkOrder>();
+    if (!task) return c.json({ success: false, error: { message: "work order not found" } }, 404);
+    if (!canSubmitWarehouseTaskFromMobile(task, auth.sub, auth.roles)) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+    if (task.status === "in_progress") {
+      return c.json({ success: true });
+    }
+    if (task.status !== "assigned") {
+      return c.json(
+        { success: false, error: { message: "only assigned task can start from mobile" } },
+        400
+      );
+    }
+
+    try {
+      await startWarehouseTask(c.env, id, auth.sub);
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+    return c.json({ success: true });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/mobile/task/:id/submit",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const task = await c.env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
+      .bind(id)
+      .first<WarehouseAssetWorkOrder>();
+    if (!task) return c.json({ success: false, error: { message: "work order not found" } }, 404);
+    if (!canSubmitWarehouseTaskFromMobile(task, auth.sub, auth.roles)) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    const body = (await c.req.json().catch(() => ({}))) as {
+      result_summary?: string | null;
+      completion_summary_json?: string | null;
+      evidence?: {
+        step_id?: number | null;
+        tracked_asset_id?: number | null;
+        evidence_type: "photo" | "video" | "voice" | "brief" | "document";
+        file_key?: string | null;
+        file_name?: string | null;
+        summary?: string | null;
+        captured_at?: string | null;
+      }[];
+    };
+    try {
+      await submitWarehouseTask(c.env, {
+        id,
+        operator_userid: auth.sub,
+        result_summary: body.result_summary,
+        completion_summary_json: body.completion_summary_json,
+        evidence: body.evidence
+      });
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    return c.json({ success: true });
   }
 );
 

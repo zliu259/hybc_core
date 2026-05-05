@@ -132,6 +132,21 @@ export interface WarehouseTaskPackage {
   updated_at: string;
 }
 
+export interface CreateWarehouseTaskPackageRequest {
+  package_title: string;
+  package_type?: string;
+  warehouse_id?: number | null;
+  project_id?: number | null;
+  priority?: WarehouseTaskPriority;
+  assignee_userid?: string | null;
+  planned_start_date?: string | null;
+  due_date?: string | null;
+  source?: WarehouseTaskSource;
+  source_biz_type?: string | null;
+  source_biz_id?: number | null;
+  remark?: string | null;
+}
+
 export interface WarehouseTaskEvidenceInput {
   step_id?: number | null;
   tracked_asset_id?: number | null;

@@ -1,6 +1,7 @@
 import { emitTrackedAssetEvents, getConfigurationParticipants } from "./asset-event";
 import { generateSerial } from "./serial";
 import type { TrackedAsset } from "../types/asset";
+import type { UserRole } from "../types/auth";
 import type { Env } from "../types/env";
 import type {
   CreateWarehouseAssetWorkOrderRequest,
@@ -32,12 +33,93 @@ const taskStartAllowedStatuses: WarehouseAssetWorkOrderStatus[] = [
   "approved"
 ];
 
+const mobileVisibleStatuses: WarehouseAssetWorkOrderStatus[] = [
+  "assigned",
+  "in_progress",
+  "rejected"
+];
+
+const evidenceTypes = ["photo", "video", "voice", "brief", "document"] as const;
+
+export interface WarehouseTaskWorkloadInput {
+  assignee_userid: string | null;
+  status: string;
+  priority: string;
+}
+
+export interface WarehouseTaskWorkloadSummary {
+  assignee_userid: string | null;
+  open_count: number;
+  urgent_count: number;
+  submitted_count: number;
+}
+
 export const normalizeReturnedAssetStatus = (status: string): string => {
   return status === "quarantine" ? "returned_quarantine" : status;
 };
 
 export const isWarehouseTaskOpenBlockingStatus = (status: string): boolean => {
   return openBlockingStatuses.includes(status as WarehouseAssetWorkOrderStatus);
+};
+
+export const isWarehouseTaskVisibleInMobile = (status: string): boolean => {
+  return mobileVisibleStatuses.includes(status as WarehouseAssetWorkOrderStatus);
+};
+
+export const canAttachTaskToPackage = (task: { status: string }): boolean => {
+  return !["completed", "cancelled"].includes(task.status);
+};
+
+export const buildWarehouseTaskWorkloadSummary = (
+  tasks: WarehouseTaskWorkloadInput[]
+): WarehouseTaskWorkloadSummary[] => {
+  const summary = new Map<string, WarehouseTaskWorkloadSummary>();
+
+  for (const task of tasks) {
+    if (!isWarehouseTaskOpenBlockingStatus(task.status)) continue;
+    const key = task.assignee_userid ?? "__unassigned__";
+    const current =
+      summary.get(key) ??
+      ({
+        assignee_userid: task.assignee_userid,
+        open_count: 0,
+        urgent_count: 0,
+        submitted_count: 0
+      } satisfies WarehouseTaskWorkloadSummary);
+
+    current.open_count += 1;
+    if (task.priority === "urgent") current.urgent_count += 1;
+    if (task.status === "submitted") current.submitted_count += 1;
+    summary.set(key, current);
+  }
+
+  return [...summary.values()];
+};
+
+export const canSubmitWarehouseTaskFromMobile = (
+  task: {
+    assignee_userid: string | null;
+    status: string;
+    mobile_enabled: number;
+  },
+  userid: string,
+  roles: UserRole[]
+): boolean => {
+  if (task.mobile_enabled !== 1) return false;
+  if (!isWarehouseTaskVisibleInMobile(task.status)) return false;
+  if (roles.includes("super_admin")) return true;
+  return task.assignee_userid === userid;
+};
+
+export const buildWarehouseMobileTaskConfig = () => {
+  return {
+    contract_version: 1,
+    visible_statuses: mobileVisibleStatuses,
+    evidence_types: evidenceTypes,
+    actions: ["start", "submit"] as const,
+    min_photo_count_source: "required_photo_count" as const,
+    manual_source: "manual_version_id" as const
+  };
 };
 
 export const buildReturnInspectionTaskDefaults = (payload: {
@@ -60,6 +142,30 @@ export const buildReturnInspectionTaskDefaults = (payload: {
     mobile_enabled: 1,
     required_photo_count: 3,
     remark: `项目返库设备必须完成签收后检查。出入库单=${payload.order_no}; 设备=${payload.asset_code}; 要求照片>=3张并提交检查简报。`
+  };
+};
+
+export const buildFollowupMaintenanceTaskDefaults = (payload: {
+  source_work_order_no: string;
+  result_summary?: string | null;
+}): {
+  work_order_type: WarehouseAssetWorkOrderType;
+  source: WarehouseTaskSource;
+  priority: WarehouseTaskPriority;
+  blocking_flag: number;
+  mobile_enabled: number;
+  required_photo_count: number;
+  remark: string;
+} => {
+  const result = payload.result_summary?.trim();
+  return {
+    work_order_type: "maintenance",
+    source: "return_receipt",
+    priority: "urgent",
+    blocking_flag: 1,
+    mobile_enabled: 1,
+    required_photo_count: 3,
+    remark: `返库检查未通过，必须维护后复核。来源检查任务=${payload.source_work_order_no}${result ? `; 检查结论=${result}` : ""}`
   };
 };
 
@@ -266,6 +372,55 @@ export const createReturnInspectionTaskForStockOrderItem = async (
     project_id: payload.project_id ?? undefined,
     warehouse_id: payload.warehouse_id ?? undefined,
     applicant_userid: payload.applicant_userid
+  });
+
+  return { ...task, created: true };
+};
+
+const createFollowupMaintenanceTaskForRejectedInspection = async (
+  env: Env,
+  payload: {
+    sourceTask: WarehouseAssetWorkOrder;
+    reviewer_userid: string;
+    result_summary?: string | null;
+  }
+): Promise<{ id: number; work_order_no: string; created: boolean } | null> => {
+  if (
+    payload.sourceTask.work_order_type !== "inspection" ||
+    payload.sourceTask.source !== "return_receipt" ||
+    !payload.sourceTask.tracked_asset_id
+  ) {
+    return null;
+  }
+
+  const existing = await env.DB.prepare(
+    `SELECT id, work_order_no
+     FROM warehouse_asset_work_order
+     WHERE tracked_asset_id = ?
+       AND source = 'return_receipt'
+       AND work_order_type = 'maintenance'
+       AND status NOT IN ('completed', 'cancelled')
+     ORDER BY id DESC
+     LIMIT 1`
+  )
+    .bind(payload.sourceTask.tracked_asset_id)
+    .first<{ id: number; work_order_no: string }>();
+  if (existing) return { ...existing, created: false };
+
+  const defaults = buildFollowupMaintenanceTaskDefaults({
+    source_work_order_no: payload.sourceTask.work_order_no,
+    result_summary: payload.result_summary
+  });
+
+  const task = await createWarehouseTask(env, {
+    ...defaults,
+    status: "pending_assignment",
+    tracked_asset_id: payload.sourceTask.tracked_asset_id,
+    tracked_asset_configuration_id: payload.sourceTask.tracked_asset_configuration_id ?? undefined,
+    stock_order_id: payload.sourceTask.stock_order_id ?? undefined,
+    project_id: payload.sourceTask.project_id ?? undefined,
+    warehouse_id: payload.sourceTask.warehouse_id ?? undefined,
+    applicant_userid: payload.reviewer_userid
   });
 
   return { ...task, created: true };
@@ -491,12 +646,21 @@ export const reviewWarehouseTask = async (
     payload.action === "approve" ? "complete" : "reject"
   );
 
+  const followupTask =
+    payload.action === "reject"
+      ? await createFollowupMaintenanceTaskForRejectedInspection(env, {
+          sourceTask: row,
+          reviewer_userid: payload.reviewer_userid,
+          result_summary: payload.result_summary
+        })
+      : null;
+
   await emitWarehouseTaskTimelineEvent(
     env,
     row,
     payload.reviewer_userid,
     payload.action === "approve" ? "work_order_completed" : "work_order_rejected",
-    `status=${nextStatus}${payload.result_summary ? `; result=${payload.result_summary}` : ""}`
+    `status=${nextStatus}${payload.result_summary ? `; result=${payload.result_summary}` : ""}${followupTask?.created ? `; followup_maintenance=${followupTask.work_order_no}` : ""}`
   );
 };
 

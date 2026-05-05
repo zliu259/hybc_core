@@ -3,12 +3,18 @@ import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import {
   assignWarehouseAssetWorkOrder,
+  assignWarehouseTaskPackageTasks,
+  createWarehouseTaskPackage,
   listWarehouseTaskEvidence,
   listWarehouseAssetWorkOrders,
+  listWarehouseTaskPackages,
+  listWarehouseTaskWorkload,
   reviewWarehouseAssetWorkOrder,
   startWarehouseAssetWorkOrder,
   type WarehouseAssetWorkOrder,
-  type WarehouseTaskEvidence
+  type WarehouseTaskEvidence,
+  type WarehouseTaskPackage,
+  type WarehouseTaskWorkloadSummary
 } from "@/api/warehouse";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
@@ -21,7 +27,12 @@ defineOptions({ name: "WarehouseTaskDispatch" });
 const loading = ref(false);
 const actionId = ref<number | null>(null);
 const rows = ref<WarehouseAssetWorkOrder[]>([]);
+const selectedRows = ref<WarehouseAssetWorkOrder[]>([]);
+const packageRows = ref<WarehouseTaskPackage[]>([]);
+const workloadRows = ref<WarehouseTaskWorkloadSummary[]>([]);
 const assignVisible = ref(false);
+const packageVisible = ref(false);
+const batchVisible = ref(false);
 const evidenceVisible = ref(false);
 const evidenceRows = ref<WarehouseTaskEvidence[]>([]);
 const evidenceLoading = ref(false);
@@ -29,6 +40,19 @@ const activeTaskNo = ref("");
 const manuals = ref<WarehouseManual[]>([]);
 const assignForm = ref({
   id: 0,
+  assignee_userid: "",
+  scheduled_date: "",
+  manual_version_id: undefined as number | undefined
+});
+const packageForm = ref({
+  package_title: "",
+  assignee_userid: "",
+  due_date: "",
+  priority: "normal" as WarehouseAssetWorkOrder["priority"],
+  remark: ""
+});
+const batchForm = ref({
+  package_id: undefined as number | undefined,
   assignee_userid: "",
   scheduled_date: "",
   manual_version_id: undefined as number | undefined
@@ -77,6 +101,12 @@ const priorityTag = (priority: WarehouseAssetWorkOrder["priority"]) => {
   return "success";
 };
 
+const workerText = (userid: string | null) => {
+  if (!userid) return "未派工";
+  const user = wecomUsers.value.find(item => item.userid === userid);
+  return user ? `${user.name} (${userid})` : userid;
+};
+
 const evidenceTypeText: Record<string, string> = {
   photo: "照片",
   video: "视频",
@@ -88,11 +118,23 @@ const evidenceTypeText: Record<string, string> = {
 const loadData = async () => {
   loading.value = true;
   try {
-    const result = await listWarehouseAssetWorkOrders(filters.value);
-    rows.value = result.data;
+    const [taskResult, packageResult, workloadResult] = await Promise.all([
+      listWarehouseAssetWorkOrders(filters.value),
+      listWarehouseTaskPackages(),
+      listWarehouseTaskWorkload({ source: filters.value.source })
+    ]);
+    rows.value = taskResult.data;
+    packageRows.value = packageResult.data.filter(item =>
+      ["open", "in_progress"].includes(item.status)
+    );
+    workloadRows.value = workloadResult.data;
   } finally {
     loading.value = false;
   }
+};
+
+const handleSelectionChange = (selection: WarehouseAssetWorkOrder[]) => {
+  selectedRows.value = selection;
 };
 
 const openAssign = (row: WarehouseAssetWorkOrder) => {
@@ -129,6 +171,63 @@ const submitAssign = async () => {
   });
   assignVisible.value = false;
   message("任务已派工", { type: "success" });
+  await loadData();
+};
+
+const submitPackage = async () => {
+  if (!packageForm.value.package_title.trim()) {
+    message("请输入任务包名称", { type: "warning" });
+    return;
+  }
+  await createWarehouseTaskPackage({
+    package_title: packageForm.value.package_title.trim(),
+    assignee_userid: packageForm.value.assignee_userid || null,
+    due_date: packageForm.value.due_date || null,
+    priority: packageForm.value.priority,
+    remark: packageForm.value.remark || null
+  });
+  packageVisible.value = false;
+  packageForm.value = {
+    package_title: "",
+    assignee_userid: "",
+    due_date: "",
+    priority: "normal",
+    remark: ""
+  };
+  message("任务包已创建", { type: "success" });
+  await loadData();
+};
+
+const openBatchAssign = () => {
+  if (selectedRows.value.length === 0) {
+    message("请先勾选任务", { type: "warning" });
+    return;
+  }
+  batchForm.value = {
+    package_id: packageRows.value[0]?.id,
+    assignee_userid: "",
+    scheduled_date: "",
+    manual_version_id: undefined
+  };
+  batchVisible.value = true;
+};
+
+const submitBatchAssign = async () => {
+  if (!batchForm.value.package_id) {
+    message("请选择任务包", { type: "warning" });
+    return;
+  }
+  const result = await assignWarehouseTaskPackageTasks(
+    batchForm.value.package_id,
+    {
+      task_ids: selectedRows.value.map(item => item.id),
+      assignee_userid: batchForm.value.assignee_userid || null,
+      scheduled_date: batchForm.value.scheduled_date || null,
+      manual_version_id: batchForm.value.manual_version_id || null
+    }
+  );
+  batchVisible.value = false;
+  message(`已更新 ${result.data.updated} 个任务`, { type: "success" });
   await loadData();
 };
 
@@ -181,6 +280,12 @@ onMounted(async () => {
           <div class="page__title">任务调度台</div>
           <div class="page__sub">库房负责人统一派工、跟进执行、复核完成</div>
         </div>
+        <div class="page__actions">
+          <el-button @click="packageVisible = true">新建任务包</el-button>
+          <el-button type="primary" @click="openBatchAssign">
+            选中加入任务包
+          </el-button>
+        </div>
       </div>
     </template>
 
@@ -208,7 +313,22 @@ onMounted(async () => {
       <el-button type="primary" @click="loadData">查询</el-button>
     </el-form>
 
-    <el-table :data="rows" border>
+    <div class="workload">
+      <div class="workload__title">人员负载</div>
+      <el-table :data="workloadRows" size="small" border>
+        <el-table-column label="人员" min-width="180">
+          <template #default="{ row }">
+            {{ workerText(row.assignee_userid) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="open_count" label="未完任务" width="110" />
+        <el-table-column prop="urgent_count" label="紧急" width="90" />
+        <el-table-column prop="submitted_count" label="待复核" width="100" />
+      </el-table>
+    </div>
+
+    <el-table :data="rows" border @selection-change="handleSelectionChange">
+      <el-table-column type="selection" width="44" />
       <el-table-column prop="work_order_no" label="任务号" width="160" />
       <el-table-column label="类型" width="100">
         <template #default="{ row }">{{
@@ -216,12 +336,17 @@ onMounted(async () => {
         }}</template>
       </el-table-column>
       <el-table-column prop="status" label="状态" width="130" />
+      <el-table-column prop="package_id" label="任务包" width="90" />
       <el-table-column label="优先级" width="100">
         <template #default="{ row }">
           <el-tag :type="priorityTag(row.priority)">{{ row.priority }}</el-tag>
         </template>
       </el-table-column>
-      <el-table-column prop="assignee_userid" label="执行人" width="140" />
+      <el-table-column label="执行人" width="180">
+        <template #default="{ row }">
+          {{ workerText(row.assignee_userid) }}
+        </template>
+      </el-table-column>
       <el-table-column
         prop="required_photo_count"
         label="照片要求"
@@ -317,6 +442,126 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
+    <el-dialog v-model="packageVisible" title="新建任务包" width="460px">
+      <el-form label-width="90px">
+        <el-form-item label="任务包名">
+          <el-input
+            v-model="packageForm.package_title"
+            placeholder="如：返库检查一组"
+          />
+        </el-form-item>
+        <el-form-item label="执行人">
+          <el-select
+            v-model="packageForm.assignee_userid"
+            filterable
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in wecomUsers"
+              :key="item.userid"
+              :label="`${item.name} (${item.userid})`"
+              :value="item.userid"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="截止日期">
+          <el-date-picker
+            v-model="packageForm.due_date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="优先级">
+          <el-select v-model="packageForm.priority" style="width: 100%">
+            <el-option label="普通" value="normal" />
+            <el-option label="高" value="high" />
+            <el-option label="紧急" value="urgent" />
+            <el-option label="低" value="low" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input v-model="packageForm.remark" type="textarea" :rows="3" />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="packageVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitPackage">创建</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="batchVisible" title="批量加入任务包" width="460px">
+      <el-alert
+        :title="`已选择 ${selectedRows.length} 个任务`"
+        type="info"
+        show-icon
+        :closable="false"
+      />
+      <el-form label-width="90px" class="dialog-form">
+        <el-form-item label="任务包">
+          <el-select
+            v-model="batchForm.package_id"
+            filterable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in packageRows"
+              :key="item.id"
+              :label="`${item.package_title} (${item.package_no})`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="执行人">
+          <el-select
+            v-model="batchForm.assignee_userid"
+            filterable
+            clearable
+            placeholder="为空则沿用任务包执行人"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in wecomUsers"
+              :key="item.userid"
+              :label="`${item.name} (${item.userid})`"
+              :value="item.userid"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="计划日期">
+          <el-date-picker
+            v-model="batchForm.scheduled_date"
+            value-format="YYYY-MM-DD"
+            style="width: 100%"
+          />
+        </el-form-item>
+        <el-form-item label="操作手册">
+          <el-select
+            v-model="batchForm.manual_version_id"
+            filterable
+            clearable
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in manuals"
+              :key="item.id"
+              :label="`${item.manual_title} v${item.latest_version_no || '-'}`"
+              :value="
+                item.active_version_id || item.latest_version_no || undefined
+              "
+              :disabled="!item.active_version_id"
+            />
+          </el-select>
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="batchVisible = false">取消</el-button>
+        <el-button type="primary" @click="submitBatchAssign"
+          >确认更新</el-button
+        >
+      </template>
+    </el-dialog>
+
     <el-dialog
       v-model="evidenceVisible"
       :title="`任务证据：${activeTaskNo}`"
@@ -360,6 +605,7 @@ onMounted(async () => {
 .page__head {
   display: flex;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .page__title {
@@ -371,5 +617,26 @@ onMounted(async () => {
 .page__sub {
   margin-top: 4px;
   color: #6e6458;
+}
+
+.page__actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workload {
+  margin-bottom: 14px;
+}
+
+.workload__title {
+  margin-bottom: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #2a241d;
+}
+
+.dialog-form {
+  margin-top: 16px;
 }
 </style>

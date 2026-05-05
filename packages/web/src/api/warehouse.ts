@@ -151,6 +151,34 @@ export type WarehouseTaskEvidence = {
   created_at: string;
 };
 
+export type WarehouseTaskPackage = {
+  id: number;
+  package_no: string;
+  package_title: string;
+  package_type: string;
+  warehouse_id: number | null;
+  project_id: number | null;
+  priority: WarehouseAssetWorkOrder["priority"];
+  status: "open" | "in_progress" | "completed" | "exception";
+  assignee_userid: string | null;
+  assigned_by_userid: string | null;
+  planned_start_date: string | null;
+  due_date: string | null;
+  source: WarehouseAssetWorkOrder["source"];
+  source_biz_type: string | null;
+  source_biz_id: number | null;
+  remark: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WarehouseTaskWorkloadSummary = {
+  assignee_userid: string | null;
+  open_count: number;
+  urgent_count: number;
+  submitted_count: number;
+};
+
 export type EquipmentPlan = {
   id: number;
   plan_no: string;
@@ -491,6 +519,123 @@ export const getWarehouseAssetWorkOrder = (id: number) =>
   http.request<{ success: boolean; data: WarehouseAssetWorkOrder }>(
     "get",
     `/api/v1/warehouse/work-order/${id}`
+  );
+
+export const listWarehouseTaskPackages = (params?: {
+  status?: WarehouseTaskPackage["status"];
+  assignee_userid?: string;
+  warehouse_id?: number;
+}) =>
+  http.request<{ success: boolean; data: WarehouseTaskPackage[] }>(
+    "get",
+    "/api/v1/warehouse/work-order/package",
+    { params }
+  );
+
+export const createWarehouseTaskPackage = (data: {
+  package_title: string;
+  package_type?: string;
+  warehouse_id?: number | null;
+  project_id?: number | null;
+  priority?: WarehouseAssetWorkOrder["priority"];
+  assignee_userid?: string | null;
+  planned_start_date?: string | null;
+  due_date?: string | null;
+  source?: WarehouseAssetWorkOrder["source"];
+  source_biz_type?: string | null;
+  source_biz_id?: number | null;
+  remark?: string | null;
+}) =>
+  http.request<{ success: boolean; data: { id: number; package_no: string } }>(
+    "post",
+    "/api/v1/warehouse/work-order/package",
+    { data }
+  );
+
+export const listWarehouseTaskWorkload = (params?: {
+  warehouse_id?: number;
+  project_id?: number;
+  source?: WarehouseAssetWorkOrder["source"];
+  assignee_userid?: string;
+}) =>
+  http.request<{ success: boolean; data: WarehouseTaskWorkloadSummary[] }>(
+    "get",
+    "/api/v1/warehouse/work-order/workload",
+    { params }
+  );
+
+export const assignWarehouseTaskPackageTasks = (
+  id: number,
+  data: {
+    task_ids: number[];
+    assignee_userid?: string | null;
+    scheduled_date?: string | null;
+    manual_version_id?: number | null;
+  }
+) =>
+  http.request<{ success: boolean; data: { updated: number } }>(
+    "post",
+    `/api/v1/warehouse/work-order/package/${id}/assign-tasks`,
+    { data }
+  );
+
+export const getWarehouseMobileTaskConfig = () =>
+  http.request<{
+    success: boolean;
+    data: {
+      contract_version: number;
+      visible_statuses: WarehouseAssetWorkOrder["status"][];
+      evidence_types: WarehouseTaskEvidence["evidence_type"][];
+      actions: string[];
+      min_photo_count_source: string;
+      manual_source: string;
+    };
+  }>("get", "/api/v1/warehouse/work-order/mobile/config");
+
+export const listMyMobileWarehouseTasks = () =>
+  http.request<{ success: boolean; data: WarehouseAssetWorkOrder[] }>(
+    "get",
+    "/api/v1/warehouse/work-order/mobile/my-tasks"
+  );
+
+export const getMobileWarehouseTask = (id: number) =>
+  http.request<{
+    success: boolean;
+    data: WarehouseAssetWorkOrder & {
+      manual_title: string | null;
+      manual_version_no: number | null;
+      manual_content: Record<string, unknown> | null;
+      steps: Array<Record<string, unknown>>;
+      evidence: WarehouseTaskEvidence[];
+    };
+  }>("get", `/api/v1/warehouse/work-order/mobile/task/${id}`);
+
+export const startMobileWarehouseTask = (id: number) =>
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/mobile/task/${id}/start`
+  );
+
+export const submitMobileWarehouseTask = (
+  id: number,
+  data?: {
+    result_summary?: string | null;
+    completion_summary_json?: string | null;
+    evidence?: {
+      step_id?: number | null;
+      tracked_asset_id?: number | null;
+      evidence_type: WarehouseTaskEvidence["evidence_type"];
+      file_key?: string | null;
+      file_name?: string | null;
+      summary?: string | null;
+      captured_at?: string | null;
+    }[];
+  }
+) =>
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/mobile/task/${id}/submit`,
+    { data }
   );
 
 export const listWarehouseTaskEvidence = (id: number) =>

@@ -1,6 +1,7 @@
 # UI 设计文档（页面级）
 
 ## 1. 文档定位与指向
+
 - 本文档为页面级 UI 设计规范，覆盖 Web 管理端与企业微信小程序。
 - Web 代码主目录：`packages/web/src`
 - 小程序代码主目录：`packages/miniapp`
@@ -9,10 +10,12 @@
 ## 2. 全局设计语言
 
 ### 2.1 风格目标
+
 - 关键词：工程化、可信、稳重、高信息密度。
 - 设计原则：先可读、再效率、后风格；高风险操作优先防误触。
 
 ### 2.2 视觉 Tokens
+
 - 背景：`#f4f1ea`
 - 卡片：`#fffaf2`
 - 主文字：`#2a241d`
@@ -25,6 +28,7 @@
 - 信息：`#2d5f9a`
 
 ### 2.3 排版与布局
+
 - 字体：`Noto Sans SC`, `PingFang SC`, sans-serif
 - H1: 32-36；H2: 24-28；H3: 18-20；正文：14-16
 - 表格行高：40-44
@@ -33,6 +37,7 @@
 ## 3. Web 页面级规范（PureAdmin）
 
 ### 3.1 页面总索引（必须有明确文件指向）
+
 - 个人工作台首页：`packages/web/src/views/welcome/index.vue`
 - 个人工作台-我的申请：`packages/web/src/views/workspace/my-applications/index.vue`
 - 工作台我的报销提交：`packages/web/src/views/workspace/reimbursement/list.vue`
@@ -87,6 +92,7 @@
 - 仓库管理：`packages/web/src/views/warehouse/index.vue`
 - 库房总控台：`packages/web/src/views/warehouse/control-center.vue`
 - 库房任务调度台：`packages/web/src/views/warehouse/task-dispatch.vue`
+  - 展示任务队列、人员负载、任务包创建、批量加入任务包/批量派工、单任务派工、复核和证据查看。
 - 返库检查维护：`packages/web/src/views/warehouse/return-maintenance.vue`
 - 顶管机组合方案台：`packages/web/src/views/warehouse/tbm-composition.vue`
 - 操作手册库：`packages/web/src/views/warehouse/manual-library.vue`
@@ -110,6 +116,7 @@
 - 全局技术支持抽屉：`packages/web/src/layout/components/lay-support/index.vue`
 
 ### 3.2 页面模板规范
+
 - 列表页模板：`页面标题区 + 筛选区 + 表格区 + 分页区`
 - 详情页模板：`主信息区 + 审批轨迹区 + 风险区 + 底部动作条`
 - 表单页模板：`分组表单 + 联动校验 + 提交结果反馈`
@@ -117,36 +124,42 @@
 ### 3.3 页面逐项要求
 
 #### A. 仪表盘 `views/dashboard/index.vue`
+
 - KPI 区：应付、应收、报销待办、审批待办。
 - 趋势区：周/月趋势图。
 - 风险区：AI 风险结论与规则告警分栏展示。
 - API 指向：`/api/v1/dashboard/*`
 
 #### B. 项目列表 `views/project/list.vue`
+
 - 固定筛选：项目状态、时间范围、项目经理。
 - 表格列：项目编号、名称、状态、进度、负责人、更新时间。
 - 行操作：查看详情、编辑、归档（归档二次确认）。
 - API 指向：`/api/v1/project`
 
 #### C. 项目详情 `views/project/detail.vue`
+
 - 上区：项目主信息卡。
 - 中区：标段、里程碑、财务摘要。
 - 下区：关联单据与事件时间线。
 - API 指向：`/api/v1/project/:id`, `/api/v1/project/:id/financial-summary`
 
 #### D. 合同管理 `views/finance/contract/index.vue`
+
 - 固定筛选：合同方向、项目、状态、关键字。
 - 表格列：合同号、方向、对方单位、合同类型、总额、已付、剩余、状态、AI审查状态。
 - 行操作：查看详情、软删除。
 - API 指向：`/api/v1/contract`
 
 #### E. 合同详情 `views/finance/contract/detail.vue`
+
 - 表单区：方向、项目、实体、对方单位、类型、经办人、日期、金额、附件、备注。
 - 摘要区：合同总额、已付金额、剩余额度。
 - AI区：审查状态、风险等级、分数、总结、建议。
 - API 指向：`/api/v1/contract/:id`, `/api/v1/contract/:id/ai-review`
 
 #### F. 对外付款申请列表 `views/finance/payment/index.vue`
+
 - 固定筛选：合同号、项目、审批状态、金额区间。
 - 表格列：申请单号、合同号、金额、申请人、付款方式（中文）、状态、提交时间、支付时间。
 - 强约束：超额风险标红并显示剩余额度。
@@ -154,6 +167,7 @@
 - API 指向：`/api/v1/payment`
 
 #### G. 对外付款申请详情 `views/finance/payment/detail.vue`
+
 - 左侧：申请信息、合同信息、附件。
 - 右侧：审批轨迹、风险评估报告。
 - 付款执行：`已审批`状态下登记支付日期、支付流水号、付款账户、付款备注并标记付款。
@@ -164,12 +178,14 @@
 - API 指向：`/api/v1/payment/:id`, `/api/v1/payment/:id/mark-paid`, `/api/v1/approval/:id/*`
 
 #### H. 收款人管理 `views/finance/payee/index.vue`
+
 - 双标签页：外部收款人/内部收款人。
 - 表格列：名称、开户行、账号、电话、创建时间。
 - 操作：新增、编辑、软删除。
 - API 指向：`/api/v1/payment/payee/*`
 
 #### F. 报销处理列表 `views/finance/reimbursement/list.vue`
+
 - 展示维度：信封编号、项目、填报人（姓名）、金额、状态、PDF状态。
 - 默认打开首个标签“报销提交”，并区分入口语义：
   - 工作台入口：展示“我的提交”；
@@ -191,14 +207,16 @@
 - API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
 
 #### F-1. 报销信封生成器（正式离线版） `views/finance/reimbursement/envelope-generator.vue`
+
 - 本地离线生成：在浏览器端批量生成 UUID4 与二维码，不调用后端生成接口。
 - 参数输入：生成数量、统一输出尺寸（纸张/信封共用一个尺寸入口，支持常见尺寸与自定义）。
 - 支持自定义标题与横向/纵向打印方向选择。
-- 结果布局：每份仅包含二维码与 UUID 字符串，不显示“报销信封1/2”等序号文案；并预留“封装日期____年__月__日、签收日期____年__月__日、填报人”填写位。
+- 结果布局：每份仅包含二维码与 UUID 字符串，不显示“报销信封1/2”等序号文案；并预留“封装日期\_**\_年**月**日、签收日期\_\_**年**月**日、填报人”填写位。
 - 输出能力：支持横向或纵向直接生成 PDF、PDF 打印（新窗口打印）；同时支持导出 CSV 与导入/导出批次 JSON（用于离线复打与跨设备交接）。
 - 排版细节：二维码尺寸下调；UUID 字号与正文一致，提升人工核对可读性。
 
 #### F-2. 报销详情 `views/finance/reimbursement/detail.vue`
+
 - 页面分区：基础信息、信封标识、状态总览、附件（拖拽上传）、操作区。
 - 表单区：项目、填报人、通道、费用日期、金额、类别、说明。
 - 附件区：拖拽上传替代 JSON 手工录入；附件列表展示类型、文件名、大小、状态。
@@ -229,10 +247,12 @@
 - API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
+
 - 原“预审工作台”“查重中心”已从对内付款主路由下线，功能融合进报销业务页（列表/详情/批次）以减少页面切换与理解成本。
 - 预审与异常检测在报销列表直接可操作，批次详情继续承载 AI 审计与审批联动。
 
 #### F-5. 报销集中审批批次列表 `views/finance/reimbursement/batch.vue`
+
 - 新增“候选报销条目”工作区：按项目 + 申请人自动列出未完成报销，可一键自动勾选“已收件+复核通过”并创建后立即送审。
 - 展示维度：批次号、项目、申报人、信封数、总金额、智能审核状态、审批状态。
 - 创建并送审要求项目、被报销人、收款方式与候选条目；付款实体、付款账户、账户显示为可选项，可由审批人员在审批详情页补充。
@@ -240,22 +260,26 @@
 - API 指向：`/api/v1/reimbursement/batch`
 
 #### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
+
 - 展示维度：批次信息、智能审核报告、批次信封明细、查重风险汇总。
 - 操作区：触发智能审核、提交集中审批、跳转“集中打款登记台”、跳转审批详情。
 - API 指向：`/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/trigger-audit`, `/api/v1/reimbursement/batch/:id/audit-report`, `/api/v1/reimbursement/batch/:id/submit-approval`, `/api/v1/reimbursement/batch/:id/mark-paid`
 
 #### F-7. 报销集中打款登记台 `views/finance/reimbursement/payout.vue`
+
 - 面向已审批报销批次的财务打款登记页面，支持单批次/多批次操作。
 - 打款登记字段：打款日期、支付流水号、支付实体、支付账号、付款账户显示文本。
 - 新增支付凭证上传区：支持上传打款截图/回单等附件，并在提交时一起保存。
 - API 指向：`/api/v1/reimbursement/batch`, `/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/mark-paid`, `/api/v1/entity`, `/api/v1/entity/:id/bank-accounts`, `/api/v1/upload/sign`
 
 #### G. 收款合同管理 `views/finance/receipt/contract.vue`
+
 - 核心列：合同号、项目、对方单位、合同总额、已开票、已收款、状态。
 - 操作：新建收款合同（direction=inbound）、查看合同详情并提交审批。
 - API 指向：`/api/v1/contract?direction=inbound`, `/api/v1/contract/:id/submit-approval`
 
 #### G-2. 发票管理 `views/finance/receipt/invoice.vue`
+
 - 双对象视图：`开票申请` + `正式发票`（Tabs）。
 - 开票申请核心列：申请单号、合同号、客户名称、客户税号、价税合计、类型、状态。
 - 开票申请列表文案：类型与状态均中文化展示；提交审批后显示“查看进度”入口，直达审批详情。
@@ -281,6 +305,7 @@
 - API 指向：`/api/v1/receipt/invoice-request*`、`/api/v1/receipt/invoice*`
 
 #### G-3. 收款登记列表 `views/finance/receipt/list.vue`
+
 - 核心列：收款单号、合同号、关联发票号、收款日期、金额、收款账户、凭证状态、登记人、状态。
 - 新增收款登记：
   - 收款账户改为“我方实体 + 银行账户”下拉选择（仅展示 active 账户）；
@@ -292,22 +317,26 @@
 - API 指向：`/api/v1/receipt`、`/api/v1/receipt/receipt-accounts`、`/api/v1/receipt/refund*`
 
 #### G-3-1. 收款登记详情 `views/finance/receipt/detail.vue`
+
 - 展示维度：收款登记主信息、合同信息、关联发票信息、收款凭证附件列表、退款记录列表。
 - 附件能力：收款凭证支持明细查看；退款记录支持在详情页上传并维护“银行汇款单”附件。
 - 退款操作：可在详情页发起全额/部分退款并立即提审，形成“查看-操作”闭环。
 - API 指向：`/api/v1/receipt/:id`、`/api/v1/receipt/refund`、`/api/v1/receipt/refund/:id/submit-approval`、`/api/v1/receipt/refund/:id/bank-slips`
 
 #### G-4. 收款统计仪表盘 `views/finance/receipt/dashboard.vue`
+
 - 指标：收款合同已开票、收款合同已到账、收款登记笔数、对外付款已支付、报销累计。
 - 支持按项目切换统计。
 - API 指向：`/api/v1/project/:id/financial-summary`
 
 #### H. 审批中心 `views/approval/index.vue`
+
 - Tab：待审批、已处理、抄送我。
 - 待审批/已处理列表列：业务类型、审批单号、所属项目、金额、业务明细、摘要、发起人、节点/操作、时间、状态（用于审批快速识别）。
 - API 指向：`/api/v1/approval/pending`
 
 #### I. 审批详情 `views/approval/detail.vue`
+
 - 上区：业务摘要（单据关键字段）。
 - 中区：流程图 + 历史操作 + 业务明细（已覆盖 `开票申请` 与 `收款退款` 明细区）。
 - 审批流程节点中的人工审批意见使用红色高亮（`#f56c6c`）展示，强化对后续环节审批人的提示：`packages/web/src/views/approval/detail.vue`
@@ -320,6 +349,7 @@
 - API 指向：`/api/v1/approval/:id/*`、`/api/v1/receipt/refund/:id`
 
 #### I-1. 审批监控台（超管） `views/approval/admin-monitor.vue`
+
 - 列表维度：审批单号、业务类型、摘要、发起人、当前节点、状态、提交时间、完成时间。
 - 筛选条件：业务类型、状态（支持多选，默认：进行中/已通过/已驳回）、发起人（企微成员下拉，仅显示姓名）、摘要关键字。
 - 筛选条件本地持久化：按“当前登录用户 + 当前浏览器设备”保存上次筛选值，刷新/重进页面自动恢复，重置时同步清空本地缓存。
@@ -328,6 +358,7 @@
 - API 指向：`/api/v1/approval/admin/all`、`/api/v1/approval/:id/force-approve`、`/api/v1/approval/:id/force-transfer`
 
 #### I-2. 审批模板配置 `views/approval/template-config.vue`
+
 - 模板列表表格：模板编码、名称、业务类型、状态、操作（编辑/预览/删除）。
 - 创建/编辑弹窗：基本信息 + ApprovalFlowDesigner 可视化编辑器（显示节点连线、负责人摘要）。
 - 预览弹窗：只读模式 ApprovalFlowDesigner（保留连线和负责人摘要展示）。
@@ -337,12 +368,14 @@
 - API 指向：`/api/v1/admin/approval-config`
 
 #### I-3. 金额阈值配置 `views/approval/threshold-config.vue`
+
 - 顶部模板选择器。
 - 阈值表格：条件字段、运算符、阈值、目标分支、优先级。
 - 创建/编辑弹窗：between运算符时显示双值输入。
 - API 指向：`/api/v1/admin/threshold`
 
 #### I-4. AI配置管理 `views/ai/config.vue`
+
 - 3标签页：AI供应商 / 路由规则 / 提示词模板。
 - 初始化区：支持填写默认 OpenAI 模型与 Endpoint，并一键初始化 AI 供应商、路由规则、提示词模板。
 - 供应商Tab：CRUD表格（key、名称、endpoint、模型、优先级、并发）。
@@ -351,6 +384,7 @@
 - API 指向：`/api/v1/admin/bootstrap/near-production-openai`, `/api/v1/admin/ai-provider`, `/api/v1/admin/ai-routing`, `/api/v1/admin/ai-prompt`
 
 #### I-5. 计算节点监控 `views/ai/nodes.vue`
+
 - 节点列表卡片：节点ID、名称、类型、状态（颜色标签）、能力、CPU/内存、最后心跳（相对时间）。
 - 30秒自动刷新。
 - Runner运行参数卡片：支持在线维护 `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL`、合同文本/视觉模型键，参数落库后同步到 KV 供 Runner 轮询读取。
@@ -359,6 +393,7 @@
 - API 指向：`/api/v1/admin/runner-runtime-config`, `/api/v1/admin/ai-runtime/test-task`, `/api/v1/task/nodes`, `/api/v1/task/queue`
 
 #### J. 资产台账 `views/asset/list.vue`
+
 - 列：资产码、类型、状态、资产归属（自有/租入）、所在项目、责任人、更新时间。
 - 支持：按资产类型动态展示属性字段。
 - 支持：按资产归属筛选；新建资产可指定归属（默认自有）。
@@ -367,27 +402,32 @@
 - API 指向：`/api/v1/asset`
 
 #### J-2. 资产详情 `views/asset/detail.vue`
+
 - 模块：基础信息、当前配置、Factory/Current/Project-Temporary 参数区、部件关系、事件时间线、文档库。
 - 交互：支持按 whole-machine view 查看当前 shell/core/console 组合，也支持切换到 shell 或 core 独立履历视图。
 - 升级要求：当资产为顶管机相关设备时，页面需要显式展示 `available now / available after modification / blocked by maintenance / returned quarantine` 等状态标签。
 - API 指向：`/api/v1/asset/:id`, `/api/v1/asset/:id/event`, `/api/v1/asset/:id/document`
 
 #### K. 仓库管理 `views/warehouse/index.vue`
+
 - 模块：仓库 KPI 总览（仓库数/待处理制单/库存预警/库存条目）、业务入口（制单/调度/库存/资产查验）、仓库档案列表。
 - 交互：软删除，状态维护（active/inactive）。
 - API 指向：`/api/v1/warehouse`
 
 #### K-2. 仓库库存 `views/warehouse/inventory.vue`
+
 - 模块：库存总览、筛选、耗材消耗登记、页内预警清单。
 - 交互：按仓库/资产类型过滤，登记消耗后刷新库存；预警项支持一键触发 AI 分析。
 - API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`, `/api/v1/warehouse/inventory/alert`, `/api/v1/warehouse/inventory/alert/:id/analyze`
 
 #### K-3. 库存预警中心 `views/warehouse/alert.vue`
+
 - 模块：低库存清单、缺口展示、AI分析触发。
 - 交互：预警项支持一键触发 `inventory_alert_analysis`。
 - API 指向：`/api/v1/warehouse/inventory/alert`, `/api/v1/warehouse/inventory/alert/:id/analyze`
 
 #### K-4. 出入库单管理 `views/warehouse/stock-order.vue`
+
 - 模块：出入库单列表、购物车式创建表单、模板快速套用、关键字快速加入。
 - 交互：草稿单可提交审批；审批通过后可执行；草稿/待审可取消。
 - 交互增强：支持“扫码值/关键字 + 数量”快速加入清单，支持预制模板一键套用后继续编辑。
@@ -397,39 +437,46 @@
 - API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
 
 #### K-5. 项目设备规划 `views/warehouse/equipment-plan.vue`
+
 - 模块：设备规划列表、新建规划、AI推荐触发、推荐结果查看、确认生成出库单。
 - 交互：确认时自动生成出库单并回写规划单。
 - 升级要求：规划结果需区分 `available now` 与 `available after modification`，并把 modification required 组合显式回传到出库单配置页。
 - API 指向：`/api/v1/warehouse/equipment-plan`, `/api/v1/warehouse/equipment-plan/:id/trigger-recommend`, `/api/v1/warehouse/equipment-plan/:id/recommendation`, `/api/v1/warehouse/equipment-plan/:id/confirm`
 
 #### K-5.1 出入库调度看板 `views/warehouse/dispatch.vue`
+
 - 模块：调度状态总览、`available_now / available_after_modification / blocked / reserved / in_transit / on_project / scrapped` 七状态分栏、组合配置标签、阻塞工单与预留记录聚合视图。
 - 交互：支持按 warehouse / asset_type / project / dispatch_state 过滤；支持从资产卡片跳转到 `views/asset/detail.vue`，在卡片内直接查看调度原因、组合配置、阻塞工单与预留记录。
 - 升级要求：若对象依赖 `special override` 才可放行，调度看板必须显式展示 override 标识、审批状态与补检要求，不能与普通 `available now` 混淆。
 - API 指向：`/api/v1/asset/dashboard/dispatch-board`, `/api/v1/asset/:id`
 
 #### K-6. 消耗品管理总览 `views/warehouse/consumables.vue`
+
 - 模块：消耗品 KPI、库存清单、消耗记录、消耗登记。
 - 交互：按仓库/消耗品类型/项目筛选，支持直接跳转出入库制单与公司盘库页面。
 - API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`, `/api/v1/asset/type`
 
 #### K-7. 公司资产盘库 `views/warehouse/stocktake.vue`
+
 - 模块：盘点任务列表、盘点执行区、差异汇总。
 - 交互：支持全公司/单仓库创建盘点任务；盘库过程中支持页内直接新增设备/消耗品并填写数量与状态（正常/新增/破损/盘亏），录入后自动计算差异并完成盘点。
 - API 指向：`/api/v1/warehouse/stocktake`, `/api/v1/warehouse/stocktake/:id`, `/api/v1/warehouse/stocktake/:id/line`, `/api/v1/warehouse/stocktake/:id/line/:lineId`, `/api/v1/warehouse/stocktake/:id/complete`
 
 #### K-8. 设备总览 `views/asset/dashboard.vue`
+
 - 模块：按类型/状态/位置三维统计。
 - 升级要求：增加顶管机专项统计：当前可用整机数、可改装后可用数、returned quarantine 数、buried shell 数、recovered core 数。
 - API 指向：`/api/v1/asset/dashboard/overview`
 
 #### K-9. 项目设备视图 `views/project/equipment-view.vue`
+
 - 模块：项目设备清单、项目维度物资消耗汇总。
 - 租赁提示：展示租赁模式、到期日、逾期天数，并在页头显示租赁设备与逾期设备汇总告警。
 - 升级要求：项目视图需显示当前 whole-machine configuration、关键部件状态、是否依赖 special override 放行、以及项目侧 freight attribution 摘要。
 - API 指向：`/api/v1/asset/dashboard/project/:projectId`
 
 #### K-10. 资产工单中心 `views/warehouse/work-order.vue`
+
 - 模块：inspection / maintenance / servicing / modification / scrapping 五类资产工单列表、创建表单、负责人分配、阻塞开关联动、结果摘要编辑。
 - 交互：支持按资产、组合配置、出入库单三类对象发起工单；支持草稿提审、审批通过后开始、进行中完成、非终态取消；支持在页内编辑负责人、计划日期、阻塞标记与结果摘要。
 - 角色可见性：
@@ -440,12 +487,14 @@
 - API 指向：`/api/v1/warehouse/work-order`, `/api/v1/warehouse/work-order/:id/submit-approval`, `/api/v1/warehouse/work-order/:id/start`, `/api/v1/warehouse/work-order/:id/complete`, `/api/v1/warehouse/work-order/:id/cancel`
 
 #### K-11. 仓库升级角色可见性矩阵
+
 - 项目经理：发起出入库申请、查看项目设备规划与自己项目的阻塞原因。
 - 办公室：审核补充出入库单、查看资料缺口、参与特批流转。
 - 库房：执行出入库、安排运输、处理 inspection / maintenance / servicing / modification / scrapping 任务。
 - 管理层：审批 special override、查看高风险资产与关键阻塞。
 
 #### L. 系统配置 `views/admin/system.vue`
+
 - 配置项：审批阈值、AI 路由、字典项、角色权限。
 - 所有修改必须记录操作审计。
 - API 指向：`/api/v1/admin/*`
@@ -453,6 +502,7 @@
 ### 3.4 Web 项目工作区（新增 IA）
 
 #### 3.4.1 页面与路由映射（必须保留旧路由兼容）
+
 - 工作区主壳：`packages/web/src/views/project/workspace/index.vue`
 - 项目面板：`packages/web/src/views/project/workspace/project-panel.vue`
 - 设备面板：`packages/web/src/views/project/workspace/equipment-panel.vue`
@@ -461,23 +511,27 @@
 - 兼容约束：`packages/web/src/views/project/detail.vue` 在首发阶段必须继续可访问。
 
 #### 3.4.2 交互模型
+
 - 入口：从 `views/project/list.vue` 行操作进入“项目工作区”。
 - 标签：工作区内固定三标签（项目 / 设备 / 财务），支持深链（URL 直接定位到标签）。
 - 隔离：切换 `projectId` 时必须重置面板缓存，禁止跨项目数据残留。
 - 容错：任一子面板加载失败时仅影响当前标签，不阻断整个工作区。
 
 #### 3.4.3 权限与可见性
+
 - `super_admin`、`manager`：可见全部面板能力。
 - `site_manager`：可见项目/设备面板；财务面板按字段级权限降级展示。
 - `operator`：默认只读；不可见高敏金额字段与高风险操作。
 - 所有敏感数据展示以 API 返回权限为准，前端仅做补充隐藏，不做越权放行。
 
 #### 3.4.4 API 指向
+
 - 工作区项目数据：`/api/v1/project/:id`
 - 工作区财务摘要：`/api/v1/project/:id/financial-summary`
 - 工作区设备摘要：`/api/v1/asset/dashboard/project/:projectId`
 
 #### 3.4.5 项目面板一站式信息聚合（新增）
+
 - 文件管理区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持项目相关人员上传并沉淀项目文件，文件可选绑定标段。
 - 项目信息编辑区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持在工作区直接查看/编辑 `location_text`（具体位置）、`project_briefing`（项目交底）、`project_start_at`（开始时间）。
 - 标段详情弹窗：在项目面板“标段总览”点击“查看详情”进入，显示标段基础信息、该标段操作员日志、该标段贯通报告。
@@ -487,6 +541,7 @@
 - 对应 API：`/api/v1/project/:id/files`、`/api/v1/project/:id/files/:fileId`、`/api/v1/log/operator?project_id=:id&section_id=:sectionId`、`/api/v1/survey/breakthrough?project_id=:id&section_id=:sectionId`。
 
 ### 3.5 Sprint 1 重构落地点（2026-02）
+
 - 默认首页路由切换到个人工作台：`packages/web/src/router/modules/home.ts`（`/` -> `/workspace/home`，保留 `/welcome` 兼容重定向）。
 - 个人工作台页面：`packages/web/src/views/welcome/index.vue`（欢迎卡、快捷入口、报销时间线、证书网格与到期预警）。
 - 个人资质与证书卡片新增文件动作：`packages/web/src/views/welcome/index.vue`（单证书支持“查看/下载”附件；未上传附件时按钮禁用并提示）。
@@ -497,6 +552,7 @@
 - Sprint 1 审批动作约束：`packages/web/src/views/approval/unified-tasklist.vue` 中通过/驳回/转签均要求填写审批意见。
 
 ### 3.6 Sprint 2 重构落地点（2026-02）
+
 - 菜单恢复与命名对齐：
   - `packages/web/src/router/modules/project.ts` 顶层菜单恢复可见，标题调整为“项目与现场指挥”。
   - `packages/web/src/router/modules/warehouse.ts` 顶层菜单恢复可见，标题调整为“库房调度”。
@@ -515,6 +571,7 @@
 - `packages/web/src/views/project/workspace/equipment-panel.vue`：新增租赁告警条、租赁列（模式/到期/逾期天数）和抽屉内租赁信息展示。
 
 ### 3.7 Sprint 3 重构落地点（2026-02）
+
 - 财务中心菜单恢复并命名对齐：`packages/web/src/router/modules/finance.ts`（顶层标题“财务中心”）。
 - 合同执行监控高密度改造：`packages/web/src/views/finance/contract/monitor.vue`
   - 表格切换为紧凑模式（`size=small`）
@@ -535,6 +592,7 @@
   - 保留 KPI 卡片与项目筛选，形成“卡片 + 图表”双层快照
 
 ### 3.8 Sprint 4 重构落地点（2026-02）
+
 - 超管统一入口：`packages/web/src/router/modules/admin.ts`
   - 汇聚审批流程设计、阈值规则、AI/Runner、服务监控中心、系统底座、企微集成、Raw Ops、Helpdesk
   - 所有子页严格 `super_admin` 可见
@@ -564,6 +622,7 @@
   - API 指向：`/api/v1/admin/wecom-push/monitor`
 
 ### 3.9 UI Refactor Plan 补齐项（2026-02）
+
 - IA 规范路径补齐：
   - `packages/web/src/router/modules/workspace.ts`（`/workspace/home`）
   - `packages/web/src/router/modules/field.ts`（`/field/projects`、`/field/project/:id`）
@@ -584,6 +643,7 @@
   - `packages/web/src/views/admin/helpdesk.vue`（详情抽屉展示附件）
 
 ### 3.10 顶部通知中心 API 化（2026-02）
+
 - 顶部 `通知/消息/待办` 全量改为实时 API 数据，不再使用本地 mock：
   - `packages/web/src/layout/components/lay-notice/index.vue`
   - 通知：`listCcApprovals`
@@ -595,6 +655,7 @@
   - `packages/web/src/layout/components/lay-notice/data.ts`（删除）
 
 ### 3.11 个人工作台交互调整（2026-02）
+
 - 个人身份信息增强（全名 + 角色 + 权限）：
   - `packages/web/src/views/welcome/index.vue`
 - 发起报销改为直接进入标准报销创建页（不再使用首页旧弹窗）：
@@ -609,6 +670,7 @@
   - 文件：`packages/web/src/views/welcome/index.vue`
 
 ### 3.12 项目工作区 Project Tab 重构（2026-02）
+
 - `tab=project` 从“信息+文件+表格堆叠”改为“项目运营驾驶舱”布局：
   - 文件能力从 `project-panel` 完全移除（已迁移到 `tab=files` 的 `file-panel`）
   - 标段总览改为卡片式并引入顶进进度条（累计顶进/标段里程）
@@ -623,12 +685,14 @@
 ## 4. 小程序页面级规范（企业微信）
 
 ### 4.0 设计基准与参考
+
 - 企业微信样式规范参考：`https://developer.work.weixin.qq.com/document/path/90305`
 - TDesign 小程序组件库参考：`https://tdesign.tencent.com/miniprogram/`
 - 设计目标：在企业微信容器内保持原生一致性（轻量、清晰、可读），同时通过 TDesign 提升组件一致性与交互反馈质量。
 - 落地策略：业务结构保持现有 Phase 10 信息架构，仅重塑视觉层与交互层，不改变后端接口契约。
 
 ### 4.1 页面总索引
+
 - 工作台（Tab1）：`packages/miniapp/pages/index/index`
 - 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
 - 公司资产盘库：`packages/miniapp/pages/warehouse-stocktake/index`
@@ -656,6 +720,7 @@
 - 通知消息：`packages/miniapp/pages/notice/index`
 
 ### 4.2 页面要求
+
 - 工作台Tab：首页展示红黄绿 KPI、九宫格高频入口，并支持角色化“创建项目”入口。
 - 库房Tab：聚合库房与资产管理入口（出入库制单、调度看板、库存预警、资产查验、公司资产盘库），不承载项目/现场内容。
 - 出入库制单（miniapp）对齐 Web：支持多条目购物车（设备+耗材同单提审），不再限制单据仅单一设备类型。
@@ -696,6 +761,7 @@
   - 班次统一使用中文选项（白班/夜班），内部存储使用英文值（day/night）。
 
 ### 4.2.1 Miniapp UI 重构落地点（2026-02）
+
 - 全局视觉系统：`packages/miniapp/app.wxss`
   - 补齐红黄绿语义色、放大触控区、统一 KPI 卡片样式。
   - 新增全局悬浮语音助手 FAB 样式（呼吸动画）。
@@ -733,6 +799,7 @@
   - `packages/api/src/routes/survey.ts`：现场勘查提交支持 `operator` 角色
 
 ### 4.2.2 Miniapp 语音助手联动（2026-02）
+
 - 后端语音能力：
   - 新增 `packages/api/src/routes/voice.ts`
   - `POST /api/v1/voice/stt`：提交语音识别任务（基于 AI Slot task_queue）
@@ -753,6 +820,7 @@
     - `packages/miniapp/pages/reimbursement/index.js`
 
 ### 4.2.3 进度看板项目选择优化（2026-02）
+
 - miniapp 项目进度看板改为“项目名称下拉”而非“输入项目编号”：
   - `packages/miniapp/pages/progress/index.js`
   - `packages/miniapp/pages/progress/index.wxml`
@@ -764,16 +832,19 @@
 ### 4.3 TDesign 组件库使用规范（小程序）
 
 #### 4.3.1 全局接入
+
 - 依赖：`packages/miniapp/package.json` 使用 `tdesign-miniprogram`。
 - 全局样式入口：`packages/miniapp/app.wxss` 通过 `@import "tdesign-miniprogram/common/style/index.wxss";` 引入。
 - 全局组件注册：`packages/miniapp/app.json` 统一注册 `t-button`、`t-tag`、`t-empty`、`t-divider`、`t-loading`、`t-cell`、`t-cell-group`、`t-notice-bar`。
 
 #### 4.3.2 视觉与排版规范
+
 - 页面背景采用低对比浅灰（`#f3f5f8`），信息承载用白卡片，强调层级优先通过字重和间距，不依赖重阴影。
 - 标题层级：页面主标题 `32rpx/600`，说明文字 `24rpx`，保持企业场景高可读性。
 - 间距节奏采用 8 的倍数（8/16/24/32rpx），页面边距 `24rpx`，关键动作区留足触控空间。
 
 #### 4.3.3 组件映射（页面级）
+
 - 工作台 `packages/miniapp/pages/index/index.wxml`：`t-button` + 统计卡片 + 分区入口网格。
 - 日志中心 `packages/miniapp/pages/log/index.wxml`：`hy-panel-card` + 快捷入口，完成角色分流。
 - 操作员日志 `packages/miniapp/pages/operator-log/index.wxml`：`hy-project-picker`、日期选择、班次中文选择、`t-button`，强化“预填-校对-提交”。
@@ -798,6 +869,7 @@
 - 个人中心 `packages/miniapp/pages/profile/index.wxml`：`t-notice-bar`、`t-button`，支持联调配置与安全退出。
 
 #### 4.3.6 业务组件下沉规范（components/）
+
 - 业务组件目录：`packages/miniapp/components/business/`
 - 组件分层原则：
   - `panel-card`：统一页面区块容器（标题、副标题、内容 slot），用于替代页面内重复 `.card + .title + .sub` 结构。
@@ -810,6 +882,7 @@
   - 状态短信息优先使用 `hy-status-chip`，禁止页面内直接堆叠零散 `t-tag` 并各自定义色值。
 
 #### 4.3.4 交互与反馈规范
+
 - 异步操作统一：按钮 `loading + disabled`，避免重复提交。
 - 危险/不可逆动作：必须二次确认（弹窗）后执行。
 - 空数据态：统一使用 `t-empty`；非空态优先卡片或 `t-cell` 展示。
@@ -817,11 +890,13 @@
 - 表单字段：必填项在标签侧使用 `required` 语义标记，与前端校验规则一致。
 
 #### 4.3.5 图标与入口信息密度优化
+
 - 入口型页面（项目/财务/库房/日志中心）统一使用“图标 + 标题 + 说明”三段式入口卡片，提升扫描效率。
 - 卡片标题支持图标（`hy-panel-card` 的 `icon` 属性），确保区块语义一眼可辨。
 - 个人中心信息行使用图标前缀，降低纯文本信息疲劳。
 
 #### 4.3.5 禁止事项
+
 - 禁止页面内随意引入未注册的第三方 UI 组件，避免风格和交互碎片化。
 - 禁止在业务页硬编码大量独立色值，优先复用全局 tokens 与语义类。
 - 禁止以 toast 代替关键确认流程（删除、拒绝、转签等动作必须确认）。
@@ -829,6 +904,7 @@
 ### 4.4 小程序项目模块重构约束（新增）
 
 #### 4.4.1 页面与路径映射
+
 - 项目列表（重构后主入口）：`packages/miniapp/pages/index/index`
 - 项目列表（独立长列表页）：`packages/miniapp/pages/project-list/index`
 - 项目详情（新增）：`packages/miniapp/pages/project-detail/index`
@@ -837,6 +913,7 @@
 - 项目接口封装：`packages/miniapp/utils/request.js`
 
 #### 4.4.2 角色行为边界
+
 - 参与者（项目成员）：可见详情中的协同动作入口（按后端权限返回）。
 - 非参与者：允许浏览全部项目列表与详情，但详情必须是只读模式。
 - 非参与者禁止项：提交审批、提交财务类动作、库存/出入库写操作、配置型操作。
@@ -852,22 +929,26 @@
 - 下管数量交互：允许填写“本班下管数”或“累计下管数”任一项，前端自动联动推算另一项，并展示历史累计提示。
 
 #### 4.4.3 范围锁定（本期禁止变更）
+
 - 财务模块入口与行为保持不变：`packages/miniapp/pages/finance/index`
 - 库房模块入口调整为“库房管理工作台”并对齐 Web：`packages/miniapp/pages/{warehouse,warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index`
 - 本期允许调整仅限项目模块的信息架构、页面跳转与只读提示层。
 
 ### 4.2.4 审批状态可视化补齐（2026-03）
+
 - 小程序审批页补齐三视图切换：`packages/miniapp/pages/approval/index.wxml`
 - 小程序审批页状态数据与动作联动：`packages/miniapp/pages/approval/index.js`
 - 小程序审批页状态样式与分段标签：`packages/miniapp/pages/approval/index.wxss`
 
 ### 3.13 审批流程初始化与状态视图补齐（2026-03）
+
 - 审批模板页新增“一键初始化默认流程”入口：`packages/web/src/views/approval/template-config.vue`
 - 审批中心列表补齐实例状态/动作中文态与筛选联动：`packages/web/src/views/approval/index.vue`
 - 审批 API 参数扩展（biz_type/keyword/status）：`packages/web/src/api/approval.ts`
 - 审批初始化 API 封装：`packages/web/src/api/admin.ts`
 
 ### 3.14 合同详情与审批AI视图增强（2026-03）
+
 - 合同详情页附件录入从 JSON 文本改为“拖拽上传 + 预览/下载”文件管理：`packages/web/src/views/finance/contract/detail.vue`
 - 合同详情页在审批进行中显示锁定提示，并禁用可编辑字段与保存动作：`packages/web/src/views/finance/contract/detail.vue`
 - 合同金额输入改为普通数字输入框，输入后实时显示加粗中文大写金额：`packages/web/src/views/finance/contract/detail.vue`
@@ -876,6 +957,7 @@
 - 审批详情响应类型扩展 AI关卡结果字段：`packages/web/src/api/approval.ts`、`packages/api/src/types/approval.ts`、`packages/api/src/services/approval/engine.ts`
 
 ### 3.15 AI关卡卡点处置能力（2026-03）
+
 - 新增超管 AI 关卡任务管理视图（全量列表、状态筛选、关键字查询）：`packages/web/src/views/admin/ai-gate-tasks.vue`
 - 新增超管手动处置动作（放行/驳回/补充意见）：`packages/web/src/views/admin/ai-gate-tasks.vue`
 - 新增后端 AI关卡任务管理 API：`packages/api/src/routes/admin.ts`
@@ -884,11 +966,13 @@
 - 新增 Runner 手动激活 API：`packages/api/src/routes/admin.ts`
 
 ### 3.16 智能发单台附件必传与成功回跳（2026-03）
+
 - 智能发单台新增合同附件、付款附件上传区，支持拖拽上传并在页内展示附件清单：`packages/web/src/views/finance/payment/wizard.vue`
 - 发起校验收敛：合同流必须存在合同附件；直接付款必须存在付款附件；启用“首笔预付款”时必须存在首笔付款附件：`packages/web/src/views/finance/payment/wizard.vue`
 - 提交流程保持“创建并提审”闭环后自动跳转到刚创建的详情页（合同跳转合同详情，付款跳转付款详情）：`packages/web/src/views/finance/payment/wizard.vue`
 
 ### 3.17 发单台与付款详情审批可用性增强（2026-03）
+
 - 智能发单台合同流字段补齐为“合同审查前置采集”模式：合同类型、经办人、合同日期、主体、对方单位、合同附件在发起前完成填写，减少提交后补录：`packages/web/src/views/finance/payment/wizard.vue`
 - 智能发单台“合同+同步付款”场景改为仅填写付款额外字段（首笔金额、付款类别、付款日期、付款方式、付款事由、首笔附件），不再重复填写合同内字段：`packages/web/src/views/finance/payment/wizard.vue`
 - 智能发单台“直接付款”场景要求完整付款审批字段（类别/日期/方式/内容/附件）后方可提交：`packages/web/src/views/finance/payment/wizard.vue`
@@ -898,24 +982,28 @@
 - 付款详情审批中锁定业务字段，但保留附件补传能力；审批中禁删附件以支持补传付款凭证：`packages/web/src/views/finance/payment/detail.vue`
 
 ### 3.18 审批提交设置可视化改造（2026-03）
+
 - 合同详情与付款详情的“审批提交设置”改为可视化表单优先（审批摘要、临时审批人多选、审批说明），降低 JSON 配置心智负担：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 - JSON 高级模式仅对 `super_admin` 暴露，其他角色仅可使用可视化模式：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 - 可视化模式新增“审批说明常用模板”下拉，支持一键填充审批说明文本以提升提审效率：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 
 ### 3.19 对外付款附件上传链路修复（2026-03）
+
 - 对外付款相关页面的附件上传 URL 统一通过 API 基地址解析，避免在生产环境命中前端网关导致 `PUT` 请求 `405`：`packages/web/src/api/upload.ts`
 - 对外付款页（付款详情、智能发单台、合同详情）上传逻辑统一改为使用解析后的绝对上传地址：`packages/web/src/views/finance/payment/detail.vue`、`packages/web/src/views/finance/payment/wizard.vue`、`packages/web/src/views/finance/contract/detail.vue`
 
 ### 3.20 审批台申请详情增强与AI关卡上下文修复（2026-03）
+
 - 审批详情页新增按业务类型展示申请明细：
   - 付款申请：显示付款关键字段与附件清单（可直接查看附件）
   - 合同申请：显示合同关键字段与附件清单
   - 报销批次：显示批次关键字段与明细项列表
-  对应文件：`packages/web/src/views/approval/detail.vue`
+    对应文件：`packages/web/src/views/approval/detail.vue`
 - AI关卡任务载荷补齐业务上下文与申请摘要，避免模板变量 `context` 为空导致模型拒绝判断：`packages/api/src/services/approval/engine.ts`、`packages/api/src/services/approval/executors.ts`
 - 提交审批时后端补齐结构化上下文（申请内容、金额、对象信息、附件元信息）供 AI 关卡判定使用：`packages/api/src/routes/payment.ts`、`packages/api/src/routes/contract.ts`、`packages/api/src/routes/reimbursement.ts`
 
 ### 3.21 AI关卡附件正文理解增强（2026-03）
+
 - `approval_ai_gate` 任务启用附件正文处理链路：与 `contract_review` 一致支持附件下载、正文抽取与视觉回退：`task-runner/runner/executor.py`
 - 文件处理策略：
   - `docx`：直接提取段落文本
@@ -925,11 +1013,13 @@
 - 提示词变量渲染增强：对象变量（如 `context`）改为 JSON 字符串渲染，避免模板出现 `[object Object]`：`packages/api/src/services/ai-slot.ts`
 
 ### 3.22 流转台附件下载与快速预览优化（2026-03）
+
 - 流转台审批详情附件链接改为绝对 API 地址，修复点击下载跳转首页问题：`packages/web/src/views/approval/detail.vue`
 - 流转台新增附件抽屉预览能力，支持 PDF/图片/TXT 快速内嵌预览，其他格式保留下载打开：`packages/web/src/views/approval/detail.vue`
 - AI关卡 context 兜底增强：当业务侧未显式提供 context 时，后端自动补齐最小上下文（biz_type/biz_id/biz_summary），避免空 context 导致模型拒绝：`packages/api/src/services/approval/engine.ts`、`packages/api/src/services/approval/executors.ts`
 
 ### 3.23 AI审批台结果展示优化与北京时间统一（2026-03）
+
 - AI审核结果表格精简为核心信息：节点、状态（中文）、结论（建议通过/建议拒绝/建议补充材料）、总结（comment）、完成时间：`packages/web/src/views/approval/detail.vue`
 - 审批流程线中 AI 节点动作改为建议性结论文案，并在同一行追加 comment：`packages/web/src/views/approval/detail.vue`
 - AI关卡任务总览（超管页）状态与动作文案中文化，时间统一北京时间：`packages/web/src/views/admin/ai-gate-tasks.vue`
@@ -937,6 +1027,7 @@
 - AI审核结果新增 `summary` JSON 兼容解析（回填 outcome/comment），避免历史数据顶层字段为空导致“结论/总结”空白：`packages/web/src/views/approval/detail.vue`
 
 ### 3.24 Web付款无合同阈值放行与审批明细名称化（2026-03）
+
 - 智能发单台（阈值内）支持“无合同/无需合同”选项，仍可按需关联已有合同，且提交时强校验超阈值必须走合同流：`packages/web/src/views/finance/payment/wizard.vue`
 - 智能发单台在选择已有关联合同时，实时显示合同可用额度（`total_amount - paid_amount`），并在提交前前端拦截“申请金额超过合同可用额度”的场景：`packages/web/src/views/finance/payment/wizard.vue`
 - 付款申请后端支持 `contract_id` 可空，并在无合同时按 `payment_request` 阈值规则校验金额上限：`packages/api/src/routes/payment.ts`、`packages/api/src/types/contract.ts`
@@ -946,12 +1037,14 @@
 - Web 付款 API 类型同步支持可空合同：`packages/web/src/api/payment.ts`
 
 ### 3.25 Web 付款详情与发单提交可用性加固（2026-03）
+
 - 付款详情附件“查看/下载”统一改为绝对 API 地址并补齐下载属性，修复工作台路由下点击附件误跳转问题：`packages/web/src/views/finance/payment/detail.vue`
 - 付款详情新增超管“废除付款”动作（危险确认 + 状态刷新），补齐高权限终止路径：`packages/web/src/views/finance/payment/detail.vue`、`packages/web/src/api/payment.ts`
 - 后端新增 `POST /api/v1/payment/:id/void`（仅 `super_admin`），废除时同步取消在途审批任务/实例，已付款场景回退合同 `paid_amount`：`packages/api/src/routes/payment.ts`、`packages/api/src/services/event-bus.ts`
 - Web 智能发单台提交动作补齐防重与反馈统一：提交中 loading、成功提示“提交成功”并返回上一级、失败提示“提交失败，请重试”：`packages/web/src/views/finance/payment/wizard.vue`
 
 ### 4.5 小程序审批端与Web审批台信息对齐（2026-03）
+
 - 小程序审批中心从“仅列表+动作”升级为“可展开审批详情”，补齐与 Web 一致的决策关键信息：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`、`packages/miniapp/pages/approval/index.wxss`
 - 详情弹层补齐业务摘要与流程信息：审批编号、业务类型、发起人、状态、提交流转时间、节点意见与动作：`packages/miniapp/pages/approval/index.wxml`
 - 按业务类型展示申请明细：付款/合同/报销批次字段对齐 Web 审批详情，降低跨端歧义：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`
@@ -960,12 +1053,14 @@
 - 时间统一：小程序审批页时间统一转换并显示为北京时间 `YYYY-MM-DD HH:mm:ss`：`packages/miniapp/pages/approval/index.js`
 
 ### 4.6 小程序审批中心重构（去快速审批，详情页闭环）（2026-03）
+
 - 审批中心列表页重构为“轻量卡片导航”，移除列表内快速审批动作，减少文字堆叠与误触：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`、`packages/miniapp/pages/approval/index.wxss`
 - 新增独立审批详情页，所有审批动作（通过/驳回/退回/转签）在详情页完成，形成直觉闭环：`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
 - 路由补齐：新增小程序审批详情页面注册：`packages/miniapp/app.json`
 - 首页入口文案同步更新为“进入审批中心查看详情”，与新交互一致：`packages/miniapp/pages/index/index.js`
 
 ### 4.7 小程序审批详情视觉减负优化（2026-03）
+
 - 审批详情页面按信息域分色分区（摘要/业务明细/附件/AI结果/流程/操作意见），并增加板块分界线，降低视觉疲劳：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
 - 信息点改为 dot + key/value 结构，并对关键值使用 tag（如业务类型、状态、AI结论）做颜色提示：`packages/miniapp/pages/approval-detail/index.wxml`
 - 底部补齐固定操作栏，提供清晰、持续可见的审批动作按钮，避免长页滚动后找不到操作入口：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
@@ -974,48 +1069,56 @@
 - 底部操作布局优化为单排 40/40/20（通过/退回/更多），其余动作收纳到“更多”弹层，减少主操作区噪音：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxss`
 
 ### 4.8 工作台待办入口与提醒模块优化（2026-03）
+
 - 工作台 `#/workspace/home` 顶部“待我审批”按钮改为带气泡未完成数，便于快速感知待办压力：`packages/web/src/views/welcome/index.vue`
 - “待我审批”按钮从原目标页收敛到统一审批台入口：`/approval/index`，避免进入信息不足页面：`packages/web/src/views/welcome/index.vue`
 - “我的待办提醒”模块由时间线改为可点击卡片列表 + 状态点样式，支持点击条目直达审批详情：`packages/web/src/views/welcome/index.vue`
 - “我的待办提醒”标题追加未完成数量（与按钮气泡一致），并保留“进入统一审批台”快捷入口：`packages/web/src/views/welcome/index.vue`
 
 ### 4.9 审批结束锁定规则前端防回退加固（2026-03）
+
 - 合同详情与付款详情的审批锁定判定收敛为共享 helper，避免页面各自维护条件导致回退：`packages/web/src/views/finance/shared/approvalLock.ts`、`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 - 两个详情页新增“超管编辑模式开启后将强制留痕”的显式提示，降低误操作风险：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 - 付款详情上传控件状态与文案对齐：审批中允许补传附件（仍禁止删除），避免“提示可上传但控件禁用”的冲突：`packages/web/src/views/finance/payment/detail.vue`
 
 ### 4.10 审批申请明细（付款）可读性与动作防重入（2026-03）
+
 - 审批详情页“申请明细（付款）”中的付款类别、付款方式统一中文化显示，避免原始值直出：`packages/web/src/views/approval/detail.vue`
 - 审批详情页“申请明细（付款）”的关联合同改为可点击链接，直接跳转合同详情页：`packages/web/src/views/approval/detail.vue`
 - 合同详情与付款详情在审批进行中/审批已结束时禁用“提交审批”“触发AI审查/风险评估”按钮，防止重复提审与不必要 AI 消耗：`packages/web/src/views/finance/contract/detail.vue`、`packages/web/src/views/finance/payment/detail.vue`
 
 ### 4.11 超管审批流程强制改派（2026-03）
+
 - 审批详情流程线为 `super_admin` 增加“强制改派”入口，仅对待处理人工任务显示，支持直接替换当前审批人：`packages/web/src/views/approval/detail.vue`
 - 审批详情新增“强制改派审批人（超管）”弹窗，要求填写改派原因并选择目标审批人，提交后即时刷新流程：`packages/web/src/views/approval/detail.vue`
 - 新增超管专用后端接口 `POST /api/v1/approval/:id/force-transfer`，强制改派会写入 `approval_transfer` 留痕并标记来源：`packages/api/src/routes/approval.ts`、`packages/api/src/services/approval/operations.ts`、`packages/api/src/types/approval.ts`、`packages/web/src/api/approval.ts`
 
 ### 4.14 审批台附件补传（2026-03）
+
 - 审批详情页支持在审批台直接上传附件到对应业务数据（当前支持付款申请、合同审批）：`packages/web/src/views/approval/detail.vue`
 - 前端新增审批附件上传 API：`packages/web/src/api/approval.ts`
 - 后端新增 `POST /api/v1/approval/:id/attachments`，按审批实例定位业务并写回 `attachments_json`，限制为“当前待处理审批人或超管”可操作：`packages/api/src/routes/approval.ts`
 
 ### 4.12 正式发票签发附件化与自动回填（2026-03）
+
 - 发票签发弹窗收敛为“上传发票附件 + 备注”，去除开票日期、发票代码、号码、校验码、金额等人工输入项：`packages/web/src/views/finance/receipt/invoice.vue`
 - 签发接口改为仅要求 `file_key`，签发后自动触发 `ocr_extract` 任务进行二维码/OCR解析并回填发票字段：`packages/api/src/routes/receipt.ts`、`packages/web/src/api/receipt.ts`
 - 发票校验状态接口在任务完成后会同步回填 `invoice_code/invoice_number/check_code/issue_date/amount_with_tax/title/tax_no/qr_code`，并保留匹配结果：`packages/api/src/routes/receipt.ts`
 - OCR 默认抽取 schema 补充 `invoice_code/check_code/qr_code_text`，提升回填完整度：`task-runner/runner/executor.py`
 
 ### 4.13 财务快照看板多维升级（2026-03）
+
 - 快照看板升级为多维分析视图，支持按时间（按月/按年）、项目、办公室行政、业务类型筛选：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 新增管理分析指标：对外付款/对内付款/收款三类金额、完成量、待处理量，以及全口径资金总额：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 新增图表：
   - 趋势图（时间维度堆叠柱 + 合计折线）
   - 结构图（业务占比环形图）
-  文件：`packages/web/src/views/finance/receipt/dashboard.vue`
+    文件：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 新增“明细追踪”表：展示业务类型、单号、项目、办公室行政、金额、状态、业务时间、最近追踪时间、追踪信息；点击单号可跳转对应业务页面：`packages/web/src/views/finance/receipt/dashboard.vue`
 - 新增后端聚合接口 `GET /api/v1/dashboard/finance-snapshot`，统一输出 summary/charts/details/pagination，支撑前端一屏分析与钻取：`packages/api/src/routes/dashboard.ts`、`packages/web/src/api/dashboard.ts`
 
 ### 4.14 报销信封生命周期重构（2026-03）
+
 - 预生成实物信封改为“未登记”状态，现场人员在发起报销时扫码登记并绑定填报人，避免批量生成阶段提前占用身份：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
 - 新增实物信封提交动作 `POST /api/v1/reimbursement/:id/submit`：要求已登记且至少有一个附件后才能提交，并自动触发 OCR/异常检测任务：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/detail.vue`
 - 电子发票上传改为直达“已接收”阶段，并在入池后立即触发 AI 审计链路（OCR + 异常检测）：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
@@ -1023,6 +1126,7 @@
 - 小程序报销流程对齐 Web 个人报销：新增“我的报销提交”列表页，并将详情页统一为“保存草稿 → 上传附件（实物/电子）→ 提交报销”闭环：`packages/miniapp/pages/reimbursement-list/index.{js,wxml,wxss}`、`packages/miniapp/pages/reimbursement/index.{js,wxml,wxss}`
 
 ### 4.15 报销前端角色化流程重组（2026-03）
+
 - 报销入口页改为角色化多视图（员工/办公室/财务），降低“同页混合多角色动作”的理解成本：`packages/web/src/views/finance/reimbursement/list.vue`
 - 员工视图默认锁定“我的提交”（按当前用户过滤），并提供发起报销入口（实物信封/电子发票）与 UUID 快速打开：`packages/web/src/views/finance/reimbursement/list.vue`
 - 办公室视图聚焦 submitted/received 阶段处理，直达预审工作台与查重中心：`packages/web/src/views/finance/reimbursement/list.vue`
@@ -1030,11 +1134,13 @@
 - 路由权限收敛：报销集中审批入口移除 operator，仅保留 super_admin/manager/site_manager/finance：`packages/web/src/router/modules/finance.ts`
 
 ### 4.16 对内付款路由精简与工作台入口迁移（2026-03）
+
 - 员工报销入口迁移至个人工作台，新增“我的报销”路由与详情路由：`packages/web/src/router/modules/workspace.ts`、`packages/web/src/views/welcome/index.vue`
 - 对内付款主路由限定为办公室/领导/财务页面，移除 operator 在该主路由下的入口角色：`packages/web/src/router/modules/finance.ts`
 - 对内付款路由下移除“预审工作台”“查重中心”独立页面入口，改为业务页内联处理：`packages/web/src/router/modules/finance.ts`、`packages/web/src/views/finance/reimbursement/list.vue`
 
 ### 4.17 Miniapp 智能发单台全面对齐（2026-03）
+
 - miniapp 对外付款页重构为“阈值识别 + 双流程（直付/合同）”的一体化页面，阈值内直接创建付款并提审，超阈值自动转合同流程：`packages/miniapp/pages/payment-apply/index.{js,wxml,wxss,json}`
 - 直付流程字段与 Web 对齐：合同（可选）、项目、收款方、付款日期、付款类别、付款方式、付款事由、备注、附件（图片/文件）与提交审批动作：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
 - 合同流程字段与 Web 对齐：项目、我方主体、对方单位、经办人、合同日期、合同类型、合同附件，并支持“同时发起首笔预付款”子流程（金额/类别/日期/方式/事由/附件）：`packages/miniapp/pages/payment-apply/index.{js,wxml}`
@@ -1047,10 +1153,12 @@
 - 首笔预付款类别在 UI 使用中文标签（预付款/进度款/结算款），提交值保留后端枚举（`prepayment/progress/settlement`），兼顾可读性与接口契约：`packages/miniapp/pages/payment-apply/index.js`
 
 ### 4.18 Miniapp 项目选择去 GPS 化（指定流程）（2026-03）
+
 - `智能发单台` 与 `我的报销提交` 两个流程中的项目选择禁用 GPS 定位匹配按钮，仅保留人工选择与刷新：`packages/miniapp/pages/payment-apply/index.wxml`、`packages/miniapp/pages/reimbursement/index.wxml`
 - `hy-project-picker` 新增 `enableGps` 配置项（默认开启）；业务页可按流程关闭 GPS 匹配而不影响其他页面：`packages/miniapp/components/business/project-picker/index.{js,wxml}`
 
 ### 4.19 Miniapp 一键催办（审批人可选 + 二次企微推送）（2026-03）
+
 - 个人中心“一键催办”由静态按钮改为真实催办流程：先选择审批单，再选择待审批人，最后确认发送催办：`packages/miniapp/pages/profile/index.{js,wxml}`
 - 新增审批可催办列表接口 `GET /api/v1/approval/remindable`（发起人视角，仅返回仍在处理中的审批及其待审批任务）：`packages/api/src/routes/approval.ts`
 - 新增催办动作接口 `POST /api/v1/approval/:id/urge`，允许发起人（及管理角色）对指定 pending task 发起二次提醒：`packages/api/src/routes/approval.ts`、`packages/api/src/types/approval.ts`
@@ -1058,11 +1166,13 @@
 - 催办推送结果写入事件日志（`wecom_template_card_urge_sent` / `wecom_template_card_urge_failed`），便于后续运营与审计追踪：`packages/api/src/routes/approval.ts`
 
 ### 4.20 Miniapp 图标字体网络依赖收敛（2026-03）
+
 - 个人中心与业务卡片组件移除直接 `t-icon` 依赖，改为本地图标字符展示，避免渲染层外网字体请求：`packages/miniapp/pages/profile/index.{wxml,wxss}`、`packages/miniapp/components/business/panel-card/index.{wxml,wxss,json}`
 - 全局组件注册移除 `t-icon` 显式挂载，减少页面级无必要 icon 组件装载：`packages/miniapp/app.json`
 - TDesign icon 样式中的远程字体源替换为本地 fallback，避免 `tdesign.gtimg.com` 字体拉取失败报错：`packages/miniapp/tdesign-miniprogram/icon/icon.wxss`、`packages/miniapp/miniprogram_npm/tdesign-miniprogram/icon/icon.wxss`
 
 ### 4.21 Miniapp 四大板块汉化补齐（2026-03）
+
 - 资金流出与审批详情补齐枚举汉化：付款类别、付款方式、合同方向、合同类型统一展示中文标签，不再直出后端英文枚举：`packages/miniapp/pages/approval-detail/index.{js,wxml}`
 - 库房板块补齐状态汉化：调度看板与库存列表改为中文状态文案（草稿/待审批/已执行/预警等），避免展示原始状态码：`packages/miniapp/pages/warehouse-dispatch/index.{js,wxml}`、`packages/miniapp/pages/warehouse-inventory/index.{js,wxml}`
 - 工作台下项目链路补齐班次/状态汉化：标段详情日志中的班次显示改为白班/夜班，项目与标段状态未知兜底统一中文：`packages/miniapp/pages/project-section/index.{js,wxml}`、`packages/miniapp/pages/project-detail/index.js`、`packages/miniapp/pages/project-list/index.js`
@@ -1070,45 +1180,54 @@
 - 资产板块补齐候选设备状态汉化：设备候选列表状态不再显示英文枚举值：`packages/miniapp/pages/asset/index.{js,wxml}`
 
 ### 4.22 Miniapp 员工加油申请入口与 Web 对齐（2026-03）
+
 - 审批与申请页（发起申请分段）新增“员工加油申请”入口卡片，形成与 Web `油卡额度申请` 等价入口：`packages/miniapp/pages/finance/index.wxml`
 - 审批与申请页语音助手菜单新增“我要发起加油申请”快捷动作：`packages/miniapp/pages/finance/index.js`
 - 新增“员工加油申请”页面，字段与 Web 保持一致：所用车辆、申请额度、车辆里程、现场照片，提交后展示我的申请记录：`packages/miniapp/pages/fuel-apply/index.{js,wxml,wxss,json}`
 - 小程序路由注册补齐：`packages/miniapp/app.json`
 
 ### 4.23 Miniapp 办公室报销扫码核查页（2026-03）
+
 - 新增办公室专用页面“信封扫码核查”，支持扫码信封 UUID 二维码后快速打开对应报销电子档案（自动定位并跳转详情）：`packages/miniapp/pages/reimbursement-archive/index.{js,wxml,wxss,json}`
 - 页面同时支持手动输入/粘贴 UUID（含扫码链接自动提取 `envelope_uuid`），并维护最近核查记录列表，方便连续核查：`packages/miniapp/pages/reimbursement-archive/index.js`
 - 流程入口补齐：审批与申请页（发起申请分段）新增“信封扫码核查”卡片，并在语音助手菜单新增快捷动作：`packages/miniapp/pages/finance/index.{js,wxml}`
 - 小程序路由注册补齐：`packages/miniapp/app.json`
 
 ### 4.24 Miniapp 待我审批直出列表（2026-03）
+
 - 流程页“待我审批”分段移除“统一审批列表 / AI 摘要卡片”二选一入口，改为页内直接展示待审批实例列表：`packages/miniapp/pages/finance/index.wxml`
 - 新增待审批列表数据加载与映射（类型、状态、节点、提交时间），点击列表项直接进入审批详情：`packages/miniapp/pages/finance/index.js`
 - 增加待审批列表空态与加载态样式，避免分段切换后的空白感：`packages/miniapp/pages/finance/index.wxss`
 
 ### 4.25 项目创建编号与项目经理选择优化（2026-03）
+
 - Web 项目立项支持项目编号自动生成（页面默认预填 + 一键重新生成）；提交时若编号为空则由后端自动补齐：`packages/web/src/views/project/create.vue`、`packages/api/src/routes/project.ts`
 - Web 项目经理选择改为“按姓名显示、按 userid 回填提交”：`packages/web/src/views/project/create.vue`
 - Miniapp 项目创建页项目经理输入框改为下拉选择（显示姓名、回填 userid），并同步支持项目编号自动生成：`packages/miniapp/pages/project-create/index.{js,wxml}`
 
 ### 4.26 合同详情附件跳转修复与经办人显示收敛（2026-03）
+
 - 合同详情附件“预览/下载”链接改为绝对 API 地址，避免在个人工作台 hash 路由下被前端路由吞掉导致跳转错误：`packages/web/src/views/finance/contract/detail.vue`
 - 合同详情“经办人”下拉展示改为仅姓名，提交值继续使用 `userid`，降低选择噪音：`packages/web/src/views/finance/contract/detail.vue`
 
 ### 4.27 Miniapp 智能发单台提交反馈统一（2026-03）
+
 - 小程序智能发单台直付/合同两条提交流程统一为：提交中 loading 防重、成功提示“提交成功”并返回上一级、失败提示“提交失败，请重试”：`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/pages/payment-apply/index.wxml`
 
 ### 4.28 Web 付款详情超管“重新激活”能力（2026-03）
+
 - 付款详情新增超管“重新激活”按钮，仅在已废除（`cancelled`）状态显示可用；激活后恢复草稿态并可重新提审：`packages/web/src/views/finance/payment/detail.vue`
 - 前端付款 API 新增 `reactivatePayment(id)`：`packages/web/src/api/payment.ts`
 - 后端新增 `POST /api/v1/payment/:id/reactivate`（仅 `super_admin`），将已废除付款恢复为 `draft`，清理旧审批实例关联并保留审计留痕：`packages/api/src/routes/payment.ts`
 - 事件总线新增 `PAYMENT_REACTIVATED` 事件类型，支持后续审计与自动化订阅：`packages/api/src/services/event-bus.ts`
 
 ### 4.29 Miniapp 实物报销 UUID 提交闸门加固（2026-03）
+
 - 小程序个人报销提交在实物信封通道下新增“有效 UUID”强校验：创建草稿与提交动作均要求 UUID 为合法格式，拦截占位符/无效值：`packages/miniapp/pages/reimbursement/index.js`
 - 扫码录入 UUID 支持从扫码结果中自动提取 `envelope_uuid` 参数或 UUID 片段，无法识别时直接阻断提交流程：`packages/miniapp/pages/reimbursement/index.js`
 
 ### 4.30 Miniapp 报销与审批防重/加载兜底（2026-03）
+
 - 报销附件支持“提交前删除”：报销详情附件列表新增删除按钮，仅在 `draft/unregistered` 状态可用，误选图片可即时移除：`packages/miniapp/pages/reimbursement/index.{js,wxml}`、`packages/api/src/routes/reimbursement.ts`
 - 报销提交防重补强：提交请求增加 `Idempotency-Key`，且后端对已提交状态返回幂等成功，避免重复点击/网络抖动重复提交：`packages/miniapp/pages/reimbursement/index.js`、`packages/api/src/routes/reimbursement.ts`
 - 电子发票创建态修正：电子发票上传后保持 `draft`，OCR 回填不再自动推进为 `submitted`，确保员工确认后再提交并避免旧数据污染：`packages/api/src/routes/reimbursement.ts`
@@ -1117,12 +1236,14 @@
 - 后端提交兜底校验：`POST /api/v1/reimbursement/:id/submit` 在 `physical` 通道下强制校验已绑定 UUID 格式，不满足则拒绝提交：`packages/api/src/routes/reimbursement.ts`
 
 ### 4.31 Miniapp 报销提交流程去歧义（2026-03）
+
 - 报销提交页字段顺序调整：`报销通道` 前置到 `绑定信封 UUID` 上方，保持“先选通道、再录 UUID”的心智顺序：`packages/miniapp/pages/reimbursement/index.wxml`
 - 状态芯片简化：报销页顶部不再展示 `PDF状态` 与 `批次`，仅保留提交人必需的进度信息（报销ID/识别号/状态/核验/附件数）：`packages/miniapp/pages/reimbursement/index.wxml`
 - 上传入口统一：将“上传附件(图片/文件)”与“上传电子发票（自动识别）”收敛为单一按钮“上传文件（统一入口）”，按报销通道自动分流（电子通道走自动识别，实物通道弹出图片/文件选择）：`packages/miniapp/pages/reimbursement/index.{js,wxml}`
 - 全局助手动作同步：浮动助手中的上传动作改为统一入口，避免多上传动作并列造成误判：`packages/miniapp/pages/reimbursement/index.js`
 
 ### 4.32 Miniapp 报销上传格式扩展（2026-03）
+
 - 统一上传入口扩展支持范围：可上传 PDF、常见图片（JPG/JPEG/PNG/WEBP/GIF/BMP）及常见票据/扫描格式（TIFF/HEIC/HEIF/OFD/XML）：`packages/miniapp/pages/reimbursement/index.{js,wxml}`
 - 电子发票通道上传细分为“图片自动识别”与“PDF/票据文件自动识别”，同一入口下按用户选择分流：`packages/miniapp/pages/reimbursement/index.js`
 - 普通附件上传增加格式白名单拦截，超出范围时给出明确提示，减少无效上传重试：`packages/miniapp/pages/reimbursement/index.js`
@@ -1131,6 +1252,7 @@
 - 上传命名兜底：当临时文件路径无扩展名（如 `wxfile://tmp_*`）时自动回退 `.bin`，并优先使用原文件名推断扩展名，避免签名文件名异常：`packages/miniapp/utils/upload.js`
 
 ### 4.33 报销后台静默审查流程重构（2026-03）
+
 - 后端静默审查改为“按票据附件逐张识别”模式：提交或办公室手动触发后，为每张附件创建独立 OCR 任务并记录识别轮次（`review_round`），支持二次静默审查全链路重跑：`packages/api/src/routes/reimbursement.ts`、`packages/api/migrations/0037_phase27_reimbursement_invoice_review_pipeline.sql`
 - 电子发票审查策略改为二维码优先：优先从二维码文本提取发票核心字段并持久化，重复比对新增 `invoice_no + invoice_date` 与 `qr_hash` 维度（保留风险分级与证据）：`packages/api/src/routes/reimbursement.ts`
 - 实体票据审查策略强化为 OCR/Vision 冗余：识别结果不完整或失败时写入办公室可读风险提示，并在静默审查结果中输出人工复核建议：`packages/api/src/routes/reimbursement.ts`
@@ -1139,16 +1261,19 @@
 - 手动重跑幂等兜底：二次静默审查接口支持 `Idempotency-Key`，防止重复点击导致并发重跑污染：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
 
 ### 4.34 报销识别结果可读化展示（2026-03）
+
 - 办公室“后台静默审查提示”中的“识别原始结果”改为“识别结果（可读版）”，不再直接展示 JSON 原文：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 识别结果展示内容结构化为中文摘要：审查轮次、票据识别统计、逐票据明细（发票号/日期/金额/来源/风险）、金额核对结论（申报金额 vs 识别合计 vs 差额）：`packages/web/src/views/finance/reimbursement/detail.vue`
 
 ### 4.35 Workspace 个人报销进度卡片改版（2026-03）
+
 - Web 个人工作台“我的报销进度”卡片移除“报销编号（envelope_no）”展示，改为“项目名称 + 金额”主标题：`packages/web/src/views/welcome/index.vue`
 - 展示形态由时间线改为点状条目列表，仅保留“审核中/待处理”条目，并在条目中展示“申报日期”：`packages/web/src/views/welcome/index.vue`
 - 报销条目状态口径修正：`submitted/received/batched/pending_approval` 统一归并为“审核中”，`unregistered/draft` 归并为“待处理”；进度条目过滤改为基于状态集合，避免状态标签变更导致误筛：`packages/web/src/views/welcome/index.vue`
 - 报销进度条目主标题支持点击跳转到对应报销详情（`/workspace/my-reimbursement/detail/:id`）：`packages/web/src/views/welcome/index.vue`
 
 ### 4.36 小程序文件上传入口改为“本地文件优先”（2026-04）
+
 - 报销页统一上传入口文案调整为“上传本地文件（统一入口）”，电子/实物通道动作项对应改为“上传本地PDF/票据文件（自动识别）”与“上传本地文件”，减少“会话文件”误解：`packages/miniapp/pages/reimbursement/index.{js,wxml}`
 - 智能发单台（对外付款）三处附件按钮文案统一调整为“上传本地文件”，与业务诉求一致：`packages/miniapp/pages/payment-apply/index.wxml`
 - 小程序文件选择封装新增本地文件选择能力 `wxChooseLocalFile`（优先 `wx.chooseFile` / `wx.miniapp.chooseFile`），并保留 `wxChooseMessageFile` 兼容实现用于会话文件场景：`packages/miniapp/utils/wx.js`
@@ -1156,10 +1281,12 @@
 - 客户端能力降级补偿：当本地文件选择能力不可用时，报销与智能发单台提供“从会话文件选择”兼容路径（需用户确认），避免上传流程硬失败：`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/utils/wx.js`
 
 ### 4.36 报销智能核查摘要防JSON泄露（2026-03）
+
 - 报销详情“智能核查摘要”优先解析 `ai_reasonability_summary` 与 `ai_reasonability.summary`，并输出办公室可读文本，不再以 JSON 兜底回显：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 摘要格式统一为：风险等级、结论、主要异常（分级）与建议动作（列表），避免多附件场景下暴露结构化原始对象：`packages/web/src/views/finance/reimbursement/detail.vue`
 
 ## 5. 组件与模块指向
+
 - 通用表格：`packages/web/src/components/Table/*`
 - 高级筛选条：`packages/web/src/components/FilterBar/*`
 - 审批轨迹：`packages/web/src/components/ApprovalTimeline/*`
@@ -1168,17 +1295,20 @@
 - 风险卡片：`packages/web/src/components/RiskCard/*`
 
 ## 6. 交互与风控要求
+
 - 危险动作必须二次确认。
 - 审批动作必须填写意见。
 - 金额输入必须实时格式化并展示金额大写。
 - AI 建议与业务规则告警必须分开展示。
 
 ## 7. 验收清单（页面级）
+
 - 每个页面都有对应路由、视图文件、接口指向。
 
 ## 8. 车辆油卡与公司实体增强（2026-03）
 
 ### 8.1 页面与路由映射
+
 - 公司实体管理（增强版）：`/admin/system-base/entity` → `packages/web/src/views/entity/index.vue`
 - 财务中心实体资料管理：`/finance/entity/profile` → `packages/web/src/views/entity/index.vue`
 - 油卡额度申请（员工入口）：`/finance/fleet/application` → `packages/web/src/views/finance/fleet/application.vue`
@@ -1190,6 +1320,7 @@
   - 该总览固定按全公司口径统计，不提供“公司实体”筛选控件，避免统计范围误解与空数据误判。
 
 ### 8.2 API 指向
+
 - 公司实体增强：`/api/v1/entity`、`/api/v1/entity/:id/attachments`、`/api/v1/entity/:id/storage-summary`
 - 车辆与油卡：`/api/v1/fleet/vehicles`、`/api/v1/fleet/fuel-cards`、`/api/v1/fleet/fuel-applications`
 - 油卡绑定与余额变动记录：`/api/v1/fleet/fuel-cards`（含绑定用户聚合字段）、`/api/v1/fleet/fuel-cards/:id/balance-logs`
@@ -1199,6 +1330,7 @@
 - 实体附件管理动作：上传/下载/删除（下载通过 `/api/v1/upload/object/:key`）
 
 ### 8.3 个人工作台员工闭环（2026-03）
+
 - 个人工作台首页保留入口：智能发单台、油卡额度申请、我的申请，支持普通员工从工作台直接发起并查看：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页布局收敛为“个人概览 + 关键数字 + 常用操作 + 待办/报销/证书内容区”，统一白底面板、8px 圆角与灰蓝文字体系，避免欢迎卡、待办卡、证书卡视觉风格割裂：`packages/web/src/views/welcome/index.vue`
 - 个人工作台首页已移除“我的内部收款信息 / 添加外部收款人 / 我的收款卡”相关入口与卡片，避免员工首页出现收款信息展示逻辑混乱：`packages/web/src/views/welcome/index.vue`
@@ -1211,6 +1343,7 @@
 - 对外付款列表接口新增 `mine/applicant_userid` 过滤，支持员工仅查看本人申请：`packages/api/src/routes/payment.ts`、`packages/web/src/api/payment.ts`
 
 ### 8.4 路由可见性规则收敛（2026-03）
+
 - 系统底层与引擎：仅 `super_admin` 可见（含服务监控中心）：`packages/web/src/router/modules/admin.ts`
 - 个人工作台：全部角色可见（`super_admin/manager/site_manager/finance/operator`）：`packages/web/src/router/modules/workspace.ts`
 - 项目与现场指挥：至少项目经理可见（`super_admin/manager/site_manager`）：`packages/web/src/router/modules/field.ts`、`packages/web/src/router/modules/project.ts`
@@ -1221,6 +1354,7 @@
 - 为保持全角色可新增外部收款人，后端 `POST /api/v1/payment/payee` 放开 `operator` 角色创建 `type=external`，`type=internal` 仍限制财务/管理角色：`packages/api/src/routes/payment.ts`
 
 ### 8.5 企业微信成员权限可视化（2026-03）
+
 - 企业微信集成页新增“每个成员权限状况”可视化：系统角色、角色识别来源、权限清单：`packages/web/src/views/wecom/member-admin.vue`
 - 企业微信联系人接口返回成员权限状态增强字段：`system_role`、`role_source`、`permissions`、`permission_status`：`packages/api/src/routes/auth.ts`
 - 页面顶部新增权限识别模式提示（企业微信标签增强成功/失败回退账号兜底）：`packages/web/src/views/wecom/member-admin.vue`
@@ -1229,16 +1363,19 @@
 - 样式 token 与状态语义一致，不出现颜色语义冲突。
 
 ### 8.6 Web 付款提交流程前端防重复提交（2026-03）
+
 - 对外付款 API 增强可选 `Idempotency-Key` 请求头透传，覆盖“创建付款申请”“提交付款审批”两个高风险动作：`packages/web/src/api/payment.ts`
 - 智能发单台在“直接付款”“合同流首笔预付款”场景新增前端幂等键复用（同一填写指纹重试复用同 key），防止网络抖动后重复点击造成多次创建/提审：`packages/web/src/views/finance/payment/wizard.vue`
 - 付款详情页“新建保存”“确认提交审批”新增前端幂等键复用与提交中防重入 loading，避免短时重试产生重复单：`packages/web/src/views/finance/payment/detail.vue`
 
 ### 8.7 Miniapp 全局防重复提交防护（2026-03）
+
 - 小程序请求层新增“写操作并发去重”机制：对 `POST/PUT/PATCH/DELETE` 按“方法+路径+业务载荷（或显式 dedupeKey）”合并并发请求，避免同一动作短时多次点击触发重复写入：`packages/miniapp/utils/request.js`
 - 小程序写操作默认自动补 `Idempotency-Key` 请求头，保证网络抖动与 relay fallback 场景下具备服务端幂等能力（同时保持 GET 读请求不受影响）：`packages/miniapp/utils/request.js`
 - 该策略覆盖资金流出、报销、审批、油卡、资产、库房等业务页所有通过 `request()` 发起的提交类动作：`packages/miniapp/pages/payment-apply/index.js`、`packages/miniapp/pages/reimbursement/index.js`、`packages/miniapp/pages/approval-detail/index.js`（及其他调用 `request` 的页面）
 
 ### 8.8 Miniapp 审批与申请-发起申请补齐“我发起的申请”（2026-03）
+
 - 小程序“审批与申请”页在“发起申请”分段仅保留“我发起的申请”入口卡片，不再在该页内直接摊平审批列表：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
 - 新增独立页面承载“我发起的申请”列表（审批视图，只读）：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss,json}`，并在 `packages/miniapp/app.json` 注册路由 `pages/approval-initiated/index`
 - 独立页面新增筛选能力：可按“流程类型 + 流程状态”过滤列表，默认状态筛选为“审批中（pending/in_progress）”：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
@@ -1247,12 +1384,14 @@
 - 审批详情页加载态/错误态解耦：慢网加载中仅显示“加载审批详情中”，仅在请求结束且失败后才显示“详情不存在或无权限”等兜底文案，避免首屏误判：`packages/miniapp/pages/approval-detail/index.{js,wxml}`
 
 ### 8.9 发起人流程监管（三分桶）补齐（2026-04）
+
 - Web「我的申请-我发起的审批」改造为发起人监管视图：按“被退回（待处理）/审批中/已完成”三分桶查看，并展示每个分组数量与当前分组列表：`packages/web/src/views/workspace/my-applications/index.vue`
 - Web 审批 API 封装新增发起人监管参数与汇总接口：`initiatedBucket` 参数、`GET /api/v1/approval/initiated/summary` 调用与类型：`packages/web/src/api/approval.ts`
 - Miniapp「我发起的申请」页面改造为同口径三分桶监管，支持按流程类型进一步筛选，列表项保留只读跳转审批详情：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
 - API 侧对发起人列表做增量兼容扩展：`GET /api/v1/approval` 新增可选 `initiatedBucket` 过滤与派生字段（`initiated_bucket`/`last_updated_at` 等），并新增 `GET /api/v1/approval/initiated/summary`：`packages/api/src/routes/approval.ts`
 
 ### 8.10 报销批次审批改为“合理性汇总 + 抽查附件”模式（2026-04）
+
 - 审批台（Web）报销批次详情新增单项 AI 结论与抽查附件能力：每条报销单可直接预览/下载附件，并展示单项合理性结论与票据识别风险，方便审批人按单抽查：`packages/web/src/views/approval/detail.vue`
 - 审批台（Miniapp）报销批次详情同步补齐单项审查信息：展示每条报销单的单项 AI 结论与附件列表，支持在审批详情页直接查看附件：`packages/miniapp/pages/approval-detail/index.{js,wxml}`
 - 报销批次详情 API 增强为“审批抽查可用”结构：`GET /api/v1/reimbursement/batch/:id` 在 item 级返回附件列表、单项合理性摘要、票据识别风险提示，供 Web/Miniapp 审批台统一消费：`packages/api/src/routes/reimbursement.ts`
@@ -1260,6 +1399,7 @@
 - 审批 AI 载荷补齐报销批次单项审查上下文（`reimbursement_item_reviews`），使模型在批次阶段可直接基于单项历史结论输出汇总意见：`packages/api/src/services/ai-slot.ts`
 
 ### 8.11 报销列表风险可视化与办公室 UUID 纠偏（2026-04）
+
 - 报销列表页移除 PDF 列，新增“通道类型”列（实物信封/电子发票），并把异常提示改为标签化展示（重复票据风险、收件核对异常、待补充材料、复核驳回）：`packages/web/src/views/finance/reimbursement/list.vue`
 - 报销列表高风险行增加行级高亮（浅红底），便于办公室人员快速锁定需优先核查条目：`packages/web/src/views/finance/reimbursement/list.vue`
 - 列表接口增强重复风险摘要字段，支持前端直接渲染风险标签：`duplicate_count` 与 `duplicate_risk_level`：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
@@ -1267,6 +1407,7 @@
 - 新增后端办公室换绑接口 `POST /api/v1/reimbursement/:id/rebind-uuid`，并对通道稳定性加约束（创建绑定与更新流程均禁止跨通道漂移），避免实物信封被误改成电子发票：`packages/api/src/routes/reimbursement.ts`、`packages/api/src/routes/reimbursement-create-policy.ts`
 
 ### 8.12 报销集中审批“被报销人+支付方案”联动补齐（2026-04）
+
 - 审批中心列表（Web）在待审批/已处理/抄送三栏新增“被报销人”列，报销批次场景优先展示 `biz_applicant_userid`，用于替代仅看发起人的歧义：`packages/web/src/views/approval/index.vue`、`packages/web/src/api/approval.ts`、`packages/api/src/routes/approval.ts`
 - 审批详情（Web）报销批次明细将“申请人”文案统一为“被报销人”，并新增“支付方式/付款账户/审批状态/审批节点”展示：`packages/web/src/views/approval/detail.vue`、`packages/web/src/api/reimbursement.ts`
 - 审批详情（Web）操作区扩展为“审批台支付方案”（支付方式 + 付款主体 + 付款账户），审批人可在审批前保存支付方案；报销批次走 `PUT /api/v1/reimbursement/batch/:id/payout-plan`，对外付款保持原路径：`packages/web/src/views/approval/detail.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
@@ -1275,6 +1416,7 @@
 - 小程序审批列表新增“被报销人”展示；审批详情在报销批次场景新增支付方式/付款账户展示与审批人可编辑支付方案（同样走批次 payout-plan 接口）：`packages/miniapp/pages/approval/index.{js,wxml}`、`packages/miniapp/pages/approval-detail/index.{js,wxml}`、`packages/api/src/routes/reimbursement.ts`
 
 ### 8.13 报销批次详情“超管二次编辑 + 全量信息展示”补齐（2026-04）
+
 - 报销批次详情页新增“超级管理员二次编辑”区域，允许超管在批次详情直接二次调整付款方式、被报销人收款账户、付款实体、付款账户及展示文本（调用 `PUT /api/v1/reimbursement/batch/:id/payout-plan`）：`packages/web/src/views/finance/reimbursement/batch-detail.vue`、`packages/web/src/api/reimbursement.ts`
 - 报销批次详情页基础信息扩展为“全量业务视图”：批次状态、项目/被报销人、付款方式、付款账户、出款实体、出款银行账户、支付流水号、打款日期、创建/更新时间、审批实例状态/当前节点：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 报销批次详情页布局收敛为“顶部摘要 + 关键动作 + 基础/收付款信息 + 折叠维护区 + 信封明细”，将超管编辑、支付凭证、查重/AI 报告默认收纳在折叠区，降低首屏复杂度：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
@@ -1282,11 +1424,13 @@
 - 报销批次详情接口补齐聚合字段，返回 `payment_entity`、`payment_bank_account`、`payment_vouchers`，减少前端二次拼接成本并保证详情一致性：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`
 
 ### 8.14 报销提交状态筛选多选与报错修复（2026-04）
+
 - 报销提交列表（财务中心）状态筛选改为多选控件，支持一次筛选多个状态并折叠标签展示：`packages/web/src/views/finance/reimbursement/list.vue`
 - 工作台“我的报销提交”状态筛选同步改为多选，保持 Web 两个入口口径一致：`packages/web/src/views/workspace/reimbursement/list.vue`
 - 报销列表接口参数 `status` 扩展为可传逗号拼接状态集合，后端按 `status IN (...)` 执行过滤，兼容单状态与多状态筛选：`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
 
 ### 8.15 报销集中审批中心候选清单收敛 + 批次详情可维护增强（2026-04）
+
 - 报销集中审批中心新增候选查询接口 `GET /api/v1/reimbursement/batch/candidates`，候选仅保留“可直接送审”条目（已收件 + 复核通过 + 未入批次），从源头消除不合格条目与重复批次风险：`packages/api/src/routes/reimbursement.ts`、`packages/web/src/api/reimbursement.ts`、`packages/web/src/views/finance/reimbursement/batch.vue`
 - 报销集中审批中心页面布局收敛为“顶部摘要 + 创建批次面板 + 候选清单 + 批次 Tab”，付款实体/付款账户移动到“可选付款信息”折叠区，进行中与历史完成批次合并为 Tab，减少首屏复杂度：`packages/web/src/views/finance/reimbursement/batch.vue`
 - 创建并送审动作新增二次确认弹窗，展示送审条目数、总金额、付款方式、被报销人收款账户、付款实体与付款账户；送审仅强制付款方式，付款实体/付款账户/账户显示允许为空并由审批人员在审批详情页补充：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/api/src/routes/reimbursement.ts`
@@ -1294,6 +1438,7 @@
 - 批次详情新增“支付凭证上传与保存”能力，可在详情页直接上传/移除并持久化支付凭证：`PUT /api/v1/reimbursement/batch/:id/payment-vouchers`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 
 ### 8.16 报销提交与详情页面信息架构收敛（2026-04）
+
 - 报销提交/处理列表页面改为“顶部标题与角色动作 + 摘要指标 + 筛选面板 + 表格区”，角色说明从多条提示条收敛到页面副标题，降低报销提交入口的首屏复杂度：`packages/web/src/views/finance/reimbursement/list.vue`
 - 报销详情页面新增顶部状态摘要，并将后台静默审查与重复风险合并收纳到折叠区；基础信息、附件和操作区保持原业务位置，减少详情页一次性展开的信息量：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 批次详情新增“报销基础信息编辑”能力（发票号、费用日期、金额、类别、说明），支持对批次内单条报销做修正并自动回写批次合计：`PUT /api/v1/reimbursement/batch/:id/items/:envelopeId/basic-info`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
