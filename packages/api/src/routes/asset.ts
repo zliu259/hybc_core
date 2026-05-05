@@ -2,8 +2,19 @@ import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
+import {
+  buildAssetManualReferenceHistory,
+  type AssetManualReferenceHistoryRow
+} from "../services/asset-manual-history";
 import { collectConfigurationParticipants, emitTrackedAssetEvents } from "../services/asset-event";
+import {
+  buildTbmCompositionCandidate,
+  inferTbmComponentRole,
+  type TbmCompositionAssetInput,
+  type TbmCompatibilityRuleInput
+} from "../services/asset-composition";
 import { generateSerial } from "../services/serial";
+import { createWarehouseTask } from "../services/warehouse-task";
 import type { Env } from "../types/env";
 import type {
   AssetCompatibilityRule,
@@ -12,6 +23,7 @@ import type {
   CreateAssetCompatibilityRuleRequest,
   CreateAssetRentalTermRequest,
   CreateTrackedAssetConfigurationRequest,
+  CreateTrackedAssetConfigurationTaskPackageRequest,
   CreateAssetTypeRequest,
   CreateTrackedAssetRequest,
   ReturnAssetRentalTermRequest,
@@ -79,6 +91,10 @@ const generateAssetCode = async (db: D1Database, typeCode: string): Promise<stri
 
 const generateConfigurationCode = async (db: D1Database): Promise<string> => {
   return generateSerial(db, "CFG", "tracked_asset_configuration", "configuration_code");
+};
+
+const generateTaskPackageNo = async (db: D1Database): Promise<string> => {
+  return generateSerial(db, "TP", "warehouse_task_package", "package_no");
 };
 
 type DispatchBoardState =
@@ -422,6 +438,88 @@ assetRoutes.get(
   }
 );
 
+assetRoutes.get(
+  "/configuration/candidate",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const coreAssetId = Number(c.req.query("core_asset_id"));
+    if (!coreAssetId) {
+      return c.json({ success: false, error: { message: "core_asset_id is required" } }, 400);
+    }
+
+    const core = await c.env.DB.prepare(
+      `SELECT ta.*,
+              at.type_code AS asset_type_code,
+              at.type_name AS asset_type_name
+       FROM tracked_asset ta
+       JOIN asset_type at ON at.id = ta.asset_type_id
+       WHERE ta.id = ?`
+    )
+      .bind(coreAssetId)
+      .first<TrackedAsset & { asset_type_code: string | null; asset_type_name: string | null }>();
+    if (!core) {
+      return c.json({ success: false, error: { message: "core asset not found" } }, 404);
+    }
+
+    const assetRows = await c.env.DB.prepare(
+      `SELECT ta.*,
+              at.type_code AS asset_type_code,
+              at.type_name AS asset_type_name
+       FROM tracked_asset ta
+       JOIN asset_type at ON at.id = ta.asset_type_id
+       WHERE ta.id != ?
+       ORDER BY ta.id DESC`
+    )
+      .bind(coreAssetId)
+      .all<TrackedAsset & { asset_type_code: string | null; asset_type_name: string | null }>();
+
+    const rules = await c.env.DB.prepare(
+      "SELECT left_asset_type_id, right_asset_type_id, relation_type FROM asset_compatibility_rule WHERE status = 'active'"
+    ).all<TbmCompatibilityRuleInput>();
+    const selectedCore: TbmCompositionAssetInput = {
+      id: core.id,
+      asset_code: core.asset_code,
+      asset_name: core.asset_name,
+      asset_type_id: core.asset_type_id,
+      asset_type_code: core.asset_type_code,
+      asset_type_name: core.asset_type_name,
+      status: core.status,
+      current_warehouse_id: core.current_warehouse_id
+    };
+
+    const candidates = (assetRows.results ?? [])
+      .map((asset) => {
+        const role = inferTbmComponentRole(asset);
+        if (role !== "shell" && role !== "console") return null;
+        return buildTbmCompositionCandidate({
+          candidate: {
+            id: asset.id,
+            asset_code: asset.asset_code,
+            asset_name: asset.asset_name,
+            asset_type_id: asset.asset_type_id,
+            asset_type_code: asset.asset_type_code,
+            asset_type_name: asset.asset_type_name,
+            status: asset.status,
+            current_warehouse_id: asset.current_warehouse_id
+          },
+          selectedCore,
+          role,
+          compatibilityRules: rules.results ?? []
+        });
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    return c.json({
+      success: true,
+      data: {
+        core: selectedCore,
+        shells: candidates.filter((item) => item.role === "shell"),
+        consoles: candidates.filter((item) => item.role === "console")
+      }
+    });
+  }
+);
+
 assetRoutes.post(
   "/configuration",
   requireRoles(["super_admin", "manager", "site_manager"]),
@@ -597,6 +695,98 @@ assetRoutes.put(
     );
 
     return c.json({ success: true });
+  }
+);
+
+assetRoutes.post(
+  "/configuration/:id/task-package",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req
+      .json()
+      .catch(() => ({}))) as CreateTrackedAssetConfigurationTaskPackageRequest;
+    const configuration = await c.env.DB.prepare(
+      "SELECT * FROM tracked_asset_configuration WHERE id = ?"
+    )
+      .bind(id)
+      .first<TrackedAssetConfiguration>();
+    if (!configuration) {
+      return c.json({ success: false, error: { message: "configuration not found" } }, 404);
+    }
+
+    const packageNo = await generateTaskPackageNo(c.env.DB);
+    const now = nowIso();
+    const title = `顶管机组合任务：${configuration.whole_machine_code || configuration.configuration_code}`;
+    const packageResult = await c.env.DB.prepare(
+      `INSERT INTO warehouse_task_package
+        (package_no, package_title, package_type, warehouse_id, project_id, priority, status,
+         assignee_userid, assigned_by_userid, planned_start_date, due_date, source,
+         source_biz_type, source_biz_id, remark, created_at, updated_at)
+       VALUES (?, ?, 'tbm_composition', ?, ?, 'high', 'open', ?, ?, NULL, ?, 'manual',
+               'tracked_asset_configuration', ?, ?, ?, ?)`
+    )
+      .bind(
+        packageNo,
+        title,
+        configuration.warehouse_id ?? null,
+        configuration.project_id ?? null,
+        body.assignee_userid ?? null,
+        auth.sub,
+        body.scheduled_date ?? null,
+        configuration.id,
+        "组合方案生成任务包：检查组件状态，必要时完成改装并提交照片简报。",
+        now,
+        now
+      )
+      .run();
+
+    const packageId = packageResult.meta.last_row_id as number;
+    const taskContext = {
+      tracked_asset_configuration_id: configuration.id,
+      project_id: configuration.project_id ?? undefined,
+      warehouse_id: configuration.warehouse_id ?? undefined,
+      package_id: packageId,
+      assignee_userid: body.assignee_userid ?? undefined,
+      scheduled_date: body.scheduled_date ?? undefined,
+      manual_version_id: body.manual_version_id ?? undefined,
+      mobile_enabled: 1,
+      required_photo_count: 3,
+      applicant_userid: auth.sub
+    };
+
+    const inspectionTask = await createWarehouseTask(c.env, {
+      ...taskContext,
+      work_order_type: "inspection",
+      source: "manual",
+      priority: "high",
+      status: body.assignee_userid ? "assigned" : "pending_assignment",
+      blocking_flag: 1,
+      remark: "顶管机组合前检查：核对壳体、机芯、操作台状态并提交照片与检查简报。"
+    });
+    const modificationTask = await createWarehouseTask(c.env, {
+      ...taskContext,
+      work_order_type: "modification",
+      source: "manual",
+      priority: "high",
+      status: body.assignee_userid ? "assigned" : "pending_assignment",
+      blocking_flag: 1,
+      remark: "顶管机组合改装：按组合方案完成组件搭配、改装确认和照片简报。"
+    });
+
+    return c.json(
+      {
+        success: true,
+        data: {
+          package_id: packageId,
+          package_no: packageNo,
+          task_ids: [inspectionTask.id, modificationTask.id],
+          work_order_nos: [inspectionTask.work_order_no, modificationTask.work_order_no]
+        }
+      },
+      201
+    );
   }
 );
 
@@ -1014,6 +1204,9 @@ assetRoutes.get(
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
+    const eventType = c.req.query("event_type");
+    const workOrderType = c.req.query("work_order_type");
+    const evidenceType = c.req.query("evidence_type");
     const asset = await c.env.DB.prepare("SELECT * FROM tracked_asset WHERE id = ?")
       .bind(id)
       .first<TrackedAsset>();
@@ -1028,10 +1221,15 @@ assetRoutes.get(
       .bind(id)
       .all<TrackedAssetDocument>();
 
-    const events = await c.env.DB.prepare(
-      "SELECT * FROM tracked_asset_event WHERE tracked_asset_id = ? ORDER BY event_time DESC"
-    )
-      .bind(id)
+    let eventSql = "SELECT * FROM tracked_asset_event WHERE tracked_asset_id = ?";
+    const eventParams: Array<string | number> = [id];
+    if (eventType) {
+      eventSql += " AND event_type = ?";
+      eventParams.push(eventType);
+    }
+    eventSql += " ORDER BY event_time DESC";
+    const events = await c.env.DB.prepare(eventSql)
+      .bind(...eventParams)
       .all<TrackedAssetEvent>();
 
     const configurations = await c.env.DB.prepare(
@@ -1042,26 +1240,33 @@ assetRoutes.get(
       .bind(id, id, id)
       .all<TrackedAssetConfiguration>();
 
-    const warehouseTasks = await c.env.DB.prepare(
-      `SELECT wao.*,
+    let taskSql = `
+      SELECT wao.*,
               wm.manual_title,
+              wmv.manual_id,
               wmv.version_no AS manual_version_no
        FROM warehouse_asset_work_order wao
        LEFT JOIN warehouse_manual_version wmv ON wmv.id = wao.manual_version_id
        LEFT JOIN warehouse_manual wm ON wm.id = wmv.manual_id
-       WHERE wao.tracked_asset_id = ?
-       ORDER BY wao.id DESC`
-    )
-      .bind(id)
+       WHERE wao.tracked_asset_id = ?`;
+    const taskParams: Array<string | number> = [id];
+    if (workOrderType) {
+      taskSql += " AND wao.work_order_type = ?";
+      taskParams.push(workOrderType);
+    }
+    taskSql += " ORDER BY wao.id DESC";
+    const warehouseTasks = await c.env.DB.prepare(taskSql)
+      .bind(...taskParams)
       .all<
         WarehouseAssetWorkOrder & {
           manual_title: string | null;
+          manual_id: number | null;
           manual_version_no: number | null;
         }
       >();
 
-    const taskEvidence = await c.env.DB.prepare(
-      `SELECT wte.*,
+    let evidenceSql = `
+      SELECT wte.*,
               wao.work_order_no,
               wao.work_order_type,
               wao.status AS work_order_status,
@@ -1072,11 +1277,20 @@ assetRoutes.get(
        JOIN warehouse_asset_work_order wao ON wao.id = wte.work_order_id
        LEFT JOIN warehouse_manual_version wmv ON wmv.id = wao.manual_version_id
        LEFT JOIN warehouse_manual wm ON wm.id = wmv.manual_id
-       WHERE wte.tracked_asset_id = ?
-          OR (wte.tracked_asset_id IS NULL AND wao.tracked_asset_id = ?)
-       ORDER BY wte.captured_at DESC, wte.id DESC`
-    )
-      .bind(id, id)
+       WHERE (wte.tracked_asset_id = ?
+          OR (wte.tracked_asset_id IS NULL AND wao.tracked_asset_id = ?))`;
+    const evidenceParams: Array<string | number> = [id, id];
+    if (workOrderType) {
+      evidenceSql += " AND wao.work_order_type = ?";
+      evidenceParams.push(workOrderType);
+    }
+    if (evidenceType) {
+      evidenceSql += " AND wte.evidence_type = ?";
+      evidenceParams.push(evidenceType);
+    }
+    evidenceSql += " ORDER BY wte.captured_at DESC, wte.id DESC";
+    const taskEvidence = await c.env.DB.prepare(evidenceSql)
+      .bind(...evidenceParams)
       .all<
         WarehouseTaskEvidence & {
           work_order_no: string;
@@ -1088,6 +1302,22 @@ assetRoutes.get(
         }
       >();
 
+    const manualHistory = buildAssetManualReferenceHistory(
+      (warehouseTasks.results ?? []).map(
+        (item): AssetManualReferenceHistoryRow => ({
+          work_order_id: item.id,
+          work_order_no: item.work_order_no,
+          work_order_type: item.work_order_type,
+          work_order_status: item.status,
+          manual_version_id: item.manual_version_id,
+          manual_id: item.manual_id,
+          manual_title: item.manual_title,
+          manual_version_no: item.manual_version_no,
+          referenced_at: item.reviewed_at ?? item.completed_at ?? item.updated_at ?? item.created_at
+        })
+      )
+    );
+
     return c.json({
       success: true,
       data: {
@@ -1096,7 +1326,8 @@ assetRoutes.get(
         events: events.results ?? [],
         configurations: configurations.results ?? [],
         warehouse_tasks: warehouseTasks.results ?? [],
-        task_evidence: taskEvidence.results ?? []
+        task_evidence: taskEvidence.results ?? [],
+        manual_history: manualHistory
       }
     });
   }

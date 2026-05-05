@@ -644,6 +644,21 @@ export const listWarehouseTaskEvidence = (id: number) =>
     `/api/v1/warehouse/work-order/${id}/evidence`
   );
 
+export const getWarehouseTaskEvidenceAccess = (evidenceId: number) =>
+  http.request<{
+    success: boolean;
+    data: {
+      evidence_id: number;
+      work_order_id: number;
+      work_order_no: string;
+      file_key: string;
+      file_name: string | null;
+      evidence_type: WarehouseTaskEvidence["evidence_type"];
+      expires_at: string;
+      url: string;
+    };
+  }>("get", `/api/v1/warehouse/work-order/evidence/${evidenceId}/access`);
+
 export const createWarehouseAssetWorkOrder = (data: {
   work_order_type: WarehouseAssetWorkOrder["work_order_type"];
   tracked_asset_id?: number;

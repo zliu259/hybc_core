@@ -8,8 +8,10 @@ import type {
   CreateWarehouseManualRequest,
   CreateWarehouseManualVersionRequest,
   WarehouseManual,
+  WarehouseManualBinding,
   WarehouseManualType,
-  WarehouseManualVersion
+  WarehouseManualVersion,
+  UpsertWarehouseManualBindingRequest
 } from "../types/warehouse-manual";
 
 const nowIso = () => new Date().toISOString();
@@ -135,6 +137,133 @@ warehouseManualRoutes.post(
       .run();
 
     return c.json({ success: true, data: { id: manualId, manual_code: manualCode } }, 201);
+  }
+);
+
+warehouseManualRoutes.get(
+  "/binding",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const manualId = c.req.query("manual_id");
+    const assetTypeId = c.req.query("asset_type_id");
+    const workOrderType = c.req.query("work_order_type");
+    const status = c.req.query("status");
+    let sql = `
+      SELECT wmb.*,
+             wm.manual_title,
+             wm.manual_type,
+             active.id AS active_version_id,
+             active.version_no AS active_version_no
+      FROM warehouse_manual_binding wmb
+      JOIN warehouse_manual wm ON wm.id = wmb.manual_id
+      LEFT JOIN warehouse_manual_version active
+        ON active.id = (
+          SELECT id FROM warehouse_manual_version
+          WHERE manual_id = wm.id AND status = 'published'
+          ORDER BY version_no DESC
+          LIMIT 1
+        )
+      WHERE 1=1`;
+    const params: Array<string | number> = [];
+    if (manualId) {
+      sql += " AND wmb.manual_id = ?";
+      params.push(Number(manualId));
+    }
+    if (assetTypeId) {
+      sql += " AND wmb.asset_type_id = ?";
+      params.push(Number(assetTypeId));
+    }
+    if (workOrderType) {
+      sql += " AND wmb.work_order_type = ?";
+      params.push(workOrderType);
+    }
+    if (status) {
+      sql += " AND wmb.status = ?";
+      params.push(status);
+    }
+    sql += " ORDER BY wmb.id DESC";
+
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<WarehouseManualBinding>();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+warehouseManualRoutes.post(
+  "/binding",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const body = (await c.req.json()) as UpsertWarehouseManualBindingRequest;
+    if (!body.manual_id) {
+      return c.json({ success: false, error: { message: "manual_id is required" } }, 400);
+    }
+    const manual = await c.env.DB.prepare("SELECT id FROM warehouse_manual WHERE id = ?")
+      .bind(body.manual_id)
+      .first<{ id: number }>();
+    if (!manual) {
+      return c.json({ success: false, error: { message: "manual not found" } }, 404);
+    }
+
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO warehouse_manual_binding
+        (manual_id, asset_type_id, work_order_type, configuration_role, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(
+        body.manual_id,
+        body.asset_type_id ?? null,
+        body.work_order_type ?? null,
+        body.configuration_role ?? null,
+        body.status ?? "active",
+        now,
+        now
+      )
+      .run();
+
+    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  }
+);
+
+warehouseManualRoutes.put(
+  "/binding/:bindingId",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const bindingId = Number(c.req.param("bindingId"));
+    const body = (await c.req.json()) as Partial<UpsertWarehouseManualBindingRequest>;
+    const existing = await c.env.DB.prepare("SELECT id FROM warehouse_manual_binding WHERE id = ?")
+      .bind(bindingId)
+      .first<{ id: number }>();
+    if (!existing) {
+      return c.json({ success: false, error: { message: "manual binding not found" } }, 404);
+    }
+
+    await c.env.DB.prepare(
+      `UPDATE warehouse_manual_binding SET
+         manual_id = COALESCE(?, manual_id),
+         asset_type_id = CASE WHEN ? IS NULL THEN asset_type_id ELSE ? END,
+         work_order_type = CASE WHEN ? IS NULL THEN work_order_type ELSE ? END,
+         configuration_role = CASE WHEN ? IS NULL THEN configuration_role ELSE ? END,
+         status = COALESCE(?, status),
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(
+        body.manual_id ?? null,
+        body.asset_type_id === undefined ? null : 1,
+        body.asset_type_id ?? null,
+        body.work_order_type === undefined ? null : 1,
+        body.work_order_type ?? null,
+        body.configuration_role === undefined ? null : 1,
+        body.configuration_role ?? null,
+        body.status ?? null,
+        nowIso(),
+        bindingId
+      )
+      .run();
+
+    return c.json({ success: true });
   }
 );
 

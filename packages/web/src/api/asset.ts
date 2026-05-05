@@ -54,6 +54,21 @@ export type TrackedAssetConfiguration = {
   updated_at: string;
 };
 
+export type TbmCompositionCandidate = {
+  id: number;
+  asset_code: string;
+  asset_name: string;
+  asset_type_id: number;
+  asset_type_code: string | null;
+  asset_type_name: string | null;
+  role: "shell" | "console";
+  status: string;
+  current_warehouse_id: number | null;
+  available: boolean;
+  requires_modification: boolean;
+  reasons: string[];
+};
+
 export type DispatchBoardState =
   | "available_now"
   | "available_after_modification"
@@ -205,7 +220,14 @@ export const createTrackedAsset = (data: {
     { data }
   );
 
-export const getTrackedAsset = (id: number) =>
+export const getTrackedAsset = (
+  id: number,
+  params?: {
+    event_type?: string;
+    work_order_type?: WarehouseAssetWorkOrder["work_order_type"];
+    evidence_type?: WarehouseTaskEvidence["evidence_type"];
+  }
+) =>
   http.request<{
     success: boolean;
     data: TrackedAsset & {
@@ -231,6 +253,17 @@ export const getTrackedAsset = (id: number) =>
           manual_version_no: number | null;
         }
       >;
+      manual_history: Array<{
+        work_order_id: number;
+        work_order_no: string;
+        work_order_type: WarehouseAssetWorkOrder["work_order_type"];
+        work_order_status: WarehouseAssetWorkOrder["status"];
+        manual_version_id: number;
+        manual_id: number | null;
+        manual_title: string;
+        manual_version_no: number | null;
+        referenced_at: string | null;
+      }>;
       task_evidence: Array<
         WarehouseTaskEvidence & {
           work_order_no: string;
@@ -242,7 +275,7 @@ export const getTrackedAsset = (id: number) =>
         }
       >;
     };
-  }>("get", `/api/v1/asset/${id}`);
+  }>("get", `/api/v1/asset/${id}`, { params });
 
 export const listTrackedAssetConfigurations = (params?: {
   status?: TrackedAssetConfiguration["status"];
@@ -254,6 +287,27 @@ export const listTrackedAssetConfigurations = (params?: {
     "/api/v1/asset/configuration",
     { params }
   );
+
+export const getTbmCompositionCandidates = (coreAssetId: number) =>
+  http.request<{
+    success: boolean;
+    data: {
+      core: {
+        id: number;
+        asset_code: string;
+        asset_name: string;
+        asset_type_id: number;
+        asset_type_code: string | null;
+        asset_type_name: string | null;
+        status: string;
+        current_warehouse_id: number | null;
+      };
+      shells: TbmCompositionCandidate[];
+      consoles: TbmCompositionCandidate[];
+    };
+  }>("get", "/api/v1/asset/configuration/candidate", {
+    params: { core_asset_id: coreAssetId }
+  });
 
 export const createTrackedAssetConfiguration = (data: {
   whole_machine_code?: string;
@@ -271,6 +325,24 @@ export const createTrackedAssetConfiguration = (data: {
     success: boolean;
     data: { id: number; configuration_code: string };
   }>("post", "/api/v1/asset/configuration", { data });
+
+export const createTrackedAssetConfigurationTaskPackage = (
+  id: number,
+  data?: {
+    assignee_userid?: string | null;
+    scheduled_date?: string | null;
+    manual_version_id?: number | null;
+  }
+) =>
+  http.request<{
+    success: boolean;
+    data: {
+      package_id: number;
+      package_no: string;
+      task_ids: number[];
+      work_order_nos: string[];
+    };
+  }>("post", `/api/v1/asset/configuration/${id}/task-package`, { data });
 
 export const updateTrackedAssetConfiguration = (
   id: number,

@@ -54,6 +54,24 @@ export interface WarehouseTaskWorkloadSummary {
   submitted_count: number;
 }
 
+export interface WarehouseManualBindingCandidate {
+  manual_version_id: number;
+  asset_type_id: number | null;
+  work_order_type: string | null;
+  configuration_role: string | null;
+}
+
+export interface WarehouseManualBindingMatchInput {
+  asset_type_id?: number | null;
+  work_order_type: string;
+  configuration_role?: string | null;
+}
+
+export interface WarehouseTaskEvidenceCount {
+  evidence_type: string;
+  evidence_count: number;
+}
+
 export const normalizeReturnedAssetStatus = (status: string): string => {
   return status === "quarantine" ? "returned_quarantine" : status;
 };
@@ -94,6 +112,56 @@ export const buildWarehouseTaskWorkloadSummary = (
   }
 
   return [...summary.values()];
+};
+
+export const chooseWarehouseManualBinding = (
+  candidates: WarehouseManualBindingCandidate[],
+  input: WarehouseManualBindingMatchInput
+): WarehouseManualBindingCandidate | null => {
+  const matches = candidates.filter((candidate) => {
+    const assetTypeMatches =
+      candidate.asset_type_id === null || candidate.asset_type_id === (input.asset_type_id ?? null);
+    const typeMatches =
+      candidate.work_order_type === null || candidate.work_order_type === input.work_order_type;
+    const roleMatches =
+      candidate.configuration_role === null ||
+      candidate.configuration_role === (input.configuration_role ?? null);
+    return assetTypeMatches && typeMatches && roleMatches;
+  });
+
+  return (
+    matches
+      .map((candidate) => ({
+        candidate,
+        score:
+          (candidate.asset_type_id !== null ? 4 : 0) +
+          (candidate.work_order_type !== null ? 2 : 0) +
+          (candidate.configuration_role !== null ? 1 : 0)
+      }))
+      .sort((left, right) => right.score - left.score)[0]?.candidate ?? null
+  );
+};
+
+export const buildWarehouseTaskTimelineSummaryDetail = (payload: {
+  status: string;
+  result_summary?: string | null;
+  manual_version_id?: number | null;
+  evidence_counts?: WarehouseTaskEvidenceCount[];
+  followup_work_order_no?: string | null;
+}): string => {
+  const parts = [`status=${payload.status}`];
+  const result = payload.result_summary?.trim();
+  if (result) parts.push(`result=${result}`);
+  if (payload.manual_version_id) parts.push(`manual_version_id=${payload.manual_version_id}`);
+  const evidenceText = (payload.evidence_counts ?? [])
+    .filter((item) => Number(item.evidence_count) > 0)
+    .map((item) => `${item.evidence_type}:${Number(item.evidence_count)}`)
+    .join(",");
+  if (evidenceText) parts.push(`evidence=${evidenceText}`);
+  if (payload.followup_work_order_no) {
+    parts.push(`followup_maintenance=${payload.followup_work_order_no}`);
+  }
+  return parts.join("; ");
 };
 
 export const canSubmitWarehouseTaskFromMobile = (
@@ -263,6 +331,83 @@ export const emitWarehouseTaskTimelineEvent = async (
   );
 };
 
+const getWarehouseTaskEvidenceCounts = async (
+  env: Env,
+  workOrderId: number
+): Promise<WarehouseTaskEvidenceCount[]> => {
+  const rows = await env.DB.prepare(
+    `SELECT evidence_type, COUNT(*) AS evidence_count
+     FROM warehouse_task_evidence
+     WHERE work_order_id = ?
+     GROUP BY evidence_type
+     ORDER BY evidence_type ASC`
+  )
+    .bind(workOrderId)
+    .all<WarehouseTaskEvidenceCount>();
+  return rows.results ?? [];
+};
+
+export const resolveWarehouseTaskManualVersionId = async (
+  env: Env,
+  payload: {
+    tracked_asset_id?: number | null;
+    stock_order_id?: number | null;
+    work_order_type: WarehouseAssetWorkOrderType;
+  }
+): Promise<number | null> => {
+  let assetTypeId: number | null = null;
+  if (payload.tracked_asset_id) {
+    const asset = await env.DB.prepare("SELECT asset_type_id FROM tracked_asset WHERE id = ?")
+      .bind(payload.tracked_asset_id)
+      .first<{ asset_type_id: number }>();
+    assetTypeId = asset?.asset_type_id ?? null;
+  }
+
+  let configurationRole: string | null = null;
+  if (payload.stock_order_id && payload.tracked_asset_id) {
+    const stockItem = await env.DB.prepare(
+      `SELECT configuration_role
+       FROM stock_order_item
+       WHERE stock_order_id = ? AND tracked_asset_id = ? AND status = 'active'
+       ORDER BY id DESC
+       LIMIT 1`
+    )
+      .bind(payload.stock_order_id, payload.tracked_asset_id)
+      .first<{ configuration_role: string | null }>();
+    configurationRole = stockItem?.configuration_role ?? null;
+  }
+
+  const rows = await env.DB.prepare(
+    `SELECT active.id AS manual_version_id,
+            wmb.asset_type_id,
+            wmb.work_order_type,
+            wmb.configuration_role
+     FROM warehouse_manual_binding wmb
+     JOIN warehouse_manual wm ON wm.id = wmb.manual_id AND wm.status = 'active'
+     JOIN warehouse_manual_version active
+       ON active.id = (
+         SELECT id FROM warehouse_manual_version
+         WHERE manual_id = wm.id AND status = 'published'
+         ORDER BY version_no DESC
+         LIMIT 1
+       )
+     WHERE wmb.status = 'active'
+       AND (? IS NULL OR wmb.asset_type_id IS NULL OR wmb.asset_type_id = ?)
+       AND (wmb.work_order_type IS NULL OR wmb.work_order_type = ?)
+       AND (? IS NULL OR wmb.configuration_role IS NULL OR wmb.configuration_role = ?)`
+  )
+    .bind(assetTypeId, assetTypeId, payload.work_order_type, configurationRole, configurationRole)
+    .all<WarehouseManualBindingCandidate>();
+
+  return (
+    chooseWarehouseManualBinding(rows.results ?? [], {
+      asset_type_id: assetTypeId,
+      work_order_type: payload.work_order_type,
+      configuration_role: configurationRole
+    })?.manual_version_id ?? null
+  );
+};
+
 export const createWarehouseTask = async (
   env: Env,
   payload: CreateWarehouseAssetWorkOrderRequest & {
@@ -277,6 +422,13 @@ export const createWarehouseTask = async (
     "work_order_no"
   );
   const now = nowIso();
+  const manualVersionId =
+    payload.manual_version_id ??
+    (await resolveWarehouseTaskManualVersionId(env, {
+      tracked_asset_id: payload.tracked_asset_id ?? null,
+      stock_order_id: payload.stock_order_id ?? null,
+      work_order_type: payload.work_order_type
+    }));
   const result = await env.DB.prepare(
     `INSERT INTO warehouse_asset_work_order
       (work_order_no, work_order_type, tracked_asset_id, tracked_asset_configuration_id, stock_order_id,
@@ -301,7 +453,7 @@ export const createWarehouseTask = async (
       payload.source ?? "manual",
       payload.priority ?? "normal",
       payload.package_id ?? null,
-      payload.manual_version_id ?? null,
+      manualVersionId,
       payload.mobile_enabled ?? 0,
       payload.required_photo_count ?? 0,
       payload.scheduled_date ?? null,
@@ -667,7 +819,13 @@ export const reviewWarehouseTask = async (
     row,
     payload.reviewer_userid,
     payload.action === "approve" ? "work_order_completed" : "work_order_rejected",
-    `status=${nextStatus}${payload.result_summary ? `; result=${payload.result_summary}` : ""}${followupTask?.created ? `; followup_maintenance=${followupTask.work_order_no}` : ""}`
+    buildWarehouseTaskTimelineSummaryDetail({
+      status: nextStatus,
+      result_summary: payload.result_summary,
+      manual_version_id: row.manual_version_id,
+      evidence_counts: await getWarehouseTaskEvidenceCounts(env, row.id),
+      followup_work_order_no: followupTask?.created ? followupTask.work_order_no : null
+    })
   );
 };
 

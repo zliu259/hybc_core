@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildWarehouseTaskTimelineSummaryDetail,
+  chooseWarehouseManualBinding,
   buildWarehouseTaskWorkloadSummary,
   buildFollowupMaintenanceTaskDefaults,
   buildReturnInspectionTaskDefaults,
@@ -132,5 +134,60 @@ describe("warehouse task queue rules", () => {
     expect(canAttachTaskToPackage({ status: "assigned" })).toBe(true);
     expect(canAttachTaskToPackage({ status: "completed" })).toBe(false);
     expect(canAttachTaskToPackage({ status: "cancelled" })).toBe(false);
+  });
+
+  it("chooses the most specific published manual binding for a task", () => {
+    const binding = chooseWarehouseManualBinding(
+      [
+        {
+          manual_version_id: 10,
+          asset_type_id: null,
+          work_order_type: "inspection",
+          configuration_role: null
+        },
+        {
+          manual_version_id: 11,
+          asset_type_id: 3,
+          work_order_type: "inspection",
+          configuration_role: null
+        },
+        {
+          manual_version_id: 12,
+          asset_type_id: 3,
+          work_order_type: "inspection",
+          configuration_role: "core"
+        },
+        {
+          manual_version_id: 13,
+          asset_type_id: 3,
+          work_order_type: "maintenance",
+          configuration_role: "core"
+        }
+      ],
+      {
+        asset_type_id: 3,
+        work_order_type: "inspection",
+        configuration_role: "core"
+      }
+    );
+
+    expect(binding?.manual_version_id).toBe(12);
+  });
+
+  it("builds a traceable task completion timeline summary", () => {
+    const detail = buildWarehouseTaskTimelineSummaryDetail({
+      status: "completed",
+      result_summary: "维护复核通过",
+      manual_version_id: 12,
+      evidence_counts: [
+        { evidence_type: "photo", evidence_count: 3 },
+        { evidence_type: "brief", evidence_count: 1 }
+      ]
+    });
+
+    expect(detail).toContain("status=completed");
+    expect(detail).toContain("result=维护复核通过");
+    expect(detail).toContain("manual_version_id=12");
+    expect(detail).toContain("evidence=photo:3,brief:1");
   });
 });

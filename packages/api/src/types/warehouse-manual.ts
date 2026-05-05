@@ -38,6 +38,21 @@ export interface WarehouseManualVersion {
   updated_at: string;
 }
 
+export interface WarehouseManualBinding {
+  id: number;
+  manual_id: number;
+  asset_type_id: number | null;
+  work_order_type: string | null;
+  configuration_role: string | null;
+  status: "active" | "disabled";
+  created_at: string;
+  updated_at: string;
+  manual_title?: string;
+  manual_type?: WarehouseManualType;
+  active_version_id?: number | null;
+  active_version_no?: number | null;
+}
+
 export interface CreateWarehouseManualRequest {
   manual_title: string;
   manual_type?: WarehouseManualType;
@@ -50,4 +65,12 @@ export interface CreateWarehouseManualVersionRequest {
   content_json: string;
   ai_draft_task_id?: number | null;
   ai_draft_status?: "none" | "queued" | "running" | "completed" | "failed";
+}
+
+export interface UpsertWarehouseManualBindingRequest {
+  manual_id: number;
+  asset_type_id?: number | null;
+  work_order_type?: string | null;
+  configuration_role?: string | null;
+  status?: "active" | "disabled";
 }

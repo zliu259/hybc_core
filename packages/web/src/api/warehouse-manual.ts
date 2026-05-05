@@ -37,6 +37,21 @@ export type WarehouseManualVersion = {
   updated_at: string;
 };
 
+export type WarehouseManualBinding = {
+  id: number;
+  manual_id: number;
+  asset_type_id: number | null;
+  work_order_type: string | null;
+  configuration_role: string | null;
+  status: "active" | "disabled";
+  created_at: string;
+  updated_at: string;
+  manual_title?: string;
+  manual_type?: WarehouseManualType;
+  active_version_id?: number | null;
+  active_version_no?: number | null;
+};
+
 export const listWarehouseManuals = (params?: {
   status?: WarehouseManual["status"];
   manual_type?: WarehouseManualType;
@@ -58,6 +73,47 @@ export const createWarehouseManual = (data: {
   http.request<{ success: boolean; data: { id: number; manual_code: string } }>(
     "post",
     "/api/v1/warehouse/manual",
+    { data }
+  );
+
+export const listWarehouseManualBindings = (params?: {
+  manual_id?: number;
+  asset_type_id?: number;
+  work_order_type?: string;
+  status?: WarehouseManualBinding["status"];
+}) =>
+  http.request<{ success: boolean; data: WarehouseManualBinding[] }>(
+    "get",
+    "/api/v1/warehouse/manual/binding",
+    { params }
+  );
+
+export const createWarehouseManualBinding = (data: {
+  manual_id: number;
+  asset_type_id?: number | null;
+  work_order_type?: string | null;
+  configuration_role?: string | null;
+  status?: WarehouseManualBinding["status"];
+}) =>
+  http.request<{ success: boolean; data: { id: number } }>(
+    "post",
+    "/api/v1/warehouse/manual/binding",
+    { data }
+  );
+
+export const updateWarehouseManualBinding = (
+  id: number,
+  data: {
+    manual_id?: number;
+    asset_type_id?: number | null;
+    work_order_type?: string | null;
+    configuration_role?: string | null;
+    status?: WarehouseManualBinding["status"];
+  }
+) =>
+  http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/warehouse/manual/binding/${id}`,
     { data }
   );
 

@@ -87,7 +87,9 @@
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 资产运维看板：`packages/web/src/views/asset/ledger.vue`
 - 资产详情：`packages/web/src/views/asset/detail.vue`
-  - 详情页展示基础信息、组合配置历史、库房任务追溯、任务照片与简报、文档库和事件时间线。
+  - 详情页展示基础信息、组合配置历史、库房任务追溯、手册引用历史、任务照片与简报、文档库和事件时间线。
+  - 库房追溯区支持任务类型、证据类型、事件类型筛选，任务证据支持抽屉预览。
+  - 任务证据预览点击后调用 `packages/web/src/api/warehouse.ts` 的 `getWarehouseTaskEvidenceAccess` 获取短时签名 URL，再通过 `packages/web/src/api/upload.ts` 解析为可预览地址。
 - 设备总览：`packages/web/src/views/asset/dashboard.vue`
 - 仓库管理：`packages/web/src/views/warehouse/index.vue`
 - 库房总控台：`packages/web/src/views/warehouse/control-center.vue`
@@ -95,7 +97,9 @@
   - 展示任务队列、人员负载、任务包创建、批量加入任务包/批量派工、单任务派工、复核和证据查看。
 - 返库检查维护：`packages/web/src/views/warehouse/return-maintenance.vue`
 - 顶管机组合方案台：`packages/web/src/views/warehouse/tbm-composition.vue`
+  - 支持按所选机芯加载候选壳体/操作台、展示兼容和不可用原因、创建组合方案、由组合方案生成任务包。
 - 操作手册库：`packages/web/src/views/warehouse/manual-library.vue`
+  - 支持手册创建、版本新增、版本发布、自动匹配规则维护；规则按手册、资产类型、任务类型、组件角色配置。
 - 仓库库存：`packages/web/src/views/warehouse/inventory.vue`
 - 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
 - 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`

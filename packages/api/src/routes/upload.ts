@@ -1,34 +1,8 @@
 import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
+import { isObjectAccessSignatureValid, signObjectAccess } from "../services/upload-signature";
 import type { Env } from "../types/env";
-
-const toHex = (arrayBuffer: ArrayBuffer): string => {
-  const view = new Uint8Array(arrayBuffer);
-  return [...view].map((v) => v.toString(16).padStart(2, "0")).join("");
-};
-
-const signUpload = async (
-  secret: string,
-  key: string,
-  expiresAt: number
-): Promise<string> => {
-  const keyData = await crypto.subtle.importKey(
-    "raw",
-    new TextEncoder().encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    keyData,
-    new TextEncoder().encode(`${key}:${expiresAt}`)
-  );
-
-  return toHex(signature);
-};
 
 const parseFileName = (name: string): string => {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
@@ -49,7 +23,7 @@ uploadRoutes.post("/sign", authMiddleware, async (c) => {
   const expiresAt = Date.now() + 10 * 60 * 1000;
   const safeName = parseFileName(body.fileName || "file.bin");
   const key = `${body.category ?? "common"}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
-  const signature = await signUpload(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
+  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
 
   return c.json({
     success: true,
@@ -102,8 +76,13 @@ uploadRoutes.put("/object/:key{.+}", async (c) => {
     );
   }
 
-  const expectedSignature = await signUpload(c.env.UPLOAD_SIGNING_SECRET, key, expires);
-  if (expectedSignature !== signature) {
+  const signatureValid = await isObjectAccessSignatureValid(
+    c.env.UPLOAD_SIGNING_SECRET,
+    key,
+    expires,
+    signature
+  );
+  if (!signatureValid) {
     return c.json(
       {
         success: false,

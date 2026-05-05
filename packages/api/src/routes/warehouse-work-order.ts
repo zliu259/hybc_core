@@ -5,6 +5,8 @@ import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
+import { buildSignedObjectUrl, signObjectAccess } from "../services/upload-signature";
+import { canAccessWarehouseTaskEvidence } from "../services/warehouse-evidence-access";
 import {
   assignWarehouseTask,
   buildWarehouseTaskWorkloadSummary,
@@ -629,6 +631,74 @@ warehouseAssetWorkOrderRoutes.post(
     }
 
     return c.json({ success: true });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.get(
+  "/evidence/:evidenceId/access",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const evidenceId = Number(c.req.param("evidenceId"));
+    if (!Number.isInteger(evidenceId)) {
+      return c.json({ success: false, error: { message: "invalid evidence id" } }, 400);
+    }
+
+    const auth = c.get("auth");
+    const evidence = await c.env.DB.prepare(
+      `SELECT wte.*,
+              wao.work_order_no,
+              wao.assignee_userid,
+              w.manager_userid AS warehouse_manager_userid
+       FROM warehouse_task_evidence wte
+       JOIN warehouse_asset_work_order wao ON wao.id = wte.work_order_id
+       LEFT JOIN warehouse w ON w.id = wao.warehouse_id AND w.status != 'deleted'
+       WHERE wte.id = ?`
+    )
+      .bind(evidenceId)
+      .first<
+        WarehouseTaskEvidence & {
+          work_order_no: string;
+          assignee_userid: string | null;
+          warehouse_manager_userid: string | null;
+        }
+      >();
+
+    if (!evidence) {
+      return c.json({ success: false, error: { message: "evidence not found" } }, 404);
+    }
+    if (!evidence.file_key) {
+      return c.json({ success: false, error: { message: "evidence has no file" } }, 400);
+    }
+    if (
+      !canAccessWarehouseTaskEvidence(auth, {
+        assignee_userid: evidence.assignee_userid,
+        operator_userid: evidence.operator_userid,
+        warehouse_manager_userid: evidence.warehouse_manager_userid
+      })
+    ) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    const expiresAt = Date.now() + 5 * 60 * 1000;
+    const signature = await signObjectAccess(
+      c.env.UPLOAD_SIGNING_SECRET,
+      evidence.file_key,
+      expiresAt
+    );
+
+    return c.json({
+      success: true,
+      data: {
+        evidence_id: evidence.id,
+        work_order_id: evidence.work_order_id,
+        work_order_no: evidence.work_order_no,
+        file_key: evidence.file_key,
+        file_name: evidence.file_name,
+        evidence_type: evidence.evidence_type,
+        expires_at: new Date(expiresAt).toISOString(),
+        url: buildSignedObjectUrl(evidence.file_key, expiresAt, signature)
+      }
+    });
   }
 );
 

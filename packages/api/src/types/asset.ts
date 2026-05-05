@@ -171,6 +171,12 @@ export interface CreateTrackedAssetConfigurationRequest {
   note?: string;
 }
 
+export interface CreateTrackedAssetConfigurationTaskPackageRequest {
+  assignee_userid?: string | null;
+  scheduled_date?: string | null;
+  manual_version_id?: number | null;
+}
+
 export interface UpdateTrackedAssetConfigurationRequest {
   whole_machine_code?: string;
   shell_asset_id?: number | null;

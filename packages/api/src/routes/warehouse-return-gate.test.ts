@@ -135,10 +135,43 @@ class WarehouseFlowDb {
       return (this.assets.get(Number(params[0])) as T | undefined) ?? null;
     }
 
+    if (sql.includes("FROM stock_order_item") && sql.includes("configuration_role")) {
+      const stockOrderId = Number(params[0]);
+      const trackedAssetId = Number(params[1]);
+      return (
+        (this.stockItems.find(
+          (item) =>
+            item.stock_order_id === stockOrderId &&
+            item.tracked_asset_id === trackedAssetId &&
+            item.status === "active"
+        ) as T | undefined) ?? null
+      );
+    }
+
     throw new Error(`Unhandled first SQL: ${sql}`);
   }
 
   async all<T>(sql: string, params: unknown[]): Promise<{ results: T[] }> {
+    if (sql.includes("FROM warehouse_manual_binding")) {
+      return { results: [] };
+    }
+
+    if (sql.includes("FROM warehouse_task_evidence") && sql.includes("GROUP BY evidence_type")) {
+      const workOrderId = Number(params[0]);
+      const counts = new Map<string, number>();
+      for (const item of this.evidence.filter(
+        (evidence) => evidence.work_order_id === workOrderId
+      )) {
+        counts.set(item.evidence_type, (counts.get(item.evidence_type) ?? 0) + 1);
+      }
+      return {
+        results: [...counts.entries()].map(([evidence_type, evidence_count]) => ({
+          evidence_type,
+          evidence_count
+        })) as T[]
+      };
+    }
+
     if (sql.includes("FROM stock_order_item WHERE stock_order_id = ?")) {
       const stockOrderId = Number(params[0]);
       return {

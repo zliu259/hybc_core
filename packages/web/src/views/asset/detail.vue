@@ -4,11 +4,13 @@ import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { listProjects } from "@/api/project";
 import {
+  getWarehouseTaskEvidenceAccess,
   listWarehouses,
   type Warehouse,
   type WarehouseAssetWorkOrder,
   type WarehouseTaskEvidence
 } from "@/api/warehouse";
+import { resolveUploadUrl } from "@/api/upload";
 import {
   addAssetDocument,
   addAssetEvent,
@@ -54,6 +56,17 @@ const asset = ref<
           manual_version_no: number | null;
         }
       >;
+      manual_history: Array<{
+        work_order_id: number;
+        work_order_no: string;
+        work_order_type: WarehouseAssetWorkOrder["work_order_type"];
+        work_order_status: WarehouseAssetWorkOrder["status"];
+        manual_version_id: number;
+        manual_id: number | null;
+        manual_title: string;
+        manual_version_no: number | null;
+        referenced_at: string | null;
+      }>;
       task_evidence: Array<
         WarehouseTaskEvidence & {
           work_order_no: string;
@@ -249,6 +262,25 @@ const eventTypeOptions = [
 
 const selectedLocation = ref("");
 const propertySnapshot = ref<Record<string, unknown> | null>(null);
+const traceFilters = ref<{
+  work_order_type?: WarehouseAssetWorkOrder["work_order_type"];
+  evidence_type?: WarehouseTaskEvidence["evidence_type"];
+  event_type?: string;
+}>({});
+const evidencePreviewVisible = ref(false);
+const evidencePreviewLoading = ref(false);
+const previewUrl = ref("");
+const previewEvidence = ref<
+  | (WarehouseTaskEvidence & {
+      work_order_no: string;
+      file_key: string | null;
+      file_name: string | null;
+      summary: string | null;
+    })
+  | null
+>(null);
+
+const previewSource = computed(() => previewUrl.value);
 
 const parseRemarkFromProperties = (value: string | null): string => {
   if (!value) return "";
@@ -345,7 +377,7 @@ const loadMeta = async () => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const result = await getTrackedAsset(id.value);
+    const result = await getTrackedAsset(id.value, traceFilters.value);
     asset.value = result.data;
     propertySnapshot.value = null;
     form.value = {
@@ -361,6 +393,37 @@ const loadData = async () => {
     selectedLocation.value = resolveLocationSelection(result.data);
   } finally {
     loading.value = false;
+  }
+};
+
+const resetTraceFilters = async () => {
+  traceFilters.value = {};
+  await loadData();
+};
+
+const openEvidencePreview = async (
+  row: WarehouseTaskEvidence & {
+    work_order_no: string;
+    file_key: string | null;
+    file_name: string | null;
+    summary: string | null;
+  }
+) => {
+  previewEvidence.value = row;
+  previewUrl.value = "";
+  evidencePreviewVisible.value = true;
+  if (!row.file_key) return;
+
+  evidencePreviewLoading.value = true;
+  try {
+    const result = await getWarehouseTaskEvidenceAccess(row.id);
+    previewUrl.value = resolveUploadUrl(result.data.url);
+  } catch (error) {
+    message((error as Error).message || "证据访问地址获取失败", {
+      type: "error"
+    });
+  } finally {
+    evidencePreviewLoading.value = false;
   }
 };
 
@@ -566,6 +629,50 @@ onMounted(async () => {
           header="库房任务追溯"
           style="background: #fffaf2; margin-bottom: 16px"
         >
+          <el-form inline class="trace-filter">
+            <el-form-item label="任务类型">
+              <el-select
+                v-model="traceFilters.work_order_type"
+                clearable
+                style="width: 140px"
+              >
+                <el-option label="检查" value="inspection" />
+                <el-option label="维修" value="maintenance" />
+                <el-option label="保养" value="servicing" />
+                <el-option label="改装" value="modification" />
+                <el-option label="报废" value="scrapping" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="证据类型">
+              <el-select
+                v-model="traceFilters.evidence_type"
+                clearable
+                style="width: 140px"
+              >
+                <el-option label="照片" value="photo" />
+                <el-option label="视频" value="video" />
+                <el-option label="语音" value="voice" />
+                <el-option label="简报" value="brief" />
+                <el-option label="文档" value="document" />
+              </el-select>
+            </el-form-item>
+            <el-form-item label="时间线">
+              <el-select
+                v-model="traceFilters.event_type"
+                clearable
+                style="width: 160px"
+              >
+                <el-option
+                  v-for="(label, value) in eventTypeLabelMap"
+                  :key="value"
+                  :label="label"
+                  :value="value"
+                />
+              </el-select>
+            </el-form-item>
+            <el-button type="primary" @click="loadData">筛选</el-button>
+            <el-button @click="resetTraceFilters">重置</el-button>
+          </el-form>
           <el-empty
             v-if="!(asset?.warehouse_tasks?.length ?? 0)"
             description="暂无库房任务记录"
@@ -610,6 +717,60 @@ onMounted(async () => {
               min-width="180"
               show-overflow-tooltip
             />
+          </el-table>
+        </el-card>
+
+        <el-card
+          shadow="never"
+          header="手册引用历史"
+          style="background: #fffaf2; margin-bottom: 16px"
+        >
+          <el-empty
+            v-if="!(asset?.manual_history?.length ?? 0)"
+            description="暂无手册引用记录"
+          />
+          <el-table v-else :data="asset?.manual_history ?? []">
+            <el-table-column
+              prop="manual_title"
+              label="手册"
+              min-width="170"
+              show-overflow-tooltip
+            />
+            <el-table-column label="版本" width="80">
+              <template #default="scope">
+                v{{ scope.row.manual_version_no || "-" }}
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="work_order_no"
+              label="任务号"
+              min-width="150"
+            />
+            <el-table-column label="任务类型" width="100">
+              <template #default="scope">
+                {{
+                  workOrderTypeLabelMap[scope.row.work_order_type] ||
+                  scope.row.work_order_type
+                }}
+              </template>
+            </el-table-column>
+            <el-table-column label="任务状态" width="100">
+              <template #default="scope">
+                {{
+                  taskStatusLabelMap[scope.row.work_order_status] ||
+                  scope.row.work_order_status
+                }}
+              </template>
+            </el-table-column>
+            <el-table-column label="引用时间" width="180">
+              <template #default="scope">
+                {{
+                  scope.row.referenced_at
+                    ? toDisplayTime(scope.row.referenced_at)
+                    : "-"
+                }}
+              </template>
+            </el-table-column>
           </el-table>
         </el-card>
 
@@ -663,6 +824,17 @@ onMounted(async () => {
               <template #default="scope">{{
                 toDisplayTime(scope.row.captured_at)
               }}</template>
+            </el-table-column>
+            <el-table-column label="预览" width="80">
+              <template #default="scope">
+                <el-button
+                  link
+                  type="primary"
+                  :disabled="!scope.row.file_key"
+                  @click="openEvidencePreview(scope.row)"
+                  >查看</el-button
+                >
+              </template>
             </el-table-column>
           </el-table>
         </el-card>
@@ -792,5 +964,77 @@ onMounted(async () => {
         >
       </template>
     </el-dialog>
+
+    <el-drawer v-model="evidencePreviewVisible" title="证据预览" size="520px">
+      <div v-if="previewEvidence" class="evidence-preview">
+        <div class="evidence-preview__meta">
+          {{ previewEvidence.work_order_no }} ·
+          {{
+            evidenceTypeLabelMap[previewEvidence.evidence_type] ||
+            previewEvidence.evidence_type
+          }}
+        </div>
+        <el-alert
+          v-if="evidencePreviewLoading"
+          title="正在获取证据访问地址"
+          type="info"
+          :closable="false"
+          class="evidence-preview__notice"
+        />
+        <el-image
+          v-else-if="previewEvidence.evidence_type === 'photo' && previewSource"
+          :src="previewSource"
+          fit="contain"
+          class="evidence-preview__image"
+          :preview-src-list="[previewSource]"
+        />
+        <el-alert
+          v-else
+          title="当前证据没有可直接预览的图片地址"
+          type="info"
+          :closable="false"
+        />
+        <el-descriptions :column="1" border class="evidence-preview__desc">
+          <el-descriptions-item label="文件名">
+            {{ previewEvidence.file_name || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="文件Key">
+            {{ previewEvidence.file_key || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="说明">
+            {{ previewEvidence.summary || "-" }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </div>
+    </el-drawer>
   </div>
 </template>
+
+<style scoped>
+.trace-filter {
+  margin-bottom: 12px;
+}
+
+.evidence-preview__meta {
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: #2a241d;
+}
+
+.evidence-preview__image {
+  width: 100%;
+  min-height: 260px;
+  margin-bottom: 14px;
+  border: 1px solid #d9ceb9;
+  border-radius: 8px;
+  background: #fffaf2;
+}
+
+.evidence-preview__notice {
+  margin-bottom: 14px;
+}
+
+.evidence-preview__desc {
+  margin-top: 14px;
+}
+</style>
