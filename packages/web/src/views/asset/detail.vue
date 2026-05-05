@@ -14,6 +14,7 @@ import { resolveUploadUrl } from "@/api/upload";
 import {
   addAssetDocument,
   addAssetEvent,
+  type AssetAvailability,
   getTrackedAsset,
   type TrackedAssetConfiguration,
   type TrackedAsset,
@@ -47,6 +48,7 @@ const loading = ref(false);
 const saving = ref(false);
 const asset = ref<
   | (TrackedAsset & {
+      availability: AssetAvailability;
       documents: AssetDocument[];
       events: AssetEvent[];
       configurations: TrackedAssetConfiguration[];
@@ -517,6 +519,30 @@ onMounted(async () => {
     <el-row :gutter="16">
       <el-col :md="12" :xs="24">
         <el-card shadow="never" header="基础信息" style="background: #fffaf2">
+          <div v-if="asset?.availability" class="availability-bar">
+            <div class="availability-bar__main">
+              <el-tag
+                :type="asset.availability.severity"
+                effect="dark"
+                size="large"
+              >
+                {{ asset.availability.label }}
+              </el-tag>
+              <span class="availability-bar__text">
+                {{
+                  asset.availability.can_dispatch
+                    ? "当前设备可以安排出库"
+                    : "当前设备不可直接出库"
+                }}
+              </span>
+            </div>
+            <div
+              v-if="asset.availability.reasons.length"
+              class="availability-bar__reasons"
+            >
+              {{ asset.availability.reasons.join("；") }}
+            </div>
+          </div>
           <el-form label-width="110px">
             <el-form-item label="资产名称">
               <el-input v-model="form.asset_name" />
@@ -1013,6 +1039,31 @@ onMounted(async () => {
 <style scoped>
 .trace-filter {
   margin-bottom: 12px;
+}
+
+.availability-bar {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid #d9ceb9;
+  border-radius: 8px;
+  background: #fff6e6;
+}
+
+.availability-bar__main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.availability-bar__text {
+  font-weight: 600;
+  color: #2a241d;
+}
+
+.availability-bar__reasons {
+  margin-top: 8px;
+  color: #6e6458;
+  line-height: 1.5;
 }
 
 .evidence-preview__meta {

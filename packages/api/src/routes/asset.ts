@@ -6,6 +6,7 @@ import {
   buildAssetManualReferenceHistory,
   type AssetManualReferenceHistoryRow
 } from "../services/asset-manual-history";
+import { buildAssetAvailabilityStatus } from "../services/asset-availability";
 import { collectConfigurationParticipants, emitTrackedAssetEvents } from "../services/asset-event";
 import {
   buildTbmCompositionCandidate,
@@ -1240,6 +1241,17 @@ assetRoutes.get(
       .bind(id, id, id)
       .all<TrackedAssetConfiguration>();
 
+    const blockingWorkOrders = await c.env.DB.prepare(
+      `SELECT work_order_no, status
+       FROM warehouse_asset_work_order
+       WHERE tracked_asset_id = ?
+         AND blocking_flag = 1
+         AND status NOT IN ('completed', 'cancelled')
+       ORDER BY id DESC`
+    )
+      .bind(id)
+      .all<{ work_order_no: string; status: string }>();
+
     let taskSql = `
       SELECT wao.*,
               wm.manual_title,
@@ -1322,6 +1334,11 @@ assetRoutes.get(
       success: true,
       data: {
         ...asset,
+        availability: buildAssetAvailabilityStatus({
+          asset,
+          blockingWorkOrders: blockingWorkOrders.results ?? [],
+          configurations: configurations.results ?? []
+        }),
         documents: docs.results ?? [],
         events: events.results ?? [],
         configurations: configurations.results ?? [],

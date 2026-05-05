@@ -36,6 +36,24 @@ export type TrackedAsset = {
   updated_at: string;
 };
 
+export type AssetAvailability = {
+  state:
+    | "available_now"
+    | "available_after_modification"
+    | "blocked"
+    | "returned_quarantine"
+    | "inspection"
+    | "maintenance"
+    | "servicing"
+    | "modification"
+    | "on_project"
+    | "scrapped";
+  label: string;
+  severity: "success" | "warning" | "danger" | "info";
+  can_dispatch: boolean;
+  reasons: string[];
+};
+
 export type TrackedAssetConfiguration = {
   id: number;
   configuration_code: string;
@@ -231,6 +249,7 @@ export const getTrackedAsset = (
   http.request<{
     success: boolean;
     data: TrackedAsset & {
+      availability: AssetAvailability;
       documents: {
         id: number;
         doc_type: string;
