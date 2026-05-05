@@ -84,6 +84,11 @@
 - 资产详情：`packages/web/src/views/asset/detail.vue`
 - 设备总览：`packages/web/src/views/asset/dashboard.vue`
 - 仓库管理：`packages/web/src/views/warehouse/index.vue`
+- 库房总控台：`packages/web/src/views/warehouse/control-center.vue`
+- 库房任务调度台：`packages/web/src/views/warehouse/task-dispatch.vue`
+- 返库检查维护：`packages/web/src/views/warehouse/return-maintenance.vue`
+- 顶管机组合方案台：`packages/web/src/views/warehouse/tbm-composition.vue`
+- 操作手册库：`packages/web/src/views/warehouse/manual-library.vue`
 - 仓库库存：`packages/web/src/views/warehouse/inventory.vue`
 - 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
 - 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`

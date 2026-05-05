@@ -5,6 +5,11 @@ import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
+import {
+  createReturnInspectionTaskForStockOrderItem,
+  isAssetBlockedByWarehouseTasks,
+  normalizeReturnedAssetStatus
+} from "../services/warehouse-task";
 import type { Env } from "../types/env";
 import type { TrackedAsset } from "../types/asset";
 import type {
@@ -47,7 +52,16 @@ const parseTaskResult = (resultJson: string | null): Record<string, unknown> | n
 };
 
 const STOCKTAKE_LINE_STATUS = new Set(["normal", "new", "damaged", "lost"]);
-const BLOCKED_TRACKED_ASSET_STATUSES = new Set(["quarantine", "inspection", "maintenance", "servicing", "modification", "scrapped", "using"]);
+const BLOCKED_TRACKED_ASSET_STATUSES = new Set([
+  "quarantine",
+  "returned_quarantine",
+  "inspection",
+  "maintenance",
+  "servicing",
+  "modification",
+  "scrapped",
+  "using"
+]);
 
 const ensureStocktakeLineStatus = (value?: string): "normal" | "new" | "damaged" | "lost" => {
   if (!value) return "normal";
@@ -96,7 +110,8 @@ const buildInitialStocktakeLines = async (
     }>();
 
   const trackedParams: number[] = [];
-  const trackedFilter = scope === "warehouse" && warehouseId ? " AND ta.current_warehouse_id = ?" : "";
+  const trackedFilter =
+    scope === "warehouse" && warehouseId ? " AND ta.current_warehouse_id = ?" : "";
   if (scope === "warehouse" && warehouseId) trackedParams.push(warehouseId);
 
   const trackedRows = await env.DB.prepare(
@@ -123,7 +138,7 @@ const buildInitialStocktakeLines = async (
     }>();
 
   const lines = [
-    ...(consumableRows.results ?? []).map(row => ({
+    ...(consumableRows.results ?? []).map((row) => ({
       warehouse_id: row.warehouse_id,
       item_kind: "consumable" as const,
       asset_type_id: row.asset_type_id,
@@ -136,7 +151,7 @@ const buildInitialStocktakeLines = async (
       line_status: "normal" as const,
       note: null
     })),
-    ...(trackedRows.results ?? []).map(row => ({
+    ...(trackedRows.results ?? []).map((row) => ({
       warehouse_id: row.warehouse_id,
       item_kind: "asset" as const,
       asset_type_id: row.asset_type_id,
@@ -178,7 +193,9 @@ const upsertInventory = async (
 
   const next = row.quantity + deltaQty;
   if (next < 0) {
-    throw new Error(`Inventory insufficient for warehouse=${warehouseId}, asset_type=${assetTypeId}`);
+    throw new Error(
+      `Inventory insufficient for warehouse=${warehouseId}, asset_type=${assetTypeId}`
+    );
   }
 
   await db
@@ -208,22 +225,19 @@ const evaluateStockOrderGate = async (
       issues.push(`tracked asset ${item.tracked_asset_id} not found`);
       continue;
     }
-    if (order.order_type === "outbound" && BLOCKED_TRACKED_ASSET_STATUSES.has(asset.status) && !overrideApproved) {
+    if (
+      order.order_type === "outbound" &&
+      BLOCKED_TRACKED_ASSET_STATUSES.has(asset.status) &&
+      !overrideApproved
+    ) {
       issues.push(`tracked asset ${asset.asset_code} blocked by status=${asset.status}`);
     }
 
-    const blockingWorkOrder = await env.DB.prepare(
-      `SELECT work_order_no FROM warehouse_asset_work_order
-       WHERE tracked_asset_id = ?
-         AND blocking_flag = 1
-         AND status IN ('pending_approval', 'approved', 'in_progress')
-       ORDER BY id DESC
-       LIMIT 1`
-    )
-      .bind(asset.id)
-      .first<{ work_order_no: string }>();
-    if (blockingWorkOrder && !overrideApproved) {
-      issues.push(`tracked asset ${asset.asset_code} blocked by work order ${blockingWorkOrder.work_order_no}`);
+    const blockingTask = await isAssetBlockedByWarehouseTasks(env, asset.id);
+    if (blockingTask.blocked && !overrideApproved) {
+      issues.push(
+        `tracked asset ${asset.asset_code} blocked by task ${blockingTask.work_order_no}`
+      );
     }
   }
 
@@ -248,7 +262,9 @@ const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<vo
     }
   }
 
-  const items = await env.DB.prepare("SELECT * FROM stock_order_item WHERE stock_order_id = ? AND status = 'active'")
+  const items = await env.DB.prepare(
+    "SELECT * FROM stock_order_item WHERE stock_order_id = ? AND status = 'active'"
+  )
     .bind(order.id)
     .all<StockOrderItem>();
 
@@ -271,12 +287,25 @@ const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<vo
           .bind(order.project_id ?? null, nowIso(), asset.id)
           .run();
       } else if (order.order_type === "inbound") {
-        const inboundStatus = order.project_id ? "quarantine" : "idle";
+        const targetWarehouse = order.to_warehouse_id ?? order.from_warehouse_id ?? null;
+        const inboundStatus = order.project_id
+          ? "returned_quarantine"
+          : normalizeReturnedAssetStatus("idle");
         await env.DB.prepare(
           "UPDATE tracked_asset SET current_project_id = NULL, current_warehouse_id = ?, current_location = 'warehouse', status = ?, updated_at = ? WHERE id = ?"
         )
-          .bind(order.to_warehouse_id ?? order.from_warehouse_id ?? null, inboundStatus, nowIso(), asset.id)
+          .bind(targetWarehouse, inboundStatus, nowIso(), asset.id)
           .run();
+        if (order.project_id) {
+          await createReturnInspectionTaskForStockOrderItem(env, {
+            order_id: order.id,
+            order_no: order.order_no,
+            project_id: order.project_id,
+            warehouse_id: targetWarehouse,
+            tracked_asset_id: asset.id,
+            applicant_userid: order.applicant_userid
+          });
+        }
       } else if (order.order_type === "transfer") {
         await env.DB.prepare(
           "UPDATE tracked_asset SET current_warehouse_id = ?, current_location = 'warehouse', status = 'idle', updated_at = ? WHERE id = ?"
@@ -348,49 +377,44 @@ warehouseRoutes.get(
       params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
     }
     sql += " ORDER BY id DESC";
-    const rows = await c.env.DB.prepare(sql).bind(...params).all<Warehouse>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<Warehouse>();
     return c.json({ success: true, data: rows.results ?? [] });
   }
 );
 
-warehouseRoutes.post(
-  "/",
-  requireRoles(["super_admin", "manager"]),
-  async (c) => {
-    const body = (await c.req.json()) as CreateWarehouseRequest;
-    if (!body.warehouse_code?.trim() || !body.warehouse_name?.trim()) {
-      return c.json(
-        { success: false, error: { message: "warehouse_code and warehouse_name are required" } },
-        400
-      );
-    }
-    const result = await c.env.DB.prepare(
-      `INSERT INTO warehouse
+warehouseRoutes.post("/", requireRoles(["super_admin", "manager"]), async (c) => {
+  const body = (await c.req.json()) as CreateWarehouseRequest;
+  if (!body.warehouse_code?.trim() || !body.warehouse_name?.trim()) {
+    return c.json(
+      { success: false, error: { message: "warehouse_code and warehouse_name are required" } },
+      400
+    );
+  }
+  const result = await c.env.DB.prepare(
+    `INSERT INTO warehouse
         (warehouse_code, warehouse_name, location, manager_userid, status, remark, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`
+  )
+    .bind(
+      body.warehouse_code.trim().toUpperCase(),
+      body.warehouse_name.trim(),
+      body.location ?? null,
+      body.manager_userid ?? null,
+      body.remark ?? null,
+      nowIso(),
+      nowIso()
     )
-      .bind(
-        body.warehouse_code.trim().toUpperCase(),
-        body.warehouse_name.trim(),
-        body.location ?? null,
-        body.manager_userid ?? null,
-        body.remark ?? null,
-        nowIso(),
-        nowIso()
-      )
-      .run();
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
-  }
-);
+    .run();
+  return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+});
 
-warehouseRoutes.put(
-  "/:id",
-  requireRoles(["super_admin", "manager"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as UpdateWarehouseRequest;
-    await c.env.DB.prepare(
-      `UPDATE warehouse SET
+warehouseRoutes.put("/:id", requireRoles(["super_admin", "manager"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.json()) as UpdateWarehouseRequest;
+  await c.env.DB.prepare(
+    `UPDATE warehouse SET
          warehouse_name = COALESCE(?, warehouse_name),
          location = COALESCE(?, location),
          manager_userid = COALESCE(?, manager_userid),
@@ -398,32 +422,27 @@ warehouseRoutes.put(
          remark = COALESCE(?, remark),
          updated_at = ?
        WHERE id = ?`
+  )
+    .bind(
+      body.warehouse_name ?? null,
+      body.location ?? null,
+      body.manager_userid ?? null,
+      body.status ?? null,
+      body.remark ?? null,
+      nowIso(),
+      id
     )
-      .bind(
-        body.warehouse_name ?? null,
-        body.location ?? null,
-        body.manager_userid ?? null,
-        body.status ?? null,
-        body.remark ?? null,
-        nowIso(),
-        id
-      )
-      .run();
-    return c.json({ success: true });
-  }
-);
+    .run();
+  return c.json({ success: true });
+});
 
-warehouseRoutes.delete(
-  "/:id",
-  requireRoles(["super_admin", "manager"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare("UPDATE warehouse SET status = 'deleted', updated_at = ? WHERE id = ?")
-      .bind(nowIso(), id)
-      .run();
-    return c.json({ success: true });
-  }
-);
+warehouseRoutes.delete("/:id", requireRoles(["super_admin", "manager"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare("UPDATE warehouse SET status = 'deleted', updated_at = ? WHERE id = ?")
+    .bind(nowIso(), id)
+    .run();
+  return c.json({ success: true });
+});
 
 warehouseRoutes.get(
   "/inventory",
@@ -445,7 +464,9 @@ warehouseRoutes.get(
     }
     sql += " ORDER BY i.id DESC";
 
-    const rows = await c.env.DB.prepare(sql).bind(...params).all();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all();
     return c.json({ success: true, data: rows.results ?? [] });
   }
 );
@@ -475,7 +496,8 @@ warehouseRoutes.post(
     const inventory = await c.env.DB.prepare("SELECT * FROM inventory WHERE id = ?")
       .bind(inventoryId)
       .first<InventoryRow>();
-    if (!inventory) return c.json({ success: false, error: { message: "Inventory row not found" } }, 404);
+    if (!inventory)
+      return c.json({ success: false, error: { message: "Inventory row not found" } }, 404);
 
     const task = await createTask(c.env, {
       task_type: "inventory_alert_analysis",
@@ -530,7 +552,10 @@ warehouseRoutes.post(
 
     if (!body.warehouse_id || !body.asset_type_id || !body.quantity || body.quantity <= 0) {
       return c.json(
-        { success: false, error: { message: "warehouse_id, asset_type_id, quantity are required" } },
+        {
+          success: false,
+          error: { message: "warehouse_id, asset_type_id, quantity are required" }
+        },
         400
       );
     }
@@ -590,7 +615,9 @@ warehouseRoutes.get(
       params.push(orderType);
     }
     sql += " ORDER BY id DESC";
-    const rows = await c.env.DB.prepare(sql).bind(...params).all<StockOrder>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<StockOrder>();
     return c.json({ success: true, data: rows.results ?? [] });
   }
 );
@@ -619,7 +646,10 @@ warehouseRoutes.post(
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateStockOrderRequest;
     if (!body.order_type || !body.items || body.items.length === 0) {
-      return c.json({ success: false, error: { message: "order_type and items are required" } }, 400);
+      return c.json(
+        { success: false, error: { message: "order_type and items are required" } },
+        400
+      );
     }
 
     if (body.rental_term_id) {
@@ -646,7 +676,10 @@ warehouseRoutes.post(
     const now = nowIso();
     const overrideStatus = body.override_status ?? "none";
     if (!["none", "requested", "approved"].includes(overrideStatus)) {
-      return c.json({ success: false, error: { message: "override_status must be none/requested/approved" } }, 400);
+      return c.json(
+        { success: false, error: { message: "override_status must be none/requested/approved" } },
+        400
+      );
     }
     const result = await c.env.DB.prepare(
       `INSERT INTO stock_order
@@ -709,7 +742,9 @@ warehouseRoutes.get(
       .bind(id)
       .first<StockOrder>();
     if (!order) return c.json({ success: false, error: { message: "Stock order not found" } }, 404);
-    const items = await c.env.DB.prepare("SELECT * FROM stock_order_item WHERE stock_order_id = ? AND status = 'active'")
+    const items = await c.env.DB.prepare(
+      "SELECT * FROM stock_order_item WHERE stock_order_id = ? AND status = 'active'"
+    )
       .bind(id)
       .all<StockOrderItem>();
     const gate = await evaluateStockOrderGate(c.env, order, items.results ?? []);
@@ -730,7 +765,10 @@ warehouseRoutes.post(
       .first<StockOrder>();
     if (!order) return c.json({ success: false, error: { message: "Stock order not found" } }, 404);
     if (order.status !== "draft") {
-      return c.json({ success: false, error: { message: "Only draft stock order can submit approval" } }, 400);
+      return c.json(
+        { success: false, error: { message: "Only draft stock order can submit approval" } },
+        400
+      );
     }
 
     const instance = await submitForApproval(
@@ -756,7 +794,10 @@ warehouseRoutes.post(
       .bind(instance.id, nowIso(), id)
       .run();
 
-    return c.json({ success: true, data: { approval_instance_id: instance.id, instance_no: instance.instance_no } });
+    return c.json({
+      success: true,
+      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+    });
   }
 );
 
@@ -770,7 +811,10 @@ warehouseRoutes.post(
       .first<StockOrder>();
     if (!order) return c.json({ success: false, error: { message: "Stock order not found" } }, 404);
     if (order.status !== "approved") {
-      return c.json({ success: false, error: { message: "Only approved stock order can execute" } }, 400);
+      return c.json(
+        { success: false, error: { message: "Only approved stock order can execute" } },
+        400
+      );
     }
 
     await applyStockOrderExecution(c.env, order);
@@ -792,10 +836,14 @@ warehouseRoutes.post(
     const auth = c.get("auth");
     const body = (await c.req.json()) as ReviewStockOrderOverrideRequest;
     if (!["request", "approve", "reject"].includes(body.action)) {
-      return c.json({ success: false, error: { message: "action must be request/approve/reject" } }, 400);
+      return c.json(
+        { success: false, error: { message: "action must be request/approve/reject" } },
+        400
+      );
     }
 
-    const nextStatus = body.action === "request" ? "requested" : body.action === "approve" ? "approved" : "rejected";
+    const nextStatus =
+      body.action === "request" ? "requested" : body.action === "approve" ? "approved" : "rejected";
     await c.env.DB.prepare(
       `UPDATE stock_order SET
          override_status = ?,
@@ -815,7 +863,9 @@ warehouseRoutes.post(
   requireRoles(["super_admin", "manager"]),
   async (c) => {
     const id = Number(c.req.param("id"));
-    await c.env.DB.prepare("UPDATE stock_order SET status = 'cancelled', updated_at = ? WHERE id = ?")
+    await c.env.DB.prepare(
+      "UPDATE stock_order SET status = 'cancelled', updated_at = ? WHERE id = ?"
+    )
       .bind(nowIso(), id)
       .run();
     return c.json({ success: true });
@@ -825,7 +875,7 @@ warehouseRoutes.post(
 warehouseRoutes.get(
   "/stocktake",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
-  async c => {
+  async (c) => {
     const status = c.req.query("status");
     const warehouseId = c.req.query("warehouse_id");
     let sql =
@@ -840,7 +890,9 @@ warehouseRoutes.get(
       params.push(Number(warehouseId));
     }
     sql += " ORDER BY st.id DESC";
-    const rows = await c.env.DB.prepare(sql).bind(...params).all<StocktakeTask & { warehouse_name: string | null }>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<StocktakeTask & { warehouse_name: string | null }>();
     return c.json({ success: true, data: rows.results ?? [] });
   }
 );
@@ -848,14 +900,15 @@ warehouseRoutes.get(
 warehouseRoutes.get(
   "/stocktake/:id",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
-  async c => {
+  async (c) => {
     const id = Number(c.req.param("id"));
     const task = await c.env.DB.prepare(
       "SELECT st.*, w.warehouse_name FROM stocktake_task st LEFT JOIN warehouse w ON w.id = st.warehouse_id WHERE st.id = ?"
     )
       .bind(id)
       .first<StocktakeTask & { warehouse_name: string | null }>();
-    if (!task) return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
+    if (!task)
+      return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
 
     const lines = await c.env.DB.prepare(
       `SELECT sl.*, w.warehouse_name
@@ -874,18 +927,27 @@ warehouseRoutes.get(
 warehouseRoutes.post(
   "/stocktake",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
-  async c => {
+  async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateStocktakeTaskRequest;
 
     if (!body.task_title?.trim() || !body.planned_date) {
-      return c.json({ success: false, error: { message: "task_title and planned_date are required" } }, 400);
+      return c.json(
+        { success: false, error: { message: "task_title and planned_date are required" } },
+        400
+      );
     }
     if (body.scope !== "company" && body.scope !== "warehouse") {
-      return c.json({ success: false, error: { message: "scope must be company or warehouse" } }, 400);
+      return c.json(
+        { success: false, error: { message: "scope must be company or warehouse" } },
+        400
+      );
     }
     if (body.scope === "warehouse" && !body.warehouse_id) {
-      return c.json({ success: false, error: { message: "warehouse scope requires warehouse_id" } }, 400);
+      return c.json(
+        { success: false, error: { message: "warehouse scope requires warehouse_id" } },
+        400
+      );
     }
 
     const taskNo = await generateSerial(c.env.DB, "PK", "stocktake_task", "task_no");
@@ -899,7 +961,7 @@ warehouseRoutes.post(
         taskNo,
         body.task_title.trim(),
         body.scope,
-        body.scope === "warehouse" ? body.warehouse_id ?? null : null,
+        body.scope === "warehouse" ? (body.warehouse_id ?? null) : null,
         body.planned_date,
         auth.sub,
         body.remark ?? null,
@@ -948,15 +1010,19 @@ warehouseRoutes.post(
 warehouseRoutes.post(
   "/stocktake/:id/line",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
-  async c => {
+  async (c) => {
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as AddStocktakeLineRequest;
     const task = await c.env.DB.prepare("SELECT * FROM stocktake_task WHERE id = ?")
       .bind(id)
       .first<StocktakeTask>();
-    if (!task) return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
+    if (!task)
+      return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
     if (task.status === "completed") {
-      return c.json({ success: false, error: { message: "Completed stocktake cannot add new lines" } }, 400);
+      return c.json(
+        { success: false, error: { message: "Completed stocktake cannot add new lines" } },
+        400
+      );
     }
     if (!body.warehouse_id || !body.item_kind || Number(body.counted_qty) <= 0) {
       return c.json(
@@ -965,7 +1031,10 @@ warehouseRoutes.post(
       );
     }
     if (body.item_kind !== "asset" && body.item_kind !== "consumable") {
-      return c.json({ success: false, error: { message: "item_kind must be asset or consumable" } }, 400);
+      return c.json(
+        { success: false, error: { message: "item_kind must be asset or consumable" } },
+        400
+      );
     }
 
     let lineStatus: "normal" | "new" | "damaged" | "lost";
@@ -981,15 +1050,24 @@ warehouseRoutes.post(
     let trackedAssetId: number | null = null;
 
     if (body.asset_type_id) {
-      const type = await c.env.DB.prepare("SELECT * FROM asset_type WHERE id = ? AND status != 'deleted'")
+      const type = await c.env.DB.prepare(
+        "SELECT * FROM asset_type WHERE id = ? AND status != 'deleted'"
+      )
         .bind(body.asset_type_id)
         .first<{ id: number; type_name: string; unit: string | null; tracked_flag: number }>();
-      if (!type) return c.json({ success: false, error: { message: "asset_type_id not found" } }, 404);
+      if (!type)
+        return c.json({ success: false, error: { message: "asset_type_id not found" } }, 404);
       if (body.item_kind === "asset" && type.tracked_flag !== 1) {
-        return c.json({ success: false, error: { message: "asset lines require tracked asset type" } }, 400);
+        return c.json(
+          { success: false, error: { message: "asset lines require tracked asset type" } },
+          400
+        );
       }
       if (body.item_kind === "consumable" && type.tracked_flag !== 0) {
-        return c.json({ success: false, error: { message: "consumable lines require untracked asset type" } }, 400);
+        return c.json(
+          { success: false, error: { message: "consumable lines require untracked asset type" } },
+          400
+        );
       }
       assetTypeId = type.id;
       if (!itemName) itemName = type.type_name;
@@ -1000,13 +1078,17 @@ warehouseRoutes.post(
       const asset = await c.env.DB.prepare("SELECT id, asset_name FROM tracked_asset WHERE id = ?")
         .bind(body.tracked_asset_id)
         .first<{ id: number; asset_name: string }>();
-      if (!asset) return c.json({ success: false, error: { message: "tracked_asset_id not found" } }, 404);
+      if (!asset)
+        return c.json({ success: false, error: { message: "tracked_asset_id not found" } }, 404);
       trackedAssetId = asset.id;
       if (!itemName) itemName = asset.asset_name;
     }
 
     if (!itemName) {
-      return c.json({ success: false, error: { message: "item_name or asset_type_id is required" } }, 400);
+      return c.json(
+        { success: false, error: { message: "item_name or asset_type_id is required" } },
+        400
+      );
     }
 
     const countedQty = Number(body.counted_qty);
@@ -1045,15 +1127,18 @@ warehouseRoutes.post(
 warehouseRoutes.put(
   "/stocktake/:id/line/:lineId",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
-  async c => {
+  async (c) => {
     const id = Number(c.req.param("id"));
     const lineId = Number(c.req.param("lineId"));
     const body = (await c.req.json()) as UpdateStocktakeLineRequest;
 
-    const line = await c.env.DB.prepare("SELECT * FROM stocktake_line WHERE id = ? AND stocktake_task_id = ?")
+    const line = await c.env.DB.prepare(
+      "SELECT * FROM stocktake_line WHERE id = ? AND stocktake_task_id = ?"
+    )
       .bind(lineId, id)
       .first<StocktakeLine>();
-    if (!line) return c.json({ success: false, error: { message: "Stocktake line not found" } }, 404);
+    if (!line)
+      return c.json({ success: false, error: { message: "Stocktake line not found" } }, 404);
 
     let lineStatus: "normal" | "new" | "damaged" | "lost";
     try {
@@ -1099,14 +1184,18 @@ warehouseRoutes.put(
 warehouseRoutes.post(
   "/stocktake/:id/complete",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
-  async c => {
+  async (c) => {
     const id = Number(c.req.param("id"));
     const task = await c.env.DB.prepare("SELECT * FROM stocktake_task WHERE id = ?")
       .bind(id)
       .first<StocktakeTask>();
-    if (!task) return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
+    if (!task)
+      return c.json({ success: false, error: { message: "Stocktake task not found" } }, 404);
     if (task.status === "completed") {
-      return c.json({ success: false, error: { message: "Stocktake task already completed" } }, 400);
+      return c.json(
+        { success: false, error: { message: "Stocktake task already completed" } },
+        400
+      );
     }
 
     const pending = await c.env.DB.prepare(
@@ -1115,7 +1204,10 @@ warehouseRoutes.post(
       .bind(id)
       .first<{ cnt: number }>();
     if ((pending?.cnt ?? 0) > 0) {
-      return c.json({ success: false, error: { message: "All stocktake lines must have counted_qty" } }, 400);
+      return c.json(
+        { success: false, error: { message: "All stocktake lines must have counted_qty" } },
+        400
+      );
     }
 
     const now = nowIso();
@@ -1159,7 +1251,9 @@ warehouseRoutes.get(
       params.push(Number(projectId));
     }
     sql += " ORDER BY id DESC";
-    const rows = await c.env.DB.prepare(sql).bind(...params).all<ProjectEquipmentPlan>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<ProjectEquipmentPlan>();
     return c.json({ success: true, data: rows.results ?? [] });
   }
 );
@@ -1174,7 +1268,9 @@ warehouseRoutes.get(
       .first<ProjectEquipmentPlan>();
     if (!plan) return c.json({ success: false, error: { message: "Plan not found" } }, 404);
 
-    const items = await c.env.DB.prepare("SELECT * FROM project_equipment_plan_item WHERE plan_id = ? ORDER BY id ASC")
+    const items = await c.env.DB.prepare(
+      "SELECT * FROM project_equipment_plan_item WHERE plan_id = ? ORDER BY id ASC"
+    )
       .bind(id)
       .all();
     return c.json({ success: true, data: { ...plan, items: items.results ?? [] } });
@@ -1189,7 +1285,10 @@ warehouseRoutes.post(
     const body = (await c.req.json()) as CreateEquipmentPlanRequest;
 
     if (!body.project_id || !body.items || body.items.length === 0) {
-      return c.json({ success: false, error: { message: "project_id and items are required" } }, 400);
+      return c.json(
+        { success: false, error: { message: "project_id and items are required" } },
+        400
+      );
     }
 
     const planNo = await generateSerial(c.env.DB, "EP", "project_equipment_plan", "plan_no");
@@ -1228,7 +1327,9 @@ warehouseRoutes.post(
       .first<ProjectEquipmentPlan>();
     if (!plan) return c.json({ success: false, error: { message: "Plan not found" } }, 404);
 
-    const items = await c.env.DB.prepare("SELECT * FROM project_equipment_plan_item WHERE plan_id = ? ORDER BY id ASC")
+    const items = await c.env.DB.prepare(
+      "SELECT * FROM project_equipment_plan_item WHERE plan_id = ? ORDER BY id ASC"
+    )
       .bind(id)
       .all();
 
@@ -1267,7 +1368,10 @@ warehouseRoutes.get(
     if (!plan) return c.json({ success: false, error: { message: "Plan not found" } }, 404);
 
     if (!plan.ai_task_id) {
-      return c.json({ success: true, data: { status: plan.ai_status, task_id: null, result: null } });
+      return c.json({
+        success: true,
+        data: { status: plan.ai_status, task_id: null, result: null }
+      });
     }
 
     const task = await c.env.DB.prepare("SELECT status, result_json FROM task_queue WHERE id = ?")
@@ -1343,7 +1447,15 @@ warehouseRoutes.post(
          status, approval_instance_id, executed_at, remark, created_at, updated_at)
        VALUES (?, 'outbound', ?, ?, NULL, ?, 'draft', NULL, NULL, ?, ?, ?)`
     )
-      .bind(orderNo, plan.project_id, body.from_warehouse_id, auth.sub, body.note ?? null, nowIso(), nowIso())
+      .bind(
+        orderNo,
+        plan.project_id,
+        body.from_warehouse_id,
+        auth.sub,
+        body.note ?? null,
+        nowIso(),
+        nowIso()
+      )
       .run();
     const stockOrderId = orderResult.meta.last_row_id as number;
 

@@ -3,14 +3,18 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler } from "../services/ai-slot";
-import {
-  emitTrackedAssetEvents,
-  getConfigurationParticipants
-} from "../services/asset-event";
 import { submitForApproval } from "../services/approval/engine";
-import { generateSerial } from "../services/serial";
-import type { TrackedAsset } from "../types/asset";
+import {
+  assignWarehouseTask,
+  cancelWarehouseTask,
+  createWarehouseTask,
+  emitWarehouseTaskTimelineEvent,
+  reviewWarehouseTask,
+  startWarehouseTask,
+  submitWarehouseTask
+} from "../services/warehouse-task";
 import type { Env } from "../types/env";
+import type { AuthTokenPayload } from "../types/auth";
 import type {
   CompleteWarehouseAssetWorkOrderRequest,
   CreateWarehouseAssetWorkOrderRequest,
@@ -22,10 +26,18 @@ import type {
 
 const nowIso = () => new Date().toISOString();
 
-const WORK_ORDER_TYPES = new Set(["inspection", "maintenance", "servicing", "modification", "scrapping"]);
+const WORK_ORDER_TYPES = new Set([
+  "inspection",
+  "maintenance",
+  "servicing",
+  "modification",
+  "scrapping"
+]);
 const ensureWorkOrderType = (value: string): WarehouseAssetWorkOrderType => {
   if (!WORK_ORDER_TYPES.has(value)) {
-    throw new Error("work_order_type must be inspection/maintenance/servicing/modification/scrapping");
+    throw new Error(
+      "work_order_type must be inspection/maintenance/servicing/modification/scrapping"
+    );
   }
   return value as WarehouseAssetWorkOrderType;
 };
@@ -45,7 +57,9 @@ const validateRelations = async (
     !payload.tracked_asset_configuration_id &&
     !payload.stock_order_id
   ) {
-    throw new Error("tracked_asset_id or tracked_asset_configuration_id or stock_order_id is required");
+    throw new Error(
+      "tracked_asset_id or tracked_asset_configuration_id or stock_order_id is required"
+    );
   }
   if (payload.tracked_asset_id) {
     const asset = await env.DB.prepare("SELECT id FROM tracked_asset WHERE id = ?")
@@ -54,7 +68,9 @@ const validateRelations = async (
     if (!asset) throw new Error("tracked_asset_id not found");
   }
   if (payload.tracked_asset_configuration_id) {
-    const configuration = await env.DB.prepare("SELECT id FROM tracked_asset_configuration WHERE id = ?")
+    const configuration = await env.DB.prepare(
+      "SELECT id FROM tracked_asset_configuration WHERE id = ?"
+    )
       .bind(payload.tracked_asset_configuration_id)
       .first<{ id: number }>();
     if (!configuration) throw new Error("tracked_asset_configuration_id not found");
@@ -79,91 +95,43 @@ const validateRelations = async (
   }
 };
 
-const resolveWorkOrderAffectedAssetIds = async (
+const ensureWarehouseTaskOwnerAuthority = async (
   env: Env,
-  payload: {
-    tracked_asset_id?: number | null;
-    tracked_asset_configuration_id?: number | null;
+  auth: AuthTokenPayload,
+  workOrderId: number
+): Promise<{ ok: true } | { ok: false; status: 403 | 404; message: string }> => {
+  if (auth.roles.includes("super_admin")) return { ok: true };
+
+  const row = await env.DB.prepare(
+    "SELECT id, warehouse_id FROM warehouse_asset_work_order WHERE id = ?"
+  )
+    .bind(workOrderId)
+    .first<{ id: number; warehouse_id: number | null }>();
+  if (!row) {
+    return { ok: false, status: 404, message: "work order not found" };
   }
-): Promise<number[]> => {
-  const ids = new Set<number>();
-  if (payload.tracked_asset_id) ids.add(payload.tracked_asset_id);
-  if (payload.tracked_asset_configuration_id) {
-    const participants = await getConfigurationParticipants(env.DB, payload.tracked_asset_configuration_id);
-    for (const participant of participants) ids.add(participant.tracked_asset_id);
+  if (!row.warehouse_id) {
+    return {
+      ok: false,
+      status: 403,
+      message: "only super_admin can dispatch work order without warehouse_id"
+    };
   }
-  return [...ids];
-};
 
-const setTrackedAssetStatusForWorkOrder = async (
-  env: Env,
-  trackedAssetIds: number[],
-  type: WarehouseAssetWorkOrderType,
-  mode: "start" | "complete" | "cancel"
-) => {
-  if (trackedAssetIds.length === 0) return;
-  for (const trackedAssetId of trackedAssetIds) {
-    const asset = await env.DB.prepare("SELECT * FROM tracked_asset WHERE id = ?")
-      .bind(trackedAssetId)
-      .first<TrackedAsset>();
-    if (!asset) continue;
-
-    let nextStatus: string | null = null;
-    if (mode === "start") {
-      if (type === "inspection") nextStatus = "inspection";
-      else if (type === "maintenance") nextStatus = "maintenance";
-      else if (type === "servicing") nextStatus = "servicing";
-      else if (type === "modification") nextStatus = "modification";
-      else if (type === "scrapping") nextStatus = "scrapped";
-    } else if (mode === "complete") {
-      nextStatus = type === "scrapping" ? "scrapped" : "idle";
-    } else if (mode === "cancel") {
-      nextStatus = asset.status === "scrapped" ? "scrapped" : "idle";
-    }
-
-    if (!nextStatus) continue;
-    await env.DB.prepare(
-      "UPDATE tracked_asset SET status = ?, updated_at = ? WHERE id = ?"
-    )
-      .bind(nextStatus, nowIso(), trackedAssetId)
-      .run();
+  const warehouse = await env.DB.prepare(
+    "SELECT manager_userid FROM warehouse WHERE id = ? AND status != 'deleted'"
+  )
+    .bind(row.warehouse_id)
+    .first<{ manager_userid: string | null }>();
+  if (!warehouse || warehouse.manager_userid !== auth.sub) {
+    return {
+      ok: false,
+      status: 403,
+      message: "only warehouse manager or super_admin can dispatch this task"
+    };
   }
-};
 
-const emitWorkOrderTimelineEvent = async (
-  env: Env,
-  payload: {
-    tracked_asset_id?: number | null;
-    tracked_asset_configuration_id?: number | null;
-    work_order_no: string;
-    work_order_type: WarehouseAssetWorkOrderType;
-    project_id?: number | null;
-    warehouse_id?: number | null;
-  },
-  operatorUserid: string,
-  eventType:
-    | "work_order_created"
-    | "work_order_submitted"
-    | "work_order_started"
-    | "work_order_completed"
-    | "work_order_cancelled",
-  detailSuffix?: string
-) => {
-  const eventTime = nowIso();
-  const assetIds = await resolveWorkOrderAffectedAssetIds(env, payload);
-  if (assetIds.length === 0) return;
-  await emitTrackedAssetEvents(
-    env.DB,
-    assetIds.map((trackedAssetId) => ({
-      tracked_asset_id: trackedAssetId,
-      event_type: eventType,
-      event_time: eventTime,
-      operator_userid: operatorUserid,
-      project_id: payload.project_id ?? null,
-      warehouse_id: payload.warehouse_id ?? null,
-      detail: `work_order_no=${payload.work_order_no}; type=${payload.work_order_type}${detailSuffix ? `; ${detailSuffix}` : ""}`
-    }))
-  );
+  return { ok: true };
 };
 
 export const warehouseAssetWorkOrderRoutes = new Hono<{
@@ -183,6 +151,8 @@ warehouseAssetWorkOrderRoutes.get(
     const projectId = c.req.query("project_id");
     const warehouseId = c.req.query("warehouse_id");
     const blockingFlag = c.req.query("blocking_flag");
+    const source = c.req.query("source");
+    const assigneeUserid = c.req.query("assignee_userid");
 
     let sql = "SELECT * FROM warehouse_asset_work_order WHERE 1=1";
     const params: Array<string | number> = [];
@@ -211,9 +181,19 @@ warehouseAssetWorkOrderRoutes.get(
       sql += " AND blocking_flag = ?";
       params.push(Number(blockingFlag));
     }
+    if (source) {
+      sql += " AND source = ?";
+      params.push(source);
+    }
+    if (assigneeUserid) {
+      sql += " AND assignee_userid = ?";
+      params.push(assigneeUserid);
+    }
 
     sql += " ORDER BY id DESC";
-    const rows = await c.env.DB.prepare(sql).bind(...params).all<WarehouseAssetWorkOrder>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<WarehouseAssetWorkOrder>();
     return c.json({ success: true, data: rows.results ?? [] });
   }
 );
@@ -248,49 +228,13 @@ warehouseAssetWorkOrderRoutes.post(
       return c.json({ success: false, error: { message: (error as Error).message } }, 400);
     }
 
-    const workOrderNo = await generateSerial(c.env.DB, "WO", "warehouse_asset_work_order", "work_order_no");
-    const now = nowIso();
-    const result = await c.env.DB.prepare(
-      `INSERT INTO warehouse_asset_work_order
-        (work_order_no, work_order_type, tracked_asset_id, tracked_asset_configuration_id, stock_order_id,
-         project_id, warehouse_id, applicant_userid, assignee_userid, blocking_flag, status, approval_instance_id,
-         scheduled_date, started_at, completed_at, result_summary, remark, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', NULL, ?, NULL, NULL, NULL, ?, ?, ?)`
-    )
-      .bind(
-        workOrderNo,
-        workOrderType,
-        body.tracked_asset_id ?? null,
-        body.tracked_asset_configuration_id ?? null,
-        body.stock_order_id ?? null,
-        body.project_id ?? null,
-        body.warehouse_id ?? null,
-        auth.sub,
-        body.assignee_userid ?? null,
-        body.blocking_flag ?? 1,
-        body.scheduled_date ?? null,
-        body.remark ?? null,
-        now,
-        now
-      )
-      .run();
+    const result = await createWarehouseTask(c.env, {
+      ...body,
+      work_order_type: workOrderType,
+      applicant_userid: auth.sub
+    });
 
-    await emitWorkOrderTimelineEvent(
-      c.env,
-      {
-        tracked_asset_id: body.tracked_asset_id ?? null,
-        tracked_asset_configuration_id: body.tracked_asset_configuration_id ?? null,
-        work_order_no: workOrderNo,
-        work_order_type: workOrderType,
-        project_id: body.project_id ?? null,
-        warehouse_id: body.warehouse_id ?? null
-      },
-      auth.sub,
-      "work_order_created",
-      `status=draft${body.blocking_flag === 0 ? "; blocking=false" : ""}`
-    );
-
-    return c.json({ success: true, data: { id: result.meta.last_row_id, work_order_no: workOrderNo } }, 201);
+    return c.json({ success: true, data: result }, 201);
   }
 );
 
@@ -302,11 +246,16 @@ warehouseAssetWorkOrderRoutes.put(
     const body = (await c.req.json()) as UpdateWarehouseAssetWorkOrderRequest;
     await c.env.DB.prepare(
       `UPDATE warehouse_asset_work_order SET
-         assignee_userid = CASE WHEN ? IS NULL THEN assignee_userid ELSE ? END,
-         blocking_flag = COALESCE(?, blocking_flag),
-         scheduled_date = CASE WHEN ? IS NULL THEN scheduled_date ELSE ? END,
-         result_summary = CASE WHEN ? IS NULL THEN result_summary ELSE ? END,
-         remark = CASE WHEN ? IS NULL THEN remark ELSE ? END,
+       assignee_userid = CASE WHEN ? IS NULL THEN assignee_userid ELSE ? END,
+       blocking_flag = COALESCE(?, blocking_flag),
+       priority = COALESCE(?, priority),
+       package_id = CASE WHEN ? IS NULL THEN package_id ELSE ? END,
+       manual_version_id = CASE WHEN ? IS NULL THEN manual_version_id ELSE ? END,
+       mobile_enabled = COALESCE(?, mobile_enabled),
+       required_photo_count = COALESCE(?, required_photo_count),
+       scheduled_date = CASE WHEN ? IS NULL THEN scheduled_date ELSE ? END,
+       result_summary = CASE WHEN ? IS NULL THEN result_summary ELSE ? END,
+       remark = CASE WHEN ? IS NULL THEN remark ELSE ? END,
          updated_at = ?
        WHERE id = ?`
     )
@@ -314,6 +263,13 @@ warehouseAssetWorkOrderRoutes.put(
         body.assignee_userid === undefined ? null : body.assignee_userid,
         body.assignee_userid ?? null,
         body.blocking_flag ?? null,
+        body.priority ?? null,
+        body.package_id === undefined ? null : body.package_id,
+        body.package_id ?? null,
+        body.manual_version_id === undefined ? null : body.manual_version_id,
+        body.manual_version_id ?? null,
+        body.mobile_enabled ?? null,
+        body.required_photo_count ?? null,
         body.scheduled_date === undefined ? null : body.scheduled_date,
         body.scheduled_date ?? null,
         body.result_summary === undefined ? null : body.result_summary,
@@ -329,18 +285,132 @@ warehouseAssetWorkOrderRoutes.put(
 );
 
 warehouseAssetWorkOrderRoutes.post(
+  "/:id/assign",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      assignee_userid?: string;
+      package_id?: number | null;
+      scheduled_date?: string | null;
+    };
+    if (!body.assignee_userid?.trim()) {
+      return c.json({ success: false, error: { message: "assignee_userid is required" } }, 400);
+    }
+
+    const authority = await ensureWarehouseTaskOwnerAuthority(c.env, auth, id);
+    if (!authority.ok) {
+      return c.json({ success: false, error: { message: authority.message } }, authority.status);
+    }
+
+    try {
+      await assignWarehouseTask(c.env, {
+        id,
+        assignee_userid: body.assignee_userid.trim(),
+        assigned_by_userid: auth.sub,
+        package_id: body.package_id,
+        scheduled_date: body.scheduled_date
+      });
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    return c.json({ success: true });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/:id/submit",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      result_summary?: string | null;
+      completion_summary_json?: string | null;
+      evidence?: {
+        step_id?: number | null;
+        tracked_asset_id?: number | null;
+        evidence_type: "photo" | "video" | "voice" | "brief" | "document";
+        file_key?: string | null;
+        file_name?: string | null;
+        summary?: string | null;
+        captured_at?: string | null;
+      }[];
+    };
+
+    try {
+      await submitWarehouseTask(c.env, {
+        id,
+        operator_userid: auth.sub,
+        result_summary: body.result_summary,
+        completion_summary_json: body.completion_summary_json,
+        evidence: body.evidence
+      });
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    return c.json({ success: true });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/:id/review",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      action?: "approve" | "reject";
+      result_summary?: string | null;
+    };
+    if (body.action !== "approve" && body.action !== "reject") {
+      return c.json(
+        { success: false, error: { message: "action must be approve or reject" } },
+        400
+      );
+    }
+
+    const authority = await ensureWarehouseTaskOwnerAuthority(c.env, auth, id);
+    if (!authority.ok) {
+      return c.json({ success: false, error: { message: authority.message } }, authority.status);
+    }
+
+    try {
+      await reviewWarehouseTask(c.env, {
+        id,
+        reviewer_userid: auth.sub,
+        action: body.action,
+        result_summary: body.result_summary
+      });
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    return c.json({ success: true });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
   "/:id/submit-approval",
   requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
-    const body = (await c.req.json().catch(() => ({}))) as SubmitWarehouseAssetWorkOrderApprovalRequest;
+    const body = (await c.req
+      .json()
+      .catch(() => ({}))) as SubmitWarehouseAssetWorkOrderApprovalRequest;
     const row = await c.env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
       .bind(id)
       .first<WarehouseAssetWorkOrder>();
     if (!row) return c.json({ success: false, error: { message: "work order not found" } }, 404);
     if (row.status !== "draft") {
-      return c.json({ success: false, error: { message: "only draft work order can submit approval" } }, 400);
+      return c.json(
+        { success: false, error: { message: "only draft work order can submit approval" } },
+        400
+      );
     }
 
     const instance = await submitForApproval(
@@ -365,7 +435,7 @@ warehouseAssetWorkOrderRoutes.post(
       .bind(instance.id, nowIso(), id)
       .run();
 
-    await emitWorkOrderTimelineEvent(
+    await emitWarehouseTaskTimelineEvent(
       c.env,
       row,
       auth.sub,
@@ -373,7 +443,10 @@ warehouseAssetWorkOrderRoutes.post(
       `status=pending_approval; approval_instance_id=${instance.id}`
     );
 
-    return c.json({ success: true, data: { approval_instance_id: instance.id, instance_no: instance.instance_no } });
+    return c.json({
+      success: true,
+      data: { approval_instance_id: instance.id, instance_no: instance.instance_no }
+    });
   }
 );
 
@@ -383,23 +456,11 @@ warehouseAssetWorkOrderRoutes.post(
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
-    const row = await c.env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
-      .bind(id)
-      .first<WarehouseAssetWorkOrder>();
-    if (!row) return c.json({ success: false, error: { message: "work order not found" } }, 404);
-    if (!["draft", "approved"].includes(row.status)) {
-      return c.json({ success: false, error: { message: "only draft or approved work order can start" } }, 400);
+    try {
+      await startWarehouseTask(c.env, id, auth.sub);
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
     }
-
-    const affectedAssetIds = await resolveWorkOrderAffectedAssetIds(c.env, row);
-    await setTrackedAssetStatusForWorkOrder(c.env, affectedAssetIds, row.work_order_type, "start");
-    await c.env.DB.prepare(
-      "UPDATE warehouse_asset_work_order SET status = 'in_progress', started_at = COALESCE(started_at, ?), updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), nowIso(), id)
-      .run();
-
-    await emitWorkOrderTimelineEvent(c.env, row, auth.sub, "work_order_started", "status=in_progress");
     return c.json({ success: true });
   }
 );
@@ -411,56 +472,41 @@ warehouseAssetWorkOrderRoutes.post(
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
     const body = (await c.req.json().catch(() => ({}))) as CompleteWarehouseAssetWorkOrderRequest;
-    const row = await c.env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
-      .bind(id)
-      .first<WarehouseAssetWorkOrder>();
-    if (!row) return c.json({ success: false, error: { message: "work order not found" } }, 404);
-    if (row.status !== "in_progress") {
-      return c.json({ success: false, error: { message: "only in_progress work order can complete" } }, 400);
+    const authority = await ensureWarehouseTaskOwnerAuthority(c.env, auth, id);
+    if (!authority.ok) {
+      return c.json({ success: false, error: { message: authority.message } }, authority.status);
     }
 
-    const affectedAssetIds = await resolveWorkOrderAffectedAssetIds(c.env, row);
-    await setTrackedAssetStatusForWorkOrder(c.env, affectedAssetIds, row.work_order_type, "complete");
-    await c.env.DB.prepare(
-      "UPDATE warehouse_asset_work_order SET status = 'completed', completed_at = ?, result_summary = COALESCE(?, result_summary), updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), body.result_summary ?? null, nowIso(), id)
-      .run();
-
-    await emitWorkOrderTimelineEvent(
-      c.env,
-      row,
-      auth.sub,
-      "work_order_completed",
-      `status=completed${body.result_summary ? `; result=${body.result_summary}` : ""}`
-    );
+    try {
+      await reviewWarehouseTask(c.env, {
+        id,
+        reviewer_userid: auth.sub,
+        action: "approve",
+        result_summary: body.result_summary
+      });
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
     return c.json({ success: true });
   }
 );
 
 warehouseAssetWorkOrderRoutes.post(
   "/:id/cancel",
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
-    const row = await c.env.DB.prepare("SELECT * FROM warehouse_asset_work_order WHERE id = ?")
-      .bind(id)
-      .first<WarehouseAssetWorkOrder>();
-    if (!row) return c.json({ success: false, error: { message: "work order not found" } }, 404);
-    if (["completed", "cancelled"].includes(row.status)) {
-      return c.json({ success: false, error: { message: "completed or cancelled work order cannot cancel" } }, 400);
+    const authority = await ensureWarehouseTaskOwnerAuthority(c.env, auth, id);
+    if (!authority.ok) {
+      return c.json({ success: false, error: { message: authority.message } }, authority.status);
     }
 
-    const affectedAssetIds = await resolveWorkOrderAffectedAssetIds(c.env, row);
-    await setTrackedAssetStatusForWorkOrder(c.env, affectedAssetIds, row.work_order_type, "cancel");
-    await c.env.DB.prepare(
-      "UPDATE warehouse_asset_work_order SET status = 'cancelled', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), id)
-      .run();
-
-    await emitWorkOrderTimelineEvent(c.env, row, auth.sub, "work_order_cancelled", "status=cancelled");
+    try {
+      await cancelWarehouseTask(c.env, id, auth.sub);
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
     return c.json({ success: true });
   }
 );

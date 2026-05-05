@@ -28,7 +28,12 @@ export type InventoryRow = {
 export type StockOrderItemInput = {
   asset_type_id?: number;
   tracked_asset_id?: number;
-  configuration_role?: "whole_machine" | "shell" | "core" | "console" | "generic";
+  configuration_role?:
+    | "whole_machine"
+    | "shell"
+    | "core"
+    | "console"
+    | "generic";
   configuration_group_key?: string;
   requires_modification?: number;
   quantity: number;
@@ -62,7 +67,13 @@ export type StockOrderItem = {
   stock_order_id: number;
   asset_type_id: number | null;
   tracked_asset_id: number | null;
-  configuration_role: "whole_machine" | "shell" | "core" | "console" | "generic" | null;
+  configuration_role:
+    | "whole_machine"
+    | "shell"
+    | "core"
+    | "console"
+    | "generic"
+    | null;
   configuration_group_key: string | null;
   requires_modification: number;
   quantity: number;
@@ -75,7 +86,12 @@ export type StockOrderItem = {
 export type WarehouseAssetWorkOrder = {
   id: number;
   work_order_no: string;
-  work_order_type: "inspection" | "maintenance" | "servicing" | "modification" | "scrapping";
+  work_order_type:
+    | "inspection"
+    | "maintenance"
+    | "servicing"
+    | "modification"
+    | "scrapping";
   tracked_asset_id: number | null;
   tracked_asset_configuration_id: number | null;
   stock_order_id: number | null;
@@ -84,8 +100,34 @@ export type WarehouseAssetWorkOrder = {
   applicant_userid: string;
   assignee_userid: string | null;
   blocking_flag: number;
-  status: "draft" | "pending_approval" | "approved" | "in_progress" | "completed" | "cancelled";
+  status:
+    | "draft"
+    | "pending_assignment"
+    | "assigned"
+    | "pending_approval"
+    | "approved"
+    | "in_progress"
+    | "submitted"
+    | "completed"
+    | "rejected"
+    | "cancelled";
   approval_instance_id: number | null;
+  source:
+    | "manual"
+    | "return_receipt"
+    | "stock_order"
+    | "stocktake"
+    | "ai_schedule";
+  priority: "low" | "normal" | "high" | "urgent";
+  package_id: number | null;
+  assigned_by_userid: string | null;
+  reviewer_userid: string | null;
+  submitted_at: string | null;
+  reviewed_at: string | null;
+  manual_version_id: number | null;
+  mobile_enabled: number;
+  required_photo_count: number;
+  completion_summary_json: string | null;
   scheduled_date: string | null;
   started_at: string | null;
   completed_at: string | null;
@@ -422,6 +464,8 @@ export const listWarehouseAssetWorkOrders = (params?: {
   project_id?: number;
   warehouse_id?: number;
   blocking_flag?: 0 | 1;
+  source?: WarehouseAssetWorkOrder["source"];
+  assignee_userid?: string;
 }) =>
   http.request<{ success: boolean; data: WarehouseAssetWorkOrder[] }>(
     "get",
@@ -444,28 +488,56 @@ export const createWarehouseAssetWorkOrder = (data: {
   warehouse_id?: number;
   assignee_userid?: string;
   blocking_flag?: number;
+  source?: WarehouseAssetWorkOrder["source"];
+  priority?: WarehouseAssetWorkOrder["priority"];
+  package_id?: number;
+  manual_version_id?: number;
+  mobile_enabled?: number;
+  required_photo_count?: number;
   scheduled_date?: string;
   remark?: string;
 }) =>
-  http.request<{ success: boolean; data: { id: number; work_order_no: string } }>(
-    "post",
-    "/api/v1/warehouse/work-order",
-    { data }
-  );
+  http.request<{
+    success: boolean;
+    data: { id: number; work_order_no: string };
+  }>("post", "/api/v1/warehouse/work-order", { data });
 
 export const updateWarehouseAssetWorkOrder = (
   id: number,
   data: {
     assignee_userid?: string | null;
     blocking_flag?: number;
+    priority?: WarehouseAssetWorkOrder["priority"];
+    package_id?: number | null;
+    manual_version_id?: number | null;
+    mobile_enabled?: number;
+    required_photo_count?: number;
     scheduled_date?: string | null;
     result_summary?: string | null;
     remark?: string | null;
   }
 ) =>
-  http.request<{ success: boolean }>("put", `/api/v1/warehouse/work-order/${id}`, {
-    data
-  });
+  http.request<{ success: boolean }>(
+    "put",
+    `/api/v1/warehouse/work-order/${id}`,
+    {
+      data
+    }
+  );
+
+export const assignWarehouseAssetWorkOrder = (
+  id: number,
+  data: {
+    assignee_userid: string;
+    package_id?: number | null;
+    scheduled_date?: string | null;
+  }
+) =>
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/${id}/assign`,
+    { data }
+  );
 
 export const submitWarehouseAssetWorkOrderApproval = (
   id: number,
@@ -477,15 +549,57 @@ export const submitWarehouseAssetWorkOrderApproval = (
   }>("post", `/api/v1/warehouse/work-order/${id}/submit-approval`, { data });
 
 export const startWarehouseAssetWorkOrder = (id: number) =>
-  http.request<{ success: boolean }>("post", `/api/v1/warehouse/work-order/${id}/start`);
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/${id}/start`
+  );
 
 export const completeWarehouseAssetWorkOrder = (
   id: number,
   data?: { result_summary?: string }
 ) =>
-  http.request<{ success: boolean }>("post", `/api/v1/warehouse/work-order/${id}/complete`, {
-    data
-  });
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/${id}/complete`,
+    {
+      data
+    }
+  );
+
+export const submitWarehouseAssetWorkOrder = (
+  id: number,
+  data?: {
+    result_summary?: string | null;
+    completion_summary_json?: string | null;
+    evidence?: {
+      step_id?: number | null;
+      tracked_asset_id?: number | null;
+      evidence_type: "photo" | "video" | "voice" | "brief" | "document";
+      file_key?: string | null;
+      file_name?: string | null;
+      summary?: string | null;
+      captured_at?: string | null;
+    }[];
+  }
+) =>
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/${id}/submit`,
+    { data }
+  );
+
+export const reviewWarehouseAssetWorkOrder = (
+  id: number,
+  data: { action: "approve" | "reject"; result_summary?: string | null }
+) =>
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/${id}/review`,
+    { data }
+  );
 
 export const cancelWarehouseAssetWorkOrder = (id: number) =>
-  http.request<{ success: boolean }>("post", `/api/v1/warehouse/work-order/${id}/cancel`);
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/work-order/${id}/cancel`
+  );
