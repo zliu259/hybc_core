@@ -146,6 +146,7 @@ warehouseManualRoutes.get(
   async (c) => {
     const manualId = c.req.query("manual_id");
     const assetTypeId = c.req.query("asset_type_id");
+    const assetModel = c.req.query("asset_model");
     const workOrderType = c.req.query("work_order_type");
     const status = c.req.query("status");
     let sql = `
@@ -172,6 +173,10 @@ warehouseManualRoutes.get(
     if (assetTypeId) {
       sql += " AND wmb.asset_type_id = ?";
       params.push(Number(assetTypeId));
+    }
+    if (assetModel) {
+      sql += " AND lower(wmb.asset_model) = lower(?)";
+      params.push(assetModel.trim());
     }
     if (workOrderType) {
       sql += " AND wmb.work_order_type = ?";
@@ -208,12 +213,13 @@ warehouseManualRoutes.post(
     const now = nowIso();
     const result = await c.env.DB.prepare(
       `INSERT INTO warehouse_manual_binding
-        (manual_id, asset_type_id, work_order_type, configuration_role, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
+        (manual_id, asset_type_id, asset_model, work_order_type, configuration_role, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         body.manual_id,
         body.asset_type_id ?? null,
+        body.asset_model?.trim() || null,
         body.work_order_type ?? null,
         body.configuration_role ?? null,
         body.status ?? "active",
@@ -243,6 +249,7 @@ warehouseManualRoutes.put(
       `UPDATE warehouse_manual_binding SET
          manual_id = COALESCE(?, manual_id),
          asset_type_id = CASE WHEN ? IS NULL THEN asset_type_id ELSE ? END,
+         asset_model = CASE WHEN ? IS NULL THEN asset_model ELSE ? END,
          work_order_type = CASE WHEN ? IS NULL THEN work_order_type ELSE ? END,
          configuration_role = CASE WHEN ? IS NULL THEN configuration_role ELSE ? END,
          status = COALESCE(?, status),
@@ -253,6 +260,8 @@ warehouseManualRoutes.put(
         body.manual_id ?? null,
         body.asset_type_id === undefined ? null : 1,
         body.asset_type_id ?? null,
+        body.asset_model === undefined ? null : 1,
+        body.asset_model?.trim() || null,
         body.work_order_type === undefined ? null : 1,
         body.work_order_type ?? null,
         body.configuration_role === undefined ? null : 1,

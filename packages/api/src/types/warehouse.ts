@@ -125,6 +125,7 @@ export interface CreateStockOrderRequest {
 export interface ReviewStockOrderOverrideRequest {
   action: "approve" | "reject" | "request";
   override_reason?: string;
+  override_risk_acknowledged?: number;
 }
 
 export interface SubmitStockOrderApprovalRequest {

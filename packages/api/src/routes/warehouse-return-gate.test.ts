@@ -48,7 +48,7 @@ class WarehouseFlowDb {
   readonly stockItems: StockOrderItem[] = [];
   readonly workOrders: WarehouseAssetWorkOrder[] = [];
   readonly evidence: WarehouseTaskEvidence[] = [];
-  readonly events: Array<Record<string, unknown>> = [];
+  readonly events: Array<{ sql: string; params: unknown[] }> = [];
 
   private nextWorkOrderId = 1;
   private nextEvidenceId = 1;
@@ -185,6 +185,20 @@ class WarehouseFlowDb {
   }
 
   async run(sql: string, params: unknown[]): Promise<D1RunResult> {
+    if (sql.includes("UPDATE tracked_asset SET current_project_id = ?")) {
+      const id = Number(params[2]);
+      const asset = this.requireAsset(id);
+      this.assets.set(id, {
+        ...asset,
+        current_project_id: params[0] as number | null,
+        current_warehouse_id: null,
+        current_location: "project",
+        status: "using",
+        updated_at: params[1] as string
+      });
+      return { meta: { last_row_id: 0 } };
+    }
+
     if (sql.includes("UPDATE tracked_asset SET current_project_id = NULL")) {
       const id = Number(params[3]);
       const asset = this.requireAsset(id);
@@ -416,6 +430,114 @@ const buildStockOrderItem = (patch: Partial<StockOrderItem>): StockOrderItem => 
 };
 
 describe("warehouse return gate flow", () => {
+  it("requires complete override audit fields before bypassing return gate blocks", async () => {
+    const db = new WarehouseFlowDb();
+    db.assets.set(1, buildTrackedAsset({ status: "returned_quarantine" }));
+    db.stockItems.push(buildStockOrderItem({ id: 1, stock_order_id: 1, tracked_asset_id: 1 }));
+    const env = buildEnv(db);
+
+    const incompleteOverrideGate = await evaluateStockOrderGate(
+      env,
+      buildStockOrder({
+        id: 1,
+        order_type: "outbound",
+        project_id: 22,
+        from_warehouse_id: 7,
+        to_warehouse_id: null,
+        override_status: "approved",
+        override_reason: "现场急需临时出库",
+        override_approver_userid: "manager.1",
+        override_risk_acknowledged: 0
+      }),
+      [buildStockOrderItem({ id: 1, stock_order_id: 1, tracked_asset_id: 1 })]
+    );
+    expect(incompleteOverrideGate.pass).toBe(false);
+    expect(incompleteOverrideGate.issues.join("; ")).toContain("override audit incomplete");
+
+    await applyStockOrderExecution(
+      env,
+      buildStockOrder({
+        id: 1,
+        order_type: "outbound",
+        project_id: 22,
+        from_warehouse_id: 7,
+        to_warehouse_id: null,
+        override_status: "approved",
+        override_reason: "现场急需临时出库，库房负责人已确认风险",
+        override_approver_userid: "manager.1",
+        override_risk_acknowledged: 1
+      })
+    );
+
+    const eventDetail = db.events[0]?.params?.[5];
+    expect(eventDetail).toContain("with override");
+    expect(eventDetail).toContain("reason=现场急需临时出库，库房负责人已确认风险");
+    expect(eventDetail).toContain("approver=manager.1");
+    expect(eventDetail).toContain("risk_acknowledged=1");
+  });
+
+  it("releases returned equipment when inspection is approved directly", async () => {
+    const db = new WarehouseFlowDb();
+    db.assets.set(1, buildTrackedAsset());
+    db.stockItems.push(buildStockOrderItem({ stock_order_id: 1, tracked_asset_id: 1 }));
+    const env = buildEnv(db);
+
+    await applyStockOrderExecution(
+      env,
+      buildStockOrder({
+        id: 1,
+        order_type: "inbound",
+        project_id: 21,
+        to_warehouse_id: 7
+      })
+    );
+
+    const inspectionTask = db.workOrders.find((item) => item.work_order_type === "inspection");
+    expect(db.assets.get(1)?.status).toBe("returned_quarantine");
+    expect(inspectionTask).toMatchObject({
+      source: "return_receipt",
+      status: "pending_assignment",
+      blocking_flag: 1
+    });
+
+    if (!inspectionTask) throw new Error("inspection task should exist");
+    await startWarehouseTask(env, inspectionTask.id, "worker.1");
+    expect(db.assets.get(1)?.status).toBe("inspection");
+
+    await submitWarehouseTask(env, {
+      id: inspectionTask.id,
+      operator_userid: "worker.1",
+      result_summary: "返库检查通过，设备状态正常",
+      evidence: [
+        { evidence_type: "photo", file_key: "r2://inspection-pass-1.jpg" },
+        { evidence_type: "photo", file_key: "r2://inspection-pass-2.jpg" },
+        { evidence_type: "photo", file_key: "r2://inspection-pass-3.jpg" }
+      ]
+    });
+    await reviewWarehouseTask(env, {
+      id: inspectionTask.id,
+      reviewer_userid: "manager.1",
+      action: "approve",
+      result_summary: "检查复核通过"
+    });
+
+    expect(db.assets.get(1)?.status).toBe("idle");
+    expect(db.workOrders.find((item) => item.work_order_type === "maintenance")).toBeUndefined();
+
+    const passGate = await evaluateStockOrderGate(
+      env,
+      buildStockOrder({
+        id: 2,
+        order_type: "outbound",
+        project_id: 22,
+        from_warehouse_id: 7,
+        to_warehouse_id: null
+      }),
+      [buildStockOrderItem({ id: 2, stock_order_id: 2, tracked_asset_id: 1 })]
+    );
+    expect(passGate).toEqual({ pass: true, issues: [] });
+  });
+
   it("keeps returned equipment blocked until rejected inspection follow-up maintenance is completed", async () => {
     const db = new WarehouseFlowDb();
     db.assets.set(1, buildTrackedAsset());

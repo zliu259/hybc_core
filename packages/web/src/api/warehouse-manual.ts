@@ -41,6 +41,7 @@ export type WarehouseManualBinding = {
   id: number;
   manual_id: number;
   asset_type_id: number | null;
+  asset_model: string | null;
   work_order_type: string | null;
   configuration_role: string | null;
   status: "active" | "disabled";
@@ -79,6 +80,7 @@ export const createWarehouseManual = (data: {
 export const listWarehouseManualBindings = (params?: {
   manual_id?: number;
   asset_type_id?: number;
+  asset_model?: string;
   work_order_type?: string;
   status?: WarehouseManualBinding["status"];
 }) =>
@@ -91,6 +93,7 @@ export const listWarehouseManualBindings = (params?: {
 export const createWarehouseManualBinding = (data: {
   manual_id: number;
   asset_type_id?: number | null;
+  asset_model?: string | null;
   work_order_type?: string | null;
   configuration_role?: string | null;
   status?: WarehouseManualBinding["status"];
@@ -106,6 +109,7 @@ export const updateWarehouseManualBinding = (
   data: {
     manual_id?: number;
     asset_type_id?: number | null;
+    asset_model?: string | null;
     work_order_type?: string | null;
     configuration_role?: string | null;
     status?: WarehouseManualBinding["status"];

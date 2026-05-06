@@ -9,8 +9,9 @@ import { buildSignedObjectUrl, signObjectAccess } from "../services/upload-signa
 import { canAccessWarehouseTaskEvidence } from "../services/warehouse-evidence-access";
 import {
   assignWarehouseTask,
-  buildWarehouseTaskWorkloadSummary,
   buildWarehouseMobileTaskConfig,
+  buildWarehouseTaskPackageStatusSummary,
+  buildWarehouseTaskWorkloadSummary,
   canAttachTaskToPackage,
   canSubmitWarehouseTaskFromMobile,
   cancelWarehouseTask,
@@ -216,6 +217,7 @@ warehouseAssetWorkOrderRoutes.get(
     const trackedAssetId = c.req.query("tracked_asset_id");
     const projectId = c.req.query("project_id");
     const warehouseId = c.req.query("warehouse_id");
+    const assetTypeId = c.req.query("asset_type_id");
     const blockingFlag = c.req.query("blocking_flag");
     const source = c.req.query("source");
     const assigneeUserid = c.req.query("assignee_userid");
@@ -242,6 +244,10 @@ warehouseAssetWorkOrderRoutes.get(
     if (warehouseId) {
       sql += " AND warehouse_id = ?";
       params.push(Number(warehouseId));
+    }
+    if (assetTypeId) {
+      sql += " AND tracked_asset_id IN (SELECT id FROM tracked_asset WHERE asset_type_id = ?)";
+      params.push(Number(assetTypeId));
     }
     if (blockingFlag) {
       sql += " AND blocking_flag = ?";
@@ -312,6 +318,7 @@ warehouseAssetWorkOrderRoutes.get(
     const status = c.req.query("status");
     const assigneeUserid = c.req.query("assignee_userid");
     const warehouseId = c.req.query("warehouse_id");
+    const projectId = c.req.query("project_id");
     let sql = "SELECT * FROM warehouse_task_package WHERE 1=1";
     const params: Array<string | number> = [];
     if (status) {
@@ -326,12 +333,62 @@ warehouseAssetWorkOrderRoutes.get(
       sql += " AND warehouse_id = ?";
       params.push(Number(warehouseId));
     }
+    if (projectId) {
+      sql += " AND project_id = ?";
+      params.push(Number(projectId));
+    }
     sql += " ORDER BY id DESC";
 
     const rows = await c.env.DB.prepare(sql)
       .bind(...params)
       .all<WarehouseTaskPackage>();
-    return c.json({ success: true, data: rows.results ?? [] });
+    const packages = rows.results ?? [];
+    if (packages.length === 0) {
+      return c.json({ success: true, data: [] });
+    }
+
+    const taskRows = await c.env.DB.prepare(
+      `SELECT package_id, status, scheduled_date
+       FROM warehouse_asset_work_order
+       WHERE package_id IN (${packages.map(() => "?").join(", ")})`
+    )
+      .bind(...packages.map((item) => item.id))
+      .all<{ package_id: number; status: string; scheduled_date: string | null }>();
+
+    const taskMap = new Map<number, Array<{ status: string; scheduled_date: string | null }>>();
+    for (const task of taskRows.results ?? []) {
+      const list = taskMap.get(task.package_id) ?? [];
+      list.push({ status: task.status, scheduled_date: task.scheduled_date });
+      taskMap.set(task.package_id, list);
+    }
+
+    const now = nowIso();
+    const data = [];
+    for (const taskPackage of packages) {
+      const summary = buildWarehouseTaskPackageStatusSummary({
+        due_date: taskPackage.due_date,
+        tasks: taskMap.get(taskPackage.id) ?? [],
+        now
+      });
+      if (summary.status !== taskPackage.status) {
+        await c.env.DB.prepare(
+          "UPDATE warehouse_task_package SET status = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(summary.status, now, taskPackage.id)
+          .run();
+      }
+      data.push({
+        ...taskPackage,
+        status: summary.status,
+        task_count: summary.task_count,
+        completed_count: summary.completed_count,
+        open_count: summary.open_count,
+        overdue_count: summary.overdue_count,
+        exception_count: summary.exception_count
+      });
+    }
+
+    return c.json({ success: true, data });
   }
 );
 

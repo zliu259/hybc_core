@@ -42,6 +42,7 @@ export interface WarehouseManualBinding {
   id: number;
   manual_id: number;
   asset_type_id: number | null;
+  asset_model: string | null;
   work_order_type: string | null;
   configuration_role: string | null;
   status: "active" | "disabled";
@@ -70,6 +71,7 @@ export interface CreateWarehouseManualVersionRequest {
 export interface UpsertWarehouseManualBindingRequest {
   manual_id: number;
   asset_type_id?: number | null;
+  asset_model?: string | null;
   work_order_type?: string | null;
   configuration_role?: string | null;
   status?: "active" | "disabled";

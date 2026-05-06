@@ -54,17 +54,33 @@ export interface WarehouseTaskWorkloadSummary {
   submitted_count: number;
 }
 
+export interface WarehouseTaskPackageStatusTask {
+  status: string;
+  scheduled_date: string | null;
+}
+
+export interface WarehouseTaskPackageStatusSummary {
+  status: "open" | "in_progress" | "completed" | "exception";
+  task_count: number;
+  completed_count: number;
+  open_count: number;
+  overdue_count: number;
+  exception_count: number;
+}
+
 export interface WarehouseManualBindingCandidate {
   manual_version_id: number;
   asset_type_id: number | null;
   work_order_type: string | null;
   configuration_role: string | null;
+  asset_model: string | null;
 }
 
 export interface WarehouseManualBindingMatchInput {
   asset_type_id?: number | null;
   work_order_type: string;
   configuration_role?: string | null;
+  asset_model?: string | null;
 }
 
 export interface WarehouseTaskEvidenceCount {
@@ -114,10 +130,57 @@ export const buildWarehouseTaskWorkloadSummary = (
   return [...summary.values()];
 };
 
+const toDateKey = (value: string | null): string | null => {
+  if (!value) return null;
+  return value.slice(0, 10);
+};
+
+export const buildWarehouseTaskPackageStatusSummary = (payload: {
+  due_date: string | null;
+  tasks: WarehouseTaskPackageStatusTask[];
+  now?: string;
+}): WarehouseTaskPackageStatusSummary => {
+  const today = toDateKey(payload.now ?? nowIso()) ?? nowIso().slice(0, 10);
+  const tasks = payload.tasks;
+  const taskCount = tasks.length;
+  const completedCount = tasks.filter((task) => task.status === "completed").length;
+  const openTasks = tasks.filter((task) => !["completed", "cancelled"].includes(task.status));
+  const overdueCount = openTasks.filter((task) => {
+    const scheduledDate = toDateKey(task.scheduled_date);
+    return Boolean(scheduledDate && scheduledDate < today);
+  }).length;
+  const packageOverdue = Boolean(
+    payload.due_date && payload.due_date < today && openTasks.length > 0 && overdueCount === 0
+  );
+  const rejectedCount = tasks.filter((task) => task.status === "rejected").length;
+  const exceptionCount = rejectedCount + overdueCount + (packageOverdue ? 1 : 0);
+
+  let status: WarehouseTaskPackageStatusSummary["status"] = "open";
+  if (taskCount > 0 && completedCount === taskCount) {
+    status = "completed";
+  } else if (exceptionCount > 0) {
+    status = "exception";
+  } else if (
+    openTasks.some((task) => task.status !== "pending_assignment" && task.status !== "draft")
+  ) {
+    status = "in_progress";
+  }
+
+  return {
+    status,
+    task_count: taskCount,
+    completed_count: completedCount,
+    open_count: openTasks.length,
+    overdue_count: overdueCount + (packageOverdue ? 1 : 0),
+    exception_count: exceptionCount
+  };
+};
+
 export const chooseWarehouseManualBinding = (
   candidates: WarehouseManualBindingCandidate[],
   input: WarehouseManualBindingMatchInput
 ): WarehouseManualBindingCandidate | null => {
+  const inputModel = input.asset_model?.trim().toLowerCase() || null;
   const matches = candidates.filter((candidate) => {
     const assetTypeMatches =
       candidate.asset_type_id === null || candidate.asset_type_id === (input.asset_type_id ?? null);
@@ -126,7 +189,9 @@ export const chooseWarehouseManualBinding = (
     const roleMatches =
       candidate.configuration_role === null ||
       candidate.configuration_role === (input.configuration_role ?? null);
-    return assetTypeMatches && typeMatches && roleMatches;
+    const candidateModel = candidate.asset_model?.trim().toLowerCase() || null;
+    const modelMatches = candidateModel === null || candidateModel === inputModel;
+    return assetTypeMatches && typeMatches && roleMatches && modelMatches;
   });
 
   return (
@@ -134,6 +199,7 @@ export const chooseWarehouseManualBinding = (
       .map((candidate) => ({
         candidate,
         score:
+          (candidate.asset_model !== null ? 8 : 0) +
           (candidate.asset_type_id !== null ? 4 : 0) +
           (candidate.work_order_type !== null ? 2 : 0) +
           (candidate.configuration_role !== null ? 1 : 0)
@@ -356,11 +422,15 @@ export const resolveWarehouseTaskManualVersionId = async (
   }
 ): Promise<number | null> => {
   let assetTypeId: number | null = null;
+  let assetModel: string | null = null;
   if (payload.tracked_asset_id) {
-    const asset = await env.DB.prepare("SELECT asset_type_id FROM tracked_asset WHERE id = ?")
+    const asset = await env.DB.prepare(
+      "SELECT asset_type_id, model FROM tracked_asset WHERE id = ?"
+    )
       .bind(payload.tracked_asset_id)
-      .first<{ asset_type_id: number }>();
+      .first<{ asset_type_id: number; model: string | null }>();
     assetTypeId = asset?.asset_type_id ?? null;
+    assetModel = asset?.model ?? null;
   }
 
   let configurationRole: string | null = null;
@@ -381,7 +451,8 @@ export const resolveWarehouseTaskManualVersionId = async (
     `SELECT active.id AS manual_version_id,
             wmb.asset_type_id,
             wmb.work_order_type,
-            wmb.configuration_role
+            wmb.configuration_role,
+            wmb.asset_model
      FROM warehouse_manual_binding wmb
      JOIN warehouse_manual wm ON wm.id = wmb.manual_id AND wm.status = 'active'
      JOIN warehouse_manual_version active
@@ -394,16 +465,26 @@ export const resolveWarehouseTaskManualVersionId = async (
      WHERE wmb.status = 'active'
        AND (? IS NULL OR wmb.asset_type_id IS NULL OR wmb.asset_type_id = ?)
        AND (wmb.work_order_type IS NULL OR wmb.work_order_type = ?)
-       AND (? IS NULL OR wmb.configuration_role IS NULL OR wmb.configuration_role = ?)`
+       AND (? IS NULL OR wmb.configuration_role IS NULL OR wmb.configuration_role = ?)
+       AND (? IS NULL OR wmb.asset_model IS NULL OR lower(wmb.asset_model) = lower(?))`
   )
-    .bind(assetTypeId, assetTypeId, payload.work_order_type, configurationRole, configurationRole)
+    .bind(
+      assetTypeId,
+      assetTypeId,
+      payload.work_order_type,
+      configurationRole,
+      configurationRole,
+      assetModel,
+      assetModel
+    )
     .all<WarehouseManualBindingCandidate>();
 
   return (
     chooseWarehouseManualBinding(rows.results ?? [], {
       asset_type_id: assetTypeId,
       work_order_type: payload.work_order_type,
-      configuration_role: configurationRole
+      configuration_role: configurationRole,
+      asset_model: assetModel
     })?.manual_version_id ?? null
   );
 };

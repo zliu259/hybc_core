@@ -12,8 +12,10 @@ import {
   cancelStockOrder,
   createStockOrder,
   executeStockOrder,
+  gateCheckStockOrder,
   listStockOrders,
   listWarehouses,
+  reviewStockOrderOverride,
   submitStockOrderApproval,
   type StockOrder,
   type StockOrderItemInput,
@@ -35,6 +37,14 @@ const quickAddKeyword = ref("");
 const quickAddQty = ref(1);
 const submitting = ref(false);
 const actionId = ref<number | null>(null);
+const overrideVisible = ref(false);
+const overrideSubmitting = ref(false);
+const overrideForm = ref({
+  order_id: 0,
+  order_no: "",
+  override_reason: "",
+  override_risk_acknowledged: false
+});
 
 const presetTemplates = [
   {
@@ -128,6 +138,13 @@ const statusTag = (status: string) => {
   if (status === "pending_approval") return "warning";
   if (status === "rejected") return "danger";
   if (status === "cancelled") return "info";
+  return "info";
+};
+
+const overrideTag = (status: StockOrder["override_status"]) => {
+  if (status === "approved") return "danger";
+  if (status === "requested") return "warning";
+  if (status === "rejected") return "info";
   return "info";
 };
 
@@ -345,11 +362,68 @@ const submitApproval = async (row: StockOrder) => {
 const executeOrder = async (row: StockOrder) => {
   actionId.value = row.id;
   try {
+    const gate = await gateCheckStockOrder(row.id);
+    if (!gate.data.pass) {
+      message(`出库检查未通过：${gate.data.issues.join("；")}`, {
+        type: "error"
+      });
+      return;
+    }
     await executeStockOrder(row.id);
     message("执行成功", { type: "success" });
     await loadData();
   } finally {
     actionId.value = null;
+  }
+};
+
+const checkGate = async (row: StockOrder) => {
+  actionId.value = row.id;
+  try {
+    const gate = await gateCheckStockOrder(row.id);
+    if (gate.data.pass) {
+      message("出库检查通过", { type: "success" });
+      return;
+    }
+    message(`出库检查未通过：${gate.data.issues.join("；")}`, {
+      type: "warning"
+    });
+  } finally {
+    actionId.value = null;
+  }
+};
+
+const openOverride = (row: StockOrder) => {
+  overrideForm.value = {
+    order_id: row.id,
+    order_no: row.order_no,
+    override_reason: row.override_reason || "",
+    override_risk_acknowledged: row.override_risk_acknowledged === 1
+  };
+  overrideVisible.value = true;
+};
+
+const submitOverride = async () => {
+  if (!overrideForm.value.override_reason.trim()) {
+    message("请填写特殊放行原因", { type: "warning" });
+    return;
+  }
+  if (!overrideForm.value.override_risk_acknowledged) {
+    message("请确认已知悉并承担本次放行风险", { type: "warning" });
+    return;
+  }
+  overrideSubmitting.value = true;
+  try {
+    await reviewStockOrderOverride(overrideForm.value.order_id, {
+      action: "approve",
+      override_reason: overrideForm.value.override_reason.trim(),
+      override_risk_acknowledged: 1
+    });
+    message("特殊放行已审批", { type: "success" });
+    overrideVisible.value = false;
+    await loadData();
+  } finally {
+    overrideSubmitting.value = false;
   }
 };
 
@@ -572,7 +646,9 @@ onMounted(async () => {
             <template #default="scope">
               <el-switch
                 :model-value="scope.row.requires_modification === 1"
-                @update:model-value="scope.row.requires_modification = $event ? 1 : 0"
+                @update:model-value="
+                  scope.row.requires_modification = $event ? 1 : 0
+                "
               />
             </template>
           </el-table-column>
@@ -659,8 +735,20 @@ onMounted(async () => {
           }}</el-tag>
         </template>
       </el-table-column>
+      <el-table-column label="特殊放行" width="130">
+        <template #default="scope">
+          <el-tag
+            v-if="scope.row.override_status !== 'none'"
+            :type="overrideTag(scope.row.override_status)"
+            effect="plain"
+          >
+            {{ scope.row.override_status }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
       <el-table-column prop="updated_at" label="更新时间" width="190" />
-      <el-table-column label="操作" width="240" fixed="right">
+      <el-table-column label="操作" width="340" fixed="right">
         <template #default="scope">
           <el-button
             v-if="scope.row.status === 'draft'"
@@ -681,6 +769,26 @@ onMounted(async () => {
             执行
           </el-button>
           <el-button
+            v-if="scope.row.status === 'approved'"
+            link
+            type="warning"
+            :loading="actionId === scope.row.id"
+            @click="checkGate(scope.row)"
+          >
+            检查
+          </el-button>
+          <el-button
+            v-if="
+              scope.row.status === 'approved' &&
+              scope.row.order_type === 'outbound'
+            "
+            link
+            type="danger"
+            @click="openOverride(scope.row)"
+          >
+            特殊放行
+          </el-button>
+          <el-button
             v-if="
               scope.row.status === 'draft' ||
               scope.row.status === 'pending_approval'
@@ -696,6 +804,46 @@ onMounted(async () => {
       </el-table-column>
     </el-table>
   </el-card>
+
+  <el-dialog
+    v-model="overrideVisible"
+    title="特殊放行审批"
+    width="520px"
+    destroy-on-close
+  >
+    <el-alert
+      type="warning"
+      show-icon
+      :closable="false"
+      title="特殊放行会绕过返库状态或未完成阻塞任务，只能由库房负责人或超级管理员审批。"
+    />
+    <el-form label-position="top" class="override-form">
+      <el-form-item label="出入库单">
+        <el-input :model-value="overrideForm.order_no" disabled />
+      </el-form-item>
+      <el-form-item label="放行原因">
+        <el-input
+          v-model="overrideForm.override_reason"
+          type="textarea"
+          :rows="4"
+          placeholder="说明为什么必须在检查/维护未完成前放行，以及现场风险控制措施"
+        />
+      </el-form-item>
+      <el-checkbox v-model="overrideForm.override_risk_acknowledged">
+        已确认本次放行风险，并由审批人承担审批责任
+      </el-checkbox>
+    </el-form>
+    <template #footer>
+      <el-button @click="overrideVisible = false">取消</el-button>
+      <el-button
+        type="danger"
+        :loading="overrideSubmitting"
+        @click="submitOverride"
+      >
+        确认放行
+      </el-button>
+    </template>
+  </el-dialog>
 </template>
 
 <style scoped>
@@ -776,6 +924,10 @@ onMounted(async () => {
   flex-wrap: wrap;
   gap: 8px;
   margin-top: 10px;
+}
+
+.override-form {
+  margin-top: 12px;
 }
 
 .cart-summary {

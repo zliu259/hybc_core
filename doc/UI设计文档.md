@@ -95,12 +95,13 @@
 - 仓库管理：`packages/web/src/views/warehouse/index.vue`
 - 库房总控台：`packages/web/src/views/warehouse/control-center.vue`
 - 库房任务调度台：`packages/web/src/views/warehouse/task-dispatch.vue`
-  - 展示任务队列、人员负载、任务包创建、批量加入任务包/批量派工、单任务派工、复核和证据查看。
+  - 展示任务队列、人员负载、任务包创建、任务包完成/未完/超时/异常汇总、批量加入任务包/批量派工、单任务派工、复核和证据查看。
+  - 筛选区支持状态、来源、执行人、仓库、项目、资产类型组合筛选。
 - 返库检查维护：`packages/web/src/views/warehouse/return-maintenance.vue`
 - 顶管机组合方案台：`packages/web/src/views/warehouse/tbm-composition.vue`
   - 支持按所选机芯加载候选壳体/操作台、展示兼容和不可用原因、创建组合方案、由组合方案生成任务包。
 - 操作手册库：`packages/web/src/views/warehouse/manual-library.vue`
-  - 支持手册创建、版本新增、版本发布、自动匹配规则维护；规则按手册、资产类型、任务类型、组件角色配置。
+  - 支持手册创建、版本新增、版本发布、自动匹配规则维护；规则按手册、设备型号、资产类型、任务类型、组件角色配置。
 - 仓库库存：`packages/web/src/views/warehouse/inventory.vue`
 - 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
 - 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`
@@ -434,12 +435,13 @@
 #### K-4. 出入库单管理 `views/warehouse/stock-order.vue`
 
 - 模块：出入库单列表、购物车式创建表单、模板快速套用、关键字快速加入。
-- 交互：草稿单可提交审批；审批通过后可执行；草稿/待审可取消。
+- 交互：草稿单可提交审批；审批通过后可先执行 gate 检查再执行；草稿/待审可取消。
 - 交互增强：支持“扫码值/关键字 + 数量”快速加入清单，支持预制模板一键套用后继续编辑。
+- 特殊放行：审批通过的出库单可发起特殊放行审批，必须填写放行原因并勾选风险确认；后端记录审批人、原因和风险确认后，才允许绕过返库隔离或阻塞任务 gate。
 - 租赁增强：制单时可选关联 `rental_term_id`，逾期租期在出库前阻断；关联租期的入库执行会回填“已归还”。
 - 组合增强：清单行支持直接标记 `configuration_role`（整机 / 机壳 / 机芯 / 操作台 / 通用）与 `requires_modification`，用于把“已组合设备直接出库”与“兼容组合但需改装”两类方案在同一制单页内表达。
 - 升级要求：主要设备出库项支持两种模式——已组合设备直接选取、compatible 组件组合选取并显示 `modification required` 提示；返库执行后主要设备自动进入 returned quarantine，不直接恢复可用。
-- API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
+- API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/gate-check`, `/api/v1/warehouse/stock-order/:id/override`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
 
 #### K-5. 项目设备规划 `views/warehouse/equipment-plan.vue`
 

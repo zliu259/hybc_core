@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildWarehouseTaskTimelineSummaryDetail,
+  buildWarehouseTaskPackageStatusSummary,
   chooseWarehouseManualBinding,
   buildWarehouseTaskWorkloadSummary,
   buildFollowupMaintenanceTaskDefaults,
@@ -143,25 +144,29 @@ describe("warehouse task queue rules", () => {
           manual_version_id: 10,
           asset_type_id: null,
           work_order_type: "inspection",
-          configuration_role: null
+          configuration_role: null,
+          asset_model: null
         },
         {
           manual_version_id: 11,
           asset_type_id: 3,
           work_order_type: "inspection",
-          configuration_role: null
+          configuration_role: null,
+          asset_model: null
         },
         {
           manual_version_id: 12,
           asset_type_id: 3,
           work_order_type: "inspection",
-          configuration_role: "core"
+          configuration_role: "core",
+          asset_model: null
         },
         {
           manual_version_id: 13,
           asset_type_id: 3,
           work_order_type: "maintenance",
-          configuration_role: "core"
+          configuration_role: "core",
+          asset_model: null
         }
       ],
       {
@@ -172,6 +177,42 @@ describe("warehouse task queue rules", () => {
     );
 
     expect(binding?.manual_version_id).toBe(12);
+  });
+
+  it("prefers a matching asset model manual binding over generic role bindings", () => {
+    const binding = chooseWarehouseManualBinding(
+      [
+        {
+          manual_version_id: 20,
+          asset_type_id: 3,
+          work_order_type: "inspection",
+          configuration_role: "core",
+          asset_model: null
+        },
+        {
+          manual_version_id: 21,
+          asset_type_id: 3,
+          work_order_type: "inspection",
+          configuration_role: null,
+          asset_model: "DN1200"
+        },
+        {
+          manual_version_id: 22,
+          asset_type_id: 3,
+          work_order_type: "inspection",
+          configuration_role: null,
+          asset_model: "DN1000"
+        }
+      ],
+      {
+        asset_type_id: 3,
+        work_order_type: "inspection",
+        configuration_role: "core",
+        asset_model: "DN1200"
+      }
+    );
+
+    expect(binding?.manual_version_id).toBe(21);
   });
 
   it("builds a traceable task completion timeline summary", () => {
@@ -189,5 +230,46 @@ describe("warehouse task queue rules", () => {
     expect(detail).toContain("result=维护复核通过");
     expect(detail).toContain("manual_version_id=12");
     expect(detail).toContain("evidence=photo:3,brief:1");
+  });
+
+  it("summarizes task package status from child tasks", () => {
+    expect(
+      buildWarehouseTaskPackageStatusSummary({
+        due_date: null,
+        tasks: [
+          { status: "completed", scheduled_date: "2026-05-05" },
+          { status: "completed", scheduled_date: "2026-05-05" }
+        ],
+        now: "2026-05-06T00:00:00.000Z"
+      })
+    ).toMatchObject({
+      status: "completed",
+      task_count: 2,
+      completed_count: 2,
+      exception_count: 0
+    });
+
+    expect(
+      buildWarehouseTaskPackageStatusSummary({
+        due_date: "2026-05-05",
+        tasks: [{ status: "assigned", scheduled_date: "2026-05-04" }],
+        now: "2026-05-06T00:00:00.000Z"
+      })
+    ).toMatchObject({
+      status: "exception",
+      overdue_count: 1,
+      exception_count: 1
+    });
+
+    expect(
+      buildWarehouseTaskPackageStatusSummary({
+        due_date: null,
+        tasks: [
+          { status: "pending_assignment", scheduled_date: null },
+          { status: "assigned", scheduled_date: null }
+        ],
+        now: "2026-05-06T00:00:00.000Z"
+      }).status
+    ).toBe("in_progress");
   });
 });

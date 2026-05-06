@@ -62,6 +62,11 @@ export type StockOrder = {
   updated_at: string;
 };
 
+export type StockOrderGateResult = {
+  pass: boolean;
+  issues: string[];
+};
+
 export type StockOrderItem = {
   id: number;
   stock_order_id: number;
@@ -170,6 +175,11 @@ export type WarehouseTaskPackage = {
   remark: string | null;
   created_at: string;
   updated_at: string;
+  task_count?: number;
+  completed_count?: number;
+  open_count?: number;
+  overdue_count?: number;
+  exception_count?: number;
 };
 
 export type WarehouseTaskWorkloadSummary = {
@@ -362,6 +372,25 @@ export const executeStockOrder = (id: number) =>
     `/api/v1/warehouse/stock-order/${id}/execute`
   );
 
+export const gateCheckStockOrder = (id: number) =>
+  http.request<{ success: boolean; data: StockOrderGateResult }>(
+    "get",
+    `/api/v1/warehouse/stock-order/${id}/gate-check`
+  );
+
+export const reviewStockOrderOverride = (
+  id: number,
+  data: {
+    action: "request" | "approve" | "reject";
+    override_reason?: string;
+    override_risk_acknowledged?: number;
+  }
+) =>
+  http.request<{
+    success: boolean;
+    data: { override_status: StockOrder["override_status"] };
+  }>("post", `/api/v1/warehouse/stock-order/${id}/override`, { data });
+
 export const cancelStockOrder = (id: number) =>
   http.request<{ success: boolean }>(
     "post",
@@ -505,6 +534,7 @@ export const listWarehouseAssetWorkOrders = (params?: {
   tracked_asset_id?: number;
   project_id?: number;
   warehouse_id?: number;
+  asset_type_id?: number;
   blocking_flag?: 0 | 1;
   source?: WarehouseAssetWorkOrder["source"];
   assignee_userid?: string;
@@ -525,6 +555,7 @@ export const listWarehouseTaskPackages = (params?: {
   status?: WarehouseTaskPackage["status"];
   assignee_userid?: string;
   warehouse_id?: number;
+  project_id?: number;
 }) =>
   http.request<{ success: boolean; data: WarehouseTaskPackage[] }>(
     "get",

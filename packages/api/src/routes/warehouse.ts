@@ -211,7 +211,12 @@ export const evaluateStockOrderGate = async (
   items: StockOrderItem[]
 ): Promise<{ pass: boolean; issues: string[] }> => {
   const issues: string[] = [];
-  const overrideApproved = order.override_status === "approved";
+  const overrideApproved = isStockOrderOverrideEffective(order);
+  if (order.override_status === "approved" && !overrideApproved) {
+    issues.push(
+      "override audit incomplete: reason, approver and risk acknowledgement are required"
+    );
+  }
 
   for (const item of items) {
     if (item.requires_modification === 1) {
@@ -242,6 +247,20 @@ export const evaluateStockOrderGate = async (
   }
 
   return { pass: issues.length === 0, issues };
+};
+
+const isStockOrderOverrideEffective = (order: StockOrder): boolean =>
+  order.override_status === "approved" &&
+  Boolean(order.override_reason?.trim()) &&
+  Boolean(order.override_approver_userid?.trim()) &&
+  order.override_risk_acknowledged === 1;
+
+const buildStockOrderExecutionDetail = (order: StockOrder): string => {
+  let detail = `Stock order ${order.order_no} executed`;
+  if (isStockOrderOverrideEffective(order)) {
+    detail += ` with override; reason=${order.override_reason?.trim()}; approver=${order.override_approver_userid}; risk_acknowledged=1`;
+  }
+  return detail;
 };
 
 export const applyStockOrderExecution = async (env: Env, order: StockOrder): Promise<void> => {
@@ -325,7 +344,7 @@ export const applyStockOrderExecution = async (env: Env, order: StockOrder): Pro
           order.applicant_userid,
           order.project_id ?? null,
           order.to_warehouse_id ?? order.from_warehouse_id ?? null,
-          `Stock order ${order.order_no} executed${order.override_status === "approved" ? " with override" : ""}`,
+          buildStockOrderExecutionDetail(order),
           nowIso()
         )
         .run();
@@ -842,17 +861,40 @@ warehouseRoutes.post(
       );
     }
 
+    const order = await c.env.DB.prepare("SELECT * FROM stock_order WHERE id = ?")
+      .bind(id)
+      .first<StockOrder>();
+    if (!order) return c.json({ success: false, error: { message: "Stock order not found" } }, 404);
+
     const nextStatus =
       body.action === "request" ? "requested" : body.action === "approve" ? "approved" : "rejected";
+    const nextReason = body.override_reason?.trim() || order.override_reason;
+    const nextRiskAcknowledged =
+      body.override_risk_acknowledged === undefined
+        ? order.override_risk_acknowledged
+        : body.override_risk_acknowledged;
+    if (body.action === "approve" && (!nextReason?.trim() || nextRiskAcknowledged !== 1)) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: "override approve requires override_reason and override_risk_acknowledged=1"
+          }
+        },
+        400
+      );
+    }
+
     await c.env.DB.prepare(
       `UPDATE stock_order SET
          override_status = ?,
-         override_reason = COALESCE(?, override_reason),
+         override_reason = ?,
          override_approver_userid = ?,
+         override_risk_acknowledged = ?,
          updated_at = ?
        WHERE id = ?`
     )
-      .bind(nextStatus, body.override_reason ?? null, auth.sub, nowIso(), id)
+      .bind(nextStatus, nextReason ?? null, auth.sub, nextRiskAcknowledged, nowIso(), id)
       .run();
     return c.json({ success: true, data: { override_status: nextStatus } });
   }

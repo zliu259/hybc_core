@@ -40,6 +40,7 @@ const bindingForm = ref({
   id: 0,
   manual_id: undefined as number | undefined,
   asset_type_id: undefined as number | undefined,
+  asset_model: "",
   work_order_type: undefined as string | undefined,
   configuration_role: undefined as string | undefined,
   status: "active" as WarehouseManualBinding["status"]
@@ -83,6 +84,10 @@ const workOrderTypeName = (type: string | null) => {
 const roleName = (role: string | null) => {
   if (!role) return "全部组件";
   return roleOptions.find(item => item.value === role)?.label || role;
+};
+
+const modelName = (model: string | null) => {
+  return model?.trim() || "全部型号";
 };
 
 const loadData = async () => {
@@ -148,6 +153,7 @@ const openBindingCreate = () => {
     id: 0,
     manual_id: selectedManualId.value ?? undefined,
     asset_type_id: undefined,
+    asset_model: "",
     work_order_type: undefined,
     configuration_role: undefined,
     status: "active"
@@ -160,6 +166,7 @@ const openBindingEdit = (row: WarehouseManualBinding) => {
     id: row.id,
     manual_id: row.manual_id,
     asset_type_id: row.asset_type_id ?? undefined,
+    asset_model: row.asset_model ?? "",
     work_order_type: row.work_order_type ?? undefined,
     configuration_role: row.configuration_role ?? undefined,
     status: row.status
@@ -177,6 +184,7 @@ const submitBinding = async () => {
     const payload = {
       manual_id: bindingForm.value.manual_id,
       asset_type_id: bindingForm.value.asset_type_id ?? null,
+      asset_model: bindingForm.value.asset_model.trim() || null,
       work_order_type: bindingForm.value.work_order_type ?? null,
       configuration_role: bindingForm.value.configuration_role ?? null,
       status: bindingForm.value.status
@@ -267,13 +275,20 @@ onMounted(loadData);
     <div class="binding-panel">
       <div class="binding-panel__head">
         <strong>自动匹配规则</strong>
-        <span>任务创建时按资产类型、任务类型、组件角色匹配已发布版本</span>
+        <span
+          >任务创建时按型号、资产类型、任务类型、组件角色匹配已发布版本</span
+        >
       </div>
       <el-table :data="bindings" border>
         <el-table-column prop="manual_title" label="手册" min-width="220" />
         <el-table-column label="资产类型" min-width="150">
           <template #default="{ row }">
             {{ assetTypeName(row.asset_type_id) }}
+          </template>
+        </el-table-column>
+        <el-table-column label="型号" min-width="120">
+          <template #default="{ row }">
+            {{ modelName(row.asset_model) }}
           </template>
         </el-table-column>
         <el-table-column label="任务类型" width="110">
@@ -386,6 +401,13 @@ onMounted(loadData);
               :value="item.id"
             />
           </el-select>
+        </el-form-item>
+        <el-form-item label="型号">
+          <el-input
+            v-model="bindingForm.asset_model"
+            clearable
+            placeholder="全部型号，或填写设备型号精确匹配"
+          />
         </el-form-item>
         <el-form-item label="任务类型">
           <el-select

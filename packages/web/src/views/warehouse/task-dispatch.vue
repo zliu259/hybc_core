@@ -1,16 +1,20 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
+import { listAssetTypes, type AssetType } from "@/api/asset";
+import { listProjects, type Project } from "@/api/project";
 import {
   assignWarehouseAssetWorkOrder,
   assignWarehouseTaskPackageTasks,
   createWarehouseTaskPackage,
   listWarehouseTaskEvidence,
   listWarehouseAssetWorkOrders,
+  listWarehouses,
   listWarehouseTaskPackages,
   listWarehouseTaskWorkload,
   reviewWarehouseAssetWorkOrder,
   startWarehouseAssetWorkOrder,
+  type Warehouse,
   type WarehouseAssetWorkOrder,
   type WarehouseTaskEvidence,
   type WarehouseTaskPackage,
@@ -38,6 +42,9 @@ const evidenceRows = ref<WarehouseTaskEvidence[]>([]);
 const evidenceLoading = ref(false);
 const activeTaskNo = ref("");
 const manuals = ref<WarehouseManual[]>([]);
+const warehouses = ref<Warehouse[]>([]);
+const projects = ref<Project[]>([]);
+const assetTypes = ref<AssetType[]>([]);
 const assignForm = ref({
   id: 0,
   assignee_userid: "",
@@ -60,6 +67,10 @@ const batchForm = ref({
 const filters = ref<{
   status?: WarehouseAssetWorkOrder["status"];
   source?: WarehouseAssetWorkOrder["source"];
+  assignee_userid?: string;
+  warehouse_id?: number;
+  project_id?: number;
+  asset_type_id?: number;
 }>({});
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
@@ -74,6 +85,26 @@ const statusOptions: Array<{
   { label: "已退回", value: "rejected" },
   { label: "已完成", value: "completed" }
 ];
+
+const taskStatusText: Record<string, string> = {
+  draft: "草稿",
+  pending_assignment: "待派工",
+  assigned: "已派工",
+  pending_approval: "审批中",
+  approved: "已批准",
+  in_progress: "执行中",
+  submitted: "待复核",
+  completed: "已完成",
+  rejected: "已退回",
+  cancelled: "已取消"
+};
+
+const packageStatusText: Record<WarehouseTaskPackage["status"], string> = {
+  open: "未开始",
+  in_progress: "进行中",
+  completed: "已完成",
+  exception: "有异常"
+};
 
 const sourceOptions: Array<{
   label: string;
@@ -101,6 +132,23 @@ const priorityTag = (priority: WarehouseAssetWorkOrder["priority"]) => {
   return "success";
 };
 
+const packageStatusTag = (status: WarehouseTaskPackage["status"]) => {
+  if (status === "exception") return "danger";
+  if (status === "completed") return "success";
+  if (status === "in_progress") return "warning";
+  return "info";
+};
+
+const isTaskOverdue = (row: WarehouseAssetWorkOrder) => {
+  if (!row.scheduled_date || ["completed", "cancelled"].includes(row.status)) {
+    return false;
+  }
+  return row.scheduled_date < new Date().toISOString().slice(0, 10);
+};
+
+const hasTaskException = (row: WarehouseAssetWorkOrder) =>
+  row.status === "rejected" || isTaskOverdue(row);
+
 const workerText = (userid: string | null) => {
   if (!userid) return "未派工";
   const user = wecomUsers.value.find(item => item.userid === userid);
@@ -120,13 +168,20 @@ const loadData = async () => {
   try {
     const [taskResult, packageResult, workloadResult] = await Promise.all([
       listWarehouseAssetWorkOrders(filters.value),
-      listWarehouseTaskPackages(),
-      listWarehouseTaskWorkload({ source: filters.value.source })
+      listWarehouseTaskPackages({
+        assignee_userid: filters.value.assignee_userid,
+        warehouse_id: filters.value.warehouse_id,
+        project_id: filters.value.project_id
+      }),
+      listWarehouseTaskWorkload({
+        source: filters.value.source,
+        assignee_userid: filters.value.assignee_userid,
+        warehouse_id: filters.value.warehouse_id,
+        project_id: filters.value.project_id
+      })
     ]);
     rows.value = taskResult.data;
-    packageRows.value = packageResult.data.filter(item =>
-      ["open", "in_progress"].includes(item.status)
-    );
+    packageRows.value = packageResult.data;
     workloadRows.value = workloadResult.data;
   } finally {
     loading.value = false;
@@ -263,12 +318,20 @@ const reviewTask = async (
 };
 
 onMounted(async () => {
-  const [manualRes] = await Promise.all([
-    listWarehouseManuals({ status: "active" }),
-    loadWecomUsers(),
-    loadData()
-  ]);
+  const [manualRes, warehouseRes, assetTypeRes, projectRes] = await Promise.all(
+    [
+      listWarehouseManuals({ status: "active" }),
+      listWarehouses(),
+      listAssetTypes({ tracked_flag: 1 }),
+      listProjects({ page: 1, pageSize: 500 }),
+      loadWecomUsers(),
+      loadData()
+    ]
+  );
   manuals.value = manualRes.data;
+  warehouses.value = warehouseRes.data;
+  assetTypes.value = assetTypeRes.data;
+  projects.value = projectRes.data;
 });
 </script>
 
@@ -310,6 +373,66 @@ onMounted(async () => {
           />
         </el-select>
       </el-form-item>
+      <el-form-item label="执行人">
+        <el-select
+          v-model="filters.assignee_userid"
+          clearable
+          filterable
+          style="width: 180px"
+        >
+          <el-option
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="`${item.name} (${item.userid})`"
+            :value="item.userid"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="仓库">
+        <el-select
+          v-model="filters.warehouse_id"
+          clearable
+          filterable
+          style="width: 180px"
+        >
+          <el-option
+            v-for="item in warehouses"
+            :key="item.id"
+            :label="item.warehouse_name"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="项目">
+        <el-select
+          v-model="filters.project_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
+          <el-option
+            v-for="item in projects"
+            :key="item.id"
+            :label="item.project_name"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
+      <el-form-item label="资产类型">
+        <el-select
+          v-model="filters.asset_type_id"
+          clearable
+          filterable
+          style="width: 220px"
+        >
+          <el-option
+            v-for="item in assetTypes"
+            :key="item.id"
+            :label="`${item.type_name} (${item.type_code})`"
+            :value="item.id"
+          />
+        </el-select>
+      </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
     </el-form>
 
@@ -327,6 +450,40 @@ onMounted(async () => {
       </el-table>
     </div>
 
+    <div class="workload">
+      <div class="workload__title">任务包状态</div>
+      <el-table :data="packageRows" size="small" border>
+        <el-table-column prop="package_title" label="任务包" min-width="180" />
+        <el-table-column label="状态" width="100">
+          <template #default="{ row }">
+            <el-tag :type="packageStatusTag(row.status)">
+              {{ packageStatusText[row.status] || row.status }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="task_count" label="任务" width="80" />
+        <el-table-column prop="completed_count" label="完成" width="80" />
+        <el-table-column prop="open_count" label="未完" width="80" />
+        <el-table-column prop="overdue_count" label="超时" width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.overdue_count" type="danger" effect="plain">
+              {{ row.overdue_count }}
+            </el-tag>
+            <span v-else>0</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="exception_count" label="异常" width="80">
+          <template #default="{ row }">
+            <el-tag v-if="row.exception_count" type="danger" effect="dark">
+              {{ row.exception_count }}
+            </el-tag>
+            <span v-else>0</span>
+          </template>
+        </el-table-column>
+        <el-table-column prop="due_date" label="截止" width="120" />
+      </el-table>
+    </div>
+
     <el-table :data="rows" border @selection-change="handleSelectionChange">
       <el-table-column type="selection" width="44" />
       <el-table-column prop="work_order_no" label="任务号" width="160" />
@@ -335,7 +492,24 @@ onMounted(async () => {
           typeText[row.work_order_type] || row.work_order_type
         }}</template>
       </el-table-column>
-      <el-table-column prop="status" label="状态" width="130" />
+      <el-table-column label="状态" width="150">
+        <template #default="{ row }">
+          <el-tag
+            :type="hasTaskException(row) ? 'danger' : 'info'"
+            effect="plain"
+          >
+            {{ taskStatusText[row.status] || row.status }}
+          </el-tag>
+          <el-tag
+            v-if="isTaskOverdue(row)"
+            type="danger"
+            effect="dark"
+            class="task-flag"
+          >
+            超时
+          </el-tag>
+        </template>
+      </el-table-column>
       <el-table-column prop="package_id" label="任务包" width="90" />
       <el-table-column label="优先级" width="100">
         <template #default="{ row }">
@@ -352,6 +526,7 @@ onMounted(async () => {
         label="照片要求"
         width="100"
       />
+      <el-table-column prop="scheduled_date" label="计划日期" width="120" />
       <el-table-column
         prop="remark"
         label="说明"
@@ -509,6 +684,7 @@ onMounted(async () => {
               :key="item.id"
               :label="`${item.package_title} (${item.package_no})`"
               :value="item.id"
+              :disabled="item.status === 'completed'"
             />
           </el-select>
         </el-form-item>
@@ -638,5 +814,9 @@ onMounted(async () => {
 
 .dialog-form {
   margin-top: 16px;
+}
+
+.task-flag {
+  margin-left: 6px;
 }
 </style>
