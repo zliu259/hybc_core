@@ -11,6 +11,7 @@ import type {
 import type { AiGateHandler } from "../types/approval";
 import { publishEvent } from "./event-bus";
 import { generateSerial } from "./serial";
+import { normalizeWarehouseManualDraftResultContent } from "./warehouse-manual-ai";
 
 const nowIso = () => new Date().toISOString();
 
@@ -26,7 +27,7 @@ const parseAttachmentMeta = (raw: string | null): AttachmentMeta[] => {
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return [];
-    const items: Array<AttachmentMeta | null> = parsed.map(item => {
+    const items: Array<AttachmentMeta | null> = parsed.map((item) => {
       if (typeof item === "string") {
         return {
           file_key: item,
@@ -379,7 +380,11 @@ const enrichAiGatePayload = async (
   if (currentAttachments.length > 0 || loadedAttachments.length > 0) {
     const currentList = currentAttachments
       .filter((item): item is AttachmentMeta => {
-        return !!item && typeof item === "object" && typeof (item as AttachmentMeta).file_key === "string";
+        return (
+          !!item &&
+          typeof item === "object" &&
+          typeof (item as AttachmentMeta).file_key === "string"
+        );
       })
       .map((item) => ({
         file_key: item.file_key,
@@ -392,7 +397,11 @@ const enrichAiGatePayload = async (
       }));
     const loadedList = loadedAttachments
       .filter((item): item is AttachmentMeta => {
-        return !!item && typeof item === "object" && typeof (item as AttachmentMeta).file_key === "string";
+        return (
+          !!item &&
+          typeof item === "object" &&
+          typeof (item as AttachmentMeta).file_key === "string"
+        );
       })
       .map((item) => ({
         file_key: item.file_key,
@@ -419,10 +428,7 @@ const enrichAiGatePayload = async (
 /**
  * Create a new task in the queue.
  */
-export const createTask = async (
-  env: Env,
-  request: CreateTaskRequest
-): Promise<TaskQueueItem> => {
+export const createTask = async (env: Env, request: CreateTaskRequest): Promise<TaskQueueItem> => {
   const taskCode = await generateSerial(env.DB, "TK", "task_queue", "task_code");
   const now = nowIso();
 
@@ -515,6 +521,21 @@ export const completeTask = async (
       .run();
   }
 
+  if (task.task_type === "warehouse_manual_draft" && task.biz_type === "warehouse_manual") {
+    await env.DB.prepare(
+      `UPDATE warehouse_manual_version SET
+         content_json = ?,
+         ai_draft_status = 'completed',
+         updated_at = ?
+       WHERE ai_draft_task_id = ? AND manual_id = ?`
+    )
+      .bind(normalizeWarehouseManualDraftResultContent(result), now, taskId, task.biz_id)
+      .run();
+    await env.DB.prepare("UPDATE warehouse_manual SET updated_at = ? WHERE id = ?")
+      .bind(now, task.biz_id)
+      .run();
+  }
+
   // Write audit log
   const provider = task.provider_id
     ? await env.DB.prepare("SELECT * FROM ai_provider_config WHERE id = ?")
@@ -591,6 +612,17 @@ export const failTask = async (
       .run();
   }
 
+  if (task.task_type === "warehouse_manual_draft" && task.biz_type === "warehouse_manual") {
+    await env.DB.prepare(
+      "UPDATE warehouse_manual_version SET ai_draft_status = 'failed', updated_at = ? WHERE ai_draft_task_id = ? AND manual_id = ?"
+    )
+      .bind(now, taskId, task.biz_id)
+      .run();
+    await env.DB.prepare("UPDATE warehouse_manual SET updated_at = ? WHERE id = ?")
+      .bind(now, task.biz_id)
+      .run();
+  }
+
   // Write error audit log
   const provider = task.provider_id
     ? await env.DB.prepare("SELECT * FROM ai_provider_config WHERE id = ?")
@@ -658,8 +690,7 @@ export const resolveProvider = async (
   // Fallback: highest-priority active provider
   const fallback = await env.DB.prepare(
     "SELECT * FROM ai_provider_config WHERE status = 'active' ORDER BY priority ASC LIMIT 1"
-  )
-    .all<AiProviderConfig>();
+  ).all<AiProviderConfig>();
 
   return fallback.results?.[0] ?? null;
 };
@@ -687,11 +718,7 @@ export const resolvePrompt = async (
     return tmpl.replace(/\{\{(\w+)\}\}/g, (_match, key: string) => {
       const value = variables[key];
       if (value === undefined) return `{{${key}}}`;
-      if (
-        typeof value === "string" ||
-        typeof value === "number" ||
-        typeof value === "boolean"
-      ) {
+      if (typeof value === "string" || typeof value === "number" || typeof value === "boolean") {
         return String(value);
       }
       try {
@@ -713,14 +740,10 @@ export const resolvePrompt = async (
 /**
  * Get available compute nodes for a task type.
  */
-export const getAvailableNodes = async (
-  env: Env,
-  taskType: string
-): Promise<ComputeNode[]> => {
+export const getAvailableNodes = async (env: Env, taskType: string): Promise<ComputeNode[]> => {
   const rows = await env.DB.prepare(
     "SELECT * FROM compute_node WHERE status = 'online'"
-  )
-    .all<ComputeNode>();
+  ).all<ComputeNode>();
 
   const nodes = rows.results ?? [];
 

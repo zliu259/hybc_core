@@ -79,6 +79,8 @@ export type TbmCompositionCandidate = {
   asset_type_id: number;
   asset_type_code: string | null;
   asset_type_name: string | null;
+  brand: string | null;
+  model: string | null;
   role: "shell" | "console";
   status: string;
   current_warehouse_id: number | null;
@@ -318,6 +320,8 @@ export const getTbmCompositionCandidates = (coreAssetId: number) =>
         asset_type_id: number;
         asset_type_code: string | null;
         asset_type_name: string | null;
+        brand: string | null;
+        model: string | null;
         status: string;
         current_warehouse_id: number | null;
       };
@@ -326,6 +330,14 @@ export const getTbmCompositionCandidates = (coreAssetId: number) =>
     };
   }>("get", "/api/v1/asset/configuration/candidate", {
     params: { core_asset_id: coreAssetId }
+  });
+
+export const triggerTbmCompositionRecommendation = (coreAssetId: number) =>
+  http.request<{
+    success: boolean;
+    data: { task_id: number; ai_status: string; no_auto_apply: boolean };
+  }>("post", "/api/v1/asset/configuration/recommendation", {
+    data: { core_asset_id: coreAssetId }
   });
 
 export const createTrackedAssetConfiguration = (data: {

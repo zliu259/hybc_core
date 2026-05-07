@@ -2,9 +2,20 @@ import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
+import { createTask } from "../services/ai-slot";
 import { generateSerial } from "../services/serial";
+import {
+  buildWarehouseManualDraftContent,
+  buildWarehouseManualDraftTaskPayload,
+  type WarehouseManualDraftHistoricalTask
+} from "../services/warehouse-manual-ai";
+import {
+  assertWarehouseManualVersionCanPublish,
+  assertWarehouseManualVersionCanSubmitReview
+} from "../services/warehouse-manual-review";
 import type { Env } from "../types/env";
 import type {
+  CreateWarehouseManualAiDraftRequest,
   CreateWarehouseManualRequest,
   CreateWarehouseManualVersionRequest,
   WarehouseManual,
@@ -291,6 +302,93 @@ warehouseManualRoutes.get(
 );
 
 warehouseManualRoutes.post(
+  "/:id/version/ai-draft",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as CreateWarehouseManualAiDraftRequest;
+    const manual = await c.env.DB.prepare("SELECT * FROM warehouse_manual WHERE id = ?")
+      .bind(id)
+      .first<WarehouseManual>();
+    if (!manual) {
+      return c.json({ success: false, error: { message: "manual not found" } }, 404);
+    }
+
+    const sourceLimit = Math.min(Math.max(Number(body.source_limit ?? 20), 1), 100);
+    const taskRows = await c.env.DB.prepare(
+      `SELECT work_order_no, work_order_type, result_summary, completion_summary_json
+       FROM warehouse_asset_work_order
+       WHERE manual_version_id IN (
+         SELECT id FROM warehouse_manual_version WHERE manual_id = ?
+       )
+         AND (result_summary IS NOT NULL OR completion_summary_json IS NOT NULL)
+       ORDER BY COALESCE(reviewed_at, completed_at, submitted_at, updated_at) DESC
+       LIMIT ?`
+    )
+      .bind(id, sourceLimit)
+      .all<WarehouseManualDraftHistoricalTask>();
+
+    const draftInput = {
+      manual_id: manual.id,
+      manual_title: manual.manual_title,
+      manual_type: manual.manual_type,
+      asset_type_id: manual.asset_type_id,
+      historical_tasks: taskRows.results ?? []
+    };
+    const task = await createTask(c.env, {
+      task_type: "warehouse_manual_draft",
+      biz_type: "warehouse_manual",
+      biz_id: manual.id,
+      priority: 6,
+      payload: buildWarehouseManualDraftTaskPayload(draftInput),
+      timeout_seconds: 600
+    });
+
+    const latest = await c.env.DB.prepare(
+      "SELECT MAX(version_no) AS version_no FROM warehouse_manual_version WHERE manual_id = ?"
+    )
+      .bind(id)
+      .first<{ version_no: number | null }>();
+    const nextVersion = Number(latest?.version_no ?? 0) + 1;
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO warehouse_manual_version
+        (manual_id, version_no, content_json, ai_draft_task_id, ai_draft_status, status,
+         published_by_userid, published_at, created_by_userid, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'queued', 'draft', NULL, NULL, ?, ?, ?)`
+    )
+      .bind(
+        id,
+        nextVersion,
+        buildWarehouseManualDraftContent(draftInput),
+        task.id,
+        auth.sub,
+        now,
+        now
+      )
+      .run();
+
+    await c.env.DB.prepare("UPDATE warehouse_manual SET updated_at = ? WHERE id = ?")
+      .bind(now, id)
+      .run();
+
+    return c.json(
+      {
+        success: true,
+        data: {
+          id: result.meta.last_row_id,
+          version_no: nextVersion,
+          ai_draft_task_id: task.id,
+          ai_draft_status: "queued"
+        }
+      },
+      201
+    );
+  }
+);
+
+warehouseManualRoutes.post(
   "/:id/version",
   requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
@@ -346,6 +444,41 @@ warehouseManualRoutes.post(
 );
 
 warehouseManualRoutes.post(
+  "/:id/version/:versionId/submit-review",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const versionId = Number(c.req.param("versionId"));
+    const version = await c.env.DB.prepare(
+      "SELECT id, status FROM warehouse_manual_version WHERE id = ? AND manual_id = ?"
+    )
+      .bind(versionId, id)
+      .first<{ id: number; status: WarehouseManualVersion["status"] }>();
+    if (!version) {
+      return c.json({ success: false, error: { message: "manual version not found" } }, 404);
+    }
+
+    try {
+      assertWarehouseManualVersionCanSubmitReview(version.status);
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
+    }
+
+    const now = nowIso();
+    await c.env.DB.prepare(
+      "UPDATE warehouse_manual_version SET status = 'reviewing', updated_at = ? WHERE id = ?"
+    )
+      .bind(now, versionId)
+      .run();
+    await c.env.DB.prepare("UPDATE warehouse_manual SET updated_at = ? WHERE id = ?")
+      .bind(now, id)
+      .run();
+
+    return c.json({ success: true });
+  }
+);
+
+warehouseManualRoutes.post(
   "/:id/version/:versionId/publish",
   requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
@@ -353,12 +486,17 @@ warehouseManualRoutes.post(
     const versionId = Number(c.req.param("versionId"));
     const auth = c.get("auth");
     const version = await c.env.DB.prepare(
-      "SELECT id FROM warehouse_manual_version WHERE id = ? AND manual_id = ?"
+      "SELECT id, status FROM warehouse_manual_version WHERE id = ? AND manual_id = ?"
     )
       .bind(versionId, id)
-      .first<{ id: number }>();
+      .first<{ id: number; status: WarehouseManualVersion["status"] }>();
     if (!version) {
       return c.json({ success: false, error: { message: "manual version not found" } }, 404);
+    }
+    try {
+      assertWarehouseManualVersionCanPublish(version.status);
+    } catch (error) {
+      return c.json({ success: false, error: { message: (error as Error).message } }, 400);
     }
 
     const now = nowIso();

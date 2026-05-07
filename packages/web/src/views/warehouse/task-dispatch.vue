@@ -14,6 +14,7 @@ import {
   listWarehouseTaskWorkload,
   reviewWarehouseAssetWorkOrder,
   startWarehouseAssetWorkOrder,
+  triggerWarehouseDispatchRecommendation,
   type Warehouse,
   type WarehouseAssetWorkOrder,
   type WarehouseTaskEvidence,
@@ -40,6 +41,7 @@ const batchVisible = ref(false);
 const evidenceVisible = ref(false);
 const evidenceRows = ref<WarehouseTaskEvidence[]>([]);
 const evidenceLoading = ref(false);
+const aiDispatchLoading = ref(false);
 const activeTaskNo = ref("");
 const manuals = ref<WarehouseManual[]>([]);
 const warehouses = ref<Warehouse[]>([]);
@@ -286,6 +288,28 @@ const submitBatchAssign = async () => {
   await loadData();
 };
 
+const triggerAiDispatch = async () => {
+  aiDispatchLoading.value = true;
+  try {
+    const result = await triggerWarehouseDispatchRecommendation({
+      task_ids:
+        selectedRows.value.length > 0
+          ? selectedRows.value.map(item => item.id)
+          : undefined,
+      warehouse_id: filters.value.warehouse_id,
+      project_id: filters.value.project_id,
+      source: filters.value.source,
+      assignee_userid: filters.value.assignee_userid,
+      limit: selectedRows.value.length > 0 ? selectedRows.value.length : 50
+    });
+    message(`AI调度建议已进入队列：#${result.data.task_id}`, {
+      type: "success"
+    });
+  } finally {
+    aiDispatchLoading.value = false;
+  }
+};
+
 const startTask = async (row: WarehouseAssetWorkOrder) => {
   actionId.value = row.id;
   try {
@@ -344,6 +368,9 @@ onMounted(async () => {
           <div class="page__sub">库房负责人统一派工、跟进执行、复核完成</div>
         </div>
         <div class="page__actions">
+          <el-button :loading="aiDispatchLoading" @click="triggerAiDispatch">
+            AI建议
+          </el-button>
           <el-button @click="packageVisible = true">新建任务包</el-button>
           <el-button type="primary" @click="openBatchAssign">
             选中加入任务包

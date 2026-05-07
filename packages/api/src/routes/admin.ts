@@ -165,7 +165,7 @@ const defaultAiPromptTemplates: Array<{
     system_prompt:
       "你是审批AI关卡助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为outcome(approve/reject)和comment。comment必须同时包含‘审查摘要’与‘结论依据’两部分。若业务类型为reimbursement_batch，本关卡目标是汇总单项AI审查结论并判断报销内容合理性；不是重新做票据真实性核验。",
     user_prompt_template:
-      "请对审批关卡做决策。任务类型={{task_type}}，业务类型={{biz_type}}，业务ID={{biz_id}}。节点={{node_key}}，审批实例={{instance_id}}，上下文={{context}}。输入JSON={{payload_json}}。\n输出要求：\n1) 仅返回JSON：{\"outcome\":\"approve|reject\",\"comment\":\"...\"}\n2) comment必须使用以下结构：\"审查摘要：<提炼关键事实与单项AI结论；若biz_type为reimbursement_batch，优先汇总reimbursement_item_reviews中的结论与风险>；结论依据：<结合业务内容、金额、单项结论与抽查附件的一致性，说明通过/拒绝理由>\"\n3) 当biz_type为reimbursement_batch时，不因‘缺少可读附件正文’单独判拒；应以单项AI结论、票据识别结果和业务合理性为主要依据。若发现高风险异常、金额不一致或关键结论冲突，再reject并明确需人工补核项。\n4) 对非reimbursement_batch业务，仍可结合附件证据做一致性判断。"
+      '请对审批关卡做决策。任务类型={{task_type}}，业务类型={{biz_type}}，业务ID={{biz_id}}。节点={{node_key}}，审批实例={{instance_id}}，上下文={{context}}。输入JSON={{payload_json}}。\n输出要求：\n1) 仅返回JSON：{"outcome":"approve|reject","comment":"..."}\n2) comment必须使用以下结构："审查摘要：<提炼关键事实与单项AI结论；若biz_type为reimbursement_batch，优先汇总reimbursement_item_reviews中的结论与风险>；结论依据：<结合业务内容、金额、单项结论与抽查附件的一致性，说明通过/拒绝理由>"\n3) 当biz_type为reimbursement_batch时，不因‘缺少可读附件正文’单独判拒；应以单项AI结论、票据识别结果和业务合理性为主要依据。若发现高风险异常、金额不一致或关键结论冲突，再reject并明确需人工补核项。\n4) 对非reimbursement_batch业务，仍可结合附件证据做一致性判断。'
   },
   {
     template_key: "prompt-log-summary-v1",
@@ -230,14 +230,7 @@ const seedDefaultApprovalConfig = async (db: Env["DB"], now: string) => {
            created_by, created_at, updated_at)
           VALUES (?, ?, ?, ?, 'active', 'system', ?, ?)`
       )
-      .bind(
-        item.template_code,
-        item.template_name,
-        item.biz_type,
-        item.config_json,
-        now,
-        now
-      )
+      .bind(item.template_code, item.template_name, item.biz_type, item.config_json, now, now)
       .run();
 
     await db
@@ -412,9 +405,7 @@ const seedDefaultAiConfig = async (
   );
 
   const promptRows = await db
-    .prepare(
-      "SELECT id, template_key FROM ai_prompt_template WHERE status = 'active'"
-    )
+    .prepare("SELECT id, template_key FROM ai_prompt_template WHERE status = 'active'")
     .all<{ id: number; template_key: string }>();
   const promptIdMap = new Map(
     (promptRows.results ?? []).map((item) => [item.template_key, item.id])
@@ -502,23 +493,16 @@ const runnerConfigKeyPattern = /^[A-Z0-9_]{2,64}$/;
 
 adminRoutes.use("*", authMiddleware);
 
-adminRoutes.get(
-  "/wecom-push/monitor",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const hoursRaw = Number(c.req.query("hours") ?? "24");
-    const limitRaw = Number(c.req.query("limit") ?? "100");
-    const hours = Number.isFinite(hoursRaw)
-      ? Math.max(1, Math.min(168, Math.floor(hoursRaw)))
-      : 24;
-    const limit = Number.isFinite(limitRaw)
-      ? Math.max(20, Math.min(500, Math.floor(limitRaw)))
-      : 100;
+adminRoutes.get("/wecom-push/monitor", requireRoles(["super_admin"]), async (c) => {
+  const hoursRaw = Number(c.req.query("hours") ?? "24");
+  const limitRaw = Number(c.req.query("limit") ?? "100");
+  const hours = Number.isFinite(hoursRaw) ? Math.max(1, Math.min(168, Math.floor(hoursRaw))) : 24;
+  const limit = Number.isFinite(limitRaw) ? Math.max(20, Math.min(500, Math.floor(limitRaw))) : 100;
 
-    const sinceIso = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
+  const sinceIso = new Date(Date.now() - hours * 60 * 60 * 1000).toISOString();
 
-    const totalsRow = await c.env.DB.prepare(
-      `SELECT
+  const totalsRow = await c.env.DB.prepare(
+    `SELECT
          SUM(CASE WHEN event_type = 'wecom_template_card_sent' THEN 1 ELSE 0 END) AS sent_count,
          SUM(CASE WHEN event_type = 'wecom_template_card_failed' THEN 1 ELSE 0 END) AS failed_count,
          SUM(CASE WHEN event_type = 'wecom_template_card_isolation_guard' THEN 1 ELSE 0 END) AS isolation_guard_count,
@@ -526,92 +510,88 @@ adminRoutes.get(
        FROM event_log
        WHERE event_type LIKE 'wecom_template_card_%'
          AND created_at >= ?`
-    )
-      .bind(sinceIso)
-      .first<WeComPushMonitorTotals>();
+  )
+    .bind(sinceIso)
+    .first<WeComPushMonitorTotals>();
 
-    const rows = await c.env.DB.prepare(
-      `SELECT id, event_type, event_source, event_payload, created_at
+  const rows = await c.env.DB.prepare(
+    `SELECT id, event_type, event_source, event_payload, created_at
        FROM event_log
        WHERE event_type LIKE 'wecom_template_card_%'
          AND created_at >= ?
        ORDER BY created_at DESC
        LIMIT ?`
-    )
-      .bind(sinceIso, limit)
-      .all<WeComPushMonitorEventRow>();
+  )
+    .bind(sinceIso, limit)
+    .all<WeComPushMonitorEventRow>();
 
-    const recent = (rows.results ?? []).map((item) => {
-      let payload: Record<string, unknown> | null = null;
-      try {
-        payload = JSON.parse(item.event_payload) as Record<string, unknown>;
-      } catch {
-        payload = { raw: item.event_payload };
-      }
+  const recent = (rows.results ?? []).map((item) => {
+    let payload: Record<string, unknown> | null = null;
+    try {
+      payload = JSON.parse(item.event_payload) as Record<string, unknown>;
+    } catch {
+      payload = { raw: item.event_payload };
+    }
 
-      return {
-        id: item.id,
-        event_type: item.event_type,
-        event_source: item.event_source,
-        created_at: item.created_at,
-        payload
-      };
+    return {
+      id: item.id,
+      event_type: item.event_type,
+      event_source: item.event_source,
+      created_at: item.created_at,
+      payload
+    };
+  });
+
+  const errorCounter = new Map<string, number>();
+  recent.forEach((item) => {
+    const payload = item.payload ?? {};
+    const singleError = typeof payload.error === "string" ? payload.error.trim() : "";
+    if (singleError) {
+      errorCounter.set(singleError, (errorCounter.get(singleError) ?? 0) + 1);
+    }
+
+    const errors = Array.isArray(payload.errors)
+      ? payload.errors.filter((entry): entry is string => typeof entry === "string")
+      : [];
+    errors.forEach((entry) => {
+      const message = entry.trim();
+      if (!message) return;
+      errorCounter.set(message, (errorCounter.get(message) ?? 0) + 1);
     });
+  });
 
-    const errorCounter = new Map<string, number>();
-    recent.forEach((item) => {
-      const payload = item.payload ?? {};
-      const singleError = typeof payload.error === "string" ? payload.error.trim() : "";
-      if (singleError) {
-        errorCounter.set(singleError, (errorCounter.get(singleError) ?? 0) + 1);
-      }
+  const top_errors = [...errorCounter.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([message, count]) => ({ message, count }));
 
-      const errors = Array.isArray(payload.errors)
-        ? payload.errors.filter((entry): entry is string => typeof entry === "string")
-        : [];
-      errors.forEach((entry) => {
-        const message = entry.trim();
-        if (!message) return;
-        errorCounter.set(message, (errorCounter.get(message) ?? 0) + 1);
-      });
-    });
+  const sentCount = totalsRow?.sent_count ?? 0;
+  const failedCount = totalsRow?.failed_count ?? 0;
+  const successRateBase = sentCount + failedCount;
+  const successRate = successRateBase > 0 ? Number((sentCount / successRateBase).toFixed(4)) : 0;
 
-    const top_errors = [...errorCounter.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 10)
-      .map(([message, count]) => ({ message, count }));
+  return c.json({
+    success: true,
+    data: {
+      window_hours: hours,
+      since: sinceIso,
+      totals: {
+        sent_count: sentCount,
+        failed_count: failedCount,
+        isolation_guard_count: totalsRow?.isolation_guard_count ?? 0,
+        summary_count: totalsRow?.summary_count ?? 0,
+        success_rate: successRate
+      },
+      top_errors,
+      recent
+    }
+  });
+});
 
-    const sentCount = totalsRow?.sent_count ?? 0;
-    const failedCount = totalsRow?.failed_count ?? 0;
-    const successRateBase = sentCount + failedCount;
-    const successRate = successRateBase > 0 ? Number((sentCount / successRateBase).toFixed(4)) : 0;
-
-    return c.json({
-      success: true,
-      data: {
-        window_hours: hours,
-        since: sinceIso,
-        totals: {
-          sent_count: sentCount,
-          failed_count: failedCount,
-          isolation_guard_count: totalsRow?.isolation_guard_count ?? 0,
-          summary_count: totalsRow?.summary_count ?? 0,
-          success_rate: successRate
-        },
-        top_errors,
-        recent
-      }
-    });
-  }
-);
-
-adminRoutes.post(
-  "/wecom-push/force-current-nodes",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const auth = c.get("auth");
-    const rows = await c.env.DB.prepare(
-      `SELECT DISTINCT
+adminRoutes.post("/wecom-push/force-current-nodes", requireRoles(["super_admin"]), async (c) => {
+  const auth = c.get("auth");
+  const rows = await c.env.DB.prepare(
+    `SELECT DISTINCT
          ai.id AS instance_id,
          ai.instance_no,
          ai.biz_type,
@@ -632,498 +612,526 @@ adminRoutes.post(
         AND ani.round = ai.current_round
        WHERE ai.status = 'in_progress'
        ORDER BY ai.id DESC`
-    ).all<{
-      instance_id: number;
-      instance_no: string;
-      biz_type: string;
-      biz_id: number;
-      biz_summary: string;
-      initiator_userid: string;
-      current_node_name: string;
-      assignee_userid: string;
-    }>();
+  ).all<{
+    instance_id: number;
+    instance_no: string;
+    biz_type: string;
+    biz_id: number;
+    biz_summary: string;
+    initiator_userid: string;
+    current_node_name: string;
+    assignee_userid: string;
+  }>();
 
-    const items = rows.results ?? [];
-    let successCount = 0;
-    let failureCount = 0;
-    const errors: string[] = [];
-    const applicantNameCache = new Map<string, string>();
-    const pushMetaCache = new Map<number, { requestTitle: string; amountText: string | null }>();
-    const instanceSet = new Set<number>();
+  const items = rows.results ?? [];
+  let successCount = 0;
+  let failureCount = 0;
+  const errors: string[] = [];
+  const applicantNameCache = new Map<string, string>();
+  const pushMetaCache = new Map<number, { requestTitle: string; amountText: string | null }>();
+  const instanceSet = new Set<number>();
 
-    for (const item of items) {
-      instanceSet.add(item.instance_id);
-      try {
-        let applicantName = applicantNameCache.get(item.initiator_userid);
-        if (!applicantName) {
-          applicantName = await resolveApplicantDisplayName(c.env, item.initiator_userid);
-          applicantNameCache.set(item.initiator_userid, applicantName);
-        }
-
-        let pushMeta = pushMetaCache.get(item.instance_id);
-        if (!pushMeta) {
-          pushMeta = await resolveApprovalPushMeta(
-            c.env,
-            item.biz_type,
-            item.biz_id,
-            item.biz_summary
-          );
-          pushMetaCache.set(item.instance_id, pushMeta);
-        }
-
-        const result = await sendApprovalTodoTemplateCard(
-          c.env,
-          {
-            instanceId: item.instance_id,
-            instanceNo: item.instance_no,
-            bizType: item.biz_type,
-            bizId: item.biz_id,
-            bizSummary: item.biz_summary,
-            currentNodeName: item.current_node_name,
-            assigneeUserId: item.assignee_userid,
-            applicantName,
-            requestTitle: pushMeta.requestTitle,
-            amountText: pushMeta.amountText ?? undefined
-          },
-          {
-            disableDuplicateCheck: true
-          }
-        );
-
-        successCount += 1;
-        await c.env.DB.prepare(
-          "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
-        )
-          .bind(
-            "wecom_template_card_sent",
-            "admin-force-current-nodes",
-            JSON.stringify({
-              instance_id: item.instance_id,
-              assignee_userid: item.assignee_userid,
-              msgid: result.msgid,
-              invaliduser: result.invaliduser,
-              unlicenseduser: result.unlicenseduser,
-              force_scan: true,
-              operated_by: auth.sub
-            }),
-            nowIso()
-          )
-          .run();
-      } catch (error) {
-        failureCount += 1;
-        const message = error instanceof Error ? error.message : "send failed";
-        errors.push(`${item.instance_id}/${item.assignee_userid}: ${message}`);
-        await c.env.DB.prepare(
-          "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
-        )
-          .bind(
-            "wecom_template_card_failed",
-            "admin-force-current-nodes",
-            JSON.stringify({
-              instance_id: item.instance_id,
-              assignee_userid: item.assignee_userid,
-              error: message,
-              force_scan: true,
-              operated_by: auth.sub
-            }),
-            nowIso()
-          )
-          .run();
+  for (const item of items) {
+    instanceSet.add(item.instance_id);
+    try {
+      let applicantName = applicantNameCache.get(item.initiator_userid);
+      if (!applicantName) {
+        applicantName = await resolveApplicantDisplayName(c.env, item.initiator_userid);
+        applicantNameCache.set(item.initiator_userid, applicantName);
       }
-    }
 
-    await c.env.DB.prepare(
-      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
-    )
-      .bind(
-        "wecom_template_card_summary",
-        "admin-force-current-nodes",
-        JSON.stringify({
-          force_scan: true,
-          operated_by: auth.sub,
-          scanned_instances: instanceSet.size,
-          scanned_recipients: items.length,
-          success_count: successCount,
-          failure_count: failureCount,
-          errors: errors.slice(0, 100)
-        }),
-        nowIso()
+      let pushMeta = pushMetaCache.get(item.instance_id);
+      if (!pushMeta) {
+        pushMeta = await resolveApprovalPushMeta(
+          c.env,
+          item.biz_type,
+          item.biz_id,
+          item.biz_summary
+        );
+        pushMetaCache.set(item.instance_id, pushMeta);
+      }
+
+      const result = await sendApprovalTodoTemplateCard(
+        c.env,
+        {
+          instanceId: item.instance_id,
+          instanceNo: item.instance_no,
+          bizType: item.biz_type,
+          bizId: item.biz_id,
+          bizSummary: item.biz_summary,
+          currentNodeName: item.current_node_name,
+          assigneeUserId: item.assignee_userid,
+          applicantName,
+          requestTitle: pushMeta.requestTitle,
+          amountText: pushMeta.amountText ?? undefined
+        },
+        {
+          disableDuplicateCheck: true
+        }
+      );
+
+      successCount += 1;
+      await c.env.DB.prepare(
+        "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
       )
-      .run();
+        .bind(
+          "wecom_template_card_sent",
+          "admin-force-current-nodes",
+          JSON.stringify({
+            instance_id: item.instance_id,
+            assignee_userid: item.assignee_userid,
+            msgid: result.msgid,
+            invaliduser: result.invaliduser,
+            unlicenseduser: result.unlicenseduser,
+            force_scan: true,
+            operated_by: auth.sub
+          }),
+          nowIso()
+        )
+        .run();
+    } catch (error) {
+      failureCount += 1;
+      const message = error instanceof Error ? error.message : "send failed";
+      errors.push(`${item.instance_id}/${item.assignee_userid}: ${message}`);
+      await c.env.DB.prepare(
+        "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+      )
+        .bind(
+          "wecom_template_card_failed",
+          "admin-force-current-nodes",
+          JSON.stringify({
+            instance_id: item.instance_id,
+            assignee_userid: item.assignee_userid,
+            error: message,
+            force_scan: true,
+            operated_by: auth.sub
+          }),
+          nowIso()
+        )
+        .run();
+    }
+  }
 
-    return c.json({
-      success: true,
-      data: {
+  await c.env.DB.prepare(
+    "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+  )
+    .bind(
+      "wecom_template_card_summary",
+      "admin-force-current-nodes",
+      JSON.stringify({
+        force_scan: true,
+        operated_by: auth.sub,
         scanned_instances: instanceSet.size,
         scanned_recipients: items.length,
         success_count: successCount,
         failure_count: failureCount,
-        errors: errors.slice(0, 20)
-      }
-    });
+        errors: errors.slice(0, 100)
+      }),
+      nowIso()
+    )
+    .run();
+
+  return c.json({
+    success: true,
+    data: {
+      scanned_instances: instanceSet.size,
+      scanned_recipients: items.length,
+      success_count: successCount,
+      failure_count: failureCount,
+      errors: errors.slice(0, 20)
+    }
+  });
+});
+
+adminRoutes.get("/runner-runtime-config", requireRoles(["super_admin"]), async (c) => {
+  const rows = await listRunnerRuntimeConfig(c.env);
+  return c.json({ success: true, data: rows });
+});
+
+adminRoutes.post("/runner-runtime-config", requireRoles(["super_admin"]), async (c) => {
+  const auth = c.get("auth");
+  const body = (await c.req.json().catch(() => ({}))) as {
+    items?: Array<{
+      config_key?: string;
+      config_value?: string;
+      is_secret?: boolean | number;
+    }>;
+  };
+
+  if (!Array.isArray(body.items) || body.items.length === 0) {
+    return c.json(
+      {
+        success: false,
+        error: { message: "items is required" }
+      },
+      400
+    );
   }
-);
 
-adminRoutes.get(
-  "/runner-runtime-config",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const rows = await listRunnerRuntimeConfig(c.env);
-    return c.json({ success: true, data: rows });
-  }
-);
+  const normalized: Array<{
+    config_key: string;
+    config_value: string;
+    is_secret: 0 | 1;
+  }> = [];
 
-adminRoutes.post(
-  "/runner-runtime-config",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const auth = c.get("auth");
-    const body = (await c.req.json().catch(() => ({}))) as {
-      items?: Array<{
-        config_key?: string;
-        config_value?: string;
-        is_secret?: boolean | number;
-      }>;
-    };
+  for (const item of body.items) {
+    const key = typeof item.config_key === "string" ? item.config_key.trim() : "";
+    const value = typeof item.config_value === "string" ? item.config_value : "";
+    const isSecret = item.is_secret ? 1 : 0;
 
-    if (!Array.isArray(body.items) || body.items.length === 0) {
+    if (!runnerConfigKeyPattern.test(key)) {
       return c.json(
         {
           success: false,
-          error: { message: "items is required" }
+          error: { message: `invalid config_key: ${key}` }
         },
         400
       );
     }
 
-    const normalized: Array<{
-      config_key: string;
-      config_value: string;
-      is_secret: 0 | 1;
-    }> = [];
-
-    for (const item of body.items) {
-      const key = typeof item.config_key === "string" ? item.config_key.trim() : "";
-      const value = typeof item.config_value === "string" ? item.config_value : "";
-      const isSecret = item.is_secret ? 1 : 0;
-
-      if (!runnerConfigKeyPattern.test(key)) {
-        return c.json(
-          {
-            success: false,
-            error: { message: `invalid config_key: ${key}` }
-          },
-          400
-        );
-      }
-
-      normalized.push({
-        config_key: key,
-        config_value: value,
-        is_secret: isSecret
-      });
-    }
-
-    const rows = await upsertRunnerRuntimeConfig(c.env, normalized, auth.sub);
-
-    return c.json({ success: true, data: rows });
+    normalized.push({
+      config_key: key,
+      config_value: value,
+      is_secret: isSecret
+    });
   }
-);
 
-adminRoutes.post(
-  "/runner-nodes/:nodeId/activate",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const nodeId = c.req.param("nodeId");
-    const now = nowIso();
+  const rows = await upsertRunnerRuntimeConfig(c.env, normalized, auth.sub);
 
-    const target = await c.env.DB.prepare(
-      "SELECT id FROM compute_node WHERE node_id = ?"
-    )
-      .bind(nodeId)
-      .first<{ id: number }>();
+  return c.json({ success: true, data: rows });
+});
 
-    if (!target) {
-      return c.json(
-        {
-          success: false,
-          error: { message: "Runner节点不存在" }
-        },
-        404
-      );
-    }
+adminRoutes.post("/runner-nodes/:nodeId/activate", requireRoles(["super_admin"]), async (c) => {
+  const nodeId = c.req.param("nodeId");
+  const now = nowIso();
 
-    await c.env.DB.prepare(
-      `UPDATE compute_node
+  const target = await c.env.DB.prepare("SELECT id FROM compute_node WHERE node_id = ?")
+    .bind(nodeId)
+    .first<{ id: number }>();
+
+  if (!target) {
+    return c.json(
+      {
+        success: false,
+        error: { message: "Runner节点不存在" }
+      },
+      404
+    );
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE compute_node
        SET status = 'online',
            last_heartbeat_at = ?,
            updated_at = ?
        WHERE id = ?`
-    )
-      .bind(now, now, target.id)
-      .run();
+  )
+    .bind(now, now, target.id)
+    .run();
 
-    return c.json({ success: true });
+  return c.json({ success: true });
+});
+
+adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    task_type?: string;
+    biz_type?: string;
+    biz_id?: number;
+    payload?: Record<string, unknown>;
+    priority?: number;
+  };
+
+  const requestedTaskType =
+    typeof body.task_type === "string" && body.task_type.trim()
+      ? body.task_type.trim()
+      : "contract_review";
+
+  if (!taskTypes.includes(requestedTaskType as (typeof taskTypes)[number])) {
+    return c.json(
+      {
+        success: false,
+        error: { message: `Unsupported task_type: ${requestedTaskType}` }
+      },
+      400
+    );
   }
-);
 
-adminRoutes.post(
-  "/ai-runtime/test-task",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as {
-      task_type?: string;
-      biz_type?: string;
-      biz_id?: number;
-      payload?: Record<string, unknown>;
-      priority?: number;
-    };
+  const taskType = requestedTaskType as (typeof taskTypes)[number];
+  const bizType =
+    typeof body.biz_type === "string" && body.biz_type.trim()
+      ? body.biz_type.trim()
+      : "ai_runtime_test";
+  const bizId =
+    typeof body.biz_id === "number" && Number.isFinite(body.biz_id)
+      ? body.biz_id
+      : Number(
+          new Date()
+            .toISOString()
+            .replace(/[-:TZ.]/g, "")
+            .slice(0, 12)
+        );
 
-    const requestedTaskType =
-      typeof body.task_type === "string" && body.task_type.trim()
-        ? body.task_type.trim()
-        : "contract_review";
-
-    if (!taskTypes.includes(requestedTaskType as (typeof taskTypes)[number])) {
-      return c.json(
-        {
-          success: false,
-          error: { message: `Unsupported task_type: ${requestedTaskType}` }
-        },
-        400
-      );
+  const defaultPayloadByTask: Record<(typeof taskTypes)[number], Record<string, unknown>> = {
+    contract_review: {
+      contract_id: bizId,
+      contract_name: "AI Runtime Test Contract",
+      total_amount: 128000,
+      payment_terms: "30%预付款，70%验收后支付"
+    },
+    risk_assessment: {
+      amount: 128000,
+      payee_name: "测试收款方",
+      scenario: "runtime_test"
+    },
+    payment_risk_assessment: {
+      amount: 128000,
+      payee_name: "测试收款方",
+      scenario: "runtime_test"
+    },
+    reimbursement_check: {
+      total_amount: 3680,
+      items: [
+        { amount: 1200, category: "交通" },
+        { amount: 2480, category: "材料" }
+      ]
+    },
+    reimbursement_anomaly: {
+      amount: 3680,
+      duplicate_count: 0
+    },
+    log_smart_fill: {
+      previous_log: { weather: "晴", cumulative_pipe_count: 48 },
+      completed_pipe_count: 6
+    },
+    log_analysis: {
+      content: "今日推进作业正常，设备状态良好。"
+    },
+    log_summary: {
+      report_type: "daily",
+      date_from: new Date().toISOString().slice(0, 10),
+      date_to: new Date().toISOString().slice(0, 10)
+    },
+    equipment_recommend: {
+      project_type: "municipal",
+      budget: 560000
+    },
+    consumable_estimation: {
+      items: [{ asset_type_id: 1, planned_qty: 120 }]
+    },
+    inventory_alert_analysis: {
+      quantity: 12,
+      min_stock: 30
+    },
+    consumption_anomaly: {
+      quantity: 66
+    },
+    ocr_extract: {
+      file_url: "test://sample-receipt"
+    },
+    file_generate: {
+      envelope_uuid: crypto.randomUUID(),
+      envelope_no: `TEST-${Date.now()}`,
+      project_id: "TEST-PROJ",
+      applicant_userid: "super_admin",
+      created_at: new Date().toISOString(),
+      submitted_at: new Date().toISOString(),
+      received_at: new Date().toISOString()
+    },
+    voice_stt: {
+      scene: "finance",
+      file_key: "test://voice"
+    },
+    approval_ai_gate: {
+      approval_id: bizId,
+      context: "runtime_test"
+    },
+    warehouse_task_dispatch_recommendation: {
+      no_auto_dispatch: true,
+      tasks: [{ id: bizId, work_order_no: "WO-TEST", priority: "urgent" }],
+      workload_summary: []
+    },
+    tbm_composition_recommendation: {
+      no_auto_apply: true,
+      core_asset_id: bizId,
+      candidates: []
+    },
+    warehouse_manual_draft: {
+      manual_id: bizId,
+      manual_title: "库房手册 AI 草稿测试",
+      historical_tasks: [{ work_order_no: "WO-TEST", result_summary: "检查正常" }]
     }
+  };
 
-    const taskType = requestedTaskType as (typeof taskTypes)[number];
-    const bizType =
-      typeof body.biz_type === "string" && body.biz_type.trim()
-        ? body.biz_type.trim()
-        : "ai_runtime_test";
-    const bizId =
-      typeof body.biz_id === "number" && Number.isFinite(body.biz_id)
-        ? body.biz_id
-        : Number(new Date().toISOString().replace(/[-:TZ.]/g, "").slice(0, 12));
+  const mergedPayload = {
+    ...defaultPayloadByTask[taskType],
+    ...(body.payload ?? {})
+  };
 
-    const defaultPayloadByTask: Record<(typeof taskTypes)[number], Record<string, unknown>> = {
-      contract_review: {
-        contract_id: bizId,
-        contract_name: "AI Runtime Test Contract",
-        total_amount: 128000,
-        payment_terms: "30%预付款，70%验收后支付"
-      },
-      risk_assessment: {
-        amount: 128000,
-        payee_name: "测试收款方",
-        scenario: "runtime_test"
-      },
-      payment_risk_assessment: {
-        amount: 128000,
-        payee_name: "测试收款方",
-        scenario: "runtime_test"
-      },
-      reimbursement_check: {
-        total_amount: 3680,
-        items: [{ amount: 1200, category: "交通" }, { amount: 2480, category: "材料" }]
-      },
-      reimbursement_anomaly: {
-        amount: 3680,
-        duplicate_count: 0
-      },
-      log_smart_fill: {
-        previous_log: { weather: "晴", cumulative_pipe_count: 48 },
-        completed_pipe_count: 6
-      },
-      log_analysis: {
-        content: "今日推进作业正常，设备状态良好。"
-      },
-      log_summary: {
-        report_type: "daily",
-        date_from: new Date().toISOString().slice(0, 10),
-        date_to: new Date().toISOString().slice(0, 10)
-      },
-      equipment_recommend: {
-        project_type: "municipal",
-        budget: 560000
-      },
-      consumable_estimation: {
-        items: [{ asset_type_id: 1, planned_qty: 120 }]
-      },
-      inventory_alert_analysis: {
-        quantity: 12,
-        min_stock: 30
-      },
-      consumption_anomaly: {
-        quantity: 66
-      },
-      ocr_extract: {
-        file_url: "test://sample-receipt"
-      },
-      file_generate: {
-        envelope_uuid: crypto.randomUUID(),
-        envelope_no: `TEST-${Date.now()}`,
-        project_id: "TEST-PROJ",
-        applicant_userid: "super_admin",
-        created_at: new Date().toISOString(),
-        submitted_at: new Date().toISOString(),
-        received_at: new Date().toISOString()
-      },
-      voice_stt: {
-        scene: "finance",
-        file_key: "test://voice"
-      },
-      approval_ai_gate: {
-        approval_id: bizId,
-        context: "runtime_test"
-      }
-    };
+  const task = await createTask(c.env, {
+    task_type: taskType,
+    biz_type: bizType,
+    biz_id: bizId,
+    payload: mergedPayload,
+    priority:
+      typeof body.priority === "number" && Number.isFinite(body.priority) ? body.priority : 9
+  });
 
-    const mergedPayload = {
-      ...defaultPayloadByTask[taskType],
-      ...(body.payload ?? {})
-    };
-
-    const task = await createTask(c.env, {
-      task_type: taskType,
-      biz_type: bizType,
-      biz_id: bizId,
-      payload: mergedPayload,
-      priority:
-        typeof body.priority === "number" && Number.isFinite(body.priority)
-          ? body.priority
-          : 9
-    });
-
-    return c.json({
-      success: true,
-      data: {
-        task_id: task.id,
-        task_code: task.task_code,
-        task_type: task.task_type,
-        biz_type: task.biz_type,
-        biz_id: task.biz_id,
-        status: task.status,
-        created_at: task.created_at
-      }
-    });
-  }
-);
+  return c.json({
+    success: true,
+    data: {
+      task_id: task.id,
+      task_code: task.task_code,
+      task_type: task.task_type,
+      biz_type: task.biz_type,
+      biz_id: task.biz_id,
+      status: task.status,
+      created_at: task.created_at
+    }
+  });
+});
 
 // ─── Approval Template CRUD ──────────
 
 // GET /approval-config — List templates
-adminRoutes.get(
-  "/approval-config",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const bizType = c.req.query("biz_type");
+adminRoutes.get("/approval-config", requireRoles(["super_admin"]), async (c) => {
+  const bizType = c.req.query("biz_type");
 
-    let sql = "SELECT * FROM approval_template WHERE status != 'deleted'";
-    const params: string[] = [];
+  let sql = "SELECT * FROM approval_template WHERE status != 'deleted'";
+  const params: string[] = [];
 
-    if (bizType) {
-      sql += " AND biz_type = ?";
-      params.push(bizType);
+  if (bizType) {
+    sql += " AND biz_type = ?";
+    params.push(bizType);
+  }
+  sql += " ORDER BY id DESC";
+
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params)
+    .all<ApprovalTemplate>();
+
+  return c.json({ success: true, data: rows.results ?? [] });
+});
+
+adminRoutes.post("/approval-config/bootstrap-initial", requireRoles(["super_admin"]), async (c) => {
+  const now = nowIso();
+  await seedDefaultApprovalConfig(c.env.DB, now);
+
+  const templateCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM approval_template WHERE status = 'active'"
+  ).first<{ total: number }>();
+
+  const thresholdCount = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM approval_threshold WHERE status = 'active'"
+  ).first<{ total: number }>();
+
+  return c.json({
+    success: true,
+    data: {
+      templates_active: templateCount?.total ?? 0,
+      thresholds_active: thresholdCount?.total ?? 0
     }
-    sql += " ORDER BY id DESC";
+  });
+});
 
-    const rows = await c.env.DB.prepare(sql)
-      .bind(...params)
-      .all<ApprovalTemplate>();
+adminRoutes.post("/bootstrap/near-production-openai", requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    openai_model?: string;
+    openai_endpoint?: string;
+  };
+  const now = nowIso();
+  const openaiModel =
+    typeof body.openai_model === "string" && body.openai_model.trim()
+      ? body.openai_model.trim()
+      : "gpt-5.2";
+  const openaiEndpoint =
+    typeof body.openai_endpoint === "string" && body.openai_endpoint.trim()
+      ? body.openai_endpoint.trim()
+      : "https://api.openai.com/v1";
 
-    return c.json({ success: true, data: rows.results ?? [] });
-  }
-);
+  await seedDefaultApprovalConfig(c.env.DB, now);
+  await seedDefaultAiConfig(c.env.DB, now, {
+    openaiModel,
+    openaiEndpoint
+  });
+  await refreshRunnerRuntimeKvFromDb(c.env);
 
-adminRoutes.post(
-  "/approval-config/bootstrap-initial",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const now = nowIso();
-    await seedDefaultApprovalConfig(c.env.DB, now);
+  const templates = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM approval_template WHERE status = 'active'"
+  ).first<{ total: number }>();
+  const thresholds = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM approval_threshold WHERE status = 'active'"
+  ).first<{ total: number }>();
+  const providers = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM ai_provider_config WHERE status = 'active'"
+  ).first<{ total: number }>();
+  const routingRules = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM ai_routing_rule WHERE status = 'active'"
+  ).first<{ total: number }>();
+  const prompts = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM ai_prompt_template WHERE status = 'active'"
+  ).first<{ total: number }>();
 
-    const templateCount = await c.env.DB.prepare(
-      "SELECT COUNT(*) as total FROM approval_template WHERE status = 'active'"
-    ).first<{ total: number }>();
-
-    const thresholdCount = await c.env.DB.prepare(
-      "SELECT COUNT(*) as total FROM approval_threshold WHERE status = 'active'"
-    ).first<{ total: number }>();
-
-    return c.json({
-      success: true,
-      data: {
-        templates_active: templateCount?.total ?? 0,
-        thresholds_active: thresholdCount?.total ?? 0
-      }
-    });
-  }
-);
-
-adminRoutes.post(
-  "/bootstrap/near-production-openai",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as {
-      openai_model?: string;
-      openai_endpoint?: string;
-    };
-    const now = nowIso();
-    const openaiModel =
-      typeof body.openai_model === "string" && body.openai_model.trim()
-        ? body.openai_model.trim()
-        : "gpt-5.2";
-    const openaiEndpoint =
-      typeof body.openai_endpoint === "string" && body.openai_endpoint.trim()
-        ? body.openai_endpoint.trim()
-        : "https://api.openai.com/v1";
-
-    await seedDefaultApprovalConfig(c.env.DB, now);
-    await seedDefaultAiConfig(c.env.DB, now, {
-      openaiModel,
-      openaiEndpoint
-    });
-    await refreshRunnerRuntimeKvFromDb(c.env);
-
-    const templates = await c.env.DB.prepare(
-      "SELECT COUNT(*) as total FROM approval_template WHERE status = 'active'"
-    ).first<{ total: number }>();
-    const thresholds = await c.env.DB.prepare(
-      "SELECT COUNT(*) as total FROM approval_threshold WHERE status = 'active'"
-    ).first<{ total: number }>();
-    const providers = await c.env.DB.prepare(
-      "SELECT COUNT(*) as total FROM ai_provider_config WHERE status = 'active'"
-    ).first<{ total: number }>();
-    const routingRules = await c.env.DB.prepare(
-      "SELECT COUNT(*) as total FROM ai_routing_rule WHERE status = 'active'"
-    ).first<{ total: number }>();
-    const prompts = await c.env.DB.prepare(
-      "SELECT COUNT(*) as total FROM ai_prompt_template WHERE status = 'active'"
-    ).first<{ total: number }>();
-
-    return c.json({
-      success: true,
-      data: {
-        openai_model: openaiModel,
-        openai_endpoint: openaiEndpoint,
-        templates_active: templates?.total ?? 0,
-        thresholds_active: thresholds?.total ?? 0,
-        ai_providers_active: providers?.total ?? 0,
-        ai_routing_rules_active: routingRules?.total ?? 0,
-        ai_prompts_active: prompts?.total ?? 0
-      }
-    });
-  }
-);
+  return c.json({
+    success: true,
+    data: {
+      openai_model: openaiModel,
+      openai_endpoint: openaiEndpoint,
+      templates_active: templates?.total ?? 0,
+      thresholds_active: thresholds?.total ?? 0,
+      ai_providers_active: providers?.total ?? 0,
+      ai_routing_rules_active: routingRules?.total ?? 0,
+      ai_prompts_active: prompts?.total ?? 0
+    }
+  });
+});
 
 // POST /approval-config — Create template
-adminRoutes.post(
-  "/approval-config",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const auth = c.get("auth");
-    const body = (await c.req.json()) as CreateTemplateRequest;
+adminRoutes.post("/approval-config", requireRoles(["super_admin"]), async (c) => {
+  const auth = c.get("auth");
+  const body = (await c.req.json()) as CreateTemplateRequest;
 
-    // Validate config_json
+  // Validate config_json
+  const { valid, errors } = validateTemplate(body.config_json);
+  if (!valid) {
+    return c.json(
+      {
+        success: false,
+        error: { message: "Invalid template config", details: errors }
+      },
+      400
+    );
+  }
+
+  const now = nowIso();
+  const result = await c.env.DB.prepare(
+    `INSERT INTO approval_template
+        (template_code, template_name, biz_type, config_json, status,
+         created_by, created_at, updated_at)
+        VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`
+  )
+    .bind(
+      body.template_code,
+      body.template_name,
+      body.biz_type,
+      body.config_json,
+      auth.sub,
+      now,
+      now
+    )
+    .run();
+
+  return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+});
+
+// PUT /approval-config/:id — Update template
+adminRoutes.put("/approval-config/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.json()) as Partial<CreateTemplateRequest> & {
+    status?: string;
+  };
+
+  // Validate config_json if provided
+  if (body.config_json) {
     const { valid, errors } = validateTemplate(body.config_json);
     if (!valid) {
       return c.json(
@@ -1134,117 +1142,63 @@ adminRoutes.post(
         400
       );
     }
-
-    const now = nowIso();
-    const result = await c.env.DB.prepare(
-      `INSERT INTO approval_template
-        (template_code, template_name, biz_type, config_json, status,
-         created_by, created_at, updated_at)
-        VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`
-    )
-      .bind(
-        body.template_code,
-        body.template_name,
-        body.biz_type,
-        body.config_json,
-        auth.sub,
-        now,
-        now
-      )
-      .run();
-
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
   }
-);
 
-// PUT /approval-config/:id — Update template
-adminRoutes.put(
-  "/approval-config/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as Partial<CreateTemplateRequest> & {
-      status?: string;
-    };
-
-    // Validate config_json if provided
-    if (body.config_json) {
-      const { valid, errors } = validateTemplate(body.config_json);
-      if (!valid) {
-        return c.json(
-          {
-            success: false,
-            error: { message: "Invalid template config", details: errors }
-          },
-          400
-        );
-      }
-    }
-
-    await c.env.DB.prepare(
-      `UPDATE approval_template SET
+  await c.env.DB.prepare(
+    `UPDATE approval_template SET
         template_name = COALESCE(?, template_name),
         biz_type = COALESCE(?, biz_type),
         config_json = COALESCE(?, config_json),
         status = COALESCE(?, status),
         updated_at = ?
        WHERE id = ?`
+  )
+    .bind(
+      body.template_name ?? null,
+      body.biz_type ?? null,
+      body.config_json ?? null,
+      body.status ?? null,
+      nowIso(),
+      id
     )
-      .bind(
-        body.template_name ?? null,
-        body.biz_type ?? null,
-        body.config_json ?? null,
-        body.status ?? null,
-        nowIso(),
-        id
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // DELETE /approval-config/:id — Soft delete template
-adminRoutes.delete(
-  "/approval-config/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare(
-      "UPDATE approval_template SET status = 'disabled', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), id)
-      .run();
+adminRoutes.delete("/approval-config/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare(
+    "UPDATE approval_template SET status = 'disabled', updated_at = ? WHERE id = ?"
+  )
+    .bind(nowIso(), id)
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // ─── Threshold CRUD ──────────
 
 // GET /threshold — List thresholds
-adminRoutes.get(
-  "/threshold",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const templateId = c.req.query("template_id");
+adminRoutes.get("/threshold", requireRoles(["super_admin"]), async (c) => {
+  const templateId = c.req.query("template_id");
 
-    let sql = "SELECT * FROM approval_threshold WHERE status != 'deleted'";
-    const params: (string | number)[] = [];
+  let sql = "SELECT * FROM approval_threshold WHERE status != 'deleted'";
+  const params: (string | number)[] = [];
 
-    if (templateId) {
-      sql += " AND template_id = ?";
-      params.push(Number(templateId));
-    }
-    sql += " ORDER BY priority ASC";
-
-    const rows = await c.env.DB.prepare(sql)
-      .bind(...params)
-      .all<ApprovalThreshold>();
-
-    return c.json({ success: true, data: rows.results ?? [] });
+  if (templateId) {
+    sql += " AND template_id = ?";
+    params.push(Number(templateId));
   }
-);
+  sql += " ORDER BY priority ASC";
+
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params)
+    .all<ApprovalThreshold>();
+
+  return c.json({ success: true, data: rows.results ?? [] });
+});
 
 adminRoutes.get("/thresholds", async (c) => {
   const bizType = c.req.query("biz_type");
@@ -1269,49 +1223,42 @@ adminRoutes.get("/thresholds", async (c) => {
 });
 
 // POST /threshold — Create threshold
-adminRoutes.post(
-  "/threshold",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const body = (await c.req.json()) as ThresholdRule;
-    const now = nowIso();
+adminRoutes.post("/threshold", requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json()) as ThresholdRule;
+  const now = nowIso();
 
-    const result = await c.env.DB.prepare(
-      `INSERT INTO approval_threshold
+  const result = await c.env.DB.prepare(
+    `INSERT INTO approval_threshold
         (template_id, condition_field, operator, threshold_value,
          threshold_value_upper, target_branch, priority, status,
          created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+  )
+    .bind(
+      body.template_id,
+      body.condition_field,
+      body.operator,
+      body.threshold_value,
+      body.threshold_value_upper ?? null,
+      body.target_branch,
+      body.priority,
+      now,
+      now
     )
-      .bind(
-        body.template_id,
-        body.condition_field,
-        body.operator,
-        body.threshold_value,
-        body.threshold_value_upper ?? null,
-        body.target_branch,
-        body.priority,
-        now,
-        now
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
-  }
-);
+  return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+});
 
 // PUT /threshold/:id — Update threshold
-adminRoutes.put(
-  "/threshold/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as Partial<ThresholdRule> & {
-      status?: string;
-    };
+adminRoutes.put("/threshold/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.json()) as Partial<ThresholdRule> & {
+    status?: string;
+  };
 
-    await c.env.DB.prepare(
-      `UPDATE approval_threshold SET
+  await c.env.DB.prepare(
+    `UPDATE approval_threshold SET
         condition_field = COALESCE(?, condition_field),
         operator = COALESCE(?, operator),
         threshold_value = COALESCE(?, threshold_value),
@@ -1321,98 +1268,82 @@ adminRoutes.put(
         status = COALESCE(?, status),
         updated_at = ?
        WHERE id = ?`
+  )
+    .bind(
+      body.condition_field ?? null,
+      body.operator ?? null,
+      body.threshold_value ?? null,
+      body.threshold_value_upper ?? null,
+      body.target_branch ?? null,
+      body.priority ?? null,
+      body.status ?? null,
+      nowIso(),
+      id
     )
-      .bind(
-        body.condition_field ?? null,
-        body.operator ?? null,
-        body.threshold_value ?? null,
-        body.threshold_value_upper ?? null,
-        body.target_branch ?? null,
-        body.priority ?? null,
-        body.status ?? null,
-        nowIso(),
-        id
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // DELETE /threshold/:id — Soft delete threshold
-adminRoutes.delete(
-  "/threshold/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare(
-      "UPDATE approval_threshold SET status = 'disabled', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), id)
-      .run();
+adminRoutes.delete("/threshold/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare(
+    "UPDATE approval_threshold SET status = 'disabled', updated_at = ? WHERE id = ?"
+  )
+    .bind(nowIso(), id)
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // ─── AI Provider Config CRUD ──────────
 
 // GET /ai-provider — List providers
-adminRoutes.get(
-  "/ai-provider",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const rows = await c.env.DB.prepare(
-      "SELECT * FROM ai_provider_config WHERE status != 'deleted' ORDER BY priority ASC"
-    ).all<AiProviderConfig>();
+adminRoutes.get("/ai-provider", requireRoles(["super_admin"]), async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM ai_provider_config WHERE status != 'deleted' ORDER BY priority ASC"
+  ).all<AiProviderConfig>();
 
-    return c.json({ success: true, data: rows.results ?? [] });
-  }
-);
+  return c.json({ success: true, data: rows.results ?? [] });
+});
 
 // POST /ai-provider — Create provider
-adminRoutes.post(
-  "/ai-provider",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const body = (await c.req.json()) as ProviderConfigRequest;
-    const now = nowIso();
+adminRoutes.post("/ai-provider", requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json()) as ProviderConfigRequest;
+  const now = nowIso();
 
-    const result = await c.env.DB.prepare(
-      `INSERT INTO ai_provider_config
+  const result = await c.env.DB.prepare(
+    `INSERT INTO ai_provider_config
         (provider_key, provider_name, api_endpoint, model_id,
          config_json, priority, max_concurrent, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+  )
+    .bind(
+      body.provider_key,
+      body.provider_name,
+      body.api_endpoint ?? null,
+      body.model_id ?? null,
+      body.config_json ?? null,
+      body.priority ?? 0,
+      body.max_concurrent ?? 1,
+      now,
+      now
     )
-      .bind(
-        body.provider_key,
-        body.provider_name,
-        body.api_endpoint ?? null,
-        body.model_id ?? null,
-        body.config_json ?? null,
-        body.priority ?? 0,
-        body.max_concurrent ?? 1,
-        now,
-        now
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
-  }
-);
+  return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+});
 
 // PUT /ai-provider/:id — Update provider
-adminRoutes.put(
-  "/ai-provider/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as Partial<ProviderConfigRequest> & {
-      status?: string;
-    };
+adminRoutes.put("/ai-provider/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.json()) as Partial<ProviderConfigRequest> & {
+    status?: string;
+  };
 
-    await c.env.DB.prepare(
-      `UPDATE ai_provider_config SET
+  await c.env.DB.prepare(
+    `UPDATE ai_provider_config SET
         provider_name = COALESCE(?, provider_name),
         api_endpoint = COALESCE(?, api_endpoint),
         model_id = COALESCE(?, model_id),
@@ -1422,77 +1353,65 @@ adminRoutes.put(
         status = COALESCE(?, status),
         updated_at = ?
        WHERE id = ?`
+  )
+    .bind(
+      body.provider_name ?? null,
+      body.api_endpoint ?? null,
+      body.model_id ?? null,
+      body.config_json ?? null,
+      body.priority ?? null,
+      body.max_concurrent ?? null,
+      body.status ?? null,
+      nowIso(),
+      id
     )
-      .bind(
-        body.provider_name ?? null,
-        body.api_endpoint ?? null,
-        body.model_id ?? null,
-        body.config_json ?? null,
-        body.priority ?? null,
-        body.max_concurrent ?? null,
-        body.status ?? null,
-        nowIso(),
-        id
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // DELETE /ai-provider/:id — Soft delete provider
-adminRoutes.delete(
-  "/ai-provider/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare(
-      "UPDATE ai_provider_config SET status = 'disabled', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), id)
-      .run();
+adminRoutes.delete("/ai-provider/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare(
+    "UPDATE ai_provider_config SET status = 'disabled', updated_at = ? WHERE id = ?"
+  )
+    .bind(nowIso(), id)
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // ─── AI Routing Rule CRUD ──────────
 
 // GET /ai-routing — List routing rules
-adminRoutes.get(
-  "/ai-routing",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const bizType = c.req.query("biz_type");
-    const taskType = c.req.query("task_type");
+adminRoutes.get("/ai-routing", requireRoles(["super_admin"]), async (c) => {
+  const bizType = c.req.query("biz_type");
+  const taskType = c.req.query("task_type");
 
-    let sql = "SELECT * FROM ai_routing_rule WHERE status != 'deleted'";
-    const params: string[] = [];
+  let sql = "SELECT * FROM ai_routing_rule WHERE status != 'deleted'";
+  const params: string[] = [];
 
-    if (bizType) {
-      sql += " AND biz_type = ?";
-      params.push(bizType);
-    }
-    if (taskType) {
-      sql += " AND task_type = ?";
-      params.push(taskType);
-    }
-    sql += " ORDER BY priority ASC";
-
-    const rows = await c.env.DB.prepare(sql)
-      .bind(...params)
-      .all<AiRoutingRule>();
-
-    return c.json({ success: true, data: rows.results ?? [] });
+  if (bizType) {
+    sql += " AND biz_type = ?";
+    params.push(bizType);
   }
-);
+  if (taskType) {
+    sql += " AND task_type = ?";
+    params.push(taskType);
+  }
+  sql += " ORDER BY priority ASC";
 
-adminRoutes.get(
-  "/ai-slot-options",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const rows = await c.env.DB.prepare(
-      `SELECT
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params)
+    .all<AiRoutingRule>();
+
+  return c.json({ success: true, data: rows.results ?? [] });
+});
+
+adminRoutes.get("/ai-slot-options", requireRoles(["super_admin"]), async (c) => {
+  const rows = await c.env.DB.prepare(
+    `SELECT
          ar.rule_name,
          ar.biz_type,
          ar.task_type,
@@ -1504,79 +1423,75 @@ adminRoutes.get(
        WHERE ar.status = 'active'
          AND ar.task_type = 'approval_ai_gate'
        ORDER BY ar.priority ASC, ar.id ASC`
-    ).all<{
-      rule_name: string;
-      biz_type: string;
-      task_type: string;
-      provider_name: string | null;
-      template_name: string | null;
-    }>();
+  ).all<{
+    rule_name: string;
+    biz_type: string;
+    task_type: string;
+    provider_name: string | null;
+    template_name: string | null;
+  }>();
 
-    const options = new Map<
-      string,
-      { slot_id: string; label: string; rule_name: string; task_type: string; source: string }
-    >();
+  const options = new Map<
+    string,
+    { slot_id: string; label: string; rule_name: string; task_type: string; source: string }
+  >();
 
-    for (const row of rows.results ?? []) {
-      const slotId = row.biz_type || "approval_ai_gate";
-      const providerPart = row.provider_name ? ` / ${row.provider_name}` : "";
-      const promptPart = row.template_name ? ` / ${row.template_name}` : "";
-      options.set(slotId, {
-        slot_id: slotId,
-        label: `${slotId} (${row.rule_name}${providerPart}${promptPart})`,
-        rule_name: row.rule_name,
-        task_type: row.task_type,
-        source: "routing"
-      });
-    }
-
-    if (!options.has("approval_ai_gate")) {
-      options.set("approval_ai_gate", {
-        slot_id: "approval_ai_gate",
-        label: "approval_ai_gate (default)",
-        rule_name: "",
-        task_type: "approval_ai_gate",
-        source: "builtin"
-      });
-    }
-
-    return c.json({ success: true, data: Array.from(options.values()) });
+  for (const row of rows.results ?? []) {
+    const slotId = row.biz_type || "approval_ai_gate";
+    const providerPart = row.provider_name ? ` / ${row.provider_name}` : "";
+    const promptPart = row.template_name ? ` / ${row.template_name}` : "";
+    options.set(slotId, {
+      slot_id: slotId,
+      label: `${slotId} (${row.rule_name}${providerPart}${promptPart})`,
+      rule_name: row.rule_name,
+      task_type: row.task_type,
+      source: "routing"
+    });
   }
-);
 
-adminRoutes.get(
-  "/approval-ai-gate/tasks",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const status = c.req.query("status");
-    const keyword = c.req.query("keyword");
-    const page = Number(c.req.query("page") ?? "1");
-    const pageSize = Number(c.req.query("pageSize") ?? "20");
-    const offset = (page - 1) * pageSize;
+  if (!options.has("approval_ai_gate")) {
+    options.set("approval_ai_gate", {
+      slot_id: "approval_ai_gate",
+      label: "approval_ai_gate (default)",
+      rule_name: "",
+      task_type: "approval_ai_gate",
+      source: "builtin"
+    });
+  }
 
-    let whereSql = " WHERE tq.task_type = 'approval_ai_gate'";
-    const params: Array<string | number> = [];
+  return c.json({ success: true, data: Array.from(options.values()) });
+});
 
-    if (status) {
-      whereSql += " AND tq.status = ?";
-      params.push(status);
-    }
-    if (keyword) {
-      whereSql +=
-        " AND (ai.instance_no LIKE ? OR ai.biz_summary LIKE ? OR ai.initiator_userid LIKE ? OR json_extract(tq.payload_json, '$.node_key') LIKE ?)";
-      params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
-    }
+adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async (c) => {
+  const status = c.req.query("status");
+  const keyword = c.req.query("keyword");
+  const page = Number(c.req.query("page") ?? "1");
+  const pageSize = Number(c.req.query("pageSize") ?? "20");
+  const offset = (page - 1) * pageSize;
 
-    const count = await c.env.DB.prepare(
-      `SELECT COUNT(*) as total
+  let whereSql = " WHERE tq.task_type = 'approval_ai_gate'";
+  const params: Array<string | number> = [];
+
+  if (status) {
+    whereSql += " AND tq.status = ?";
+    params.push(status);
+  }
+  if (keyword) {
+    whereSql +=
+      " AND (ai.instance_no LIKE ? OR ai.biz_summary LIKE ? OR ai.initiator_userid LIKE ? OR json_extract(tq.payload_json, '$.node_key') LIKE ?)";
+    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+  }
+
+  const count = await c.env.DB.prepare(
+    `SELECT COUNT(*) as total
        FROM task_queue tq
        LEFT JOIN approval_instance ai ON ai.id = tq.biz_id${whereSql}`
-    )
-      .bind(...params)
-      .first<{ total: number }>();
+  )
+    .bind(...params)
+    .first<{ total: number }>();
 
-    const rows = await c.env.DB.prepare(
-      `SELECT
+  const rows = await c.env.DB.prepare(
+    `SELECT
          tq.id as task_id,
          tq.status as task_status,
          tq.biz_type as task_biz_type,
@@ -1603,80 +1518,79 @@ adminRoutes.get(
        ${whereSql}
        ORDER BY tq.created_at DESC
        LIMIT ? OFFSET ?`
-    )
-      .bind(...params, pageSize, offset)
-      .all<{
-        task_id: number;
-        task_status: string;
-        task_biz_type: string;
-        error_message: string | null;
-        task_created_at: string;
-        task_completed_at: string | null;
-        payload_json: string | null;
-        instance_id: number | null;
-        instance_no: string | null;
-        instance_status: string | null;
-        biz_type: string | null;
-        biz_summary: string | null;
-        initiator_userid: string | null;
-        current_round: number | null;
-        current_node_key: string | null;
-        node_status: string | null;
-      }>();
+  )
+    .bind(...params, pageSize, offset)
+    .all<{
+      task_id: number;
+      task_status: string;
+      task_biz_type: string;
+      error_message: string | null;
+      task_created_at: string;
+      task_completed_at: string | null;
+      payload_json: string | null;
+      instance_id: number | null;
+      instance_no: string | null;
+      instance_status: string | null;
+      biz_type: string | null;
+      biz_summary: string | null;
+      initiator_userid: string | null;
+      current_round: number | null;
+      current_node_key: string | null;
+      node_status: string | null;
+    }>();
 
-    const data = (rows.results ?? []).map((row) => {
-      let nodeKey: string | null = null;
-      let aiSlotId: string | null = null;
-      if (row.payload_json) {
-        try {
-          const payload = JSON.parse(row.payload_json) as {
-            node_key?: unknown;
-            ai_slot_id?: unknown;
-          };
-          nodeKey = typeof payload.node_key === "string" ? payload.node_key : null;
-          aiSlotId = typeof payload.ai_slot_id === "string" ? payload.ai_slot_id : null;
-        } catch {
-          nodeKey = null;
-          aiSlotId = null;
-        }
+  const data = (rows.results ?? []).map((row) => {
+    let nodeKey: string | null = null;
+    let aiSlotId: string | null = null;
+    if (row.payload_json) {
+      try {
+        const payload = JSON.parse(row.payload_json) as {
+          node_key?: unknown;
+          ai_slot_id?: unknown;
+        };
+        nodeKey = typeof payload.node_key === "string" ? payload.node_key : null;
+        aiSlotId = typeof payload.ai_slot_id === "string" ? payload.ai_slot_id : null;
+      } catch {
+        nodeKey = null;
+        aiSlotId = null;
       }
+    }
 
-      return {
-        task_id: row.task_id,
-        task_status: row.task_status,
-        task_biz_type: row.task_biz_type,
-        error_message: row.error_message,
-        task_created_at: row.task_created_at,
-        task_completed_at: row.task_completed_at,
-        node_key: nodeKey,
-        ai_slot_id: aiSlotId,
-        node_status: row.node_status,
-        instance: row.instance_id
-          ? {
-              id: row.instance_id,
-              instance_no: row.instance_no,
-              status: row.instance_status,
-              biz_type: row.biz_type,
-              biz_summary: row.biz_summary,
-              initiator_userid: row.initiator_userid,
-              current_round: row.current_round,
-              current_node_key: row.current_node_key
-            }
-          : null
-      };
-    });
+    return {
+      task_id: row.task_id,
+      task_status: row.task_status,
+      task_biz_type: row.task_biz_type,
+      error_message: row.error_message,
+      task_created_at: row.task_created_at,
+      task_completed_at: row.task_completed_at,
+      node_key: nodeKey,
+      ai_slot_id: aiSlotId,
+      node_status: row.node_status,
+      instance: row.instance_id
+        ? {
+            id: row.instance_id,
+            instance_no: row.instance_no,
+            status: row.instance_status,
+            biz_type: row.biz_type,
+            biz_summary: row.biz_summary,
+            initiator_userid: row.initiator_userid,
+            current_round: row.current_round,
+            current_node_key: row.current_node_key
+          }
+        : null
+    };
+  });
 
-    return c.json({
-      success: true,
-      data,
-      pagination: {
-        page,
-        pageSize,
-        total: count?.total ?? 0
-      }
-    });
-  }
-);
+  return c.json({
+    success: true,
+    data,
+    pagination: {
+      page,
+      pageSize,
+      total: count?.total ?? 0
+    }
+  });
+});
 
 adminRoutes.post(
   "/approval-ai-gate/tasks/:taskId/handle",
@@ -1822,7 +1736,18 @@ adminRoutes.post(
           (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
-        .bind(node.id, task.biz_id, "AI_GATE", null, comment || "超级管理员补充AI节点意见", node.round, "completed", now, now, now)
+        .bind(
+          node.id,
+          task.biz_id,
+          "AI_GATE",
+          null,
+          comment || "超级管理员补充AI节点意见",
+          node.round,
+          "completed",
+          now,
+          now,
+          now
+        )
         .run();
 
       return c.json({ success: true, data: { task_id: task.id, handled: "comment" } });
@@ -1896,7 +1821,18 @@ adminRoutes.post(
         (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-      .bind(node.id, task.biz_id, "AI_GATE", action, comment || "超级管理员手动处理AI关卡", node.round, "completed", now, now, now)
+      .bind(
+        node.id,
+        task.biz_id,
+        "AI_GATE",
+        action,
+        comment || "超级管理员手动处理AI关卡",
+        node.round,
+        "completed",
+        now,
+        now,
+        now
+      )
       .run();
 
     await advanceWorkflow(c.env, task.biz_id, createAiGateHandler());
@@ -1906,48 +1842,41 @@ adminRoutes.post(
 );
 
 // POST /ai-routing — Create routing rule
-adminRoutes.post(
-  "/ai-routing",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const body = (await c.req.json()) as RoutingRuleRequest;
-    const now = nowIso();
+adminRoutes.post("/ai-routing", requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json()) as RoutingRuleRequest;
+  const now = nowIso();
 
-    const result = await c.env.DB.prepare(
-      `INSERT INTO ai_routing_rule
+  const result = await c.env.DB.prepare(
+    `INSERT INTO ai_routing_rule
         (rule_name, biz_type, task_type, condition_json,
          provider_id, prompt_template_id, priority, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
+  )
+    .bind(
+      body.rule_name,
+      body.biz_type,
+      body.task_type,
+      body.condition_json ?? null,
+      body.provider_id,
+      body.prompt_template_id ?? null,
+      body.priority ?? 0,
+      now,
+      now
     )
-      .bind(
-        body.rule_name,
-        body.biz_type,
-        body.task_type,
-        body.condition_json ?? null,
-        body.provider_id,
-        body.prompt_template_id ?? null,
-        body.priority ?? 0,
-        now,
-        now
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
-  }
-);
+  return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+});
 
 // PUT /ai-routing/:id — Update routing rule
-adminRoutes.put(
-  "/ai-routing/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as Partial<RoutingRuleRequest> & {
-      status?: string;
-    };
+adminRoutes.put("/ai-routing/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.json()) as Partial<RoutingRuleRequest> & {
+    status?: string;
+  };
 
-    await c.env.DB.prepare(
-      `UPDATE ai_routing_rule SET
+  await c.env.DB.prepare(
+    `UPDATE ai_routing_rule SET
         rule_name = COALESCE(?, rule_name),
         biz_type = COALESCE(?, biz_type),
         task_type = COALESCE(?, task_type),
@@ -1958,97 +1887,81 @@ adminRoutes.put(
         status = COALESCE(?, status),
         updated_at = ?
        WHERE id = ?`
+  )
+    .bind(
+      body.rule_name ?? null,
+      body.biz_type ?? null,
+      body.task_type ?? null,
+      body.condition_json ?? null,
+      body.provider_id ?? null,
+      body.prompt_template_id ?? null,
+      body.priority ?? null,
+      body.status ?? null,
+      nowIso(),
+      id
     )
-      .bind(
-        body.rule_name ?? null,
-        body.biz_type ?? null,
-        body.task_type ?? null,
-        body.condition_json ?? null,
-        body.provider_id ?? null,
-        body.prompt_template_id ?? null,
-        body.priority ?? null,
-        body.status ?? null,
-        nowIso(),
-        id
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // DELETE /ai-routing/:id — Soft delete routing rule
-adminRoutes.delete(
-  "/ai-routing/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare(
-      "UPDATE ai_routing_rule SET status = 'disabled', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), id)
-      .run();
+adminRoutes.delete("/ai-routing/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare(
+    "UPDATE ai_routing_rule SET status = 'disabled', updated_at = ? WHERE id = ?"
+  )
+    .bind(nowIso(), id)
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // ─── AI Prompt Template CRUD ──────────
 
 // GET /ai-prompt — List prompt templates
-adminRoutes.get(
-  "/ai-prompt",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const rows = await c.env.DB.prepare(
-      "SELECT * FROM ai_prompt_template WHERE status != 'deleted' ORDER BY template_key ASC"
-    ).all<AiPromptTemplate>();
+adminRoutes.get("/ai-prompt", requireRoles(["super_admin"]), async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM ai_prompt_template WHERE status != 'deleted' ORDER BY template_key ASC"
+  ).all<AiPromptTemplate>();
 
-    return c.json({ success: true, data: rows.results ?? [] });
-  }
-);
+  return c.json({ success: true, data: rows.results ?? [] });
+});
 
 // POST /ai-prompt — Create prompt template
-adminRoutes.post(
-  "/ai-prompt",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const body = (await c.req.json()) as PromptTemplateRequest;
-    const now = nowIso();
+adminRoutes.post("/ai-prompt", requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json()) as PromptTemplateRequest;
+  const now = nowIso();
 
-    const result = await c.env.DB.prepare(
-      `INSERT INTO ai_prompt_template
+  const result = await c.env.DB.prepare(
+    `INSERT INTO ai_prompt_template
         (template_key, template_name, system_prompt, user_prompt_template,
          variables_schema, version, status, created_at, updated_at)
         VALUES (?, ?, ?, ?, ?, 1, 'active', ?, ?)`
+  )
+    .bind(
+      body.template_key,
+      body.template_name,
+      body.system_prompt,
+      body.user_prompt_template,
+      body.variables_schema ?? null,
+      now,
+      now
     )
-      .bind(
-        body.template_key,
-        body.template_name,
-        body.system_prompt,
-        body.user_prompt_template,
-        body.variables_schema ?? null,
-        now,
-        now
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
-  }
-);
+  return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+});
 
 // PUT /ai-prompt/:id — Update prompt template (increments version)
-adminRoutes.put(
-  "/ai-prompt/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as Partial<PromptTemplateRequest> & {
-      status?: string;
-    };
+adminRoutes.put("/ai-prompt/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  const body = (await c.req.json()) as Partial<PromptTemplateRequest> & {
+    status?: string;
+  };
 
-    await c.env.DB.prepare(
-      `UPDATE ai_prompt_template SET
+  await c.env.DB.prepare(
+    `UPDATE ai_prompt_template SET
         template_name = COALESCE(?, template_name),
         system_prompt = COALESCE(?, system_prompt),
         user_prompt_template = COALESCE(?, user_prompt_template),
@@ -2057,34 +1970,29 @@ adminRoutes.put(
         status = COALESCE(?, status),
         updated_at = ?
        WHERE id = ?`
+  )
+    .bind(
+      body.template_name ?? null,
+      body.system_prompt ?? null,
+      body.user_prompt_template ?? null,
+      body.variables_schema ?? null,
+      body.status ?? null,
+      nowIso(),
+      id
     )
-      .bind(
-        body.template_name ?? null,
-        body.system_prompt ?? null,
-        body.user_prompt_template ?? null,
-        body.variables_schema ?? null,
-        body.status ?? null,
-        nowIso(),
-        id
-      )
-      .run();
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});
 
 // DELETE /ai-prompt/:id — Soft delete prompt template
-adminRoutes.delete(
-  "/ai-prompt/:id",
-  requireRoles(["super_admin"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare(
-      "UPDATE ai_prompt_template SET status = 'disabled', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), id)
-      .run();
+adminRoutes.delete("/ai-prompt/:id", requireRoles(["super_admin"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare(
+    "UPDATE ai_prompt_template SET status = 'disabled', updated_at = ? WHERE id = ?"
+  )
+    .bind(nowIso(), id)
+    .run();
 
-    return c.json({ success: true });
-  }
-);
+  return c.json({ success: true });
+});

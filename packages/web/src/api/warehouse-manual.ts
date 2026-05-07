@@ -29,7 +29,7 @@ export type WarehouseManualVersion = {
   content_json: string;
   ai_draft_task_id: number | null;
   ai_draft_status: "none" | "queued" | "running" | "completed" | "failed";
-  status: "draft" | "published" | "archived";
+  status: "draft" | "reviewing" | "published" | "archived";
   published_by_userid: string | null;
   published_at: string | null;
   created_by_userid: string;
@@ -137,8 +137,31 @@ export const createWarehouseManualVersion = (
     { data }
   );
 
+export const createWarehouseManualAiDraft = (
+  id: number,
+  data?: { source_limit?: number }
+) =>
+  http.request<{
+    success: boolean;
+    data: {
+      id: number;
+      version_no: number;
+      ai_draft_task_id: number;
+      ai_draft_status: WarehouseManualVersion["ai_draft_status"];
+    };
+  }>("post", `/api/v1/warehouse/manual/${id}/version/ai-draft`, { data });
+
 export const publishWarehouseManualVersion = (id: number, versionId: number) =>
   http.request<{ success: boolean }>(
     "post",
     `/api/v1/warehouse/manual/${id}/version/${versionId}/publish`
+  );
+
+export const submitWarehouseManualVersionReview = (
+  id: number,
+  versionId: number
+) =>
+  http.request<{ success: boolean }>(
+    "post",
+    `/api/v1/warehouse/manual/${id}/version/${versionId}/submit-review`
   );

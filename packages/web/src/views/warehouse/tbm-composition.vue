@@ -6,6 +6,7 @@ import {
   getTbmCompositionCandidates,
   getDispatchBoard,
   listTrackedAssetConfigurations,
+  triggerTbmCompositionRecommendation,
   type DispatchBoardItem,
   type TbmCompositionCandidate,
   type TrackedAssetConfiguration
@@ -26,6 +27,7 @@ const candidateLoading = ref(false);
 const candidateShells = ref<TbmCompositionCandidate[]>([]);
 const candidateConsoles = ref<TbmCompositionCandidate[]>([]);
 const packageActionId = ref<number | null>(null);
+const aiRecommendLoading = ref(false);
 
 const coreOptions = computed(() =>
   items.value.filter(item => {
@@ -139,6 +141,24 @@ const createPackageFromConfiguration = async (
   }
 };
 
+const triggerAiRecommendation = async () => {
+  if (!selectedCoreId.value) {
+    message("请选择机芯后再生成 AI 推荐", { type: "warning" });
+    return;
+  }
+  aiRecommendLoading.value = true;
+  try {
+    const result = await triggerTbmCompositionRecommendation(
+      selectedCoreId.value
+    );
+    message(`AI组合推荐已进入队列：#${result.data.task_id}`, {
+      type: "success"
+    });
+  } finally {
+    aiRecommendLoading.value = false;
+  }
+};
+
 watch(selectedCoreId, async value => {
   selectedShellId.value = null;
   selectedConsoleId.value = null;
@@ -158,6 +178,12 @@ onMounted(loadData);
             以机芯为中心查看操作台、壳体和阻塞任务，改装动作进入任务队列
           </div>
         </div>
+        <el-button
+          :disabled="!selectedCoreId"
+          :loading="aiRecommendLoading"
+          @click="triggerAiRecommendation"
+          >AI推荐</el-button
+        >
       </div>
     </template>
 
@@ -234,6 +260,8 @@ onMounted(loadData);
         <el-table :data="displayedConsoleOptions" border height="360">
           <el-table-column prop="asset_code" label="编码" width="150" />
           <el-table-column prop="asset_name" label="名称" min-width="180" />
+          <el-table-column prop="model" label="型号" width="120" />
+          <el-table-column prop="brand" label="厂家" width="120" />
           <el-table-column label="状态" width="120">
             <template #default="{ row }">
               <el-tag :type="row.available ? 'success' : 'warning'">
@@ -299,6 +327,8 @@ onMounted(loadData);
       <el-table :data="displayedShellOptions" border>
         <el-table-column prop="asset_code" label="编码" width="150" />
         <el-table-column prop="asset_name" label="名称" min-width="180" />
+        <el-table-column prop="model" label="型号" width="120" />
+        <el-table-column prop="brand" label="厂家" width="120" />
         <el-table-column label="状态" width="120">
           <template #default="{ row }">
             <el-tag :type="row.available ? 'success' : 'warning'">

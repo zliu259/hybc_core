@@ -16,7 +16,10 @@ export const taskTypes = [
   "ocr_extract",
   "file_generate",
   "voice_stt",
-  "approval_ai_gate"
+  "approval_ai_gate",
+  "warehouse_task_dispatch_recommendation",
+  "tbm_composition_recommendation",
+  "warehouse_manual_draft"
 ] as const;
 export type TaskType = (typeof taskTypes)[number];
 
@@ -30,18 +33,10 @@ export const taskQueueStatuses = [
 ] as const;
 export type TaskQueueStatus = (typeof taskQueueStatuses)[number];
 
-export const computeNodeStatuses = [
-  "online",
-  "offline",
-  "draining"
-] as const;
+export const computeNodeStatuses = ["online", "offline", "draining"] as const;
 export type ComputeNodeStatus = (typeof computeNodeStatuses)[number];
 
-export const providerKeys = [
-  "claude",
-  "openai",
-  "local"
-] as const;
+export const providerKeys = ["claude", "openai", "local"] as const;
 export type ProviderKey = (typeof providerKeys)[number];
 
 // ─── DB Row Types (match 0006_ai_slot.sql column-for-column) ──────────

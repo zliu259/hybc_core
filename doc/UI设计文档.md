@@ -95,13 +95,18 @@
 - 仓库管理：`packages/web/src/views/warehouse/index.vue`
 - 库房总控台：`packages/web/src/views/warehouse/control-center.vue`
 - 库房任务调度台：`packages/web/src/views/warehouse/task-dispatch.vue`
-  - 展示任务队列、人员负载、任务包创建、任务包完成/未完/超时/异常汇总、批量加入任务包/批量派工、单任务派工、复核和证据查看。
+  - 展示任务队列、人员负载、任务包创建、任务包完成/未完/超时/异常汇总、批量加入任务包/批量派工、单任务派工、复核、证据查看和 AI 调度建议触发。
   - 筛选区支持状态、来源、执行人、仓库、项目、资产类型组合筛选。
+  - AI 调度建议可基于当前筛选或勾选任务创建 `warehouse_task_dispatch_recommendation` 异步任务，结果只作为建议，不自动派工。
 - 返库检查维护：`packages/web/src/views/warehouse/return-maintenance.vue`
 - 顶管机组合方案台：`packages/web/src/views/warehouse/tbm-composition.vue`
-  - 支持按所选机芯加载候选壳体/操作台、展示兼容和不可用原因、创建组合方案、由组合方案生成任务包。
+  - 支持按所选机芯加载候选壳体/操作台，展示型号、厂家、兼容和不可用原因，型号/口径/厂家不一致会提示需改装。
+  - 支持创建组合方案，由组合方案生成任务包；任务包包含组合前检查、改装实施和组合确认步骤。
+  - 支持基于所选机芯触发 `tbm_composition_recommendation` AI 组合推荐异步任务，结果只作为候选建议，不自动创建或修改组合方案。
 - 操作手册库：`packages/web/src/views/warehouse/manual-library.vue`
-  - 支持手册创建、版本新增、版本发布、自动匹配规则维护；规则按手册、设备型号、资产类型、任务类型、组件角色配置。
+  - 支持手册创建、版本新增、AI 草稿、版本提审、审核发布、自动匹配规则维护；规则按手册、设备型号、资产类型、任务类型、组件角色配置。
+  - 版本记录区按状态显示操作：`draft` 可提审，`reviewing` 可发布，`published/archived` 不再显示误操作入口。
+  - AI 草稿从历史任务简报生成，进入 `warehouse_manual_draft` 异步任务；任务完成后回填草稿内容，不自动发布。
 - 仓库库存：`packages/web/src/views/warehouse/inventory.vue`
 - 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
 - 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`

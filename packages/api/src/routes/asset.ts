@@ -8,13 +8,16 @@ import {
 } from "../services/asset-manual-history";
 import { buildAssetAvailabilityStatus } from "../services/asset-availability";
 import { collectConfigurationParticipants, emitTrackedAssetEvents } from "../services/asset-event";
+import { createTask } from "../services/ai-slot";
 import {
   buildTbmCompositionCandidate,
+  buildTbmCompositionTaskDefinitions,
   inferTbmComponentRole,
   type TbmCompositionAssetInput,
   type TbmCompatibilityRuleInput
 } from "../services/asset-composition";
 import { generateSerial } from "../services/serial";
+import { buildTbmCompositionRecommendationPayload } from "../services/warehouse-ai";
 import { createWarehouseTask } from "../services/warehouse-task";
 import type { Env } from "../types/env";
 import type {
@@ -484,6 +487,9 @@ assetRoutes.get(
       asset_type_id: core.asset_type_id,
       asset_type_code: core.asset_type_code,
       asset_type_name: core.asset_type_name,
+      brand: core.brand,
+      model: core.model,
+      properties_json: core.properties_json,
       status: core.status,
       current_warehouse_id: core.current_warehouse_id
     };
@@ -500,6 +506,9 @@ assetRoutes.get(
             asset_type_id: asset.asset_type_id,
             asset_type_code: asset.asset_type_code,
             asset_type_name: asset.asset_type_name,
+            brand: asset.brand,
+            model: asset.model,
+            properties_json: asset.properties_json,
             status: asset.status,
             current_warehouse_id: asset.current_warehouse_id
           },
@@ -517,6 +526,114 @@ assetRoutes.get(
         shells: candidates.filter((item) => item.role === "shell"),
         consoles: candidates.filter((item) => item.role === "console")
       }
+    });
+  }
+);
+
+assetRoutes.post(
+  "/configuration/recommendation",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as { core_asset_id?: number };
+    const coreAssetId = Number(body.core_asset_id);
+    if (!coreAssetId) {
+      return c.json({ success: false, error: { message: "core_asset_id is required" } }, 400);
+    }
+
+    const core = await c.env.DB.prepare(
+      `SELECT ta.*,
+              at.type_code AS asset_type_code,
+              at.type_name AS asset_type_name
+       FROM tracked_asset ta
+       JOIN asset_type at ON at.id = ta.asset_type_id
+       WHERE ta.id = ?`
+    )
+      .bind(coreAssetId)
+      .first<TrackedAsset & { asset_type_code: string | null; asset_type_name: string | null }>();
+    if (!core) {
+      return c.json({ success: false, error: { message: "core asset not found" } }, 404);
+    }
+
+    const assetRows = await c.env.DB.prepare(
+      `SELECT ta.*,
+              at.type_code AS asset_type_code,
+              at.type_name AS asset_type_name
+       FROM tracked_asset ta
+       JOIN asset_type at ON at.id = ta.asset_type_id
+       WHERE ta.id != ?
+       ORDER BY ta.id DESC`
+    )
+      .bind(coreAssetId)
+      .all<TrackedAsset & { asset_type_code: string | null; asset_type_name: string | null }>();
+
+    const rules = await c.env.DB.prepare(
+      "SELECT left_asset_type_id, right_asset_type_id, relation_type FROM asset_compatibility_rule WHERE status = 'active'"
+    ).all<TbmCompatibilityRuleInput>();
+    const selectedCore: TbmCompositionAssetInput = {
+      id: core.id,
+      asset_code: core.asset_code,
+      asset_name: core.asset_name,
+      asset_type_id: core.asset_type_id,
+      asset_type_code: core.asset_type_code,
+      asset_type_name: core.asset_type_name,
+      brand: core.brand,
+      model: core.model,
+      properties_json: core.properties_json,
+      status: core.status,
+      current_warehouse_id: core.current_warehouse_id
+    };
+    const candidates = (assetRows.results ?? [])
+      .map((asset) => {
+        const role = inferTbmComponentRole(asset);
+        if (role !== "shell" && role !== "console") return null;
+        return buildTbmCompositionCandidate({
+          candidate: {
+            id: asset.id,
+            asset_code: asset.asset_code,
+            asset_name: asset.asset_name,
+            asset_type_id: asset.asset_type_id,
+            asset_type_code: asset.asset_type_code,
+            asset_type_name: asset.asset_type_name,
+            brand: asset.brand,
+            model: asset.model,
+            properties_json: asset.properties_json,
+            status: asset.status,
+            current_warehouse_id: asset.current_warehouse_id
+          },
+          selectedCore,
+          role,
+          compatibilityRules: rules.results ?? []
+        });
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    const task = await createTask(c.env, {
+      task_type: "tbm_composition_recommendation",
+      biz_type: "tracked_asset",
+      biz_id: coreAssetId,
+      priority: 5,
+      payload: buildTbmCompositionRecommendationPayload({
+        core: {
+          id: selectedCore.id,
+          asset_code: selectedCore.asset_code,
+          asset_name: selectedCore.asset_name,
+          asset_type_id: selectedCore.asset_type_id,
+          asset_type_code: selectedCore.asset_type_code,
+          asset_type_name: selectedCore.asset_type_name,
+          brand: selectedCore.brand ?? null,
+          model: selectedCore.model ?? null,
+          status: selectedCore.status,
+          current_warehouse_id: selectedCore.current_warehouse_id
+        },
+        shells: candidates.filter((item) => item.role === "shell"),
+        consoles: candidates.filter((item) => item.role === "console")
+      }),
+      timeout_seconds: 600
+    });
+
+    return c.json({
+      success: true,
+      data: { task_id: task.id, ai_status: "pending", no_auto_apply: true }
     });
   }
 );
@@ -757,24 +874,37 @@ assetRoutes.post(
       applicant_userid: auth.sub
     };
 
-    const inspectionTask = await createWarehouseTask(c.env, {
-      ...taskContext,
-      work_order_type: "inspection",
-      source: "manual",
-      priority: "high",
-      status: body.assignee_userid ? "assigned" : "pending_assignment",
-      blocking_flag: 1,
-      remark: "顶管机组合前检查：核对壳体、机芯、操作台状态并提交照片与检查简报。"
-    });
-    const modificationTask = await createWarehouseTask(c.env, {
-      ...taskContext,
-      work_order_type: "modification",
-      source: "manual",
-      priority: "high",
-      status: body.assignee_userid ? "assigned" : "pending_assignment",
-      blocking_flag: 1,
-      remark: "顶管机组合改装：按组合方案完成组件搭配、改装确认和照片简报。"
-    });
+    const taskResults = [];
+    const taskDefinitions = buildTbmCompositionTaskDefinitions();
+    for (const [index, definition] of taskDefinitions.entries()) {
+      const task = await createWarehouseTask(c.env, {
+        ...taskContext,
+        work_order_type: definition.work_order_type,
+        source: "manual",
+        priority: "high",
+        status: body.assignee_userid ? "assigned" : "pending_assignment",
+        blocking_flag: 1,
+        required_photo_count: definition.required_photo_count,
+        remark: definition.remark
+      });
+      await c.env.DB.prepare(
+        `INSERT INTO warehouse_task_step
+          (work_order_id, step_no, step_title, step_type, required_flag, status,
+           manual_version_id, result_json, completed_by_userid, completed_at, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 1, 'pending', ?, NULL, NULL, NULL, ?, ?)`
+      )
+        .bind(
+          task.id,
+          index + 1,
+          definition.step_title,
+          definition.step_type,
+          taskContext.manual_version_id ?? null,
+          now,
+          now
+        )
+        .run();
+      taskResults.push(task);
+    }
 
     return c.json(
       {
@@ -782,8 +912,8 @@ assetRoutes.post(
         data: {
           package_id: packageId,
           package_no: packageNo,
-          task_ids: [inspectionTask.id, modificationTask.id],
-          work_order_nos: [inspectionTask.work_order_no, modificationTask.work_order_no]
+          task_ids: taskResults.map((task) => task.id),
+          work_order_nos: taskResults.map((task) => task.work_order_no)
         }
       },
       201

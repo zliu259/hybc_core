@@ -189,6 +189,15 @@ export type WarehouseTaskWorkloadSummary = {
   submitted_count: number;
 };
 
+export type WarehouseDispatchRecommendationRequest = {
+  task_ids?: number[];
+  warehouse_id?: number;
+  project_id?: number;
+  source?: WarehouseAssetWorkOrder["source"];
+  assignee_userid?: string;
+  limit?: number;
+};
+
 export type EquipmentPlan = {
   id: number;
   plan_no: string;
@@ -594,6 +603,16 @@ export const listWarehouseTaskWorkload = (params?: {
     "/api/v1/warehouse/work-order/workload",
     { params }
   );
+
+export const triggerWarehouseDispatchRecommendation = (
+  data: WarehouseDispatchRecommendationRequest
+) =>
+  http.request<{
+    success: boolean;
+    data: { task_id: number; ai_status: string; no_auto_dispatch: boolean };
+  }>("post", "/api/v1/warehouse/work-order/ai/dispatch-recommendation", {
+    data
+  });
 
 export const assignWarehouseTaskPackageTasks = (
   id: number,

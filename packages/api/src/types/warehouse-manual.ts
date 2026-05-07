@@ -8,6 +8,7 @@ export const warehouseManualTypes = [
 ] as const;
 
 export type WarehouseManualType = (typeof warehouseManualTypes)[number];
+export type WarehouseManualVersionStatus = "draft" | "reviewing" | "published" | "archived";
 
 export interface WarehouseManual {
   id: number;
@@ -30,7 +31,7 @@ export interface WarehouseManualVersion {
   content_json: string;
   ai_draft_task_id: number | null;
   ai_draft_status: "none" | "queued" | "running" | "completed" | "failed";
-  status: "draft" | "published" | "archived";
+  status: WarehouseManualVersionStatus;
   published_by_userid: string | null;
   published_at: string | null;
   created_by_userid: string;
@@ -66,6 +67,10 @@ export interface CreateWarehouseManualVersionRequest {
   content_json: string;
   ai_draft_task_id?: number | null;
   ai_draft_status?: "none" | "queued" | "running" | "completed" | "failed";
+}
+
+export interface CreateWarehouseManualAiDraftRequest {
+  source_limit?: number;
 }
 
 export interface UpsertWarehouseManualBindingRequest {

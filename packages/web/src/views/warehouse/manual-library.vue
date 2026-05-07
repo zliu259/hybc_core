@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { listAssetTypes, type AssetType } from "@/api/asset";
 import {
+  createWarehouseManualAiDraft,
   createWarehouseManualBinding,
   createWarehouseManual,
   createWarehouseManualVersion,
@@ -10,6 +11,7 @@ import {
   listWarehouseManuals,
   listWarehouseManualVersions,
   publishWarehouseManualVersion,
+  submitWarehouseManualVersionReview,
   updateWarehouseManualBinding,
   type WarehouseManual,
   type WarehouseManualBinding,
@@ -29,6 +31,7 @@ const editorVisible = ref(false);
 const versionVisible = ref(false);
 const bindingVisible = ref(false);
 const bindingSaving = ref(false);
+const aiDraftLoading = ref(false);
 const createForm = ref({
   manual_title: "",
   manual_type: "operation" as WarehouseManualType,
@@ -70,6 +73,16 @@ const roleOptions = [
   { label: "操作台", value: "console" },
   { label: "通用", value: "generic" }
 ];
+
+const versionStatusName = (status: WarehouseManualVersion["status"]) => {
+  const statusMap: Record<WarehouseManualVersion["status"], string> = {
+    draft: "草稿",
+    reviewing: "待发布",
+    published: "已发布",
+    archived: "已归档"
+  };
+  return statusMap[status];
+};
 
 const assetTypeName = (id: number | null) => {
   if (!id) return "全部资产类型";
@@ -146,6 +159,33 @@ const publishVersion = async (version: WarehouseManualVersion) => {
   const manual = manuals.value.find(item => item.id === version.manual_id);
   if (manual) await openVersions(manual);
   await loadData();
+};
+
+const submitVersionReview = async (version: WarehouseManualVersion) => {
+  await submitWarehouseManualVersionReview(version.manual_id, version.id);
+  message("手册版本已提交审核", { type: "success" });
+  const manual = manuals.value.find(item => item.id === version.manual_id);
+  if (manual) await openVersions(manual);
+  await loadData();
+};
+
+const createAiDraft = async () => {
+  if (!selectedManualId.value) {
+    message("请先选择手册", { type: "warning" });
+    return;
+  }
+  const manual = manuals.value.find(item => item.id === selectedManualId.value);
+  aiDraftLoading.value = true;
+  try {
+    const result = await createWarehouseManualAiDraft(selectedManualId.value, {
+      source_limit: 20
+    });
+    message(`AI草稿已创建：v${result.data.version_no}`, { type: "success" });
+    if (manual) await openVersions(manual);
+    await loadData();
+  } finally {
+    aiDraftLoading.value = false;
+  }
 };
 
 const openBindingCreate = () => {
@@ -241,30 +281,55 @@ onMounted(loadData);
       <div class="version-panel">
         <div class="version-panel__head">
           <strong>版本记录</strong>
-          <el-button
-            size="small"
-            :disabled="!selectedManualId"
-            @click="versionVisible = true"
-            >新增版本</el-button
-          >
+          <div class="version-panel__actions">
+            <el-button
+              size="small"
+              :disabled="!selectedManualId"
+              :loading="aiDraftLoading"
+              @click="createAiDraft"
+              >AI草稿</el-button
+            >
+            <el-button
+              size="small"
+              :disabled="!selectedManualId"
+              @click="versionVisible = true"
+              >新增版本</el-button
+            >
+          </div>
         </div>
         <el-table :data="versions" border height="516">
           <el-table-column prop="version_no" label="版本" width="80" />
-          <el-table-column prop="status" label="状态" width="100" />
+          <el-table-column label="状态" width="100">
+            <template #default="{ row }">
+              {{ versionStatusName(row.status) }}
+            </template>
+          </el-table-column>
           <el-table-column
             prop="created_by_userid"
             label="创建人"
             width="130"
           />
           <el-table-column prop="created_at" label="创建时间" min-width="170" />
-          <el-table-column label="操作" width="100">
+          <el-table-column label="操作" width="130">
             <template #default="{ row }">
               <el-button
+                v-if="row.status === 'draft'"
                 link
                 type="primary"
-                :disabled="row.status === 'published'"
+                @click="submitVersionReview(row)"
+                >提审</el-button
+              >
+              <el-button
+                v-if="row.status === 'reviewing'"
+                link
+                type="primary"
                 @click="publishVersion(row)"
                 >发布</el-button
+              >
+              <span
+                v-if="row.status === 'published' || row.status === 'archived'"
+                class="muted"
+                >-</span
               >
             </template>
           </el-table-column>
@@ -508,6 +573,11 @@ onMounted(loadData);
   margin-bottom: 10px;
 }
 
+.version-panel__actions {
+  display: flex;
+  gap: 8px;
+}
+
 .binding-panel {
   margin-top: 14px;
 }
@@ -521,5 +591,9 @@ onMounted(loadData);
 
 .binding-panel__head span {
   color: #6e6458;
+}
+
+.muted {
+  color: #9b9489;
 }
 </style>

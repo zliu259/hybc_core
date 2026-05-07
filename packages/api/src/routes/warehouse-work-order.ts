@@ -2,11 +2,12 @@ import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
-import { createAiGateHandler } from "../services/ai-slot";
+import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
 import { buildSignedObjectUrl, signObjectAccess } from "../services/upload-signature";
 import { canAccessWarehouseTaskEvidence } from "../services/warehouse-evidence-access";
+import { buildWarehouseDispatchRecommendationPayload } from "../services/warehouse-ai";
 import {
   assignWarehouseTask,
   buildWarehouseMobileTaskConfig,
@@ -307,6 +308,97 @@ warehouseAssetWorkOrderRoutes.get(
     return c.json({
       success: true,
       data: buildWarehouseTaskWorkloadSummary(rows.results ?? [])
+    });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/ai/dispatch-recommendation",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const body = (await c.req.json().catch(() => ({}))) as {
+      task_ids?: number[];
+      warehouse_id?: number;
+      project_id?: number;
+      source?: WarehouseAssetWorkOrder["source"];
+      assignee_userid?: string;
+      limit?: number;
+    };
+    const taskIds = (body.task_ids ?? [])
+      .map((item) => Number(item))
+      .filter((item) => Number.isInteger(item) && item > 0);
+    const filters = {
+      ...(taskIds.length > 0 ? { task_ids: taskIds } : {}),
+      ...(body.warehouse_id ? { warehouse_id: Number(body.warehouse_id) } : {}),
+      ...(body.project_id ? { project_id: Number(body.project_id) } : {}),
+      ...(body.source ? { source: body.source } : {}),
+      ...(body.assignee_userid?.trim() ? { assignee_userid: body.assignee_userid.trim() } : {})
+    };
+    const limit = Math.min(Math.max(Number(body.limit ?? 50), 1), 100);
+    let sql = `
+      SELECT id, work_order_no, work_order_type, priority, status, warehouse_id, project_id,
+             assignee_userid, package_id, scheduled_date, blocking_flag, required_photo_count, remark
+      FROM warehouse_asset_work_order
+      WHERE status NOT IN ('completed', 'cancelled')`;
+    const params: Array<string | number> = [];
+    if (taskIds.length > 0) {
+      sql += ` AND id IN (${taskIds.map(() => "?").join(", ")})`;
+      params.push(...taskIds);
+    }
+    if (body.warehouse_id) {
+      sql += " AND warehouse_id = ?";
+      params.push(Number(body.warehouse_id));
+    }
+    if (body.project_id) {
+      sql += " AND project_id = ?";
+      params.push(Number(body.project_id));
+    }
+    if (body.source) {
+      sql += " AND source = ?";
+      params.push(body.source);
+    }
+    if (body.assignee_userid?.trim()) {
+      sql += " AND assignee_userid = ?";
+      params.push(body.assignee_userid.trim());
+    }
+    sql +=
+      " ORDER BY CASE priority WHEN 'urgent' THEN 1 WHEN 'high' THEN 2 WHEN 'normal' THEN 3 ELSE 4 END, id DESC LIMIT ?";
+    params.push(limit);
+
+    const taskRows = await c.env.DB.prepare(sql)
+      .bind(...params)
+      .all<WarehouseAssetWorkOrder>();
+    const tasks = taskRows.results ?? [];
+    if (tasks.length === 0) {
+      return c.json(
+        { success: false, error: { message: "no open tasks for recommendation" } },
+        400
+      );
+    }
+
+    const workload = buildWarehouseTaskWorkloadSummary(
+      tasks.map((task) => ({
+        assignee_userid: task.assignee_userid,
+        status: task.status,
+        priority: task.priority
+      }))
+    );
+    const task = await createTask(c.env, {
+      task_type: "warehouse_task_dispatch_recommendation",
+      biz_type: "warehouse_task_dispatch",
+      biz_id: 0,
+      priority: 5,
+      payload: buildWarehouseDispatchRecommendationPayload({
+        filters,
+        tasks,
+        workload_summary: workload
+      }),
+      timeout_seconds: 600
+    });
+
+    return c.json({
+      success: true,
+      data: { task_id: task.id, ai_status: "pending", no_auto_dispatch: true }
     });
   }
 );
