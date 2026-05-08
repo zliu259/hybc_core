@@ -98,3 +98,40 @@ export const buildTbmCompositionRecommendationPayload = (input: {
     }
   };
 };
+
+export const buildWarehouseTaskSummaryPayload = (input: {
+  task: {
+    id: number;
+    work_order_no: string;
+    work_order_type: WarehouseAssetWorkOrderType;
+    priority: WarehouseTaskPriority;
+    status: WarehouseAssetWorkOrderStatus;
+    result_summary: string | null;
+    completion_summary_json: string | null;
+    remark: string | null;
+  };
+  evidence: Array<{
+    evidence_type: string;
+    file_name: string | null;
+    summary: string | null;
+  }>;
+}) => {
+  return {
+    task_type: "warehouse_task_summary" as const,
+    human_edit_required: true,
+    task: input.task,
+    evidence_count: input.evidence.length,
+    evidence: input.evidence.map((item) => ({
+      evidence_type: item.evidence_type,
+      file_name: item.file_name,
+      summary: item.summary
+    })),
+    output_contract: {
+      result_summary: "string",
+      completion_summary_json: "object",
+      safety_flags: ["string"],
+      followup_suggestions: ["string"],
+      human_edit_policy: "operator_or_manager_must_review_before_submit"
+    }
+  };
+};

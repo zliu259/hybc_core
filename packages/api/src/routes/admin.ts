@@ -959,6 +959,16 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
       manual_id: bizId,
       manual_title: "库房手册 AI 草稿测试",
       historical_tasks: [{ work_order_no: "WO-TEST", result_summary: "检查正常" }]
+    },
+    warehouse_task_summary: {
+      human_edit_required: true,
+      task: {
+        id: bizId,
+        work_order_no: "WO-TEST",
+        work_order_type: "inspection",
+        result_summary: "检查正常"
+      },
+      evidence: []
     }
   };
 

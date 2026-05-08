@@ -7,7 +7,10 @@ import { submitForApproval } from "../services/approval/engine";
 import { generateSerial } from "../services/serial";
 import { buildSignedObjectUrl, signObjectAccess } from "../services/upload-signature";
 import { canAccessWarehouseTaskEvidence } from "../services/warehouse-evidence-access";
-import { buildWarehouseDispatchRecommendationPayload } from "../services/warehouse-ai";
+import {
+  buildWarehouseDispatchRecommendationPayload,
+  buildWarehouseTaskSummaryPayload
+} from "../services/warehouse-ai";
 import {
   assignWarehouseTask,
   buildWarehouseMobileTaskConfig,
@@ -399,6 +402,84 @@ warehouseAssetWorkOrderRoutes.post(
     return c.json({
       success: true,
       data: { task_id: task.id, ai_status: "pending", no_auto_dispatch: true }
+    });
+  }
+);
+
+warehouseAssetWorkOrderRoutes.post(
+  "/:id/ai/summary-draft",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const taskRow = await c.env.DB.prepare(
+      `SELECT id, work_order_no, work_order_type, priority, status,
+              result_summary, completion_summary_json, remark,
+              assignee_userid
+       FROM warehouse_asset_work_order
+       WHERE id = ?`
+    )
+      .bind(id)
+      .first<
+        Pick<
+          WarehouseAssetWorkOrder,
+          | "id"
+          | "work_order_no"
+          | "work_order_type"
+          | "priority"
+          | "status"
+          | "result_summary"
+          | "completion_summary_json"
+          | "remark"
+          | "assignee_userid"
+        >
+      >();
+    if (!taskRow) {
+      return c.json({ success: false, error: { message: "work order not found" } }, 404);
+    }
+    if (
+      !auth.roles.includes("super_admin") &&
+      !auth.roles.includes("manager") &&
+      !auth.roles.includes("site_manager") &&
+      taskRow.assignee_userid !== auth.sub
+    ) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    const evidenceRows = await c.env.DB.prepare(
+      `SELECT evidence_type, file_name, summary
+       FROM warehouse_task_evidence
+       WHERE work_order_id = ?
+       ORDER BY captured_at DESC, id DESC
+       LIMIT 20`
+    )
+      .bind(id)
+      .all<{ evidence_type: string; file_name: string | null; summary: string | null }>();
+
+    const task = await createTask(c.env, {
+      task_type: "warehouse_task_summary",
+      biz_type: "warehouse_asset_work_order",
+      biz_id: id,
+      priority: 5,
+      payload: buildWarehouseTaskSummaryPayload({
+        task: {
+          id: taskRow.id,
+          work_order_no: taskRow.work_order_no,
+          work_order_type: taskRow.work_order_type,
+          priority: taskRow.priority,
+          status: taskRow.status,
+          result_summary: taskRow.result_summary,
+          completion_summary_json: taskRow.completion_summary_json,
+          remark: taskRow.remark
+        },
+        evidence: evidenceRows.results ?? []
+      }),
+      timeout_seconds: 300
+    });
+
+    return c.json({
+      success: true,
+      data: { task_id: task.id, ai_status: "pending", human_edit_required: true }
     });
   }
 );

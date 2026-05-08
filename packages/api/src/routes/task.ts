@@ -11,12 +11,7 @@ import type {
   TaskQueueItem,
   ComputeNode
 } from "../types/ai";
-import {
-  pollForNode,
-  submitResult,
-  registerNode,
-  heartbeat
-} from "../services/task-queue";
+import { pollForNode, submitResult, registerNode, heartbeat } from "../services/task-queue";
 
 export const taskRoutes = new Hono<{
   Bindings: Env;
@@ -28,10 +23,7 @@ taskRoutes.get("/poll", apiKeyMiddleware, async (c) => {
   const capabilitiesRaw = c.req.query("capabilities");
 
   if (!nodeId) {
-    return c.json(
-      { success: false, error: { message: "Missing node_id parameter" } },
-      400
-    );
+    return c.json({ success: false, error: { message: "Missing node_id parameter" } }, 400);
   }
 
   const capabilities = capabilitiesRaw
@@ -76,10 +68,7 @@ taskRoutes.post("/:id/result", apiKeyMiddleware, async (c) => {
   const body = (await c.req.json()) as TaskResultSubmission;
 
   if (!nodeId) {
-    return c.json(
-      { success: false, error: { message: "Missing X-Node-Id header" } },
-      400
-    );
+    return c.json({ success: false, error: { message: "Missing X-Node-Id header" } }, 400);
   }
 
   try {
@@ -91,23 +80,18 @@ taskRoutes.post("/:id/result", apiKeyMiddleware, async (c) => {
   }
 });
 
-taskRoutes.get(
-  "/nodes",
-  authMiddleware,
-  requireRoles(["super_admin", "manager"]),
-  async (c) => {
-    const rows = await c.env.DB.prepare(
-      "SELECT * FROM compute_node ORDER BY last_heartbeat_at DESC"
-    ).all<ComputeNode>();
+taskRoutes.get("/nodes", authMiddleware, requireRoles(["super_admin", "manager"]), async (c) => {
+  const rows = await c.env.DB.prepare(
+    "SELECT * FROM compute_node ORDER BY last_heartbeat_at DESC"
+  ).all<ComputeNode>();
 
-    return c.json({ success: true, data: rows.results ?? [] });
-  }
-);
+  return c.json({ success: true, data: rows.results ?? [] });
+});
 
 taskRoutes.get(
   "/queue",
   authMiddleware,
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
     const status = c.req.query("status");
     const taskType = c.req.query("task_type");
@@ -155,7 +139,7 @@ taskRoutes.get(
 taskRoutes.get(
   "/:id",
   authMiddleware,
-  requireRoles(["super_admin", "manager"]),
+  requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
     const id = Number(c.req.param("id"));
 
@@ -164,10 +148,7 @@ taskRoutes.get(
       .first<TaskQueueItem>();
 
     if (!task) {
-      return c.json(
-        { success: false, error: { message: "Task not found" } },
-        404
-      );
+      return c.json({ success: false, error: { message: "Task not found" } }, 404);
     }
 
     return c.json({ success: true, data: task });

@@ -50,14 +50,36 @@ const shellOptions = computed(() =>
   })
 );
 
+const toCompositionCandidate = (
+  item: DispatchBoardItem,
+  role: TbmCompositionCandidate["role"]
+): TbmCompositionCandidate => ({
+  id: item.id,
+  asset_code: item.asset_code,
+  asset_name: item.asset_name,
+  asset_type_id: item.asset_type_id,
+  asset_type_code: item.asset_type_code,
+  asset_type_name: item.asset_type_name,
+  brand: null,
+  model: null,
+  role,
+  status: item.status,
+  current_warehouse_id: item.current_warehouse_id,
+  available: item.dispatch_state === "available_now",
+  requires_modification: item.dispatch_state === "available_after_modification",
+  reasons: item.reasons
+});
+
 const displayedShellOptions = computed(() =>
-  candidateShells.value.length > 0 ? candidateShells.value : shellOptions.value
+  candidateShells.value.length > 0
+    ? candidateShells.value
+    : shellOptions.value.map(item => toCompositionCandidate(item, "shell"))
 );
 
 const displayedConsoleOptions = computed(() =>
   candidateConsoles.value.length > 0
     ? candidateConsoles.value
-    : consoleOptions.value
+    : consoleOptions.value.map(item => toCompositionCandidate(item, "console"))
 );
 
 const blockedItems = computed(() =>

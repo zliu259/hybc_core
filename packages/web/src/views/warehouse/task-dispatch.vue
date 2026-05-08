@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { listAssetTypes, type AssetType } from "@/api/asset";
 import { listProjects, type Project } from "@/api/project";
+import { getTaskDetail, listTaskQueue, type TaskQueueItem } from "@/api/task";
 import {
   assignWarehouseAssetWorkOrder,
   assignWarehouseTaskPackageTasks,
@@ -15,6 +16,7 @@ import {
   reviewWarehouseAssetWorkOrder,
   startWarehouseAssetWorkOrder,
   triggerWarehouseDispatchRecommendation,
+  triggerWarehouseTaskSummaryDraft,
   type Warehouse,
   type WarehouseAssetWorkOrder,
   type WarehouseTaskEvidence,
@@ -42,6 +44,11 @@ const evidenceVisible = ref(false);
 const evidenceRows = ref<WarehouseTaskEvidence[]>([]);
 const evidenceLoading = ref(false);
 const aiDispatchLoading = ref(false);
+const aiResultVisible = ref(false);
+const aiResultRows = ref<TaskQueueItem[]>([]);
+const aiResultLoading = ref(false);
+const aiResultDetail = ref<TaskQueueItem | null>(null);
+const summaryActionId = ref<number | null>(null);
 const activeTaskNo = ref("");
 const manuals = ref<WarehouseManual[]>([]);
 const warehouses = ref<Warehouse[]>([]);
@@ -163,6 +170,29 @@ const evidenceTypeText: Record<string, string> = {
   voice: "语音",
   brief: "简报",
   document: "文档"
+};
+
+const warehouseAiTaskTypes = [
+  "warehouse_task_dispatch_recommendation",
+  "tbm_composition_recommendation",
+  "warehouse_manual_draft",
+  "warehouse_task_summary"
+];
+
+const aiTaskTypeText: Record<string, string> = {
+  warehouse_task_dispatch_recommendation: "调度建议",
+  tbm_composition_recommendation: "组合推荐",
+  warehouse_manual_draft: "手册草稿",
+  warehouse_task_summary: "简报草稿"
+};
+
+const formatJson = (value: string | null) => {
+  if (!value) return "-";
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2);
+  } catch {
+    return value;
+  }
 };
 
 const loadData = async () => {
@@ -310,6 +340,42 @@ const triggerAiDispatch = async () => {
   }
 };
 
+const triggerSummaryDraft = async (row: WarehouseAssetWorkOrder) => {
+  summaryActionId.value = row.id;
+  try {
+    const result = await triggerWarehouseTaskSummaryDraft(row.id);
+    message(`AI简报草稿已进入队列：#${result.data.task_id}`, {
+      type: "success"
+    });
+  } finally {
+    summaryActionId.value = null;
+  }
+};
+
+const openAiResults = async () => {
+  aiResultVisible.value = true;
+  aiResultLoading.value = true;
+  aiResultDetail.value = null;
+  try {
+    const results = await Promise.all(
+      warehouseAiTaskTypes.map(task_type =>
+        listTaskQueue({ task_type, page: 1, pageSize: 10 })
+      )
+    );
+    aiResultRows.value = results
+      .flatMap(item => item.data)
+      .sort((left, right) => right.created_at.localeCompare(left.created_at))
+      .slice(0, 30);
+  } finally {
+    aiResultLoading.value = false;
+  }
+};
+
+const openAiResultDetail = async (row: TaskQueueItem) => {
+  const result = await getTaskDetail(row.id);
+  aiResultDetail.value = result.data;
+};
+
 const startTask = async (row: WarehouseAssetWorkOrder) => {
   actionId.value = row.id;
   try {
@@ -371,6 +437,7 @@ onMounted(async () => {
           <el-button :loading="aiDispatchLoading" @click="triggerAiDispatch">
             AI建议
           </el-button>
+          <el-button @click="openAiResults">AI结果</el-button>
           <el-button @click="packageVisible = true">新建任务包</el-button>
           <el-button type="primary" @click="openBatchAssign">
             选中加入任务包
@@ -560,13 +627,20 @@ onMounted(async () => {
         min-width="260"
         show-overflow-tooltip
       />
-      <el-table-column label="操作" width="310" fixed="right">
+      <el-table-column label="操作" width="380" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" @click="openAssign(row)"
             >派工</el-button
           >
           <el-button link type="primary" @click="openEvidence(row)"
             >证据</el-button
+          >
+          <el-button
+            link
+            type="primary"
+            :loading="summaryActionId === row.id"
+            @click="triggerSummaryDraft(row)"
+            >简报草稿</el-button
           >
           <el-button
             link
@@ -797,6 +871,42 @@ onMounted(async () => {
         <el-table-column prop="operator_userid" label="提交人" width="120" />
       </el-table>
     </el-dialog>
+
+    <el-dialog v-model="aiResultVisible" title="库房AI结果" width="920px">
+      <el-table
+        v-loading="aiResultLoading"
+        :data="aiResultRows"
+        border
+        height="320"
+      >
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column label="类型" width="130">
+          <template #default="{ row }">
+            {{ aiTaskTypeText[row.task_type] || row.task_type }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column prop="biz_id" label="业务ID" width="90" />
+        <el-table-column prop="created_at" label="创建时间" min-width="170" />
+        <el-table-column label="操作" width="90">
+          <template #default="{ row }">
+            <el-button link type="primary" @click="openAiResultDetail(row)"
+              >查看</el-button
+            >
+          </template>
+        </el-table-column>
+      </el-table>
+      <div v-if="aiResultDetail" class="ai-result-detail">
+        <div class="workload__title">结果</div>
+        <pre>{{ formatJson(aiResultDetail.result_json) }}</pre>
+      </div>
+      <template #footer>
+        <el-button @click="openAiResults">刷新</el-button>
+        <el-button type="primary" @click="aiResultVisible = false"
+          >关闭</el-button
+        >
+      </template>
+    </el-dialog>
   </el-card>
 </template>
 
@@ -845,5 +955,22 @@ onMounted(async () => {
 
 .task-flag {
   margin-left: 6px;
+}
+
+.ai-result-detail {
+  margin-top: 14px;
+}
+
+.ai-result-detail pre {
+  max-height: 260px;
+  padding: 12px;
+  overflow: auto;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #2a241d;
+  white-space: pre-wrap;
+  background: #f7f2e8;
+  border: 1px solid #d9ceb9;
+  border-radius: 6px;
 }
 </style>

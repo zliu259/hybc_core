@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildTbmCompositionRecommendationPayload,
+  buildWarehouseTaskSummaryPayload,
   buildWarehouseDispatchRecommendationPayload
 } from "./warehouse-ai";
 
@@ -95,6 +96,41 @@ describe("warehouse ai helpers", () => {
       recommended_shell_asset_id: "number|null",
       recommended_console_asset_id: "number|null",
       reason: "string"
+    });
+  });
+
+  it("builds a warehouse task summary payload that remains editable before submission", () => {
+    const payload = buildWarehouseTaskSummaryPayload({
+      task: {
+        id: 31,
+        work_order_no: "WO-260508-001",
+        work_order_type: "maintenance",
+        priority: "high",
+        status: "in_progress",
+        result_summary: "已更换密封圈",
+        completion_summary_json: '{"photo_count":3}',
+        remark: "返库维护"
+      },
+      evidence: [
+        {
+          evidence_type: "photo",
+          file_name: "seal-after.jpg",
+          summary: "更换后照片"
+        }
+      ]
+    });
+
+    expect(payload.task_type).toBe("warehouse_task_summary");
+    expect(payload.human_edit_required).toBe(true);
+    expect(payload.task).toMatchObject({
+      id: 31,
+      work_order_no: "WO-260508-001",
+      work_order_type: "maintenance"
+    });
+    expect(payload.evidence_count).toBe(1);
+    expect(payload.output_contract).toMatchObject({
+      result_summary: "string",
+      completion_summary_json: "object"
     });
   });
 });

@@ -98,6 +98,7 @@
   - 展示任务队列、人员负载、任务包创建、任务包完成/未完/超时/异常汇总、批量加入任务包/批量派工、单任务派工、复核、证据查看和 AI 调度建议触发。
   - 筛选区支持状态、来源、执行人、仓库、项目、资产类型组合筛选。
   - AI 调度建议可基于当前筛选或勾选任务创建 `warehouse_task_dispatch_recommendation` 异步任务，结果只作为建议，不自动派工。
+  - 单任务可触发 `warehouse_task_summary` 简报草稿异步任务；顶部“AI结果”入口汇总查看调度建议、组合推荐、手册草稿和简报草稿任务结果。
 - 返库检查维护：`packages/web/src/views/warehouse/return-maintenance.vue`
 - 顶管机组合方案台：`packages/web/src/views/warehouse/tbm-composition.vue`
   - 支持按所选机芯加载候选壳体/操作台，展示型号、厂家、兼容和不可用原因，型号/口径/厂家不一致会提示需改装。

@@ -614,6 +614,12 @@ export const triggerWarehouseDispatchRecommendation = (
     data
   });
 
+export const triggerWarehouseTaskSummaryDraft = (id: number) =>
+  http.request<{
+    success: boolean;
+    data: { task_id: number; ai_status: string; human_edit_required: boolean };
+  }>("post", `/api/v1/warehouse/work-order/${id}/ai/summary-draft`);
+
 export const assignWarehouseTaskPackageTasks = (
   id: number,
   data: {
