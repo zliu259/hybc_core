@@ -33,12 +33,7 @@ type ApprovalPushOptions = {
   disableDuplicateCheck?: boolean;
 };
 
-type ApprovalResultType =
-  | "returned"
-  | "approved"
-  | "rejected"
-  | "cancelled"
-  | "withdrawn";
+type ApprovalResultType = "returned" | "approved" | "rejected" | "cancelled" | "withdrawn";
 
 type ApprovalResultPushPayload = {
   instanceId: number;
@@ -80,12 +75,7 @@ const normalizeBridgeProxyUrl = (env: Env): string | null => {
   return `${normalized}/wecom/proxy`;
 };
 
-const putCachedString = async (
-  env: Env,
-  key: string,
-  value: string,
-  expiresInSeconds?: number
-) => {
+const putCachedString = async (env: Env, key: string, value: string, expiresInSeconds?: number) => {
   const ttl = Math.max(60, (expiresInSeconds ?? TOKEN_DEFAULT_TTL_SECONDS) - 300);
   await env.KV.put(key, value, { expirationTtl: ttl });
 };
@@ -159,9 +149,7 @@ const fetchWeComAccessToken = async (env: Env): Promise<string> => {
   );
 
   if (tokenJson.errcode !== 0 || !tokenJson.access_token) {
-    throw new Error(
-      weComErrorMessage(tokenJson.errmsg, "Failed to get WeCom access_token")
-    );
+    throw new Error(weComErrorMessage(tokenJson.errmsg, "Failed to get WeCom access_token"));
   }
 
   await putCachedString(env, ACCESS_TOKEN_KV_KEY, tokenJson.access_token, tokenJson.expires_in);
@@ -201,17 +189,20 @@ const resolveMiniProgramPagePath = (instanceId: number, config: WeComPushRouteCo
 const resolveRouteConfig = async (env: Env): Promise<WeComPushRouteConfig> => {
   try {
     const runtimeMap = await loadRunnerRuntimeMap(env);
-    const defaultTargetRaw = env.WECOM_APPROVAL_DEFAULT_TARGET ?? runtimeMap.WECOM_APPROVAL_DEFAULT_TARGET;
+    const defaultTargetRaw =
+      env.WECOM_APPROVAL_DEFAULT_TARGET ?? runtimeMap.WECOM_APPROVAL_DEFAULT_TARGET;
 
     return {
       webBaseUrl:
         (env.WECOM_APPROVAL_WEB_BASE_URL || runtimeMap.WECOM_APPROVAL_WEB_BASE_URL || "").trim() ||
         null,
-      miniAppId:
-        (env.WECOM_MINIAPP_APPID || runtimeMap.WECOM_MINIAPP_APPID || "").trim() || null,
+      miniAppId: (env.WECOM_MINIAPP_APPID || runtimeMap.WECOM_MINIAPP_APPID || "").trim() || null,
       miniPagePathTemplate:
-        (env.WECOM_APPROVAL_MINI_PAGE_PATH || runtimeMap.WECOM_APPROVAL_MINI_PAGE_PATH || "").trim() ||
-        null,
+        (
+          env.WECOM_APPROVAL_MINI_PAGE_PATH ||
+          runtimeMap.WECOM_APPROVAL_MINI_PAGE_PATH ||
+          ""
+        ).trim() || null,
       defaultTarget: defaultTargetRaw === "web" ? "web" : "miniapp"
     };
   } catch {
@@ -240,8 +231,7 @@ const APPROVAL_RESULT_LABELS: Record<ApprovalResultType, string> = {
   withdrawn: "已撤回"
 };
 
-const bizTypeLabel = (bizType: string): string =>
-  BIZ_TYPE_LABELS[bizType] ?? bizType;
+const bizTypeLabel = (bizType: string): string => BIZ_TYPE_LABELS[bizType] ?? bizType;
 
 const formatAmountCny = (amount: number | null | undefined): string | null => {
   if (typeof amount !== "number" || !Number.isFinite(amount)) return null;
@@ -268,7 +258,9 @@ export const resolveApprovalPushMeta = async (
   }
 
   if (bizType === "reimbursement_batch") {
-    const row = await env.DB.prepare("SELECT total_amount, batch_no FROM reimbursement_batch WHERE id = ?")
+    const row = await env.DB.prepare(
+      "SELECT total_amount, batch_no FROM reimbursement_batch WHERE id = ?"
+    )
       .bind(bizId)
       .first<{ total_amount: number | null; batch_no: string | null }>();
     return {
@@ -278,7 +270,9 @@ export const resolveApprovalPushMeta = async (
   }
 
   if (bizType === "invoice_request") {
-    const row = await env.DB.prepare("SELECT amount_with_tax, request_no FROM invoice_request WHERE id = ?")
+    const row = await env.DB.prepare(
+      "SELECT amount_with_tax, request_no FROM invoice_request WHERE id = ?"
+    )
       .bind(bizId)
       .first<{ amount_with_tax: number | null; request_no: string | null }>();
     return {
@@ -315,11 +309,12 @@ export const resolveApplicantDisplayName = async (
       forceRefresh: false,
       allowStaleOnRefreshError: true
     });
-    const matched = book.users.find(user => user.userid === normalized);
+    const matched = book.users.find((user) => user.userid === normalized);
     if (matched?.name?.trim()) {
       return matched.name.trim();
     }
-  } catch {
+  } catch (error) {
+    console.warn("Failed to resolve applicant display name from WeCom contacts", error);
   }
   return normalized;
 };
@@ -354,7 +349,9 @@ const buildTemplateCard = async (
   }
 
   if (jumpList.length === 0) {
-    throw new Error("No jump target configured: set WECOM_MINIAPP_APPID or WECOM_APPROVAL_WEB_BASE_URL/WECHAT_REDIRECT_URI");
+    throw new Error(
+      "No jump target configured: set WECOM_MINIAPP_APPID or WECOM_APPROVAL_WEB_BASE_URL/WECHAT_REDIRECT_URI"
+    );
   }
 
   const cardAction =
@@ -436,16 +433,11 @@ export const sendApprovalTodoTemplateCard = async (
   };
 };
 
-const buildResultTemplateCard = async (
-  env: Env,
-  payload: ApprovalResultPushPayload
-) => {
+const buildResultTemplateCard = async (env: Env, payload: ApprovalResultPushPayload) => {
   const routeConfig = await resolveRouteConfig(env);
   const webUrl = resolveWebDetailUrl(env, payload.instanceId, routeConfig);
   const miniAppId = routeConfig.miniAppId ?? "";
-  const miniPagePath = miniAppId
-    ? resolveMiniProgramPagePath(payload.instanceId, routeConfig)
-    : "";
+  const miniPagePath = miniAppId ? resolveMiniProgramPagePath(payload.instanceId, routeConfig) : "";
   const defaultTarget = routeConfig.defaultTarget;
 
   const jumpList: Array<Record<string, unknown>> = [];
@@ -537,9 +529,7 @@ export const sendApprovalResultTemplateCard = async (
   );
 
   if (json.errcode !== 0) {
-    throw new Error(
-      weComErrorMessage(json.errmsg, "Failed to send WeCom result template card")
-    );
+    throw new Error(weComErrorMessage(json.errmsg, "Failed to send WeCom result template card"));
   }
 
   return {

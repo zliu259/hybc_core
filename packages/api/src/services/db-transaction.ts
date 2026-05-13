@@ -2,9 +2,7 @@ const isSqlTransactionUnsupportedError = (error: unknown): boolean => {
   if (!(error instanceof Error)) return false;
   return (
     error.message.includes("state.storage.transaction()") ||
-    error.message.includes(
-      "instead of the SQL BEGIN TRANSACTION or SAVEPOINT statements"
-    )
+    error.message.includes("instead of the SQL BEGIN TRANSACTION or SAVEPOINT statements")
   );
 };
 
@@ -19,7 +17,7 @@ export const runInTransaction = async <T>(
   work: () => Promise<T>,
   options: RunInTransactionOptions = {}
 ): Promise<T> => {
-  const allowFallback = options.allowUnsupportedFallback ?? true;
+  const allowFallback = options.allowUnsupportedFallback ?? false;
   try {
     await db.exec("BEGIN IMMEDIATE TRANSACTION");
   } catch (error) {
