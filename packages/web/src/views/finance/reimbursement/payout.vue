@@ -20,6 +20,7 @@ import {
   type ReimbursementBatch,
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
+import ReimbursementDetail from "./detail.vue";
 
 defineOptions({ name: "ReimbursementPayout" });
 const route = useRoute();
@@ -29,6 +30,8 @@ const actionLoading = ref(false);
 const rows = ref<ReimbursementBatch[]>([]);
 const selectedIds = ref<number[]>([]);
 const detailsMap = ref<Record<number, ReimbursementBatchDetail>>({});
+const envelopeDetailDrawerVisible = ref(false);
+const activeEnvelopeDetailId = ref<number | null>(null);
 
 const payDialogVisible = ref(false);
 const payTargetIds = ref<number[]>([]);
@@ -183,19 +186,25 @@ const submitMarkPaid = async () => {
   try {
     await Promise.all(
       payTargetIds.value.map(id =>
-        markBatchPaid(id, {
-          paid_at: payForm.value.paid_at,
-          payment_reference: payForm.value.payment_reference,
-          payment_account: payForm.value.payment_account,
-          payment_entity_id: payForm.value.payment_entity_id,
-          payment_entity_bank_account_id:
-            payForm.value.payment_entity_bank_account_id,
-          payment_vouchers: voucherItems.value.map(item => ({
-            file_key: item.file_key,
-            file_name: item.file_name,
-            file_size: item.file_size
-          }))
-        }, { idempotencyKey: `reimbursement-batch-paid-${id}-${crypto.randomUUID()}` })
+        markBatchPaid(
+          id,
+          {
+            paid_at: payForm.value.paid_at,
+            payment_reference: payForm.value.payment_reference,
+            payment_account: payForm.value.payment_account,
+            payment_entity_id: payForm.value.payment_entity_id,
+            payment_entity_bank_account_id:
+              payForm.value.payment_entity_bank_account_id,
+            payment_vouchers: voucherItems.value.map(item => ({
+              file_key: item.file_key,
+              file_name: item.file_name,
+              file_size: item.file_size
+            }))
+          },
+          {
+            idempotencyKey: `reimbursement-batch-paid-${id}-${crypto.randomUUID()}`
+          }
+        )
       )
     );
     message("打款登记成功", { type: "success" });
@@ -218,6 +227,24 @@ const onExpand = async (
 
 const onSelectionChange = (selection: ReimbursementBatch[]) => {
   selectedIds.value = selection.map(item => item.id);
+};
+
+const openEnvelopeDetail = (id: number) => {
+  activeEnvelopeDetailId.value = id;
+  envelopeDetailDrawerVisible.value = true;
+};
+
+const closeEnvelopeDetail = () => {
+  envelopeDetailDrawerVisible.value = false;
+};
+
+const onEnvelopeDetailClosed = () => {
+  activeEnvelopeDetailId.value = null;
+};
+
+const onEnvelopeDetailChanged = async () => {
+  detailsMap.value = {};
+  await loadData();
 };
 
 onMounted(async () => {
@@ -285,6 +312,17 @@ onMounted(async () => {
               label="报销说明"
               min-width="200"
             />
+            <el-table-column label="操作" width="90" fixed="right">
+              <template #default="{ row: item }">
+                <el-button
+                  link
+                  type="primary"
+                  @click="openEnvelopeDetail(item.id)"
+                >
+                  详情
+                </el-button>
+              </template>
+            </el-table-column>
           </el-table>
         </template>
       </el-table-column>
@@ -404,6 +442,24 @@ onMounted(async () => {
         提交
       </el-button>
     </template>
+  </el-drawer>
+
+  <el-drawer
+    v-model="envelopeDetailDrawerVisible"
+    title="报销详情"
+    size="82%"
+    destroy-on-close
+    append-to-body
+    class="reimbursement-detail-drawer"
+    @closed="onEnvelopeDetailClosed"
+  >
+    <ReimbursementDetail
+      v-if="activeEnvelopeDetailId !== null"
+      :envelope-id="activeEnvelopeDetailId"
+      drawer-mode
+      @close="closeEnvelopeDetail"
+      @changed="onEnvelopeDetailChanged"
+    />
   </el-drawer>
 </template>
 

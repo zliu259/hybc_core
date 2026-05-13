@@ -27,14 +27,29 @@ import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "ReimbursementDetail" });
 
+const props = defineProps<{
+  envelopeId?: number | string;
+  drawerMode?: boolean;
+  workspaceView?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (event: "close"): void;
+  (event: "changed"): void;
+  (event: "created", id: number): void;
+}>();
+
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStoreHook();
 const roleSet = computed(() => new Set(userStore.roles ?? []));
-const isWorkspaceView = computed(() => route.path.startsWith("/workspace/"));
+const isWorkspaceView = computed(
+  () => props.workspaceView ?? route.path.startsWith("/workspace/")
+);
 
-const envelopeId = computed(() => Number(route.params.id));
-const isCreate = computed(() => route.params.id === "create");
+const effectiveEnvelopeId = computed(() => props.envelopeId ?? route.params.id);
+const envelopeId = computed(() => Number(effectiveEnvelopeId.value));
+const isCreate = computed(() => effectiveEnvelopeId.value === "create");
 
 const baseDataLoading = ref(false);
 const detailLoading = ref(false);
@@ -468,6 +483,22 @@ const recognitionRawText = computed(() => {
 const createIdempotencyKey = (scope: string) =>
   `${scope}-${crypto.randomUUID()}`;
 
+const notifyChanged = () => {
+  emit("changed");
+};
+
+const closeDetail = () => {
+  if (props.drawerMode) {
+    emit("close");
+    return;
+  }
+  router.push(
+    isWorkspaceView.value
+      ? "/workspace/my-reimbursement"
+      : "/finance/reimbursement"
+  );
+};
+
 const stagedAttachmentsForSubmit = () =>
   attachmentItems.value
     .filter(item => item.is_new)
@@ -623,6 +654,7 @@ const submitRebindEnvelopeUuid = async () => {
   message("信封UUID换绑成功", { type: "success" });
   rebindEnvelopeUuid.value = "";
   await loadDetail();
+  notifyChanged();
 };
 
 const uploadAttachment = async (options: UploadRequestOptions) => {
@@ -738,7 +770,12 @@ const save = async () => {
         { idempotencyKey: createIdempotencyKey("reimbursement-create") }
       );
       message("创建成功", { type: "success" });
-      if (route.path.startsWith("/workspace/")) {
+      emit("created", result.data.id);
+      notifyChanged();
+      if (props.drawerMode) {
+        return;
+      }
+      if (isWorkspaceView.value) {
         router.replace(`/workspace/my-reimbursement/detail/${result.data.id}`);
       } else {
         router.replace(`/finance/reimbursement/detail/${result.data.id}`);
@@ -756,6 +793,7 @@ const save = async () => {
       });
       message("保存成功", { type: "success" });
       await loadDetail();
+      notifyChanged();
     }
   } finally {
     saving.value = false;
@@ -784,6 +822,7 @@ const scanSubmit = async () => {
     message("扫码识别完成，已打开已有报销信封", { type: "info" });
   }
   await loadDetail();
+  notifyChanged();
 };
 
 const submitEnvelope = async () => {
@@ -800,6 +839,7 @@ const submitEnvelope = async () => {
     });
     message("报销已提交，等待办公室收件与后续核查", { type: "success" });
     await loadDetail();
+    notifyChanged();
     ensureAuditPolling("已提交，系统正在后台静默核查并会自动刷新进度");
   } catch (error) {
     const err = error as ApiErrorShape;
@@ -826,6 +866,7 @@ const submitEnvelope = async () => {
         type: "warning"
       });
       await loadDetail();
+      notifyChanged();
       ensureAuditPolling("已提交，系统正在后台静默核查并会自动刷新进度");
     } catch (forceError) {
       message(resolveApiErrorMessage(forceError, "提交失败，请稍后重试"), {
@@ -858,6 +899,7 @@ const voidEnvelope = async () => {
     await voidReimbursementEnvelope(detail.value.id);
     message("报销提交已废止", { type: "success" });
     await loadDetail();
+    notifyChanged();
   } finally {
     voiding.value = false;
   }
@@ -874,6 +916,7 @@ const verify = async (result: "verified" | "mismatch") => {
     type: result === "verified" ? "success" : "warning"
   });
   await loadDetail();
+  notifyChanged();
 };
 
 const refreshOcrStatus = async () => {
@@ -902,6 +945,7 @@ const rerunSilentReview = async () => {
       type: "success"
     });
     await loadDetail();
+    notifyChanged();
     ensureAuditPolling("二次静默审查已启动，系统将自动刷新进度");
   } finally {
     rerunningSilentReview.value = false;
@@ -921,6 +965,7 @@ const submitPrecheck = async (
       type: action === "approved" ? "success" : "warning"
     });
     await loadDetail();
+    notifyChanged();
   } catch (error) {
     const err = error as {
       response?: {
@@ -936,6 +981,7 @@ const submitPrecheck = async (
       type: "warning"
     });
     await loadDetail();
+    notifyChanged();
     ensureAuditPolling("审计任务处理中，系统将自动刷新状态");
   }
 };
@@ -955,7 +1001,7 @@ onBeforeUnmount(() => {
 });
 
 watch(
-  () => route.params.id,
+  () => effectiveEnvelopeId.value,
   async () => {
     clearAuditPolling();
     previewDrawerVisible.value = false;
@@ -991,16 +1037,9 @@ watch(
         <span>{{
           isCreate ? "新建报销" : `报销详情 - ${detail?.envelope_no || ""}`
         }}</span>
-        <el-button
-          @click="
-            router.push(
-              route.path.startsWith('/workspace/')
-                ? '/workspace/my-reimbursement'
-                : '/finance/reimbursement'
-            )
-          "
-          >返回</el-button
-        >
+        <el-button @click="closeDetail">{{
+          props.drawerMode ? "关闭" : "返回"
+        }}</el-button>
       </div>
     </template>
 
@@ -1015,7 +1054,9 @@ watch(
       </div>
       <div class="summary-tile">
         <span>报销通道</span>
-        <strong>{{ form.channel === "physical" ? "实物信封" : "电子发票" }}</strong>
+        <strong>{{
+          form.channel === "physical" ? "实物信封" : "电子发票"
+        }}</strong>
       </div>
       <div class="summary-tile">
         <span>后台核查</span>
@@ -1447,12 +1488,19 @@ watch(
           <el-table-column prop="match_type" label="匹配类型" width="120" />
           <el-table-column prop="risk_level" label="风险等级" width="120">
             <template #default="scope">
-              <el-tag :type="toRiskLevelTagType(scope.row.risk_level)" size="small">
+              <el-tag
+                :type="toRiskLevelTagType(scope.row.risk_level)"
+                size="small"
+              >
                 {{ toRiskLevelLabel(scope.row.risk_level) }}
               </el-tag>
             </template>
           </el-table-column>
-          <el-table-column prop="matched_invoice_no" label="匹配发票号" width="200" />
+          <el-table-column
+            prop="matched_invoice_no"
+            label="匹配发票号"
+            width="200"
+          />
           <el-table-column prop="summary" label="说明" min-width="240" />
         </el-table>
       </el-collapse-item>
@@ -1485,6 +1533,11 @@ watch(
 </template>
 
 <style scoped>
+:global(.reimbursement-detail-drawer .el-drawer__body) {
+  padding: 12px;
+  background: #f5f7fa;
+}
+
 .detail-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));

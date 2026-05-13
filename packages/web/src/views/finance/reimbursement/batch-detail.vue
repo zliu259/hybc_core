@@ -3,7 +3,11 @@ import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
-import { aiAuditStatusLabel, precheckStatusLabel, statusLabel } from "@/utils/enum-labels";
+import {
+  aiAuditStatusLabel,
+  precheckStatusLabel,
+  statusLabel
+} from "@/utils/enum-labels";
 import {
   getBatchAuditReport,
   getReimbursementBatch,
@@ -27,6 +31,7 @@ import { listPayees, type Payee } from "@/api/payment";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { formatToken, getToken } from "@/utils/auth";
 import { formatBeijingDateTime } from "@/utils/datetime";
+import ReimbursementDetail from "./detail.vue";
 
 defineOptions({ name: "ReimbursementBatchDetail" });
 
@@ -36,9 +41,13 @@ const userStore = useUserStoreHook();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const batchId = computed(() => Number(route.params.id));
-const isSuperAdmin = computed(() => (userStore.roles ?? []).includes("super_admin"));
+const isSuperAdmin = computed(() =>
+  (userStore.roles ?? []).includes("super_admin")
+);
 const canMaintainBatchDetail = computed(() =>
-  (userStore.roles ?? []).some(role => ["super_admin", "manager", "finance"].includes(role))
+  (userStore.roles ?? []).some(role =>
+    ["super_admin", "manager", "finance"].includes(role)
+  )
 );
 
 const loading = ref(false);
@@ -73,6 +82,8 @@ const voucherEditorRows = ref<
 
 const editItemDialogVisible = ref(false);
 const savingItemBasic = ref(false);
+const envelopeDetailDrawerVisible = ref(false);
+const activeEnvelopeDetailId = ref<number | null>(null);
 const editItemForm = ref({
   envelope_id: 0,
   invoice_no: "",
@@ -105,7 +116,10 @@ const paymentMethodLabelMap: Record<string, string> = {
   其他: "其他"
 };
 
-const invoiceRiskTagMap: Record<string, "success" | "warning" | "danger" | "info"> = {
+const invoiceRiskTagMap: Record<
+  string,
+  "success" | "warning" | "danger" | "info"
+> = {
   low: "success",
   medium: "warning",
   high: "danger"
@@ -176,8 +190,10 @@ const toInvoiceRiskLabel = (value: string | null | undefined) => {
 
 const normalizePaymentMethodValue = (value: string | null | undefined) => {
   if (!value) return "";
-  if (value === "transfer" || value === "bank_transfer" || value === "对公转账") return "transfer";
-  if (value === "personal_transfer" || value === "转账") return "personal_transfer";
+  if (value === "transfer" || value === "bank_transfer" || value === "对公转账")
+    return "transfer";
+  if (value === "personal_transfer" || value === "转账")
+    return "personal_transfer";
   if (value === "cash" || value === "现金") return "cash";
   if (value === "bill" || value === "票据") return "bill";
   if (value === "other" || value === "其他") return "other";
@@ -194,8 +210,8 @@ const parsePaymentVouchers = (
   paymentVouchersJson: string | null | undefined
 ) => {
   if (Array.isArray(paymentVouchers)) {
-    return paymentVouchers.filter(
-      item => Boolean(item && typeof item.file_key === "string" && item.file_key.trim())
+    return paymentVouchers.filter(item =>
+      Boolean(item && typeof item.file_key === "string" && item.file_key.trim())
     );
   }
   if (!paymentVouchersJson) return [];
@@ -218,14 +234,21 @@ const parsePaymentVouchers = (
         };
       })
       .filter(item => item !== null);
-    return rows as Array<{ file_key: string; file_name?: string; file_size?: number }>;
+    return rows as Array<{
+      file_key: string;
+      file_name?: string;
+      file_size?: number;
+    }>;
   } catch {
     return [];
   }
 };
 
 const voucherRows = computed(() =>
-  parsePaymentVouchers(detail.value?.payment_vouchers, detail.value?.payment_vouchers_json)
+  parsePaymentVouchers(
+    detail.value?.payment_vouchers,
+    detail.value?.payment_vouchers_json
+  )
 );
 
 const syncVoucherEditorFromDetail = () => {
@@ -295,7 +318,9 @@ const savePaymentVouchers = async () => {
   }
 };
 
-const openEditItemDialog = (item: ReimbursementBatchDetail["items"][number]) => {
+const openEditItemDialog = (
+  item: ReimbursementBatchDetail["items"][number]
+) => {
   editItemForm.value = {
     envelope_id: item.id,
     invoice_no: item.invoice_no ?? "",
@@ -307,17 +332,38 @@ const openEditItemDialog = (item: ReimbursementBatchDetail["items"][number]) => 
   editItemDialogVisible.value = true;
 };
 
+const openEnvelopeDetail = (id: number) => {
+  activeEnvelopeDetailId.value = id;
+  envelopeDetailDrawerVisible.value = true;
+};
+
+const closeEnvelopeDetail = () => {
+  envelopeDetailDrawerVisible.value = false;
+};
+
+const onEnvelopeDetailClosed = () => {
+  activeEnvelopeDetailId.value = null;
+};
+
+const onEnvelopeDetailChanged = async () => {
+  await loadDetail();
+};
+
 const saveItemBasicInfo = async () => {
   if (!detail.value || !editItemForm.value.envelope_id) return;
   savingItemBasic.value = true;
   try {
-    await updateBatchItemBasicInfo(detail.value.id, editItemForm.value.envelope_id, {
-      invoice_no: editItemForm.value.invoice_no || undefined,
-      expense_date: editItemForm.value.expense_date || undefined,
-      amount: Number(editItemForm.value.amount),
-      category: editItemForm.value.category || undefined,
-      description: editItemForm.value.description || undefined
-    });
+    await updateBatchItemBasicInfo(
+      detail.value.id,
+      editItemForm.value.envelope_id,
+      {
+        invoice_no: editItemForm.value.invoice_no || undefined,
+        expense_date: editItemForm.value.expense_date || undefined,
+        amount: Number(editItemForm.value.amount),
+        category: editItemForm.value.category || undefined,
+        description: editItemForm.value.description || undefined
+      }
+    );
     message("报销基础信息已更新", { type: "success" });
     editItemDialogVisible.value = false;
     await loadDetail();
@@ -326,7 +372,10 @@ const saveItemBasicInfo = async () => {
   }
 };
 
-const loadBankAccounts = async (entityId: number | undefined, preferredAccountId?: number) => {
+const loadBankAccounts = async (
+  entityId: number | undefined,
+  preferredAccountId?: number
+) => {
   if (!entityId) {
     bankAccounts.value = [];
     payoutEdit.value.payment_entity_bank_account_id = undefined;
@@ -339,13 +388,19 @@ const loadBankAccounts = async (entityId: number | undefined, preferredAccountId
   }
 };
 
-const loadInternalPayees = async (applicantUserid: string | undefined, preferredPayeeId?: number | null) => {
+const loadInternalPayees = async (
+  applicantUserid: string | undefined,
+  preferredPayeeId?: number | null
+) => {
   if (!applicantUserid) {
     internalPayees.value = [];
     payoutEdit.value.payee_id = undefined;
     return;
   }
-  const result = await listPayees({ type: "internal", linked_userid: applicantUserid });
+  const result = await listPayees({
+    type: "internal",
+    linked_userid: applicantUserid
+  });
   internalPayees.value = result.data;
   if (preferredPayeeId) {
     payoutEdit.value.payee_id = preferredPayeeId;
@@ -354,8 +409,11 @@ const loadInternalPayees = async (applicantUserid: string | undefined, preferred
 
 const syncEditFormFromDetail = async () => {
   if (!detail.value) return;
-  payoutEdit.value.payment_method = normalizePaymentMethodValue(detail.value.payment_method);
-  payoutEdit.value.payment_entity_id = detail.value.payment_entity_id ?? undefined;
+  payoutEdit.value.payment_method = normalizePaymentMethodValue(
+    detail.value.payment_method
+  );
+  payoutEdit.value.payment_entity_id =
+    detail.value.payment_entity_id ?? undefined;
   payoutEdit.value.payment_entity_bank_account_id =
     detail.value.payment_entity_bank_account_id ?? undefined;
   payoutEdit.value.payment_account = detail.value.payment_account ?? "";
@@ -512,7 +570,9 @@ onMounted(async () => {
         <div class="page-title">批次详情</div>
         <div class="page-subtitle">{{ detail?.batch_no || "加载中" }}</div>
       </div>
-      <el-button @click="router.push('/finance/reimbursement/batch')">返回</el-button>
+      <el-button @click="router.push('/finance/reimbursement/batch')"
+        >返回</el-button
+      >
     </div>
 
     <template v-if="detail">
@@ -531,7 +591,9 @@ onMounted(async () => {
         </div>
         <div class="summary-tile">
           <span class="tile-label">审批节点</span>
-          <strong>{{ detail.approval_instance?.current_node_name || "-" }}</strong>
+          <strong>{{
+            detail.approval_instance?.current_node_name || "-"
+          }}</strong>
         </div>
       </div>
 
@@ -540,16 +602,28 @@ onMounted(async () => {
           <el-button type="primary" :loading="actionLoading" @click="runAudit">
             触发智能审核
           </el-button>
-          <el-button :loading="actionLoading" @click="refreshAudit">刷新审核状态</el-button>
-          <el-button type="success" :loading="actionLoading" @click="submitApproval">
+          <el-button :loading="actionLoading" @click="refreshAudit"
+            >刷新审核状态</el-button
+          >
+          <el-button
+            type="success"
+            :loading="actionLoading"
+            @click="submitApproval"
+          >
             提交集中审批
           </el-button>
-          <el-button type="warning" :loading="actionLoading" @click="doMarkPaid">
+          <el-button
+            type="warning"
+            :loading="actionLoading"
+            @click="doMarkPaid"
+          >
             去集中打款登记
           </el-button>
           <el-button
             v-if="detail.approval_instance_id"
-            @click="router.push(`/approval/detail/${detail.approval_instance_id}`)"
+            @click="
+              router.push(`/approval/detail/${detail.approval_instance_id}`)
+            "
           >
             查看审批详情
           </el-button>
@@ -570,7 +644,9 @@ onMounted(async () => {
               aiAuditStatusLabel(detail.ai_audit_status)
             }}</el-descriptions-item>
             <el-descriptions-item label="审批状态">{{
-              detail.approval_instance ? statusLabel(detail.approval_instance.status) : "-"
+              detail.approval_instance
+                ? statusLabel(detail.approval_instance.status)
+                : "-"
             }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{
               formatBeijingDateTime(detail.created_at)
@@ -614,7 +690,11 @@ onMounted(async () => {
       </div>
 
       <el-collapse class="maintenance-collapse">
-        <el-collapse-item v-if="isSuperAdmin" title="超级管理员二次编辑" name="admin-edit">
+        <el-collapse-item
+          v-if="isSuperAdmin"
+          title="超级管理员二次编辑"
+          name="admin-edit"
+        >
           <el-form class="compact-form" label-width="110px">
             <el-form-item label="付款方式">
               <el-select
@@ -688,7 +768,11 @@ onMounted(async () => {
               />
             </el-form-item>
             <el-form-item>
-              <el-button :loading="savingPayout" type="primary" @click="saveSecondaryEdit">
+              <el-button
+                :loading="savingPayout"
+                type="primary"
+                @click="saveSecondaryEdit"
+              >
                 保存二次编辑
               </el-button>
             </el-form-item>
@@ -704,7 +788,9 @@ onMounted(async () => {
             :disabled="uploadingVoucher"
             :http-request="uploadVoucher"
           >
-            <div class="el-upload__text">拖拽凭证到这里，或 <em>点击上传</em></div>
+            <div class="el-upload__text">
+              拖拽凭证到这里，或 <em>点击上传</em>
+            </div>
             <div class="el-upload__tip">支持上传打款截图、回单等凭证</div>
           </el-upload>
 
@@ -723,7 +809,11 @@ onMounted(async () => {
             <el-table-column prop="file_size" label="大小" width="120" />
             <el-table-column label="操作" width="180">
               <template #default="scope">
-                <el-link :href="fileUrl(scope.row.file_key)" target="_blank" type="primary">
+                <el-link
+                  :href="fileUrl(scope.row.file_key)"
+                  target="_blank"
+                  type="primary"
+                >
                   下载
                 </el-link>
                 <el-link
@@ -748,7 +838,11 @@ onMounted(async () => {
           </el-table>
           <el-empty v-else description="暂无支付凭证" />
           <div v-if="canMaintainBatchDetail" style="margin-top: 10px">
-            <el-button type="primary" :loading="savingVouchers" @click="savePaymentVouchers">
+            <el-button
+              type="primary"
+              :loading="savingVouchers"
+              @click="savePaymentVouchers"
+            >
               保存支付凭证
             </el-button>
           </div>
@@ -756,10 +850,17 @@ onMounted(async () => {
 
         <el-collapse-item title="查重风险与智能审核" name="audit">
           <div class="audit-grid">
-            <el-table :data="detail.duplicate_summary || []" size="small" border>
+            <el-table
+              :data="detail.duplicate_summary || []"
+              size="small"
+              border
+            >
               <el-table-column label="风险级别" width="140">
                 <template #default="scope">
-                  <el-tag :type="invoiceRiskTagMap[scope.row.risk_level] || 'info'" size="small">
+                  <el-tag
+                    :type="invoiceRiskTagMap[scope.row.risk_level] || 'info'"
+                    size="small"
+                  >
                     {{ toInvoiceRiskLabel(scope.row.risk_level) }}
                   </el-tag>
                 </template>
@@ -767,7 +868,9 @@ onMounted(async () => {
               <el-table-column prop="cnt" label="数量" width="120" />
             </el-table>
             <div class="audit-report">
-              <div class="audit-status">状态：{{ aiAuditStatusLabel(auditStatus) }}</div>
+              <div class="audit-status">
+                状态：{{ aiAuditStatusLabel(auditStatus) }}
+              </div>
               <pre>{{ auditResult || "-" }}</pre>
             </div>
           </div>
@@ -776,70 +879,121 @@ onMounted(async () => {
 
       <section class="detail-section">
         <div class="section-title">批次信封明细</div>
-      <el-table :data="detail?.items || []" border>
-        <el-table-column prop="id" label="信封ID" width="90" />
-        <el-table-column prop="envelope_no" label="信封编号" width="170" />
-        <el-table-column prop="invoice_no" label="发票号" width="170" />
-        <el-table-column prop="expense_date" label="费用日期" width="120" />
-        <el-table-column prop="amount" label="金额" width="120" />
-        <el-table-column prop="category" label="类别" width="120" />
-        <el-table-column prop="description" label="说明" min-width="220" show-overflow-tooltip />
-        <el-table-column label="复核状态" width="120">
-          <template #default="scope">{{ precheckStatusLabel(scope.row.precheck_status) }}</template>
-        </el-table-column>
-        <el-table-column label="信封状态" width="120">
-          <template #default="scope">{{ statusLabel(scope.row.status) }}</template>
-        </el-table-column>
-        <el-table-column label="单项AI结论" min-width="220" show-overflow-tooltip>
-          <template #default="scope">{{ scope.row.ai_reasonability_summary || "-" }}</template>
-        </el-table-column>
-        <el-table-column label="票据风险" width="120">
-          <template #default="scope">
-            <el-tag
-              v-if="scope.row.invoice_review_highest_risk"
-              :type="invoiceRiskTagMap[scope.row.invoice_review_highest_risk] || 'info'"
-              size="small"
-            >
-              {{ toInvoiceRiskLabel(scope.row.invoice_review_highest_risk) }}
-            </el-tag>
-            <template v-else>-</template>
-          </template>
-        </el-table-column>
-        <el-table-column label="附件" min-width="220">
-          <template #default="scope">
-            <template v-if="Array.isArray(scope.row.attachments) && scope.row.attachments.length">
-              <div
-                v-for="attachment in scope.row.attachments"
-                :key="`${scope.row.id}-${attachment.id}`"
-                class="attachment-row"
+        <el-table :data="detail?.items || []" border>
+          <el-table-column prop="id" label="信封ID" width="90" />
+          <el-table-column prop="envelope_no" label="信封编号" width="170" />
+          <el-table-column prop="invoice_no" label="发票号" width="170" />
+          <el-table-column prop="expense_date" label="费用日期" width="120" />
+          <el-table-column prop="amount" label="金额" width="120" />
+          <el-table-column prop="category" label="类别" width="120" />
+          <el-table-column
+            prop="description"
+            label="说明"
+            min-width="220"
+            show-overflow-tooltip
+          />
+          <el-table-column label="复核状态" width="120">
+            <template #default="scope">{{
+              precheckStatusLabel(scope.row.precheck_status)
+            }}</template>
+          </el-table-column>
+          <el-table-column label="信封状态" width="120">
+            <template #default="scope">{{
+              statusLabel(scope.row.status)
+            }}</template>
+          </el-table-column>
+          <el-table-column
+            label="单项AI结论"
+            min-width="220"
+            show-overflow-tooltip
+          >
+            <template #default="scope">{{
+              scope.row.ai_reasonability_summary || "-"
+            }}</template>
+          </el-table-column>
+          <el-table-column label="票据风险" width="120">
+            <template #default="scope">
+              <el-tag
+                v-if="scope.row.invoice_review_highest_risk"
+                :type="
+                  invoiceRiskTagMap[scope.row.invoice_review_highest_risk] ||
+                  'info'
+                "
+                size="small"
               >
-                <span class="attachment-name">{{ attachment.file_name || attachment.file_key }}</span>
-                <el-link :href="fileUrl(attachment.file_key)" target="_blank" type="primary">
-                  查看
-                </el-link>
-              </div>
+                {{ toInvoiceRiskLabel(scope.row.invoice_review_highest_risk) }}
+              </el-tag>
+              <template v-else>-</template>
             </template>
-            <template v-else>-</template>
-          </template>
-        </el-table-column>
-        <el-table-column label="操作" width="120" fixed="right">
-          <template #default="scope">
-            <el-button link type="primary" @click="router.push(`/finance/reimbursement/detail/${scope.row.id}`)">
-              详情
-            </el-button>
-            <el-button
-              v-if="canMaintainBatchDetail"
-              link
-              type="warning"
-              @click="openEditItemDialog(scope.row)"
-            >
-              编辑基础信息
-            </el-button>
-          </template>
-        </el-table-column>
-      </el-table>
+          </el-table-column>
+          <el-table-column label="附件" min-width="220">
+            <template #default="scope">
+              <template
+                v-if="
+                  Array.isArray(scope.row.attachments) &&
+                  scope.row.attachments.length
+                "
+              >
+                <div
+                  v-for="attachment in scope.row.attachments"
+                  :key="`${scope.row.id}-${attachment.id}`"
+                  class="attachment-row"
+                >
+                  <span class="attachment-name">{{
+                    attachment.file_name || attachment.file_key
+                  }}</span>
+                  <el-link
+                    :href="fileUrl(attachment.file_key)"
+                    target="_blank"
+                    type="primary"
+                  >
+                    查看
+                  </el-link>
+                </div>
+              </template>
+              <template v-else>-</template>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="120" fixed="right">
+            <template #default="scope">
+              <el-button
+                link
+                type="primary"
+                @click="openEnvelopeDetail(scope.row.id)"
+              >
+                详情
+              </el-button>
+              <el-button
+                v-if="canMaintainBatchDetail"
+                link
+                type="warning"
+                @click="openEditItemDialog(scope.row)"
+              >
+                编辑基础信息
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
       </section>
     </template>
+
+    <el-drawer
+      v-model="envelopeDetailDrawerVisible"
+      title="报销详情"
+      size="82%"
+      destroy-on-close
+      append-to-body
+      class="reimbursement-detail-drawer"
+      @closed="onEnvelopeDetailClosed"
+    >
+      <ReimbursementDetail
+        v-if="activeEnvelopeDetailId !== null"
+        :envelope-id="activeEnvelopeDetailId"
+        drawer-mode
+        @close="closeEnvelopeDetail"
+        @changed="onEnvelopeDetailChanged"
+      />
+    </el-drawer>
 
     <el-dialog
       v-model="editItemDialogVisible"
@@ -872,12 +1026,20 @@ onMounted(async () => {
           <el-input v-model="editItemForm.category" clearable />
         </el-form-item>
         <el-form-item label="说明">
-          <el-input v-model="editItemForm.description" type="textarea" :rows="3" />
+          <el-input
+            v-model="editItemForm.description"
+            type="textarea"
+            :rows="3"
+          />
         </el-form-item>
       </el-form>
       <template #footer>
         <el-button @click="editItemDialogVisible = false">取消</el-button>
-        <el-button type="primary" :loading="savingItemBasic" @click="saveItemBasicInfo">
+        <el-button
+          type="primary"
+          :loading="savingItemBasic"
+          @click="saveItemBasicInfo"
+        >
           保存
         </el-button>
       </template>

@@ -26,6 +26,7 @@ import {
   type ReimbursementBatch
 } from "@/api/reimbursement";
 import { listPayees, createPayee, type Payee } from "@/api/payment";
+import ReimbursementDetail from "./detail.vue";
 
 defineOptions({ name: "ReimbursementBatchList" });
 
@@ -41,6 +42,8 @@ const candidateSelectedIds = ref<number[]>([]);
 const historyRows = ref<ReimbursementBatch[]>([]);
 const entities = ref<Entity[]>([]);
 const bankAccounts = ref<EntityBankAccount[]>([]);
+const envelopeDetailDrawerVisible = ref(false);
+const activeEnvelopeDetailId = ref<number | null>(null);
 
 const page = ref(1);
 const pageSize = ref(20);
@@ -304,7 +307,8 @@ const submitCreateAndApproval = async () => {
     (sum, item) => sum + Number(item.amount || 0),
     0
   );
-  const paymentEntityLabel = entityNameMap.value.get(filters.value.payment_entity_id) || "-";
+  const paymentEntityLabel =
+    entityNameMap.value.get(filters.value.payment_entity_id) || "-";
   const paymentAccountLabel =
     activeBankAccounts.value.find(
       item => item.id === filters.value.payment_entity_bank_account_id
@@ -335,29 +339,38 @@ const submitCreateAndApproval = async () => {
   creatingAndSubmitting.value = true;
   try {
     const createKey = `reimbursement-batch-create-${crypto.randomUUID()}`;
-    const result = await createReimbursementBatch({
-      project_id: filters.value.project_id,
-      applicant_userid: filters.value.applicant_userid.trim(),
-      payment_method: filters.value.payment_method || undefined,
-      payment_entity_id: filters.value.payment_entity_id,
-      payment_entity_bank_account_id: filters.value.payment_entity_bank_account_id,
-      payment_account: filters.value.payment_account.trim(),
-      payee_id: filters.value.payee_id,
-      envelope_ids:
-        candidateSelectedIds.value.length > 0
-          ? candidateSelectedIds.value
-          : undefined
-    }, { idempotencyKey: createKey });
+    const result = await createReimbursementBatch(
+      {
+        project_id: filters.value.project_id,
+        applicant_userid: filters.value.applicant_userid.trim(),
+        payment_method: filters.value.payment_method || undefined,
+        payment_entity_id: filters.value.payment_entity_id,
+        payment_entity_bank_account_id:
+          filters.value.payment_entity_bank_account_id,
+        payment_account: filters.value.payment_account.trim(),
+        payee_id: filters.value.payee_id,
+        envelope_ids:
+          candidateSelectedIds.value.length > 0
+            ? candidateSelectedIds.value
+            : undefined
+      },
+      { idempotencyKey: createKey }
+    );
 
-    await submitBatchApproval(result.data.id, {
-      payment_method: filters.value.payment_method || undefined,
-      payment_entity_id: filters.value.payment_entity_id,
-      payment_entity_bank_account_id: filters.value.payment_entity_bank_account_id,
-      payment_account: filters.value.payment_account.trim(),
-      payee_id: filters.value.payee_id
-    }, {
-      idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
-    });
+    await submitBatchApproval(
+      result.data.id,
+      {
+        payment_method: filters.value.payment_method || undefined,
+        payment_entity_id: filters.value.payment_entity_id,
+        payment_entity_bank_account_id:
+          filters.value.payment_entity_bank_account_id,
+        payment_account: filters.value.payment_account.trim(),
+        payee_id: filters.value.payee_id
+      },
+      {
+        idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
+      }
+    );
     message(`批次已创建并送审：${result.data.batch_no}`, { type: "success" });
 
     await Promise.all([loadData(), loadCandidates(), loadHistory()]);
@@ -371,6 +384,23 @@ const submitCreateAndApproval = async () => {
 
 const onCandidateSelectionChange = (selection: ReimbursementEnvelope[]) => {
   candidateSelectedIds.value = selection.map(item => item.id);
+};
+
+const openEnvelopeDetail = (id: number) => {
+  activeEnvelopeDetailId.value = id;
+  envelopeDetailDrawerVisible.value = true;
+};
+
+const closeEnvelopeDetail = () => {
+  envelopeDetailDrawerVisible.value = false;
+};
+
+const onEnvelopeDetailClosed = () => {
+  activeEnvelopeDetailId.value = null;
+};
+
+const onEnvelopeDetailChanged = async () => {
+  await loadCandidates();
 };
 
 const openDetail = (id: number) => {
@@ -396,7 +426,9 @@ watch(
     <div class="page-header">
       <div>
         <div class="page-title">报销集中审批与历史中心</div>
-        <div class="page-subtitle">按项目和被报销人汇总候选报销，确认后创建批次并送审。</div>
+        <div class="page-subtitle">
+          按项目和被报销人汇总候选报销，确认后创建批次并送审。
+        </div>
       </div>
       <el-space wrap>
         <el-button @click="loadCandidates">刷新候选</el-button>
@@ -433,7 +465,9 @@ watch(
       <div class="section-heading">
         <div>
           <div class="section-title">创建集中审批批次</div>
-          <div class="section-subtitle">必填项目、被报销人和付款方式；付款实体与付款账户可在审批时补充。</div>
+          <div class="section-subtitle">
+            必填项目、被报销人和付款方式；付款实体与付款账户可在审批时补充。
+          </div>
         </div>
         <el-button @click="autoSelectSubmittable">自动勾选可送审</el-button>
       </div>
@@ -441,7 +475,12 @@ watch(
       <el-form class="compact-form" label-width="86px">
         <div class="form-grid">
           <el-form-item label="所属项目">
-            <el-select v-model="filters.project_id" clearable filterable placeholder="选择项目">
+            <el-select
+              v-model="filters.project_id"
+              clearable
+              filterable
+              placeholder="选择项目"
+            >
               <el-option
                 v-for="item in projects"
                 :key="item.id"
@@ -466,7 +505,11 @@ watch(
             </el-select>
           </el-form-item>
           <el-form-item label="付款方式">
-            <el-select v-model="filters.payment_method" clearable placeholder="选择付款方式">
+            <el-select
+              v-model="filters.payment_method"
+              clearable
+              placeholder="选择付款方式"
+            >
               <el-option label="对公转账" value="transfer" />
               <el-option label="转账" value="personal_transfer" />
               <el-option label="现金" value="cash" />
@@ -539,7 +582,10 @@ watch(
                 </el-select>
               </el-form-item>
               <el-form-item label="账户显示">
-                <el-input v-model="filters.payment_account" placeholder="可选，审批时可补充" />
+                <el-input
+                  v-model="filters.payment_account"
+                  placeholder="可选，审批时可补充"
+                />
               </el-form-item>
             </div>
           </el-collapse-item>
@@ -551,7 +597,9 @@ watch(
       <div class="section-heading">
         <div>
           <div class="section-title">候选报销条目</div>
-          <div class="section-subtitle">仅展示已收件、复核通过、未入批次的报销。</div>
+          <div class="section-subtitle">
+            仅展示已收件、复核通过、未入批次的报销。
+          </div>
         </div>
         <el-button @click="loadCandidates">查询候选报销</el-button>
       </div>
@@ -562,38 +610,36 @@ watch(
         stripe
         @selection-change="onCandidateSelectionChange"
       >
-      <el-table-column type="selection" width="52" />
-      <el-table-column prop="envelope_no" label="信封编号" width="160" />
-      <el-table-column label="状态" width="130">
-        <template #default="scope">{{
-          statusLabel(scope.row.status)
-        }}</template>
-      </el-table-column>
-      <el-table-column label="复核状态" width="130">
-        <template #default="scope">{{
-          precheckStatusLabel(scope.row.precheck_status)
-        }}</template>
-      </el-table-column>
-      <el-table-column label="通道" width="110">
-        <template #default="scope">{{
-          channelLabel(scope.row.channel)
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="invoice_no" label="发票号" min-width="180" />
-      <el-table-column prop="amount" label="金额" width="120" />
-      <el-table-column prop="updated_at" label="最近更新时间" width="180" />
-      <el-table-column label="操作" width="120" fixed="right">
-        <template #default="scope">
-          <el-button
-            link
-            type="primary"
-            @click="
-              router.push(`/finance/reimbursement/detail/${scope.row.id}`)
-            "
-            >查看</el-button
-          >
-        </template>
-      </el-table-column>
+        <el-table-column type="selection" width="52" />
+        <el-table-column prop="envelope_no" label="信封编号" width="160" />
+        <el-table-column label="状态" width="130">
+          <template #default="scope">{{
+            statusLabel(scope.row.status)
+          }}</template>
+        </el-table-column>
+        <el-table-column label="复核状态" width="130">
+          <template #default="scope">{{
+            precheckStatusLabel(scope.row.precheck_status)
+          }}</template>
+        </el-table-column>
+        <el-table-column label="通道" width="110">
+          <template #default="scope">{{
+            channelLabel(scope.row.channel)
+          }}</template>
+        </el-table-column>
+        <el-table-column prop="invoice_no" label="发票号" min-width="180" />
+        <el-table-column prop="amount" label="金额" width="120" />
+        <el-table-column prop="updated_at" label="最近更新时间" width="180" />
+        <el-table-column label="操作" width="120" fixed="right">
+          <template #default="scope">
+            <el-button
+              link
+              type="primary"
+              @click="openEnvelopeDetail(scope.row.id)"
+              >查看</el-button
+            >
+          </template>
+        </el-table-column>
       </el-table>
     </section>
 
@@ -604,7 +650,12 @@ watch(
           <div class="section-subtitle">进行中与历史完成批次集中查看。</div>
         </div>
         <div class="batch-filter">
-          <el-select v-model="filters.status" clearable placeholder="批次状态" style="width: 160px">
+          <el-select
+            v-model="filters.status"
+            clearable
+            placeholder="批次状态"
+            style="width: 160px"
+          >
             <el-option label="草稿" value="draft" />
             <el-option label="待审批" value="pending_approval" />
             <el-option label="已审批" value="approved" />
@@ -624,7 +675,11 @@ watch(
                 projectMap[scope.row.project_id] || scope.row.project_id
               }}</template>
             </el-table-column>
-            <el-table-column prop="applicant_userid" label="被报销人" width="140" />
+            <el-table-column
+              prop="applicant_userid"
+              label="被报销人"
+              width="140"
+            />
             <el-table-column label="付款方式" width="120">
               <template #default="scope">{{
                 toPaymentMethodLabel(scope.row.payment_method)
@@ -638,12 +693,18 @@ watch(
               }}</template>
             </el-table-column>
             <el-table-column label="审批状态" width="120">
-              <template #default="scope">{{ statusLabel(scope.row.status) }}</template>
+              <template #default="scope">{{
+                statusLabel(scope.row.status)
+              }}</template>
             </el-table-column>
             <el-table-column prop="created_at" label="创建时间" width="180" />
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="scope">
-                <el-button link type="primary" @click="openDetail(scope.row.id)">
+                <el-button
+                  link
+                  type="primary"
+                  @click="openDetail(scope.row.id)"
+                >
                   详情
                 </el-button>
               </template>
@@ -673,7 +734,11 @@ watch(
                 projectMap[scope.row.project_id] || scope.row.project_id
               }}</template>
             </el-table-column>
-            <el-table-column prop="applicant_userid" label="被报销人" width="140" />
+            <el-table-column
+              prop="applicant_userid"
+              label="被报销人"
+              width="140"
+            />
             <el-table-column label="付款方式" width="120">
               <template #default="scope">{{
                 toPaymentMethodLabel(scope.row.payment_method)
@@ -682,12 +747,22 @@ watch(
             <el-table-column prop="item_count" label="信封数" width="100" />
             <el-table-column prop="total_amount" label="总金额" width="120" />
             <el-table-column label="结果状态" width="120">
-              <template #default="scope">{{ statusLabel(scope.row.status) }}</template>
+              <template #default="scope">{{
+                statusLabel(scope.row.status)
+              }}</template>
             </el-table-column>
-            <el-table-column prop="updated_at" label="最近更新时间" width="180" />
+            <el-table-column
+              prop="updated_at"
+              label="最近更新时间"
+              width="180"
+            />
             <el-table-column label="操作" width="120" fixed="right">
               <template #default="scope">
-                <el-button link type="primary" @click="openDetail(scope.row.id)">
+                <el-button
+                  link
+                  type="primary"
+                  @click="openDetail(scope.row.id)"
+                >
                   详情
                 </el-button>
               </template>
@@ -696,6 +771,24 @@ watch(
         </el-tab-pane>
       </el-tabs>
     </section>
+
+    <el-drawer
+      v-model="envelopeDetailDrawerVisible"
+      title="报销详情"
+      size="82%"
+      destroy-on-close
+      append-to-body
+      class="reimbursement-detail-drawer"
+      @closed="onEnvelopeDetailClosed"
+    >
+      <ReimbursementDetail
+        v-if="activeEnvelopeDetailId !== null"
+        :envelope-id="activeEnvelopeDetailId"
+        drawer-mode
+        @close="closeEnvelopeDetail"
+        @changed="onEnvelopeDetailChanged"
+      />
+    </el-drawer>
 
     <el-dialog
       v-model="newPayeeVisible"
@@ -717,9 +810,7 @@ watch(
           <el-input v-model="newPayeeForm.phone" />
         </el-form-item>
         <el-form-item label="关联 userid">
-          <span style="color: #555">{{
-            filters.applicant_userid || "—"
-          }}</span>
+          <span style="color: #555">{{ filters.applicant_userid || "—" }}</span>
         </el-form-item>
       </el-form>
       <template #footer>

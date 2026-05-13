@@ -17,6 +17,7 @@ import {
   triggerEnvelopeAnomalyCheck,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
+import ReimbursementDetail from "./detail.vue";
 
 defineOptions({ name: "ReimbursementList" });
 
@@ -181,6 +182,8 @@ const highRiskCount = computed(() => list.value.filter(isHighRiskRow).length);
 
 const quickScanDialogVisible = ref(false);
 const quickScanUuid = ref("");
+const detailDrawerVisible = ref(false);
+const activeDetailId = ref<number | null>(null);
 const createIdempotencyKey = (scope: string) =>
   `${scope}-${crypto.randomUUID()}`;
 
@@ -224,7 +227,20 @@ const goDetail = (id: number) => {
     router.push(`/workspace/my-reimbursement/detail/${id}`);
     return;
   }
-  router.push(`/finance/reimbursement/detail/${id}`);
+  activeDetailId.value = id;
+  detailDrawerVisible.value = true;
+};
+
+const closeDetailDrawer = () => {
+  detailDrawerVisible.value = false;
+};
+
+const onDetailDrawerClosed = () => {
+  activeDetailId.value = null;
+};
+
+const onDetailChanged = async () => {
+  await loadData();
 };
 
 const goBatchCenter = () => {
@@ -363,7 +379,9 @@ watch(workflowView, mode => {
           type="success"
           @click="goCreate"
         >
-          {{ !isWorkspaceRoute && canOfficeOps ? "代员工发起报销" : "发起报销" }}
+          {{
+            !isWorkspaceRoute && canOfficeOps ? "代员工发起报销" : "发起报销"
+          }}
         </el-button>
         <el-button v-if="workflowView === 'office'" @click="openQuickScan">
           扫码/输入UUID
@@ -418,7 +436,12 @@ watch(workflowView, mode => {
       <el-form class="filter-form" label-width="72px">
         <div class="filter-grid">
           <el-form-item label="所属项目">
-            <el-select v-model="filters.project_id" clearable filterable placeholder="全部项目">
+            <el-select
+              v-model="filters.project_id"
+              clearable
+              filterable
+              placeholder="全部项目"
+            >
               <el-option
                 v-for="item in projects"
                 :key="item.id"
@@ -449,7 +472,11 @@ watch(workflowView, mode => {
             </el-select>
           </el-form-item>
           <el-form-item label="通道">
-            <el-select v-model="filters.channel" clearable placeholder="全部通道">
+            <el-select
+              v-model="filters.channel"
+              clearable
+              placeholder="全部通道"
+            >
               <el-option label="实物信封" value="physical" />
               <el-option label="电子发票" value="electronic" />
             </el-select>
@@ -475,7 +502,11 @@ watch(workflowView, mode => {
             </el-select>
           </el-form-item>
           <el-form-item label="关键字">
-            <el-input v-model="filters.keyword" clearable placeholder="编号/UUID/发票号" />
+            <el-input
+              v-model="filters.keyword"
+              clearable
+              placeholder="编号/UUID/发票号"
+            />
           </el-form-item>
           <el-form-item>
             <el-button type="primary" @click="loadData">查询</el-button>
@@ -486,101 +517,101 @@ watch(workflowView, mode => {
 
     <section class="table-panel">
       <el-table
-      :data="list"
-      :loading="loading"
-      :row-class-name="tableRowClassName"
-    >
-      <el-table-column prop="envelope_no" label="信封编号" width="150" />
-      <el-table-column label="项目" width="180">
-        <template #default="scope">{{
-          projectMap[scope.row.project_id] || scope.row.project_id
-        }}</template>
-      </el-table-column>
-      <el-table-column label="填报人" width="140">
-        <template #default="scope">{{
-          toApplicantLabel(scope.row.applicant_userid)
-        }}</template>
-      </el-table-column>
-      <el-table-column label="通道类型" width="120">
-        <template #default="scope">
-          <el-tag
-            :type="scope.row.channel === 'physical' ? 'info' : 'success'"
-            effect="light"
-          >
-            {{ channelLabel(scope.row.channel) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="amount" label="金额" width="100" />
-      <el-table-column label="异常提示" min-width="220">
-        <template #default="scope">
-          <el-space wrap>
+        :data="list"
+        :loading="loading"
+        :row-class-name="tableRowClassName"
+      >
+        <el-table-column prop="envelope_no" label="信封编号" width="150" />
+        <el-table-column label="项目" width="180">
+          <template #default="scope">{{
+            projectMap[scope.row.project_id] || scope.row.project_id
+          }}</template>
+        </el-table-column>
+        <el-table-column label="填报人" width="140">
+          <template #default="scope">{{
+            toApplicantLabel(scope.row.applicant_userid)
+          }}</template>
+        </el-table-column>
+        <el-table-column label="通道类型" width="120">
+          <template #default="scope">
             <el-tag
-              v-for="tag in rowAnomalyTags(scope.row)"
-              :key="tag.label"
-              :type="tag.type"
-              size="small"
+              :type="scope.row.channel === 'physical' ? 'info' : 'success'"
               effect="light"
             >
-              {{ tag.label }}
+              {{ channelLabel(scope.row.channel) }}
             </el-tag>
-            <span v-if="rowAnomalyTags(scope.row).length === 0">-</span>
-          </el-space>
-        </template>
-      </el-table-column>
-      <el-table-column label="复核" width="100">
-        <template #default="scope">{{
-          precheckStatusLabel(scope.row.precheck_status)
-        }}</template>
-      </el-table-column>
-      <el-table-column label="状态" width="110">
-        <template #default="scope">
-          <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
-            statusLabel(scope.row.status)
-          }}</el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column label="操作" width="320" fixed="right">
-        <template #default="scope">
-          <el-button link type="primary" @click="goDetail(scope.row.id)"
-            >详情</el-button
-          >
-          <template v-if="workflowView !== 'submission' && canOfficeOps">
-            <el-button link @click="onTriggerAnomaly(scope.row.id)"
-              >智能核查</el-button
-            >
-            <el-button
-              v-if="['submitted', 'received'].includes(scope.row.status)"
-              link
-              type="info"
-              @click="onRerunSilentReview(scope.row.id)"
-              >二次静默审查</el-button
-            >
-            <el-button
-              v-if="scope.row.status === 'received'"
-              link
-              type="success"
-              @click="onPrecheck(scope.row.id, 'approved')"
-              >复核通过</el-button
-            >
-            <el-button
-              v-if="scope.row.status === 'received'"
-              link
-              type="warning"
-              @click="onPrecheck(scope.row.id, 'supplement')"
-              >补充材料</el-button
-            >
-            <el-button
-              v-if="scope.row.status === 'received'"
-              link
-              type="danger"
-              @click="onPrecheck(scope.row.id, 'rejected')"
-              >复核驳回</el-button
-            >
           </template>
-        </template>
-      </el-table-column>
+        </el-table-column>
+        <el-table-column prop="amount" label="金额" width="100" />
+        <el-table-column label="异常提示" min-width="220">
+          <template #default="scope">
+            <el-space wrap>
+              <el-tag
+                v-for="tag in rowAnomalyTags(scope.row)"
+                :key="tag.label"
+                :type="tag.type"
+                size="small"
+                effect="light"
+              >
+                {{ tag.label }}
+              </el-tag>
+              <span v-if="rowAnomalyTags(scope.row).length === 0">-</span>
+            </el-space>
+          </template>
+        </el-table-column>
+        <el-table-column label="复核" width="100">
+          <template #default="scope">{{
+            precheckStatusLabel(scope.row.precheck_status)
+          }}</template>
+        </el-table-column>
+        <el-table-column label="状态" width="110">
+          <template #default="scope">
+            <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
+              statusLabel(scope.row.status)
+            }}</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column prop="created_at" label="创建时间" width="180" />
+        <el-table-column label="操作" width="320" fixed="right">
+          <template #default="scope">
+            <el-button link type="primary" @click="goDetail(scope.row.id)"
+              >详情</el-button
+            >
+            <template v-if="workflowView !== 'submission' && canOfficeOps">
+              <el-button link @click="onTriggerAnomaly(scope.row.id)"
+                >智能核查</el-button
+              >
+              <el-button
+                v-if="['submitted', 'received'].includes(scope.row.status)"
+                link
+                type="info"
+                @click="onRerunSilentReview(scope.row.id)"
+                >二次静默审查</el-button
+              >
+              <el-button
+                v-if="scope.row.status === 'received'"
+                link
+                type="success"
+                @click="onPrecheck(scope.row.id, 'approved')"
+                >复核通过</el-button
+              >
+              <el-button
+                v-if="scope.row.status === 'received'"
+                link
+                type="warning"
+                @click="onPrecheck(scope.row.id, 'supplement')"
+                >补充材料</el-button
+              >
+              <el-button
+                v-if="scope.row.status === 'received'"
+                link
+                type="danger"
+                @click="onPrecheck(scope.row.id, 'rejected')"
+                >复核驳回</el-button
+              >
+            </template>
+          </template>
+        </el-table-column>
       </el-table>
 
       <el-pagination
@@ -618,6 +649,25 @@ watch(workflowView, mode => {
       <el-button type="primary" @click="submitQuickScan">打开信封</el-button>
     </template>
   </el-dialog>
+
+  <el-drawer
+    v-model="detailDrawerVisible"
+    title="报销详情"
+    size="82%"
+    destroy-on-close
+    append-to-body
+    class="reimbursement-detail-drawer"
+    @closed="onDetailDrawerClosed"
+  >
+    <ReimbursementDetail
+      v-if="activeDetailId !== null"
+      :envelope-id="activeDetailId"
+      drawer-mode
+      :workspace-view="isWorkspaceRoute"
+      @close="closeDetailDrawer"
+      @changed="onDetailChanged"
+    />
+  </el-drawer>
 </template>
 
 <style scoped>
