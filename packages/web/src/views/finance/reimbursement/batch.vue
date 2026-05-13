@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
-import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
   aiAuditStatusLabel,
@@ -26,11 +25,11 @@ import {
   type ReimbursementBatch
 } from "@/api/reimbursement";
 import { listPayees, createPayee, type Payee } from "@/api/payment";
+import ReimbursementBatchDetail from "./batch-detail.vue";
 import ReimbursementDetail from "./detail.vue";
 
 defineOptions({ name: "ReimbursementBatchList" });
 
-const router = useRouter();
 const loading = ref(false);
 const list = ref<ReimbursementBatch[]>([]);
 const projects = ref<Project[]>([]);
@@ -44,6 +43,8 @@ const entities = ref<Entity[]>([]);
 const bankAccounts = ref<EntityBankAccount[]>([]);
 const envelopeDetailDrawerVisible = ref(false);
 const activeEnvelopeDetailId = ref<number | null>(null);
+const batchDetailDrawerVisible = ref(false);
+const activeBatchDetailId = ref<number | null>(null);
 
 const page = ref(1);
 const pageSize = ref(20);
@@ -374,7 +375,7 @@ const submitCreateAndApproval = async () => {
     message(`批次已创建并送审：${result.data.batch_no}`, { type: "success" });
 
     await Promise.all([loadData(), loadCandidates(), loadHistory()]);
-    router.push(`/finance/reimbursement/batch/${result.data.id}`);
+    openDetail(result.data.id);
   } catch {
     message("提交失败", { type: "error" });
   } finally {
@@ -404,7 +405,20 @@ const onEnvelopeDetailChanged = async () => {
 };
 
 const openDetail = (id: number) => {
-  router.push(`/finance/reimbursement/batch/${id}`);
+  activeBatchDetailId.value = id;
+  batchDetailDrawerVisible.value = true;
+};
+
+const closeBatchDetail = () => {
+  batchDetailDrawerVisible.value = false;
+};
+
+const onBatchDetailClosed = () => {
+  activeBatchDetailId.value = null;
+};
+
+const onBatchDetailChanged = async () => {
+  await Promise.all([loadData(), loadHistory(), loadCandidates()]);
 };
 
 onMounted(async () => {
@@ -771,6 +785,24 @@ watch(
         </el-tab-pane>
       </el-tabs>
     </section>
+
+    <el-drawer
+      v-model="batchDetailDrawerVisible"
+      title="报销批次详情"
+      size="86%"
+      destroy-on-close
+      append-to-body
+      class="reimbursement-batch-detail-drawer"
+      @closed="onBatchDetailClosed"
+    >
+      <ReimbursementBatchDetail
+        v-if="activeBatchDetailId !== null"
+        :batch-id="activeBatchDetailId"
+        drawer-mode
+        @close="closeBatchDetail"
+        @changed="onBatchDetailChanged"
+      />
+    </el-drawer>
 
     <el-drawer
       v-model="envelopeDetailDrawerVisible"

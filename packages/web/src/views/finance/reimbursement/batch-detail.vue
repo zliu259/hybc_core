@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
@@ -35,12 +35,23 @@ import ReimbursementDetail from "./detail.vue";
 
 defineOptions({ name: "ReimbursementBatchDetail" });
 
+const props = defineProps<{
+  batchId?: number | string;
+  drawerMode?: boolean;
+}>();
+
+const emit = defineEmits<{
+  (event: "close"): void;
+  (event: "changed"): void;
+}>();
+
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStoreHook();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
-const batchId = computed(() => Number(route.params.id));
+const effectiveBatchId = computed(() => props.batchId ?? route.params.id);
+const batchId = computed(() => Number(effectiveBatchId.value));
 const isSuperAdmin = computed(() =>
   (userStore.roles ?? []).includes("super_admin")
 );
@@ -300,6 +311,18 @@ const removeVoucherRow = (index: number) => {
   voucherEditorRows.value.splice(index, 1);
 };
 
+const notifyChanged = () => {
+  emit("changed");
+};
+
+const closeBatchDetail = () => {
+  if (props.drawerMode) {
+    emit("close");
+    return;
+  }
+  router.push("/finance/reimbursement/batch");
+};
+
 const savePaymentVouchers = async () => {
   if (!detail.value) return;
   savingVouchers.value = true;
@@ -313,6 +336,7 @@ const savePaymentVouchers = async () => {
     });
     message("支付凭证已保存", { type: "success" });
     await loadDetail();
+    notifyChanged();
   } finally {
     savingVouchers.value = false;
   }
@@ -367,6 +391,7 @@ const saveItemBasicInfo = async () => {
     message("报销基础信息已更新", { type: "success" });
     editItemDialogVisible.value = false;
     await loadDetail();
+    notifyChanged();
   } finally {
     savingItemBasic.value = false;
   }
@@ -486,6 +511,7 @@ const saveSecondaryEdit = async () => {
     await updateBatchPayoutPlan(detail.value.id, payload);
     message("二次编辑保存成功", { type: "success" });
     await loadDetail();
+    notifyChanged();
   } finally {
     savingPayout.value = false;
   }
@@ -528,6 +554,7 @@ const runAudit = async () => {
     await triggerBatchAudit(batchId.value);
     message("已触发智能审核", { type: "success" });
     await loadDetail();
+    notifyChanged();
   } finally {
     actionLoading.value = false;
   }
@@ -548,6 +575,7 @@ const submitApproval = async () => {
     });
     message(`已提交审批：${result.data.instance_no}`, { type: "success" });
     await loadDetail();
+    notifyChanged();
   } finally {
     actionLoading.value = false;
   }
@@ -561,6 +589,13 @@ onMounted(async () => {
   await loadMeta();
   await loadDetail();
 });
+
+watch(
+  () => effectiveBatchId.value,
+  async () => {
+    await loadDetail();
+  }
+);
 </script>
 
 <template>
@@ -570,9 +605,9 @@ onMounted(async () => {
         <div class="page-title">批次详情</div>
         <div class="page-subtitle">{{ detail?.batch_no || "加载中" }}</div>
       </div>
-      <el-button @click="router.push('/finance/reimbursement/batch')"
-        >返回</el-button
-      >
+      <el-button @click="closeBatchDetail">{{
+        props.drawerMode ? "关闭" : "返回"
+      }}</el-button>
     </div>
 
     <template v-if="detail">
@@ -1048,6 +1083,11 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+:global(.reimbursement-batch-detail-drawer .el-drawer__body) {
+  padding: 12px;
+  background: #f5f7fa;
+}
+
 .batch-detail-page {
   display: flex;
   flex-direction: column;

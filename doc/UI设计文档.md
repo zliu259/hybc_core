@@ -270,14 +270,16 @@
 - 新增“候选报销条目”工作区：按项目 + 申请人自动列出未完成报销，可一键自动勾选“已收件+复核通过”并创建后立即送审。
 - 展示维度：批次号、项目、申报人、信封数、总金额、智能审核状态、审批状态。
 - 创建并送审要求项目、被报销人、收款方式与候选条目；付款实体、付款账户、账户显示为可选项，可由审批人员在审批详情页补充。
-- 新增“历史完成（财务/领导）”区域：展示已付款/已拒绝等过往批次，支持进入批次详情追踪。
+- 新增“历史完成（财务/领导）”区域：展示已付款/已拒绝等过往批次，支持打开批次详情追踪。
 - 候选报销条目“查看”使用右侧详情抽屉，不离开集中审批页面：`packages/web/src/views/finance/reimbursement/batch.vue`
+- 审批批次“详情”使用右侧批次详情抽屉，创建并送审成功后也在当前页面打开批次详情，避免跳转导致候选区、筛选和历史区重新加载：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - API 指向：`/api/v1/reimbursement/batch`
 
 #### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
 
 - 展示维度：批次信息、智能审核报告、批次信封明细、查重风险汇总。
 - 操作区：触发智能审核、提交集中审批、跳转“集中打款登记台”、跳转审批详情。
+- 批次详情支持路由页与右侧抽屉两种承载方式；抽屉模式通过 `batchId` 载入指定批次，并在智能审核、提交审批、二次编辑、凭证保存和条目基础信息编辑后通知父页面刷新当前列表：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - 批次信封明细中的单项“详情”使用右侧抽屉打开，避免离开批次详情并重新加载批次上下文：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - API 指向：`/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/trigger-audit`, `/api/v1/reimbursement/batch/:id/audit-report`, `/api/v1/reimbursement/batch/:id/submit-approval`, `/api/v1/reimbursement/batch/:id/mark-paid`
 
