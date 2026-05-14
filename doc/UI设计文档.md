@@ -559,6 +559,11 @@
 - 标段内日志能力：施工日志与贯通报告统一下沉到“标段详情抽屉”，支持查看、新增与编辑。
 - 贯通报告标段绑定：贯通报告按 `section_id` 归集，并在对应标段详情下追溯。
 - 对应 API：`/api/v1/project/:id/files`、`/api/v1/project/:id/files/:fileId`、`/api/v1/log/operator?project_id=:id&section_id=:sectionId`、`/api/v1/survey/breakthrough?project_id=:id&section_id=:sectionId`。
+- 外包日志入口：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持项目内生成/打印免登录二维码、停用旧二维码，并展示外包日志 AI 审计与人工复核列表。
+- 外包日志免登录页：`packages/web/src/views/public/project-log.vue`，路由 `/public/project-log/:token`，面向手机扫码填写同一项目下的标段施工日志与项目日志。
+- 外包日志免登录页状态：`packages/web/src/views/public/project-log.vue` 必须提供加载等待、加载失败结果页、照片上传中提示、提交中表单禁用、防重复提交、提交成功编号与 AI 审计任务编号反馈。
+- 外包二维码有效性：仅 `active` 项目允许生成和使用二维码；项目状态切换为非 `active`（规划中、筹备中、收尾中、已归档等）时，后端自动撤销该项目有效二维码，公共扫码接口也实时拒绝非 `active` 项目。
+- 外包日志 API 指向：`/api/v1/project/:id/public-log-link`、`/api/v1/project/:id/external-log-submissions`、`/api/v1/public/project-log/:token`、`/api/v1/public/project-log/:token/submissions`。
 
 ### 3.5 Sprint 1 重构落地点（2026-02）
 

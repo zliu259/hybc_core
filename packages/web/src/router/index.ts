@@ -115,7 +115,7 @@ export function resetRouter() {
 }
 
 /** 路由白名单 */
-const whiteList = ["/login"];
+const whiteList = ["/login", "/public/project-log"];
 
 const { VITE_HIDE_HOME } = import.meta.env;
 
@@ -161,7 +161,7 @@ router.beforeEach((to: ToRouteType, _from, next) => {
   }
   /** 如果已经登录并存在登录信息后不能跳转到路由白名单，而是继续保持在当前页面 */
   function toCorrectRoute() {
-    if (whiteList.includes(to.fullPath)) {
+    if (to.path === "/login") {
       const fallbackPath = getTopMenu()?.path || "/";
       next(_from?.fullPath || fallbackPath);
       return;
@@ -248,7 +248,11 @@ router.beforeEach((to: ToRouteType, _from, next) => {
     }
   } else {
     if (to.path !== "/login") {
-      if (whiteList.indexOf(to.path) !== -1) {
+      if (
+        whiteList.some(
+          path => to.path === path || to.path.startsWith(`${path}/`)
+        )
+      ) {
         next();
       } else {
         removeToken();

@@ -11,6 +11,10 @@ export interface OperatorLog {
   issue_summary: string | null;
   remark: string | null;
   operator_userid: string;
+  source_type?: string;
+  external_submission_id?: number | null;
+  external_submitter_name?: string | null;
+  external_submitter_company?: string | null;
   status: string;
   created_at: string;
   updated_at: string;
@@ -24,6 +28,10 @@ export interface ManagerLog {
   detail_html: string | null;
   risk_note: string | null;
   manager_userid: string;
+  source_type?: string;
+  external_submission_id?: number | null;
+  external_submitter_name?: string | null;
+  external_submitter_company?: string | null;
   status: string;
   created_at: string;
   updated_at: string;

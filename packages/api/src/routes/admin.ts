@@ -174,6 +174,14 @@ const defaultAiPromptTemplates: Array<{
       "你是项目日志汇总助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为summary、highlights、progress_alert。",
     user_prompt_template:
       "请生成日志汇总。任务类型={{task_type}}，业务ID={{biz_id}}，汇总类型={{report_type}}，日期范围={{date_from}}到{{date_to}}，项目={{project_id}}。输入JSON={{payload_json}}。输出简洁摘要、关键进展和风险预警。"
+  },
+  {
+    template_key: "prompt-external-log-audit-v1",
+    template_name: "外包日志AI审计默认提示词",
+    system_prompt:
+      "你是施工项目日志审计助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为decision、risk_level、score、summary、issues。decision只能是auto_approve或needs_manual_review；risk_level只能是low、medium、high；score为0-100整数；issues为数组，每项包含severity和message。",
+    user_prompt_template:
+      "请审计外包人员提交的标段施工日志和项目日志。任务类型={{task_type}}，业务ID={{biz_id}}。输入JSON={{payload_json}}。重点检查：1) 标段施工日志与历史施工日志的连续性，累计下管数量不能倒退，进尺和下管数量应合理；2) 同项目同标段同日期同班次是否重复；3) 施工日志与项目日志在停工、风险、天气、土质、问题描述上是否矛盾；4) 必填字段是否完整；5) 日期是否符合项目施工周期；6) 文本是否明显无意义或模板化。只有无硬性错误且风险低时输出auto_approve，否则输出needs_manual_review并列明问题。"
   }
 ];
 
@@ -217,6 +225,13 @@ const defaultAiRoutingRules: Array<{
     biz_type: "construction_log",
     task_type: "log_summary",
     prompt_key: "prompt-log-summary-v1",
+    priority: 1
+  },
+  {
+    rule_name: "OPENAI_EXTERNAL_LOG_AUDIT_DEFAULT",
+    biz_type: "external_log_submission",
+    task_type: "external_log_audit",
+    prompt_key: "prompt-external-log-audit-v1",
     priority: 1
   }
 ];
@@ -910,6 +925,27 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
       report_type: "daily",
       date_from: new Date().toISOString().slice(0, 10),
       date_to: new Date().toISOString().slice(0, 10)
+    },
+    external_log_audit: {
+      submission_id: bizId,
+      project: { id: 1, project_name: "测试项目", status: "active" },
+      section: { id: 1, section_code: "S1", section_name: "测试标段" },
+      log_date: new Date().toISOString().slice(0, 10),
+      shift: "day",
+      operator_log: {
+        completed_pipe_count: 6,
+        cumulative_pipe_count: 54,
+        footage_m: 9.5,
+        issue_summary: "设备运行正常"
+      },
+      project_log: {
+        detail_html: "今日完成白班顶进作业，现场协调正常。",
+        risk_note: ""
+      },
+      context: {
+        previous_operator_logs: [{ cumulative_pipe_count: 48, footage_m: 8.8 }],
+        previous_project_logs: []
+      }
     },
     equipment_recommend: {
       project_type: "municipal",

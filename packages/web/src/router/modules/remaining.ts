@@ -10,6 +10,15 @@ export default [
       showLink: false
     }
   },
+  {
+    path: "/public/project-log/:token",
+    name: "PublicProjectLog",
+    component: () => import("@/views/public/project-log.vue"),
+    meta: {
+      title: "外包日志填报",
+      showLink: false
+    }
+  },
   // 全屏403（无权访问）页面
   {
     path: "/access-denied",

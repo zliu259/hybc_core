@@ -9,6 +9,7 @@ import type {
   ComputeNode
 } from "../types/ai";
 import type { AiGateHandler } from "../types/approval";
+import { applyExternalLogAuditResult } from "./external-log-audit";
 import { publishEvent } from "./event-bus";
 import { generateSerial } from "./serial";
 import { normalizeWarehouseManualDraftResultContent } from "./warehouse-manual-ai";
@@ -536,6 +537,10 @@ export const completeTask = async (
       .run();
   }
 
+  if (task.task_type === "external_log_audit" && task.biz_type === "external_log_submission") {
+    await applyExternalLogAuditResult(env, task.biz_id, taskId, result);
+  }
+
   // Write audit log
   const provider = task.provider_id
     ? await env.DB.prepare("SELECT * FROM ai_provider_config WHERE id = ?")
@@ -620,6 +625,22 @@ export const failTask = async (
       .run();
     await env.DB.prepare("UPDATE warehouse_manual SET updated_at = ? WHERE id = ?")
       .bind(now, task.biz_id)
+      .run();
+  }
+
+  if (
+    task.task_type === "external_log_audit" &&
+    task.biz_type === "external_log_submission" &&
+    newStatus === "failed"
+  ) {
+    await env.DB.prepare(
+      `UPDATE external_log_submission SET
+         review_status = 'needs_manual_review',
+         ai_review_summary = ?,
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(`AI审计任务失败：${error}`, now, task.biz_id)
       .run();
   }
 

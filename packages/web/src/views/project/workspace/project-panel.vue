@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
+import QRCode from "qrcode";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
@@ -10,11 +11,18 @@ import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
 import {
   getProjectById,
+  createProjectPublicLogLink,
+  listExternalLogSubmissions,
+  listProjectPublicLogLinks,
   listProjectSections,
+  reviewExternalLogSubmission,
+  updateProjectPublicLogLink,
   updateProjectSection,
   updateProject,
   updateProjectStatus,
+  type ExternalLogSubmission,
   type Project,
+  type ProjectPublicLogLink,
   type ProjectSection
 } from "@/api/project";
 import {
@@ -51,6 +59,15 @@ const sections = ref<ProjectSection[]>([]);
 const operatorLogs = ref<OperatorLog[]>([]);
 const managerLogs = ref<ManagerLog[]>([]);
 const breakthroughReports = ref<BreakthroughReport[]>([]);
+const publicLogLinks = ref<ProjectPublicLogLink[]>([]);
+const publicLinkDialogVisible = ref(false);
+const publicLinkLoading = ref(false);
+const publicLinkExpiresAt = ref("");
+const generatedPublicUrl = ref("");
+const generatedPublicQr = ref("");
+const externalSubmissions = ref<ExternalLogSubmission[]>([]);
+const externalSubmissionsLoading = ref(false);
+const externalReviewingId = ref<number | null>(null);
 
 const sectionDrawerVisible = ref(false);
 const sectionDrawerLoading = ref(false);
@@ -122,6 +139,19 @@ const canWriteProjectLog = computed(() => {
   );
 });
 
+const activePublicLogLink = computed(() =>
+  publicLogLinks.value.find(item => item.status === "active")
+);
+
+const pendingExternalSubmissionCount = computed(
+  () =>
+    externalSubmissions.value.filter(item =>
+      ["pending_ai_review", "needs_manual_review", "ai_approved"].includes(
+        item.review_status
+      )
+    ).length
+);
+
 const statusLabelMap: Record<string, string> = {
   planning: "规划中",
   preparing: "筹备中",
@@ -147,6 +177,15 @@ const sectionStatusLabelMap: Record<string, string> = {
   done: "完成"
 };
 
+const externalReviewStatusLabelMap: Record<string, string> = {
+  pending_ai_review: "AI审计中",
+  ai_approved: "AI低风险",
+  needs_manual_review: "需人工复核",
+  approved_auto: "AI自动通过",
+  approved_manual: "人工通过",
+  rejected: "已驳回"
+};
+
 const projectStatusLabel = computed(() => {
   const raw = project.value?.status || "";
   return statusLabelMap[raw] || raw || "-";
@@ -160,6 +199,11 @@ const shiftLabel = (shift: string | null | undefined) => {
 const sectionStatusLabel = (status: string | null | undefined) => {
   if (!status) return "-";
   return sectionStatusLabelMap[status] || status;
+};
+
+const externalReviewStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "-";
+  return externalReviewStatusLabelMap[status] || status;
 };
 
 const sectionStatusOptions = computed(() => [
@@ -254,11 +298,34 @@ const loadProjectLogData = async () => {
   breakthroughReports.value = breakthroughRes.data;
 };
 
+const loadPublicLogLinks = async () => {
+  const result = await listProjectPublicLogLinks(props.projectId);
+  publicLogLinks.value = result.data;
+};
+
+const loadExternalSubmissions = async () => {
+  externalSubmissionsLoading.value = true;
+  try {
+    const result = await listExternalLogSubmissions(props.projectId, {
+      page: 1,
+      pageSize: 100
+    });
+    externalSubmissions.value = result.data;
+  } finally {
+    externalSubmissionsLoading.value = false;
+  }
+};
+
 const loadData = async () => {
   if (!props.projectId) return;
   loading.value = true;
   try {
-    await Promise.all([loadProjectMain(), loadProjectLogData()]);
+    await Promise.all([
+      loadProjectMain(),
+      loadProjectLogData(),
+      loadPublicLogLinks(),
+      loadExternalSubmissions()
+    ]);
   } finally {
     loading.value = false;
   }
@@ -628,6 +695,87 @@ const quickTriggerSummary = async (reportType: "daily" | "weekly") => {
   );
 };
 
+const buildPublicLogUrl = (token: string) => {
+  return `${window.location.origin}${window.location.pathname}#/public/project-log/${token}`;
+};
+
+const openPublicLinkDialog = async () => {
+  publicLinkDialogVisible.value = true;
+  generatedPublicUrl.value = "";
+  generatedPublicQr.value = "";
+  await loadPublicLogLinks();
+};
+
+const generatePublicLogLink = async () => {
+  publicLinkLoading.value = true;
+  try {
+    const result = await createProjectPublicLogLink(props.projectId, {
+      allowed_log_types: ["operator_log", "project_log"],
+      expires_at: publicLinkExpiresAt.value || null
+    });
+    generatedPublicUrl.value = buildPublicLogUrl(result.data.token);
+    generatedPublicQr.value = await QRCode.toDataURL(generatedPublicUrl.value, {
+      margin: 1,
+      width: 240
+    });
+    message("外包日志二维码已生成，旧二维码已失效", { type: "success" });
+    await loadPublicLogLinks();
+  } finally {
+    publicLinkLoading.value = false;
+  }
+};
+
+const revokePublicLogLink = async (link: ProjectPublicLogLink) => {
+  publicLinkLoading.value = true;
+  try {
+    await updateProjectPublicLogLink(props.projectId, link.id, {
+      status: "revoked"
+    });
+    message("外包日志二维码已停用", { type: "success" });
+    await loadPublicLogLinks();
+  } finally {
+    publicLinkLoading.value = false;
+  }
+};
+
+const printPublicQr = () => {
+  window.print();
+};
+
+const reviewExternalSubmission = async (
+  row: ExternalLogSubmission,
+  action: "approve" | "reject"
+) => {
+  externalReviewingId.value = row.id;
+  try {
+    await reviewExternalLogSubmission(props.projectId, row.id, {
+      action,
+      comment:
+        action === "approve"
+          ? "管理员复核通过外包日志"
+          : "管理员复核驳回外包日志"
+    });
+    message(action === "approve" ? "外包日志已通过" : "外包日志已驳回", {
+      type: "success"
+    });
+    await Promise.all([loadExternalSubmissions(), loadProjectLogData()]);
+  } finally {
+    externalReviewingId.value = null;
+  }
+};
+
+const parseAiIssues = (row: ExternalLogSubmission) => {
+  if (!row.ai_review_result_json) return [];
+  try {
+    const parsed = JSON.parse(row.ai_review_result_json) as {
+      issues?: Array<{ severity?: string; message?: string }>;
+    };
+    return Array.isArray(parsed.issues) ? parsed.issues : [];
+  } catch {
+    return [];
+  }
+};
+
 watch(
   () => props.projectId,
   () => {
@@ -715,6 +863,106 @@ onMounted(loadWecomUsers);
           >
         </el-form-item>
       </el-form>
+    </el-card>
+
+    <el-card shadow="never" header="外包日志入口与AI复核" class="mt-3">
+      <div class="external-log-toolbar">
+        <el-space wrap>
+          <el-button type="primary" @click="openPublicLinkDialog">
+            打印外包日志二维码
+          </el-button>
+          <el-button
+            :loading="externalSubmissionsLoading"
+            @click="loadExternalSubmissions"
+          >
+            刷新外包提交
+          </el-button>
+          <el-tag :type="activePublicLogLink ? 'success' : 'info'">
+            {{ activePublicLogLink ? "二维码已启用" : "暂无可用二维码" }}
+          </el-tag>
+          <el-tag v-if="pendingExternalSubmissionCount" type="warning">
+            待处理 {{ pendingExternalSubmissionCount }}
+          </el-tag>
+        </el-space>
+      </div>
+
+      <el-table
+        v-loading="externalSubmissionsLoading"
+        :data="externalSubmissions"
+        max-height="360"
+        class="mt-3"
+      >
+        <el-table-column prop="created_at" label="提交时间" width="170" />
+        <el-table-column prop="submitter_name" label="填报人" width="120" />
+        <el-table-column
+          prop="submitter_company"
+          label="外包单位"
+          min-width="150"
+          show-overflow-tooltip
+        />
+        <el-table-column label="标段" min-width="160">
+          <template #default="scope">
+            {{ scope.row.section_code || "-" }}
+            {{ scope.row.section_name || "" }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="log_date" label="日期" width="110" />
+        <el-table-column label="审计状态" width="120">
+          <template #default="scope">
+            {{ externalReviewStatusLabel(scope.row.review_status) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="ai_review_score" label="AI分" width="80" />
+        <el-table-column
+          prop="ai_review_summary"
+          label="AI摘要"
+          min-width="220"
+          show-overflow-tooltip
+        />
+        <el-table-column label="AI问题" min-width="220">
+          <template #default="scope">
+            <div v-if="parseAiIssues(scope.row).length === 0">-</div>
+            <template v-else>
+              <div
+                v-for="item in parseAiIssues(scope.row)"
+                :key="`${item.severity || 'info'}-${item.message}`"
+              >
+                {{ item.severity || "info" }}：{{ item.message }}
+              </div>
+            </template>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="scope">
+            <el-button
+              link
+              type="primary"
+              :loading="externalReviewingId === scope.row.id"
+              :disabled="
+                ['approved_auto', 'approved_manual', 'rejected'].includes(
+                  scope.row.review_status
+                )
+              "
+              @click="reviewExternalSubmission(scope.row, 'approve')"
+            >
+              通过
+            </el-button>
+            <el-button
+              link
+              type="danger"
+              :loading="externalReviewingId === scope.row.id"
+              :disabled="
+                ['approved_auto', 'approved_manual', 'rejected'].includes(
+                  scope.row.review_status
+                )
+              "
+              @click="reviewExternalSubmission(scope.row, 'reject')"
+            >
+              驳回
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
     </el-card>
 
     <el-card shadow="never" header="标段总览（卡片视图）" class="mt-3">
@@ -1011,6 +1259,68 @@ onMounted(loadWecomUsers);
         </el-row>
       </div>
     </el-drawer>
+
+    <el-dialog
+      v-model="publicLinkDialogVisible"
+      title="打印外包日志二维码"
+      width="640px"
+    >
+      <el-alert
+        type="warning"
+        show-icon
+        :closable="false"
+        class="mb-3"
+        title="生成新二维码会自动停用该项目之前的可用二维码。二维码只用于外包日志提交，不开放后台权限。"
+      />
+      <el-form label-width="110px">
+        <el-form-item label="有效期">
+          <el-date-picker
+            v-model="publicLinkExpiresAt"
+            type="datetime"
+            value-format="YYYY-MM-DDTHH:mm:ss.SSS[Z]"
+            placeholder="不填则长期有效"
+          />
+        </el-form-item>
+        <el-form-item>
+          <el-button
+            type="primary"
+            :loading="publicLinkLoading"
+            @click="generatePublicLogLink"
+          >
+            生成新二维码
+          </el-button>
+        </el-form-item>
+      </el-form>
+
+      <div v-if="generatedPublicQr" class="public-qr-print">
+        <img :src="generatedPublicQr" alt="external-log-qr" />
+        <div class="public-qr-print__title">
+          {{ project?.project_name || "项目" }}外包日志填报
+        </div>
+        <div class="public-qr-print__url">{{ generatedPublicUrl }}</div>
+        <el-button class="mt-3" @click="printPublicQr">打印</el-button>
+      </div>
+
+      <el-table :data="publicLogLinks" max-height="220" class="mt-3">
+        <el-table-column prop="id" label="ID" width="80" />
+        <el-table-column prop="status" label="状态" width="100" />
+        <el-table-column prop="expires_at" label="有效期" min-width="180" />
+        <el-table-column prop="created_at" label="创建时间" min-width="180" />
+        <el-table-column label="操作" width="100">
+          <template #default="scope">
+            <el-button
+              v-if="scope.row.status === 'active'"
+              link
+              type="danger"
+              :loading="publicLinkLoading"
+              @click="revokePublicLogLink(scope.row)"
+            >
+              停用
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </el-dialog>
 
     <el-dialog
       v-model="managerLogDialogVisible"
@@ -1336,6 +1646,59 @@ onMounted(loadWecomUsers);
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.external-log-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.public-qr-print {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 16px;
+  border: 1px solid #ebeef5;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.public-qr-print img {
+  width: 220px;
+  height: 220px;
+}
+
+.public-qr-print__title {
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.public-qr-print__url {
+  max-width: 100%;
+  word-break: break-all;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
+}
+
+@media print {
+  .project-panel-page > :not(.el-overlay) {
+    display: none !important;
+  }
+
+  .el-dialog__header,
+  .el-dialog__footer,
+  .el-overlay .el-button,
+  .el-overlay .el-alert,
+  .el-overlay .el-form,
+  .el-overlay .el-table {
+    display: none !important;
+  }
+
+  .public-qr-print {
+    border: 0;
+  }
 }
 
 .section-toolbar {

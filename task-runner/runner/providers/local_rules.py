@@ -32,6 +32,7 @@ class LocalRulesProvider(AiProvider):
             "log_smart_fill",
             "log_analysis",
             "log_summary",
+            "external_log_audit",
             "file_generate",
             "approval_ai_gate",
         ]
@@ -70,6 +71,8 @@ class LocalRulesProvider(AiProvider):
             output = self._log_analysis(payload)
         elif task_type == "log_summary":
             output = self._log_summary(payload)
+        elif task_type == "external_log_audit":
+            output = self._external_log_audit(payload)
         elif task_type == "file_generate":
             output = self._file_generate(payload)
         elif task_type == "approval_ai_gate":
@@ -443,6 +446,78 @@ class LocalRulesProvider(AiProvider):
                     "level": "medium",
                     "message": "部分项目今日进度低于近7日均值",
                 },
+            },
+            ensure_ascii=False,
+        )
+
+    def _external_log_audit(self, payload: dict[str, object]) -> str:
+        def as_float(value: object) -> float:
+            if isinstance(value, (int, float)):
+                return float(value)
+            if isinstance(value, str):
+                try:
+                    return float(value)
+                except ValueError:
+                    return 0.0
+            return 0.0
+
+        operator_raw = payload.get("operator_log")
+        operator = operator_raw if isinstance(operator_raw, dict) else {}
+        project_log_raw = payload.get("project_log")
+        project_log = project_log_raw if isinstance(project_log_raw, dict) else {}
+        context_raw = payload.get("context")
+        context = context_raw if isinstance(context_raw, dict) else {}
+        previous_raw = context.get("previous_operator_logs", [])
+        previous = previous_raw if isinstance(previous_raw, list) else []
+
+        issues: list[dict[str, str]] = []
+        completed = as_float(operator.get("completed_pipe_count"))
+        cumulative = as_float(operator.get("cumulative_pipe_count"))
+        if cumulative < completed:
+            issues.append(
+                {
+                    "severity": "high",
+                    "message": "累计下管数量小于本班次下管数量，需要人工核对。",
+                }
+            )
+
+        previous_cumulative = None
+        for item in previous:
+            if isinstance(item, dict):
+                value = item.get("cumulative_pipe_count")
+                parsed = as_float(value)
+                if parsed > 0:
+                    previous_cumulative = parsed
+                    break
+        if previous_cumulative is not None and cumulative < previous_cumulative:
+            issues.append(
+                {
+                    "severity": "high",
+                    "message": "累计下管数量低于最近历史记录，需要人工核对连续性。",
+                }
+            )
+
+        detail = str(project_log.get("detail_html") or project_log.get("detail") or "")
+        remark = str(operator.get("remark") or "")
+        issue_summary = str(operator.get("issue_summary") or "")
+        if len(detail.strip()) < 8 and len(remark.strip()) < 8 and len(issue_summary.strip()) < 8:
+            issues.append(
+                {
+                    "severity": "medium",
+                    "message": "施工日志和项目日志描述过短，无法充分判断现场情况。",
+                }
+            )
+
+        score = 92 if not issues else 68
+        return json.dumps(
+            {
+                "decision": "auto_approve" if not issues else "needs_manual_review",
+                "risk_level": "low" if not issues else "medium",
+                "score": score,
+                "summary": "本地规则审计完成，未发现明显异常。"
+                if not issues
+                else "本地规则审计发现需要管理员复核的问题。",
+                "issues": issues,
             },
             ensure_ascii=False,
         )

@@ -53,6 +53,47 @@ export type ProjectFile = {
   updated_at: string;
 };
 
+export type ProjectPublicLogLink = {
+  id: number;
+  project_id: number;
+  allowed_log_types_json: string;
+  expires_at: string | null;
+  status: string;
+  created_by_userid: string;
+  revoked_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type ExternalLogSubmission = {
+  id: number;
+  project_id: number;
+  section_id: number | null;
+  section_code?: string | null;
+  section_name?: string | null;
+  submitter_name: string;
+  submitter_company: string | null;
+  submitter_phone: string | null;
+  log_date: string;
+  shift: string;
+  operator_log_payload_json: string;
+  project_log_payload_json: string;
+  photo_keys_json: string | null;
+  review_status: string;
+  ai_review_task_id: number | null;
+  ai_review_result_json: string | null;
+  ai_review_score: number | null;
+  ai_review_risk_level: string | null;
+  ai_review_summary: string | null;
+  reviewed_by_userid: string | null;
+  reviewed_at: string | null;
+  review_comment: string | null;
+  adopted_operator_log_id: number | null;
+  adopted_manager_log_id: number | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export const listProjects = (params?: {
   page?: number;
   pageSize?: number;
@@ -229,3 +270,68 @@ export const deleteProjectFile = (projectId: number, fileId: number) => {
     `/api/v1/project/${projectId}/files/${fileId}`
   );
 };
+
+export const listProjectPublicLogLinks = (projectId: number) =>
+  http.request<{ success: boolean; data: ProjectPublicLogLink[] }>(
+    "get",
+    `/api/v1/project/${projectId}/public-log-link`
+  );
+
+export const createProjectPublicLogLink = (
+  projectId: number,
+  data: {
+    allowed_log_types?: string[];
+    expires_at?: string | null;
+  }
+) =>
+  http.request<{
+    success: boolean;
+    data: {
+      id: number;
+      token: string;
+      allowed_log_types: string[];
+      expires_at: string | null;
+      status: string;
+    };
+  }>("post", `/api/v1/project/${projectId}/public-log-link`, { data });
+
+export const updateProjectPublicLogLink = (
+  projectId: number,
+  linkId: number,
+  data: { status: "active" | "revoked" }
+) =>
+  http.request<{ success: boolean }>(
+    "patch",
+    `/api/v1/project/${projectId}/public-log-link/${linkId}`,
+    { data }
+  );
+
+export const listExternalLogSubmissions = (
+  projectId: number,
+  params?: {
+    status?: string;
+    page?: number;
+    pageSize?: number;
+  }
+) =>
+  http.request<{
+    success: boolean;
+    data: ExternalLogSubmission[];
+    pagination: { page: number; pageSize: number; total: number };
+  }>("get", `/api/v1/project/${projectId}/external-log-submissions`, {
+    params
+  });
+
+export const reviewExternalLogSubmission = (
+  projectId: number,
+  submissionId: number,
+  data: {
+    action: "approve" | "reject";
+    comment?: string;
+  }
+) =>
+  http.request<{ success: boolean; data?: Record<string, unknown> }>(
+    "post",
+    `/api/v1/project/${projectId}/external-log-submissions/${submissionId}/review`,
+    { data }
+  );
