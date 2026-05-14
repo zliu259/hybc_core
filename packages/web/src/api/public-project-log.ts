@@ -56,6 +56,7 @@ export const submitPublicProjectLog = (
     submitter_name: string;
     submitter_company?: string;
     submitter_phone?: string;
+    log_types?: string[];
     section_id?: number | null;
     log_date: string;
     shift: string;

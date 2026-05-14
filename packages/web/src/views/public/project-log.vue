@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
 import { resolveUploadUrl } from "@/api/upload";
@@ -13,6 +13,8 @@ import {
 } from "@/api/public-project-log";
 
 defineOptions({ name: "PublicProjectLog" });
+
+const profileCacheKey = "hybc_public_log_profile_v1";
 
 const route = useRoute();
 const token = computed(() => String(route.params.token || ""));
@@ -28,6 +30,7 @@ const sections = ref<PublicProjectLogSection[]>([]);
 const photoFiles = ref<
   Array<{ file_key: string; file_url: string; file_name: string }>
 >([]);
+const selectedLogTypes = ref<string[]>(["project_log", "operator_log"]);
 
 const today = new Date().toISOString().slice(0, 10);
 const form = ref({
@@ -54,6 +57,18 @@ const shiftOptions = [
   { label: "白班", value: "day" },
   { label: "夜班", value: "night" }
 ];
+const logTypeOptions = [
+  { label: "项目日志", value: "project_log" },
+  { label: "标段日志", value: "operator_log" }
+];
+
+const hasProjectLog = computed(() =>
+  selectedLogTypes.value.includes("project_log")
+);
+
+const hasOperatorLog = computed(() =>
+  selectedLogTypes.value.includes("operator_log")
+);
 
 const formDisabled = computed(
   () => loading.value || submitting.value || Boolean(submittedId.value)
@@ -89,6 +104,36 @@ const getErrorMessage = (error: unknown, fallback: string) => {
     }
   }
   return fallback;
+};
+
+const loadCachedProfile = () => {
+  try {
+    const raw = window.localStorage.getItem(profileCacheKey);
+    if (!raw) return;
+    const cached = JSON.parse(raw) as {
+      submitter_name?: string;
+      submitter_company?: string;
+      submitter_phone?: string;
+    };
+    form.value.submitter_name = cached.submitter_name || "";
+    form.value.submitter_company = cached.submitter_company || "";
+    form.value.submitter_phone = cached.submitter_phone || "";
+  } catch {
+    window.localStorage.removeItem(profileCacheKey);
+  }
+};
+
+const cacheProfile = () => {
+  try {
+    window.localStorage.setItem(
+      profileCacheKey,
+      JSON.stringify({
+        submitter_name: form.value.submitter_name.trim(),
+        submitter_company: form.value.submitter_company.trim(),
+        submitter_phone: form.value.submitter_phone.trim()
+      })
+    );
+  } catch {}
 };
 
 const loadContext = async () => {
@@ -173,25 +218,36 @@ const submit = async () => {
     message("请填写填报人姓名", { type: "warning" });
     return;
   }
+  if (!hasProjectLog.value && !hasOperatorLog.value) {
+    message("请选择项目日志或标段日志", { type: "warning" });
+    return;
+  }
   if (!form.value.log_date || !form.value.shift) {
     message("请填写日期和班次", { type: "warning" });
     return;
   }
-  if (!form.value.project_detail.trim()) {
+  if (hasOperatorLog.value && !form.value.section_id) {
+    message("填写标段日志时请选择标段", { type: "warning" });
+    return;
+  }
+  if (hasProjectLog.value && !form.value.project_detail.trim()) {
     message("请填写项目日志内容", { type: "warning" });
     return;
   }
 
   submitting.value = true;
   try {
+    cacheProfile();
     const result = await submitPublicProjectLog(token.value, {
       submitter_name: form.value.submitter_name.trim(),
       submitter_company: form.value.submitter_company.trim() || undefined,
       submitter_phone: form.value.submitter_phone.trim() || undefined,
-      section_id: form.value.section_id ?? null,
+      log_types: selectedLogTypes.value,
+      section_id: hasOperatorLog.value ? (form.value.section_id ?? null) : null,
       log_date: form.value.log_date,
       shift: form.value.shift,
       operator_log: {
+        enabled: hasOperatorLog.value,
         weather: form.value.weather.trim() || undefined,
         completed_pipe_count: form.value.completed_pipe_count,
         cumulative_pipe_count: form.value.cumulative_pipe_count,
@@ -201,6 +257,7 @@ const submit = async () => {
         remark: form.value.remark.trim() || undefined
       },
       project_log: {
+        enabled: hasProjectLog.value,
         title: form.value.project_title.trim() || undefined,
         detail_html: form.value.project_detail.trim(),
         tomorrow_plan: form.value.tomorrow_plan.trim() || undefined,
@@ -222,7 +279,19 @@ const submit = async () => {
   }
 };
 
-onMounted(loadContext);
+watch(
+  () => [
+    form.value.submitter_name,
+    form.value.submitter_company,
+    form.value.submitter_phone
+  ],
+  cacheProfile
+);
+
+onMounted(() => {
+  loadCachedProfile();
+  void loadContext();
+});
 </script>
 
 <template>
@@ -302,6 +371,29 @@ onMounted(loadContext);
         </div>
 
         <div class="form-section">
+          <div class="form-section__title">填写内容</div>
+          <el-form-item label="日志类型" required>
+            <el-checkbox-group v-model="selectedLogTypes">
+              <el-checkbox-button
+                v-for="item in logTypeOptions"
+                :key="item.value"
+                :label="item.value"
+              >
+                {{ item.label }}
+              </el-checkbox-button>
+            </el-checkbox-group>
+          </el-form-item>
+          <el-form-item label="日志日期" required>
+            <el-date-picker
+              v-model="form.log_date"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
+          </el-form-item>
+        </div>
+
+        <div v-if="hasOperatorLog" class="form-section">
           <div class="form-section__title">标段施工日志</div>
           <el-form-item label="标段">
             <el-select v-model="form.section_id" filterable style="width: 100%">
@@ -314,16 +406,6 @@ onMounted(loadContext);
             </el-select>
           </el-form-item>
           <el-row :gutter="12">
-            <el-col :xs="24" :sm="12">
-              <el-form-item label="日期" required>
-                <el-date-picker
-                  v-model="form.log_date"
-                  type="date"
-                  value-format="YYYY-MM-DD"
-                  style="width: 100%"
-                />
-              </el-form-item>
-            </el-col>
             <el-col :xs="24" :sm="12">
               <el-form-item label="班次" required>
                 <el-segmented v-model="form.shift" :options="shiftOptions" />
@@ -374,7 +456,7 @@ onMounted(loadContext);
           </el-form-item>
         </div>
 
-        <div class="form-section">
+        <div v-if="hasProjectLog" class="form-section">
           <div class="form-section__title">项目日志</div>
           <el-form-item label="标题">
             <el-input v-model="form.project_title" />

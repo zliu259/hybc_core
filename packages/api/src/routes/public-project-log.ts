@@ -224,6 +224,7 @@ publicProjectLogRoutes.post("/:token/submissions", async (c) => {
     submitter_name: string;
     submitter_company?: string;
     submitter_phone?: string;
+    log_types?: string[];
     section_id?: number | null;
     log_date: string;
     shift: string;
@@ -242,7 +243,27 @@ publicProjectLogRoutes.post("/:token/submissions", async (c) => {
     );
   }
 
-  const sectionId = body.section_id ? Number(body.section_id) : null;
+  const logTypes = Array.isArray(body.log_types)
+    ? body.log_types.filter((item): item is string =>
+        ["operator_log", "project_log"].includes(item)
+      )
+    : [];
+  const operatorLogEnabled =
+    logTypes.includes("operator_log") || body.operator_log?.enabled === true;
+  const projectLogEnabled =
+    logTypes.includes("project_log") || body.project_log?.enabled === true || logTypes.length === 0;
+
+  if (!operatorLogEnabled && !projectLogEnabled) {
+    return c.json({ success: false, error: { message: "At least one log type is required" } }, 400);
+  }
+
+  const sectionId = operatorLogEnabled && body.section_id ? Number(body.section_id) : null;
+  if (operatorLogEnabled && !sectionId) {
+    return c.json(
+      { success: false, error: { message: "section_id is required for section logs" } },
+      400
+    );
+  }
   if (sectionId && !resolved.sections.some((item) => item.id === sectionId)) {
     return c.json({ success: false, error: { message: "Section not found in this project" } }, 400);
   }
@@ -278,8 +299,8 @@ publicProjectLogRoutes.post("/:token/submissions", async (c) => {
       String(body.submitter_phone ?? "").trim() || null,
       logDate,
       shift,
-      JSON.stringify(body.operator_log ?? {}),
-      JSON.stringify(body.project_log ?? {}),
+      JSON.stringify({ ...(body.operator_log ?? {}), enabled: operatorLogEnabled }),
+      JSON.stringify({ ...(body.project_log ?? {}), enabled: projectLogEnabled }),
       JSON.stringify(photoKeys),
       ipHash,
       c.req.header("user-agent") ?? null,
@@ -305,8 +326,12 @@ publicProjectLogRoutes.post("/:token/submissions", async (c) => {
       },
       log_date: logDate,
       shift,
-      operator_log: body.operator_log ?? {},
-      project_log: body.project_log ?? {},
+      log_types: [
+        ...(operatorLogEnabled ? ["operator_log"] : []),
+        ...(projectLogEnabled ? ["project_log"] : [])
+      ],
+      operator_log: { ...(body.operator_log ?? {}), enabled: operatorLogEnabled },
+      project_log: { ...(body.project_log ?? {}), enabled: projectLogEnabled },
       photo_count: photoKeys.length,
       context
     }
