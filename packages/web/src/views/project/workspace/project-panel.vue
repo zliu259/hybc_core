@@ -704,6 +704,25 @@ const openPublicLinkDialog = async () => {
   generatedPublicUrl.value = "";
   generatedPublicQr.value = "";
   await loadPublicLogLinks();
+  if (activePublicLogLink.value?.token) {
+    await showPublicLogLinkQr(activePublicLogLink.value);
+  }
+};
+
+const showPublicLogLinkQr = async (link: ProjectPublicLogLink) => {
+  if (!link.token) {
+    generatedPublicUrl.value = "";
+    generatedPublicQr.value = "";
+    message("该二维码为旧数据，未保存可打印链接，请重新生成一次", {
+      type: "warning"
+    });
+    return;
+  }
+  generatedPublicUrl.value = buildPublicLogUrl(link.token);
+  generatedPublicQr.value = await QRCode.toDataURL(generatedPublicUrl.value, {
+    margin: 1,
+    width: 240
+  });
 };
 
 const generatePublicLogLink = async () => {
@@ -713,13 +732,22 @@ const generatePublicLogLink = async () => {
       allowed_log_types: ["operator_log", "project_log"],
       expires_at: publicLinkExpiresAt.value || null
     });
-    generatedPublicUrl.value = buildPublicLogUrl(result.data.token);
-    generatedPublicQr.value = await QRCode.toDataURL(generatedPublicUrl.value, {
-      margin: 1,
-      width: 240
-    });
     message("外包日志二维码已生成，旧二维码已失效", { type: "success" });
     await loadPublicLogLinks();
+    const nextLink = publicLogLinks.value.find(
+      item => item.id === result.data.id
+    );
+    if (nextLink) await showPublicLogLinkQr(nextLink);
+    else {
+      generatedPublicUrl.value = buildPublicLogUrl(result.data.token);
+      generatedPublicQr.value = await QRCode.toDataURL(
+        generatedPublicUrl.value,
+        {
+          margin: 1,
+          width: 240
+        }
+      );
+    }
   } finally {
     publicLinkLoading.value = false;
   }
@@ -1266,11 +1294,11 @@ onMounted(loadWecomUsers);
       width="640px"
     >
       <el-alert
-        type="warning"
+        type="info"
         show-icon
         :closable="false"
         class="mb-3"
-        title="生成新二维码会自动停用该项目之前的可用二维码。二维码只用于外包日志提交，不开放后台权限。"
+        title="可查看并再次打印当前有效二维码；生成新二维码会自动停用旧二维码。二维码只用于外包日志提交，不开放后台权限。"
       />
       <el-form label-width="110px">
         <el-form-item label="有效期">
@@ -1306,8 +1334,17 @@ onMounted(loadWecomUsers);
         <el-table-column prop="status" label="状态" width="100" />
         <el-table-column prop="expires_at" label="有效期" min-width="180" />
         <el-table-column prop="created_at" label="创建时间" min-width="180" />
-        <el-table-column label="操作" width="100">
+        <el-table-column label="操作" width="180">
           <template #default="scope">
+            <el-button
+              v-if="scope.row.status === 'active'"
+              link
+              type="primary"
+              :loading="publicLinkLoading"
+              @click="showPublicLogLinkQr(scope.row)"
+            >
+              查看/打印
+            </el-button>
             <el-button
               v-if="scope.row.status === 'active'"
               link

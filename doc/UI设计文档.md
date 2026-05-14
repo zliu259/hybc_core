@@ -560,6 +560,7 @@
 - 贯通报告标段绑定：贯通报告按 `section_id` 归集，并在对应标段详情下追溯。
 - 对应 API：`/api/v1/project/:id/files`、`/api/v1/project/:id/files/:fileId`、`/api/v1/log/operator?project_id=:id&section_id=:sectionId`、`/api/v1/survey/breakthrough?project_id=:id&section_id=:sectionId`。
 - 外包日志入口：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持项目内生成/打印免登录二维码、停用旧二维码，并展示外包日志 AI 审计与人工复核列表。
+- 外包二维码复用打印：`packages/web/src/views/project/workspace/project-panel.vue` 的“打印外包日志二维码”弹窗支持查看并再次打印当前有效二维码；历史旧二维码若未保存明文 token，需要重新生成一次后才能查看/打印。
 - 外包日志免登录页：`packages/web/src/views/public/project-log.vue`，路由 `/public/project-log/:token`，面向手机扫码填写同一项目下的标段施工日志与项目日志。
 - 外包日志类型选择：扫码页支持选择填写“项目日志”“标段日志”，可单选或同时选择；选择标段日志时必须选择对应标段，后端采纳时只生成已选择类型对应的正式日志记录。
 - 外包人员信息缓存：扫码页使用浏览器本地缓存保存填报人姓名、外包单位、联系电话，下次进入自动回填，不写入登录态。

@@ -56,6 +56,7 @@ export type ProjectFile = {
 export type ProjectPublicLogLink = {
   id: number;
   project_id: number;
+  token: string | null;
   allowed_log_types_json: string;
   expires_at: string | null;
   status: string;

@@ -320,7 +320,7 @@ projectRoutes.get(
   async (c) => {
     const projectId = Number(c.req.param("id"));
     const rows = await c.env.DB.prepare(
-      `SELECT id, project_id, allowed_log_types_json, expires_at, status, created_by_userid,
+      `SELECT id, project_id, token, allowed_log_types_json, expires_at, status, created_by_userid,
               revoked_at, created_at, updated_at
          FROM project_public_log_link
         WHERE project_id = ?
@@ -380,11 +380,12 @@ projectRoutes.post(
 
     const result = await c.env.DB.prepare(
       `INSERT INTO project_public_log_link
-        (project_id, token_hash, allowed_log_types_json, expires_at, status, created_by_userid, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'active', ?, ?, ?)`
+        (project_id, token, token_hash, allowed_log_types_json, expires_at, status, created_by_userid, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?)`
     )
       .bind(
         projectId,
+        token,
         tokenHash,
         JSON.stringify(allowedTypes),
         body.expires_at ?? null,
