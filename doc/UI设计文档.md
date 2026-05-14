@@ -396,7 +396,7 @@
 #### I-4. AI配置管理 `views/ai/config.vue`
 
 - 3标签页：AI供应商 / 路由规则 / 提示词模板。
-- 初始化区：支持填写默认 OpenAI 模型与 Endpoint，并一键初始化 AI 供应商、路由规则、提示词模板。
+- 初始化区：支持填写默认 OpenAI 模型与 Endpoint，并一键初始化 AI 供应商、路由规则、提示词模板；OpenAI 模型默认值为 `gpt-5.5`。
 - 供应商Tab：CRUD表格（key、名称、endpoint、模型、优先级、并发）。
 - 路由规则Tab：CRUD表格（规则名、业务类型、任务类型、供应商、优先级）。
 - 提示词Tab：CRUD表格（key、名称、版本）+ 编辑弹窗含system/user prompt大文本区。
@@ -406,7 +406,7 @@
 
 - 节点列表卡片：节点ID、名称、类型、状态（颜色标签）、能力、CPU/内存、最后心跳（相对时间）。
 - 30秒自动刷新。
-- Runner运行参数卡片：支持在线维护 `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL`、合同文本/视觉模型键，参数落库后同步到 KV 供 Runner 轮询读取。
+- Runner运行参数卡片：支持在线维护 `OPENAI_API_KEY`、`OPENAI_MODEL`、`OPENAI_BASE_URL`、合同文本/视觉模型键，参数落库后同步到 KV 供 Runner 轮询读取；`OPENAI_MODEL` 与合同文本模型未配置时默认回落到 `gpt-5.5`。
 - AI运行测试卡片：可按任务类型创建测试任务，任务进入队列后在下方队列表追踪结果。
 - 任务队列卡片：筛选（状态/任务类型）+ 表格 + 分页。
 - API 指向：`/api/v1/admin/runner-runtime-config`, `/api/v1/admin/ai-runtime/test-task`, `/api/v1/task/nodes`, `/api/v1/task/queue`

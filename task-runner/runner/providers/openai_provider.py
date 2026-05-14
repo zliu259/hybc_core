@@ -17,7 +17,7 @@ class OpenAIProvider(AiProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-5.2",
+        model: str = "gpt-5.5",
         base_url: str | None = None,
         organization: str | None = None,
         project: str | None = None,

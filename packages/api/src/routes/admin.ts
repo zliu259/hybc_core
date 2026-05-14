@@ -341,12 +341,12 @@ const seedDefaultAiConfig = async (
     is_secret: 0 | 1;
   }> = [
     { config_key: "OPENAI_MODEL", config_value: options.openaiModel, is_secret: 0 },
-    { config_key: "OPENAI_MODEL_CONTRACT_REVIEW_TEXT", config_value: "gpt-5.2", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_CONTRACT_REVIEW_TEXT", config_value: "gpt-5.5", is_secret: 0 },
     { config_key: "OPENAI_MODEL_CONTRACT_REVIEW_VISION", config_value: "gpt-4o", is_secret: 0 },
     { config_key: "OPENAI_MODEL_REASONING", config_value: "gpt-5.1", is_secret: 0 },
     { config_key: "OPENAI_MODEL_FAST", config_value: "gpt-5-mini", is_secret: 0 },
     { config_key: "OPENAI_MODEL_EFFICIENT", config_value: "gpt-5-nano", is_secret: 0 },
-    { config_key: "OPENAI_MODEL_CHAT", config_value: "gpt-5.2-chat-latest", is_secret: 0 },
+    { config_key: "OPENAI_MODEL_CHAT", config_value: "gpt-5.5", is_secret: 0 },
     { config_key: "OPENAI_MODEL_CHAT_COMPAT", config_value: "gpt-5.1-chat-latest", is_secret: 0 },
     { config_key: "OPENAI_MODEL_SEARCH", config_value: "gpt-5-search-api", is_secret: 0 },
     { config_key: "OPENAI_MODEL_TRANSCRIBE", config_value: "gpt-4o-transcribe", is_secret: 0 },
@@ -1088,7 +1088,7 @@ adminRoutes.post("/bootstrap/near-production-openai", requireRoles(["super_admin
   const openaiModel =
     typeof body.openai_model === "string" && body.openai_model.trim()
       ? body.openai_model.trim()
-      : "gpt-5.2";
+      : "gpt-5.5";
   const openaiEndpoint =
     typeof body.openai_endpoint === "string" && body.openai_endpoint.trim()
       ? body.openai_endpoint.trim()

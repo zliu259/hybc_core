@@ -30,9 +30,9 @@ const runtimeLoading = ref(false);
 const runtimeSaving = ref(false);
 const runtimeForm = ref({
   OPENAI_API_KEY: "",
-  OPENAI_MODEL: "gpt-5.2",
+  OPENAI_MODEL: "gpt-5.5",
   OPENAI_BASE_URL: "https://api.openai.com/v1",
-  OPENAI_MODEL_CONTRACT_REVIEW_TEXT: "gpt-5.2",
+  OPENAI_MODEL_CONTRACT_REVIEW_TEXT: "gpt-5.5",
   OPENAI_MODEL_CONTRACT_REVIEW_VISION: "gpt-4o",
   ANTHROPIC_API_KEY: "",
   ANTHROPIC_MODEL: "claude-sonnet-4-20250514",
@@ -151,11 +151,11 @@ const loadRuntimeConfig = async () => {
     );
     runtimeForm.value = {
       OPENAI_API_KEY: map.get("OPENAI_API_KEY") ?? "",
-      OPENAI_MODEL: map.get("OPENAI_MODEL") ?? "gpt-5.2",
+      OPENAI_MODEL: map.get("OPENAI_MODEL") ?? "gpt-5.5",
       OPENAI_BASE_URL:
         map.get("OPENAI_BASE_URL") ?? "https://api.openai.com/v1",
       OPENAI_MODEL_CONTRACT_REVIEW_TEXT:
-        map.get("OPENAI_MODEL_CONTRACT_REVIEW_TEXT") ?? "gpt-5.2",
+        map.get("OPENAI_MODEL_CONTRACT_REVIEW_TEXT") ?? "gpt-5.5",
       OPENAI_MODEL_CONTRACT_REVIEW_VISION:
         map.get("OPENAI_MODEL_CONTRACT_REVIEW_VISION") ?? "gpt-4o",
       ANTHROPIC_API_KEY: map.get("ANTHROPIC_API_KEY") ?? "",

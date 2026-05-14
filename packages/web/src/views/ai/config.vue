@@ -95,7 +95,7 @@ const bizTypeOptions = [
 
 const bootstrapLoading = ref(false);
 const bootstrapForm = ref({
-  openai_model: "gpt-5.2",
+  openai_model: "gpt-5.5",
   openai_endpoint: "https://api.openai.com/v1"
 });
 

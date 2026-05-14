@@ -164,7 +164,7 @@ class TaskExecutor:
 
             selected_model = model if isinstance(model, str) and model else runtime.get("OPENAI_MODEL")
             if not isinstance(selected_model, str) or not selected_model:
-                selected_model = os.getenv("OPENAI_MODEL", "gpt-5.2")
+                selected_model = os.getenv("OPENAI_MODEL", "gpt-5.5")
 
             model_overrides: dict[str, str] = {}
             runtime_map = runtime if isinstance(runtime, dict) else {}
