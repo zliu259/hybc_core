@@ -295,7 +295,7 @@ projectRoutes.patch(
     await c.env.DB.prepare("UPDATE project SET status = ?, updated_at = ? WHERE id = ?")
       .bind(body.status, now, id)
       .run();
-    if (body.status !== "active") {
+    if (body.status === "archived") {
       await revokeActivePublicLogLinks(c.env, id, now);
     }
 
@@ -350,11 +350,11 @@ projectRoutes.post(
     if (!project) {
       return c.json({ success: false, error: { message: "Project not found" } }, 404);
     }
-    if (project.status !== "active") {
+    if (project.status === "archived") {
       return c.json(
         {
           success: false,
-          error: { message: "Only active projects can generate public log links" }
+          error: { message: "Archived projects cannot generate public log links" }
         },
         400
       );

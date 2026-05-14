@@ -95,11 +95,11 @@ const requireActiveLink = async (
     .bind(link.project_id)
     .first<ProjectRow>();
 
-  if (!project || project.status !== "active") {
+  if (!project || project.status === "archived") {
     return Response.json(
       {
         success: false,
-        error: { message: "Project is not active; public log link is disabled" }
+        error: { message: "Project is archived; public log link is disabled" }
       },
       { status: 410 }
     );
