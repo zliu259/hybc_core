@@ -716,7 +716,9 @@
   - 路由容器：`packages/web/src/views/project/workspace/index.vue`
   - 标段总览与新增入口：`packages/web/src/views/project/workspace/project-panel.vue`
 - 标段总览头部新增“新增标段”操作，面向 `super_admin/manager/site_manager`：
-  - 弹窗字段：标段编码、标段名称、计划里程、初始状态、管材、管型、土质、拟派设备、匹配评分、匹配说明。
+  - 弹窗字段：标段编码、标段名称、计划里程、初始状态、管材、管型、土质。
+  - 管材、管型、土质使用下拉选择；优先读取数据字典，缺失时使用前端兜底选项。
+  - 拟派设备、匹配评分、匹配说明属于 AI 自动填写字段，不在新增标段人工表单中展示。
   - 创建中按钮展示 loading，成功后关闭弹窗并刷新标段总览。
   - 必填校验：标段编码、标段名称。
 - 标段总览补齐加载反馈与结果返回：

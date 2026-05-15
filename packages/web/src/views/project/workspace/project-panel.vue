@@ -9,6 +9,7 @@ import { statusLabel } from "@/utils/enum-labels";
 import { useUserStoreHook } from "@/store/modules/user";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
+import { listDictItems, type DictItem } from "@/api/dict";
 import {
   createProjectSection,
   getProjectById,
@@ -109,11 +110,12 @@ const createSectionForm = ref({
   status: "planning",
   pipe_material: "",
   pipe_model: "",
-  soil_type: "",
-  assigned_machine_type: "",
-  ai_machine_match_note: "",
-  ai_machine_match_score: undefined as number | undefined
+  soil_type: ""
 });
+
+const pipeMaterialOptions = ref<string[]>([]);
+const pipeModelOptions = ref<string[]>([]);
+const soilTypeOptions = ref<string[]>([]);
 
 const managerLogForm = ref({
   log_date: "",
@@ -245,6 +247,30 @@ const sectionStatusOptions = computed(() => [
 
 const sectionProgressMilestones = [0, 25, 50, 75, 100];
 
+const fallbackPipeMaterialOptions = ["钢筋混凝土管", "钢管", "HDPE管", "PE管"];
+const fallbackPipeModelOptions = [
+  "DN600",
+  "DN800",
+  "DN1000",
+  "DN1200",
+  "DN1500",
+  "DN1800",
+  "DN2000"
+];
+const fallbackSoilTypeOptions = ["粉质黏土", "砂土", "淤泥质土", "卵石层"];
+
+const toActiveDictLabels = (items: DictItem[] | Record<string, DictItem[]>) => {
+  const rows = Array.isArray(items) ? items : [];
+  return rows
+    .filter(item => item.status === "active")
+    .map(item => item.dict_label)
+    .filter(Boolean);
+};
+
+const mergeOptions = (dictLabels: string[], fallback: string[]) => {
+  return Array.from(new Set([...dictLabels, ...fallback]));
+};
+
 const sectionDrawerProgress = computed(() => {
   const sectionLength = currentSection.value?.section_length || 0;
   const advanced = sectionOperatorLogs.value.reduce(
@@ -344,6 +370,32 @@ const loadExternalSubmissions = async () => {
     externalSubmissions.value = result.data;
   } finally {
     externalSubmissionsLoading.value = false;
+  }
+};
+
+const loadSectionOptionData = async () => {
+  try {
+    const [pipeMaterialRes, pipeModelRes, soilTypeRes] = await Promise.all([
+      listDictItems("pipe_type"),
+      listDictItems("pipe_model"),
+      listDictItems("soil_type")
+    ]);
+    pipeMaterialOptions.value = mergeOptions(
+      toActiveDictLabels(pipeMaterialRes.data),
+      fallbackPipeMaterialOptions
+    );
+    pipeModelOptions.value = mergeOptions(
+      toActiveDictLabels(pipeModelRes.data),
+      fallbackPipeModelOptions
+    );
+    soilTypeOptions.value = mergeOptions(
+      toActiveDictLabels(soilTypeRes.data),
+      fallbackSoilTypeOptions
+    );
+  } catch {
+    pipeMaterialOptions.value = fallbackPipeMaterialOptions;
+    pipeModelOptions.value = fallbackPipeModelOptions;
+    soilTypeOptions.value = fallbackSoilTypeOptions;
   }
 };
 
@@ -494,10 +546,7 @@ const resetCreateSectionForm = () => {
     status: "planning",
     pipe_material: "",
     pipe_model: "",
-    soil_type: "",
-    assigned_machine_type: "",
-    ai_machine_match_note: "",
-    ai_machine_match_score: undefined
+    soil_type: ""
   };
 };
 
@@ -528,10 +577,7 @@ const submitCreateSection = async () => {
       status: formData.status,
       pipe_material: formData.pipe_material.trim() || null,
       pipe_model: formData.pipe_model.trim() || null,
-      soil_type: formData.soil_type.trim() || null,
-      assigned_machine_type: formData.assigned_machine_type.trim() || null,
-      ai_machine_match_note: formData.ai_machine_match_note.trim() || null,
-      ai_machine_match_score: formData.ai_machine_match_score ?? null
+      soil_type: formData.soil_type.trim() || null
     });
     message("标段已创建", { type: "success" });
     createSectionDialogVisible.value = false;
@@ -911,6 +957,7 @@ watch(
 
 onMounted(loadData);
 onMounted(loadWecomUsers);
+onMounted(loadSectionOptionData);
 </script>
 
 <template>
@@ -1646,43 +1693,56 @@ onMounted(loadWecomUsers);
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="管材">
-              <el-input v-model="createSectionForm.pipe_material" />
+              <el-select
+                v-model="createSectionForm.pipe_material"
+                clearable
+                filterable
+                placeholder="选择管材"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in pipeMaterialOptions"
+                  :key="item"
+                  :label="item"
+                  :value="item"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="管型">
-              <el-input v-model="createSectionForm.pipe_model" />
+              <el-select
+                v-model="createSectionForm.pipe_model"
+                clearable
+                filterable
+                placeholder="选择管型"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in pipeModelOptions"
+                  :key="item"
+                  :label="item"
+                  :value="item"
+                />
+              </el-select>
             </el-form-item>
           </el-col>
         </el-row>
-        <el-row :gutter="16">
-          <el-col :span="12">
-            <el-form-item label="土质">
-              <el-input v-model="createSectionForm.soil_type" />
-            </el-form-item>
-          </el-col>
-          <el-col :span="12">
-            <el-form-item label="拟派设备">
-              <el-input v-model="createSectionForm.assigned_machine_type" />
-            </el-form-item>
-          </el-col>
-        </el-row>
-        <el-form-item label="匹配评分">
-          <el-input-number
-            v-model="createSectionForm.ai_machine_match_score"
-            :min="0"
-            :max="100"
-            :precision="2"
-            style="width: 220px"
-          />
-        </el-form-item>
-        <el-form-item label="匹配说明">
-          <el-input
-            v-model="createSectionForm.ai_machine_match_note"
-            type="textarea"
-            :rows="3"
-            placeholder="可记录设备匹配依据、风险或施工建议"
-          />
+        <el-form-item label="土质">
+          <el-select
+            v-model="createSectionForm.soil_type"
+            clearable
+            filterable
+            placeholder="选择土质"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="item in soilTypeOptions"
+              :key="item"
+              :label="item"
+              :value="item"
+            />
+          </el-select>
         </el-form-item>
       </el-form>
       <template #footer>
