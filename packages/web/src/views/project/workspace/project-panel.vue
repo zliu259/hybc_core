@@ -9,7 +9,6 @@ import { statusLabel } from "@/utils/enum-labels";
 import { useUserStoreHook } from "@/store/modules/user";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
-import { listDictItems, type DictItem } from "@/api/dict";
 import {
   createProjectSection,
   getProjectById,
@@ -113,9 +112,22 @@ const createSectionForm = ref({
   soil_type: ""
 });
 
-const pipeMaterialOptions = ref<string[]>([]);
-const pipeModelOptions = ref<string[]>([]);
-const soilTypeOptions = ref<string[]>([]);
+const soilTypeOptions = [
+  "粘土",
+  "粉土",
+  "细砂",
+  "中砂",
+  "粗砂",
+  "细砾",
+  "中砾",
+  "粗砾",
+  "卵石",
+  "漂石",
+  "强风化岩石",
+  "中风化岩石",
+  "弱风化岩石",
+  "岩石"
+];
 
 const managerLogForm = ref({
   log_date: "",
@@ -247,30 +259,6 @@ const sectionStatusOptions = computed(() => [
 
 const sectionProgressMilestones = [0, 25, 50, 75, 100];
 
-const fallbackPipeMaterialOptions = ["钢筋混凝土管", "钢管", "HDPE管", "PE管"];
-const fallbackPipeModelOptions = [
-  "DN600",
-  "DN800",
-  "DN1000",
-  "DN1200",
-  "DN1500",
-  "DN1800",
-  "DN2000"
-];
-const fallbackSoilTypeOptions = ["粉质黏土", "砂土", "淤泥质土", "卵石层"];
-
-const toActiveDictLabels = (items: DictItem[] | Record<string, DictItem[]>) => {
-  const rows = Array.isArray(items) ? items : [];
-  return rows
-    .filter(item => item.status === "active")
-    .map(item => item.dict_label)
-    .filter(Boolean);
-};
-
-const mergeOptions = (dictLabels: string[], fallback: string[]) => {
-  return Array.from(new Set([...dictLabels, ...fallback]));
-};
-
 const sectionDrawerProgress = computed(() => {
   const sectionLength = currentSection.value?.section_length || 0;
   const advanced = sectionOperatorLogs.value.reduce(
@@ -370,32 +358,6 @@ const loadExternalSubmissions = async () => {
     externalSubmissions.value = result.data;
   } finally {
     externalSubmissionsLoading.value = false;
-  }
-};
-
-const loadSectionOptionData = async () => {
-  try {
-    const [pipeMaterialRes, pipeModelRes, soilTypeRes] = await Promise.all([
-      listDictItems("pipe_type"),
-      listDictItems("pipe_model"),
-      listDictItems("soil_type")
-    ]);
-    pipeMaterialOptions.value = mergeOptions(
-      toActiveDictLabels(pipeMaterialRes.data),
-      fallbackPipeMaterialOptions
-    );
-    pipeModelOptions.value = mergeOptions(
-      toActiveDictLabels(pipeModelRes.data),
-      fallbackPipeModelOptions
-    );
-    soilTypeOptions.value = mergeOptions(
-      toActiveDictLabels(soilTypeRes.data),
-      fallbackSoilTypeOptions
-    );
-  } catch {
-    pipeMaterialOptions.value = fallbackPipeMaterialOptions;
-    pipeModelOptions.value = fallbackPipeModelOptions;
-    soilTypeOptions.value = fallbackSoilTypeOptions;
   }
 };
 
@@ -957,7 +919,6 @@ watch(
 
 onMounted(loadData);
 onMounted(loadWecomUsers);
-onMounted(loadSectionOptionData);
 </script>
 
 <template>
@@ -1693,38 +1654,22 @@ onMounted(loadSectionOptionData);
         <el-row :gutter="16">
           <el-col :span="12">
             <el-form-item label="管材">
-              <el-select
+              <el-input
                 v-model="createSectionForm.pipe_material"
-                clearable
-                filterable
-                placeholder="选择管材"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="item in pipeMaterialOptions"
-                  :key="item"
-                  :label="item"
-                  :value="item"
-                />
-              </el-select>
+                maxlength="60"
+                show-word-limit
+                placeholder="手动填写管材"
+              />
             </el-form-item>
           </el-col>
           <el-col :span="12">
             <el-form-item label="管型">
-              <el-select
+              <el-input
                 v-model="createSectionForm.pipe_model"
-                clearable
-                filterable
-                placeholder="选择管型"
-                style="width: 100%"
-              >
-                <el-option
-                  v-for="item in pipeModelOptions"
-                  :key="item"
-                  :label="item"
-                  :value="item"
-                />
-              </el-select>
+                maxlength="60"
+                show-word-limit
+                placeholder="手动填写管型"
+              />
             </el-form-item>
           </el-col>
         </el-row>
