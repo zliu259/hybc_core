@@ -710,6 +710,21 @@
   - `packages/web/src/views/project/workspace/project-panel.vue`
   - `packages/web/src/views/project/workspace/index.vue`
 
+### 3.13 项目工作区工作段入口与加载结果态（2026-05）
+
+- 项目工作区新增独立标签 `工作段（标段总览）`，深链参数为 `tab=sections`：
+  - 路由容器：`packages/web/src/views/project/workspace/index.vue`
+  - 标段总览承载页：`packages/web/src/views/project/workspace/project-panel.vue`
+- 项目工作区旧入口页和项目列表增加“标段总览”直达入口：
+  - `packages/web/src/views/project/workspace-entry.vue`
+  - `packages/web/src/views/project/list.vue`
+- 标段总览补齐加载反馈与结果返回：
+  - 顶部显示“正在加载/已返回 N 个标段/加载失败”。
+  - 支持手动刷新标段总览。
+  - 空结果显示“暂无标段数据”。
+  - 工作区整体加载失败时展示错误 Alert 和“重新加载”操作。
+  - 标段详情抽屉加载失败时展示错误 Alert 和“重新加载详情”操作。
+
 ## 4. 小程序页面级规范（企业微信）
 
 ### 4.0 设计基准与参考

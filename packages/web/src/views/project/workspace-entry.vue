@@ -45,7 +45,7 @@ onMounted(load);
           statusLabel(scope.row.status)
         }}</template>
       </el-table-column>
-      <el-table-column label="进入" width="240" fixed="right">
+      <el-table-column label="进入" width="320" fixed="right">
         <template #default="scope">
           <el-button
             link
@@ -53,6 +53,13 @@ onMounted(load);
             @click="openWorkspace(scope.row.id, 'project')"
           >
             项目面板
+          </el-button>
+          <el-button
+            link
+            type="primary"
+            @click="openWorkspace(scope.row.id, 'sections')"
+          >
+            标段总览
           </el-button>
           <el-button
             link

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import QRCode from "qrcode";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { ElMessageBox } from "element-plus";
@@ -45,7 +45,15 @@ import {
 } from "@/api/survey";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
-const props = defineProps<{ projectId: number }>();
+const props = withDefaults(
+  defineProps<{
+    projectId: number;
+    initialFocus?: "sections" | "";
+  }>(),
+  {
+    initialFocus: ""
+  }
+);
 
 const router = useRouter();
 const userStore = useUserStoreHook();
@@ -53,6 +61,7 @@ const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const loading = ref(false);
 const saving = ref(false);
+const loadError = ref("");
 const creatingManagerLog = ref(false);
 const project = ref<Project | null>(null);
 const sections = ref<ProjectSection[]>([]);
@@ -71,6 +80,7 @@ const externalReviewingId = ref<number | null>(null);
 
 const sectionDrawerVisible = ref(false);
 const sectionDrawerLoading = ref(false);
+const sectionDrawerError = ref("");
 const currentSection = ref<ProjectSection | null>(null);
 const sectionOperatorLogs = ref<OperatorLog[]>([]);
 const sectionBreakthroughReports = ref<BreakthroughReport[]>([]);
@@ -96,6 +106,8 @@ const form = ref({
   project_briefing: "",
   project_start_at: ""
 });
+
+const sectionOverviewRef = ref<HTMLElement | null>(null);
 
 const managerLogForm = ref({
   log_date: "",
@@ -273,6 +285,21 @@ const sectionMetrics = computed(() => {
   });
 });
 
+const sectionResultLabel = computed(() => {
+  if (loading.value) return "正在加载标段数据";
+  if (loadError.value) return "标段数据加载失败";
+  return `已返回 ${sectionMetrics.value.length} 个标段`;
+});
+
+const scrollToSectionOverview = async () => {
+  if (props.initialFocus !== "sections") return;
+  await nextTick();
+  sectionOverviewRef.value?.scrollIntoView({
+    behavior: "smooth",
+    block: "start"
+  });
+};
+
 const loadProjectMain = async () => {
   const [detail, sectionData] = await Promise.all([
     getProjectById(props.projectId),
@@ -319,6 +346,7 @@ const loadExternalSubmissions = async () => {
 const loadData = async () => {
   if (!props.projectId) return;
   loading.value = true;
+  loadError.value = "";
   try {
     await Promise.all([
       loadProjectMain(),
@@ -326,8 +354,12 @@ const loadData = async () => {
       loadPublicLogLinks(),
       loadExternalSubmissions()
     ]);
+  } catch {
+    loadError.value = "项目工作区数据加载失败，请稍后重试。";
+    message(loadError.value, { type: "error" });
   } finally {
     loading.value = false;
+    await scrollToSectionOverview();
   }
 };
 
@@ -375,8 +407,14 @@ const openSectionDrawer = async (section: ProjectSection) => {
   sectionStatusValue.value = section.status;
   sectionDrawerVisible.value = true;
   sectionDrawerLoading.value = true;
+  sectionDrawerError.value = "";
   try {
     await loadSectionDetailData(section.id);
+  } catch {
+    sectionOperatorLogs.value = [];
+    sectionBreakthroughReports.value = [];
+    sectionDrawerError.value = "标段详情加载失败，请刷新后重试。";
+    message(sectionDrawerError.value, { type: "error" });
   } finally {
     sectionDrawerLoading.value = false;
   }
@@ -811,12 +849,32 @@ watch(
   }
 );
 
+watch(
+  () => props.initialFocus,
+  () => {
+    void scrollToSectionOverview();
+  }
+);
+
 onMounted(loadData);
 onMounted(loadWecomUsers);
 </script>
 
 <template>
   <div v-loading="loading" class="project-panel-page">
+    <el-alert
+      v-if="loadError"
+      type="error"
+      show-icon
+      :closable="false"
+      class="mb-3"
+      :title="loadError"
+    >
+      <template #default>
+        <el-button link type="primary" @click="loadData">重新加载</el-button>
+      </template>
+    </el-alert>
+
     <el-card shadow="never" header="项目信息">
       <el-form label-width="90px">
         <el-form-item label="项目编码">
@@ -993,59 +1051,84 @@ onMounted(loadWecomUsers);
       </el-table>
     </el-card>
 
-    <el-card shadow="never" header="标段总览（卡片视图）" class="mt-3">
-      <el-empty v-if="sectionMetrics.length === 0" description="暂无标段数据" />
-      <div v-else class="section-grid">
-        <div
-          v-for="item in sectionMetrics"
-          :key="item.section.id"
-          class="section-card"
-          @click="openSectionDrawer(item.section)"
-        >
-          <div class="section-card__head">
+    <div ref="sectionOverviewRef">
+      <el-card shadow="never" class="mt-3">
+        <template #header>
+          <div class="card-header card-header--with-action">
             <div>
-              <div class="section-card__code">
-                {{ item.section.section_code }}
-              </div>
-              <div class="section-card__name">
-                {{ item.section.section_name }}
-              </div>
+              <span>标段总览（卡片视图）</span>
+              <el-tag class="ml-2" size="small" type="info">
+                {{ sectionResultLabel }}
+              </el-tag>
             </div>
-            <el-tag size="small">{{
-              sectionStatusLabel(item.section.status)
-            }}</el-tag>
+            <el-button :loading="loading" @click="loadData">
+              刷新标段总览
+            </el-button>
           </div>
+        </template>
+        <el-empty
+          v-if="!loading && sectionMetrics.length === 0"
+          description="暂无标段数据"
+        />
+        <div v-else class="section-grid">
+          <div
+            v-for="item in sectionMetrics"
+            :key="item.section.id"
+            class="section-card"
+            @click="openSectionDrawer(item.section)"
+          >
+            <div class="section-card__head">
+              <div>
+                <div class="section-card__code">
+                  {{ item.section.section_code }}
+                </div>
+                <div class="section-card__name">
+                  {{ item.section.section_name }}
+                </div>
+              </div>
+              <el-tag size="small">{{
+                sectionStatusLabel(item.section.status)
+              }}</el-tag>
+            </div>
 
-          <div class="section-card__line">
-            <span>顶进进度</span>
-            <span>{{ item.progress.toFixed(1) }}%</span>
-          </div>
-          <el-progress
-            :percentage="Number(item.progress.toFixed(1))"
-            :stroke-width="12"
-            :color="
-              item.progress >= 85
-                ? '#67c23a'
-                : item.progress >= 60
-                  ? '#e6a23c'
-                  : '#f56c6c'
-            "
-          />
+            <div class="section-card__line">
+              <span>顶进进度</span>
+              <span>{{ item.progress.toFixed(1) }}%</span>
+            </div>
+            <el-progress
+              :percentage="Number(item.progress.toFixed(1))"
+              :stroke-width="12"
+              :color="
+                item.progress >= 85
+                  ? '#67c23a'
+                  : item.progress >= 60
+                    ? '#e6a23c'
+                    : '#f56c6c'
+              "
+            />
 
-          <div class="section-card__meta">
-            <span>总里程: {{ item.section.section_length || 0 }}m</span>
-            <span>累计顶进: {{ item.footage.toFixed(1) }}m</span>
-          </div>
-          <div class="section-card__meta">
-            <span>施工日志: {{ item.logCount }}</span>
-            <span>贯通报告: {{ item.breakthroughCount }}</span>
-          </div>
-          <div class="section-card__meta">
-            最近更新: {{ item.latestLogDate }}
+            <div class="section-card__meta">
+              <span>总里程: {{ item.section.section_length || 0 }}m</span>
+              <span>累计顶进: {{ item.footage.toFixed(1) }}m</span>
+            </div>
+            <div class="section-card__meta">
+              <span>施工日志: {{ item.logCount }}</span>
+              <span>贯通报告: {{ item.breakthroughCount }}</span>
+            </div>
+            <div class="section-card__meta">
+              <span>最近更新: {{ item.latestLogDate }}</span>
+              <el-button
+                link
+                type="primary"
+                @click.stop="openSectionDrawer(item.section)"
+              >
+                查看详情
+              </el-button>
+            </div>
           </div>
         </div>
-      </div>
-    </el-card>
+      </el-card>
+    </div>
 
     <el-card shadow="never" header="项目日志一站式视图" class="mt-3">
       <div class="log-toolbar">
@@ -1116,6 +1199,25 @@ onMounted(loadWecomUsers);
       destroy-on-close
     >
       <div v-loading="sectionDrawerLoading">
+        <el-alert
+          v-if="sectionDrawerError"
+          type="error"
+          show-icon
+          :closable="false"
+          class="mb-3"
+          :title="sectionDrawerError"
+        >
+          <template #default>
+            <el-button
+              v-if="currentSection"
+              link
+              type="primary"
+              @click="openSectionDrawer(currentSection)"
+            >
+              重新加载详情
+            </el-button>
+          </template>
+        </el-alert>
         <el-descriptions :column="4" border class="mb-3">
           <el-descriptions-item label="标段编码">{{
             currentSection?.section_code
@@ -1623,6 +1725,22 @@ onMounted(loadWecomUsers);
 <style scoped>
 .mb-3 {
   margin-bottom: 12px;
+}
+
+.card-header {
+  font-weight: 700;
+  color: #1f2937;
+}
+
+.card-header--with-action {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.ml-2 {
+  margin-left: 8px;
 }
 
 .section-grid {
