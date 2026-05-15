@@ -48,14 +48,8 @@ const isOperator = computed(() => (userStore.roles ?? []).includes("operator"));
   </el-card>
 
   <el-tabs v-model="activeTab" type="border-card">
-    <el-tab-pane label="项目动态" name="project">
+    <el-tab-pane label="项目动态与工作段" name="project">
       <ProjectWorkspaceProjectPanel :project-id="projectId" />
-    </el-tab-pane>
-    <el-tab-pane label="工作段（标段总览）" name="sections">
-      <ProjectWorkspaceProjectPanel
-        :project-id="projectId"
-        initial-focus="sections"
-      />
     </el-tab-pane>
     <el-tab-pane label="设备与材料" name="equipment">
       <ProjectWorkspaceEquipmentPanel :project-id="projectId" />

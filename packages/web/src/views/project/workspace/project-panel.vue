@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import QRCode from "qrcode";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { ElMessageBox } from "element-plus";
@@ -10,6 +10,7 @@ import { useUserStoreHook } from "@/store/modules/user";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
 import {
+  createProjectSection,
   getProjectById,
   createProjectPublicLogLink,
   listExternalLogSubmissions,
@@ -45,15 +46,7 @@ import {
 } from "@/api/survey";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
-const props = withDefaults(
-  defineProps<{
-    projectId: number;
-    initialFocus?: "sections" | "";
-  }>(),
-  {
-    initialFocus: ""
-  }
-);
+const props = defineProps<{ projectId: number }>();
 
 const router = useRouter();
 const userStore = useUserStoreHook();
@@ -81,6 +74,8 @@ const externalReviewingId = ref<number | null>(null);
 const sectionDrawerVisible = ref(false);
 const sectionDrawerLoading = ref(false);
 const sectionDrawerError = ref("");
+const createSectionDialogVisible = ref(false);
+const creatingSection = ref(false);
 const currentSection = ref<ProjectSection | null>(null);
 const sectionOperatorLogs = ref<OperatorLog[]>([]);
 const sectionBreakthroughReports = ref<BreakthroughReport[]>([]);
@@ -107,7 +102,18 @@ const form = ref({
   project_start_at: ""
 });
 
-const sectionOverviewRef = ref<HTMLElement | null>(null);
+const createSectionForm = ref({
+  section_code: "",
+  section_name: "",
+  section_length: undefined as number | undefined,
+  status: "planning",
+  pipe_material: "",
+  pipe_model: "",
+  soil_type: "",
+  assigned_machine_type: "",
+  ai_machine_match_note: "",
+  ai_machine_match_score: undefined as number | undefined
+});
 
 const managerLogForm = ref({
   log_date: "",
@@ -148,6 +154,13 @@ const canWriteProjectLog = computed(() => {
   const roles = userStore.roles ?? [];
   return roles.some(role =>
     ["super_admin", "manager", "site_manager", "finance"].includes(role)
+  );
+});
+
+const canManageSections = computed(() => {
+  const roles = userStore.roles ?? [];
+  return roles.some(role =>
+    ["super_admin", "manager", "site_manager"].includes(role)
   );
 });
 
@@ -291,15 +304,6 @@ const sectionResultLabel = computed(() => {
   return `已返回 ${sectionMetrics.value.length} 个标段`;
 });
 
-const scrollToSectionOverview = async () => {
-  if (props.initialFocus !== "sections") return;
-  await nextTick();
-  sectionOverviewRef.value?.scrollIntoView({
-    behavior: "smooth",
-    block: "start"
-  });
-};
-
 const loadProjectMain = async () => {
   const [detail, sectionData] = await Promise.all([
     getProjectById(props.projectId),
@@ -359,7 +363,6 @@ const loadData = async () => {
     message(loadError.value, { type: "error" });
   } finally {
     loading.value = false;
-    await scrollToSectionOverview();
   }
 };
 
@@ -480,6 +483,63 @@ const saveSectionStatus = async () => {
     message("标段状态已更新", { type: "success" });
   } finally {
     sectionStatusSaving.value = false;
+  }
+};
+
+const resetCreateSectionForm = () => {
+  createSectionForm.value = {
+    section_code: "",
+    section_name: "",
+    section_length: undefined,
+    status: "planning",
+    pipe_material: "",
+    pipe_model: "",
+    soil_type: "",
+    assigned_machine_type: "",
+    ai_machine_match_note: "",
+    ai_machine_match_score: undefined
+  };
+};
+
+const openCreateSectionDialog = () => {
+  resetCreateSectionForm();
+  createSectionDialogVisible.value = true;
+};
+
+const submitCreateSection = async () => {
+  const formData = createSectionForm.value;
+  const sectionCode = formData.section_code.trim();
+  const sectionName = formData.section_name.trim();
+  if (!sectionCode) {
+    message("请填写标段编码", { type: "warning" });
+    return;
+  }
+  if (!sectionName) {
+    message("请填写标段名称", { type: "warning" });
+    return;
+  }
+
+  creatingSection.value = true;
+  try {
+    await createProjectSection(props.projectId, {
+      section_code: sectionCode,
+      section_name: sectionName,
+      section_length: formData.section_length ?? null,
+      status: formData.status,
+      pipe_material: formData.pipe_material.trim() || null,
+      pipe_model: formData.pipe_model.trim() || null,
+      soil_type: formData.soil_type.trim() || null,
+      assigned_machine_type: formData.assigned_machine_type.trim() || null,
+      ai_machine_match_note: formData.ai_machine_match_note.trim() || null,
+      ai_machine_match_score: formData.ai_machine_match_score ?? null
+    });
+    message("标段已创建", { type: "success" });
+    createSectionDialogVisible.value = false;
+    await loadProjectMain();
+  } catch {
+    message("标段创建失败，请稍后重试", { type: "error" });
+  } finally {
+    creatingSection.value = false;
   }
 };
 
@@ -849,13 +909,6 @@ watch(
   }
 );
 
-watch(
-  () => props.initialFocus,
-  () => {
-    void scrollToSectionOverview();
-  }
-);
-
 onMounted(loadData);
 onMounted(loadWecomUsers);
 </script>
@@ -1051,7 +1104,7 @@ onMounted(loadWecomUsers);
       </el-table>
     </el-card>
 
-    <div ref="sectionOverviewRef">
+    <div>
       <el-card shadow="never" class="mt-3">
         <template #header>
           <div class="card-header card-header--with-action">
@@ -1061,9 +1114,18 @@ onMounted(loadWecomUsers);
                 {{ sectionResultLabel }}
               </el-tag>
             </div>
-            <el-button :loading="loading" @click="loadData">
-              刷新标段总览
-            </el-button>
+            <el-space>
+              <el-button
+                type="primary"
+                :disabled="!canManageSections"
+                @click="openCreateSectionDialog"
+              >
+                新增标段
+              </el-button>
+              <el-button :loading="loading" @click="loadData">
+                刷新标段总览
+              </el-button>
+            </el-space>
           </div>
         </template>
         <el-empty
@@ -1530,6 +1592,108 @@ onMounted(loadWecomUsers);
           @click="submitManagerLog"
           >提交日志</el-button
         >
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="createSectionDialogVisible"
+      title="新增标段"
+      width="760px"
+      destroy-on-close
+    >
+      <el-alert
+        type="info"
+        show-icon
+        :closable="false"
+        class="mb-3"
+        title="新增后会立即返回到标段总览，可继续进入详情补充施工日志与贯通报告。"
+      />
+      <el-form label-width="120px">
+        <el-form-item label="标段编码" required>
+          <el-input
+            v-model="createSectionForm.section_code"
+            maxlength="50"
+            show-word-limit
+            placeholder="例如 SECTION-001 / 工作段-A"
+          />
+        </el-form-item>
+        <el-form-item label="标段名称" required>
+          <el-input
+            v-model="createSectionForm.section_name"
+            maxlength="100"
+            show-word-limit
+            placeholder="填写标段或工作段名称"
+          />
+        </el-form-item>
+        <el-form-item label="计划里程(m)">
+          <el-input-number
+            v-model="createSectionForm.section_length"
+            :min="0"
+            :precision="2"
+            style="width: 220px"
+          />
+        </el-form-item>
+        <el-form-item label="初始状态">
+          <el-select v-model="createSectionForm.status" style="width: 220px">
+            <el-option
+              v-for="opt in sectionStatusOptions"
+              :key="opt.value"
+              :label="opt.label"
+              :value="opt.value"
+            />
+          </el-select>
+        </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="管材">
+              <el-input v-model="createSectionForm.pipe_material" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="管型">
+              <el-input v-model="createSectionForm.pipe_model" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="土质">
+              <el-input v-model="createSectionForm.soil_type" />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="拟派设备">
+              <el-input v-model="createSectionForm.assigned_machine_type" />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-form-item label="匹配评分">
+          <el-input-number
+            v-model="createSectionForm.ai_machine_match_score"
+            :min="0"
+            :max="100"
+            :precision="2"
+            style="width: 220px"
+          />
+        </el-form-item>
+        <el-form-item label="匹配说明">
+          <el-input
+            v-model="createSectionForm.ai_machine_match_note"
+            type="textarea"
+            :rows="3"
+            placeholder="可记录设备匹配依据、风险或施工建议"
+          />
+        </el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="createSectionDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="creatingSection"
+          @click="submitCreateSection"
+        >
+          创建标段
+        </el-button>
       </template>
     </el-dialog>
 
