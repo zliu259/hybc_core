@@ -15,7 +15,7 @@ export default [
     name: "PublicProjectLog",
     component: () => import("@/views/public/project-log.vue"),
     meta: {
-      title: "外包日志填报",
+      title: "外包日志工作台",
       showLink: false
     }
   },

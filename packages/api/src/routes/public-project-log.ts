@@ -37,6 +37,37 @@ type SectionRow = {
   assigned_machine_type: string | null;
 };
 
+type PublicOperatorLogRow = {
+  id: number;
+  section_id: number | null;
+  log_date: string;
+  shift: string;
+  weather: string | null;
+  completed_pipe_count: number;
+  cumulative_pipe_count: number;
+  footage_m: number | null;
+  issue_summary: string | null;
+  remark: string | null;
+  status: string;
+  source_type: string;
+  external_submitter_name: string | null;
+  external_submitter_company: string | null;
+  section_code: string | null;
+  section_name: string | null;
+};
+
+type PublicManagerLogRow = {
+  id: number;
+  log_date: string;
+  title: string | null;
+  detail_html: string | null;
+  risk_note: string | null;
+  status: string;
+  source_type: string;
+  external_submitter_name: string | null;
+  external_submitter_company: string | null;
+};
+
 const hashToken = async (token: string): Promise<string> => {
   const bytes = new TextEncoder().encode(token);
   const digest = await crypto.subtle.digest("SHA-256", bytes);
@@ -189,6 +220,116 @@ publicProjectLogRoutes.get("/:token", async (c) => {
       expires_at: resolved.link.expires_at
     }
   });
+});
+
+publicProjectLogRoutes.get("/:token/logs/project", async (c) => {
+  const resolved = await requireActiveLink(c.env, c.req.param("token"));
+  if (resolved instanceof Response) return resolved;
+
+  const page = Math.max(Number(c.req.query("page") ?? "1"), 1);
+  const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "10"), 1), 30);
+  const offset = (page - 1) * pageSize;
+
+  const rows = await c.env.DB.prepare(
+    `SELECT id, log_date, title, detail_html, risk_note, status, source_type,
+            external_submitter_name, external_submitter_company
+       FROM manager_log
+      WHERE project_id = ?
+        AND status != 'deleted'
+      ORDER BY log_date DESC, id DESC
+      LIMIT ? OFFSET ?`
+  )
+    .bind(resolved.project.id, pageSize, offset)
+    .all<PublicManagerLogRow>();
+
+  const totalRow = await c.env.DB.prepare(
+    "SELECT COUNT(*) as total FROM manager_log WHERE project_id = ? AND status != 'deleted'"
+  )
+    .bind(resolved.project.id)
+    .first<{ total: number }>();
+
+  return c.json({
+    success: true,
+    data: rows.results ?? [],
+    pagination: { page, pageSize, total: totalRow?.total ?? 0 }
+  });
+});
+
+publicProjectLogRoutes.get("/:token/logs/operator", async (c) => {
+  const resolved = await requireActiveLink(c.env, c.req.param("token"));
+  if (resolved instanceof Response) return resolved;
+
+  const page = Math.max(Number(c.req.query("page") ?? "1"), 1);
+  const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "10"), 1), 30);
+  const offset = (page - 1) * pageSize;
+  const sectionId = Number(c.req.query("section_id") ?? "0");
+
+  let sql = `SELECT l.id, l.section_id, l.log_date, l.shift, l.weather,
+                    l.completed_pipe_count, l.cumulative_pipe_count, l.footage_m,
+                    l.issue_summary, l.remark, l.status, l.source_type,
+                    l.external_submitter_name, l.external_submitter_company,
+                    s.section_code, s.section_name
+               FROM operator_log l
+               LEFT JOIN project_section s ON s.id = l.section_id
+              WHERE l.project_id = ?
+                AND l.status != 'deleted'`;
+  let countSql =
+    "SELECT COUNT(*) as total FROM operator_log WHERE project_id = ? AND status != 'deleted'";
+  const params: Array<number> = [resolved.project.id];
+  if (sectionId > 0) {
+    sql += " AND l.section_id = ?";
+    countSql += " AND section_id = ?";
+    params.push(sectionId);
+  }
+  sql +=
+    " ORDER BY l.log_date DESC, CASE l.shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, l.id DESC LIMIT ? OFFSET ?";
+
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params, pageSize, offset)
+    .all<PublicOperatorLogRow>();
+  const totalRow = await c.env.DB.prepare(countSql)
+    .bind(...params)
+    .first<{ total: number }>();
+
+  return c.json({
+    success: true,
+    data: rows.results ?? [],
+    pagination: { page, pageSize, total: totalRow?.total ?? 0 }
+  });
+});
+
+publicProjectLogRoutes.get("/:token/logs/operator/latest", async (c) => {
+  const resolved = await requireActiveLink(c.env, c.req.param("token"));
+  if (resolved instanceof Response) return resolved;
+
+  const sectionId = Number(c.req.query("section_id") ?? "0");
+  if (!sectionId) {
+    return c.json({ success: true, data: null });
+  }
+  if (!resolved.sections.some((item) => item.id === sectionId)) {
+    return c.json({ success: false, error: { message: "Section not found in this project" } }, 400);
+  }
+
+  const row = await c.env.DB.prepare(
+    `SELECT l.id, l.section_id, l.log_date, l.shift, l.weather,
+            l.completed_pipe_count, l.cumulative_pipe_count, l.footage_m,
+            l.issue_summary, l.remark, l.status, l.source_type,
+            l.external_submitter_name, l.external_submitter_company,
+            s.section_code, s.section_name
+       FROM operator_log l
+       LEFT JOIN project_section s ON s.id = l.section_id
+      WHERE l.project_id = ?
+        AND l.section_id = ?
+        AND l.status != 'deleted'
+      ORDER BY l.log_date DESC,
+               CASE l.shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC,
+               l.id DESC
+      LIMIT 1`
+  )
+    .bind(resolved.project.id, sectionId)
+    .first<PublicOperatorLogRow>();
+
+  return c.json({ success: true, data: row ?? null });
 });
 
 publicProjectLogRoutes.post("/:token/upload-sign", async (c) => {

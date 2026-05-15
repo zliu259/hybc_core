@@ -21,6 +21,43 @@ export type PublicProjectLogSection = {
   assigned_machine_type: string | null;
 };
 
+export type PublicOperatorLogItem = {
+  id: number;
+  section_id: number | null;
+  log_date: string;
+  shift: string;
+  weather: string | null;
+  completed_pipe_count: number;
+  cumulative_pipe_count: number;
+  footage_m: number | null;
+  issue_summary: string | null;
+  remark: string | null;
+  status: string;
+  source_type: string;
+  external_submitter_name: string | null;
+  external_submitter_company: string | null;
+  section_code: string | null;
+  section_name: string | null;
+};
+
+export type PublicProjectLogItem = {
+  id: number;
+  log_date: string;
+  title: string | null;
+  detail_html: string | null;
+  risk_note: string | null;
+  status: string;
+  source_type: string;
+  external_submitter_name: string | null;
+  external_submitter_company: string | null;
+};
+
+export type PublicPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+};
+
 export const getPublicProjectLogContext = (token: string) =>
   http.request<{
     success: boolean;
@@ -49,6 +86,50 @@ export const createPublicProjectLogUploadSignature = (
       fileUrl: string;
     };
   }>("post", `/api/v1/public/project-log/${token}/upload-sign`, { data });
+
+export const getPublicProjectLogItems = (
+  token: string,
+  params?: {
+    page?: number;
+    pageSize?: number;
+  }
+) =>
+  http.request<{
+    success: boolean;
+    data: PublicProjectLogItem[];
+    pagination: PublicPagination;
+  }>("get", `/api/v1/public/project-log/${token}/logs/project`, {
+    params
+  });
+
+export const getPublicOperatorLogItems = (
+  token: string,
+  params?: {
+    section_id?: number;
+    page?: number;
+    pageSize?: number;
+  }
+) =>
+  http.request<{
+    success: boolean;
+    data: PublicOperatorLogItem[];
+    pagination: PublicPagination;
+  }>("get", `/api/v1/public/project-log/${token}/logs/operator`, {
+    params
+  });
+
+export const getPublicLatestOperatorLog = (
+  token: string,
+  params: {
+    section_id?: number;
+  }
+) =>
+  http.request<{
+    success: boolean;
+    data: PublicOperatorLogItem | null;
+  }>("get", `/api/v1/public/project-log/${token}/logs/operator/latest`, {
+    params
+  });
 
 export const submitPublicProjectLog = (
   token: string,
