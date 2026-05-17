@@ -17,7 +17,9 @@ import {
   triggerEnvelopeAnomalyCheck,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
+import ReimbursementBatchCenter from "./batch.vue";
 import ReimbursementDetail from "./detail.vue";
+import ReimbursementPayoutCenter from "./payout.vue";
 
 defineOptions({ name: "ReimbursementList" });
 
@@ -57,9 +59,10 @@ const canFinanceCenter = computed(() =>
 );
 const isWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
-type WorkflowView = "submission" | "office" | "finance";
+type WorkflowView = "submission" | "office" | "approval" | "payout";
 const workflowView = ref<WorkflowView>("submission");
 const workflowReady = ref(false);
+const submissionStatuses = ["unregistered", "draft", "submitted"];
 
 const projectMap = computed(() => {
   const map: Record<number, string> = {};
@@ -157,22 +160,82 @@ const tableRowClassName = ({ row }: { row: ReimbursementEnvelope }) => {
 };
 
 const currentViewTitle = computed(() => {
-  if (workflowView.value === "office") return "办公室处理与审查";
-  if (workflowView.value === "finance") return "财务集中审批与历史";
+  if (workflowView.value === "office") return "核对签收与复核";
+  if (workflowView.value === "approval") return "报销提交审批";
+  if (workflowView.value === "payout") return "付款标记";
   return "报销提交";
 });
 
 const currentViewHint = computed(() => {
   if (workflowView.value === "office") {
-    return "重点处理已提交/已收件单据，执行收件核查、智能核查和复核动作。";
+    return "办公室在这里完成信封核对签收、异常标记、二次静默审查和复核处理。";
   }
-  if (workflowView.value === "finance") {
-    return "进入集中送审、打款登记，并查看历史完成批次。";
+  if (workflowView.value === "approval") {
+    return "把已签收且复核通过的报销按项目和被报销人汇总，创建批次并提交审批。";
+  }
+  if (workflowView.value === "payout") {
+    return "审批通过后的报销批次在这里登记付款日期、流水号、付款账户和凭证。";
   }
   return isWorkspaceRoute.value
     ? "查看我的报销提交，并可继续发起报销。"
-    : "查看全部报销提交；办公室/领导可在此代员工发起报销。";
+    : "只展示未登记、草稿和已提交条目；后续审批和付款状态请在右侧流程页签处理。";
 });
+
+const isEnvelopeWorkflow = computed(() =>
+  ["submission", "office"].includes(workflowView.value)
+);
+
+const workflowStepItems = computed(() => {
+  const items: Array<{
+    name: WorkflowView;
+    title: string;
+    subtitle: string;
+  }> = [
+    {
+      name: "submission",
+      title: "1. 报销提交",
+      subtitle: "新建、草稿、已提交"
+    }
+  ];
+
+  if (!isWorkspaceRoute.value && canOfficeOps.value) {
+    items.push({
+      name: "office",
+      title: "2. 核对签收与复核",
+      subtitle: "签收、异常、复核"
+    });
+  }
+
+  if (!isWorkspaceRoute.value && canFinanceCenter.value) {
+    items.push(
+      {
+        name: "approval",
+        title: "3. 提交审批",
+        subtitle: "汇总批次并送审"
+      },
+      {
+        name: "payout",
+        title: "4. 付款标记",
+        subtitle: "登记流水和凭证"
+      }
+    );
+  }
+
+  return items;
+});
+
+const switchWorkflow = (name: WorkflowView) => {
+  workflowView.value = name;
+};
+
+const workflowFromQuery = (): WorkflowView | null => {
+  if (isWorkspaceRoute.value) return null;
+  const step = String(route.query.step || "");
+  if (["submission", "office", "approval", "payout"].includes(step)) {
+    return step as WorkflowView;
+  }
+  return null;
+};
 
 const listedAmountTotal = computed(() =>
   list.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
@@ -241,14 +304,6 @@ const onDetailDrawerClosed = () => {
 
 const onDetailChanged = async () => {
   await loadData();
-};
-
-const goBatchCenter = () => {
-  router.push("/finance/reimbursement/batch");
-};
-
-const goPayoutCenter = () => {
-  router.push("/finance/reimbursement/payout");
 };
 
 const goEnvelopeGenerator = () => {
@@ -327,14 +382,14 @@ const applyWorkflowPreset = (mode: WorkflowView) => {
     filters.value.applicant_userid = isWorkspaceRoute.value
       ? currentUserid.value
       : "";
-    filters.value.status = [];
+    filters.value.status = [...submissionStatuses];
     filters.value.channel = "";
     return;
   }
 
   if (mode === "office") {
     filters.value.applicant_userid = "";
-    filters.value.status = ["submitted"];
+    filters.value.status = ["submitted", "received"];
     filters.value.channel = "";
     return;
   }
@@ -347,16 +402,22 @@ const applyWorkflowPreset = (mode: WorkflowView) => {
 const onWorkflowChange = async (mode: WorkflowView) => {
   applyWorkflowPreset(mode);
   page.value = 1;
-  await loadData();
+  if (isEnvelopeWorkflow.value) {
+    await loadData();
+  }
 };
 
 onMounted(async () => {
-  workflowView.value = "submission";
+  workflowView.value =
+    workflowFromQuery() ||
+    (!isWorkspaceRoute.value && canOfficeOps.value ? "office" : "submission");
 
   applyWorkflowPreset(workflowView.value);
 
   await Promise.all([loadProjects(), loadWecomUsers()]);
-  await loadData();
+  if (isEnvelopeWorkflow.value) {
+    await loadData();
+  }
   workflowReady.value = true;
 });
 
@@ -364,6 +425,15 @@ watch(workflowView, mode => {
   if (!workflowReady.value) return;
   onWorkflowChange(mode);
 });
+
+watch(
+  () => route.query.step,
+  () => {
+    const target = workflowFromQuery();
+    if (!target || target === workflowView.value) return;
+    workflowView.value = target;
+  }
+);
 </script>
 
 <template>
@@ -386,12 +456,6 @@ watch(workflowView, mode => {
         <el-button v-if="workflowView === 'office'" @click="openQuickScan">
           扫码/输入UUID
         </el-button>
-        <el-button v-if="workflowView === 'finance'" @click="goBatchCenter">
-          集中审批台
-        </el-button>
-        <el-button v-if="workflowView === 'finance'" @click="goPayoutCenter">
-          集中打款台
-        </el-button>
         <el-button
           v-if="!isWorkspaceRoute && canFinanceCenter"
           type="primary"
@@ -403,7 +467,21 @@ watch(workflowView, mode => {
       </el-space>
     </div>
 
-    <div class="summary-grid">
+    <nav v-if="!isWorkspaceRoute" class="workflow-steps">
+      <button
+        v-for="item in workflowStepItems"
+        :key="item.name"
+        class="workflow-step"
+        :class="{ 'workflow-step--active': workflowView === item.name }"
+        type="button"
+        @click="switchWorkflow(item.name)"
+      >
+        <span>{{ item.title }}</span>
+        <small>{{ item.subtitle }}</small>
+      </button>
+    </nav>
+
+    <div v-if="isEnvelopeWorkflow" class="summary-grid">
       <div class="summary-tile">
         <span>当前列表</span>
         <strong>{{ total }}</strong>
@@ -423,17 +501,22 @@ watch(workflowView, mode => {
         <el-tab-pane label="报销提交" name="submission" />
         <el-tab-pane
           v-if="canOfficeOps && !isWorkspaceRoute"
-          label="办公室处理与审查"
+          label="核对签收与复核"
           name="office"
         />
         <el-tab-pane
           v-if="canFinanceCenter && !isWorkspaceRoute"
-          label="财务集中审批与历史"
-          name="finance"
+          label="提交审批"
+          name="approval"
+        />
+        <el-tab-pane
+          v-if="canFinanceCenter && !isWorkspaceRoute"
+          label="付款标记"
+          name="payout"
         />
       </el-tabs>
 
-      <el-form class="filter-form" label-width="72px">
+      <el-form v-if="isEnvelopeWorkflow" class="filter-form" label-width="72px">
         <div class="filter-grid">
           <el-form-item label="所属项目">
             <el-select
@@ -515,7 +598,7 @@ watch(workflowView, mode => {
       </el-form>
     </section>
 
-    <section class="table-panel">
+    <section v-if="isEnvelopeWorkflow" class="table-panel">
       <el-table
         :data="list"
         :loading="loading"
@@ -629,6 +712,14 @@ watch(workflowView, mode => {
         "
       />
     </section>
+
+    <section v-else-if="workflowView === 'approval'" class="embedded-workflow">
+      <ReimbursementBatchCenter />
+    </section>
+
+    <section v-else-if="workflowView === 'payout'" class="embedded-workflow">
+      <ReimbursementPayoutCenter />
+    </section>
   </div>
 
   <el-dialog
@@ -710,6 +801,40 @@ watch(workflowView, mode => {
   gap: 12px;
 }
 
+.workflow-steps {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.workflow-step {
+  display: flex;
+  min-height: 72px;
+  padding: 12px 14px;
+  text-align: left;
+  cursor: pointer;
+  background: #ffffff;
+  border: 1px solid #dcdfe6;
+  border-radius: 8px;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.workflow-step span {
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.workflow-step small {
+  margin-top: 6px;
+  color: #6b7280;
+}
+
+.workflow-step--active {
+  background: #ecf5ff;
+  border-color: #409eff;
+}
+
 .summary-tile {
   min-height: 78px;
   padding: 14px 16px;
@@ -749,6 +874,10 @@ watch(workflowView, mode => {
   margin-top: 12px;
 }
 
+.embedded-workflow :deep(.page-header) {
+  margin-top: 0;
+}
+
 :deep(.el-table .reimbursement-row-high-risk > td) {
   background: #fff2f0 !important;
 }
@@ -760,6 +889,7 @@ watch(workflowView, mode => {
   }
 
   .summary-grid,
+  .workflow-steps,
   .filter-grid {
     grid-template-columns: 1fr;
   }

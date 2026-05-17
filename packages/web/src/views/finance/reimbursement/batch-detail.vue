@@ -582,7 +582,7 @@ const submitApproval = async () => {
 };
 
 const doMarkPaid = async () => {
-  router.push(`/finance/reimbursement/payout?batch_id=${batchId.value}`);
+  router.push(`/finance/reimbursement?step=payout&batch_id=${batchId.value}`);
 };
 
 onMounted(async () => {

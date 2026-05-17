@@ -60,7 +60,7 @@
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`
 - 收款人管理：`packages/web/src/views/finance/payee/index.vue`
   - 个人工作台路径 `/workspace/payee` 下仅显示“与当前账号姓名匹配”的内部收款人记录（服务端按 `nickname/username` 与收款人姓名匹配过滤）。
-- 报销处理列表：`packages/web/src/views/finance/reimbursement/list.vue`
+- 报销付款工作台：`packages/web/src/views/finance/reimbursement/list.vue`
 - 报销信封生成器（正式离线版）：`packages/web/src/views/finance/reimbursement/envelope-generator.vue`
 - 报销详情：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 报销预审工作台：`packages/web/src/views/finance/reimbursement/precheck.vue`
@@ -196,23 +196,24 @@
 - 操作：新增、编辑、软删除。
 - API 指向：`/api/v1/payment/payee/*`
 
-#### F. 报销处理列表 `views/finance/reimbursement/list.vue`
+#### F. 报销付款工作台 `views/finance/reimbursement/list.vue`
 
 - 展示维度：信封编号、项目、填报人（姓名）、金额、状态、PDF状态。
-- 默认打开首个标签“报销提交”，并区分入口语义：
-  - 工作台入口：展示“我的提交”；
-  - 财务中心入口：展示全部报销提交（办公室/领导可查看全量并代员工发起）。
+- 财务中心入口默认打开“核对签收与复核”，办公室人员进入后优先看到待处理单据。
+- “报销提交”默认仅展示 `unregistered/draft/submitted`，不再混入 `pending_approval/approved/paid` 等审批或付款阶段条目。
+- 工作台入口仍展示“我的提交”，但同样按早期提交状态默认过滤，避免把审批完成数据误认为待提交。
 - 角色化流程视图：
-  - 报销提交：统一提交视图（含代员工发起入口）
-  - 办公室：处理与审查（复核提示/智能核查/收件核查）
-  - 财务与领导：集中审批与历史
+  - 报销提交：新建、草稿、已提交（含代员工发起入口）
+  - 核对签收与复核：收件核查、异常标记、二次静默审查、复核通过/补充/驳回
+  - 提交审批：嵌入 `packages/web/src/views/finance/reimbursement/batch.vue`，按项目和被报销人汇总可送审条目并创建批次
+  - 付款标记：嵌入 `packages/web/src/views/finance/reimbursement/payout.vue`，对已审批批次登记付款流水、付款账户和凭证
 - 支持入口：UUID快速打开信封（办公室）、进入详情执行登记/提交/收件核查/预审动作。
 - 页面收敛：移除“批量生成未登记信封”入口，实体信封由办公室线下发放并通过 UUID 入流。
 - 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
 - 功能融合：复核提示、智能核查、复核通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
 - 报销处理页（财务中心入口）常驻“信封生成器”按钮，避免因分段切换看不到入口。
-- 页面信息架构收敛为“顶部标题/动作 + 摘要指标 + 筛选面板 + 表格区”，将角色说明并入页面副标题，避免提示条、筛选项、动作按钮混排造成首屏复杂：`packages/web/src/views/finance/reimbursement/list.vue`
-- 财务中心“报销提交 / 办公室处理与审查 / 财务集中审批与历史”中的报销条目详情统一改为右侧抽屉打开，复用详情页能力并保留当前列表筛选、分页与标签状态：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/views/finance/reimbursement/detail.vue`
+- 页面信息架构收敛为“顶部标题/动作 + 流程步骤条 + 当前步骤内容”，流程步骤条按办公室实际顺序展示：报销提交 → 核对签收与复核 → 提交审批 → 付款标记。
+- 财务中心“报销提交 / 核对签收与复核 / 提交审批 / 付款标记”中的报销条目详情统一改为右侧抽屉打开，复用详情页能力并保留当前列表筛选、分页与标签状态：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/views/finance/reimbursement/detail.vue`
 - 报销提交列表默认隐藏 `cancelled` 记录；仅在状态筛选显式选择“已废止”时展示：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
 - 报销提交列表“状态”筛选支持多选，前端将多选状态合并为逗号参数传递，后端按 `IN` 条件过滤，避免多选后筛选报错：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
 - 报销集中审批中心候选条目改为“后端强约束可送审清单”：仅返回 `status=received + precheck_status=approved + batch_id IS NULL` 且项目/被报销人匹配的条目，避免草稿/待审批/已提交条目混入候选并导致重复批次审批：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`

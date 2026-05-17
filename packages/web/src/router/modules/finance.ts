@@ -26,7 +26,7 @@ export default {
           name: "ReimbursementList",
           component: () => import("@/views/finance/reimbursement/list.vue"),
           meta: {
-            title: "报销处理",
+            title: "报销付款工作台",
             roles: ["super_admin", "manager", "finance"]
           }
         },
@@ -46,7 +46,8 @@ export default {
           component: () => import("@/views/finance/reimbursement/batch.vue"),
           meta: {
             title: "报销集中审批",
-            roles: ["super_admin", "manager", "finance"]
+            roles: ["super_admin", "manager", "finance"],
+            showLink: false
           }
         },
         {
@@ -55,7 +56,8 @@ export default {
           component: () => import("@/views/finance/reimbursement/payout.vue"),
           meta: {
             title: "报销集中打款",
-            roles: ["super_admin", "manager", "finance"]
+            roles: ["super_admin", "manager", "finance"],
+            showLink: false
           }
         },
         {
