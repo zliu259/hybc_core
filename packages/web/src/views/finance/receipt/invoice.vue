@@ -41,6 +41,7 @@ type InvoiceItemDraft = {
   specification: string;
   unit: string;
   quantity: number;
+  /** Tax-inclusive unit price. Stored as unit_price for API compatibility. */
   unit_price: number;
 };
 
@@ -197,23 +198,34 @@ const itemTemplates: InvoiceItemTemplate[] = [
   }
 ];
 
-const amountWithoutTax = computed(() => {
-  return invoiceItems.value.reduce((sum, item) => {
-    const quantity = Number.isFinite(item.quantity) ? item.quantity : 0;
-    const price = Number.isFinite(item.unit_price) ? item.unit_price : 0;
-    return sum + quantity * price;
-  }, 0);
+const toLineAmountWithTax = (item: InvoiceItemDraft) => {
+  const quantity = Number.isFinite(item.quantity) ? item.quantity : 0;
+  const priceWithTax = Number.isFinite(item.unit_price) ? item.unit_price : 0;
+  return quantity * priceWithTax;
+};
+
+const amountWithTax = computed(() => {
+  return invoiceItems.value.reduce(
+    (sum, item) => sum + toLineAmountWithTax(item),
+    0
+  );
 });
 
-const taxAmountEstimated = computed(() => {
+const taxRateRatio = computed(() => {
   const taxRate = Number.isFinite(requestForm.value.tax_rate_percent)
     ? requestForm.value.tax_rate_percent
     : 0;
-  return amountWithoutTax.value * (taxRate / 100);
+  return Math.max(taxRate, 0) / 100;
 });
 
-const amountWithTax = computed(() => {
-  return amountWithoutTax.value + taxAmountEstimated.value;
+const amountWithoutTax = computed(() => {
+  const divisor = 1 + taxRateRatio.value;
+  if (divisor <= 0) return amountWithTax.value;
+  return amountWithTax.value / divisor;
+});
+
+const taxAmountEstimated = computed(() => {
+  return amountWithTax.value - amountWithoutTax.value;
 });
 
 const toChineseAmount = (amount: number): string => {
@@ -450,7 +462,9 @@ const importTemplate = (templateKey: string) => {
   const template = itemTemplates.find(item => item.key === templateKey);
   if (!template) return;
   invoiceItems.value = template.items.map(item => cloneItem(item));
-  message(`已导入${template.label}，可继续调整数量和单价`, { type: "success" });
+  message(`已导入${template.label}，可继续调整数量和含税单价`, {
+    type: "success"
+  });
 };
 
 const setTaxRateQuick = (rate: number) => {
@@ -615,7 +629,9 @@ const submitCreateRequest = async () => {
       items_json: JSON.stringify(
         invoiceItems.value.map(item => ({
           ...item,
-          amount: Number((item.quantity * item.unit_price).toFixed(2))
+          unit_price_with_tax: Number(item.unit_price.toFixed(2)),
+          amount: Number(toLineAmountWithTax(item).toFixed(2)),
+          amount_with_tax: Number(toLineAmountWithTax(item).toFixed(2))
         }))
       ),
       attachments_json: remittanceAttachments.value.length
@@ -1125,7 +1141,7 @@ onMounted(async () => {
             />
           </template>
         </el-table-column>
-        <el-table-column label="单价" width="150">
+        <el-table-column label="含税单价" width="150">
           <template #default="scope">
             <el-input-number
               v-model="scope.row.unit_price"
@@ -1136,9 +1152,9 @@ onMounted(async () => {
             />
           </template>
         </el-table-column>
-        <el-table-column label="金额" width="200">
+        <el-table-column label="含税金额" width="200">
           <template #default="scope">
-            {{ (scope.row.quantity * scope.row.unit_price).toFixed(2) }}
+            {{ toLineAmountWithTax(scope.row).toFixed(2) }}
           </template>
         </el-table-column>
         <el-table-column label="操作" width="130" fixed="right">
@@ -1181,6 +1197,14 @@ onMounted(async () => {
         </el-dropdown>
       </div>
 
+      <el-form-item label="含税金额合计">
+        <el-input :model-value="amountWithTax.toFixed(2)" readonly />
+        <div
+          style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00"
+        >
+          大写：{{ amountWithTaxCn }}
+        </div>
+      </el-form-item>
       <el-form-item label="不含税金额">
         <el-input :model-value="amountWithoutTax.toFixed(2)" readonly />
         <div
@@ -1195,14 +1219,6 @@ onMounted(async () => {
           style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00"
         >
           大写：{{ taxAmountEstimatedCn }}
-        </div>
-      </el-form-item>
-      <el-form-item label="价税合计">
-        <el-input :model-value="amountWithTax.toFixed(2)" readonly />
-        <div
-          style="width: 100%; margin-top: 6px; font-weight: 700; color: #5c3b00"
-        >
-          大写：{{ amountWithTaxCn }}
         </div>
       </el-form-item>
 

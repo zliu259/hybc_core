@@ -109,7 +109,7 @@ const createSectionForm = ref({
   status: "planning",
   pipe_material: "",
   pipe_model: "",
-  soil_type: ""
+  soil_type: [] as string[]
 });
 
 const soilTypeOptions = [
@@ -508,7 +508,7 @@ const resetCreateSectionForm = () => {
     status: "planning",
     pipe_material: "",
     pipe_model: "",
-    soil_type: ""
+    soil_type: []
   };
 };
 
@@ -539,7 +539,9 @@ const submitCreateSection = async () => {
       status: formData.status,
       pipe_material: formData.pipe_material.trim() || null,
       pipe_model: formData.pipe_model.trim() || null,
-      soil_type: formData.soil_type.trim() || null
+      soil_type: formData.soil_type.length
+        ? formData.soil_type.join("、")
+        : null
     });
     message("标段已创建", { type: "success" });
     createSectionDialogVisible.value = false;
@@ -1676,9 +1678,12 @@ onMounted(loadWecomUsers);
         <el-form-item label="土质">
           <el-select
             v-model="createSectionForm.soil_type"
+            multiple
             clearable
             filterable
-            placeholder="选择土质"
+            collapse-tags
+            collapse-tags-tooltip
+            placeholder="可多选土质"
             style="width: 100%"
           >
             <el-option

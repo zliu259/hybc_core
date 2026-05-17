@@ -171,19 +171,29 @@ export default {
       path: "/finance/receipts",
       name: "FinanceReceipts",
       component: Layout,
-      redirect: "/finance/receipt/contract",
+      redirect: "/finance/receipt/workbench",
       meta: {
         title: "收款",
         roles: ["super_admin", "manager", "finance"]
       },
       children: [
         {
+          path: "/finance/receipt/workbench",
+          name: "ReceiptWorkbench",
+          component: () => import("@/views/finance/receipt/workbench.vue"),
+          meta: {
+            title: "收款工作台",
+            roles: ["super_admin", "manager", "finance"]
+          }
+        },
+        {
           path: "/finance/receipt/contract",
           name: "InboundContractList",
           component: () => import("@/views/finance/receipt/contract.vue"),
           meta: {
             title: "收款合同",
-            roles: ["super_admin", "manager", "finance"]
+            roles: ["super_admin", "manager", "finance"],
+            showLink: false
           }
         },
         {
@@ -192,7 +202,8 @@ export default {
           component: () => import("@/views/finance/receipt/invoice.vue"),
           meta: {
             title: "发票管理",
-            roles: ["super_admin", "manager", "finance"]
+            roles: ["super_admin", "manager", "finance"],
+            showLink: false
           }
         },
         {
@@ -201,7 +212,8 @@ export default {
           component: () => import("@/views/finance/receipt/list.vue"),
           meta: {
             title: "收款登记",
-            roles: ["super_admin", "manager", "finance"]
+            roles: ["super_admin", "manager", "finance"],
+            showLink: false
           }
         },
         {

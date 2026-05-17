@@ -68,6 +68,7 @@
 - 报销集中审批批次列表：`packages/web/src/views/finance/reimbursement/batch.vue`
 - 报内报销集中打款台：`packages/web/src/views/finance/reimbursement/payout.vue`
 - 报销集中审批批次详情：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
+- 收款工作台：`packages/web/src/views/finance/receipt/workbench.vue`
 - 收款合同管理：`packages/web/src/views/finance/receipt/contract.vue`
 - 发票管理：`packages/web/src/views/finance/receipt/invoice.vue`
 - 收款登记列表：`packages/web/src/views/finance/receipt/list.vue`
@@ -292,7 +293,14 @@
 - 批次展开后的报销条目提供“详情”入口，使用右侧抽屉快速查看与处理，不影响当前打款登记台状态：`packages/web/src/views/finance/reimbursement/payout.vue`
 - API 指向：`/api/v1/reimbursement/batch`, `/api/v1/reimbursement/batch/:id`, `/api/v1/reimbursement/batch/:id/mark-paid`, `/api/v1/entity`, `/api/v1/entity/:id/bank-accounts`, `/api/v1/upload/sign`
 
-#### G. 收款合同管理 `views/finance/receipt/contract.vue`
+#### G. 收款工作台 `views/finance/receipt/workbench.vue`
+
+- 财务中心“收款”入口默认进入收款工作台，按办公室实际操作顺序展示：收款合同 → 开票处理 → 收款登记 → 收款看板。
+- 工作台嵌入既有收款合同、发票管理、收款登记和统计看板页面，办公室无需在多个子菜单之间查找功能。
+- 旧路由 `/finance/receipt/contract`、`/finance/receipt/invoice`、`/finance/receipt` 保留为隐藏路由，用于详情跳转和历史链接兼容。
+- API 指向：沿用各子页面现有 API。
+
+#### G-1. 收款合同管理 `views/finance/receipt/contract.vue`
 
 - 核心列：合同号、项目、对方单位、合同总额、已开票、已收款、状态。
 - 操作：新建收款合同（direction=inbound）、查看合同详情并提交审批。
@@ -313,8 +321,9 @@
   - 发票类目可自定义输入；税率使用百分数输入（如 `13` 表示 13%）；
   - 税率支持 0/1/3/6/9/13 快捷填入按钮；
   - 开票明细使用可编辑子表（subtable），不再要求手填 JSON；
+  - 明细列“单价/金额”改为“含税单价/含税金额”，行金额按 `数量 × 含税单价` 计算；
   - 开票明细支持“复制上一行”与“从模板导入”，减少重复录入；
-  - 不含税金额/预计税额/价税合计由明细与税率自动计算；
+  - 含税金额合计由明细行求和，不含税金额按 `含税金额合计 ÷ (1 + 税率)` 倒推，预计税额按 `含税金额合计 - 不含税金额` 计算；
   - 汇款凭证改为拖拽上传附件（可视化列表）。
 - 正式发票核心列：系统单号、税务发票号、合同号、抬头、开票日期、价税合计、校验状态。
 - 正式发票动作：触发 OCR/二维码校验、删除。
@@ -719,7 +728,7 @@
 - 标段总览头部新增“新增标段”操作，面向 `super_admin/manager/site_manager`：
   - 弹窗字段：标段编码、标段名称、计划里程、初始状态、管材、管型、土质。
   - 管材、管型使用手动输入。
-  - 土质使用固定下拉选项：粘土、粉土、细砂、中砂、粗砂、细砾、中砾、粗砾、卵石、漂石、强风化岩石、中风化岩石、弱风化岩石、岩石。
+  - 土质使用固定下拉多选：粘土、粉土、细砂、中砂、粗砂、细砾、中砾、粗砾、卵石、漂石、强风化岩石、中风化岩石、弱风化岩石、岩石；提交时按 `、` 拼接保存到现有文本字段。
   - 拟派设备、匹配评分、匹配说明属于 AI 自动填写字段，不在新增标段人工表单中展示。
   - 创建中按钮展示 loading，成功后关闭弹窗并刷新标段总览。
   - 必填校验：标段编码、标段名称。
