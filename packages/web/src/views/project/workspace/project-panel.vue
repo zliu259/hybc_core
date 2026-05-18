@@ -81,6 +81,14 @@ const sectionOperatorLogs = ref<OperatorLog[]>([]);
 const sectionBreakthroughReports = ref<BreakthroughReport[]>([]);
 const sectionStatusSaving = ref(false);
 const sectionStatusValue = ref("");
+const sectionBaseSaving = ref(false);
+const sectionBaseForm = ref({
+  section_name: "",
+  section_length: undefined as number | undefined,
+  pipe_material: "",
+  pipe_model: "",
+  soil_type: [] as string[]
+});
 
 const operatorLogDetailVisible = ref(false);
 const operatorLogDetailLoading = ref(false);
@@ -419,9 +427,31 @@ const setStatus = async (status: string) => {
   } catch {}
 };
 
+const parseSoilTypes = (value: string | null | undefined) => {
+  if (!value) return [];
+  return value
+    .split(/[、,，]/)
+    .map(item => item.trim())
+    .filter(Boolean);
+};
+
+const syncSectionBaseForm = (section: ProjectSection) => {
+  sectionBaseForm.value = {
+    section_name: section.section_name || "",
+    section_length:
+      section.section_length === null || section.section_length === undefined
+        ? undefined
+        : section.section_length,
+    pipe_material: section.pipe_material || "",
+    pipe_model: section.pipe_model || "",
+    soil_type: parseSoilTypes(section.soil_type)
+  };
+};
+
 const openSectionDrawer = async (section: ProjectSection) => {
   currentSection.value = section;
   sectionStatusValue.value = section.status;
+  syncSectionBaseForm(section);
   sectionDrawerVisible.value = true;
   sectionDrawerLoading.value = true;
   sectionDrawerError.value = "";
@@ -497,6 +527,52 @@ const saveSectionStatus = async () => {
     message("标段状态已更新", { type: "success" });
   } finally {
     sectionStatusSaving.value = false;
+  }
+};
+
+const saveSectionBase = async () => {
+  if (!currentSection.value) return;
+  const formData = sectionBaseForm.value;
+  const sectionName = formData.section_name.trim();
+  if (!sectionName) {
+    message("请填写标段名称", { type: "warning" });
+    return;
+  }
+
+  sectionBaseSaving.value = true;
+  try {
+    const payload = {
+      section_name: sectionName,
+      section_length: formData.section_length ?? null,
+      pipe_material: formData.pipe_material.trim() || null,
+      pipe_model: formData.pipe_model.trim() || null,
+      soil_type: formData.soil_type.length
+        ? formData.soil_type.join("、")
+        : null
+    };
+    await updateProjectSection(
+      props.projectId,
+      currentSection.value.id,
+      payload
+    );
+    currentSection.value = {
+      ...currentSection.value,
+      ...payload
+    };
+    const idx = sections.value.findIndex(
+      item => item.id === currentSection.value?.id
+    );
+    if (idx >= 0) {
+      sections.value[idx] = {
+        ...sections.value[idx],
+        ...payload
+      };
+    }
+    message("标段基础信息已保存", { type: "success" });
+  } catch {
+    message("标段基础信息保存失败，请稍后重试", { type: "error" });
+  } finally {
+    sectionBaseSaving.value = false;
   }
 };
 
@@ -1304,6 +1380,94 @@ onMounted(loadWecomUsers);
             sectionStatusLabel(currentSection?.status)
           }}</el-descriptions-item>
         </el-descriptions>
+
+        <el-card shadow="never" class="mb-3" header="标段基础信息">
+          <el-form label-width="110px">
+            <el-row :gutter="16">
+              <el-col :span="12">
+                <el-form-item label="标段编码">
+                  <el-input
+                    :model-value="currentSection?.section_code"
+                    disabled
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="12">
+                <el-form-item label="标段名称" required>
+                  <el-input
+                    v-model="sectionBaseForm.section_name"
+                    :disabled="!canManageSections"
+                    maxlength="100"
+                    show-word-limit
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="8">
+                <el-form-item label="里程(m)">
+                  <el-input-number
+                    v-model="sectionBaseForm.section_length"
+                    :disabled="!canManageSections"
+                    :min="0"
+                    :precision="2"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="管材">
+                  <el-input
+                    v-model="sectionBaseForm.pipe_material"
+                    :disabled="!canManageSections"
+                    maxlength="60"
+                    show-word-limit
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="管型">
+                  <el-input
+                    v-model="sectionBaseForm.pipe_model"
+                    :disabled="!canManageSections"
+                    maxlength="60"
+                    show-word-limit
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-form-item label="土质">
+              <el-select
+                v-model="sectionBaseForm.soil_type"
+                multiple
+                clearable
+                filterable
+                collapse-tags
+                collapse-tags-tooltip
+                :disabled="!canManageSections"
+                placeholder="可多选土质"
+                style="width: 100%"
+              >
+                <el-option
+                  v-for="item in soilTypeOptions"
+                  :key="item"
+                  :label="item"
+                  :value="item"
+                />
+              </el-select>
+            </el-form-item>
+            <el-form-item>
+              <el-button
+                type="primary"
+                :disabled="!canManageSections"
+                :loading="sectionBaseSaving"
+                @click="saveSectionBase"
+              >
+                保存基础信息
+              </el-button>
+            </el-form-item>
+          </el-form>
+        </el-card>
 
         <el-card shadow="never" class="mb-3" header="标段状态管理">
           <el-space>
