@@ -14,6 +14,7 @@ export interface Env {
   RUNNER_HEALTH_URL?: string;
   WECHAT_CORPID?: string;
   WECHAT_SECRET?: string;
+  WECHAT_CUSTOMER_CONTACT_SECRET?: string;
   WECHAT_AGENT_ID?: string;
   WECHAT_REDIRECT_URI?: string;
   WECHAT_ROLE_TAG_MAPPING?: string;

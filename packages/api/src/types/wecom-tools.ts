@@ -25,6 +25,7 @@ export type WeComToolName = (typeof weComToolNames)[number];
 export type WeComToolAccess = "read" | "write";
 export type WeComToolScope = "project" | "section";
 export type WeComGroupWebhookProxyMode = "direct" | "bridge";
+export type WeComGroupChatType = "internal" | "external_customer_group" | "discovered" | "manual";
 
 export type JsonSchema = {
   type: "object";
@@ -281,6 +282,21 @@ export interface ProjectWeComPushEvent {
   webhook_secret_ref: string | null;
   retry_count: number;
   pushed_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface WeComGroupChatDirectoryItem {
+  id: number;
+  chat_id: string;
+  chat_name: string;
+  chat_type: WeComGroupChatType;
+  owner_userid: string | null;
+  source: string;
+  webhook_secret_ref: string | null;
+  status: string;
+  raw_json: string | null;
+  last_synced_at: string | null;
   created_at: string;
   updated_at: string;
 }

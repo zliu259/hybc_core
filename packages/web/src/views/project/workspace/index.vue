@@ -71,11 +71,7 @@ watch(
     <el-tab-pane label="文件库" name="files">
       <ProjectWorkspaceFilePanel :project-id="projectId" />
     </el-tab-pane>
-    <el-tab-pane
-      v-if="isSuperAdmin"
-      label="企业微信群与智能机器人"
-      name="wecom"
-    >
+    <el-tab-pane v-if="isSuperAdmin" label="项目群绑定" name="wecom">
       <WeComToolBindingPanel :project-id="projectId" />
     </el-tab-pane>
     <el-tab-pane label="财务面板" name="finance">

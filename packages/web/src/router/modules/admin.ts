@@ -75,6 +75,15 @@ export default {
       }
     },
     {
+      path: "/admin/wecom-bot-settings",
+      name: "AdminWeComBotSettings",
+      component: () => import("@/views/admin/wecom-bot-settings.vue"),
+      meta: {
+        title: "企业微信智能机器人",
+        roles: ["super_admin"]
+      }
+    },
+    {
       path: "/admin/system-base/entity",
       name: "AdminSystemBaseEntity",
       component: () => import("@/views/entity/index.vue"),

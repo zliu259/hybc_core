@@ -77,6 +77,35 @@ export type WeComFrontendConfig = {
   tool_token_source: "kv" | "env" | "none";
 };
 
+export type WeComGroupChatType =
+  | "internal"
+  | "external_customer_group"
+  | "discovered"
+  | "manual";
+
+export type WeComGroupChat = {
+  id: number;
+  chat_id: string;
+  chat_name: string;
+  chat_type: WeComGroupChatType;
+  owner_userid: string | null;
+  source: string;
+  webhook_secret_ref: string | null;
+  status: string;
+  raw_json: string | null;
+  last_synced_at: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
+export type WeComGroupChatPayload = {
+  chat_id: string;
+  chat_name: string;
+  chat_type?: WeComGroupChatType;
+  owner_userid?: string | null;
+  webhook_secret_ref?: string | null;
+};
+
 export const getWeComToolManifest = () => {
   return http.request<{
     success: boolean;
@@ -106,6 +135,29 @@ export const saveWeComGroupWebhook = (data: {
     success: boolean;
     data: { secret_ref: string; configured: boolean };
   }>("put", "/api/v1/wecom/webhooks", { data });
+};
+
+export const listWeComGroupChats = (keyword = "") => {
+  return http.request<{ success: boolean; data: WeComGroupChat[] }>(
+    "get",
+    "/api/v1/wecom/chats",
+    { params: { keyword } }
+  );
+};
+
+export const saveWeComGroupChatManual = (data: WeComGroupChatPayload) => {
+  return http.request<{ success: boolean; data: WeComGroupChat }>(
+    "post",
+    "/api/v1/wecom/chats/manual",
+    { data }
+  );
+};
+
+export const syncWeComExternalGroupChats = () => {
+  return http.request<{
+    success: boolean;
+    data: { synced: number; skipped: number };
+  }>("post", "/api/v1/wecom/chats/sync-external");
 };
 
 export const listProjectWeComBindings = (projectId: number) => {

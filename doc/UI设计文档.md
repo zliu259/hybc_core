@@ -85,6 +85,11 @@
 - AI关卡任务管理（超管）：`packages/web/src/views/admin/ai-gate-tasks.vue`
 - 企微推送监控（超管）：`packages/web/src/views/admin/wecom-push-monitor.vue`
   - 新增“扫描当前节点并强制推送”按钮，调用 `POST /api/v1/admin/wecom-push/force-current-nodes`，用于对当前所有在途审批节点待办执行强制推送。
+- 企业微信智能机器人设置（超管）：`packages/web/src/views/admin/wecom-bot-settings.vue`
+  - 位于“系统底层与引擎”，承载企业级智能机器人工具接入配置，不放在单个项目工作区。
+  - 展示工具清单地址、工具调用地址和 Token 配置状态，支持复制地址与保存工具调用 Token；Token 保存后不回显。
+  - 支持保存企业微信群机器人 Webhook URL；真实 URL 写入 KV，页面和 D1 只使用 `Webhook Secret Ref`。
+  - 维护群聊目录，支持手动添加群聊、搜索群聊、同步外部客户群；内部普通群无法由企业微信 API 全量枚举时，通过手动或工具调用发现记录补齐。
 - 资产台账：`packages/web/src/views/asset/list.vue`
 - 资产运维看板：`packages/web/src/views/asset/ledger.vue`
 - 资产详情：`packages/web/src/views/asset/detail.vue`
@@ -118,12 +123,13 @@
 - 公司资产盘库：`packages/web/src/views/warehouse/stocktake.vue`
 - 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
 - 项目设备视图：`packages/web/src/views/project/equipment-view.vue`
-- 项目工作区企业微信群与智能机器人配置：`packages/web/src/views/project/workspace/components/wecom-tool-binding-panel.vue`
-  - 作为独立 Tab 嵌入 `packages/web/src/views/project/workspace/index.vue`，Tab 名称为“企业微信群与智能机器人”。
+- 项目工作区项目群绑定：`packages/web/src/views/project/workspace/components/wecom-tool-binding-panel.vue`
+  - 作为独立 Tab 嵌入 `packages/web/src/views/project/workspace/index.vue`，Tab 名称为“项目群绑定”。
   - Tab 入口仅对 `super_admin` 显示；非超级管理员访问 `tab=wecom` 时自动回到“项目动态与工作段”。
-  - 顶部展示智能机器人工具清单地址、工具调用地址和 Token 配置状态，支持一键复制地址并在前端保存工具调用 Token。
-  - 支持在前端保存企业微信群机器人 Webhook URL；真实 URL 写入 KV，不在页面回显，项目绑定只使用 `Webhook Secret Ref`。
-  - 支持配置项目绑定群、智能机器人 ID、允许调用的只读工具、日志推送 Webhook secret 引用、问答启用和日志推送启用。
+  - 仅承载项目维度群绑定，不再展示企业级工具 Token、工具地址和 Webhook URL 配置。
+  - 群聊 ID 使用可搜索下拉，从系统群聊目录加载；支持 `allow-create` 直接输入未入库群聊 ID。
+  - 选择目录内群聊时自动带出绑定名称和 `Webhook Secret Ref`，降低重复录入。
+  - 支持配置智能机器人 ID、允许调用的只读工具、日志推送 Webhook secret 引用、问答启用和日志推送启用。
   - 支持新增、编辑、停用和单绑定测试推送；测试推送按钮需有行级 loading，完成后刷新推送结果。
   - 下方展示最近工具调用记录和最近推送结果，失败记录直接显示错误原因。
   - 列表加载、保存、测试推送和停用操作必须有明确 loading；保存、测试或停用后刷新绑定列表与记录区。

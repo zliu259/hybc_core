@@ -8,6 +8,11 @@ import {
   saveWeComGroupWebhook,
   saveWeComToolToken
 } from "../services/wecom-config";
+import {
+  listWeComGroupChats,
+  syncExternalWeComGroupChats,
+  upsertWeComGroupChat
+} from "../services/wecom-group-chat-directory";
 import { sendProjectWeComBindingTestMessage } from "../services/wecom-message-push";
 import { callWeComProjectTool } from "../services/wecom-project-tools";
 import {
@@ -25,6 +30,7 @@ import {
   isWeComReadOnlyToolName,
   weComReadOnlyToolNames,
   weComToolDefinitions,
+  type WeComGroupChatType,
   type WeComToolCallContext
 } from "../types/wecom-tools";
 
@@ -79,6 +85,18 @@ const asToolContext = (value: unknown): WeComToolCallContext => {
   };
 };
 
+const asGroupChatType = (value: unknown): WeComGroupChatType | undefined => {
+  if (
+    value === "internal" ||
+    value === "external_customer_group" ||
+    value === "discovered" ||
+    value === "manual"
+  ) {
+    return value;
+  }
+  return undefined;
+};
+
 wecomToolRoutes.get("/tools/health", (c) => {
   return c.json({ success: true, data: { status: "ok" } });
 });
@@ -97,20 +115,15 @@ const apiBaseUrlFromRequest = (request: Request): string => {
   return `${url.origin}/api/v1/wecom`;
 };
 
-wecomToolRoutes.get(
-  "/config",
-  authMiddleware,
-  requireRoles(["super_admin", "manager", "site_manager"]),
-  async (c) => {
-    const data = await getWeComFrontendConfig(c.env, apiBaseUrlFromRequest(c.req.raw));
-    return c.json({ success: true, data });
-  }
-);
+wecomToolRoutes.get("/config", authMiddleware, requireRoles(["super_admin"]), async (c) => {
+  const data = await getWeComFrontendConfig(c.env, apiBaseUrlFromRequest(c.req.raw));
+  return c.json({ success: true, data });
+});
 
 wecomToolRoutes.put(
   "/config/tool-token",
   authMiddleware,
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin"]),
   async (c) => {
     const body = (await c.req.json().catch(() => ({}))) as { token?: unknown };
     try {
@@ -128,23 +141,83 @@ wecomToolRoutes.put(
   }
 );
 
-wecomToolRoutes.put(
-  "/webhooks",
+wecomToolRoutes.put("/webhooks", authMiddleware, requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    secret_ref?: unknown;
+    webhook_url?: unknown;
+  };
+  try {
+    const data = await saveWeComGroupWebhook(c.env, body);
+    return c.json({ success: true, data });
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: { message: error instanceof Error ? error.message : "WeCom webhook save failed" }
+      },
+      400
+    );
+  }
+});
+
+wecomToolRoutes.get("/chats", authMiddleware, requireRoles(["super_admin"]), async (c) => {
+  const data = await listWeComGroupChats(c.env, {
+    keyword: c.req.query("keyword"),
+    includeInactive: c.req.query("includeInactive") === "true",
+    limit: Number(c.req.query("limit") ?? 100)
+  });
+  return c.json({ success: true, data });
+});
+
+wecomToolRoutes.post("/chats/manual", authMiddleware, requireRoles(["super_admin"]), async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as {
+    chat_id?: unknown;
+    chat_name?: unknown;
+    chat_type?: unknown;
+    owner_userid?: unknown;
+    webhook_secret_ref?: unknown;
+  };
+
+  try {
+    const data = await upsertWeComGroupChat(c.env, {
+      chat_id: typeof body.chat_id === "string" ? body.chat_id : "",
+      chat_name: typeof body.chat_name === "string" ? body.chat_name : "",
+      chat_type: asGroupChatType(body.chat_type),
+      owner_userid: typeof body.owner_userid === "string" ? body.owner_userid : null,
+      source: "manual",
+      webhook_secret_ref:
+        typeof body.webhook_secret_ref === "string" ? body.webhook_secret_ref : null
+    });
+    return c.json({ success: true, data }, 201);
+  } catch (error) {
+    return c.json(
+      {
+        success: false,
+        error: {
+          message: error instanceof Error ? error.message : "WeCom group chat save failed"
+        }
+      },
+      400
+    );
+  }
+});
+
+wecomToolRoutes.post(
+  "/chats/sync-external",
   authMiddleware,
-  requireRoles(["super_admin", "manager", "site_manager"]),
+  requireRoles(["super_admin"]),
   async (c) => {
-    const body = (await c.req.json().catch(() => ({}))) as {
-      secret_ref?: unknown;
-      webhook_url?: unknown;
-    };
     try {
-      const data = await saveWeComGroupWebhook(c.env, body);
+      const data = await syncExternalWeComGroupChats(c.env);
       return c.json({ success: true, data });
     } catch (error) {
       return c.json(
         {
           success: false,
-          error: { message: error instanceof Error ? error.message : "WeCom webhook save failed" }
+          error: {
+            message:
+              error instanceof Error ? error.message : "WeCom external group chat sync failed"
+          }
         },
         400
       );

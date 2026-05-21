@@ -4,18 +4,16 @@ import { message } from "@/utils/message";
 import {
   createProjectWeComBinding,
   disableProjectWeComBinding,
-  getWeComFrontendConfig,
   getWeComToolManifest,
+  listWeComGroupChats,
   listProjectWeComBindings,
   listProjectWeComPushEvents,
   listProjectWeComToolAudits,
-  saveWeComGroupWebhook,
-  saveWeComToolToken,
   testProjectWeComBinding,
   updateProjectWeComBinding,
   type ProjectWeComBinding,
   type ProjectWeComPushEvent,
-  type WeComFrontendConfig,
+  type WeComGroupChat,
   type WeComToolCallAudit,
   type WeComToolDefinition
 } from "@/api/wecom-tools";
@@ -27,19 +25,12 @@ const saving = ref(false);
 const disablingId = ref<number | null>(null);
 const testingId = ref<number | null>(null);
 const editingId = ref<number | null>(null);
-const savingToken = ref(false);
-const savingWebhook = ref(false);
 const bindings = ref<ProjectWeComBinding[]>([]);
 const tools = ref<WeComToolDefinition[]>([]);
+const groupOptions = ref<WeComGroupChat[]>([]);
+const groupLoading = ref(false);
 const audits = ref<WeComToolCallAudit[]>([]);
 const pushEvents = ref<ProjectWeComPushEvent[]>([]);
-const frontendConfig = ref<WeComFrontendConfig | null>(null);
-
-const configForm = reactive({
-  tool_token: "",
-  webhook_secret_ref: "",
-  webhook_url: ""
-});
 
 const form = reactive({
   binding_name: "",
@@ -94,6 +85,13 @@ const statusTagType = (status: string) => {
   return "warning";
 };
 
+const chatTypeLabel = (value: string) => {
+  if (value === "internal") return "内部群";
+  if (value === "external_customer_group") return "外部客户群";
+  if (value === "discovered") return "工具调用发现";
+  return "手动登记";
+};
+
 const resetForm = () => {
   editingId.value = null;
   form.binding_name = "";
@@ -105,20 +103,34 @@ const resetForm = () => {
   form.qa_enabled = true;
 };
 
+const loadGroupOptions = async (keyword = "") => {
+  groupLoading.value = true;
+  try {
+    const res = await listWeComGroupChats(keyword);
+    groupOptions.value = res.data;
+  } catch {
+    message("群聊目录加载失败，请先在系统底层设置中维护群聊", {
+      type: "warning"
+    });
+  } finally {
+    groupLoading.value = false;
+  }
+};
+
 const loadData = async () => {
   if (!props.projectId) return;
   loading.value = true;
   try {
-    const [configRes, manifestRes, bindingsRes, auditsRes, pushEventsRes] =
+    const [manifestRes, groupRes, bindingsRes, auditsRes, pushEventsRes] =
       await Promise.all([
-        getWeComFrontendConfig(),
         getWeComToolManifest(),
+        listWeComGroupChats(),
         listProjectWeComBindings(props.projectId),
         listProjectWeComToolAudits(props.projectId),
         listProjectWeComPushEvents(props.projectId)
       ]);
-    frontendConfig.value = configRes.data;
     tools.value = manifestRes.data.tools;
+    groupOptions.value = groupRes.data;
     bindings.value = bindingsRes.data;
     audits.value = auditsRes.data;
     pushEvents.value = pushEventsRes.data;
@@ -131,62 +143,6 @@ const loadData = async () => {
     message("企业微信群配置加载失败", { type: "error" });
   } finally {
     loading.value = false;
-  }
-};
-
-const copyText = async (value: string | undefined) => {
-  if (!value) return;
-  try {
-    await navigator.clipboard.writeText(value);
-    message("已复制", { type: "success" });
-  } catch {
-    message("复制失败，请手动复制", { type: "warning" });
-  }
-};
-
-const saveToolToken = async () => {
-  if (!configForm.tool_token.trim()) {
-    message("请填写工具调用 Token", { type: "warning" });
-    return;
-  }
-  savingToken.value = true;
-  try {
-    await saveWeComToolToken({ token: configForm.tool_token.trim() });
-    configForm.tool_token = "";
-    message("工具调用 Token 已保存", { type: "success" });
-    await loadData();
-  } catch {
-    message("工具调用 Token 保存失败，至少需要 16 位", { type: "error" });
-  } finally {
-    savingToken.value = false;
-  }
-};
-
-const saveWebhook = async () => {
-  if (!configForm.webhook_secret_ref.trim()) {
-    message("请填写 Webhook Secret Ref", { type: "warning" });
-    return;
-  }
-  if (!configForm.webhook_url.trim()) {
-    message("请填写企业微信群机器人 Webhook URL", { type: "warning" });
-    return;
-  }
-  savingWebhook.value = true;
-  try {
-    const secretRef = configForm.webhook_secret_ref.trim();
-    await saveWeComGroupWebhook({
-      secret_ref: secretRef,
-      webhook_url: configForm.webhook_url.trim()
-    });
-    form.push_webhook_secret_ref = secretRef;
-    configForm.webhook_url = "";
-    message("Webhook 已保存，可直接用于项目绑定", { type: "success" });
-  } catch {
-    message("Webhook 保存失败，请确认 URL 来自企业微信群机器人", {
-      type: "error"
-    });
-  } finally {
-    savingWebhook.value = false;
   }
 };
 
@@ -224,6 +180,17 @@ const submit = async () => {
     message("企业微信群绑定保存失败", { type: "error" });
   } finally {
     saving.value = false;
+  }
+};
+
+const selectGroupChat = (chatId: string) => {
+  const selected = groupOptions.value.find(item => item.chat_id === chatId);
+  if (!selected) return;
+  if (!form.binding_name.trim()) {
+    form.binding_name = selected.chat_name;
+  }
+  if (!form.push_webhook_secret_ref.trim() && selected.webhook_secret_ref) {
+    form.push_webhook_secret_ref = selected.webhook_secret_ref;
   }
 };
 
@@ -273,9 +240,9 @@ watch(() => props.projectId, loadData);
     <template #header>
       <div class="panel-header">
         <div>
-          <div class="panel-title">企业微信群与智能机器人</div>
+          <div class="panel-title">项目群绑定</div>
           <div class="panel-subtitle">
-            机器人问答调用项目工具，日志通知走群机器人 Webhook
+            将当前项目绑定到企业微信群，问答工具与日志推送按项目隔离
           </div>
         </div>
         <el-button :loading="loading" @click="loadData">刷新</el-button>
@@ -283,100 +250,6 @@ watch(() => props.projectId, loadData);
     </template>
 
     <div v-loading="loading" class="panel-body">
-      <div class="config-section">
-        <div class="section-title">智能机器人接入配置</div>
-        <el-row :gutter="16">
-          <el-col :md="12" :sm="24">
-            <el-form label-width="120px">
-              <el-form-item label="工具清单地址">
-                <el-input
-                  :model-value="frontendConfig?.manifest_url || ''"
-                  readonly
-                >
-                  <template #append>
-                    <el-button @click="copyText(frontendConfig?.manifest_url)">
-                      复制
-                    </el-button>
-                  </template>
-                </el-input>
-              </el-form-item>
-              <el-form-item label="工具调用地址">
-                <el-input
-                  :model-value="frontendConfig?.call_url || ''"
-                  readonly
-                >
-                  <template #append>
-                    <el-button @click="copyText(frontendConfig?.call_url)">
-                      复制
-                    </el-button>
-                  </template>
-                </el-input>
-              </el-form-item>
-            </el-form>
-          </el-col>
-          <el-col :md="12" :sm="24">
-            <el-form :model="configForm" label-width="120px">
-              <el-form-item label="Token 状态">
-                <el-tag
-                  :type="
-                    frontendConfig?.tool_token_configured ? 'success' : 'info'
-                  "
-                >
-                  {{
-                    frontendConfig?.tool_token_configured
-                      ? `已配置（${frontendConfig.tool_token_source}）`
-                      : "未配置"
-                  }}
-                </el-tag>
-              </el-form-item>
-              <el-form-item label="工具 Token">
-                <el-input
-                  v-model="configForm.tool_token"
-                  type="password"
-                  show-password
-                  placeholder="留空不修改，保存后不回显"
-                >
-                  <template #append>
-                    <el-button :loading="savingToken" @click="saveToolToken">
-                      保存
-                    </el-button>
-                  </template>
-                </el-input>
-              </el-form-item>
-            </el-form>
-          </el-col>
-        </el-row>
-
-        <el-form :model="configForm" label-width="140px" class="webhook-form">
-          <el-row :gutter="16">
-            <el-col :md="8" :sm="24">
-              <el-form-item label="Webhook Secret Ref">
-                <el-input
-                  v-model="configForm.webhook_secret_ref"
-                  placeholder="如：prod-east"
-                />
-              </el-form-item>
-            </el-col>
-            <el-col :md="16" :sm="24">
-              <el-form-item label="群机器人 URL">
-                <el-input
-                  v-model="configForm.webhook_url"
-                  type="password"
-                  show-password
-                  placeholder="企业微信群机器人 Webhook URL，保存后不回显"
-                >
-                  <template #append>
-                    <el-button :loading="savingWebhook" @click="saveWebhook">
-                      保存 Webhook
-                    </el-button>
-                  </template>
-                </el-input>
-              </el-form-item>
-            </el-col>
-          </el-row>
-        </el-form>
-      </div>
-
       <div class="section-title">项目群绑定</div>
       <el-form :model="form" label-width="140px" class="binding-form">
         <el-row :gutter="16">
@@ -390,10 +263,29 @@ watch(() => props.projectId, loadData);
           </el-col>
           <el-col :md="8" :sm="24">
             <el-form-item label="群聊 ID">
-              <el-input
+              <el-select
                 v-model="form.group_chat_id"
-                placeholder="企业微信群 ID"
-              />
+                filterable
+                remote
+                allow-create
+                clearable
+                default-first-option
+                :loading="groupLoading"
+                placeholder="搜索或手动输入群聊 ID"
+                style="width: 100%"
+                @remote-method="loadGroupOptions"
+                @change="selectGroupChat"
+              >
+                <el-option
+                  v-for="group in groupOptions"
+                  :key="group.chat_id"
+                  :label="`${group.chat_name}（${chatTypeLabel(group.chat_type)}）`"
+                  :value="group.chat_id"
+                >
+                  <span>{{ group.chat_name }}</span>
+                  <span class="group-option-id">{{ group.chat_id }}</span>
+                </el-option>
+              </el-select>
             </el-form-item>
           </el-col>
           <el-col :md="8" :sm="24">
@@ -425,7 +317,7 @@ watch(() => props.projectId, loadData);
             <el-form-item label="Webhook Secret Ref">
               <el-input
                 v-model="form.push_webhook_secret_ref"
-                placeholder="如：prod-east"
+                placeholder="系统设置中保存的 Webhook Ref"
               />
             </el-form-item>
           </el-col>
@@ -603,24 +495,20 @@ watch(() => props.projectId, loadData);
   min-height: 160px;
 }
 
-.config-section {
-  padding-bottom: 16px;
-  margin-bottom: 16px;
-  border-bottom: 1px solid var(--el-border-color-light);
-}
-
 .section-title {
   margin-bottom: 12px;
   font-size: 15px;
   font-weight: 600;
 }
 
-.webhook-form {
-  margin-top: 4px;
-}
-
 .binding-form {
   margin-bottom: 16px;
+}
+
+.group-option-id {
+  float: right;
+  color: var(--el-text-color-secondary);
+  font-size: 12px;
 }
 
 .records-section {
