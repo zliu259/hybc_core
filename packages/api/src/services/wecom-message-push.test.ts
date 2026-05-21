@@ -248,4 +248,17 @@ describe("wecom message push", () => {
       source_biz_id: 1
     });
   });
+
+  it("fails test messages when the webhook secret cannot be resolved", async () => {
+    const env = createEnv(null);
+
+    await expect(sendProjectWeComBindingTestMessage(env, 1)).rejects.toThrow(
+      "Webhook secret not found"
+    );
+    expect(env.DB.events[0]).toMatchObject({
+      status: "failed",
+      source_event_type: "TEST_SEND",
+      error_message: "Webhook secret not found"
+    });
+  });
 });

@@ -36,6 +36,11 @@ type PushOptions = {
   projectId?: number;
 };
 
+type PushDeliveryResult = {
+  status: "sent" | "failed";
+  error_message?: string | null;
+};
+
 const nowIso = () => new Date().toISOString();
 
 const stripHtml = (html: string | null): string => {
@@ -136,7 +141,7 @@ const sendMarkdownToBinding = async (
     source_biz_id: number;
   },
   fetcher: typeof fetch
-) => {
+): Promise<PushDeliveryResult> => {
   const secretRef = binding.push_webhook_secret_ref?.trim();
   if (!secretRef) {
     await recordPushEvent(env, {
@@ -146,7 +151,7 @@ const sendMarkdownToBinding = async (
       status: "failed",
       error_message: "Webhook secret ref is empty"
     });
-    return;
+    return { status: "failed", error_message: "Webhook secret ref is empty" };
   }
 
   const webhookUrl = await env.KV.get(`wecom:group-webhook:${secretRef}`);
@@ -158,7 +163,7 @@ const sendMarkdownToBinding = async (
       status: "failed",
       error_message: "Webhook secret not found"
     });
-    return;
+    return { status: "failed", error_message: "Webhook secret not found" };
   }
 
   try {
@@ -188,14 +193,17 @@ const sendMarkdownToBinding = async (
       message_summary: markdown,
       status: "sent"
     });
+    return { status: "sent" };
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Webhook push failed";
     await recordPushEvent(env, {
       binding,
       ...event,
       message_summary: markdown,
       status: "failed",
-      error_message: error instanceof Error ? error.message : "Webhook push failed"
+      error_message: errorMessage
     });
+    return { status: "failed", error_message: errorMessage };
   }
 };
 
@@ -274,7 +282,7 @@ export const sendProjectWeComBindingTestMessage = async (
     throw new Error("Project not found");
   }
 
-  await sendMarkdownToBinding(
+  const result = await sendMarkdownToBinding(
     env,
     binding,
     buildTestMarkdown(project, binding),
@@ -286,4 +294,7 @@ export const sendProjectWeComBindingTestMessage = async (
     },
     options.fetcher ?? fetch
   );
+  if (result.status !== "sent") {
+    throw new Error(result.error_message ?? "Webhook test push failed");
+  }
 };

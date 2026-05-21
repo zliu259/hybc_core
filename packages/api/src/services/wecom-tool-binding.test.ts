@@ -239,6 +239,21 @@ describe("wecom tool binding service", () => {
     ).rejects.toThrow("push_webhook_secret_ref is required");
   });
 
+  it("rejects full webhook URLs as webhook secret refs", async () => {
+    const env = createEnv();
+
+    await expect(
+      createProjectWeComBinding(env, {
+        project_id: 7,
+        binding_name: "东线项目群",
+        group_chat_id: "wr-group-1",
+        push_webhook_secret_ref: "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc",
+        push_enabled: true,
+        qa_enabled: true
+      })
+    ).rejects.toThrow("push_webhook_secret_ref must be a saved secret ref");
+  });
+
   it("requires group or bot identity when qa is enabled", async () => {
     const env = createEnv();
 

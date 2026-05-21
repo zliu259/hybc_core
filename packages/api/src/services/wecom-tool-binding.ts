@@ -37,6 +37,12 @@ const cleanText = (value: unknown): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const assertValidWebhookSecretRef = (value: string): void => {
+  if (!/^[A-Za-z0-9][A-Za-z0-9_-]{1,63}$/.test(value)) {
+    throw new Error("push_webhook_secret_ref must be a saved secret ref");
+  }
+};
+
 const isMissingWeComMigrationError = (error: unknown): boolean => {
   const message = error instanceof Error ? error.message : String(error);
   return (
@@ -91,6 +97,9 @@ const validateBindingInput = (input: ProjectWeComBindingInput): void => {
 
   if (pushEnabled && !webhookSecretRef) {
     throw new Error("push_webhook_secret_ref is required when push is enabled");
+  }
+  if (webhookSecretRef) {
+    assertValidWebhookSecretRef(webhookSecretRef);
   }
   if (qaEnabled && !groupChatId && !botId) {
     throw new Error("group_chat_id or bot_id is required when qa is enabled");
