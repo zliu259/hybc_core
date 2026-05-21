@@ -1,6 +1,6 @@
 {
   "libVersion": "3.15.2",
-  "projectname": "miniapp",
+  "projectname": "hybc-core",
   "setting": {
     "urlCheck": true,
     "packNpmManually": true,

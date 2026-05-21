@@ -9,6 +9,7 @@ import { statusLabel } from "@/utils/enum-labels";
 import { useUserStoreHook } from "@/store/modules/user";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature } from "@/api/upload";
+import WeComToolBindingPanel from "./components/wecom-tool-binding-panel.vue";
 import {
   createProjectSection,
   getProjectById,
@@ -1189,6 +1190,8 @@ onMounted(loadWecomUsers);
         </el-table-column>
       </el-table>
     </el-card>
+
+    <WeComToolBindingPanel :project-id="projectId" />
 
     <div>
       <el-card shadow="never" class="mt-3">

@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createTask } from "../services/ai-slot";
+import { publishEvent } from "../services/event-bus";
 import type { Env } from "../types/env";
 import type { ManagerLog, ManagerLogPhoto, OperatorLog } from "../types/log";
 import { hydrateLegacyManagerLog, hydrateLegacyOperatorLog } from "../utils/legacy-compat";
@@ -91,7 +92,8 @@ logRoutes.get(
       params.push(shift);
     }
 
-    sql += " ORDER BY log_date DESC, CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, id DESC LIMIT ? OFFSET ?";
+    sql +=
+      " ORDER BY log_date DESC, CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, id DESC LIMIT ? OFFSET ?";
     const rows = await c.env.DB.prepare(sql)
       .bind(...params, pageSize, offset)
       .all<OperatorLog>();
@@ -131,11 +133,19 @@ logRoutes.post(
     };
 
     if (!body.project_id || !body.log_date?.trim() || !body.shift?.trim()) {
-      return c.json({ success: false, error: { message: "project_id, log_date, shift are required" } }, 400);
+      return c.json(
+        { success: false, error: { message: "project_id, log_date, shift are required" } },
+        400
+      );
     }
 
     const completed = Number(body.completed_pipe_count ?? 0);
-    const previous = await getPreviousCumulative(c.env.DB, body.project_id, body.log_date, body.shift);
+    const previous = await getPreviousCumulative(
+      c.env.DB,
+      body.project_id,
+      body.log_date,
+      body.shift
+    );
     const cumulative = Number(body.cumulative_pipe_count ?? previous + completed);
 
     const now = nowIso();
@@ -172,7 +182,9 @@ logRoutes.get(
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
-    const row = await c.env.DB.prepare("SELECT * FROM operator_log WHERE id = ? AND status != 'deleted'")
+    const row = await c.env.DB.prepare(
+      "SELECT * FROM operator_log WHERE id = ? AND status != 'deleted'"
+    )
       .bind(id)
       .first<OperatorLog>();
     if (!row) {
@@ -203,7 +215,9 @@ logRoutes.put(
       status?: string;
     };
 
-    const existing = await c.env.DB.prepare("SELECT * FROM operator_log WHERE id = ? AND status != 'deleted'")
+    const existing = await c.env.DB.prepare(
+      "SELECT * FROM operator_log WHERE id = ? AND status != 'deleted'"
+    )
       .bind(id)
       .first<OperatorLog>();
     if (!existing) {
@@ -262,7 +276,9 @@ logRoutes.delete(
   requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
     const id = Number(c.req.param("id"));
-    await c.env.DB.prepare("UPDATE operator_log SET status = 'deleted', updated_at = ? WHERE id = ?")
+    await c.env.DB.prepare(
+      "UPDATE operator_log SET status = 'deleted', updated_at = ? WHERE id = ?"
+    )
       .bind(nowIso(), id)
       .run();
     return c.json({ success: true });
@@ -280,13 +296,15 @@ logRoutes.post(
       completed_pipe_count?: number;
     };
     if (!body.project_id || !body.log_date?.trim() || !body.shift?.trim()) {
-      return c.json({ success: false, error: { message: "project_id, log_date, shift are required" } }, 400);
+      return c.json(
+        { success: false, error: { message: "project_id, log_date, shift are required" } },
+        400
+      );
     }
 
-    const previous = await c.env.DB
-      .prepare(
-        "SELECT * FROM operator_log WHERE project_id = ? AND status != 'deleted' ORDER BY log_date DESC, CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, id DESC LIMIT 1"
-      )
+    const previous = await c.env.DB.prepare(
+      "SELECT * FROM operator_log WHERE project_id = ? AND status != 'deleted' ORDER BY log_date DESC, CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, id DESC LIMIT 1"
+    )
       .bind(body.project_id)
       .first<OperatorLog>();
 
@@ -375,70 +393,76 @@ logRoutes.get(
   }
 );
 
-logRoutes.post(
-  "/manager",
-  requireRoles(["super_admin", "manager", "site_manager"]),
-  async (c) => {
-    const auth = c.get("auth");
-    const body = (await c.req.json()) as {
-      project_id: number;
-      log_date: string;
-      title?: string;
-      detail_html?: string;
-      risk_note?: string;
-      status?: string;
-      photos?: Array<{ file_key: string; caption?: string }>;
-    };
+logRoutes.post("/manager", requireRoles(["super_admin", "manager", "site_manager"]), async (c) => {
+  const auth = c.get("auth");
+  const body = (await c.req.json()) as {
+    project_id: number;
+    log_date: string;
+    title?: string;
+    detail_html?: string;
+    risk_note?: string;
+    status?: string;
+    photos?: Array<{ file_key: string; caption?: string }>;
+  };
 
-    if (!body.project_id || !body.log_date?.trim()) {
-      return c.json({ success: false, error: { message: "project_id and log_date are required" } }, 400);
-    }
+  if (!body.project_id || !body.log_date?.trim()) {
+    return c.json(
+      { success: false, error: { message: "project_id and log_date are required" } },
+      400
+    );
+  }
 
-    const now = nowIso();
-    const result = await c.env.DB.prepare(
-      `INSERT INTO manager_log
+  const now = nowIso();
+  const result = await c.env.DB.prepare(
+    `INSERT INTO manager_log
         (project_id, log_date, title, detail_html, risk_note, manager_userid, status, created_at, updated_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  )
+    .bind(
+      body.project_id,
+      body.log_date,
+      body.title ?? null,
+      body.detail_html ?? null,
+      body.risk_note ?? null,
+      auth.sub,
+      body.status ?? "draft",
+      now,
+      now
     )
-      .bind(
-        body.project_id,
-        body.log_date,
-        body.title ?? null,
-        body.detail_html ?? null,
-        body.risk_note ?? null,
-        auth.sub,
-        body.status ?? "draft",
-        now,
-        now
-      )
-      .run();
+    .run();
 
-    const id = Number(result.meta.last_row_id);
-    if (Array.isArray(body.photos)) {
-      let sortOrder = 0;
-      for (const photo of body.photos) {
-        if (!photo.file_key?.trim()) continue;
-        await c.env.DB.prepare(
-          `INSERT INTO manager_log_photo
+  const id = Number(result.meta.last_row_id);
+  if (Array.isArray(body.photos)) {
+    let sortOrder = 0;
+    for (const photo of body.photos) {
+      if (!photo.file_key?.trim()) continue;
+      await c.env.DB.prepare(
+        `INSERT INTO manager_log_photo
             (manager_log_id, file_key, caption, sort_order, status, created_at)
            VALUES (?, ?, ?, ?, 'active', ?)`
-        )
-          .bind(id, photo.file_key, photo.caption ?? null, sortOrder, now)
-          .run();
-        sortOrder += 1;
-      }
+      )
+        .bind(id, photo.file_key, photo.caption ?? null, sortOrder, now)
+        .run();
+      sortOrder += 1;
     }
-
-    return c.json({ success: true, data: { id } }, 201);
   }
-);
+
+  await publishEvent(c.env, "MANAGER_LOG_CREATED", "log.manager.create", {
+    project_id: body.project_id,
+    manager_log_id: id
+  });
+
+  return c.json({ success: true, data: { id } }, 201);
+});
 
 logRoutes.get(
   "/manager/:id",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
-    const managerLog = await c.env.DB.prepare("SELECT * FROM manager_log WHERE id = ? AND status != 'deleted'")
+    const managerLog = await c.env.DB.prepare(
+      "SELECT * FROM manager_log WHERE id = ? AND status != 'deleted'"
+    )
       .bind(id)
       .first<ManagerLog>();
     if (!managerLog) {
@@ -496,7 +520,9 @@ logRoutes.put(
       .run();
 
     if (Array.isArray(body.photos)) {
-      await c.env.DB.prepare("UPDATE manager_log_photo SET status = 'deleted' WHERE manager_log_id = ?")
+      await c.env.DB.prepare(
+        "UPDATE manager_log_photo SET status = 'deleted' WHERE manager_log_id = ?"
+      )
         .bind(id)
         .run();
       let sortOrder = 0;
@@ -511,6 +537,16 @@ logRoutes.put(
           .run();
         sortOrder += 1;
       }
+    }
+
+    const updatedLog = await c.env.DB.prepare("SELECT project_id FROM manager_log WHERE id = ?")
+      .bind(id)
+      .first<{ project_id: number }>();
+    if (updatedLog) {
+      await publishEvent(c.env, "MANAGER_LOG_UPDATED", "log.manager.update", {
+        project_id: updatedLog.project_id,
+        manager_log_id: id
+      });
     }
 
     return c.json({ success: true });
@@ -557,20 +593,16 @@ logRoutes.delete(
   }
 );
 
-logRoutes.delete(
-  "/manager/:id",
-  requireRoles(["super_admin", "manager"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    await c.env.DB.prepare("UPDATE manager_log SET status = 'deleted', updated_at = ? WHERE id = ?")
-      .bind(nowIso(), id)
-      .run();
-    await c.env.DB.prepare("UPDATE manager_log_photo SET status = 'deleted' WHERE manager_log_id = ?")
-      .bind(id)
-      .run();
-    return c.json({ success: true });
-  }
-);
+logRoutes.delete("/manager/:id", requireRoles(["super_admin", "manager"]), async (c) => {
+  const id = Number(c.req.param("id"));
+  await c.env.DB.prepare("UPDATE manager_log SET status = 'deleted', updated_at = ? WHERE id = ?")
+    .bind(nowIso(), id)
+    .run();
+  await c.env.DB.prepare("UPDATE manager_log_photo SET status = 'deleted' WHERE manager_log_id = ?")
+    .bind(id)
+    .run();
+  return c.json({ success: true });
+});
 
 logRoutes.post(
   "/summary/trigger",

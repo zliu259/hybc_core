@@ -118,6 +118,14 @@
 - 公司资产盘库：`packages/web/src/views/warehouse/stocktake.vue`
 - 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
 - 项目设备视图：`packages/web/src/views/project/equipment-view.vue`
+- 项目工作区企业微信群与智能机器人配置：`packages/web/src/views/project/workspace/components/wecom-tool-binding-panel.vue`
+  - 嵌入 `packages/web/src/views/project/workspace/project-panel.vue`。
+  - 顶部展示智能机器人工具清单地址、工具调用地址和 Token 配置状态，支持一键复制地址并在前端保存工具调用 Token。
+  - 支持在前端保存企业微信群机器人 Webhook URL；真实 URL 写入 KV，不在页面回显，项目绑定只使用 `Webhook Secret Ref`。
+  - 支持配置项目绑定群、智能机器人 ID、允许调用的只读工具、日志推送 Webhook secret 引用、问答启用和日志推送启用。
+  - 支持新增、编辑、停用和单绑定测试推送；测试推送按钮需有行级 loading，完成后刷新推送结果。
+  - 下方展示最近工具调用记录和最近推送结果，失败记录直接显示错误原因。
+  - 列表加载、保存、测试推送和停用操作必须有明确 loading；保存、测试或停用后刷新绑定列表与记录区。
 - 操作员日志列表：`packages/web/src/views/construction/operator-log/list.vue`
 - 操作员日志填报：`packages/web/src/views/construction/operator-log/form.vue`
 - 管理员日志：`packages/web/src/views/construction/manager-log/index.vue`

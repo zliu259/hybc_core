@@ -33,7 +33,10 @@ export const domainEventTypes = [
   "REIMBURSEMENT_ENVELOPE_CANCELLED",
   "REIMBURSEMENT_BATCH_CREATED",
   "REIMBURSEMENT_BATCH_SUBMITTED",
-  "REIMBURSEMENT_BATCH_PAID"
+  "REIMBURSEMENT_BATCH_PAID",
+  "MANAGER_LOG_CREATED",
+  "MANAGER_LOG_UPDATED",
+  "EXTERNAL_LOG_ADOPTED"
 ] as const;
 
 export type DomainEventType = (typeof domainEventTypes)[number];
@@ -83,18 +86,10 @@ export const publishEvent = async (
 /**
  * Write an event directly to the event_log table.
  */
-export const logEvent = async (
-  env: Env,
-  event: DomainEvent
-): Promise<void> => {
+export const logEvent = async (env: Env, event: DomainEvent): Promise<void> => {
   await env.DB.prepare(
     "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
   )
-    .bind(
-      event.type,
-      event.source,
-      JSON.stringify(event.payload),
-      event.timestamp
-    )
+    .bind(event.type, event.source, JSON.stringify(event.payload), event.timestamp)
     .run();
 };

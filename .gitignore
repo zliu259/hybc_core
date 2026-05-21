@@ -4,6 +4,12 @@ dist/
 .npm/
 package-lock.json
 
+# Miniapp dependencies / generated vendor packages
+packages/miniapp/node_modules/
+packages/miniapp/miniprogram_npm/*
+!packages/miniapp/miniprogram_npm/.gitkeep
+packages/miniapp/tdesign-miniprogram/
+
 # Python
 __pycache__/
 .pytest_cache/

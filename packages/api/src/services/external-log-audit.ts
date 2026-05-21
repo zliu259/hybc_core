@@ -1,5 +1,6 @@
 import type { TaskResultSubmission } from "../types/ai";
 import type { Env } from "../types/env";
+import { publishEvent } from "./event-bus";
 
 const nowIso = () => new Date().toISOString();
 
@@ -249,6 +250,14 @@ export const adoptExternalSubmission = async (
       submission.id
     )
     .run();
+
+  if (managerLogId) {
+    await publishEvent(env, "EXTERNAL_LOG_ADOPTED", "external-log-audit.adopt", {
+      project_id: submission.project_id,
+      manager_log_id: managerLogId,
+      external_submission_id: submission.id
+    });
+  }
 
   return { operatorLogId, managerLogId };
 };

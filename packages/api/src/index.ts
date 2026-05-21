@@ -26,6 +26,7 @@ import { taskRoutes } from "./routes/task";
 import { uploadRoutes } from "./routes/upload";
 import { userRoutes } from "./routes/user";
 import { voiceRoutes } from "./routes/voice";
+import { wecomToolRoutes } from "./routes/wecom-tools";
 import { warehouseRoutes } from "./routes/warehouse";
 import { warehouseManualRoutes } from "./routes/warehouse-manual";
 import { warehouseAssetWorkOrderRoutes } from "./routes/warehouse-work-order";
@@ -77,6 +78,7 @@ app.route("/api/v1/task", taskRoutes);
 app.route("/api/v1/dict", dictRoutes);
 app.route("/api/v1/upload", uploadRoutes);
 app.route("/api/v1/voice", voiceRoutes);
+app.route("/api/v1/wecom", wecomToolRoutes);
 app.route("/api/v1/admin", adminRoutes);
 app.route("/api/v1/dashboard", dashboardRoutes);
 
