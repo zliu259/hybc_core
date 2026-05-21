@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useUserStoreHook } from "@/store/modules/user";
 import ProjectWorkspaceProjectPanel from "./project-panel.vue";
 import ProjectWorkspaceEquipmentPanel from "./equipment-panel.vue";
 import ProjectWorkspaceFinancePanel from "./finance-panel.vue";
 import ProjectWorkspaceFilePanel from "./file-panel.vue";
+import WeComToolBindingPanel from "./components/wecom-tool-binding-panel.vue";
 
 defineOptions({
   name: "ProjectWorkspace"
@@ -30,6 +31,19 @@ const activeTab = computed({
 });
 
 const isOperator = computed(() => (userStore.roles ?? []).includes("operator"));
+const isSuperAdmin = computed(() =>
+  (userStore.roles ?? []).includes("super_admin")
+);
+
+watch(
+  [activeTab, isSuperAdmin],
+  ([tab, allowed]) => {
+    if (tab === "wecom" && !allowed) {
+      activeTab.value = "project";
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
@@ -56,6 +70,13 @@ const isOperator = computed(() => (userStore.roles ?? []).includes("operator"));
     </el-tab-pane>
     <el-tab-pane label="文件库" name="files">
       <ProjectWorkspaceFilePanel :project-id="projectId" />
+    </el-tab-pane>
+    <el-tab-pane
+      v-if="isSuperAdmin"
+      label="企业微信群与智能机器人"
+      name="wecom"
+    >
+      <WeComToolBindingPanel :project-id="projectId" />
     </el-tab-pane>
     <el-tab-pane label="财务面板" name="finance">
       <ProjectWorkspaceFinancePanel

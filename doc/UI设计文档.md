@@ -119,7 +119,8 @@
 - 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
 - 项目设备视图：`packages/web/src/views/project/equipment-view.vue`
 - 项目工作区企业微信群与智能机器人配置：`packages/web/src/views/project/workspace/components/wecom-tool-binding-panel.vue`
-  - 嵌入 `packages/web/src/views/project/workspace/project-panel.vue`。
+  - 作为独立 Tab 嵌入 `packages/web/src/views/project/workspace/index.vue`，Tab 名称为“企业微信群与智能机器人”。
+  - Tab 入口仅对 `super_admin` 显示；非超级管理员访问 `tab=wecom` 时自动回到“项目动态与工作段”。
   - 顶部展示智能机器人工具清单地址、工具调用地址和 Token 配置状态，支持一键复制地址并在前端保存工具调用 Token。
   - 支持在前端保存企业微信群机器人 Webhook URL；真实 URL 写入 KV，不在页面回显，项目绑定只使用 `Webhook Secret Ref`。
   - 支持配置项目绑定群、智能机器人 ID、允许调用的只读工具、日志推送 Webhook secret 引用、问答启用和日志推送启用。
