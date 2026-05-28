@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { getUserProfile } = require("../../utils/auth");
 
 const sectionStatusText = {
   planning: "规划中",
@@ -38,7 +39,9 @@ Page({
     sectionCards: [],
     summary: null,
     managerLogs: [],
-    expandedManagerLogId: 0
+    expandedManagerLogId: 0,
+    canReviewExternalLogs: false,
+    externalReviewCount: 0
   },
 
   onLoad(query) {
@@ -109,6 +112,31 @@ Page({
       });
   },
 
+  canReviewExternalLogs(project) {
+    const profile = getUserProfile() || {};
+    const roles = Array.isArray(profile.roles) ? profile.roles : [];
+    const username = profile.username || "";
+    if (roles.includes("super_admin")) return true;
+    const hasManagementRole = roles.includes("manager") || roles.includes("site_manager");
+    return Boolean(hasManagementRole && project && project.manager_userid === username);
+  },
+
+  async loadExternalReviewCount(project, canReviewExternalLogs) {
+    if (!project || !canReviewExternalLogs) return 0;
+    try {
+      const res = await request({
+        method: "GET",
+        path: `/api/v1/project/${this.data.projectId}/external-log-submissions?status=needs_manual_review&page=1&pageSize=1`
+      });
+      if (res.pagination && Number.isFinite(Number(res.pagination.total))) {
+        return Number(res.pagination.total || 0);
+      }
+      return Array.isArray(res.data) ? res.data.length : 0;
+    } catch {
+      return 0;
+    }
+  },
+
   async loadData() {
     if (!this.data.projectId) return;
     this.setData({ loading: true });
@@ -126,17 +154,23 @@ Page({
       const operatorLogs = Array.isArray(operatorLogsRes.data) ? operatorLogsRes.data : [];
       const breakthroughs = Array.isArray(breakthroughRes.data) ? breakthroughRes.data : [];
 
+      const project = projectRes.data
+        ? {
+            ...projectRes.data,
+            statusText: this.toSectionStatus(projectRes.data.status)
+          }
+        : null;
+      const canReviewExternalLogs = this.canReviewExternalLogs(project);
+      const externalReviewCount = await this.loadExternalReviewCount(project, canReviewExternalLogs);
+
       this.setData({
-        project: projectRes.data
-          ? {
-              ...projectRes.data,
-              statusText: this.toSectionStatus(projectRes.data.status)
-            }
-          : null,
+        project,
         sections,
         sectionCards: this.buildSectionCards(sections, operatorLogs, breakthroughs),
         summary: summaryRes.data || null,
-        managerLogs: this.buildManagerLogs(Array.isArray(managerLogsRes.data) ? managerLogsRes.data : [])
+        managerLogs: this.buildManagerLogs(Array.isArray(managerLogsRes.data) ? managerLogsRes.data : []),
+        canReviewExternalLogs,
+        externalReviewCount
       });
     } catch (error) {
       wx.showToast({ title: "加载项目失败", icon: "none" });
@@ -176,6 +210,14 @@ Page({
       return;
     }
     wx.navigateTo({ url: `/pages/manager-log/index?projectId=${this.data.projectId}` });
+  },
+
+  openExternalLogReview() {
+    if (!this.data.canReviewExternalLogs) {
+      wx.showToast({ title: "当前账号不可复核该项目外部日志", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: `/pages/external-log-review/index?projectId=${this.data.projectId}` });
   },
 
   showReadonlyTip() {

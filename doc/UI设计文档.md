@@ -775,6 +775,7 @@
 
 - 工作台（Tab1）：`packages/miniapp/pages/index/index`
 - 项目驾驶舱（管理人员）：`packages/miniapp/pages/manager-dashboard/index`
+- 外部日志复核：`packages/miniapp/pages/external-log-review/index`
 - 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
 - 我的库房任务：`packages/miniapp/pages/warehouse-task/index`
 - 公司资产盘库：`packages/miniapp/pages/warehouse-stocktake/index`
@@ -1003,6 +1004,7 @@
 - 项目驾驶舱（管理总览）：`packages/miniapp/pages/manager-dashboard/index`
 - 项目列表（独立长列表页）：`packages/miniapp/pages/project-list/index`
 - 项目详情（新增）：`packages/miniapp/pages/project-detail/index`
+- 外部日志复核（新增）：`packages/miniapp/pages/external-log-review/index`
 - 标段详情（新增）：`packages/miniapp/pages/project-section/index`
 - 项目模块配置：`packages/miniapp/app.json`
 - 项目接口封装：`packages/miniapp/utils/request.js`
@@ -1018,7 +1020,8 @@
 - 项目日志移动端交互：默认折叠，按日期降序展示，列表头只显示日期（精确到天）和中文状态；点击后展开完整内容与照片。
 - 标段入口移动端交互：项目详情中的标段卡片仅负责跳转，点击后进入独立标段页查看施工日志与贯通信息，减少长列表滚动与误触。
 - 工作台首页边界：`pages/index/index` 不直接承载项目长列表，仅提供“看项目/进入项目列表”入口和管理人员“项目驾驶舱”入口，避免首页过长影响首屏操作效率。
-- 项目驾驶舱边界：`pages/manager-dashboard/index` 只做公司管理视角的跨项目总览、预警与最近日志聚合；单项目工作段、项目日志、财务摘要等深看能力继续由 `pages/project-list/index` -> `pages/project-detail/index` 承载。
+- 项目驾驶舱边界：`pages/manager-dashboard/index` 只做公司管理视角的跨项目总览、预警与最近日志聚合；最近日志必须展示“项目-标段/项目级”上下文，避免只看日期无法判断日志归属；单项目工作段、项目日志、财务摘要等深看能力继续由 `pages/project-list/index` -> `pages/project-detail/index` 承载。
+- 外部日志复核边界：`pages/project-detail/index` 仅对 `super_admin` 或项目负责人管理角色展示待复核入口；`pages/external-log-review/index` 复用 Web 端 `/api/v1/project/:id/external-log-submissions` 与 `/review` 接口，只处理 `needs_manual_review` 外部日志，支持放行写入正式日志或驳回。
 - 工作台与库房边界：项目/现场相关能力留在工作台与项目页，`pages/warehouse/index` 仅承载库房与资产管理能力。
 - 施工日志填写交互：`pages/operator-log/index` 使用“项目 -> 标段选择器”模式，禁止手输标段ID。
 - 班次判定交互：默认按填写时间自动判定（晚间偏白班收尾、早间偏夜班收尾），仍允许手动改班次并提供一键重判。

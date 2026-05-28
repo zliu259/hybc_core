@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { adoptExternalSubmission } from "../services/external-log-audit";
+import type { UserRole } from "../types/auth";
 import type { Env } from "../types/env";
 import { hydrateLegacyProject, hydrateLegacySection } from "../utils/legacy-compat";
 
@@ -65,6 +66,20 @@ const ensureFixedNonProjectOptions = async (env: Env) => {
 const allowedStatus = ["planning", "preparing", "active", "completing", "archived"] as const;
 
 type ProjectStatus = (typeof allowedStatus)[number];
+
+export const canReviewExternalLogSubmission = ({
+  userid,
+  roles,
+  projectManagerUserid
+}: {
+  userid: string;
+  roles: UserRole[];
+  projectManagerUserid: string | null;
+}): boolean => {
+  if (roles.includes("super_admin")) return true;
+  if (!roles.some((role) => role === "manager" || role === "site_manager")) return false;
+  return Boolean(projectManagerUserid && projectManagerUserid === userid);
+};
 
 export const projectRoutes = new Hono<{
   Bindings: Env;
@@ -441,6 +456,23 @@ projectRoutes.get(
   requireRoles(["super_admin", "manager", "site_manager"]),
   async (c) => {
     const projectId = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const project = await c.env.DB.prepare("SELECT manager_userid FROM project WHERE id = ?")
+      .bind(projectId)
+      .first<{ manager_userid: string | null }>();
+    if (!project) {
+      return c.json({ success: false, error: { message: "Project not found" } }, 404);
+    }
+    if (
+      !canReviewExternalLogSubmission({
+        userid: auth.sub,
+        roles: auth.roles,
+        projectManagerUserid: project.manager_userid
+      })
+    ) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
     const status = c.req.query("status");
     const page = Math.max(Number(c.req.query("page") ?? "1"), 1);
     const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "20"), 1), 100);
@@ -482,6 +514,23 @@ projectRoutes.get(
   async (c) => {
     const projectId = Number(c.req.param("id"));
     const submissionId = Number(c.req.param("submissionId"));
+    const auth = c.get("auth");
+    const project = await c.env.DB.prepare("SELECT manager_userid FROM project WHERE id = ?")
+      .bind(projectId)
+      .first<{ manager_userid: string | null }>();
+    if (!project) {
+      return c.json({ success: false, error: { message: "Project not found" } }, 404);
+    }
+    if (
+      !canReviewExternalLogSubmission({
+        userid: auth.sub,
+        roles: auth.roles,
+        projectManagerUserid: project.manager_userid
+      })
+    ) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
     const row = await c.env.DB.prepare(
       `SELECT s.*, ps.section_code, ps.section_name
          FROM external_log_submission s
@@ -510,6 +559,21 @@ projectRoutes.post(
       action: "approve" | "reject";
       comment?: string;
     };
+    const project = await c.env.DB.prepare("SELECT manager_userid FROM project WHERE id = ?")
+      .bind(projectId)
+      .first<{ manager_userid: string | null }>();
+    if (!project) {
+      return c.json({ success: false, error: { message: "Project not found" } }, 404);
+    }
+    if (
+      !canReviewExternalLogSubmission({
+        userid: auth.sub,
+        roles: auth.roles,
+        projectManagerUserid: project.manager_userid
+      })
+    ) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
 
     const row = await c.env.DB.prepare(
       "SELECT id FROM external_log_submission WHERE id = ? AND project_id = ?"

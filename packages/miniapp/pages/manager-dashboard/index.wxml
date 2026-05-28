@@ -71,6 +71,7 @@
       <view class="log-icon">{{item.icon}}</view>
       <view class="log-main">
         <view class="log-title">{{item.title}}</view>
+        <view class="log-context">{{item.contextText}}</view>
         <view class="log-desc">{{item.dayText}} · {{item.typeText}} · {{item.desc}}</view>
       </view>
     </view>

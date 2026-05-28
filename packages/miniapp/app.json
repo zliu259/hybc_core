@@ -5,6 +5,7 @@
     "pages/project-list/index",
     "pages/manager-dashboard/index",
     "pages/project-detail/index",
+    "pages/external-log-review/index",
     "pages/project-section/index",
     "pages/project-create/index",
     "pages/finance/index",

@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { buildProjectSectionLabel } = require("./log-context");
 
 const statusText = {
   planning: "规划中",
@@ -144,6 +145,7 @@ Page({
       project_id: Number(item.project_id || 0),
       typeText: "施工日志",
       icon: "🚜",
+      contextText: buildProjectSectionLabel(item),
       dayText: toDay(item.log_date),
       title: `${item.shift === "night" ? "夜班" : "白班"} · 进尺 ${normalizeNumber(item.footage_m)}m`,
       desc: item.issue_summary || item.remark || "无异常说明"
@@ -153,6 +155,7 @@ Page({
       project_id: Number(item.project_id || 0),
       typeText: "管理日志",
       icon: "📸",
+      contextText: buildProjectSectionLabel(item),
       dayText: toDay(item.log_date),
       title: item.title || "现场概况",
       desc: stripHtml(item.detail_html || item.risk_note || "无补充说明")

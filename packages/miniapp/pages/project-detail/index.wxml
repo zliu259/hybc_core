@@ -11,6 +11,16 @@
     </view>
   </hy-panel-card>
 
+  <hy-panel-card wx:if="{{canReviewExternalLogs}}" title="外部日志复核" icon="check-circle" subtitle="AI 未通过的外部日志需要项目管理人员放行或驳回">
+    <view class="external-review-card" bindtap="openExternalLogReview">
+      <view>
+        <view class="external-review-title">待人工复核</view>
+        <view class="external-review-desc">查看 AI 摘要、问题列表和填报内容后放行</view>
+      </view>
+      <view class="external-review-count">{{externalReviewCount}}</view>
+    </view>
+  </hy-panel-card>
+
   <hy-panel-card title="项目日志" icon="file-1" subtitle="默认折叠，按日期排序，点开看完整内容">
     <view class="toolbar">
       <t-button theme="primary" size="small" disabled="{{readonly}}" bindtap="goCreateManagerLog">快速填写项目日志</t-button>

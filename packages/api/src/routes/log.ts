@@ -62,38 +62,42 @@ logRoutes.get(
     const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "20"), 1), 100);
     const offset = (page - 1) * pageSize;
 
-    let sql = "SELECT * FROM operator_log WHERE status != 'deleted'";
-    let countSql = "SELECT COUNT(*) as total FROM operator_log WHERE status != 'deleted'";
+    let sql = `SELECT ol.*, p.project_name, p.project_code, ps.section_code, ps.section_name
+      FROM operator_log ol
+      LEFT JOIN project p ON p.id = ol.project_id
+      LEFT JOIN project_section ps ON ps.id = ol.section_id
+      WHERE ol.status != 'deleted'`;
+    let countSql = "SELECT COUNT(*) as total FROM operator_log ol WHERE ol.status != 'deleted'";
     const params: Array<string | number> = [];
 
     if (projectId) {
-      sql += " AND project_id = ?";
-      countSql += " AND project_id = ?";
+      sql += " AND ol.project_id = ?";
+      countSql += " AND ol.project_id = ?";
       params.push(Number(projectId));
     }
     if (sectionId) {
-      sql += " AND section_id = ?";
-      countSql += " AND section_id = ?";
+      sql += " AND ol.section_id = ?";
+      countSql += " AND ol.section_id = ?";
       params.push(Number(sectionId));
     }
     if (dateFrom) {
-      sql += " AND log_date >= ?";
-      countSql += " AND log_date >= ?";
+      sql += " AND ol.log_date >= ?";
+      countSql += " AND ol.log_date >= ?";
       params.push(dateFrom);
     }
     if (dateTo) {
-      sql += " AND log_date <= ?";
-      countSql += " AND log_date <= ?";
+      sql += " AND ol.log_date <= ?";
+      countSql += " AND ol.log_date <= ?";
       params.push(dateTo);
     }
     if (shift) {
-      sql += " AND shift = ?";
-      countSql += " AND shift = ?";
+      sql += " AND ol.shift = ?";
+      countSql += " AND ol.shift = ?";
       params.push(shift);
     }
 
     sql +=
-      " ORDER BY log_date DESC, CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, id DESC LIMIT ? OFFSET ?";
+      " ORDER BY ol.log_date DESC, CASE ol.shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, ol.id DESC LIMIT ? OFFSET ?";
     const rows = await c.env.DB.prepare(sql)
       .bind(...params, pageSize, offset)
       .all<OperatorLog>();
@@ -354,25 +358,28 @@ logRoutes.get(
     const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "20"), 1), 100);
     const offset = (page - 1) * pageSize;
 
-    let sql = "SELECT * FROM manager_log WHERE status != 'deleted'";
-    let countSql = "SELECT COUNT(*) as total FROM manager_log WHERE status != 'deleted'";
+    let sql = `SELECT ml.*, p.project_name, p.project_code
+      FROM manager_log ml
+      LEFT JOIN project p ON p.id = ml.project_id
+      WHERE ml.status != 'deleted'`;
+    let countSql = "SELECT COUNT(*) as total FROM manager_log ml WHERE ml.status != 'deleted'";
     const params: Array<string | number> = [];
     if (projectId) {
-      sql += " AND project_id = ?";
-      countSql += " AND project_id = ?";
+      sql += " AND ml.project_id = ?";
+      countSql += " AND ml.project_id = ?";
       params.push(Number(projectId));
     }
     if (dateFrom) {
-      sql += " AND log_date >= ?";
-      countSql += " AND log_date >= ?";
+      sql += " AND ml.log_date >= ?";
+      countSql += " AND ml.log_date >= ?";
       params.push(dateFrom);
     }
     if (dateTo) {
-      sql += " AND log_date <= ?";
-      countSql += " AND log_date <= ?";
+      sql += " AND ml.log_date <= ?";
+      countSql += " AND ml.log_date <= ?";
       params.push(dateTo);
     }
-    sql += " ORDER BY log_date DESC, id DESC LIMIT ? OFFSET ?";
+    sql += " ORDER BY ml.log_date DESC, ml.id DESC LIMIT ? OFFSET ?";
 
     const rows = await c.env.DB.prepare(sql)
       .bind(...params, pageSize, offset)

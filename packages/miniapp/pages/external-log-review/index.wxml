@@ -1,0 +1,61 @@
+<view class="page">
+  <view class="review-hero">
+    <view>
+      <view class="hero-kicker">外部日志</view>
+      <view class="hero-title">人工复核</view>
+      <view class="hero-desc">仅展示 AI 未通过的外部日志，确认后可放行写入正式日志</view>
+    </view>
+    <view class="hero-count">
+      <view class="count-value">{{rows.length}}</view>
+      <view class="count-label">待复核</view>
+    </view>
+  </view>
+
+  <view class="toolbar">
+    <t-button theme="primary" block bindtap="loadRows" loading="{{loading}}" disabled="{{loading || actionBusy}}">刷新</t-button>
+  </view>
+
+  <t-empty wx:if="{{!loading && rows.length === 0}}" description="暂无需要人工复核的外部日志" />
+
+  <view wx:for="{{rows}}" wx:key="id" class="review-card">
+    <view class="card-head">
+      <view>
+        <view class="card-title">{{item.logDate}} · {{item.shiftText}}</view>
+        <view class="card-sub">{{item.sectionText}}</view>
+      </view>
+      <view class="status-chip">{{item.statusText}}</view>
+    </view>
+
+    <view class="meta-grid">
+      <view class="meta-item">填报人：{{item.submitterName}}</view>
+      <view class="meta-item">单位：{{item.submitterCompany}}</view>
+      <view class="meta-item">电话：{{item.submitterPhone}}</view>
+      <view class="meta-item">AI分：{{item.scoreText}} · {{item.riskText}}</view>
+    </view>
+
+    <view class="ai-box">
+      <view class="section-title">AI 摘要</view>
+      <view class="section-text">{{item.aiSummary}}</view>
+      <view wx:if="{{item.issues.length > 0}}" class="issue-list">
+        <view wx:for="{{item.issues}}" wx:for-item="issue" wx:key="message" class="issue-item">
+          {{issue.severity}}：{{issue.message}}
+        </view>
+      </view>
+    </view>
+
+    <view class="content-box">
+      <view class="section-title">工作段日志</view>
+      <view class="section-text">{{item.operatorSummary || '-'}}</view>
+    </view>
+
+    <view class="content-box">
+      <view class="section-title">项目日志</view>
+      <view class="section-text">{{item.projectSummary || '-'}}</view>
+    </view>
+
+    <view class="action-row">
+      <t-button theme="primary" data-id="{{item.id}}" data-action="approve" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">放行</t-button>
+      <t-button theme="danger" variant="outline" data-id="{{item.id}}" data-action="reject" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">驳回</t-button>
+    </view>
+  </view>
+</view>
