@@ -1,60 +1,78 @@
 <view class="page">
-  <hy-panel-card title="✅ 审批与申请" icon="task-checked" subtitle="红黄绿摘要 + 滑动式决策">
-    <view class="segment-wrap">
-      <view class="segment-item {{segment === 'pending' ? 'active' : ''}}" data-value="pending" bindtap="onSegmentChange">
-        待我审批（{{pendingCount}}）
-      </view>
-      <view class="segment-item {{segment === 'apply' ? 'active' : ''}}" data-value="apply" bindtap="onSegmentChange">
-        发起申请
-      </view>
+  <view class="finance-hero">
+    <view>
+      <view class="hero-kicker">✅ 审批与申请</view>
+      <view class="hero-title">先决策，再发起</view>
+      <view class="hero-desc">待办审批、资金发单、报销和油卡申请统一入口</view>
     </view>
+    <view class="hero-count">
+      <view class="count-value">{{pendingCount}}</view>
+      <view class="count-label">待审批</view>
+    </view>
+  </view>
 
-    <view wx:if="{{segment === 'pending'}}" class="entry-grid">
-      <view wx:if="{{pendingLoading}}" class="pending-tip">正在加载待审批列表...</view>
-      <view wx:elif="{{pendingList.length === 0}}" class="pending-tip">当前没有待审批事项</view>
+  <view class="summary-grid">
+    <view class="summary-card {{pendingCount > 0 ? 'warn' : 'ok'}}">
+      <view class="summary-value">{{pendingCount}}</view>
+      <view class="summary-label">待我审批</view>
+    </view>
+    <view class="summary-card">
+      <view class="summary-value">{{applyActionCount}}</view>
+      <view class="summary-label">申请入口</view>
+    </view>
+    <view class="summary-card">
+      <view class="summary-value">只读</view>
+      <view class="summary-label">我发起的申请</view>
+    </view>
+  </view>
+
+  <view class="segment-wrap">
+    <view class="segment-item {{segment === 'pending' ? 'active' : ''}}" data-value="pending" bindtap="onSegmentChange">
+      待我审批
+    </view>
+    <view class="segment-item {{segment === 'apply' ? 'active' : ''}}" data-value="apply" bindtap="onSegmentChange">
+      发起申请
+    </view>
+  </view>
+
+  <hy-panel-card wx:if="{{segment === 'pending'}}" title="待我审批" icon="🚦" subtitle="点击条目进入审批详情完成决策">
+    <view wx:if="{{pendingLoading}}" class="pending-tip">正在加载待审批列表...</view>
+    <t-empty wx:elif="{{pendingList.length === 0}}" description="当前没有待审批事项" />
+    <view class="approval-list">
       <view
         wx:for="{{pendingList}}"
         wx:key="id"
-        class="entry-card pending-entry"
+        class="approval-card"
         data-id="{{item.id}}"
         bindtap="openPendingDetail"
       >
-        <view class="entry-top"><view class="entry-title">{{item.instance_no}}</view></view>
-        <view class="entry-desc">{{item.biz_summary || '-'}}</view>
-        <view class="entry-meta">类型：{{item.bizTypeLabel}}</view>
-        <view class="entry-meta">节点：{{item.current_node_name || '-'}}</view>
-        <view class="entry-meta">状态：{{item.statusText}}</view>
-        <view class="entry-meta">提交时间：{{item.submittedAtText}}</view>
-      </view>
-    </view>
-
-    <view wx:if="{{segment === 'apply'}}" class="entry-grid">
-      <view wx:if="{{canPaymentApply}}" class="entry-card" data-path="/pages/payment-apply/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">💸 智能发单台</view></view>
-        <view class="entry-desc">金额阈值识别 + 直付/合同双流程</view>
-      </view>
-      <view wx:else class="entry-card">
-        <view class="entry-top"><view class="entry-title">💸 智能发单台</view></view>
-        <view class="entry-desc">当前角色无权限</view>
-      </view>
-      <view class="entry-card" data-path="/pages/reimbursement-list/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">🧾 我的报销提交</view></view>
-        <view class="entry-desc">发起报销、上传票据、跟踪状态</view>
-      </view>
-      <view class="entry-card" data-path="/pages/reimbursement-archive/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">📂 信封扫码核查</view></view>
-        <view class="entry-desc">办公室扫码信封UUID，快速打开报销电子档案</view>
-      </view>
-      <view class="entry-card" data-path="/pages/fuel-apply/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">⛽ 油卡额度申请</view></view>
-        <view class="entry-desc">填写油卡额度、车辆里程并上传现场照片</view>
-      </view>
-
-      <view class="entry-card" data-path="/pages/approval-initiated/index" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">🗂️ 我发起的申请</view></view>
-        <view class="entry-desc">进入审批视图查看我发起的申请（只读）</view>
+        <view class="approval-head">
+          <view class="approval-no">{{item.instance_no}}</view>
+          <view class="status-chip">{{item.statusText}}</view>
+        </view>
+        <view class="approval-summary">{{item.biz_summary || '-'}}</view>
+        <view class="meta-grid">
+          <view class="meta-item">类型：{{item.bizTypeLabel}}</view>
+          <view class="meta-item">节点：{{item.current_node_name || '-'}}</view>
+          <view class="meta-item wide">提交：{{item.submittedAtText}}</view>
+        </view>
       </view>
     </view>
   </hy-panel-card>
 
+  <hy-panel-card wx:if="{{segment === 'apply'}}" title="发起申请" icon="⚡" subtitle="常用流程按业务场景聚合">
+    <view class="apply-grid">
+      <view
+        wx:for="{{applyActions}}"
+        wx:key="title"
+        class="apply-card {{item.tone}} {{item.disabled ? 'disabled' : ''}}"
+        data-path="{{item.path}}"
+        data-disabled="{{item.disabled}}"
+        bindtap="goTo"
+      >
+        <view class="apply-title">{{item.title}}</view>
+        <view class="apply-desc">{{item.desc}}</view>
+      </view>
+    </view>
+  </hy-panel-card>
 </view>

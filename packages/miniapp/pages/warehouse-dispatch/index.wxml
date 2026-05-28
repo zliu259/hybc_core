@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="🚚 调度看板" icon="chart-bar" subtitle="对齐 Web 双向对冲调度看板">
+  <hy-panel-card title="待执行单据" icon="chart-bar" subtitle="仅承接 Web 审批通过后的出入库执行">
     <view class="stats-row">
       <view class="stat-card">
         <view class="stat-value">{{inboundPending.length}}</view>

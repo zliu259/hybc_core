@@ -9,6 +9,7 @@
     "pages/project-create/index",
     "pages/finance/index",
     "pages/warehouse/index",
+    "pages/warehouse-task/index",
     "pages/warehouse-stock-order/index",
     "pages/warehouse-inventory/index",
     "pages/warehouse-dispatch/index",

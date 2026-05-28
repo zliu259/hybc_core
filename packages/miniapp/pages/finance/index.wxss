@@ -1,24 +1,119 @@
+.finance-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 30rpx 28rpx;
+  border-radius: 24rpx;
+  color: #ffffff;
+  background: linear-gradient(135deg, #183f36 0%, #2f6c5f 100%);
+  box-shadow: 0 16rpx 36rpx rgba(47, 108, 95, 0.22);
+}
+
+.hero-kicker {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.hero-title {
+  margin-top: 6rpx;
+  font-size: 42rpx;
+  font-weight: 800;
+}
+
+.hero-desc {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hero-count {
+  flex: 0 0 auto;
+  width: 104rpx;
+  height: 104rpx;
+  border-radius: 30rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.16);
+}
+
+.count-value {
+  font-size: 42rpx;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.count-label {
+  margin-top: 8rpx;
+  font-size: 20rpx;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 12rpx;
+  margin: 18rpx 0 20rpx;
+}
+
+.summary-card {
+  min-height: 128rpx;
+  padding: 18rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  border: 1px solid #dbe8f7;
+  box-sizing: border-box;
+}
+
+.summary-card.warn {
+  background: #fff7ea;
+  border-color: #ffd99a;
+}
+
+.summary-card.ok {
+  background: #f0fff4;
+  border-color: #bde8c6;
+}
+
+.summary-value {
+  font-size: 36rpx;
+  line-height: 1.15;
+  font-weight: 800;
+  color: #1f2329;
+}
+
+.summary-label {
+  margin-top: 12rpx;
+  font-size: 22rpx;
+  color: #5c667a;
+}
+
 .segment-wrap {
   display: flex;
-  border-radius: 16rpx;
-  overflow: hidden;
-  border: 1px solid #d9e5f5;
-  margin-bottom: 14rpx;
+  gap: 12rpx;
+  padding: 8rpx;
+  border-radius: 999rpx;
+  background: #ffffff;
+  border: 1px solid #dbe8f7;
+  margin-bottom: 20rpx;
 }
 
 .segment-item {
   flex: 1;
   text-align: center;
-  padding: 20rpx 10rpx;
-  background: #f5f8fc;
+  padding: 18rpx 10rpx;
+  border-radius: 999rpx;
   font-size: 26rpx;
   color: #55657b;
 }
 
 .segment-item.active {
-  background: #1677ff;
+  background: #2f6c5f;
   color: #fff;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .pending-tip {
@@ -28,12 +123,122 @@
   font-size: 24rpx;
 }
 
-.pending-entry .entry-desc {
-  margin-top: 6rpx;
+.approval-list {
+  margin-top: 12rpx;
 }
 
-.entry-meta {
-  margin-top: 4rpx;
+.approval-card {
+  padding: 22rpx;
+  margin-top: 16rpx;
+  border-radius: 18rpx;
+  background: #f8fbff;
+  border: 1px solid #dbe8f7;
+}
+
+.approval-card:active,
+.apply-card:active {
+  opacity: 0.82;
+}
+
+.approval-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14rpx;
+}
+
+.approval-no {
+  flex: 1;
+  min-width: 0;
+  font-size: 30rpx;
+  font-weight: 800;
+  color: #1f2329;
+}
+
+.status-chip {
+  flex: 0 0 auto;
+  padding: 6rpx 14rpx;
+  border-radius: 999rpx;
+  background: #fff7ea;
+  color: #b26a00;
+  font-size: 22rpx;
+}
+
+.approval-summary {
+  margin-top: 10rpx;
+  font-size: 25rpx;
+  line-height: 1.45;
+  color: #1f2329;
+}
+
+.meta-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8rpx 12rpx;
+  margin-top: 16rpx;
+}
+
+.meta-item {
+  min-width: 0;
   font-size: 22rpx;
   color: #6b7a90;
+}
+
+.meta-item.wide {
+  grid-column: 1 / span 2;
+}
+
+.apply-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.apply-card {
+  min-height: 158rpx;
+  padding: 20rpx;
+  border-radius: 18rpx;
+  box-sizing: border-box;
+  background: #f8fbff;
+  border: 1px solid #dbe8f7;
+}
+
+.apply-card.blue {
+  background: #eef6ff;
+  border-color: #cfe3ff;
+}
+
+.apply-card.green {
+  background: #eefbf3;
+  border-color: #c9edd5;
+}
+
+.apply-card.orange,
+.apply-card.yellow {
+  background: #fff7ea;
+  border-color: #ffd99a;
+}
+
+.apply-card.gray {
+  background: #f6f8fb;
+  border-color: #e2e8f0;
+}
+
+.apply-card.disabled {
+  opacity: 0.58;
+}
+
+.apply-title {
+  font-size: 28rpx;
+  line-height: 1.35;
+  font-weight: 800;
+  color: #1f2329;
+}
+
+.apply-desc {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.4;
+  color: #5c667a;
 }

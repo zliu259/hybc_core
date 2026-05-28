@@ -532,6 +532,7 @@
   - 库房：可查看并执行 inspection / maintenance / modification / scrapping 任务。
   - 管理层：可查看 special override 队列与高风险阻塞任务。
 - API 指向：`/api/v1/warehouse/work-order`, `/api/v1/warehouse/work-order/:id/submit-approval`, `/api/v1/warehouse/work-order/:id/start`, `/api/v1/warehouse/work-order/:id/complete`, `/api/v1/warehouse/work-order/:id/cancel`
+- 移动端执行契约：`packages/miniapp/pages/warehouse-task/index` 仅调用 `/api/v1/warehouse/work-order/mobile/my-tasks`, `/api/v1/warehouse/work-order/mobile/task/:id`, `/api/v1/warehouse/work-order/mobile/task/:id/start`, `/api/v1/warehouse/work-order/mobile/task/:id/submit`；不暴露 Web 端的创建、分派、审核、AI 推荐和任务包管理。
 
 #### K-11. 仓库升级角色可见性矩阵
 
@@ -775,6 +776,7 @@
 - 工作台（Tab1）：`packages/miniapp/pages/index/index`
 - 项目驾驶舱（管理人员）：`packages/miniapp/pages/manager-dashboard/index`
 - 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
+- 我的库房任务：`packages/miniapp/pages/warehouse-task/index`
 - 公司资产盘库：`packages/miniapp/pages/warehouse-stocktake/index`
 - 审批与申请（Tab3）：`packages/miniapp/pages/finance/index`
 - 我的（Tab4）：`packages/miniapp/pages/profile/index`
@@ -804,11 +806,12 @@
 
 - 工作台Tab：首页展示红黄绿状态、待审批/进度预警/施工中项目 KPI、常用动作、管理入口和全部应用；保留“看项目/进入项目列表”入口作为单项目详情深看路径。
 - 项目驾驶舱（仅在工作台对 `super_admin/manager` 突出展示入口）：面向公司管理人员即时查看施工中项目进展，页面聚合施工中项目卡片、进度预警、最近施工日志与管理日志；项目卡片点击进入 `packages/miniapp/pages/project-detail/index` 只读详情。
-- 库房Tab：聚合库房与资产管理入口（出入库制单、调度看板、库存预警、资产查验、公司资产盘库），不承载项目/现场内容。
+- 库房Tab：重构为执行人员“库房执行台”，首页只突出我的任务、扫码查验、待执行单据、盘库执行；库存预警与制单申请降为辅助入口，不承载 Web 端的派工、审核、AI 调度等全功能管理动作。
+- 我的库房任务：承接 Web 库房任务调度台派发后的移动执行，按待开始/执行中/退回分类展示 `mobile_enabled=1` 的个人任务；详情页支持开始任务、查看操作手册与步骤、填写结果简报、上传现场照片并提交证据。
 - 出入库制单（miniapp）对齐 Web：支持多条目购物车（设备+耗材同单提审），不再限制单据仅单一设备类型。
 - 出入库制单（miniapp）选型加速：支持“扫码匹配资产类型”与“关键字检索资产类型”双通道。
 - 出入库制单（miniapp）模板加速：支持预制模板一键套用并继续逐项修改数量/删除后提交。
-- 审批与申请Tab：通过分段器组织“待我审批/发起申请”，并提供快速审批与发单入口。
+- 审批与申请Tab：采用与工作台一致的“Hero + KPI + 胶囊分段 + 任务/动作卡片”结构；通过分段器组织“待我审批/发起申请”，待审批区展示决策任务卡，发起申请区展示业务动作卡。
 - 我的Tab：作为个人工作台，放置个人概览、常用动作、个人申请时间线、证书预警；账号、认证、API 地址、刷新资料和退出登录统一进入 `packages/miniapp/pages/profile-settings/index`。
 - 账号与配置页：集中展示用户 ID、昵称、角色、认证方式、企微验证时间；支持本机 API 地址保存/恢复默认、刷新资料和退出登录。
 - 日志中心：仅负责日志角色入口分流（操作员/管理员）。
@@ -860,7 +863,9 @@
   - 新增 `packages/miniapp/pages/{warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index.*` 承接制单、库存、调度。
   - `warehouse-stock-order` 采用“检索库 + 购物车清单”结构，支持扫码加入、关键字筛选、模板套用、统一提审。
 - 审批与申请页重构：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
-  - 待办/发起分段器 + 快捷动作入口 + 全局语音助手。
+  - Hero 摘要、待审批/申请入口 KPI、胶囊式“待我审批/发起申请”分段。
+  - 待我审批分段使用决策任务卡展示单号、摘要、类型、节点、状态、提交时间，点击进入审批详情。
+  - 发起申请分段使用两列动作卡展示智能发单台、我的报销提交、信封扫码核查、油卡额度申请、我发起的申请；无权限动作显示禁用态。
 - 我的页重构：`packages/miniapp/pages/profile/index.{js,wxml,wxss}`
   - 个人概览、关键数字、常用动作、个人申请时间线、证书预警卡；不再展示配置类明细。
   - 个人证书卡新增附件入口：支持“查看/下载”证书文件（无附件时显示占位并给出提示）。
@@ -1022,7 +1027,7 @@
 #### 4.4.3 范围锁定（本期禁止变更）
 
 - 财务模块入口与行为保持不变：`packages/miniapp/pages/finance/index`
-- 库房模块入口调整为“库房管理工作台”并对齐 Web：`packages/miniapp/pages/{warehouse,warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index`
+- 库房模块入口调整为“库房执行台”并对齐 Web 移动执行契约：`packages/miniapp/pages/{warehouse,warehouse-task,warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index`
 - 本期允许调整仅限项目模块的信息架构、页面跳转与只读提示层。
 
 ### 4.2.4 审批状态可视化补齐（2026-03）
@@ -1470,6 +1475,7 @@
 - 小程序“审批与申请”页在“发起申请”分段仅保留“我发起的申请”入口卡片，不再在该页内直接摊平审批列表：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
 - 新增独立页面承载“我发起的申请”列表（审批视图，只读）：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss,json}`，并在 `packages/miniapp/app.json` 注册路由 `pages/approval-initiated/index`
 - 独立页面新增筛选能力：可按“流程类型 + 流程状态”过滤列表，默认状态筛选为“审批中（pending/in_progress）”：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
+- 独立页面付款审批条目需展示业务事项明细：审批列表接口返回 `biz_detail`，小程序列表在固定发单台摘要之外补充付款单号与付款事由，避免“智能发单台-直接付款”无法辨认具体事项：`packages/api/src/routes/approval.ts`、`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
 - 列表条目统一跳转审批详情页（`/pages/approval-detail/index`），不跳转具体业务页面，满足“看审批不看业务页”路径约束：`packages/miniapp/pages/approval-initiated/index.js`
 - 审批详情页新增只读模式（`readonly=1`），只保留查看，不展示审批意见与底部操作按钮：`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxml`
 - 审批详情页加载态/错误态解耦：慢网加载中仅显示“加载审批详情中”，仅在请求结束且失败后才显示“详情不存在或无权限”等兜底文案，避免首屏误判：`packages/miniapp/pages/approval-detail/index.{js,wxml}`

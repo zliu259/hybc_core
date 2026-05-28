@@ -92,6 +92,18 @@ const buildInitiatedBucketCaseSql = (instanceAlias: string): string => {
   END`;
 };
 
+const approvalBizDetailSql = (instanceAlias: string): string => {
+  return `CASE ${instanceAlias}.biz_type
+    WHEN 'payment_request' THEN (SELECT pr.serial_no || ' | ' || IFNULL(pr.content, '-') FROM payment_request pr WHERE pr.id = ${instanceAlias}.biz_id)
+    WHEN 'outbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ${instanceAlias}.biz_id)
+    WHEN 'inbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ${instanceAlias}.biz_id)
+    WHEN 'reimbursement_batch' THEN (SELECT rb.batch_no || ' | ' || rb.item_count || '单' FROM reimbursement_batch rb WHERE rb.id = ${instanceAlias}.biz_id)
+    WHEN 'invoice_request' THEN (SELECT ir.request_no || ' | ' || IFNULL(ir.customer_name, '-') FROM invoice_request ir WHERE ir.id = ${instanceAlias}.biz_id)
+    WHEN 'stock_order' THEN (SELECT so.order_no || ' | ' || IFNULL(so.order_type, '-') FROM stock_order so WHERE so.id = ${instanceAlias}.biz_id)
+    ELSE NULL
+  END`;
+};
+
 // ─── GET / — List all instances for current user ──────────
 
 approvalRoutes.get("/", async (c) => {
@@ -125,6 +137,7 @@ approvalRoutes.get("/", async (c) => {
   const initiatedBucketCaseSql = buildInitiatedBucketCaseSql("ai");
 
   let sql = `SELECT DISTINCT ai.*,
+    ${approvalBizDetailSql("ai")} as biz_detail,
     ${initiatedBucketCaseSql} as initiated_bucket,
     CASE WHEN ${returnedNeedsActionSql} THEN 1 ELSE 0 END as has_pending_task_for_initiator,
     CASE

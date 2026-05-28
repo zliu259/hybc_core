@@ -65,6 +65,16 @@
   margin-top: 8rpx;
 }
 
+.biz-detail {
+  margin-bottom: 8rpx;
+  padding: 12rpx 14rpx;
+  border-radius: 12rpx;
+  background: #f6f9ff;
+  color: #243246;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
 .approval-card {
   border-radius: 16rpx;
   margin-bottom: 14rpx;

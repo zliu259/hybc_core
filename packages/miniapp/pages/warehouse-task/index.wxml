@@ -1,0 +1,109 @@
+<view class="page">
+  <view class="task-hero">
+    <view>
+      <view class="hero-kicker">移动库房任务</view>
+      <view class="hero-title">我的库房任务</view>
+      <view class="hero-desc">按 Web 端派工结果执行，只保留开始、拍照、提交</view>
+    </view>
+    <view class="hero-count">
+      <view class="count-value">{{totalCount}}</view>
+      <view class="count-label">待处理</view>
+    </view>
+  </view>
+
+  <view class="segment-wrap">
+    <view
+      wx:for="{{segmentItems}}"
+      wx:key="key"
+      class="segment-item {{activeSegment === item.key ? 'active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onSegmentChange"
+    >
+      {{item.label}} {{item.count}}
+    </view>
+  </view>
+
+  <view wx:if="{{visibleTasks.length === 0}}" class="empty-state">当前分类暂无任务</view>
+  <view wx:for="{{visibleTasks}}" wx:key="id" class="task-card" data-id="{{item.id}}" bindtap="openTask">
+    <view class="task-head">
+      <view class="task-no">{{item.work_order_no}}</view>
+      <view class="status-chip {{item.status}}">{{item.statusText}}</view>
+    </view>
+    <view class="task-title">{{item.typeText}} · {{item.priorityText}}</view>
+    <view class="task-meta">排期：{{item.scheduledDay}} · 照片要求：{{item.requiredPhotoCount}} 张</view>
+    <view class="task-remark">{{item.remark || '无备注'}}</view>
+  </view>
+
+  <view wx:if="{{selectedTask}}" class="detail-mask" bindtap="closeTask">
+    <view class="detail-panel" catchtap="noop">
+      <view class="detail-head">
+        <view>
+          <view class="detail-kicker">{{selectedTask.typeText}} · {{selectedTask.priorityText}}</view>
+          <view class="detail-title">{{selectedTask.work_order_no}}</view>
+        </view>
+        <view class="close-btn" bindtap="closeTask">×</view>
+      </view>
+
+      <view class="detail-grid">
+        <view class="detail-cell">
+          <view class="cell-label">状态</view>
+          <view class="cell-value">{{selectedTask.statusText}}</view>
+        </view>
+        <view class="detail-cell">
+          <view class="cell-label">排期</view>
+          <view class="cell-value">{{selectedTask.scheduledDay}}</view>
+        </view>
+        <view class="detail-cell">
+          <view class="cell-label">本次照片</view>
+          <view class="cell-value">{{selectedTask.localPhotoCount}} / {{selectedTask.requiredPhotoCount}}</view>
+        </view>
+        <view class="detail-cell">
+          <view class="cell-label">证据</view>
+          <view class="cell-value">{{selectedTask.evidenceCount}}</view>
+        </view>
+      </view>
+
+      <view class="section">
+        <view class="section-title">执行说明</view>
+        <view class="section-text">{{selectedTask.remark || '暂无执行说明'}}</view>
+      </view>
+
+      <view wx:if="{{selectedTask.manual_title}}" class="section manual-section">
+        <view class="section-title">操作手册</view>
+        <view class="section-text">{{selectedTask.manual_title}} {{selectedTask.manualVersionText}}</view>
+      </view>
+
+      <view wx:if="{{selectedTask.steps.length > 0}}" class="section">
+        <view class="section-title">步骤</view>
+        <view wx:for="{{selectedTask.steps}}" wx:key="id" class="step-item">
+          <view class="step-no">{{item.step_no}}</view>
+          <view class="step-text">{{item.step_title || item.step_name || item.remark || '执行步骤'}}</view>
+        </view>
+      </view>
+
+      <view class="section">
+        <view class="section-title">结果简报</view>
+        <textarea
+          class="result-input"
+          value="{{resultSummary}}"
+          placeholder="填写现场处理结果、异常说明或后续建议"
+          maxlength="800"
+          bindinput="onResultInput"
+        />
+      </view>
+
+      <view class="evidence-row">
+        <view>
+          <view class="section-title">现场照片</view>
+          <view class="section-text">已加入 {{selectedTask.localEvidence.length || 0}} 张，提交后进入证据库</view>
+        </view>
+        <t-button size="small" variant="outline" bindtap="pickEvidencePhoto" loading="{{photoBusy}}" disabled="{{photoBusy || actionBusy}}">拍照/上传</t-button>
+      </view>
+
+      <view class="detail-actions">
+        <t-button wx:if="{{selectedTask.canStart}}" theme="primary" bindtap="startTask" loading="{{actionBusy}}" disabled="{{actionBusy}}">开始任务</t-button>
+        <t-button wx:if="{{selectedTask.canSubmit}}" theme="primary" bindtap="submitTask" loading="{{actionBusy}}" disabled="{{actionBusy || photoBusy}}">提交结果</t-button>
+      </view>
+    </view>
+  </view>
+</view>

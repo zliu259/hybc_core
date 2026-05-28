@@ -94,8 +94,15 @@ Page({
   },
 
   mapListItem(item) {
+    const bizSummary = item.biz_summary || "-";
+    const bizDetail = item.biz_detail || "";
+    const displaySummary = bizDetail && bizSummary.startsWith("智能发单台-")
+      ? `${bizSummary}｜${bizDetail}`
+      : bizSummary;
     return {
       ...item,
+      displaySummary,
+      bizDetail,
       bizTypeLabel: this.bizTypeLabel(item.biz_type),
       cardClass: this.cardClassByType(item.biz_type),
       initiatedBucketText: this.initiatedBucketLabel(item.initiated_bucket),

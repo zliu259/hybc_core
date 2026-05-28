@@ -158,6 +158,17 @@ const buildPayeeLabels = (payees) => {
   );
 };
 
+const buildDirectPaymentSummary = ({ form, amount, payee, contract }) => {
+  const content = String((form && form.content) || "").trim() || "未填写付款事由";
+  const payeeName = payee && payee.name ? payee.name : "未选择收款方";
+  const amountText = formatAmountNumber(amount);
+  if (contract) {
+    const contractText = contract.contract_no || contract.counterparty || "已关联合同";
+    return `智能发单台-合同直付｜${content}｜${contractText}｜${amountText}元`;
+  }
+  return `智能发单台-直接付款｜${content}｜${payeeName}｜${amountText}元`;
+};
+
 Page({
   data: {
     loadingMeta: false,
@@ -841,6 +852,12 @@ Page({
     wx.showLoading({ title: "提交中...", mask: true });
     try {
       const form = this.data.directForm;
+      const amount = Number(this.data.amountInput || 0);
+      const payee = this.data.selectedDirectPayee;
+      const contractId = Number(form.contract_id || 0);
+      const contract = contractId > 0
+        ? (this.data.contracts || []).find((item) => Number(item.id) === contractId)
+        : null;
       const created = await request({
         method: "POST",
         path: "/api/v1/payment",
@@ -850,7 +867,7 @@ Page({
           payee_id: Number(form.payee_id),
           expected_payment_date: form.expected_payment_date,
           category: form.category,
-          amount: Number(this.data.amountInput || 0),
+          amount,
           content: form.content,
           payment_method: form.payment_method,
           attachments_json: serializeAttachments(this.data.directPaymentAttachments),
@@ -864,7 +881,7 @@ Page({
         method: "POST",
         path: `/api/v1/payment/${paymentId}/submit-approval`,
         data: {
-          biz_summary: "智能发单台-直接付款",
+          biz_summary: buildDirectPaymentSummary({ form, amount, payee, contract }),
           instance_config: { note: "阈值内直接付款" }
         }
       });

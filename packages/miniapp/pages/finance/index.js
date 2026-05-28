@@ -15,6 +15,8 @@ Page({
     segment: "pending",
     pendingCount: 0,
     canPaymentApply: false,
+    applyActionCount: 5,
+    applyActions: [],
     pendingLoading: false,
     pendingList: []
   },
@@ -22,8 +24,52 @@ Page({
   onShow() {
     const profile = getUserProfile() || {};
     const roles = Array.isArray(profile.roles) ? profile.roles : [];
-    this.setData({ canPaymentApply: canLaunchPayment(roles) });
+    const canPaymentApply = canLaunchPayment(roles);
+    this.setData({
+      canPaymentApply,
+      applyActions: this.buildApplyActions(canPaymentApply)
+    });
     this.loadPendingList();
+  },
+
+  buildApplyActions(canPaymentApply) {
+    return [
+      {
+        title: "💸 智能发单台",
+        desc: canPaymentApply ? "金额阈值识别 + 直付/合同双流程" : "当前角色无权限",
+        path: "/pages/payment-apply/index",
+        tone: "blue",
+        disabled: !canPaymentApply
+      },
+      {
+        title: "🧾 我的报销提交",
+        desc: "发起报销、上传票据、跟踪状态",
+        path: "/pages/reimbursement-list/index",
+        tone: "green",
+        disabled: false
+      },
+      {
+        title: "📂 信封扫码核查",
+        desc: "办公室扫码信封UUID，快速打开电子档案",
+        path: "/pages/reimbursement-archive/index",
+        tone: "orange",
+        disabled: false
+      },
+      {
+        title: "⛽ 油卡额度申请",
+        desc: "填写油卡额度、车辆里程并上传现场照片",
+        path: "/pages/fuel-apply/index",
+        tone: "yellow",
+        disabled: false
+      },
+      {
+        title: "🗂️ 我发起的申请",
+        desc: "进入审批视图查看我发起的申请（只读）",
+        path: "/pages/approval-initiated/index",
+        tone: "gray",
+        disabled: false
+      }
+    ];
   },
 
   statusLabel(status) {
@@ -101,6 +147,11 @@ Page({
 
   goTo(e) {
     const path = e.currentTarget.dataset.path;
+    const disabled = e.currentTarget.dataset.disabled === "true" || e.currentTarget.dataset.disabled === true;
+    if (disabled) {
+      wx.showToast({ title: "当前角色无权限", icon: "none" });
+      return;
+    }
     wx.navigateTo({ url: path });
   },
 
