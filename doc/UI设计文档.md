@@ -1475,7 +1475,7 @@
 - 小程序“审批与申请”页在“发起申请”分段仅保留“我发起的申请”入口卡片，不再在该页内直接摊平审批列表：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
 - 新增独立页面承载“我发起的申请”列表（审批视图，只读）：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss,json}`，并在 `packages/miniapp/app.json` 注册路由 `pages/approval-initiated/index`
 - 独立页面新增筛选能力：可按“流程类型 + 流程状态”过滤列表，默认状态筛选为“审批中（pending/in_progress）”：`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
-- 独立页面付款审批条目需展示业务事项明细：审批列表接口返回 `biz_detail`，小程序列表在固定发单台摘要之外补充付款单号与付款事由，避免“智能发单台-直接付款”无法辨认具体事项：`packages/api/src/routes/approval.ts`、`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
+- 独立页面付款审批条目需在摘要中展示业务事项明细：审批列表接口返回 `biz_detail`，小程序列表对所有 `payment_request` 摘要补充付款单号与付款事由，避免从外层无法辨认具体付款内容：`packages/api/src/routes/approval.ts`、`packages/miniapp/pages/approval-initiated/index.{js,wxml,wxss}`
 - 列表条目统一跳转审批详情页（`/pages/approval-detail/index`），不跳转具体业务页面，满足“看审批不看业务页”路径约束：`packages/miniapp/pages/approval-initiated/index.js`
 - 审批详情页新增只读模式（`readonly=1`），只保留查看，不展示审批意见与底部操作按钮：`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxml`
 - 审批详情页加载态/错误态解耦：慢网加载中仅显示“加载审批详情中”，仅在请求结束且失败后才显示“详情不存在或无权限”等兜底文案，避免首屏误判：`packages/miniapp/pages/approval-detail/index.{js,wxml}`

@@ -96,7 +96,8 @@ Page({
   mapListItem(item) {
     const bizSummary = item.biz_summary || "-";
     const bizDetail = item.biz_detail || "";
-    const displaySummary = bizDetail && bizSummary.startsWith("智能发单台-")
+    const shouldAppendBizDetail = item.biz_type === "payment_request" || bizSummary.startsWith("智能发单台-");
+    const displaySummary = bizDetail && shouldAppendBizDetail
       ? `${bizSummary}｜${bizDetail}`
       : bizSummary;
     return {
