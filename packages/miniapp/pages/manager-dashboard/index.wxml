@@ -1,0 +1,83 @@
+<view class="page manager-page">
+  <view class="hero">
+    <view>
+      <view class="hero-title">项目驾驶舱</view>
+      <view class="hero-sub">施工中项目 · 进度 · 日志 · 预警</view>
+    </view>
+    <t-button class="hero-refresh" size="small" theme="primary" bindtap="refresh" loading="{{loading}}" disabled="{{loading}}">刷新</t-button>
+  </view>
+
+  <view class="updated">最近更新：{{updatedAt || '尚未刷新'}}</view>
+
+  <view class="overview-grid">
+    <view class="overview-card">
+      <view class="overview-value">{{overview.activeProjects}}</view>
+      <view class="overview-label">施工中项目</view>
+    </view>
+    <view class="overview-card {{overview.alerts > 0 ? 'warn' : 'ok'}}">
+      <view class="overview-value">{{overview.alerts}}</view>
+      <view class="overview-label">进度预警</view>
+    </view>
+    <view class="overview-card">
+      <view class="overview-value">{{overview.operatorLogs}}</view>
+      <view class="overview-label">施工日志</view>
+    </view>
+    <view class="overview-card">
+      <view class="overview-value">{{overview.footage}}</view>
+      <view class="overview-label">累计进尺 m</view>
+    </view>
+  </view>
+
+  <hy-panel-card title="项目进展" icon="🏗️" subtitle="点进项目详情查看工作段、管理日志和财务摘要">
+    <t-empty wx:if="{{!loading && projectCards.length === 0}}" description="暂无施工中项目" />
+    <view wx:for="{{projectCards}}" wx:key="id" class="project-card" data-id="{{item.id}}" bindtap="openProject">
+      <view class="project-head">
+        <view class="project-name">{{item.project_name}}</view>
+        <view class="status {{item.warning ? 'danger' : 'success'}}">{{item.warning ? '有预警' : item.statusText}}</view>
+      </view>
+      <view class="project-code">{{item.project_code}} · 负责人 {{item.manager_userid}}</view>
+      <view class="project-metrics">
+        <view class="metric">
+          <view class="metric-value">{{item.footage_total}}</view>
+          <view class="metric-label">累计进尺</view>
+        </view>
+        <view class="metric">
+          <view class="metric-value">{{item.completed_total}}</view>
+          <view class="metric-label">累计下管</view>
+        </view>
+        <view class="metric">
+          <view class="metric-value">{{item.operator_count}}/{{item.manager_count}}</view>
+          <view class="metric-label">施工/管理日志</view>
+        </view>
+      </view>
+      <view class="project-foot">最近填报：{{item.latest_day}} · {{item.latest_footage}}m</view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="进度预警" icon="🚦" subtitle="红灯优先处理，黄灯当天复核">
+    <t-empty wx:if="{{!loading && alerts.length === 0}}" description="当前无项目预警" />
+    <view wx:for="{{alerts}}" wx:key="project_id" class="alert-row" data-id="{{item.project_id}}" bindtap="openProject">
+      <view class="alert-level {{item.levelClass}}">{{item.levelText}}</view>
+      <view class="alert-main">
+        <view class="alert-title">{{item.project_name}}</view>
+        <view class="alert-desc">{{item.message}} · 今日 {{item.today_footage}}m / 近7日均 {{item.avg_7d}}m</view>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="最近日志" icon="🧾" subtitle="施工日志与管理日志混排，便于快速追踪现场变化">
+    <t-empty wx:if="{{!loading && recentLogs.length === 0}}" description="暂无最近日志" />
+    <view wx:for="{{recentLogs}}" wx:key="id" class="log-row" data-id="{{item.project_id}}" bindtap="openProject">
+      <view class="log-icon">{{item.icon}}</view>
+      <view class="log-main">
+        <view class="log-title">{{item.title}}</view>
+        <view class="log-desc">{{item.dayText}} · {{item.typeText}} · {{item.desc}}</view>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <view class="bottom-actions">
+    <t-button class="btn" variant="outline" block bindtap="openProjectList">进入项目列表</t-button>
+    <t-button class="btn" theme="primary" block bindtap="openProgress">进度预警页</t-button>
+  </view>
+</view>

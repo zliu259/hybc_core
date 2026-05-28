@@ -1,35 +1,65 @@
 <view class="page">
-  <hy-panel-card title="早安，工程伙伴" icon="dashboard" subtitle="今天先看红黄绿，再做动作">
-    <view class="kpi-board">
-      <view class="kpi-item red">
-        <view class="kpi-label traffic-red">🔴 待审批</view>
-        <view class="kpi-value traffic-red">{{pendingCount}}</view>
-      </view>
-      <view class="kpi-item yellow">
-        <view class="kpi-label traffic-yellow">🟡 库存预警</view>
-        <view class="kpi-value traffic-yellow">{{warningCount}}</view>
-      </view>
-      <view class="kpi-item green">
-        <view class="kpi-label traffic-green">🟢 通知消息</view>
-        <view class="kpi-value traffic-green">{{noticeCount}}</view>
-      </view>
-      <view class="kpi-item">
-        <view class="kpi-label">📍 当前项目数</view>
-        <view class="kpi-value">{{projectCount}}</view>
+  <view class="workbench-hero {{riskTone}}">
+    <view class="hero-main">
+      <view class="hero-title">早安，工程伙伴</view>
+      <view class="hero-desc">先看红黄绿，再做今天的动作</view>
+    </view>
+    <view class="risk-pill">{{riskTone === 'red' ? '🔴' : riskTone === 'yellow' ? '🟡' : '🟢'}} {{riskText}}</view>
+  </view>
+
+  <view class="risk-card {{riskTone}}">
+    <view>
+      <view class="risk-title">{{riskText}}</view>
+      <view class="risk-desc">{{riskDesc}}</view>
+    </view>
+    <view class="risk-count">{{warningCount}}</view>
+  </view>
+
+  <view class="kpi-board">
+    <view class="kpi-item red">
+      <view class="kpi-label traffic-red">🔴 待审批</view>
+      <view class="kpi-value traffic-red">{{pendingCount}}</view>
+    </view>
+    <view class="kpi-item yellow">
+      <view class="kpi-label traffic-yellow">🟡 进度预警</view>
+      <view class="kpi-value traffic-yellow">{{warningCount}}</view>
+    </view>
+    <view class="kpi-item green">
+      <view class="kpi-label traffic-green">🟢 施工中项目</view>
+      <view class="kpi-value traffic-green">{{activeProjectCount}}</view>
+    </view>
+    <view class="kpi-item">
+      <view class="kpi-label">📍 全部项目</view>
+      <view class="kpi-value">{{projectCount}}</view>
+    </view>
+  </view>
+
+  <hy-panel-card title="常用动作" icon="⚡" subtitle="现场高频操作放在最前面">
+    <view class="action-grid">
+      <view wx:for="{{coreActions}}" wx:key="title" class="action-card {{item.tone}}" data-path="{{item.path}}" bindtap="goTo">
+        <view class="action-title">{{item.title}}</view>
+        <view class="action-desc">{{item.desc}}</view>
       </view>
     </view>
+  </hy-panel-card>
 
-    <view class="row mt-2">
-      <t-button class="btn btn-primary mt-2" theme="primary" block bindtap="openProjectList">进入项目列表</t-button>
+  <hy-panel-card wx:if="{{showManagerDashboard}}" title="管理入口" icon="📊" subtitle="公司管理人员即时总览进行中项目">
+    <view class="manager-entry" bindtap="openManagerDashboard">
+      <view class="manager-copy">
+        <view class="manager-title">项目驾驶舱</view>
+        <view class="manager-desc">查看施工中项目、进度、日志和红黄灯预警</view>
+      </view>
+      <view class="manager-arrow">进入</view>
     </view>
+  </hy-panel-card>
 
+  <hy-panel-card title="全部应用" icon="▦" subtitle="低频功能收纳在这里，减少工作台干扰">
     <view class="entry-grid">
-      <view wx:for="{{entries}}" wx:key="title" class="entry-card" data-path="{{item.path}}" bindtap="goTo">
+      <view wx:for="{{appEntries}}" wx:key="title" class="entry-card" data-path="{{item.path}}" bindtap="goTo">
         <view class="entry-top"><view class="entry-title">{{item.title}}</view></view>
         <view class="entry-desc">{{item.desc}}</view>
       </view>
     </view>
-
   </hy-panel-card>
 
 </view>

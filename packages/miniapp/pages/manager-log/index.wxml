@@ -1,20 +1,48 @@
 <view class="page">
-  <hy-panel-card title="📸 写现场概况（管理日志）" icon="file-image" subtitle="拍照必传，系统自动摘要">
-    <hy-project-picker value="{{projectId}}" label="所属项目" bind:change="onProjectChange" />
-    <view class="label required">日期</view>
-    <picker mode="date" value="{{form.log_date}}" bindchange="onDateChange" disabled="{{busy}}">
-      <view class="input">{{form.log_date}}</view>
-    </picker>
-    <view class="label">📰 标题</view>
-    <input class="input" value="{{form.title}}" data-key="title" bindinput="onInput" disabled="{{busy}}" />
-    <view class="label">🧾 日志内容</view>
-    <textarea class="input" value="{{form.detail_html}}" data-key="detail_html" bindinput="onInput" disabled="{{busy}}" />
-    <view class="row">
-      <hy-status-chip text="已上传图片 {{form.photos.length}} 张" theme="primary" variant="light" />
+  <view class="log-hero manager">
+    <view>
+      <view class="hero-kicker">📸 管理日志</view>
+      <view class="hero-title">写现场概况</view>
+      <view class="hero-desc">记录人机料法环，照片作为现场证据</view>
     </view>
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="pickPhoto" loading="{{busy}}" disabled="{{busy}}">拍照/选图</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">提交日志</t-button>
+    <view class="hero-mark">照</view>
+  </view>
+
+  <hy-panel-card title="1. 日志上下文" subtitle="先确认项目和日期，避免日志归档错误">
+    <hy-project-picker value="{{projectId}}" label="所属项目" excludeArchived="{{true}}" bind:change="onProjectChange" />
+    <view class="date-block">
+      <view class="label required">日期</view>
+      <picker mode="date" value="{{form.log_date}}" bindchange="onDateChange" disabled="{{busy}}">
+        <view class="select-input">{{form.log_date}}</view>
+      </picker>
     </view>
   </hy-panel-card>
+
+  <hy-panel-card title="2. 现场概况" subtitle="标题写结论，内容写关键变化和风险">
+    <view class="label">📰 标题</view>
+    <input class="input" value="{{form.title}}" data-key="title" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label">🧾 日志内容</view>
+    <textarea class="input textarea" value="{{form.detail_html}}" data-key="detail_html" bindinput="onInput" disabled="{{busy}}" />
+  </hy-panel-card>
+
+  <hy-panel-card title="3. 现场照片" subtitle="建议至少上传 1 张现场实景图">
+    <view class="photo-status {{form.photos.length > 0 ? 'ready' : 'empty'}}">
+      <view class="photo-icon">{{form.photos.length > 0 ? '✅' : '📷'}}</view>
+      <view class="photo-copy">
+        <view class="photo-title">{{form.photos.length > 0 ? '照片已上传' : '还没有现场照片'}}</view>
+        <view class="photo-desc">当前 {{form.photos.length}} 张，用于管理日志审计和日报汇总</view>
+      </view>
+    </view>
+
+    <view class="photo-list" wx:if="{{form.photos.length > 0}}">
+      <view wx:for="{{form.photos}}" wx:key="file_key" class="photo-chip">现场照片 {{index + 1}}</view>
+    </view>
+
+    <t-button class="photo-button" variant="outline" block bindtap="pickPhoto" loading="{{busy}}" disabled="{{busy}}">拍照/选图</t-button>
+  </hy-panel-card>
+
+  <view class="submit-bar">
+    <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{busy}}" disabled="{{busy}}">提交日志</t-button>
+  </view>
 </view>

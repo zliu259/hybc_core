@@ -318,6 +318,7 @@
 #### G-1. 收款合同管理 `views/finance/receipt/contract.vue`
 
 - 核心列：合同号、项目、对方单位、合同总额、已开票、已收款、状态。
+- “已开票”展示税后价税合计口径，由后端按发票 `amount_with_tax` 汇总并兼容旧发票 `amount`：`packages/web/src/views/finance/receipt/contract.vue`、`packages/api/src/routes/contract.ts`、`packages/api/src/routes/receipt.ts`
 - 操作：新建收款合同（direction=inbound）、查看合同详情并提交审批。
 - API 指向：`/api/v1/contract?direction=inbound`, `/api/v1/contract/:id/submit-approval`
 
@@ -377,6 +378,7 @@
 
 - Tab：待审批、已处理、抄送我。
 - 待审批/已处理列表列：业务类型、审批单号、所属项目、金额、业务明细、摘要、发起人、节点/操作、时间、状态（用于审批快速识别）。
+- 报销审批条目的“业务明细”支持直接点击跳转对应报销批次详情，便于从我的待办直接核对报销业务：`packages/web/src/views/approval/index.vue`
 - API 指向：`/api/v1/approval/pending`
 
 #### I. 审批详情 `views/approval/detail.vue`
@@ -771,10 +773,12 @@
 ### 4.1 页面总索引
 
 - 工作台（Tab1）：`packages/miniapp/pages/index/index`
+- 项目驾驶舱（管理人员）：`packages/miniapp/pages/manager-dashboard/index`
 - 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
 - 公司资产盘库：`packages/miniapp/pages/warehouse-stocktake/index`
 - 审批与申请（Tab3）：`packages/miniapp/pages/finance/index`
 - 我的（Tab4）：`packages/miniapp/pages/profile/index`
+- 账号与配置：`packages/miniapp/pages/profile-settings/index`
 - 登录恢复页：`packages/miniapp/pages/login/index`
 - 日志中心：`packages/miniapp/pages/log/index`
 - 操作员日志：`packages/miniapp/pages/operator-log/index`
@@ -798,16 +802,18 @@
 
 ### 4.2 页面要求
 
-- 工作台Tab：首页展示红黄绿 KPI、九宫格高频入口，并支持角色化“创建项目”入口。
+- 工作台Tab：首页展示红黄绿状态、待审批/进度预警/施工中项目 KPI、常用动作、管理入口和全部应用；保留“看项目/进入项目列表”入口作为单项目详情深看路径。
+- 项目驾驶舱（仅在工作台对 `super_admin/manager` 突出展示入口）：面向公司管理人员即时查看施工中项目进展，页面聚合施工中项目卡片、进度预警、最近施工日志与管理日志；项目卡片点击进入 `packages/miniapp/pages/project-detail/index` 只读详情。
 - 库房Tab：聚合库房与资产管理入口（出入库制单、调度看板、库存预警、资产查验、公司资产盘库），不承载项目/现场内容。
 - 出入库制单（miniapp）对齐 Web：支持多条目购物车（设备+耗材同单提审），不再限制单据仅单一设备类型。
 - 出入库制单（miniapp）选型加速：支持“扫码匹配资产类型”与“关键字检索资产类型”双通道。
 - 出入库制单（miniapp）模板加速：支持预制模板一键套用并继续逐项修改数量/删除后提交。
 - 审批与申请Tab：通过分段器组织“待我审批/发起申请”，并提供快速审批与发单入口。
-- 我的Tab：放置个人申请时间线、证书预警、联调配置、会话管理。
+- 我的Tab：作为个人工作台，放置个人概览、常用动作、个人申请时间线、证书预警；账号、认证、API 地址、刷新资料和退出登录统一进入 `packages/miniapp/pages/profile-settings/index`。
+- 账号与配置页：集中展示用户 ID、昵称、角色、认证方式、企微验证时间；支持本机 API 地址保存/恢复默认、刷新资料和退出登录。
 - 日志中心：仅负责日志角色入口分流（操作员/管理员）。
-- 操作员日志页：支持 AI 预填 + 提交，班次使用中文选择（白班/夜班），内部存储保持 day/night。
-- 管理员日志页：支持拍照上传 + 结构化提交。
+- 操作员日志页：支持 AI 预填 + 提交，班次使用中文选择（白班/夜班），内部存储保持 day/night；页面布局按“施工上下文 / 本班核心数据 / 现场补充 / 提交动作”分段，突出本班下管、累计下管、当日顶进三项核心数字；项目选择仅允许非归档项目。
+- 管理员日志页：支持拍照上传 + 结构化提交；页面布局按“日志上下文 / 现场概况 / 现场照片 / 提交动作”分段，照片状态必须在独立证据区显示；项目选择仅允许非归档项目。
 - 审批页：移动端单手可完成通过/拒绝/退回/转签，危险动作前需确认弹窗。
 - 报销页：支持个人报销草稿创建/编辑、绑定 UUID、附件上传（实物/电子）、提交与 OCR 状态追踪。
 - 查询中心（仅 `super_admin/finance/manager`）：
@@ -833,6 +839,7 @@
 - 低操作成本原则：
   - 项目选择统一使用下拉选择组件（`hy-project-picker`），避免手输项目ID。
   - 支持“定位匹配项目”快捷动作；若项目未配置坐标，则保留手动选择。
+  - `hy-project-picker` 支持 `excludeArchived` 参数；日志填写页必须启用该参数，避免向归档项目继续写入新日志。
   - 业务例外：`智能发单台` 与 `我的报销提交` 流程禁用 GPS 自动匹配，项目仅允许人工显式选择，避免地理偏差导致错绑。
   - 日期统一使用 `picker mode=date`，避免手输日期格式。
   - 班次统一使用中文选项（白班/夜班），内部存储使用英文值（day/night）。
@@ -845,7 +852,9 @@
 - 4 Tabs 信息架构（文案与顺序）：`packages/miniapp/app.json`
   - `工作台`、`库房`、`流程`、`我的`。
 - 工作台首页重构：`packages/miniapp/pages/index/index.{js,wxml,wxss}`
-  - 欢迎区 + 红黄绿 KPI + 大入口网格 + 项目清单 + 全局语音助手。
+  - 欢迎区 + 红黄绿状态条 + KPI + 常用动作 + 管理入口 + 全部应用；首页不直接承载项目长列表。
+- 项目驾驶舱新增：`packages/miniapp/pages/manager-dashboard/index.{js,wxml,wxss,json}`
+  - 使用 `/api/v1/project?status=active`、`/api/v1/log/dashboard`、`/api/v1/log/progress-alert`、`/api/v1/log/operator`、`/api/v1/log/manager` 聚合进行中项目、进度、预警和日志。
 - 库房页重构：`packages/miniapp/pages/warehouse/index.{js,wxml,wxss}`
   - 库房 KPI（仓库数、待处理制单、库存预警、库存条目）与库房业务入口聚合。
   - 新增 `packages/miniapp/pages/{warehouse-stock-order,warehouse-inventory,warehouse-dispatch}/index.*` 承接制单、库存、调度。
@@ -853,8 +862,10 @@
 - 审批与申请页重构：`packages/miniapp/pages/finance/index.{js,wxml,wxss}`
   - 待办/发起分段器 + 快捷动作入口 + 全局语音助手。
 - 我的页重构：`packages/miniapp/pages/profile/index.{js,wxml,wxss}`
-  - 个人申请时间线、证书预警卡、联调配置区。
+  - 个人概览、关键数字、常用动作、个人申请时间线、证书预警卡；不再展示配置类明细。
   - 个人证书卡新增附件入口：支持“查看/下载”证书文件（无附件时显示占位并给出提示）。
+- 账号与配置页新增：`packages/miniapp/pages/profile-settings/index.{js,wxml,wxss,json}`
+  - 集中承载用户身份、认证状态、API 地址联调配置、刷新资料和退出登录。
 - 核心业务页视觉强化：
   - 审批：`packages/miniapp/pages/approval/index.{js,wxml,wxss}`（红黄绿摘要 + 长按后滑动解锁通过）
   - 报销：
@@ -924,8 +935,8 @@
 
 - 工作台 `packages/miniapp/pages/index/index.wxml`：`t-button` + 统计卡片 + 分区入口网格。
 - 日志中心 `packages/miniapp/pages/log/index.wxml`：`hy-panel-card` + 快捷入口，完成角色分流。
-- 操作员日志 `packages/miniapp/pages/operator-log/index.wxml`：`hy-project-picker`、日期选择、班次中文选择、`t-button`，强化“预填-校对-提交”。
-- 管理员日志 `packages/miniapp/pages/manager-log/index.wxml`：`hy-project-picker`、日期选择、拍照上传、`hy-status-chip`。
+- 操作员日志 `packages/miniapp/pages/operator-log/index.wxml`：`hy-project-picker`、标段选择、日期选择、班次中文选择、核心数字卡片、`t-button`，强化“确认上下文-填写核心数字-补充异常-提交”。
+- 管理员日志 `packages/miniapp/pages/manager-log/index.wxml`：`hy-project-picker`、日期选择、标题/内容填写、照片证据状态卡、`t-button`。
 - 审批 `packages/miniapp/pages/approval/index.wxml`：`t-button`、`t-empty`，用于动作一致性与无数据空态。
 - 报销 `packages/miniapp/pages/reimbursement/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，用于链路状态可视化（OCR/PDF）。
 - 查询中心 `packages/miniapp/pages/query/index.wxml`：`hy-panel-card` + 入口卡片网格，统一承接高权限查询入口。
@@ -943,7 +954,8 @@
 - 设备 `packages/miniapp/pages/asset/index.wxml`：`t-notice-bar`、`t-empty`、`t-button`，突出扫码与状态查看。
 - 进度 `packages/miniapp/pages/progress/index.wxml`：`t-cell`、`t-empty`、`t-button`，提升指标与预警信息扫描效率。
 - 通知 `packages/miniapp/pages/notice/index.wxml`：`t-empty` + 列表卡片，保持消息列表简洁。
-- 个人中心 `packages/miniapp/pages/profile/index.wxml`：`t-notice-bar`、`t-button`，支持联调配置与安全退出。
+- 个人中心 `packages/miniapp/pages/profile/index.wxml`：`hy-panel-card`、`t-empty`、`t-button`，承载个人高频动作、申请动态和证书卡片。
+- 账号与配置 `packages/miniapp/pages/profile-settings/index.wxml`：`hy-panel-card`、`t-button`，承载账号信息、认证信息、API 地址配置、刷新资料和安全退出。
 
 #### 4.3.6 业务组件下沉规范（components/）
 
@@ -983,6 +995,7 @@
 #### 4.4.1 页面与路径映射
 
 - 项目列表（重构后主入口）：`packages/miniapp/pages/index/index`
+- 项目驾驶舱（管理总览）：`packages/miniapp/pages/manager-dashboard/index`
 - 项目列表（独立长列表页）：`packages/miniapp/pages/project-list/index`
 - 项目详情（新增）：`packages/miniapp/pages/project-detail/index`
 - 标段详情（新增）：`packages/miniapp/pages/project-section/index`
@@ -999,7 +1012,8 @@
 - 标段内容边界与 Web 统一：施工日志与贯通报告仅在“标段详情”上下文展示与维护（查看/新增/编辑）。
 - 项目日志移动端交互：默认折叠，按日期降序展示，列表头只显示日期（精确到天）和中文状态；点击后展开完整内容与照片。
 - 标段入口移动端交互：项目详情中的标段卡片仅负责跳转，点击后进入独立标段页查看施工日志与贯通信息，减少长列表滚动与误触。
-- 工作台首页边界：`pages/index/index` 不直接承载项目长列表，仅提供“进入项目列表”入口，避免首页过长影响首屏操作效率。
+- 工作台首页边界：`pages/index/index` 不直接承载项目长列表，仅提供“看项目/进入项目列表”入口和管理人员“项目驾驶舱”入口，避免首页过长影响首屏操作效率。
+- 项目驾驶舱边界：`pages/manager-dashboard/index` 只做公司管理视角的跨项目总览、预警与最近日志聚合；单项目工作段、项目日志、财务摘要等深看能力继续由 `pages/project-list/index` -> `pages/project-detail/index` 承载。
 - 工作台与库房边界：项目/现场相关能力留在工作台与项目页，`pages/warehouse/index` 仅承载库房与资产管理能力。
 - 施工日志填写交互：`pages/operator-log/index` 使用“项目 -> 标段选择器”模式，禁止手输标段ID。
 - 班次判定交互：默认按填写时间自动判定（晚间偏白班收尾、早间偏夜班收尾），仍允许手动改班次并提供一键重判。

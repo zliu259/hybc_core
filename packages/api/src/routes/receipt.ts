@@ -25,6 +25,10 @@ import type {
   UpdateInvoiceRequest,
   UpdateReceiptRequest
 } from "../types/receipt";
+import {
+  invoiceContractAmount,
+  invoiceContractAmountSql
+} from "./receipt-invoice-amount";
 
 const nowIso = () => new Date().toISOString();
 
@@ -579,7 +583,7 @@ receiptRoutes.post(
     }
 
     const sumRow = await c.env.DB.prepare(
-      "SELECT IFNULL(SUM(amount), 0) as total FROM invoice WHERE contract_id = ? AND status != 'deleted'"
+      `SELECT IFNULL(SUM(${invoiceContractAmountSql}), 0) as total FROM invoice WHERE contract_id = ? AND status != 'deleted'`
     )
       .bind(request.contract_id)
       .first<{ total: number }>();
@@ -665,7 +669,14 @@ receiptRoutes.post(
     await c.env.DB.prepare(
       "UPDATE contract SET invoiced_amount = invoiced_amount + ?, updated_at = ? WHERE id = ?"
     )
-      .bind(request.amount_without_tax, now, request.contract_id)
+      .bind(
+        invoiceContractAmount({
+          amount: request.amount_without_tax,
+          amount_with_tax: request.amount_with_tax
+        }),
+        now,
+        request.contract_id
+      )
       .run();
 
     return c.json(
@@ -764,7 +775,7 @@ receiptRoutes.post(
     }
 
     const sumRow = await c.env.DB.prepare(
-      "SELECT IFNULL(SUM(amount), 0) as total FROM invoice WHERE contract_id = ? AND status != 'deleted'"
+      `SELECT IFNULL(SUM(${invoiceContractAmountSql}), 0) as total FROM invoice WHERE contract_id = ? AND status != 'deleted'`
     )
       .bind(body.contract_id)
       .first<{ total: number }>();
@@ -832,6 +843,11 @@ receiptRoutes.put(
     }
 
     const nextAmount = body.amount ?? invoice.amount;
+    const nextContractAmount = invoiceContractAmount({
+      amount: nextAmount,
+      amount_with_tax: invoice.amount_with_tax
+    });
+    const currentContractAmount = invoiceContractAmount(invoice);
 
     const contract = await c.env.DB.prepare("SELECT * FROM contract WHERE id = ? AND status != 'deleted'")
       .bind(invoice.contract_id)
@@ -841,18 +857,18 @@ receiptRoutes.put(
     }
 
     const others = await c.env.DB.prepare(
-      "SELECT IFNULL(SUM(amount), 0) as total FROM invoice WHERE contract_id = ? AND status != 'deleted' AND id != ?"
+      `SELECT IFNULL(SUM(${invoiceContractAmountSql}), 0) as total FROM invoice WHERE contract_id = ? AND status != 'deleted' AND id != ?`
     )
       .bind(invoice.contract_id, id)
       .first<{ total: number }>();
     const othersTotal = others?.total ?? 0;
 
-    if (othersTotal + nextAmount > contract.total_amount) {
+    if (othersTotal + nextContractAmount > contract.total_amount) {
       return c.json(
         {
           success: false,
           error: {
-            message: `Invoiced overflow: others ${othersTotal} + current ${nextAmount} > contract ${contract.total_amount}`
+            message: `Invoiced overflow: others ${othersTotal} + current ${nextContractAmount} > contract ${contract.total_amount}`
           }
         },
         400
@@ -885,7 +901,7 @@ receiptRoutes.put(
       )
       .run();
 
-    const delta = nextAmount - invoice.amount;
+    const delta = nextContractAmount - currentContractAmount;
     if (delta !== 0) {
       await c.env.DB.prepare(
         "UPDATE contract SET invoiced_amount = invoiced_amount + ?, updated_at = ? WHERE id = ?"
@@ -918,7 +934,7 @@ receiptRoutes.delete(
     await c.env.DB.prepare(
       "UPDATE contract SET invoiced_amount = MAX(invoiced_amount - ?, 0), updated_at = ? WHERE id = ?"
     )
-      .bind(invoice.amount, now, invoice.contract_id)
+      .bind(invoiceContractAmount(invoice), now, invoice.contract_id)
       .run();
 
     return c.json({ success: true });

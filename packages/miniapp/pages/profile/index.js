@@ -18,6 +18,8 @@ Page({
     busy: false,
     timeline: [],
     certificates: [],
+    certificateWarnCount: 0,
+    avatarText: "我",
     profileRoleText: "-",
     profileAuthMethodText: "-"
   },
@@ -88,6 +90,11 @@ Page({
     return map[value] || "未知";
   },
 
+  avatarText(profile) {
+    const source = String((profile && (profile.nickname || profile.username || profile.id)) || "我");
+    return source.slice(0, 1) || "我";
+  },
+
   onShow() {
     this.reloadProfile();
   },
@@ -99,11 +106,14 @@ Page({
       const profile = res.data || getUserProfile() || {};
       const timeline = this.normalizeTimeline(profile);
       const certificates = this.normalizeCertificates(profile);
+      const certificateWarnCount = certificates.filter((item) => item.level === "warn").length;
       setUserProfile(profile);
       this.setData({
         profile,
         timeline,
         certificates,
+        certificateWarnCount,
+        avatarText: this.avatarText(profile),
         profileRoleText: this.roleText(profile.roles),
         profileAuthMethodText: this.authMethodText(profile.auth_method)
       });
@@ -113,6 +123,8 @@ Page({
         profile,
         timeline: this.normalizeTimeline(profile),
         certificates: this.normalizeCertificates(profile),
+        certificateWarnCount: this.normalizeCertificates(profile).filter((item) => item.level === "warn").length,
+        avatarText: this.avatarText(profile),
         profileRoleText: this.roleText(profile.roles),
         profileAuthMethodText: this.authMethodText(profile.auth_method)
       });
@@ -203,6 +215,10 @@ Page({
 
   goToFuelApply() {
     wx.navigateTo({ url: "/pages/fuel-apply/index" });
+  },
+
+  openSettings() {
+    wx.navigateTo({ url: "/pages/profile-settings/index" });
   },
 
   bizTypeLabel(value) {

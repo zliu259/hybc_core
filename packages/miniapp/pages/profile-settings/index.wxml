@@ -1,0 +1,57 @@
+<view class="page">
+  <view class="settings-hero">
+    <view>
+      <view class="hero-kicker">⚙️ 账号与配置</view>
+      <view class="hero-title">配置集中管理</view>
+      <view class="hero-desc">身份、认证、联调地址和退出登录都放在这里</view>
+    </view>
+    <view class="hero-mark">设</view>
+  </view>
+
+  <hy-panel-card title="账号信息" icon="👤" subtitle="当前企业微信账号身份">
+    <view class="info-list">
+      <view class="info-row">
+        <view class="info-label">用户ID</view>
+        <view class="info-value">{{profile.id || profile.username || '-'}}</view>
+      </view>
+      <view class="info-row">
+        <view class="info-label">昵称</view>
+        <view class="info-value">{{profile.nickname || '-'}}</view>
+      </view>
+      <view class="info-row">
+        <view class="info-label">角色</view>
+        <view class="info-value">{{profileRoleText}}</view>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="认证信息" icon="✅" subtitle="登录方式与企微校验状态">
+    <view class="info-list">
+      <view class="info-row">
+        <view class="info-label">认证方式</view>
+        <view class="info-value">{{profileAuthMethodText}}</view>
+      </view>
+      <view class="info-row">
+        <view class="info-label">企微验证</view>
+        <view class="info-value">{{profile.wecom_verified_at || '-'}}</view>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="联调配置" icon="🔗" subtitle="仅用于本机调试和故障切换">
+    <view class="label">API 地址</view>
+    <input class="input" value="{{apiBaseUrl}}" bindinput="onApiBaseInput" placeholder="https://bridge.hybcdg.com" />
+    <view class="config-hint">生产环境默认使用香港桥接地址；保存后会写入本机缓存。</view>
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="resetApiBase">恢复默认</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="saveApiBase">保存地址</t-button>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="账号操作" icon="🛡️" subtitle="资料刷新和安全退出">
+    <view class="row">
+      <t-button class="btn btn-primary" theme="primary" bindtap="reloadProfile" loading="{{busy}}" disabled="{{busy}}">刷新资料</t-button>
+      <t-button class="btn btn-warn" theme="danger" bindtap="logout">退出登录</t-button>
+    </view>
+  </hy-panel-card>
+</view>

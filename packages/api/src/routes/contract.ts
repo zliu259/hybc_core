@@ -22,6 +22,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
+import { invoiceContractAmountSql } from "./receipt-invoice-amount";
 
 const nowIso = () => new Date().toISOString();
 
@@ -171,6 +172,41 @@ const reconcileContractStatusWithApproval = async (
   return latestApproval;
 };
 
+const applyInboundInvoicedTotals = async (
+  db: D1Database,
+  contracts: Contract[]
+): Promise<Contract[]> => {
+  const inboundIds = contracts
+    .filter(contract => contract.direction === "inbound")
+    .map(contract => contract.id);
+  if (inboundIds.length === 0) return contracts;
+
+  const placeholders = inboundIds.map(() => "?").join(", ");
+  const totals = await db
+    .prepare(
+      `SELECT contract_id, IFNULL(SUM(${invoiceContractAmountSql}), 0) as total
+         FROM invoice
+        WHERE status != 'deleted'
+          AND contract_id IN (${placeholders})
+        GROUP BY contract_id`
+    )
+    .bind(...inboundIds)
+    .all<{ contract_id: number; total: number }>();
+
+  const totalByContractId = new Map(
+    (totals.results ?? []).map(row => [row.contract_id, row.total])
+  );
+
+  return contracts.map(contract =>
+    contract.direction === "inbound"
+      ? {
+          ...contract,
+          invoiced_amount: totalByContractId.get(contract.id) ?? 0
+        }
+      : contract
+  );
+};
+
 export const contractRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -258,10 +294,14 @@ contractRoutes.get("/", async (c) => {
   const rows = await c.env.DB.prepare(sql)
     .bind(...params, pageSize, offset)
     .all<Contract>();
+  const contracts = await applyInboundInvoicedTotals(
+    c.env.DB,
+    rows.results ?? []
+  );
 
   return c.json({
     success: true,
-    data: rows.results ?? [],
+    data: contracts,
     pagination: { page, pageSize, total }
   });
 });
@@ -290,10 +330,14 @@ contractRoutes.get("/:id", async (c) => {
     .bind(id)
     .all();
 
+  const [contractWithInvoiceTotal] = await applyInboundInvoicedTotals(c.env.DB, [
+    contract
+  ]);
+
   return c.json({
     success: true,
     data: {
-      ...contract,
+      ...contractWithInvoiceTotal,
       amount_changes: changes.results ?? [],
       payment_requests: payments.results ?? []
     }

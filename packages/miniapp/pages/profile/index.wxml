@@ -1,7 +1,51 @@
 <view class="page">
-  <hy-panel-card title="👤 我的中心" icon="user-circle" subtitle="个人申请追踪、报销与证书预警">
-    <view class="section-title">📌 我的申请时间线</view>
-    <view wx:if="{{!timeline.length}}" class="sub">暂无申请动态</view>
+  <view class="profile-hero">
+    <view class="avatar">{{avatarText}}</view>
+    <view class="hero-main">
+      <view class="hero-name">{{profile.nickname || profile.username || '我的中心'}}</view>
+      <view class="hero-role">{{profileRoleText}}</view>
+    </view>
+    <view class="settings-pill" bindtap="openSettings">账号与配置</view>
+  </view>
+
+  <view class="summary-grid">
+    <view class="summary-card">
+      <view class="summary-value">{{timeline.length}}</view>
+      <view class="summary-label">申请动态</view>
+    </view>
+    <view class="summary-card {{certificateWarnCount > 0 ? 'warn' : ''}}">
+      <view class="summary-value">{{certificateWarnCount}}</view>
+      <view class="summary-label">证书预警</view>
+    </view>
+    <view class="summary-card">
+      <view class="summary-value">{{certificates.length}}</view>
+      <view class="summary-label">证书总数</view>
+    </view>
+  </view>
+
+  <hy-panel-card title="常用动作" icon="⚡" subtitle="个人高频事项放在最前面">
+    <view class="action-grid">
+      <view class="action-card green" bindtap="goToReimbursement">
+        <view class="action-title">🧾 我的报销提交</view>
+        <view class="action-desc">发起报销并跟踪状态</view>
+      </view>
+      <view class="action-card blue" bindtap="goToPaymentApply">
+        <view class="action-title">💸 智能发单台</view>
+        <view class="action-desc">发起对外付款申请</view>
+      </view>
+      <view class="action-card orange" bindtap="goToFuelApply">
+        <view class="action-title">⛽ 油卡额度申请</view>
+        <view class="action-desc">提交额度并查看记录</view>
+      </view>
+      <view class="action-card red" bindtap="urgeApprovalFlow">
+        <view class="action-title">🔔 一键催办</view>
+        <view class="action-desc">提醒待处理审批人</view>
+      </view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="我的申请时间线" icon="📌" subtitle="聚合最近个人业务动态">
+    <t-empty wx:if="{{!timeline.length}}" description="暂无申请动态" />
     <view wx:for="{{timeline}}" wx:key="text" class="timeline-item">
       <view class="timeline-left">{{item.icon}}</view>
       <view class="timeline-main">
@@ -9,18 +53,10 @@
         <view class="timeline-status">{{item.status}}</view>
       </view>
     </view>
+  </hy-panel-card>
 
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="urgeApprovalFlow" loading="{{busy}}" disabled="{{busy}}">🔔 一键催办</t-button>
-      <t-button class="btn btn-primary" theme="primary" data-path="/pages/reimbursement-list/index" bindtap="goToReimbursement">🧾 我的报销提交</t-button>
-    </view>
-    <view class="row" style="margin-top: 8px">
-      <t-button class="btn" variant="outline" bindtap="goToPaymentApply">💸 智能发单台</t-button>
-      <t-button class="btn" variant="outline" bindtap="goToFuelApply">⛽ 油卡额度申请</t-button>
-    </view>
-
-    <view class="section-title">📚 我的证书</view>
-    <view wx:if="{{!certificates.length}}" class="sub">暂无证书数据</view>
+  <hy-panel-card title="我的证书" icon="📚" subtitle="查看证书状态和附件">
+    <t-empty wx:if="{{!certificates.length}}" description="暂无证书数据" />
     <view class="cert-grid">
       <view wx:for="{{certificates}}" wx:key="id" class="cert-card {{item.level}}">
         <view class="cert-name">{{item.level === 'warn' ? '⚠️' : '✅'}} {{item.name}}</view>
@@ -43,16 +79,5 @@
         </view>
       </view>
     </view>
-
-    <view class="profile-item"><view class="profile-icon">👤</view><view class="sub">用户ID：{{profile.id || profile.username || '-'}}</view></view>
-    <view class="profile-item"><view class="profile-icon">🪪</view><view class="sub">昵称：{{profile.nickname || '-'}}</view></view>
-    <view class="profile-item"><view class="profile-icon">🛡️</view><view class="sub">角色：{{profileRoleText}}</view></view>
-    <view class="profile-item"><view class="profile-icon">✅</view><view class="sub">认证方式：{{profileAuthMethodText}}</view></view>
-    <view class="profile-item"><view class="profile-icon">🕒</view><view class="sub">企微验证：{{profile.wecom_verified_at || '-'}}</view></view>
-    <view class="row">
-      <t-button class="btn btn-primary" theme="primary" bindtap="reloadProfile" loading="{{busy}}" disabled="{{busy}}">刷新资料</t-button>
-      <t-button class="btn btn-warn" theme="danger" bindtap="logout">退出登录</t-button>
-    </view>
   </hy-panel-card>
-
 </view>

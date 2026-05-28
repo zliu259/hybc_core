@@ -1,3 +1,142 @@
+.log-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 30rpx 28rpx;
+  margin-bottom: 20rpx;
+  border-radius: 24rpx;
+  color: #ffffff;
+  box-shadow: 0 16rpx 36rpx rgba(47, 108, 95, 0.22);
+}
+
+.log-hero.operator {
+  background: linear-gradient(135deg, #183f36 0%, #2f6c5f 100%);
+}
+
+.hero-kicker {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.hero-title {
+  margin-top: 6rpx;
+  font-size: 42rpx;
+  font-weight: 800;
+}
+
+.hero-desc {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hero-mark {
+  flex: 0 0 auto;
+  width: 86rpx;
+  height: 86rpx;
+  border-radius: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 38rpx;
+  font-weight: 800;
+}
+
+.field-block {
+  margin-top: 16rpx;
+}
+
+.context-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-top: 16rpx;
+}
+
+.context-cell {
+  min-width: 0;
+}
+
+.select-input {
+  min-height: 92rpx;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid #d8dce5;
+  border-radius: 16rpx;
+  padding: 18rpx;
+  margin-top: 10rpx;
+  background: #fff;
+  font-size: 27rpx;
+  color: #1f2329;
+}
+
+.select-input.compact {
+  min-height: 82rpx;
+  font-size: 25rpx;
+}
+
+.shift-button {
+  margin-top: 16rpx;
+}
+
+.number-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14rpx;
+  margin-top: 14rpx;
+}
+
+.number-field {
+  position: relative;
+  min-height: 168rpx;
+  padding: 18rpx;
+  border-radius: 18rpx;
+  background: #f8fbff;
+  border: 1px solid #dbe8f7;
+  box-sizing: border-box;
+}
+
+.number-field.wide {
+  grid-column: 1 / span 2;
+}
+
+.number-label {
+  font-size: 24rpx;
+  color: #5c667a;
+}
+
+.number-input {
+  margin-top: 14rpx;
+  padding-right: 58rpx;
+  font-size: 44rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  color: #1f2329;
+}
+
+.unit {
+  position: absolute;
+  right: 18rpx;
+  bottom: 20rpx;
+  font-size: 23rpx;
+  color: #5c667a;
+}
+
+.textarea {
+  min-height: 150rpx;
+  line-height: 1.45;
+}
+
+.submit-bar {
+  display: flex;
+  gap: 14rpx;
+  padding: 6rpx 0 18rpx;
+}
+
 .voice-box {
   margin-top: 10rpx;
   border-radius: 14rpx;

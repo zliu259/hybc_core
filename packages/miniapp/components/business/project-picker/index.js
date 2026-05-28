@@ -76,6 +76,10 @@ Component({
     enableGps: {
       type: Boolean,
       value: true
+    },
+    excludeArchived: {
+      type: Boolean,
+      value: false
     }
   },
 
@@ -146,6 +150,7 @@ Component({
           const rawList = (res && res.data) || [];
           const projects = rawList
             .filter((item) => item && item.id)
+            .filter((item) => !this.properties.excludeArchived || item.status !== "archived")
             .sort(byProjectPriority);
           const names = projects.map((item) => item.project_name || `项目#${item.id}`);
           this.setData({
@@ -154,7 +159,10 @@ Component({
             selectedIndex: 0
           });
 
-          if (!projects.length) return;
+          if (!projects.length) {
+            this.updateSelectedMeta(null);
+            return;
+          }
 
           const current = Number(this.properties.value || 0);
           const currentProject = projects.find((item) => Number(item.id) === current);

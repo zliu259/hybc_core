@@ -1,3 +1,143 @@
+.log-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 30rpx 28rpx;
+  margin-bottom: 20rpx;
+  border-radius: 24rpx;
+  color: #ffffff;
+  box-shadow: 0 16rpx 36rpx rgba(45, 95, 154, 0.22);
+}
+
+.log-hero.manager {
+  background: linear-gradient(135deg, #1f3555 0%, #2d5f9a 100%);
+}
+
+.hero-kicker {
+  font-size: 24rpx;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.hero-title {
+  margin-top: 6rpx;
+  font-size: 42rpx;
+  font-weight: 800;
+}
+
+.hero-desc {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.45;
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.hero-mark {
+  flex: 0 0 auto;
+  width: 86rpx;
+  height: 86rpx;
+  border-radius: 28rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.16);
+  font-size: 38rpx;
+  font-weight: 800;
+}
+
+.date-block {
+  margin-top: 16rpx;
+}
+
+.select-input {
+  min-height: 92rpx;
+  display: flex;
+  align-items: center;
+  box-sizing: border-box;
+  border: 1px solid #d8dce5;
+  border-radius: 16rpx;
+  padding: 18rpx;
+  margin-top: 10rpx;
+  background: #fff;
+  font-size: 27rpx;
+  color: #1f2329;
+}
+
+.textarea {
+  min-height: 210rpx;
+  line-height: 1.45;
+}
+
+.photo-status {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+  padding: 20rpx;
+  margin-top: 14rpx;
+  border-radius: 18rpx;
+  border: 1px solid #ffd99a;
+  background: #fff7ea;
+}
+
+.photo-status.ready {
+  border-color: #bde8c6;
+  background: #f0fff4;
+}
+
+.photo-icon {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #ffffff;
+  font-size: 32rpx;
+}
+
+.photo-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.photo-title {
+  font-size: 29rpx;
+  font-weight: 800;
+  color: #1f2329;
+}
+
+.photo-desc {
+  margin-top: 6rpx;
+  font-size: 23rpx;
+  line-height: 1.45;
+  color: #5c667a;
+}
+
+.photo-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 14rpx;
+}
+
+.photo-chip {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #eef6ff;
+  color: #2d5f9a;
+  font-size: 22rpx;
+}
+
+.photo-button {
+  margin-top: 16rpx;
+}
+
+.submit-bar {
+  display: flex;
+  gap: 14rpx;
+  padding: 6rpx 0 18rpx;
+}
+
 .voice-box {
   margin-top: 10rpx;
   border-radius: 14rpx;

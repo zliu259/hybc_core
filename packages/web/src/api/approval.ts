@@ -39,6 +39,7 @@ export type PendingApprovalItem = {
   id: number;
   instance_no: string;
   biz_type: string;
+  biz_id: number;
   biz_summary: string;
   biz_detail?: string | null;
   biz_amount?: number | null;
@@ -59,6 +60,7 @@ export type ProcessedApprovalItem = {
   id: number;
   instance_no: string;
   biz_type: string;
+  biz_id: number;
   biz_summary: string;
   biz_detail?: string | null;
   biz_amount?: number | null;

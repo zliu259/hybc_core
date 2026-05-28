@@ -247,7 +247,7 @@ approvalRoutes.get("/pending", async (c) => {
     .first<{ total: number }>();
 
    const rows = await c.env.DB.prepare(
-     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
+     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_id, ai.biz_summary,
        ai.initiator_userid, ai.current_node_key, ai.status, ai.submitted_at,
        CASE ai.biz_type
          WHEN 'reimbursement_batch' THEN (SELECT rb.applicant_userid FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
@@ -346,7 +346,7 @@ approvalRoutes.get("/processed", async (c) => {
     .first<{ total: number }>();
 
    const rows = await c.env.DB.prepare(
-     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_summary,
+     `SELECT ai.id, ai.instance_no, ai.biz_type, ai.biz_id, ai.biz_summary,
        ai.initiator_userid, ai.status, ai.submitted_at,
        CASE ai.biz_type
          WHEN 'reimbursement_batch' THEN (SELECT rb.applicant_userid FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)

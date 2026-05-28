@@ -119,6 +119,19 @@ const gotoDetail = (id: number) => {
   router.push(`/approval/detail/${id}`);
 };
 
+const businessDetailRoute = (row: { biz_type: string; biz_id?: number }) => {
+  if (row.biz_type === "reimbursement_batch" && row.biz_id) {
+    return `/finance/reimbursement/batch/${row.biz_id}`;
+  }
+  return null;
+};
+
+const goToBusinessDetail = (row: { biz_type: string; biz_id?: number }) => {
+  const target = businessDetailRoute(row);
+  if (!target) return;
+  router.push(target);
+};
+
 const bizTypeLabel = (value: string) =>
   bizTypeOptions.find(o => o.value === value)?.label ?? toBizTypeLabel(value);
 
@@ -228,11 +241,21 @@ onMounted(async () => {
             }}</template>
           </el-table-column>
           <el-table-column
-            prop="biz_detail"
             label="业务明细"
             min-width="220"
             show-overflow-tooltip
-          />
+          >
+            <template #default="{ row }">
+              <el-link
+                v-if="businessDetailRoute(row)"
+                type="primary"
+                @click.stop="goToBusinessDetail(row)"
+              >
+                {{ row.biz_detail || "-" }}
+              </el-link>
+              <template v-else>{{ row.biz_detail || "-" }}</template>
+            </template>
+          </el-table-column>
           <el-table-column
             prop="biz_summary"
             label="摘要"
@@ -312,11 +335,21 @@ onMounted(async () => {
             }}</template>
           </el-table-column>
           <el-table-column
-            prop="biz_detail"
             label="业务明细"
             min-width="220"
             show-overflow-tooltip
-          />
+          >
+            <template #default="{ row }">
+              <el-link
+                v-if="businessDetailRoute(row)"
+                type="primary"
+                @click.stop="goToBusinessDetail(row)"
+              >
+                {{ row.biz_detail || "-" }}
+              </el-link>
+              <template v-else>{{ row.biz_detail || "-" }}</template>
+            </template>
+          </el-table-column>
           <el-table-column
             prop="biz_summary"
             label="摘要"
