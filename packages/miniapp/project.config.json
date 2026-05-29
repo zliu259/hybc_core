@@ -45,7 +45,24 @@
     "qywx_simulator_plugin": "2.27.3"
   },
   "packOptions": {
-    "ignore": [],
+    "ignore": [
+      {
+        "type": "folder",
+        "value": "miniprogram_npm"
+      },
+      {
+        "type": "folder",
+        "value": "node_modules"
+      },
+      {
+        "type": "suffix",
+        "value": ".test.js"
+      },
+      {
+        "type": "suffix",
+        "value": ".d.ts"
+      }
+    ],
     "include": []
   },
   "editorSetting": {},
