@@ -19,6 +19,10 @@ const canAccessManagerDashboard = (roles) => {
   return roles.includes("super_admin") || roles.includes("manager");
 };
 
+const canAccessExternalLogReview = (roles) => {
+  return roles.includes("super_admin") || roles.includes("manager") || roles.includes("site_manager");
+};
+
 const getTotal = (result) => {
   return Number(
     (result && result.pagination && result.pagination.total) ||
@@ -74,6 +78,7 @@ Page({
     warningCount: 0,
     projectCount: 0,
     activeProjectCount: 0,
+    externalReviewCount: 0,
     loading: false,
     coreActions: CORE_ACTIONS,
     appEntries: DEFAULT_APPS,
@@ -81,7 +86,8 @@ Page({
     riskText: "现场正常",
     riskDesc: "暂无进度预警，先处理高频事项",
     showCreateProject: false,
-    showManagerDashboard: false
+    showManagerDashboard: false,
+    showExternalLogReview: false
   },
 
   onShow() {
@@ -96,10 +102,23 @@ Page({
       const paymentAllowed = canLaunchPayment(roles);
       const queryAllowed = canAccessQuery(roles);
       const showManagerDashboard = canAccessManagerDashboard(roles);
+      const showExternalLogReview = canAccessExternalLogReview(roles);
       const pending = await request({
         method: "GET",
         path: "/api/v1/approval/pending?page=1&pageSize=20"
       });
+      let externalReviewCount = 0;
+      if (showExternalLogReview) {
+        try {
+          const externalReview = await request({
+            method: "GET",
+            path: "/api/v1/project/external-log-submissions?status=needs_manual_review&page=1&pageSize=1"
+          });
+          externalReviewCount = getTotal(externalReview);
+        } catch {
+          externalReviewCount = 0;
+        }
+      }
       let alerts = [];
       try {
         const alertResult = await request({
@@ -148,12 +167,21 @@ Page({
               : "暂无进度预警，先处理高频事项",
         showCreateProject,
         showManagerDashboard,
+        showExternalLogReview,
+        externalReviewCount,
         appEntries: finalEntries
       });
 
       this.loadProjectMeta();
     } catch {
-      this.setData({ pendingCount: 0, noticeCount: 0, warningCount: 0, projectCount: 0, activeProjectCount: 0 });
+      this.setData({
+        pendingCount: 0,
+        noticeCount: 0,
+        warningCount: 0,
+        projectCount: 0,
+        activeProjectCount: 0,
+        externalReviewCount: 0
+      });
     } finally {
       this.setData({ loading: false });
     }
@@ -185,6 +213,10 @@ Page({
 
   openManagerDashboard() {
     wx.navigateTo({ url: "/pages/manager-dashboard/index" });
+  },
+
+  openExternalLogReview() {
+    wx.navigateTo({ url: "/pages/external-log-review/index" });
   },
 
   goTo(e) {

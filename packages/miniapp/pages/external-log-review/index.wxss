@@ -77,6 +77,14 @@
   color: #1f2329;
 }
 
+.card-project {
+  margin-top: 8rpx;
+  font-size: 25rpx;
+  line-height: 1.35;
+  font-weight: 800;
+  color: #2f6c5f;
+}
+
 .card-sub {
   margin-top: 8rpx;
   font-size: 23rpx;

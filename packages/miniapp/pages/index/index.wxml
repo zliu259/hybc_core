@@ -43,13 +43,23 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card wx:if="{{showManagerDashboard}}" title="管理入口" icon="📊" subtitle="公司管理人员即时总览进行中项目">
-    <view class="manager-entry" bindtap="openManagerDashboard">
+  <hy-panel-card wx:if="{{showManagerDashboard || showExternalLogReview}}" title="管理入口" icon="📊" subtitle="公司管理人员即时总览进行中项目">
+    <view wx:if="{{showManagerDashboard}}" class="manager-entry" bindtap="openManagerDashboard">
       <view class="manager-copy">
         <view class="manager-title">项目驾驶舱</view>
         <view class="manager-desc">查看施工中项目、进度、日志和红黄灯预警</view>
       </view>
       <view class="manager-arrow">进入</view>
+    </view>
+    <view wx:if="{{showExternalLogReview}}" class="manager-entry review-entry" bindtap="openExternalLogReview">
+      <view class="manager-copy">
+        <view class="manager-title">外部日志待复核</view>
+        <view class="manager-desc">集中处理 AI 未通过的外部项目/工作段日志</view>
+      </view>
+      <view class="review-badge">
+        <view class="review-count">{{externalReviewCount}}</view>
+        <view class="review-label">待处理</view>
+      </view>
     </view>
   </hy-panel-card>
 

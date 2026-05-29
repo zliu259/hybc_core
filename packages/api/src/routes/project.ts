@@ -81,6 +81,19 @@ export const canReviewExternalLogSubmission = ({
   return Boolean(projectManagerUserid && projectManagerUserid === userid);
 };
 
+export type ExternalLogReviewProjectScope = "all" | "managed" | "none";
+
+export const canListExternalLogReviewProjects = ({
+  roles
+}: {
+  userid: string;
+  roles: UserRole[];
+}): ExternalLogReviewProjectScope => {
+  if (roles.includes("super_admin")) return "all";
+  if (roles.some((role) => role === "manager" || role === "site_manager")) return "managed";
+  return "none";
+};
+
 export const projectRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
@@ -149,6 +162,64 @@ projectRoutes.get("/", async (c) => {
     }
   });
 });
+
+projectRoutes.get(
+  "/external-log-submissions",
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const scope = canListExternalLogReviewProjects({
+      userid: auth.sub,
+      roles: auth.roles
+    });
+    if (scope === "none") {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    const status = c.req.query("status");
+    const page = Math.max(Number(c.req.query("page") ?? "1"), 1);
+    const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "20"), 1), 100);
+    const offset = (page - 1) * pageSize;
+
+    let sql = `SELECT s.*, p.project_name, p.project_code, ps.section_code, ps.section_name
+         FROM external_log_submission s
+         LEFT JOIN project p ON p.id = s.project_id
+         LEFT JOIN project_section ps ON ps.id = s.section_id
+        WHERE 1=1`;
+    let countSql = `SELECT COUNT(*) AS total
+         FROM external_log_submission s
+         LEFT JOIN project p ON p.id = s.project_id
+        WHERE 1=1`;
+    const params: Array<string | number> = [];
+
+    if (scope === "managed") {
+      sql += " AND p.manager_userid = ?";
+      countSql += " AND p.manager_userid = ?";
+      params.push(auth.sub);
+    }
+
+    if (status) {
+      sql += " AND s.review_status = ?";
+      countSql += " AND s.review_status = ?";
+      params.push(status);
+    }
+
+    sql += " ORDER BY s.created_at DESC LIMIT ? OFFSET ?";
+
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params, pageSize, offset)
+      .all();
+    const count = await c.env.DB.prepare(countSql)
+      .bind(...params)
+      .first<{ total: number }>();
+
+    return c.json({
+      success: true,
+      data: rows.results ?? [],
+      pagination: { page, pageSize, total: count?.total ?? 0 }
+    });
+  }
+);
 
 projectRoutes.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));

@@ -37,6 +37,8 @@ const stripHtml = (value) => String(value || "").replace(/<[^>]+>/g, "").trim();
 Page({
   data: {
     projectId: 0,
+    initialized: false,
+    isGlobalMode: true,
     loading: false,
     actionBusy: false,
     rows: []
@@ -44,12 +46,12 @@ Page({
 
   onLoad(query) {
     const projectId = Number(query.projectId || 0);
-    this.setData({ projectId });
+    this.setData({ projectId, initialized: true, isGlobalMode: !projectId });
     this.loadRows();
   },
 
   onShow() {
-    if (this.data.projectId) {
+    if (this.data.initialized) {
       this.loadRows();
     }
   },
@@ -72,6 +74,8 @@ Page({
       : [];
     return {
       id: Number(item.id),
+      projectId: Number(item.project_id || 0),
+      projectText: item.project_name || item.project_code || "未知项目",
       submitterName: item.submitter_name || "-",
       submitterCompany: item.submitter_company || "-",
       submitterPhone: item.submitter_phone || "-",
@@ -110,12 +114,15 @@ Page({
   },
 
   async loadRows() {
-    if (!this.data.projectId || this.data.loading) return;
+    if (this.data.loading) return;
     this.setData({ loading: true });
     try {
+      const path = this.data.projectId
+        ? `/api/v1/project/${this.data.projectId}/external-log-submissions?status=needs_manual_review&page=1&pageSize=50`
+        : "/api/v1/project/external-log-submissions?status=needs_manual_review&page=1&pageSize=50";
       const res = await request({
         method: "GET",
-        path: `/api/v1/project/${this.data.projectId}/external-log-submissions?status=needs_manual_review&page=1&pageSize=50`
+        path
       });
       const rows = Array.isArray(res.data) ? res.data.map((item) => this.mapRow(item)) : [];
       this.setData({ rows });
@@ -129,8 +136,9 @@ Page({
 
   confirmReview(e) {
     const id = Number(e.currentTarget.dataset.id || 0);
+    const projectId = Number(e.currentTarget.dataset.projectid || this.data.projectId || 0);
     const action = e.currentTarget.dataset.action;
-    if (!id || !["approve", "reject"].includes(action)) return;
+    if (!id || !projectId || !["approve", "reject"].includes(action)) return;
     wx.showModal({
       title: action === "approve" ? "确认放行" : "确认驳回",
       content: action === "approve" ? "放行后将写入正式项目/施工日志。" : "驳回后该外部日志不会写入正式日志。",
@@ -138,19 +146,19 @@ Page({
       confirmColor: action === "approve" ? "#1677ff" : "#d93026",
       success: (res) => {
         if (res.confirm) {
-          this.reviewSubmission(id, action);
+          this.reviewSubmission(id, action, projectId);
         }
       }
     });
   },
 
-  async reviewSubmission(id, action) {
+  async reviewSubmission(id, action, projectId) {
     if (this.data.actionBusy) return;
     this.setData({ actionBusy: true });
     try {
       await request({
         method: "POST",
-        path: `/api/v1/project/${this.data.projectId}/external-log-submissions/${id}/review`,
+        path: `/api/v1/project/${projectId}/external-log-submissions/${id}/review`,
         data: {
           action,
           comment: action === "approve" ? "小程序复核放行外部日志" : "小程序复核驳回外部日志"

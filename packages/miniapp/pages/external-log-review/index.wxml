@@ -2,7 +2,7 @@
   <view class="review-hero">
     <view>
       <view class="hero-kicker">外部日志</view>
-      <view class="hero-title">人工复核</view>
+      <view class="hero-title">{{isGlobalMode ? '待复核总览' : '人工复核'}}</view>
       <view class="hero-desc">仅展示 AI 未通过的外部日志，确认后可放行写入正式日志</view>
     </view>
     <view class="hero-count">
@@ -21,6 +21,7 @@
     <view class="card-head">
       <view>
         <view class="card-title">{{item.logDate}} · {{item.shiftText}}</view>
+        <view wx:if="{{isGlobalMode}}" class="card-project">{{item.projectText}}</view>
         <view class="card-sub">{{item.sectionText}}</view>
       </view>
       <view class="status-chip">{{item.statusText}}</view>
@@ -54,8 +55,8 @@
     </view>
 
     <view class="action-row">
-      <t-button theme="primary" data-id="{{item.id}}" data-action="approve" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">放行</t-button>
-      <t-button theme="danger" variant="outline" data-id="{{item.id}}" data-action="reject" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">驳回</t-button>
+      <t-button theme="primary" data-id="{{item.id}}" data-projectid="{{item.projectId}}" data-action="approve" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">放行</t-button>
+      <t-button theme="danger" variant="outline" data-id="{{item.id}}" data-projectid="{{item.projectId}}" data-action="reject" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">驳回</t-button>
     </view>
   </view>
 </view>
