@@ -1,12 +1,28 @@
 <view class="page">
   <hy-panel-card title="⛽ 油卡额度申请" subtitle="与 Web 油卡额度申请对齐：额度、车辆、里程、照片、申请记录">
+    <view wx:if="{{needsInfoCount > 0}}" class="notice-warning">
+      有 {{needsInfoCount}} 条油卡申请需要补充资料，请在申请记录中点击“补充资料”。
+    </view>
+
     <view class="label required">所用车辆</view>
-    <picker mode="selector" range="{{vehicleLabels}}" value="{{vehicleIndex}}" bindchange="onVehicleChange">
+    <picker
+      mode="selector"
+      range="{{vehicleLabels}}"
+      value="{{vehicleIndex}}"
+      bindchange="onVehicleChange"
+      disabled="{{!!resubmitApplicationId}}"
+    >
       <view class="picker-value">{{vehicleLabels[vehicleIndex]}}</view>
     </picker>
 
     <view class="label required">油卡卡号</view>
-    <picker mode="selector" range="{{fuelCardLabels}}" value="{{fuelCardIndex}}" bindchange="onFuelCardChange">
+    <picker
+      mode="selector"
+      range="{{fuelCardLabels}}"
+      value="{{fuelCardIndex}}"
+      bindchange="onFuelCardChange"
+      disabled="{{!!resubmitApplicationId}}"
+    >
       <view class="picker-value">{{fuelCardLabels[fuelCardIndex]}}</view>
     </picker>
 
@@ -35,8 +51,13 @@
     <view class="label required">现场照片</view>
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="choosePhotos" disabled="{{submitting}}">上传照片</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">提交申请</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">
+        {{resubmitApplicationId ? '提交补充资料' : '提交申请'}}
+      </t-button>
     </view>
+    <button wx:if="{{resubmitApplicationId}}" class="secondary-btn" bindtap="cancelResubmit">
+      取消补充
+    </button>
 
     <view wx:if="{{photoList.length === 0}}" class="empty-tip">暂无照片</view>
     <view wx:for="{{photoList}}" wx:key="file_key" class="photo-item">
@@ -51,9 +72,20 @@
     <view wx:for="{{myApplications}}" wx:key="id" class="record-item">
       <view class="record-title">{{item.application_no}}</view>
       <view class="record-line">车辆：{{item.current_plate_no || '-'}} ｜ 里程：{{item.vehicle_mileage_km}}</view>
-      <view class="record-line">额度：{{item.requested_amount}} ｜ 状态：{{item.statusLabel || item.status}}</view>
+      <view class="record-line">额度：{{item.requested_amount}}</view>
+      <view class="record-status">状态：{{statusTextMap[item.status] || item.status}}</view>
+      <view wx:if="{{item.risk_summary}}" class="record-line">风险：{{item.risk_summary}}</view>
+      <view wx:if="{{item.needs_info_reason}}" class="record-warning">补充说明：{{item.needs_info_reason}}</view>
       <view class="record-line">申请时间：{{item.requested_at}}</view>
       <view class="record-line">处理人：{{item.processed_by_userid || '-'}} ｜ 卡余额：{{item.latest_card_balance || '-'}}</view>
+      <button
+        wx:if="{{item.status === 'needs_info'}}"
+        size="mini"
+        data-id="{{item.id}}"
+        bindtap="startResubmit"
+      >
+        补充资料
+      </button>
     </view>
   </hy-panel-card>
 </view>

@@ -51,6 +51,40 @@ export const ownershipTypeLabel = (v: string): string => {
   return m[v] ?? v;
 };
 
+export const fuelApplicationStatusLabel = (value: string) => {
+  if (value === "pending") return "待办公室处理";
+  if (value === "needs_info") return "待补充资料";
+  if (value === "processed") return "已通过";
+  if (value === "rejected") return "已拒绝";
+  if (value === "cancelled") return "已废除";
+  return value;
+};
+
+export const fuelRiskLabel = (value: string) => {
+  if (value === "high") return "高风险";
+  if (value === "warning") return "需关注";
+  if (value === "normal") return "正常";
+  return value;
+};
+
+export const fuelRiskTagType = (
+  value: string
+): "success" | "warning" | "danger" | "info" => {
+  if (value === "high") return "danger";
+  if (value === "warning") return "warning";
+  if (value === "normal") return "success";
+  return "info";
+};
+
+export const fleetNotificationStatusLabel = (value: string) => {
+  if (value === "pending") return "待发送";
+  if (value === "sending") return "发送中";
+  if (value === "sent") return "已发送";
+  if (value === "failed") return "发送失败";
+  if (value === "skipped") return "已跳过";
+  return value;
+};
+
 export const contractTypeLabel = (v: string): string => {
   const m: Record<string, string> = {
     labor: "人工",

@@ -1,14 +1,19 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import type { UploadRequestOptions } from "element-plus";
 import { message } from "@/utils/message";
-import { statusLabel } from "@/utils/enum-labels";
+import {
+  fuelApplicationStatusLabel,
+  fuelRiskLabel,
+  fuelRiskTagType
+} from "@/utils/enum-labels";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   createFuelQuotaApplication,
   listFleetVehicles,
   listMyFuelCards,
   listFuelQuotaApplications,
+  resubmitFuelQuotaApplication,
   type FuelCard,
   type FleetVehicle,
   type FuelQuotaApplication
@@ -28,6 +33,39 @@ const form = ref({
   requested_amount: 0,
   vehicle_mileage_km: 0
 });
+const resubmitDialogVisible = ref(false);
+const resubmitTarget = ref<FuelQuotaApplication | null>(null);
+const resubmitPhotoKeys = ref<string[]>([]);
+const resubmitForm = ref({
+  requested_amount: 0,
+  vehicle_mileage_km: 0
+});
+
+const needsInfoApplications = computed(() =>
+  myApplications.value.filter(item => item.status === "needs_info")
+);
+
+const parsePhotoKeys = (value: string | null | undefined) => {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter(
+      (item): item is string => typeof item === "string" && item.trim() !== ""
+    );
+  } catch {
+    return [];
+  }
+};
+
+const fuelStatusTagType = (
+  value: FuelQuotaApplication["status"]
+): "success" | "warning" | "danger" | "info" => {
+  if (value === "pending") return "warning";
+  if (value === "needs_info") return "danger";
+  if (value === "processed") return "success";
+  return "info";
+};
 
 const loadData = async () => {
   loading.value = true;
@@ -45,7 +83,10 @@ const loadData = async () => {
   }
 };
 
-const uploadPhoto = async (options: UploadRequestOptions) => {
+const uploadPhotoTo = async (
+  options: UploadRequestOptions,
+  onUploaded: (key: string) => void
+) => {
   try {
     const signResult = await createUploadSignature({
       fileName: options.file.name,
@@ -67,7 +108,7 @@ const uploadPhoto = async (options: UploadRequestOptions) => {
       throw new Error(`upload_failed_${uploadResp.status}`);
     }
 
-    photoKeys.value.push(signResult.data.key);
+    onUploaded(signResult.data.key);
     options.onSuccess?.({} as never);
     message("照片上传成功", { type: "success" });
   } catch {
@@ -75,6 +116,12 @@ const uploadPhoto = async (options: UploadRequestOptions) => {
     message("照片上传失败", { type: "error" });
   }
 };
+
+const uploadPhoto = (options: UploadRequestOptions) =>
+  uploadPhotoTo(options, key => photoKeys.value.push(key));
+
+const uploadResubmitPhoto = (options: UploadRequestOptions) =>
+  uploadPhotoTo(options, key => resubmitPhotoKeys.value.push(key));
 
 const submitApplication = async () => {
   if (!form.value.vehicle_id) {
@@ -107,6 +154,49 @@ const submitApplication = async () => {
   message("油卡额度申请已提交", { type: "success" });
 };
 
+const openResubmitApplication = (row: FuelQuotaApplication) => {
+  resubmitTarget.value = row;
+  resubmitForm.value = {
+    requested_amount: row.requested_amount,
+    vehicle_mileage_km: row.vehicle_mileage_km
+  };
+  resubmitPhotoKeys.value = [];
+  resubmitDialogVisible.value = true;
+};
+
+const cancelResubmitApplication = () => {
+  resubmitDialogVisible.value = false;
+  resubmitTarget.value = null;
+  resubmitPhotoKeys.value = [];
+};
+
+const resubmitApplication = async () => {
+  if (!resubmitTarget.value) return;
+  const existingPhotoKeys = parsePhotoKeys(
+    resubmitTarget.value.photo_keys_json
+  );
+  const nextPhotoKeys = Array.from(
+    new Set([...existingPhotoKeys, ...resubmitPhotoKeys.value])
+  );
+  if (nextPhotoKeys.length === 0) {
+    message("请先上传补充照片", { type: "warning" });
+    return;
+  }
+
+  await resubmitFuelQuotaApplication(resubmitTarget.value.id, {
+    requested_amount:
+      resubmitForm.value.requested_amount ||
+      resubmitTarget.value.requested_amount,
+    vehicle_mileage_km:
+      resubmitForm.value.vehicle_mileage_km ||
+      resubmitTarget.value.vehicle_mileage_km,
+    photo_keys_json: JSON.stringify(nextPhotoKeys)
+  });
+  cancelResubmitApplication();
+  await loadData();
+  message("补充资料已重新提交", { type: "success" });
+};
+
 onMounted(loadData);
 </script>
 
@@ -124,6 +214,15 @@ onMounted(loadData);
         <el-button @click="loadData">刷新</el-button>
       </div>
     </template>
+
+    <el-alert
+      v-if="needsInfoApplications.length > 0"
+      type="warning"
+      show-icon
+      :closable="false"
+      style="margin-bottom: 12px"
+      :title="`有 ${needsInfoApplications.length} 条油卡申请需要补充资料，请在下方记录中点击重新提交。`"
+    />
 
     <el-form label-width="110px" style="max-width: 720px">
       <el-form-item label="所用车辆">
@@ -173,16 +272,90 @@ onMounted(loadData);
       <el-table-column prop="vehicle_mileage_km" label="里程" width="100" />
       <el-table-column prop="requested_amount" label="申请额度" width="120" />
       <el-table-column prop="card_no" label="油卡卡号" width="180" />
-      <el-table-column label="状态" width="100">
-        <template #default="scope">{{
-          statusLabel(scope.row.status)
-        }}</template>
+      <el-table-column label="风险" width="110">
+        <template #default="scope">
+          <el-tag :type="fuelRiskTagType(scope.row.risk_level)" size="small">
+            {{ fuelRiskLabel(scope.row.risk_level) }}
+          </el-tag>
+        </template>
       </el-table-column>
+      <el-table-column prop="risk_summary" label="风险摘要" min-width="180" />
+      <el-table-column label="状态" width="130">
+        <template #default="scope">
+          <el-tag :type="fuelStatusTagType(scope.row.status)" size="small">
+            {{ fuelApplicationStatusLabel(scope.row.status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column
+        prop="needs_info_reason"
+        label="补充原因"
+        min-width="180"
+      />
       <el-table-column prop="requested_at" label="申请日期" width="180" />
       <el-table-column prop="processed_by_userid" label="处理人" width="140" />
       <el-table-column prop="processed_at" label="处理时间" width="180" />
       <el-table-column prop="office_remark" label="处理备注" min-width="180" />
       <el-table-column prop="latest_card_balance" label="卡余额" width="120" />
+      <el-table-column label="操作" width="120" fixed="right">
+        <template #default="scope">
+          <el-button
+            v-if="scope.row.status === 'needs_info'"
+            type="primary"
+            link
+            @click="openResubmitApplication(scope.row)"
+          >
+            重新提交
+          </el-button>
+          <span v-else class="text-gray-400">-</span>
+        </template>
+      </el-table-column>
     </el-table>
   </el-card>
+
+  <el-dialog
+    v-model="resubmitDialogVisible"
+    title="补充油卡申请资料"
+    width="560px"
+  >
+    <el-alert
+      v-if="resubmitTarget?.needs_info_reason"
+      type="warning"
+      show-icon
+      :closable="false"
+      style="margin-bottom: 12px"
+      :title="resubmitTarget.needs_info_reason"
+    />
+    <el-form label-width="120px">
+      <el-form-item label="申请单">
+        <span>{{ resubmitTarget?.application_no || "-" }}</span>
+      </el-form-item>
+      <el-form-item label="申请额度">
+        <el-input-number
+          v-model="resubmitForm.requested_amount"
+          :min="0"
+          :step="100"
+        />
+      </el-form-item>
+      <el-form-item label="车辆里程(km)">
+        <el-input-number v-model="resubmitForm.vehicle_mileage_km" :min="0" />
+      </el-form-item>
+      <el-form-item label="补充照片">
+        <el-upload
+          drag
+          multiple
+          :show-file-list="true"
+          :http-request="uploadResubmitPhoto"
+        >
+          <div class="el-upload__text">上传补充照片</div>
+        </el-upload>
+      </el-form-item>
+    </el-form>
+    <template #footer>
+      <el-button @click="cancelResubmitApplication">取消</el-button>
+      <el-button type="primary" @click="resubmitApplication">
+        提交补充资料
+      </el-button>
+    </template>
+  </el-dialog>
 </template>

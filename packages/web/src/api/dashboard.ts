@@ -121,11 +121,18 @@ export const getVehicleFuelOverview = (params: {
         mileage_km_total: number;
         fuel_apply_count: number;
         fuel_requested_amount_total: number;
+        fuel_processed_amount_total: number;
         fuel_processed_count: number;
         fuel_rejected_count: number;
         fuel_pending_count: number;
+        active_fuel_vehicle_count: number;
+        fuel_vehicle_coverage_rate: number;
         active_card_count: number;
         active_card_balance_total: number;
+        low_balance_card_count: number;
+        avg_handle_hours: number;
+        health_status: "healthy" | "watch" | "risk";
+        health_summary: string;
       };
       charts: {
         fuel_apply_trend: Array<{

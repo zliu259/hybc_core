@@ -271,7 +271,7 @@ export default {
       path: "/finance/fleet-center",
       name: "FinanceFleetCenter",
       component: Layout,
-      redirect: "/finance/fleet/application",
+      redirect: "/finance/fleet/dashboard",
       meta: {
         title: "车辆油卡",
         roles: ["super_admin", "manager", "finance"]
@@ -287,12 +287,22 @@ export default {
           }
         },
         {
+          path: "/finance/fleet/processing",
+          name: "FleetFuelProcessingWorkbench",
+          component: () =>
+            import("@/views/finance/fleet/processing-workbench.vue"),
+          meta: {
+            title: "油卡处理工作台",
+            roles: ["super_admin", "finance"]
+          }
+        },
+        {
           path: "/finance/fleet/applications-all",
           name: "FuelQuotaApplicationAllList",
           component: () =>
             import("@/views/finance/fleet/applications-list.vue"),
           meta: {
-            title: "油卡额度全量处理",
+            title: "油卡申请全量记录",
             roles: ["super_admin", "manager", "finance"]
           }
         },
@@ -301,8 +311,17 @@ export default {
           name: "FleetVehicleOps",
           component: () => import("@/views/finance/fleet/vehicles.vue"),
           meta: {
-            title: "车辆与办公室处理",
+            title: "车辆油卡档案",
             roles: ["super_admin", "manager", "finance"]
+          }
+        },
+        {
+          path: "/finance/fleet/rules-audit",
+          name: "FleetRulesAuditCenter",
+          component: () => import("@/views/finance/fleet/rules-audit.vue"),
+          meta: {
+            title: "规则与审计",
+            roles: ["super_admin"]
           }
         },
         {
@@ -310,7 +329,7 @@ export default {
           name: "FleetFuelDashboard",
           component: () => import("@/views/finance/fleet/dashboard.vue"),
           meta: {
-            title: "车辆用油总览",
+            title: "用油健康总览",
             roles: ["super_admin", "manager", "finance"]
           }
         }

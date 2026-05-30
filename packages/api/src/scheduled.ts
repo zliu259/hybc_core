@@ -11,6 +11,10 @@ import {
   wakeRunner,
   requeueTimedOutTasks
 } from "./services/cron-jobs";
+import {
+  createFleetTimeoutNotifications,
+  deliverPendingFleetNotifications
+} from "./services/fleet-notification";
 import type { Env } from "./types/env";
 
 export const scheduled = async (
@@ -26,7 +30,11 @@ export const scheduled = async (
         if (await shouldWakeRunner(env)) {
           await wakeRunner(env);
         }
-        await Promise.all([checkNodeHeartbeat(env), checkTimeouts(env)]);
+        await Promise.all([
+          checkNodeHeartbeat(env),
+          checkTimeouts(env),
+          deliverPendingFleetNotifications(env)
+        ]);
         await requeueTimedOutTasks(env);
         return;
       }
@@ -37,6 +45,8 @@ export const scheduled = async (
           refreshWeComContactsCache(env),
           markOverdueRentalTerms(env)
         ]);
+        await createFleetTimeoutNotifications(env);
+        await deliverPendingFleetNotifications(env);
         return;
       }
 
@@ -45,7 +55,12 @@ export const scheduled = async (
         return;
       }
 
-      await Promise.all([checkNodeHeartbeat(env), checkTimeouts(env), checkApprovalTimeouts(env)]);
+      await Promise.all([
+        checkNodeHeartbeat(env),
+        checkTimeouts(env),
+        checkApprovalTimeouts(env),
+        deliverPendingFleetNotifications(env)
+      ]);
       await requeueTimedOutTasks(env);
     })()
   );

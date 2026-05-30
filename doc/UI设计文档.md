@@ -1411,12 +1411,17 @@
 - 公司实体管理（增强版）：`/admin/system-base/entity` → `packages/web/src/views/entity/index.vue`
 - 财务中心实体资料管理：`/finance/entity/profile` → `packages/web/src/views/entity/index.vue`
 - 油卡额度申请（员工入口）：`/finance/fleet/application` → `packages/web/src/views/finance/fleet/application.vue`
-- 油卡额度全量处理页：`/finance/fleet/applications-all` → `packages/web/src/views/finance/fleet/applications-list.vue`
-- 车辆档案与办公室处理：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
+- 油卡处理工作台：`/finance/fleet/processing` → `packages/web/src/views/finance/fleet/processing-workbench.vue`
+  - 财务/办公室使用，按待处理、待补充、已通过、已拒绝队列处理油卡申请；详情侧栏展示风险摘要、规则命中、车辆与油卡信息，并支持通过、退回补充、拒绝。
+- 油卡申请全量记录：`/finance/fleet/applications-all` → `packages/web/src/views/finance/fleet/applications-list.vue`
+  - 管理视角查看全量油卡申请；超级管理员仅可废除待处理或待补充申请，避免已处理余额流水状态被破坏。
+- 车辆油卡档案：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
   - 车辆档案支持按状态筛选（全部/启用中/已停用），可查看停用车辆。
   - 车辆档案操作支持“编辑”与“启用/停用”双向切换；编辑弹窗支持修改车牌号、车型、归属、所属实体、权属人、状态。
-- 车辆用油领导总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
+- 用油健康总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
   - 该总览固定按全公司口径统计，不提供“公司实体”筛选控件，避免统计范围误解与空数据误判。
+- 规则与审计中心：`/finance/fleet/rules-audit` → `packages/web/src/views/finance/fleet/rules-audit.vue`
+  - 超级管理员维护油卡规则、查看企微通知记录和操作审计。
 
 ### 8.2 API 指向
 

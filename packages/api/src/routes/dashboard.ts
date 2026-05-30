@@ -410,6 +410,44 @@ dashboardRoutes.get(
         pending_count: number;
       }>();
 
+    const approvedFuelRows = await c.env.DB.prepare(
+      `SELECT
+        COUNT(*) as approved_count,
+        IFNULL(SUM(requested_amount), 0) as approved_amount_total
+       FROM fuel_quota_application
+       WHERE status = 'processed' AND requested_at >= ? AND requested_at < ?`
+    )
+      .bind(range.start, range.end)
+      .first<{ approved_count: number; approved_amount_total: number }>();
+
+    const activeFuelVehicleRows = await c.env.DB.prepare(
+      `SELECT COUNT(DISTINCT a.vehicle_id) as active_fuel_vehicle_count
+       FROM fuel_quota_application a
+       JOIN company_vehicle v ON v.id = a.vehicle_id
+       WHERE a.status = 'processed'
+         AND v.status = 'active'
+         AND a.requested_at >= ?
+         AND a.requested_at < ?`
+    )
+      .bind(range.start, range.end)
+      .first<{ active_fuel_vehicle_count: number }>();
+
+    const lowBalanceRows = await c.env.DB.prepare(
+      `SELECT COUNT(*) as low_balance_card_count
+       FROM fuel_card
+       WHERE status = 'active' AND latest_balance < 300`
+    ).first<{ low_balance_card_count: number }>();
+
+    const processingRows = await c.env.DB.prepare(
+      `SELECT
+        COUNT(*) as handled_count,
+        IFNULL(AVG((julianday(processed_at) - julianday(requested_at)) * 24), 0) as avg_handle_hours
+       FROM fuel_quota_application
+       WHERE processed_at IS NOT NULL AND requested_at >= ? AND requested_at < ?`
+    )
+      .bind(range.start, range.end)
+      .first<{ handled_count: number; avg_handle_hours: number }>();
+
     const trendBucket = periodType === "year" ? "substr(a.requested_at, 1, 7)" : "substr(a.requested_at, 1, 10)";
     const trendRows = await c.env.DB.prepare(
       `SELECT
@@ -453,6 +491,30 @@ dashboardRoutes.get(
       "SELECT COUNT(*) as card_count, IFNULL(SUM(latest_balance), 0) as card_balance_total FROM fuel_card WHERE status = 'active'"
     ).first<{ card_count: number; card_balance_total: number }>();
 
+    const activeVehicleTotal = vehicleCountRow?.active_total ?? 0;
+    const activeFuelVehicleCount = activeFuelVehicleRows?.active_fuel_vehicle_count ?? 0;
+    const lowBalanceCardCount = lowBalanceRows?.low_balance_card_count ?? 0;
+    const pendingCount = fuelRows?.pending_count ?? 0;
+    const healthStatus =
+      lowBalanceCardCount > 0 || pendingCount > 10
+        ? "risk"
+        : pendingCount > 0
+          ? "watch"
+          : "healthy";
+    let healthSummary = "油卡余额与处理状态正常";
+    if (healthStatus === "risk") {
+      const riskParts = [];
+      if (lowBalanceCardCount > 0) {
+        riskParts.push(`存在 ${lowBalanceCardCount} 张低余额油卡`);
+      }
+      if (pendingCount > 10) {
+        riskParts.push(`待处理 ${pendingCount} 单`);
+      }
+      healthSummary = riskParts.join("，");
+    } else if (healthStatus === "watch") {
+      healthSummary = `待处理 ${pendingCount} 单，余额整体正常`;
+    }
+
     return c.json({
       success: true,
       data: {
@@ -464,18 +526,26 @@ dashboardRoutes.get(
         },
         summary: {
           vehicle_total: vehicleCountRow?.total ?? 0,
-          active_vehicle_total: vehicleCountRow?.active_total ?? 0,
+          active_vehicle_total: activeVehicleTotal,
           company_owned_vehicle_total: vehicleCountRow?.company_owned_total ?? 0,
           employee_owned_vehicle_total: vehicleCountRow?.employee_owned_total ?? 0,
           mileage_log_count: mileageRows?.log_count ?? 0,
           mileage_km_total: mileageRows?.mileage_total ?? 0,
           fuel_apply_count: fuelRows?.apply_count ?? 0,
           fuel_requested_amount_total: fuelRows?.requested_amount_total ?? 0,
+          fuel_processed_amount_total: approvedFuelRows?.approved_amount_total ?? 0,
           fuel_processed_count: fuelRows?.processed_count ?? 0,
           fuel_rejected_count: fuelRows?.rejected_count ?? 0,
-          fuel_pending_count: fuelRows?.pending_count ?? 0,
+          fuel_pending_count: pendingCount,
+          active_fuel_vehicle_count: activeFuelVehicleCount,
+          fuel_vehicle_coverage_rate:
+            activeVehicleTotal > 0 ? Number((activeFuelVehicleCount / activeVehicleTotal).toFixed(4)) : 0,
           active_card_count: cardBalanceRows?.card_count ?? 0,
-          active_card_balance_total: cardBalanceRows?.card_balance_total ?? 0
+          active_card_balance_total: cardBalanceRows?.card_balance_total ?? 0,
+          low_balance_card_count: lowBalanceCardCount,
+          avg_handle_hours: processingRows?.avg_handle_hours ?? 0,
+          health_status: healthStatus,
+          health_summary: healthSummary
         },
         charts: {
           fuel_apply_trend: trendRows.results ?? [],

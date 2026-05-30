@@ -12,6 +12,13 @@ type WeComSendResponse = {
   msgid?: string;
 };
 
+type SendWeComTemplateCardInput = {
+  touser: string;
+  template_card: Record<string, unknown>;
+  enable_duplicate_check?: 0 | 1;
+  fallback_error_message?: string;
+};
+
 type ApprovalPushPayload = {
   instanceId: number;
   instanceNo: string;
@@ -397,19 +404,33 @@ export const sendApprovalTodoTemplateCard = async (
   invaliduser: string | null;
   unlicenseduser: string | null;
 }> => {
+  const templateCard = await buildTemplateCard(env, payload, options);
+  return sendWeComTemplateCard(env, {
+    touser: payload.assigneeUserId,
+    template_card: templateCard,
+    enable_duplicate_check: options?.disableDuplicateCheck ? 0 : 1
+  });
+};
+
+export const sendWeComTemplateCard = async (
+  env: Env,
+  input: SendWeComTemplateCardInput
+): Promise<{
+  msgid: string | null;
+  invaliduser: string | null;
+  unlicenseduser: string | null;
+}> => {
   if (!env.WECHAT_AGENT_ID) {
     throw new Error("WECHAT_AGENT_ID is not configured");
   }
 
   const accessToken = await fetchWeComAccessToken(env);
-  const templateCard = await buildTemplateCard(env, payload, options);
-  const disableDuplicateCheck = Boolean(options?.disableDuplicateCheck);
   const requestBody = {
-    touser: payload.assigneeUserId,
+    touser: input.touser,
     msgtype: "template_card",
     agentid: Number(env.WECHAT_AGENT_ID),
-    template_card: templateCard,
-    enable_duplicate_check: disableDuplicateCheck ? 0 : 1,
+    template_card: input.template_card,
+    enable_duplicate_check: input.enable_duplicate_check ?? 1,
     duplicate_check_interval: 600
   };
 
@@ -423,7 +444,9 @@ export const sendApprovalTodoTemplateCard = async (
   );
 
   if (json.errcode !== 0) {
-    throw new Error(weComErrorMessage(json.errmsg, "Failed to send WeCom template card"));
+    throw new Error(
+      weComErrorMessage(json.errmsg, input.fallback_error_message ?? "Failed to send WeCom template card")
+    );
   }
 
   return {
@@ -504,37 +527,10 @@ export const sendApprovalResultTemplateCard = async (
   invaliduser: string | null;
   unlicenseduser: string | null;
 }> => {
-  if (!env.WECHAT_AGENT_ID) {
-    throw new Error("WECHAT_AGENT_ID is not configured");
-  }
-
-  const accessToken = await fetchWeComAccessToken(env);
   const templateCard = await buildResultTemplateCard(env, payload);
-  const requestBody = {
+  return sendWeComTemplateCard(env, {
     touser: payload.initiatorUserId,
-    msgtype: "template_card",
-    agentid: Number(env.WECHAT_AGENT_ID),
     template_card: templateCard,
-    enable_duplicate_check: 1,
-    duplicate_check_interval: 600
-  };
-
-  const json = await fetchViaBridgeStrict<WeComSendResponse>(
-    env,
-    `https://qyapi.weixin.qq.com/cgi-bin/message/send?access_token=${encodeURIComponent(accessToken)}`,
-    {
-      method: "POST",
-      body: requestBody
-    }
-  );
-
-  if (json.errcode !== 0) {
-    throw new Error(weComErrorMessage(json.errmsg, "Failed to send WeCom result template card"));
-  }
-
-  return {
-    msgid: json.msgid ?? null,
-    invaliduser: json.invaliduser ?? null,
-    unlicenseduser: json.unlicenseduser ?? null
-  };
+    fallback_error_message: "Failed to send WeCom result template card"
+  });
 };

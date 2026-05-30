@@ -8,6 +8,7 @@ import {
 } from "@/api/fleet";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
+import { fuelApplicationStatusLabel } from "@/utils/enum-labels";
 
 defineOptions({ name: "FuelQuotaApplicationAllList" });
 
@@ -20,18 +21,14 @@ const userStore = useUserStoreHook();
 const roleSet = computed(() => new Set(userStore.roles ?? []));
 const isSuperAdmin = computed(() => roleSet.value.has("super_admin"));
 
-const fuelStatusLabel = (value: string) => {
-  if (value === "pending") return "待处理";
-  if (value === "processed") return "已处理";
-  if (value === "rejected") return "已拒绝";
-  if (value === "cancelled") return "已废除";
-  return value;
-};
+const canVoidApplication = (row: FuelQuotaApplication) =>
+  row.status === "pending" || row.status === "needs_info";
 
 const fuelStatusType = (
   value: string
 ): "warning" | "success" | "danger" | "info" => {
   if (value === "pending") return "warning";
+  if (value === "needs_info") return "danger";
   if (value === "processed") return "success";
   if (value === "rejected") return "danger";
   return "info";
@@ -99,7 +96,7 @@ onMounted(loadData);
           align-items: center;
         "
       >
-        <span>油卡额度申请全量处理页</span>
+        <span>油卡申请全量记录</span>
         <el-space>
           <el-select
             v-model="status"
@@ -109,6 +106,7 @@ onMounted(loadData);
             @change="loadData"
           >
             <el-option label="待处理" value="pending" />
+            <el-option label="待补充资料" value="needs_info" />
             <el-option label="已处理" value="processed" />
             <el-option label="已拒绝" value="rejected" />
             <el-option label="已废除" value="cancelled" />
@@ -130,7 +128,7 @@ onMounted(loadData);
       <el-table-column label="状态" width="120">
         <template #default="scope">
           <el-tag :type="fuelStatusType(scope.row.status)" size="small">
-            {{ fuelStatusLabel(scope.row.status) }}
+            {{ fuelApplicationStatusLabel(scope.row.status) }}
           </el-tag>
         </template>
       </el-table-column>
@@ -155,7 +153,7 @@ onMounted(loadData);
       >
         <template #default="scope">
           <el-button
-            v-if="scope.row.status !== 'cancelled'"
+            v-if="canVoidApplication(scope.row)"
             type="danger"
             size="small"
             text

@@ -2,10 +2,186 @@ import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
+import {
+  appendApiAuditLog,
+  assertFuelApplicationTransition,
+  buildFuelRiskSummary,
+  createFleetNotificationRecord,
+  evaluateFuelApplicationRules,
+  listEnabledFleetFuelRulePolicies,
+  replaceFuelQuotaRuleHits,
+  type FleetFuelRulePolicyType,
+  type FuelApplicationRuleContext,
+  type FuelApplicationStatus
+} from "../services/fleet-governance";
+import { deliverPendingFleetNotifications } from "../services/fleet-notification";
 import { generateSerial } from "../services/serial";
+import type { UserRole } from "../types/auth";
 import type { Env } from "../types/env";
 
 const nowIso = () => new Date().toISOString();
+const maxPageSize = 100;
+
+const parsePositiveInteger = (value: string | undefined): number | null => {
+  if (!value || !/^[1-9]\d*$/.test(value)) {
+    return null;
+  }
+
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed : null;
+};
+
+const parseBoundedPagination = (
+  pageValue: string | undefined,
+  pageSizeValue: string | undefined
+): { page: number; pageSize: number } | null => {
+  const page = pageValue === undefined ? 1 : parsePositiveInteger(pageValue);
+  const pageSize = pageSizeValue === undefined ? 20 : parsePositiveInteger(pageSizeValue);
+
+  if (!page || !pageSize || pageSize > maxPageSize) {
+    return null;
+  }
+
+  return { page, pageSize };
+};
+
+const fuelRulePolicyTypes: FleetFuelRulePolicyType[] = [
+  "amount_limit",
+  "monthly_frequency",
+  "mileage_delta",
+  "card_balance",
+  "photo_required"
+];
+
+const fuelRuleSeverities = ["info", "warning", "high"] as const;
+const governanceAuditTargetTypes = ["fuel_quota_application", "fuel_card", "fleet_fuel_rule_policy"];
+
+type FuelRuleSeverity = (typeof fuelRuleSeverities)[number];
+
+type FuelRiskEvaluationInput = {
+  applicationId: number;
+  applicantUserid: string;
+  vehicleId: number;
+  fuelCardId: number | null;
+  requestedAmount: number;
+  vehicleMileageKm: number;
+  photoKeysJson: string | null;
+  requestedAt: string;
+};
+
+type FuelApplicationForGovernance = {
+  id: number;
+  application_no: string;
+  applicant_userid: string;
+  vehicle_id: number;
+  fuel_card_id: number | null;
+  requested_amount: number;
+  vehicle_mileage_km: number;
+  photo_keys_json: string | null;
+  status: FuelApplicationStatus;
+  requested_at: string;
+};
+
+const getActorRolesJson = (roles: UserRole[]): string => JSON.stringify(roles);
+
+const canViewFleetWide = (roles: UserRole[]) =>
+  roles.some(role => role === "super_admin" || role === "manager" || role === "finance");
+
+const monthRangeFromIso = (iso: string): { start: string; end: string } => {
+  const date = new Date(iso);
+  const start = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 1));
+
+  return {
+    start: start.toISOString(),
+    end: end.toISOString()
+  };
+};
+
+const isFuelRulePolicyType = (value: string): value is FleetFuelRulePolicyType =>
+  fuelRulePolicyTypes.includes(value as FleetFuelRulePolicyType);
+
+const isFuelRuleSeverity = (value: string): value is FuelRuleSeverity =>
+  fuelRuleSeverities.includes(value as FuelRuleSeverity);
+
+const normalizeConfigJson = (value: unknown): string | null => {
+  if (typeof value === "string") {
+    try {
+      JSON.parse(value);
+      return value;
+    } catch {
+      return null;
+    }
+  }
+
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return JSON.stringify(value);
+  }
+
+  return null;
+};
+
+const loadFuelRuleContext = async (
+  env: Env,
+  input: FuelRiskEvaluationInput
+): Promise<FuelApplicationRuleContext> => {
+  const monthRange = monthRangeFromIso(input.requestedAt);
+  const monthlyApplyCount = await env.DB.prepare(
+    `SELECT COUNT(*) AS total
+     FROM fuel_quota_application
+     WHERE applicant_userid = ?
+       AND requested_at >= ?
+       AND requested_at < ?
+       AND status <> 'cancelled'`
+  )
+    .bind(input.applicantUserid, monthRange.start, monthRange.end)
+    .first<{ total: number }>();
+
+  const previousMileage = await env.DB.prepare(
+    `SELECT vehicle_mileage_km
+     FROM fuel_quota_application
+     WHERE vehicle_id = ?
+       AND id <> ?
+       AND status <> 'cancelled'
+     ORDER BY requested_at DESC, id DESC
+     LIMIT 1`
+  )
+    .bind(input.vehicleId, input.applicationId)
+    .first<{ vehicle_mileage_km: number }>();
+
+  const fuelCard = input.fuelCardId
+    ? await env.DB.prepare("SELECT latest_balance FROM fuel_card WHERE id = ?")
+        .bind(input.fuelCardId)
+        .first<{ latest_balance: number | null }>()
+    : null;
+
+  return {
+    requested_amount: input.requestedAmount,
+    vehicle_mileage_km: input.vehicleMileageKm,
+    photo_keys_json: input.photoKeysJson,
+    monthly_apply_count: monthlyApplyCount?.total ?? 0,
+    previous_mileage_km: previousMileage?.vehicle_mileage_km ?? null,
+    card_latest_balance: fuelCard?.latest_balance ?? null
+  };
+};
+
+const evaluateAndPersistFuelRisk = async (env: Env, input: FuelRiskEvaluationInput) => {
+  const policies = await listEnabledFleetFuelRulePolicies(env);
+  const application = await loadFuelRuleContext(env, input);
+  const hits = evaluateFuelApplicationRules({ policies, application });
+  const summary = buildFuelRiskSummary(hits);
+
+  await replaceFuelQuotaRuleHits(env, input.applicationId, hits);
+  await env.DB.prepare(
+    `UPDATE fuel_quota_application
+     SET risk_level = ?, risk_summary = ?, updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(summary.risk_level, summary.risk_summary, nowIso(), input.applicationId)
+    .run();
+
+  return { hits, summary };
+};
 
 const appendFuelCardBalanceLog = async (
   env: Env,
@@ -274,6 +450,7 @@ fleetRoutes.get("/fuel-cards", async (c) => {
   const auth = c.get("auth");
   const status = c.req.query("status");
   const mine = c.req.query("mine") === "true";
+  const shouldScopeToMine = mine || !canViewFleetWide(auth.roles);
   let sql = `SELECT
     card.*,
     IFNULL(GROUP_CONCAT(DISTINCT bind.bind_userid), '') AS bind_userids,
@@ -284,7 +461,7 @@ fleetRoutes.get("/fuel-cards", async (c) => {
   sql += " LEFT JOIN fuel_card_user_binding bind ON bind.fuel_card_id = card.id";
 
   sql += " WHERE 1=1";
-  if (mine) {
+  if (shouldScopeToMine) {
     sql += " AND bind.status = 'active' AND bind.bind_userid = ?";
     params.push(auth.sub);
   }
@@ -344,10 +521,26 @@ fleetRoutes.get(
   "/fuel-cards/:id/balance-logs",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
+    const auth = c.get("auth");
     const fuelCardId = Number(c.req.param("id"));
     const page = Number(c.req.query("page") ?? "1");
     const pageSize = Number(c.req.query("pageSize") ?? "20");
     const offset = (page - 1) * pageSize;
+
+    if (!Number.isSafeInteger(fuelCardId) || fuelCardId <= 0) {
+      return c.json({ success: false, error: { message: "fuel card id must be a positive integer" } }, 400);
+    }
+
+    if (!canViewFleetWide(auth.roles)) {
+      const binding = await c.env.DB.prepare(
+        "SELECT id FROM fuel_card_user_binding WHERE fuel_card_id = ? AND bind_userid = ? AND status = 'active'"
+      )
+        .bind(fuelCardId, auth.sub)
+        .first<{ id: number }>();
+      if (!binding) {
+        return c.json({ success: false, error: { message: "fuel card not found" } }, 404);
+      }
+    }
 
     const countRow = await c.env.DB.prepare(
       "SELECT COUNT(*) AS total FROM fuel_card_balance_log WHERE fuel_card_id = ?"
@@ -432,6 +625,7 @@ fleetRoutes.post(
 fleetRoutes.get("/fuel-applications", async (c) => {
   const auth = c.get("auth");
   const mine = c.req.query("mine") === "true";
+  const shouldScopeToMine = mine || !canViewFleetWide(auth.roles);
   const status = c.req.query("status");
 
   let sql = `SELECT
@@ -447,7 +641,7 @@ fleetRoutes.get("/fuel-applications", async (c) => {
    WHERE 1=1`;
   const params: string[] = [];
 
-  if (mine) {
+  if (shouldScopeToMine) {
     sql += " AND a.applicant_userid = ?";
     params.push(auth.sub);
   }
@@ -562,6 +756,40 @@ fleetRoutes.post(
       )
       .run();
 
+    const applicationId = Number(result.meta.last_row_id);
+    const riskEvaluation = await evaluateAndPersistFuelRisk(c.env, {
+      applicationId,
+      applicantUserid: auth.sub,
+      vehicleId: body.vehicle_id,
+      fuelCardId: body.fuel_card_id,
+      requestedAmount: body.requested_amount,
+      vehicleMileageKm: body.vehicle_mileage_km,
+      photoKeysJson: body.photo_keys_json ?? null,
+      requestedAt: ts
+    });
+
+    await createFleetNotificationRecord(c.env, {
+      application_id: applicationId,
+      notification_type: "submitted",
+      target_group_key: "finance_office",
+      message_summary: `加油申请 ${applicationNo} 已提交`
+    });
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fuel_application_submit",
+      target_type: "fuel_quota_application",
+      target_id: String(applicationId),
+      detail_json: JSON.stringify({
+        application_no: applicationNo,
+        vehicle_id: body.vehicle_id,
+        fuel_card_id: body.fuel_card_id,
+        requested_amount: body.requested_amount,
+        risk_level: riskEvaluation.summary.risk_level
+      })
+    });
+
     await c.env.DB.prepare(
       "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
     )
@@ -569,7 +797,7 @@ fleetRoutes.post(
         "fuel_quota_application_submitted",
         "fleet-route",
         JSON.stringify({
-          application_id: result.meta.last_row_id,
+          application_id: applicationId,
           application_no: applicationNo,
           applicant_userid: auth.sub,
           vehicle_id: body.vehicle_id,
@@ -581,33 +809,293 @@ fleetRoutes.post(
       .run();
 
     return c.json(
-      { success: true, data: { id: result.meta.last_row_id, application_no: applicationNo } },
+      { success: true, data: { id: applicationId, application_no: applicationNo } },
       201
     );
   }
 );
 
-fleetRoutes.post(
-  "/fuel-applications/:id/process",
-  requireRoles(["super_admin", "manager", "finance"]),
+fleetRoutes.get(
+  "/fuel-applications/:id/rule-hits",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
   async (c) => {
     const auth = c.get("auth");
-    const id = Number(c.req.param("id"));
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "application id must be a positive integer" } }, 400);
+    }
+
+    const application = await c.env.DB.prepare(
+      "SELECT id, applicant_userid FROM fuel_quota_application WHERE id = ?"
+    )
+      .bind(id)
+      .first<{ id: number; applicant_userid: string }>();
+
+    if (!application) {
+      return c.json({ success: false, error: { message: "application not found" } }, 404);
+    }
+
+    const canViewAll = auth.roles.some((role) =>
+      ["super_admin", "manager", "finance"].includes(role)
+    );
+    if (!canViewAll && application.applicant_userid !== auth.sub) {
+      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+    }
+
+    const rows = await c.env.DB.prepare(
+      `SELECT
+        hit.id,
+        hit.application_id,
+        hit.policy_id,
+        policy.policy_name,
+        hit.policy_type,
+        hit.severity,
+        hit.hit_message,
+        hit.suggested_action,
+        hit.created_at
+       FROM fuel_quota_rule_hit hit
+       LEFT JOIN fleet_fuel_rule_policy policy ON policy.id = hit.policy_id
+       WHERE hit.application_id = ?
+       ORDER BY hit.id ASC`
+    )
+      .bind(id)
+      .all();
+
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+fleetRoutes.post(
+  "/fuel-applications/:id/request-info",
+  requireRoles(["super_admin", "finance"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "application id must be a positive integer" } }, 400);
+    }
+
+    const body = (await c.req.json()) as { reason?: string; office_remark?: string };
+    const reason = body.reason?.trim();
+
+    if (!reason) {
+      return c.json({ success: false, error: { message: "reason is required" } }, 400);
+    }
+
+    const application = await c.env.DB.prepare(
+      `SELECT
+        id,
+        application_no,
+        applicant_userid,
+        vehicle_id,
+        fuel_card_id,
+        requested_amount,
+        vehicle_mileage_km,
+        photo_keys_json,
+        status,
+        requested_at
+       FROM fuel_quota_application
+       WHERE id = ?`
+    )
+      .bind(id)
+      .first<FuelApplicationForGovernance>();
+
+    if (!application) {
+      return c.json({ success: false, error: { message: "application not found" } }, 404);
+    }
+
+    try {
+      assertFuelApplicationTransition(application.status, "needs_info");
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: { message: error instanceof Error ? error.message : "invalid status transition" }
+        },
+        400
+      );
+    }
+
+    const ts = nowIso();
+    const updateResult = await c.env.DB.prepare(
+      `UPDATE fuel_quota_application SET
+        status = 'needs_info',
+        needs_info_reason = ?,
+        processed_by_userid = ?,
+        processed_at = ?,
+        office_remark = ?,
+        updated_at = ?
+       WHERE id = ? AND status = ?`
+    )
+      .bind(reason, auth.sub, ts, body.office_remark ?? reason, ts, id, application.status)
+      .run();
+
+    if ((updateResult.meta.changes ?? 0) === 0) {
+      return c.json(
+        { success: false, error: { message: "Application status changed; please reload and retry" } },
+        409
+      );
+    }
+
+    await createFleetNotificationRecord(c.env, {
+      application_id: id,
+      notification_type: "needs_info",
+      target_userids_json: JSON.stringify([application.applicant_userid]),
+      message_summary: `加油申请 ${application.application_no} 需要补充资料`
+    });
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fuel_application_request_info",
+      target_type: "fuel_quota_application",
+      target_id: String(id),
+      detail_json: JSON.stringify({ reason })
+    });
+
+    return c.json({ success: true });
+  }
+);
+
+fleetRoutes.post(
+  "/fuel-applications/:id/resubmit",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "application id must be a positive integer" } }, 400);
+    }
+
+    const body = (await c.req.json()) as {
+      requested_amount?: number;
+      vehicle_mileage_km?: number;
+      photo_keys_json?: string | null;
+    };
+
+    const application = await c.env.DB.prepare(
+      `SELECT
+        id,
+        application_no,
+        applicant_userid,
+        vehicle_id,
+        fuel_card_id,
+        requested_amount,
+        vehicle_mileage_km,
+        photo_keys_json,
+        status,
+        requested_at
+       FROM fuel_quota_application
+       WHERE id = ?`
+    )
+      .bind(id)
+      .first<FuelApplicationForGovernance>();
+
+    if (!application) {
+      return c.json({ success: false, error: { message: "application not found" } }, 404);
+    }
+
+    if (application.applicant_userid !== auth.sub && !auth.roles.includes("super_admin")) {
+      return c.json({ success: false, error: { message: "Only applicant or super_admin can resubmit" } }, 403);
+    }
+
+    try {
+      assertFuelApplicationTransition(application.status, "pending");
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: { message: error instanceof Error ? error.message : "invalid status transition" }
+        },
+        400
+      );
+    }
+
+    const requestedAmount =
+      typeof body.requested_amount === "number" ? body.requested_amount : application.requested_amount;
+    const vehicleMileageKm =
+      typeof body.vehicle_mileage_km === "number"
+        ? body.vehicle_mileage_km
+        : application.vehicle_mileage_km;
+    const photoKeysJson =
+      Object.prototype.hasOwnProperty.call(body, "photo_keys_json")
+        ? (body.photo_keys_json ?? null)
+        : application.photo_keys_json;
+
+    const ts = nowIso();
+    const updateResult = await c.env.DB.prepare(
+      `UPDATE fuel_quota_application SET
+        requested_amount = ?,
+        vehicle_mileage_km = ?,
+        photo_keys_json = ?,
+        status = 'pending',
+        needs_info_reason = NULL,
+        resubmitted_at = ?,
+        supplement_count = supplement_count + 1,
+        updated_at = ?
+       WHERE id = ? AND status = ?`
+    )
+      .bind(requestedAmount, vehicleMileageKm, photoKeysJson, ts, ts, id, application.status)
+      .run();
+
+    if ((updateResult.meta.changes ?? 0) === 0) {
+      return c.json(
+        { success: false, error: { message: "Application status changed; please reload and retry" } },
+        409
+      );
+    }
+
+    await evaluateAndPersistFuelRisk(c.env, {
+      applicationId: id,
+      applicantUserid: application.applicant_userid,
+      vehicleId: application.vehicle_id,
+      fuelCardId: application.fuel_card_id,
+      requestedAmount,
+      vehicleMileageKm,
+      photoKeysJson,
+      requestedAt: application.requested_at
+    });
+
+    await createFleetNotificationRecord(c.env, {
+      application_id: id,
+      notification_type: "submitted",
+      target_group_key: "finance_office",
+      message_summary: `加油申请 ${application.application_no} 已重新提交`
+    });
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fuel_application_resubmit",
+      target_type: "fuel_quota_application",
+      target_id: String(id),
+      detail_json: JSON.stringify({
+        requested_amount: requestedAmount,
+        vehicle_mileage_km: vehicleMileageKm,
+        photo_keys_json: photoKeysJson
+      })
+    });
+
+    return c.json({ success: true });
+  }
+);
+
+fleetRoutes.post(
+  "/fuel-applications/:id/process",
+  requireRoles(["super_admin", "finance"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "application id must be a positive integer" } }, 400);
+    }
+
     const body = (await c.req.json()) as {
       status: "processed" | "rejected";
       fuel_card_id?: number;
       latest_card_balance?: number;
       office_remark?: string;
     };
-
-    const currentApplication = await c.env.DB.prepare(
-      "SELECT id, fuel_card_id FROM fuel_quota_application WHERE id = ?"
-    )
-      .bind(id)
-      .first<{ id: number; fuel_card_id: number | null }>();
-    if (!currentApplication) {
-      return c.json({ success: false, error: { message: "application not found" } }, 404);
-    }
 
     if (body.status !== "processed" && body.status !== "rejected") {
       return c.json({ success: false, error: { message: "invalid status" } }, 400);
@@ -623,8 +1111,52 @@ fleetRoutes.post(
       );
     }
 
+    const currentApplication = await c.env.DB.prepare(
+      "SELECT id, application_no, applicant_userid, fuel_card_id, status FROM fuel_quota_application WHERE id = ?"
+    )
+      .bind(id)
+      .first<{
+        id: number;
+        application_no: string;
+        applicant_userid: string;
+        fuel_card_id: number | null;
+        status: FuelApplicationStatus;
+      }>();
+    if (!currentApplication) {
+      return c.json({ success: false, error: { message: "application not found" } }, 404);
+    }
+
+    try {
+      assertFuelApplicationTransition(currentApplication.status, body.status);
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: { message: error instanceof Error ? error.message : "invalid status transition" }
+        },
+        400
+      );
+    }
+
+    const targetFuelCardId =
+      typeof body.fuel_card_id === "number" ? body.fuel_card_id : currentApplication.fuel_card_id;
+    let previousBalance: number | null = null;
+    if (body.status === "processed" || typeof body.fuel_card_id === "number") {
+      if (!targetFuelCardId) {
+        return c.json({ success: false, error: { message: "fuel_card_id is required" } }, 400);
+      }
+
+      const targetCard = await c.env.DB.prepare("SELECT latest_balance, status FROM fuel_card WHERE id = ?")
+        .bind(targetFuelCardId)
+        .first<{ latest_balance: number; status: string }>();
+      if (!targetCard || targetCard.status !== "active") {
+        return c.json({ success: false, error: { message: "fuel_card_id is invalid or inactive" } }, 400);
+      }
+      previousBalance = typeof targetCard.latest_balance === "number" ? targetCard.latest_balance : 0;
+    }
+
     const ts = nowIso();
-    await c.env.DB.prepare(
+    const updateResult = await c.env.DB.prepare(
       `UPDATE fuel_quota_application SET
         status = ?,
         processed_by_userid = ?,
@@ -633,29 +1165,34 @@ fleetRoutes.post(
         fuel_card_id = COALESCE(?, fuel_card_id),
         latest_card_balance = ?,
         updated_at = ?
-       WHERE id = ?`
+       WHERE id = ? AND status = ?`
     )
       .bind(
         body.status,
         auth.sub,
         ts,
         body.office_remark ?? null,
-        typeof body.fuel_card_id === "number" ? body.fuel_card_id : null,
+        targetFuelCardId,
         typeof body.latest_card_balance === "number" ? body.latest_card_balance : null,
         ts,
-        id
+        id,
+        currentApplication.status
       )
       .run();
 
-    const targetFuelCardId =
-      typeof body.fuel_card_id === "number" ? body.fuel_card_id : currentApplication.fuel_card_id;
+    if ((updateResult.meta.changes ?? 0) === 0) {
+      return c.json(
+        { success: false, error: { message: "Application status changed; please reload and retry" } },
+        409
+      );
+    }
 
-    if (body.status === "processed" && typeof body.latest_card_balance === "number" && targetFuelCardId) {
-      const targetCard = await c.env.DB.prepare("SELECT latest_balance FROM fuel_card WHERE id = ?")
-        .bind(targetFuelCardId)
-        .first<{ latest_balance: number }>();
-      const previousBalance = typeof targetCard?.latest_balance === "number" ? targetCard.latest_balance : 0;
-
+    if (
+      body.status === "processed" &&
+      typeof body.latest_card_balance === "number" &&
+      targetFuelCardId &&
+      previousBalance !== null
+    ) {
       await c.env.DB.prepare("UPDATE fuel_card SET latest_balance = ?, updated_at = ? WHERE id = ?")
         .bind(body.latest_card_balance, ts, targetFuelCardId)
         .run();
@@ -690,6 +1227,31 @@ fleetRoutes.post(
       )
       .run();
 
+    await createFleetNotificationRecord(c.env, {
+      application_id: id,
+      notification_type: "processed",
+      target_userids_json: JSON.stringify([currentApplication.applicant_userid]),
+      message_summary:
+        body.status === "processed"
+          ? `加油申请 ${currentApplication.application_no} 已通过`
+          : `加油申请 ${currentApplication.application_no} 已拒绝`
+    });
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fuel_application_process",
+      target_type: "fuel_quota_application",
+      target_id: String(id),
+      detail_json: JSON.stringify({
+        status: body.status,
+        fuel_card_id: targetFuelCardId,
+        latest_card_balance:
+          typeof body.latest_card_balance === "number" ? body.latest_card_balance : null,
+        office_remark: body.office_remark ?? null
+      })
+    });
+
     return c.json({ success: true });
   }
 );
@@ -699,7 +1261,10 @@ fleetRoutes.post(
   requireRoles(["super_admin"]),
   async (c) => {
     const auth = c.get("auth");
-    const id = Number(c.req.param("id"));
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "application id must be a positive integer" } }, 400);
+    }
     const body = (await c.req.json()) as { reason?: string };
 
     const application = await c.env.DB.prepare(
@@ -716,24 +1281,42 @@ fleetRoutes.post(
       return c.json({ success: false, error: { message: "application is already cancelled" } }, 400);
     }
 
+    if (application.status !== "pending" && application.status !== "needs_info") {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Only pending or needs_info applications can be voided" }
+        },
+        400
+      );
+    }
+
     const ts = nowIso();
-    await c.env.DB.prepare(
+    const updateResult = await c.env.DB.prepare(
       `UPDATE fuel_quota_application SET
         status = 'cancelled',
         office_remark = ?,
         processed_by_userid = ?,
         processed_at = ?,
         updated_at = ?
-       WHERE id = ?`
+       WHERE id = ? AND status = ?`
     )
       .bind(
         body.reason ?? "超级管理员废除",
         auth.sub,
         ts,
         ts,
-        id
+        id,
+        application.status
       )
       .run();
+
+    if ((updateResult.meta.changes ?? 0) === 0) {
+      return c.json(
+        { success: false, error: { message: "Application status changed; please reload and retry" } },
+        409
+      );
+    }
 
     await c.env.DB.prepare(
       "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
@@ -750,6 +1333,453 @@ fleetRoutes.post(
       )
       .run();
 
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fuel_application_void",
+      target_type: "fuel_quota_application",
+      target_id: String(id),
+      detail_json: JSON.stringify({ reason: body.reason ?? null })
+    });
+
     return c.json({ success: true });
+  }
+);
+
+fleetRoutes.get(
+  "/rule-policies",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const enabled = c.req.query("enabled");
+    const policyType = c.req.query("policy_type");
+    let sql = `SELECT
+      id,
+      policy_name,
+      policy_type,
+      config_json,
+      severity,
+      enabled,
+      created_by,
+      created_at,
+      updated_at
+     FROM fleet_fuel_rule_policy
+     WHERE 1=1`;
+    const params: Array<string | number> = [];
+
+    if (enabled === "0" || enabled === "1") {
+      sql += " AND enabled = ?";
+      params.push(Number(enabled));
+    }
+
+    if (policyType) {
+      sql += " AND policy_type = ?";
+      params.push(policyType);
+    }
+
+    sql += " ORDER BY id ASC";
+    const rows = await c.env.DB.prepare(sql).bind(...params).all();
+    return c.json({ success: true, data: rows.results ?? [] });
+  }
+);
+
+fleetRoutes.post(
+  "/rule-policies",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as {
+      policy_name?: string;
+      policy_type?: string;
+      config_json?: unknown;
+      severity?: string;
+      enabled?: number | boolean;
+    };
+    const policyName = body.policy_name?.trim();
+    const configJson = normalizeConfigJson(body.config_json);
+
+    if (!policyName) {
+      return c.json({ success: false, error: { message: "policy_name is required" } }, 400);
+    }
+    if (!body.policy_type || !isFuelRulePolicyType(body.policy_type)) {
+      return c.json({ success: false, error: { message: "policy_type is invalid" } }, 400);
+    }
+    if (!configJson) {
+      return c.json({ success: false, error: { message: "config_json must be valid JSON" } }, 400);
+    }
+    if (body.severity && !isFuelRuleSeverity(body.severity)) {
+      return c.json({ success: false, error: { message: "severity is invalid" } }, 400);
+    }
+
+    const enabled = typeof body.enabled === "boolean" ? (body.enabled ? 1 : 0) : body.enabled === 0 ? 0 : 1;
+    const ts = nowIso();
+    const result = await c.env.DB.prepare(
+      `INSERT INTO fleet_fuel_rule_policy (
+        policy_name,
+        policy_type,
+        config_json,
+        severity,
+        enabled,
+        created_by,
+        created_at,
+        updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+      .bind(policyName, body.policy_type, configJson, body.severity ?? "warning", enabled, auth.sub, ts, ts)
+      .run();
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fleet_fuel_rule_policy_create",
+      target_type: "fleet_fuel_rule_policy",
+      target_id: String(Number(result.meta.last_row_id)),
+      detail_json: JSON.stringify({
+        policy_name: policyName,
+        policy_type: body.policy_type,
+        severity: body.severity ?? "warning",
+        enabled
+      })
+    });
+
+    return c.json({ success: true, data: { id: Number(result.meta.last_row_id) } }, 201);
+  }
+);
+
+fleetRoutes.put(
+  "/rule-policies/:id",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "rule policy id must be a positive integer" } }, 400);
+    }
+
+    const body = (await c.req.json()) as {
+      policy_name?: string;
+      policy_type?: string;
+      config_json?: unknown;
+      severity?: string;
+      enabled?: number | boolean;
+    };
+
+    const existing = await c.env.DB.prepare("SELECT id FROM fleet_fuel_rule_policy WHERE id = ?")
+      .bind(id)
+      .first<{ id: number }>();
+    if (!existing) {
+      return c.json({ success: false, error: { message: "rule policy not found" } }, 404);
+    }
+
+    const policyName = typeof body.policy_name === "string" ? body.policy_name.trim() : null;
+    if (body.policy_name !== undefined && !policyName) {
+      return c.json({ success: false, error: { message: "policy_name is required" } }, 400);
+    }
+    if (body.policy_type !== undefined && !isFuelRulePolicyType(body.policy_type)) {
+      return c.json({ success: false, error: { message: "policy_type is invalid" } }, 400);
+    }
+    if (body.severity !== undefined && !isFuelRuleSeverity(body.severity)) {
+      return c.json({ success: false, error: { message: "severity is invalid" } }, 400);
+    }
+
+    const configJson = body.config_json === undefined ? null : normalizeConfigJson(body.config_json);
+    if (body.config_json !== undefined && !configJson) {
+      return c.json({ success: false, error: { message: "config_json must be valid JSON" } }, 400);
+    }
+
+    const enabled =
+      typeof body.enabled === "boolean"
+        ? body.enabled
+          ? 1
+          : 0
+        : typeof body.enabled === "number"
+          ? body.enabled === 1
+            ? 1
+            : 0
+          : null;
+
+    const ts = nowIso();
+    await c.env.DB.prepare(
+      `UPDATE fleet_fuel_rule_policy SET
+        policy_name = COALESCE(?, policy_name),
+        policy_type = COALESCE(?, policy_type),
+        config_json = COALESCE(?, config_json),
+        severity = COALESCE(?, severity),
+        enabled = COALESCE(?, enabled),
+        updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(
+        policyName,
+        body.policy_type ?? null,
+        configJson,
+        body.severity ?? null,
+        enabled,
+        ts,
+        id
+      )
+      .run();
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fleet_fuel_rule_policy_update",
+      target_type: "fleet_fuel_rule_policy",
+      target_id: String(id),
+      detail_json: JSON.stringify({
+        policy_name: policyName,
+        policy_type: body.policy_type ?? null,
+        config_json: configJson,
+        severity: body.severity ?? null,
+        enabled
+      })
+    });
+
+    return c.json({ success: true });
+  }
+);
+
+fleetRoutes.post(
+  "/rule-policies/:id/toggle",
+  requireRoles(["super_admin"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "rule policy id must be a positive integer" } }, 400);
+    }
+
+    let body: { enabled?: number | boolean } = {};
+    try {
+      body = (await c.req.json()) as { enabled?: number | boolean };
+    } catch {
+      body = {};
+    }
+
+    const existing = await c.env.DB.prepare("SELECT id, enabled FROM fleet_fuel_rule_policy WHERE id = ?")
+      .bind(id)
+      .first<{ id: number; enabled: number }>();
+    if (!existing) {
+      return c.json({ success: false, error: { message: "rule policy not found" } }, 404);
+    }
+
+    const enabled =
+      typeof body.enabled === "boolean"
+        ? body.enabled
+          ? 1
+          : 0
+        : typeof body.enabled === "number"
+          ? body.enabled === 1
+            ? 1
+            : 0
+          : existing.enabled === 1
+            ? 0
+            : 1;
+
+    const ts = nowIso();
+    await c.env.DB.prepare("UPDATE fleet_fuel_rule_policy SET enabled = ?, updated_at = ? WHERE id = ?")
+      .bind(enabled, ts, id)
+      .run();
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fleet_fuel_rule_policy_toggle",
+      target_type: "fleet_fuel_rule_policy",
+      target_id: String(id),
+      detail_json: JSON.stringify({
+        previous_enabled: existing.enabled,
+        enabled
+      })
+    });
+
+    return c.json({ success: true, data: { id, enabled } });
+  }
+);
+
+fleetRoutes.get(
+  "/notifications",
+  requireRoles(["super_admin", "finance", "manager"]),
+  async (c) => {
+    const status = c.req.query("status");
+    const notificationType = c.req.query("notification_type");
+    const applicationIdValue = c.req.query("application_id");
+    const applicationId =
+      applicationIdValue === undefined ? null : parsePositiveInteger(applicationIdValue);
+    const pagination = parseBoundedPagination(c.req.query("page"), c.req.query("pageSize"));
+    if (!pagination) {
+      return c.json(
+        { success: false, error: { message: `page and pageSize must be positive integers; pageSize max is ${maxPageSize}` } },
+        400
+      );
+    }
+    if (applicationIdValue !== undefined && !applicationId) {
+      return c.json({ success: false, error: { message: "application_id must be a positive integer" } }, 400);
+    }
+
+    const { page, pageSize } = pagination;
+    const offset = (page - 1) * pageSize;
+
+    let sql = `SELECT
+      id,
+      application_id,
+      notification_type,
+      target_userids_json,
+      target_group_key,
+      message_summary,
+      status,
+      error_message,
+      retry_count,
+      sent_at,
+      created_at,
+      updated_at
+     FROM fleet_wecom_notification
+     WHERE 1=1`;
+    const params: Array<string | number> = [];
+
+    if (status) {
+      sql += " AND status = ?";
+      params.push(status);
+    }
+    if (notificationType) {
+      sql += " AND notification_type = ?";
+      params.push(notificationType);
+    }
+    if (applicationId !== null) {
+      sql += " AND application_id = ?";
+      params.push(applicationId);
+    }
+
+    const countSql = `SELECT COUNT(*) AS total FROM (${sql})`;
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
+    const countRow = await c.env.DB.prepare(countSql).bind(...params).first<{ total: number }>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params, pageSize, offset)
+      .all();
+
+    return c.json({
+      success: true,
+      data: rows.results ?? [],
+      pagination: { page, pageSize, total: countRow?.total ?? 0 }
+    });
+  }
+);
+
+fleetRoutes.post(
+  "/notifications/:id/retry",
+  requireRoles(["super_admin", "finance"]),
+  async (c) => {
+    const id = parsePositiveInteger(c.req.param("id"));
+    if (!id) {
+      return c.json({ success: false, error: { message: "notification id must be a positive integer" } }, 400);
+    }
+
+    const notification = await c.env.DB.prepare(
+      "SELECT id, status FROM fleet_wecom_notification WHERE id = ?"
+    )
+      .bind(id)
+      .first<{ id: number; status: string }>();
+
+    if (!notification) {
+      return c.json({ success: false, error: { message: "notification not found" } }, 404);
+    }
+
+    if (notification.status !== "failed" && notification.status !== "skipped") {
+      return c.json(
+        { success: false, error: { message: "Only failed or skipped notifications can be retried" } },
+        400
+      );
+    }
+
+    const result = await c.env.DB.prepare(
+      `UPDATE fleet_wecom_notification
+       SET status = 'pending',
+           error_message = NULL,
+           sent_at = NULL,
+           updated_at = ?
+       WHERE id = ? AND status IN ('failed', 'skipped')`
+    )
+      .bind(nowIso(), id)
+      .run();
+
+    if ((result.meta.changes ?? 0) === 0) {
+      return c.json(
+        { success: false, error: { message: "Notification status changed; please reload and retry" } },
+        409
+      );
+    }
+
+    const delivery = await deliverPendingFleetNotifications(c.env, { notificationId: id, limit: 1 });
+    return c.json({ success: true, data: delivery });
+  }
+);
+
+fleetRoutes.get(
+  "/audit",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const action = c.req.query("action");
+    const actorUserid = c.req.query("actor_userid");
+    const targetType = c.req.query("target_type");
+    const targetId = c.req.query("target_id");
+    const pagination = parseBoundedPagination(c.req.query("page"), c.req.query("pageSize"));
+    if (!pagination) {
+      return c.json(
+        { success: false, error: { message: `page and pageSize must be positive integers; pageSize max is ${maxPageSize}` } },
+        400
+      );
+    }
+
+    const { page, pageSize } = pagination;
+    const offset = (page - 1) * pageSize;
+
+    let sql = `SELECT
+      id,
+      actor_userid,
+      actor_roles_json,
+      action,
+      target_type,
+      target_id,
+      status,
+      detail_json,
+      created_at
+     FROM api_audit_log
+     WHERE 1=1`;
+    const params: string[] = [];
+
+    if (action) {
+      sql += " AND action = ?";
+      params.push(action);
+    }
+    if (actorUserid) {
+      sql += " AND actor_userid = ?";
+      params.push(actorUserid);
+    }
+    sql += " AND target_type IN (?, ?, ?)";
+    params.push(...governanceAuditTargetTypes);
+
+    if (targetType) {
+      if (!governanceAuditTargetTypes.includes(targetType)) {
+        return c.json({ success: false, error: { message: "target_type is invalid" } }, 400);
+      }
+      sql += " AND target_type = ?";
+      params.push(targetType);
+    }
+    if (targetId) {
+      sql += " AND target_id = ?";
+      params.push(targetId);
+    }
+
+    const countSql = `SELECT COUNT(*) AS total FROM (${sql})`;
+    sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
+    const countRow = await c.env.DB.prepare(countSql).bind(...params).first<{ total: number }>();
+    const rows = await c.env.DB.prepare(sql)
+      .bind(...params, pageSize, offset)
+      .all();
+
+    return c.json({
+      success: true,
+      data: rows.results ?? [],
+      pagination: { page, pageSize, total: countRow?.total ?? 0 }
+    });
   }
 );

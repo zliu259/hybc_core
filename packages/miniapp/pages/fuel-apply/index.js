@@ -3,10 +3,23 @@ const { uploadFileToR2 } = require("../../utils/upload");
 const { wxChooseMediaImage } = require("../../utils/wx");
 
 const STATUS_LABELS = {
-  pending: "待处理",
-  processed: "已处理",
+  pending: "待办公室处理",
+  needs_info: "待补充资料",
+  processed: "已通过",
   rejected: "已拒绝",
   cancelled: "已废除"
+};
+
+const parsePhotoKeys = (value) => {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => typeof item === "string" && item.trim())
+      : [];
+  } catch {
+    return [];
+  }
 };
 
 Page({
@@ -19,6 +32,9 @@ Page({
     fuelCards: [],
     fuelCardLabels: ["请选择油卡"],
     fuelCardIndex: 0,
+    resubmitApplicationId: "",
+    needsInfoCount: 0,
+    statusTextMap: STATUS_LABELS,
     form: {
       vehicle_id: "",
       fuel_card_id: "",
@@ -38,17 +54,33 @@ Page({
     this.setData({ loading: true });
     try {
       const [vehicleRes, cardRes, myRes] = await Promise.all([
-        request({ method: "GET", path: "/api/v1/fleet/vehicles?status=active" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/fleet/fuel-cards?mine=true&status=active" }).catch(() => null),
-        request({ method: "GET", path: "/api/v1/fleet/fuel-applications?mine=true" }).catch(() => null)
+        request({
+          method: "GET",
+          path: "/api/v1/fleet/vehicles?status=active"
+        }).catch(() => null),
+        request({
+          method: "GET",
+          path: "/api/v1/fleet/fuel-cards?mine=true&status=active"
+        }).catch(() => null),
+        request({
+          method: "GET",
+          path: "/api/v1/fleet/fuel-applications?mine=true"
+        }).catch(() => null)
       ]);
 
-      const vehicles = vehicleRes && Array.isArray(vehicleRes.data) ? vehicleRes.data : [];
-      const fuelCards = cardRes && Array.isArray(cardRes.data) ? cardRes.data : [];
-      const myApplications = (myRes && Array.isArray(myRes.data) ? myRes.data : []).map((item) => ({
+      const vehicles =
+        vehicleRes && Array.isArray(vehicleRes.data) ? vehicleRes.data : [];
+      const fuelCards =
+        cardRes && Array.isArray(cardRes.data) ? cardRes.data : [];
+      const myApplications = (
+        myRes && Array.isArray(myRes.data) ? myRes.data : []
+      ).map((item) => ({
         ...item,
         statusLabel: STATUS_LABELS[item.status] || item.status
       }));
+      const needsInfoCount = myApplications.filter(
+        (item) => item.status === "needs_info"
+      ).length;
       this.setData({
         vehicles,
         fuelCards,
@@ -56,8 +88,11 @@ Page({
           vehicles.map((item) => `${item.current_plate_no || "-"} (${item.vehicle_uuid || item.id})`)
         ),
         fuelCardLabels: ["请选择油卡"].concat(
-          fuelCards.map((item) => `${item.card_no || item.id} (余额: ${item.latest_balance || 0})`)
+          fuelCards.map(
+            (item) => `${item.card_no || item.id} (余额: ${item.latest_balance || 0})`
+          )
         ),
+        needsInfoCount,
         myApplications
       });
     } finally {
@@ -140,6 +175,49 @@ Page({
     this.setData({ photoList: next });
   },
 
+  startResubmit(e) {
+    const id = e.currentTarget.dataset.id;
+    const target = this.data.myApplications.find(
+      (item) => String(item.id) === String(id)
+    );
+    if (!target) return;
+    const vehicleIndex = this.data.vehicles.findIndex(
+      (item) => Number(item.id) === Number(target.vehicle_id)
+    );
+    const fuelCardIndex = this.data.fuelCards.findIndex(
+      (item) => Number(item.id) === Number(target.fuel_card_id)
+    );
+    this.setData({
+      resubmitApplicationId: String(id),
+      vehicleIndex: vehicleIndex >= 0 ? vehicleIndex + 1 : 0,
+      fuelCardIndex: fuelCardIndex >= 0 ? fuelCardIndex + 1 : 0,
+      photoList: [],
+      "form.vehicle_id": target.vehicle_id || "",
+      "form.fuel_card_id": target.fuel_card_id || "",
+      "form.requested_amount": target.requested_amount || "",
+      "form.vehicle_mileage_km": target.vehicle_mileage_km || ""
+    });
+  },
+
+  cancelResubmit() {
+    this.setData({
+      resubmitApplicationId: "",
+      vehicleIndex: 0,
+      fuelCardIndex: 0,
+      photoList: [],
+      form: {
+        vehicle_id: "",
+        fuel_card_id: "",
+        requested_amount: "",
+        vehicle_mileage_km: ""
+      }
+    });
+  },
+
+  statusText(status) {
+    return this.data.statusTextMap[status] || status || "-";
+  },
+
   async submit() {
     if (this.data.submitting) return;
     const vehicleId = Number(this.data.form.vehicle_id || 0);
@@ -167,21 +245,43 @@ Page({
     this.setData({ submitting: true });
     wx.showLoading({ title: "提交中...", mask: true });
     try {
+      const isResubmit = Boolean(this.data.resubmitApplicationId);
+      const path = isResubmit
+        ? `/api/v1/fleet/fuel-applications/${this.data.resubmitApplicationId}/resubmit`
+        : "/api/v1/fleet/fuel-applications";
+      const targetApplication = isResubmit
+        ? this.data.myApplications.find(
+            (item) =>
+              String(item.id) === String(this.data.resubmitApplicationId)
+          )
+        : null;
+      const photoKeys = Array.from(
+        new Set(
+          parsePhotoKeys(targetApplication && targetApplication.photo_keys_json).concat(
+            this.data.photoList.map((item) => item.file_key)
+          )
+        )
+      );
+
       await request({
         method: "POST",
-        path: "/api/v1/fleet/fuel-applications",
+        path,
         data: {
           vehicle_id: vehicleId,
           fuel_card_id: fuelCardId,
           requested_amount: amount,
           vehicle_mileage_km: mileage,
-          photo_keys_json: JSON.stringify(this.data.photoList.map((item) => item.file_key))
+          photo_keys_json: JSON.stringify(photoKeys)
         }
       });
 
       wx.hideLoading();
-      wx.showToast({ title: "申请已提交", icon: "success" });
+      wx.showToast({
+        title: isResubmit ? "补充已提交" : "申请已提交",
+        icon: "success"
+      });
       this.setData({
+        resubmitApplicationId: "",
         vehicleIndex: 0,
         fuelCardIndex: 0,
         form: {
@@ -195,7 +295,10 @@ Page({
       await this.loadData();
     } catch (error) {
       wx.hideLoading();
-      wx.showToast({ title: (error && error.message) || "提交失败", icon: "none" });
+      wx.showToast({
+        title: (error && error.message) || "提交失败",
+        icon: "none"
+      });
     } finally {
       this.setData({ submitting: false });
     }

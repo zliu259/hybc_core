@@ -9,11 +9,36 @@ import {
 
 defineOptions({ name: "FleetFuelDashboard" });
 
+type HealthStatus = "healthy" | "watch" | "risk";
+
+type Summary = {
+  vehicle_total: number;
+  active_vehicle_total: number;
+  company_owned_vehicle_total: number;
+  employee_owned_vehicle_total: number;
+  mileage_log_count: number;
+  mileage_km_total: number;
+  fuel_apply_count: number;
+  fuel_requested_amount_total: number;
+  fuel_processed_amount_total: number;
+  fuel_processed_count: number;
+  fuel_rejected_count: number;
+  fuel_pending_count: number;
+  active_fuel_vehicle_count: number;
+  fuel_vehicle_coverage_rate: number;
+  active_card_count: number;
+  active_card_balance_total: number;
+  low_balance_card_count: number;
+  avg_handle_hours: number;
+  health_status: HealthStatus;
+  health_summary: string;
+};
+
 const loading = ref(false);
 const periodType = ref<VehicleFuelOverviewPeriodType>("year");
 const period = ref(String(new Date().getFullYear()));
 
-const summary = ref({
+const summary = ref<Summary>({
   vehicle_total: 0,
   active_vehicle_total: 0,
   company_owned_vehicle_total: 0,
@@ -22,11 +47,18 @@ const summary = ref({
   mileage_km_total: 0,
   fuel_apply_count: 0,
   fuel_requested_amount_total: 0,
+  fuel_processed_amount_total: 0,
   fuel_processed_count: 0,
   fuel_rejected_count: 0,
   fuel_pending_count: 0,
+  active_fuel_vehicle_count: 0,
+  fuel_vehicle_coverage_rate: 0,
   active_card_count: 0,
-  active_card_balance_total: 0
+  active_card_balance_total: 0,
+  low_balance_card_count: 0,
+  avg_handle_hours: 0,
+  health_status: "healthy",
+  health_summary: "油卡余额与处理状态正常"
 });
 
 const trend = ref<
@@ -55,6 +87,12 @@ let trendChart: ReturnType<typeof echarts.init> | null = null;
 
 const statusText = computed(() => {
   return `待处理 ${summary.value.fuel_pending_count} / 已处理 ${summary.value.fuel_processed_count} / 拒绝 ${summary.value.fuel_rejected_count}`;
+});
+
+const healthAlertType = computed(() => {
+  if (summary.value.health_status === "risk") return "error";
+  if (summary.value.health_status === "watch") return "warning";
+  return "success";
 });
 
 const renderChart = async () => {
@@ -139,8 +177,8 @@ onUnmounted(() => {
       <div
         style="
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          justify-content: space-between;
         "
       >
         <div>
@@ -186,6 +224,42 @@ onUnmounted(() => {
     <el-row :gutter="12" style="margin-top: 12px">
       <el-col :md="6" :xs="24"
         ><el-card shadow="never"
+          >本期申请总额：¥{{
+            amountFormatter(summary.fuel_requested_amount_total)
+          }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >本期通过金额：¥{{
+            amountFormatter(summary.fuel_processed_amount_total)
+          }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >活跃油卡余额：¥{{
+            amountFormatter(summary.active_card_balance_total)
+          }}</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >低余额油卡：{{ summary.low_balance_card_count }}</el-card
+        ></el-col
+      >
+    </el-row>
+
+    <el-alert
+      :type="healthAlertType"
+      :title="summary.health_summary"
+      show-icon
+      style="margin-top: 12px"
+    />
+
+    <el-row :gutter="12" style="margin-top: 12px">
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
           >车辆总数：{{ summary.vehicle_total }}</el-card
         ></el-col
       >
@@ -196,40 +270,14 @@ onUnmounted(() => {
       >
       <el-col :md="6" :xs="24"
         ><el-card shadow="never"
-          >员工私车：{{ summary.employee_owned_vehicle_total }}</el-card
+          >本期已用油车辆：{{ summary.active_fuel_vehicle_count }}</el-card
         ></el-col
       >
       <el-col :md="6" :xs="24"
         ><el-card shadow="never"
-          >本期里程总和：{{
-            amountFormatter(summary.mileage_km_total)
-          }}
-          km</el-card
-        ></el-col
-      >
-    </el-row>
-
-    <el-row :gutter="12" style="margin-top: 12px">
-      <el-col :md="6" :xs="24"
-        ><el-card shadow="never"
-          >申请总额：¥{{
-            amountFormatter(summary.fuel_requested_amount_total)
-          }}</el-card
-        ></el-col
-      >
-      <el-col :md="6" :xs="24"
-        ><el-card shadow="never"
-          >申请笔数：{{ summary.fuel_apply_count }}</el-card
-        ></el-col
-      >
-      <el-col :md="6" :xs="24"
-        ><el-card shadow="never">处理状态：{{ statusText }}</el-card></el-col
-      >
-      <el-col :md="6" :xs="24"
-        ><el-card shadow="never"
-          >油卡余额总额：¥{{
-            amountFormatter(summary.active_card_balance_total)
-          }}</el-card
+          >覆盖率：{{
+            (summary.fuel_vehicle_coverage_rate * 100).toFixed(2)
+          }}%</el-card
         ></el-col
       >
     </el-row>
@@ -257,5 +305,33 @@ onUnmounted(() => {
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-row :gutter="12" style="margin-top: 12px">
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never">处理状态：{{ statusText }}</el-card></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >平均处理时长：{{
+            amountFormatter(summary.avg_handle_hours)
+          }}
+          小时</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >本期里程总和：{{
+            amountFormatter(summary.mileage_km_total)
+          }}
+          km</el-card
+        ></el-col
+      >
+      <el-col :md="6" :xs="24"
+        ><el-card shadow="never"
+          >车辆结构：公司 {{ summary.company_owned_vehicle_total }} / 员工
+          {{ summary.employee_owned_vehicle_total }}</el-card
+        ></el-col
+      >
+    </el-row>
   </el-card>
 </template>
