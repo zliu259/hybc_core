@@ -41,6 +41,10 @@ import type {
 
 const nowIso = () => new Date().toISOString();
 
+const getUploadBaseUrl = (env: Env, requestUrl: string): string => {
+  return env.WECOM_PUSH_API_BASE_URL?.trim() || new URL(requestUrl).origin;
+};
+
 const WORK_ORDER_TYPES = new Set([
   "inspection",
   "maintenance",
@@ -926,7 +930,12 @@ warehouseAssetWorkOrderRoutes.get(
         file_name: evidence.file_name,
         evidence_type: evidence.evidence_type,
         expires_at: new Date(expiresAt).toISOString(),
-        url: buildSignedObjectUrl(evidence.file_key, expiresAt, signature)
+        url: buildSignedObjectUrl(
+          evidence.file_key,
+          expiresAt,
+          signature,
+          getUploadBaseUrl(c.env, c.req.url)
+        )
       }
     });
   }

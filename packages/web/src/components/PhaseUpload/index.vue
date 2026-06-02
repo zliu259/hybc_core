@@ -2,7 +2,7 @@
 import { ref } from "vue";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
-import { createUploadSignature } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 
 type UploadedItem = {
   name: string;
@@ -37,7 +37,7 @@ const beforeUpload = async (file: File) => {
     });
 
     const signed = signResult.data;
-    await fetch(signed.uploadUrl, {
+    await fetch(resolveUploadUrl(signed.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": file.type || "application/octet-stream",

@@ -4,7 +4,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { message } from "@/utils/message";
 import { fileCategoryLabel } from "@/utils/enum-labels";
 import { formatToken, getToken } from "@/utils/auth";
-import { createUploadSignature } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   createProjectFile,
   deleteProjectFile,
@@ -76,7 +76,7 @@ const uploadBySignedUrl = async (options: UploadRequestOptions) => {
     });
     const sign = signRes.data;
 
-    const uploadResp = await fetch(sign.uploadUrl, {
+    const uploadResp = await fetch(resolveUploadUrl(sign.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": rawFile.type || "application/octet-stream",

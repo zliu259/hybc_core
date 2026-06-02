@@ -1550,3 +1550,7 @@
 - 报销提交/处理列表页面改为“顶部标题与角色动作 + 摘要指标 + 筛选面板 + 表格区”，角色说明从多条提示条收敛到页面副标题，降低报销提交入口的首屏复杂度：`packages/web/src/views/finance/reimbursement/list.vue`
 - 报销详情页面新增顶部状态摘要，并将后台静默审查与重复风险合并收纳到折叠区；基础信息、附件和操作区保持原业务位置，减少详情页一次性展开的信息量：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 批次详情新增“报销基础信息编辑”能力（发票号、费用日期、金额、类别、说明），支持对批次内单条报销做修正并自动回写批次合计：`PUT /api/v1/reimbursement/batch/:id/items/:envelopeId/basic-info`，页面文件：`packages/web/src/views/finance/reimbursement/batch-detail.vue`
+
+### 8.17 上传 URL API 域名修正（2026-06）
+
+- Web 端所有仍直接使用签名返回 `uploadUrl` 的上传入口统一通过 `resolveUploadUrl()` 解析到 API 域名，避免相对路径在 `web.hybcdg.com` 下发起 PUT 导致 405：`packages/web/src/views/project/workspace/project-panel.vue`、`packages/web/src/views/project/workspace/file-panel.vue`、`packages/web/src/components/PhaseUpload/index.vue`、`packages/web/src/layout/components/lay-support/index.vue`

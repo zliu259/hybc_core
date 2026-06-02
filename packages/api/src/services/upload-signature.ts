@@ -25,10 +25,22 @@ export const signObjectAccess = async (
   return toHex(signature);
 };
 
-export const buildSignedObjectUrl = (key: string, expiresAt: number, signature: string): string => {
-  return `/api/v1/upload/object/${encodeURIComponent(
-    key
-  )}?expires=${expiresAt}&signature=${signature}`;
+const normalizeBaseUrl = (baseUrl?: string | null): string => {
+  if (!baseUrl?.trim()) return "";
+  return baseUrl.trim().replace(/\/+$/, "");
+};
+
+export const buildObjectUrl = (key: string, baseUrl?: string | null): string => {
+  return `${normalizeBaseUrl(baseUrl)}/api/v1/upload/object/${encodeURIComponent(key)}`;
+};
+
+export const buildSignedObjectUrl = (
+  key: string,
+  expiresAt: number,
+  signature: string,
+  baseUrl?: string | null
+): string => {
+  return `${buildObjectUrl(key, baseUrl)}?expires=${expiresAt}&signature=${signature}`;
 };
 
 export const isObjectAccessSignatureValid = async (

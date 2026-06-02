@@ -1,7 +1,11 @@
 import { Hono } from "hono";
 
 import { enqueueTask } from "../services/task-queue";
-import { signObjectAccess } from "../services/upload-signature";
+import {
+  buildObjectUrl,
+  buildSignedObjectUrl,
+  signObjectAccess
+} from "../services/upload-signature";
 import type { Env } from "../types/env";
 
 const nowIso = () => new Date().toISOString();
@@ -99,6 +103,10 @@ const hashText = async (value: string): Promise<string | null> => {
 
 const parseFileName = (name: string): string => {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+};
+
+const getUploadBaseUrl = (env: Env, requestUrl: string): string => {
+  return env.WECOM_PUSH_API_BASE_URL?.trim() || new URL(requestUrl).origin;
 };
 
 const parseAllowedTypes = (raw: string): string[] => {
@@ -380,6 +388,7 @@ publicProjectLogRoutes.post("/:token/upload-sign", async (c) => {
   const expiresAt = Date.now() + 10 * 60 * 1000;
   const key = `external-log/${resolved.project.id}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
   const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
+  const uploadBaseUrl = getUploadBaseUrl(c.env, c.req.url);
 
   return c.json({
     success: true,
@@ -387,8 +396,8 @@ publicProjectLogRoutes.post("/:token/upload-sign", async (c) => {
       key,
       expiresAt,
       contentType: body.contentType ?? "application/octet-stream",
-      uploadUrl: `/api/v1/upload/object/${encodeURIComponent(key)}?expires=${expiresAt}&signature=${signature}`,
-      fileUrl: `/api/v1/upload/object/${encodeURIComponent(key)}`
+      uploadUrl: buildSignedObjectUrl(key, expiresAt, signature, uploadBaseUrl),
+      fileUrl: buildObjectUrl(key, uploadBaseUrl)
     }
   });
 });

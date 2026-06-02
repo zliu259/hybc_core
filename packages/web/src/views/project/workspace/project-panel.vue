@@ -8,7 +8,7 @@ import { ElMessageBox } from "element-plus";
 import { statusLabel } from "@/utils/enum-labels";
 import { useUserStoreHook } from "@/store/modules/user";
 import { formatToken, getToken } from "@/utils/auth";
-import { createUploadSignature } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   createProjectSection,
   getProjectById,
@@ -934,7 +934,7 @@ const uploadManagerLogPhoto = async (options: UploadRequestOptions) => {
     });
     const signed = signedRes.data;
 
-    const uploadResp = await fetch(signed.uploadUrl, {
+    const uploadResp = await fetch(resolveUploadUrl(signed.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": rawFile.type || "application/octet-stream",

@@ -3,7 +3,7 @@ import { computed, onMounted, reactive, ref } from "vue";
 import type { UploadFile } from "element-plus";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
-import { createUploadSignature } from "@/api/upload";
+import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   createSupportTicket,
   listMySupportTickets,
@@ -79,7 +79,7 @@ const uploadAttachments = async () => {
       category: "support"
     });
     const sign = signRes.data;
-    const uploadResp = await fetch(sign.uploadUrl, {
+    const uploadResp = await fetch(resolveUploadUrl(sign.uploadUrl), {
       method: "PUT",
       headers: {
         "content-type": raw.type || "application/octet-stream",

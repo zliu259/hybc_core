@@ -1,11 +1,20 @@
 import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
-import { isObjectAccessSignatureValid, signObjectAccess } from "../services/upload-signature";
+import {
+  buildObjectUrl,
+  buildSignedObjectUrl,
+  isObjectAccessSignatureValid,
+  signObjectAccess
+} from "../services/upload-signature";
 import type { Env } from "../types/env";
 
 const parseFileName = (name: string): string => {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
+};
+
+const getUploadBaseUrl = (env: Env, requestUrl: string): string => {
+  return env.WECOM_PUSH_API_BASE_URL?.trim() || new URL(requestUrl).origin;
 };
 
 export const uploadRoutes = new Hono<{
@@ -24,6 +33,7 @@ uploadRoutes.post("/sign", authMiddleware, async (c) => {
   const safeName = parseFileName(body.fileName || "file.bin");
   const key = `${body.category ?? "common"}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
   const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
+  const uploadBaseUrl = getUploadBaseUrl(c.env, c.req.url);
 
   return c.json({
     success: true,
@@ -32,8 +42,8 @@ uploadRoutes.post("/sign", authMiddleware, async (c) => {
       expiresAt,
       signature,
       contentType: body.contentType ?? "application/octet-stream",
-      uploadUrl: `/api/v1/upload/object/${encodeURIComponent(key)}?expires=${expiresAt}&signature=${signature}`,
-      fileUrl: `/api/v1/upload/object/${encodeURIComponent(key)}`
+      uploadUrl: buildSignedObjectUrl(key, expiresAt, signature, uploadBaseUrl),
+      fileUrl: buildObjectUrl(key, uploadBaseUrl)
     }
   });
 });
@@ -105,7 +115,7 @@ uploadRoutes.put("/object/:key{.+}", async (c) => {
     success: true,
     data: {
       key,
-      url: `/api/v1/upload/object/${encodeURIComponent(key)}`
+      url: buildObjectUrl(key, getUploadBaseUrl(c.env, c.req.url))
     }
   });
 });
