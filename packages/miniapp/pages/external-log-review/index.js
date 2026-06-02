@@ -21,6 +21,13 @@ const riskText = {
   unknown: "未知"
 };
 
+const deviationText = {
+  left: "左偏",
+  right: "右偏",
+  high: "高",
+  low: "低"
+};
+
 const safeParseObject = (value) => {
   if (!value) return {};
   if (typeof value === "object" && !Array.isArray(value)) return value;
@@ -95,6 +102,13 @@ Page({
               `本班下管：${Number(operatorPayload.completed_pipe_count || 0)}`,
               `累计下管：${Number(operatorPayload.cumulative_pipe_count || 0)}`,
               operatorPayload.footage_m ? `进尺：${operatorPayload.footage_m}m` : "",
+              operatorPayload.cumulative_footage_m ? `累计顶进：${operatorPayload.cumulative_footage_m}m` : "",
+              operatorPayload.cutter_current_text ? `刀盘电流：${operatorPayload.cutter_current_text}` : "",
+              operatorPayload.cutter_frequency_hz ? `刀盘频率：${operatorPayload.cutter_frequency_hz}Hz` : "",
+              operatorPayload.chamber_pressure_mpa ? `泥仓压力：${operatorPayload.chamber_pressure_mpa}MPa` : "",
+              operatorPayload.main_thrust_text ? `顶力：${operatorPayload.main_thrust_text}` : "",
+              operatorPayload.horizontal_deviation_mm ? `水平偏差：${deviationText[operatorPayload.horizontal_deviation_direction] || operatorPayload.horizontal_deviation_direction || ""}${operatorPayload.horizontal_deviation_mm}mm` : "",
+              operatorPayload.vertical_deviation_mm ? `高程偏差：${deviationText[operatorPayload.vertical_deviation_direction] || operatorPayload.vertical_deviation_direction || ""}${operatorPayload.vertical_deviation_mm}mm` : "",
               operatorPayload.issue_summary ? `问题：${operatorPayload.issue_summary}` : "",
               operatorPayload.remark ? `备注：${operatorPayload.remark}` : ""
             ]

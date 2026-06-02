@@ -12,6 +12,20 @@ export type OperatorLog = {
   completed_pipe_count: number;
   cumulative_pipe_count: number;
   footage_m: number | null;
+  cumulative_footage_m: number | null;
+  main_thrust_mpa?: number | null;
+  main_thrust_text?: string | null;
+  chamber_pressure_mpa?: number | null;
+  cutter_current_a?: number | null;
+  cutter_current_text?: string | null;
+  cutter_frequency_hz?: number | null;
+  soil_type?: string | null;
+  deviation_direction?: string | null;
+  deviation_value_mm?: number | null;
+  horizontal_deviation_direction?: string | null;
+  horizontal_deviation_mm?: number | null;
+  vertical_deviation_direction?: string | null;
+  vertical_deviation_mm?: number | null;
   issue_summary: string | null;
   remark: string | null;
   operator_userid: string;
@@ -69,9 +83,11 @@ export const deleteOperatorLog = (id: number) =>
 
 export const smartFillOperatorLog = (data: {
   project_id: number;
+  section_id?: number | null;
   log_date: string;
   shift: string;
   completed_pipe_count?: number;
+  footage_m?: number;
 }) =>
   http.request<{
     success: boolean;
@@ -80,6 +96,7 @@ export const smartFillOperatorLog = (data: {
         weather: string;
         issue_summary: string;
         cumulative_pipe_count: number;
+        cumulative_footage_m: number;
       };
       task_id: number;
     };

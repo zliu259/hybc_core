@@ -49,6 +49,17 @@
   margin-top: 16rpx;
 }
 
+.field-row {
+  display: flex;
+  gap: 14rpx;
+  margin-top: 12rpx;
+}
+
+.field-half {
+  flex: 1;
+  min-width: 0;
+}
+
 .context-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;

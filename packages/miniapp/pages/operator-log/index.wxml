@@ -53,6 +53,11 @@
         <input class="number-input" type="digit" value="{{form.footage_m}}" data-key="footage_m" bindinput="onInput" disabled="{{busy}}" />
         <view class="unit">米</view>
       </view>
+      <view class="number-field wide">
+        <view class="number-label">📈 累计顶进</view>
+        <input class="number-input" type="digit" value="{{form.cumulative_footage_m}}" data-key="cumulative_footage_m" bindinput="onInput" disabled="{{busy}}" />
+        <view class="unit">米</view>
+      </view>
     </view>
 
     <view class="calc-hint">{{calcHint || '可填写本班或累计任一项，系统自动推算另一项'}}</view>
@@ -61,6 +66,40 @@
   <hy-panel-card title="3. 现场补充" subtitle="天气、异常和备注用于后续日报周报">
     <view class="label">🌦 天气</view>
     <input class="input" value="{{form.weather}}" data-key="weather" bindinput="onInput" disabled="{{busy}}" />
+
+    <view class="label">⚙️ 刀盘电流</view>
+    <input class="input" value="{{form.cutter_current_text}}" data-key="cutter_current_text" bindinput="onInput" disabled="{{busy}}" placeholder="例如 2*35A" />
+
+    <view class="field-row">
+      <view class="field-half">
+        <view class="label">刀盘频率(Hz)</view>
+        <input class="input" type="digit" value="{{form.cutter_frequency_hz}}" data-key="cutter_frequency_hz" bindinput="onInput" disabled="{{busy}}" />
+      </view>
+      <view class="field-half">
+        <view class="label">泥仓压力(MPa)</view>
+        <input class="input" type="digit" value="{{form.chamber_pressure_mpa}}" data-key="chamber_pressure_mpa" bindinput="onInput" disabled="{{busy}}" />
+      </view>
+    </view>
+
+    <view class="label">💪 顶力</view>
+    <input class="input" value="{{form.main_thrust_text}}" data-key="main_thrust_text" bindinput="onInput" disabled="{{busy}}" placeholder="例如 4×12MPa" />
+
+    <view class="field-row">
+      <view class="field-half">
+        <view class="label">水平偏差(mm)</view>
+        <input class="input" type="digit" value="{{form.horizontal_deviation_mm}}" data-key="horizontal_deviation_mm" bindinput="onInput" disabled="{{busy}}" />
+        <picker mode="selector" range="{{horizontalDeviationOptions}}" value="{{horizontalDeviationIndex}}" bindchange="onHorizontalDeviationChange" disabled="{{busy}}">
+          <view class="select-input compact">{{horizontalDeviationOptions[horizontalDeviationIndex]}}</view>
+        </picker>
+      </view>
+      <view class="field-half">
+        <view class="label">高程偏差(mm)</view>
+        <input class="input" type="digit" value="{{form.vertical_deviation_mm}}" data-key="vertical_deviation_mm" bindinput="onInput" disabled="{{busy}}" />
+        <picker mode="selector" range="{{verticalDeviationOptions}}" value="{{verticalDeviationIndex}}" bindchange="onVerticalDeviationChange" disabled="{{busy}}">
+          <view class="select-input compact">{{verticalDeviationOptions[verticalDeviationIndex]}}</view>
+        </picker>
+      </view>
+    </view>
 
     <view class="label">🧠 问题摘要</view>
     <textarea class="input textarea" value="{{form.issue_summary}}" data-key="issue_summary" bindinput="onInput" disabled="{{busy}}" />

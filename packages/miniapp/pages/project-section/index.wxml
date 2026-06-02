@@ -4,6 +4,8 @@
       <view class="section-title">{{section.section_name}}</view>
       <view class="section-sub">{{section.section_code}} · {{section.statusText}}</view>
       <view class="section-sub">标段里程：{{section.section_length || '-'}}m</view>
+      <view class="section-sub">管径/规格：{{section.pipeText}} · 坡度：{{section.slopeText}}</view>
+      <view class="section-sub">顶进方式：{{section.jackingMethodText}}</view>
       <view class="section-sub">负责人：{{section.manager_userid || '-'}}</view>
     </view>
   </hy-panel-card>
@@ -16,7 +18,10 @@
     <view wx:for="{{operatorLogs}}" wx:key="id" class="log-row">
       <view class="log-title">{{item.log_date}} · {{item.shiftText}}</view>
       <view class="log-sub">完成管节 {{item.completed_pipe_count}} · 累计管节 {{item.cumulative_pipe_count}}</view>
-      <view class="log-sub">当日顶进 {{item.footage_m || 0}}m · 填报人 {{item.operator_userid || '-'}}</view>
+      <view class="log-sub">当日顶进 {{item.footage_m || 0}}m · 累计顶进 {{item.cumulative_footage_m || '-'}}m</view>
+      <view class="log-sub">刀盘 {{item.cutter_current_text || '-'}} / {{item.cutter_frequency_hz || '-'}}Hz · 泥仓 {{item.chamber_pressure_mpa || '-'}}MPa</view>
+      <view class="log-sub">顶力 {{item.main_thrust_text || '-'}} · 偏差 {{item.deviationText}}</view>
+      <view class="log-sub">填报人 {{item.operator_userid || '-'}}</view>
       <view wx:if="{{item.issue_summary}}" class="log-sub">问题：{{item.issue_summary}}</view>
       <view class="toolbar">
         <t-button size="small" variant="outline" disabled="{{readonly}}" data-id="{{item.id}}" bindtap="goEditOperatorLog">编辑</t-button>

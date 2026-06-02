@@ -31,9 +31,12 @@ type SectionRow = {
   section_name: string;
   section_length: number | null;
   status: string;
+  design_slope: number | null;
+  pipe_diameter_mm: number | null;
   pipe_material: string | null;
   pipe_model: string | null;
   soil_type: string | null;
+  jacking_method: string | null;
   assigned_machine_type: string | null;
 };
 
@@ -46,6 +49,20 @@ type PublicOperatorLogRow = {
   completed_pipe_count: number;
   cumulative_pipe_count: number;
   footage_m: number | null;
+  cumulative_footage_m: number | null;
+  main_thrust_mpa: number | null;
+  main_thrust_text: string | null;
+  chamber_pressure_mpa: number | null;
+  cutter_current_a: number | null;
+  cutter_current_text: string | null;
+  cutter_frequency_hz: number | null;
+  soil_type: string | null;
+  deviation_direction: string | null;
+  deviation_value_mm: number | null;
+  horizontal_deviation_direction: string | null;
+  horizontal_deviation_mm: number | null;
+  vertical_deviation_direction: string | null;
+  vertical_deviation_mm: number | null;
   issue_summary: string | null;
   remark: string | null;
   status: string;
@@ -138,7 +155,8 @@ const requireActiveLink = async (
 
   const sectionRows = await env.DB.prepare(
     `SELECT id, project_id, section_code, section_name, section_length, status,
-            pipe_material, pipe_model, soil_type, assigned_machine_type
+            design_slope, pipe_diameter_mm, pipe_material, pipe_model, soil_type,
+            jacking_method, assigned_machine_type
        FROM project_section
       WHERE project_id = ?
       ORDER BY id DESC`
@@ -157,7 +175,11 @@ const loadAuditContext = async (
 ) => {
   const previousOperatorLogs = await env.DB.prepare(
     `SELECT id, section_id, log_date, shift, completed_pipe_count, cumulative_pipe_count,
-            footage_m, issue_summary, remark, operator_userid, source_type
+            footage_m, cumulative_footage_m, main_thrust_text, chamber_pressure_mpa,
+            cutter_current_text, cutter_frequency_hz, soil_type,
+            horizontal_deviation_direction, horizontal_deviation_mm,
+            vertical_deviation_direction, vertical_deviation_mm,
+            issue_summary, remark, operator_userid, source_type
        FROM operator_log
       WHERE project_id = ?
         AND status != 'deleted'
@@ -170,7 +192,11 @@ const loadAuditContext = async (
 
   const sameDayOperatorLogs = await env.DB.prepare(
     `SELECT id, section_id, log_date, shift, completed_pipe_count, cumulative_pipe_count,
-            footage_m, issue_summary, remark, operator_userid, source_type
+            footage_m, cumulative_footage_m, main_thrust_text, chamber_pressure_mpa,
+            cutter_current_text, cutter_frequency_hz, soil_type,
+            horizontal_deviation_direction, horizontal_deviation_mm,
+            vertical_deviation_direction, vertical_deviation_mm,
+            issue_summary, remark, operator_userid, source_type
        FROM operator_log
       WHERE project_id = ?
         AND log_date = ?
@@ -266,7 +292,12 @@ publicProjectLogRoutes.get("/:token/logs/operator", async (c) => {
 
   let sql = `SELECT l.id, l.section_id, l.log_date, l.shift, l.weather,
                     l.completed_pipe_count, l.cumulative_pipe_count, l.footage_m,
-                    l.issue_summary, l.remark, l.status, l.source_type,
+                    l.cumulative_footage_m, l.main_thrust_mpa, l.main_thrust_text,
+                    l.chamber_pressure_mpa, l.cutter_current_a, l.cutter_current_text,
+                    l.cutter_frequency_hz, l.soil_type, l.deviation_direction,
+                    l.deviation_value_mm, l.horizontal_deviation_direction,
+                    l.horizontal_deviation_mm, l.vertical_deviation_direction,
+                    l.vertical_deviation_mm, l.issue_summary, l.remark, l.status, l.source_type,
                     l.external_submitter_name, l.external_submitter_company,
                     s.section_code, s.section_name
                FROM operator_log l
@@ -313,7 +344,12 @@ publicProjectLogRoutes.get("/:token/logs/operator/latest", async (c) => {
   const row = await c.env.DB.prepare(
     `SELECT l.id, l.section_id, l.log_date, l.shift, l.weather,
             l.completed_pipe_count, l.cumulative_pipe_count, l.footage_m,
-            l.issue_summary, l.remark, l.status, l.source_type,
+            l.cumulative_footage_m, l.main_thrust_mpa, l.main_thrust_text,
+            l.chamber_pressure_mpa, l.cutter_current_a, l.cutter_current_text,
+            l.cutter_frequency_hz, l.soil_type, l.deviation_direction,
+            l.deviation_value_mm, l.horizontal_deviation_direction,
+            l.horizontal_deviation_mm, l.vertical_deviation_direction,
+            l.vertical_deviation_mm, l.issue_summary, l.remark, l.status, l.source_type,
             l.external_submitter_name, l.external_submitter_company,
             s.section_code, s.section_name
        FROM operator_log l

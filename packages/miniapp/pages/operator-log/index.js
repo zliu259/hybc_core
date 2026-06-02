@@ -36,6 +36,15 @@ Page({
       completed_pipe_count: "0",
       cumulative_pipe_count: "0",
       footage_m: "",
+      cumulative_footage_m: "",
+      cutter_current_text: "",
+      cutter_frequency_hz: "",
+      chamber_pressure_mpa: "",
+      main_thrust_text: "",
+      horizontal_deviation_direction: "right",
+      horizontal_deviation_mm: "",
+      vertical_deviation_direction: "high",
+      vertical_deviation_mm: "",
       weather: "",
       issue_summary: "",
       remark: ""
@@ -46,6 +55,12 @@ Page({
     submitLabel: "提交日志",
     shiftOptions: SHIFT_OPTIONS.map((item) => item.label),
     shiftIndex: SHIFT_OPTIONS.findIndex((item) => item.value === inferShiftByCurrentTime()),
+    horizontalDeviationOptions: ["左偏", "右偏"],
+    horizontalDeviationValues: ["left", "right"],
+    horizontalDeviationIndex: 1,
+    verticalDeviationOptions: ["高", "低"],
+    verticalDeviationValues: ["high", "low"],
+    verticalDeviationIndex: 0,
     sectionOptions: [],
     sectionNames: [],
     sectionIndex: -1,
@@ -167,9 +182,24 @@ Page({
         "form.completed_pipe_count": String(detail.completed_pipe_count || 0),
         "form.cumulative_pipe_count": String(detail.cumulative_pipe_count || 0),
         "form.footage_m": detail.footage_m === null || detail.footage_m === undefined ? "" : String(detail.footage_m),
+        "form.cumulative_footage_m": detail.cumulative_footage_m === null || detail.cumulative_footage_m === undefined ? "" : String(detail.cumulative_footage_m),
+        "form.cutter_current_text": detail.cutter_current_text || "",
+        "form.cutter_frequency_hz": detail.cutter_frequency_hz === null || detail.cutter_frequency_hz === undefined ? "" : String(detail.cutter_frequency_hz),
+        "form.chamber_pressure_mpa": detail.chamber_pressure_mpa === null || detail.chamber_pressure_mpa === undefined ? "" : String(detail.chamber_pressure_mpa),
+        "form.main_thrust_text": detail.main_thrust_text || "",
+        "form.horizontal_deviation_direction": detail.horizontal_deviation_direction || detail.deviation_direction || "right",
+        "form.horizontal_deviation_mm": detail.horizontal_deviation_mm === null || detail.horizontal_deviation_mm === undefined ? (detail.deviation_value_mm === null || detail.deviation_value_mm === undefined ? "" : String(detail.deviation_value_mm)) : String(detail.horizontal_deviation_mm),
+        "form.vertical_deviation_direction": detail.vertical_deviation_direction || "high",
+        "form.vertical_deviation_mm": detail.vertical_deviation_mm === null || detail.vertical_deviation_mm === undefined ? "" : String(detail.vertical_deviation_mm),
         "form.weather": detail.weather || "",
         "form.issue_summary": detail.issue_summary || "",
         "form.remark": detail.remark || ""
+      });
+      const horizontalIndex = this.data.horizontalDeviationValues.findIndex((item) => item === (detail.horizontal_deviation_direction || detail.deviation_direction));
+      const verticalIndex = this.data.verticalDeviationValues.findIndex((item) => item === detail.vertical_deviation_direction);
+      this.setData({
+        horizontalDeviationIndex: horizontalIndex < 0 ? 1 : horizontalIndex,
+        verticalDeviationIndex: verticalIndex < 0 ? 0 : verticalIndex
       });
 
       await this.loadSections(projectId, sectionId);
@@ -198,6 +228,25 @@ Page({
       sectionIndex: index,
       sectionId: section.id,
       "form.section_id": String(section.id)
+    });
+    this.refreshBaselineAndDerive();
+  },
+
+  onHorizontalDeviationChange(e) {
+    const index = Number(e.detail.value || 0);
+    const value = this.data.horizontalDeviationValues[index] || "right";
+    this.setData({
+      horizontalDeviationIndex: index,
+      "form.horizontal_deviation_direction": value
+    });
+  },
+
+  onVerticalDeviationChange(e) {
+    const index = Number(e.detail.value || 0);
+    const value = this.data.verticalDeviationValues[index] || "high";
+    this.setData({
+      verticalDeviationIndex: index,
+      "form.vertical_deviation_direction": value
     });
   },
 
@@ -270,14 +319,20 @@ Page({
         path: "/api/v1/log/operator/smart-fill",
         data: {
           project_id: Number(form.project_id),
+          section_id: form.section_id ? Number(form.section_id) : null,
           log_date: form.log_date,
           shift: form.shift,
-          completed_pipe_count: 0
+          completed_pipe_count: 0,
+          footage_m: form.footage_m === "" ? undefined : Number(form.footage_m)
         }
       });
       const prefill = ((res || {}).data || {}).prefill || {};
       const previousCumulative = Number(prefill.cumulative_pipe_count || 0);
-      this.setData({ previousCumulative });
+      const patch = { previousCumulative };
+      if (!form.cumulative_footage_m && prefill.cumulative_footage_m !== null && prefill.cumulative_footage_m !== undefined) {
+        patch["form.cumulative_footage_m"] = String(prefill.cumulative_footage_m);
+      }
+      this.setData(patch);
       if (this.data.lastEditedField === "cumulative") {
         this.deriveByCumulative();
       } else {
@@ -302,9 +357,11 @@ Page({
         path: "/api/v1/log/operator/smart-fill",
         data: {
           project_id: Number(form.project_id),
+          section_id: form.section_id ? Number(form.section_id) : null,
           log_date: form.log_date,
           shift: form.shift,
-          completed_pipe_count: Number(form.completed_pipe_count || 0)
+          completed_pipe_count: Number(form.completed_pipe_count || 0),
+          footage_m: form.footage_m === "" ? undefined : Number(form.footage_m)
         }
       });
       const prefill = ((res || {}).data || {}).prefill || {};
@@ -315,6 +372,7 @@ Page({
         "form.weather": prefill.weather || "",
         "form.issue_summary": prefill.issue_summary || "",
         "form.cumulative_pipe_count": String(cumulative),
+        "form.cumulative_footage_m": prefill.cumulative_footage_m === null || prefill.cumulative_footage_m === undefined ? form.cumulative_footage_m : String(prefill.cumulative_footage_m),
         calcHint: `AI预填完成：历史累计${previousCumulative}，当前累计${cumulative}`
       });
       wx.showToast({ title: "AI预填完成", icon: "success" });
@@ -346,6 +404,15 @@ Page({
         completed_pipe_count: Number(form.completed_pipe_count || 0),
         cumulative_pipe_count: Number(form.cumulative_pipe_count || 0),
         footage_m: form.footage_m === "" ? undefined : Number(form.footage_m),
+        cumulative_footage_m: form.cumulative_footage_m === "" ? undefined : Number(form.cumulative_footage_m),
+        cutter_current_text: form.cutter_current_text,
+        cutter_frequency_hz: form.cutter_frequency_hz === "" ? undefined : Number(form.cutter_frequency_hz),
+        chamber_pressure_mpa: form.chamber_pressure_mpa === "" ? undefined : Number(form.chamber_pressure_mpa),
+        main_thrust_text: form.main_thrust_text,
+        horizontal_deviation_direction: form.horizontal_deviation_direction,
+        horizontal_deviation_mm: form.horizontal_deviation_mm === "" ? undefined : Number(form.horizontal_deviation_mm),
+        vertical_deviation_direction: form.vertical_deviation_direction,
+        vertical_deviation_mm: form.vertical_deviation_mm === "" ? undefined : Number(form.vertical_deviation_mm),
         weather: form.weather,
         issue_summary: form.issue_summary,
         remark: form.remark,

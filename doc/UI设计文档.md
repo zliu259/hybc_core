@@ -582,7 +582,7 @@
 
 - 文件管理区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持项目相关人员上传并沉淀项目文件，文件可选绑定标段。
 - 项目信息编辑区：位于 `packages/web/src/views/project/workspace/project-panel.vue`，支持在工作区直接查看/编辑 `location_text`（具体位置）、`project_briefing`（项目交底）、`project_start_at`（开始时间）。
-- 标段详情弹窗：在项目面板“标段总览”点击“查看详情”进入，显示标段基础信息、该标段操作员日志、该标段贯通报告。
+- 标段详情弹窗：在项目面板“标段总览”点击“查看详情”进入，显示标段基础信息、该标段操作员日志、该标段贯通报告；标段基础信息需覆盖计划里程、管径/规格、设计坡度、顶进方式、管材、土质等项目/工作段级字段。
 - 项目日志聚合区：仅展示项目级管理员日志（项目相关内容），不再承载施工日志/标段贯通内容。
 - 标段内日志能力：施工日志与贯通报告统一下沉到“标段详情抽屉”，支持查看、新增与编辑。
 - 贯通报告标段绑定：贯通报告按 `section_id` 归集，并在对应标段详情下追溯。
@@ -592,7 +592,8 @@
 - 外包日志免登录页：`packages/web/src/views/public/project-log.vue`，路由 `/public/project-log/:token`，面向手机扫码填写同一项目下的标段施工日志与项目日志。
 - 外包日志类型选择：扫码页支持选择填写“项目日志”“标段日志”，可单选或同时选择；选择标段日志时必须选择对应标段，后端采纳时只生成已选择类型对应的正式日志记录。
 - 外包人员信息缓存：扫码页使用浏览器本地缓存保存填报人姓名、外包单位、联系电话，下次进入自动回填，不写入登录态。
-- 外包日志免登录页状态：`packages/web/src/views/public/project-log.vue` 扫码后先进入外包日志工作台，提供“查看项目日志 / 查看工作段日志 / 填写项目日志 / 填写工作段日志”四个入口；填写工作段日志页必须在选择工作段后展示上一条同工作段日志，辅助现场人员快速对比累计数、进尺、问题和备注；所有填写页继续提供加载等待、加载失败结果页、照片上传中提示、提交中表单禁用、防重复提交、提交成功编号与 AI 审计任务编号反馈。
+- 外包日志免登录页状态：`packages/web/src/views/public/project-log.vue` 扫码后先进入外包日志工作台，提供“查看项目日志 / 查看工作段日志 / 填写项目日志 / 填写工作段日志”四个入口；填写工作段日志页必须在选择工作段后展示上一条同工作段日志，辅助现场人员快速对比累计数、累计顶进、设备参数、偏差、问题和备注；所有填写页继续提供加载等待、加载失败结果页、照片上传中提示、提交中表单禁用、防重复提交、提交成功编号与 AI 审计任务编号反馈。
+- 施工日志字段口径：Web 施工日志中心 `packages/web/src/views/construction/operator-log/form.vue`、项目工作区标段抽屉 `packages/web/src/views/project/workspace/project-panel.vue`、外包扫码页 `packages/web/src/views/public/project-log.vue` 统一支持本班/累计下管、本班/累计顶进、刀盘电流、刀盘频率、泥仓压力、顶力、水平偏差、高程偏差、天气、问题摘要和备注。
 - 外包二维码有效性：除 `archived` 归档项目外，规划中、筹备中、施工中、收尾中等项目状态均允许生成和使用二维码；项目状态切换为 `archived` 时，后端自动撤销该项目有效二维码，公共扫码接口也实时拒绝归档项目。
 - 外包日志 API 指向：`/api/v1/project/:id/public-log-link`、`/api/v1/project/:id/external-log-submissions`、`/api/v1/public/project-log/:token`、`/api/v1/public/project-log/:token/submissions`。
 
@@ -745,14 +746,14 @@
   - 标段总览与新增入口：`packages/web/src/views/project/workspace/project-panel.vue`
 - 标段总览头部新增“新增标段”操作，面向 `super_admin/manager/site_manager`：
   - 弹窗字段：标段编码、标段名称、计划里程、初始状态、管材、管型、土质。
-  - 管材、管型使用手动输入。
+  - 管径、坡度、顶进方式、管材、管型使用手动输入。
   - 土质使用固定下拉多选：粘土、粉土、细砂、中砂、粗砂、细砾、中砾、粗砾、卵石、漂石、强风化岩石、中风化岩石、弱风化岩石、岩石；提交时按 `、` 拼接保存到现有文本字段。
   - 拟派设备、匹配评分、匹配说明属于 AI 自动填写字段，不在新增标段人工表单中展示。
   - 创建中按钮展示 loading，成功后关闭弹窗并刷新标段总览。
   - 必填校验：标段编码、标段名称。
 - 标段详情抽屉新增“标段基础信息”编辑区：
   - 文件：`packages/web/src/views/project/workspace/project-panel.vue`
-  - 允许修改标段名称、里程、管材、管型、土质；标段编码只读。
+  - 允许修改标段名称、里程、管径、坡度、顶进方式、管材、管型、土质；标段编码只读。
   - 土质与新增标段一致，支持固定选项多选并按 `、` 拼接保存。
   - 保存成功后同步刷新当前抽屉和标段总览卡片中的基础数据。
 - 标段总览补齐加载反馈与结果返回：
@@ -816,7 +817,7 @@
 - 我的Tab：作为个人工作台，放置个人概览、常用动作、个人申请时间线、证书预警；账号、认证、API 地址、刷新资料和退出登录统一进入 `packages/miniapp/pages/profile-settings/index`。
 - 账号与配置页：集中展示用户 ID、昵称、角色、认证方式、企微验证时间；支持本机 API 地址保存/恢复默认、刷新资料和退出登录。
 - 日志中心：仅负责日志角色入口分流（操作员/管理员）。
-- 操作员日志页：支持 AI 预填 + 提交，班次使用中文选择（白班/夜班），内部存储保持 day/night；页面布局按“施工上下文 / 本班核心数据 / 现场补充 / 提交动作”分段，突出本班下管、累计下管、当日顶进三项核心数字；项目选择仅允许非归档项目。
+- 操作员日志页：支持 AI 预填 + 提交，班次使用中文选择（白班/夜班），内部存储保持 day/night；页面布局按“施工上下文 / 本班核心数据 / 现场补充 / 提交动作”分段，突出本班下管、累计下管、当日顶进、累计顶进等核心数字，并在现场补充区填写刀盘电流/频率、泥仓压力、顶力、水平/高程偏差、天气、问题和备注；项目选择仅允许非归档项目。
 - 管理员日志页：支持拍照上传 + 结构化提交；页面布局按“日志上下文 / 现场概况 / 现场照片 / 提交动作”分段，照片状态必须在独立证据区显示；项目选择仅允许非归档项目。
 - 审批页：移动端单手可完成通过/拒绝/退回/转签，危险动作前需确认弹窗。
 - 报销页：支持个人报销草稿创建/编辑、绑定 UUID、附件上传（实物/电子）、提交与 OCR 状态追踪。
@@ -941,7 +942,7 @@
 
 - 工作台 `packages/miniapp/pages/index/index.wxml`：`t-button` + 统计卡片 + 分区入口网格。
 - 日志中心 `packages/miniapp/pages/log/index.wxml`：`hy-panel-card` + 快捷入口，完成角色分流。
-- 操作员日志 `packages/miniapp/pages/operator-log/index.wxml`：`hy-project-picker`、标段选择、日期选择、班次中文选择、核心数字卡片、`t-button`，强化“确认上下文-填写核心数字-补充异常-提交”。
+- 操作员日志 `packages/miniapp/pages/operator-log/index.wxml`：`hy-project-picker`、标段选择、日期选择、班次中文选择、核心数字卡片、设备参数/偏差补充区、`t-button`，强化“确认上下文-填写核心数字-补充异常-提交”。
 - 管理员日志 `packages/miniapp/pages/manager-log/index.wxml`：`hy-project-picker`、日期选择、标题/内容填写、照片证据状态卡、`t-button`。
 - 审批 `packages/miniapp/pages/approval/index.wxml`：`t-button`、`t-empty`，用于动作一致性与无数据空态。
 - 报销 `packages/miniapp/pages/reimbursement/index.wxml`：`t-notice-bar`、`t-tag`、`t-button`，用于链路状态可视化（OCR/PDF）。
@@ -1023,7 +1024,7 @@
 - 项目驾驶舱边界：`pages/manager-dashboard/index` 只做公司管理视角的跨项目总览、预警与最近日志聚合；最近日志必须展示“项目-标段/项目级”上下文，避免只看日期无法判断日志归属；单项目工作段、项目日志、财务摘要等深看能力继续由 `pages/project-list/index` -> `pages/project-detail/index` 承载。
 - 外部日志复核边界：`pages/project-detail/index` 仅对 `super_admin` 或项目负责人管理角色展示待复核入口；`pages/external-log-review/index` 复用 Web 端 `/api/v1/project/:id/external-log-submissions` 与 `/review` 接口，只处理 `needs_manual_review` 外部日志，支持放行写入正式日志或驳回。
 - 工作台与库房边界：项目/现场相关能力留在工作台与项目页，`pages/warehouse/index` 仅承载库房与资产管理能力。
-- 施工日志填写交互：`pages/operator-log/index` 使用“项目 -> 标段选择器”模式，禁止手输标段ID。
+- 施工日志填写交互：`pages/operator-log/index` 使用“项目 -> 标段选择器”模式，禁止手输标段ID；字段口径与 Web/外部扫码端一致，支持累计顶进、刀盘电流/频率、泥仓压力、顶力、水平偏差、高程偏差等现场参数。
 - 班次判定交互：默认按填写时间自动判定（晚间偏白班收尾、早间偏夜班收尾），仍允许手动改班次并提供一键重判。
 - 下管数量交互：允许填写“本班下管数”或“累计下管数”任一项，前端自动联动推算另一项，并展示历史累计提示。
 

@@ -50,6 +50,33 @@ const remove = async (row: OperatorLog) => {
   await loadData();
 };
 
+const shiftLabel = (shift: string) => {
+  if (shift === "day") return "白班";
+  if (shift === "night") return "夜班";
+  return shift || "-";
+};
+
+const deviationLabel = (row: OperatorLog) => {
+  const directionMap: Record<string, string> = {
+    left: "左偏",
+    right: "右偏",
+    high: "高",
+    low: "低"
+  };
+  const horizontalDirection =
+    row.horizontal_deviation_direction || row.deviation_direction || "";
+  const horizontalValue = row.horizontal_deviation_mm ?? row.deviation_value_mm;
+  const parts = [
+    horizontalDirection && typeof horizontalValue === "number"
+      ? `${directionMap[horizontalDirection] || horizontalDirection}${horizontalValue}mm`
+      : "",
+    row.vertical_deviation_direction && typeof row.vertical_deviation_mm === "number"
+      ? `${directionMap[row.vertical_deviation_direction] || row.vertical_deviation_direction}${row.vertical_deviation_mm}mm`
+      : ""
+  ].filter(Boolean);
+  return parts.length ? parts.join("，") : "-";
+};
+
 onMounted(async () => {
   await Promise.all([loadData(), loadProjects()]);
 });
@@ -92,8 +119,8 @@ onMounted(async () => {
       </el-form-item>
       <el-form-item label="班次">
         <el-select v-model="filters.shift" clearable style="width: 140px">
-          <el-option label="day" value="day" />
-          <el-option label="night" value="night" />
+          <el-option label="白班" value="day" />
+          <el-option label="夜班" value="night" />
         </el-select>
       </el-form-item>
       <el-form-item label="日期范围">
@@ -117,7 +144,9 @@ onMounted(async () => {
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="project_id" label="项目ID" width="90" />
       <el-table-column prop="log_date" label="日期" width="120" />
-      <el-table-column prop="shift" label="班次" width="90" />
+      <el-table-column label="班次" width="90">
+        <template #default="scope">{{ shiftLabel(scope.row.shift) }}</template>
+      </el-table-column>
       <el-table-column
         prop="completed_pipe_count"
         label="当班下管"
@@ -128,7 +157,27 @@ onMounted(async () => {
         label="累计下管"
         width="100"
       />
-      <el-table-column prop="footage_m" label="进尺(m)" width="100" />
+      <el-table-column prop="footage_m" label="本班顶进(m)" width="110" />
+      <el-table-column
+        prop="cumulative_footage_m"
+        label="累计顶进(m)"
+        width="110"
+      />
+      <el-table-column
+        prop="cutter_current_text"
+        label="刀盘电流"
+        width="110"
+        show-overflow-tooltip
+      />
+      <el-table-column
+        prop="main_thrust_text"
+        label="顶力"
+        width="110"
+        show-overflow-tooltip
+      />
+      <el-table-column label="偏差" width="130">
+        <template #default="scope">{{ deviationLabel(scope.row) }}</template>
+      </el-table-column>
       <el-table-column prop="operator_userid" label="填报人" width="120" />
       <el-table-column label="状态" width="100">
         <template #default="scope">{{

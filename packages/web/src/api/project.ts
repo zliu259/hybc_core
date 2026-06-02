@@ -25,9 +25,12 @@ export type ProjectSection = {
   section_name: string;
   section_length: number | null;
   status: string;
+  design_slope?: number | null;
+  pipe_diameter_mm?: number | null;
   pipe_material?: string | null;
   pipe_model?: string | null;
   soil_type?: string | null;
+  jacking_method?: string | null;
   assigned_machine_type?: string | null;
   ai_machine_match_note?: string | null;
   ai_machine_match_score?: number | null;
@@ -182,9 +185,12 @@ export const createProjectSection = (
     section_name: string;
     section_length?: number | null;
     status?: string;
+    design_slope?: number | null;
+    pipe_diameter_mm?: number | null;
     pipe_material?: string | null;
     pipe_model?: string | null;
     soil_type?: string | null;
+    jacking_method?: string | null;
     assigned_machine_type?: string | null;
     ai_machine_match_note?: string | null;
     ai_machine_match_score?: number | null;
@@ -204,9 +210,12 @@ export const updateProjectSection = (
     section_name?: string;
     section_length?: number | null;
     status?: string;
+    design_slope?: number | null;
+    pipe_diameter_mm?: number | null;
     pipe_material?: string | null;
     pipe_model?: string | null;
     soil_type?: string | null;
+    jacking_method?: string | null;
     assigned_machine_type?: string | null;
     ai_machine_match_note?: string | null;
     ai_machine_match_score?: number | null;

@@ -16,17 +16,63 @@ const shiftOrder = (shift: string): number => {
   return 3;
 };
 
-const getPreviousCumulative = async (
+type OperatorLogInput = {
+  project_id: number;
+  section_id?: number | null;
+  log_date: string;
+  shift: string;
+  weather?: string;
+  completed_pipe_count?: number;
+  cumulative_pipe_count?: number;
+  footage_m?: number;
+  cumulative_footage_m?: number;
+  main_thrust_mpa?: number;
+  main_thrust_text?: string;
+  chamber_pressure_mpa?: number;
+  cutter_current_a?: number;
+  cutter_current_text?: string;
+  cutter_frequency_hz?: number;
+  soil_type?: string;
+  deviation_direction?: string;
+  deviation_value_mm?: number;
+  horizontal_deviation_direction?: string;
+  horizontal_deviation_mm?: number;
+  vertical_deviation_direction?: string;
+  vertical_deviation_mm?: number;
+  issue_summary?: string;
+  remark?: string;
+  status?: string;
+};
+
+type OperatorLogPatchInput = Omit<Partial<OperatorLogInput>, "project_id">;
+
+const nullableText = (value: string | undefined): string | null => {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim();
+  return trimmed ? trimmed : null;
+};
+
+const nullableNumber = (value: number | undefined): number | null => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return null;
+  return value;
+};
+
+const getPreviousProgress = async (
   db: D1Database,
   projectId: number,
+  sectionId: number | null | undefined,
   logDate: string,
   shift: string,
   excludeId?: number
-): Promise<number> => {
+): Promise<{ cumulative_pipe_count: number; cumulative_footage_m: number }> => {
   const currentOrder = shiftOrder(shift);
   let sql =
-    "SELECT cumulative_pipe_count, log_date, shift FROM operator_log WHERE project_id = ? AND status != 'deleted'";
+    "SELECT cumulative_pipe_count, cumulative_footage_m, log_date, shift FROM operator_log WHERE project_id = ? AND status != 'deleted'";
   const params: Array<string | number> = [projectId];
+  if (sectionId) {
+    sql += " AND section_id = ?";
+    params.push(sectionId);
+  }
   if (excludeId) {
     sql += " AND id != ?";
     params.push(excludeId);
@@ -38,8 +84,43 @@ const getPreviousCumulative = async (
   const previous = await db
     .prepare(sql)
     .bind(...params)
-    .first<{ cumulative_pipe_count: number }>();
-  return previous?.cumulative_pipe_count ?? 0;
+    .first<{ cumulative_pipe_count: number | null; cumulative_footage_m: number | null }>();
+
+  if (!previous) {
+    return { cumulative_pipe_count: 0, cumulative_footage_m: 0 };
+  }
+
+  if (previous.cumulative_footage_m !== null && previous.cumulative_footage_m !== undefined) {
+    return {
+      cumulative_pipe_count: previous.cumulative_pipe_count ?? 0,
+      cumulative_footage_m: previous.cumulative_footage_m
+    };
+  }
+
+  let sumSql =
+    "SELECT IFNULL(SUM(IFNULL(footage_m, 0)), 0) AS cumulative_footage_m FROM operator_log WHERE project_id = ? AND status != 'deleted'";
+  const sumParams: Array<string | number> = [projectId];
+  if (sectionId) {
+    sumSql += " AND section_id = ?";
+    sumParams.push(sectionId);
+  }
+  if (excludeId) {
+    sumSql += " AND id != ?";
+    sumParams.push(excludeId);
+  }
+  sumSql +=
+    " AND (log_date < ? OR (log_date = ? AND CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END < ?))";
+  sumParams.push(logDate, logDate, currentOrder);
+
+  const footageSum = await db
+    .prepare(sumSql)
+    .bind(...sumParams)
+    .first<{ cumulative_footage_m: number }>();
+
+  return {
+    cumulative_pipe_count: previous.cumulative_pipe_count ?? 0,
+    cumulative_footage_m: footageSum?.cumulative_footage_m ?? 0
+  };
 };
 
 export const logRoutes = new Hono<{
@@ -122,19 +203,7 @@ logRoutes.post(
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const auth = c.get("auth");
-    const body = (await c.req.json()) as {
-      project_id: number;
-      section_id?: number;
-      log_date: string;
-      shift: string;
-      weather?: string;
-      completed_pipe_count?: number;
-      cumulative_pipe_count?: number;
-      footage_m?: number;
-      issue_summary?: string;
-      remark?: string;
-      status?: string;
-    };
+    const body = (await c.req.json()) as OperatorLogInput;
 
     if (!body.project_id || !body.log_date?.trim() || !body.shift?.trim()) {
       return c.json(
@@ -144,32 +213,57 @@ logRoutes.post(
     }
 
     const completed = Number(body.completed_pipe_count ?? 0);
-    const previous = await getPreviousCumulative(
+    const footage = Number(body.footage_m ?? 0);
+    const previous = await getPreviousProgress(
       c.env.DB,
       body.project_id,
+      body.section_id ?? null,
       body.log_date,
       body.shift
     );
-    const cumulative = Number(body.cumulative_pipe_count ?? previous + completed);
+    const cumulative = Number(
+      body.cumulative_pipe_count ?? previous.cumulative_pipe_count + completed
+    );
+    const cumulativeFootage = Number(
+      body.cumulative_footage_m ?? previous.cumulative_footage_m + footage
+    );
 
     const now = nowIso();
     const result = await c.env.DB.prepare(
       `INSERT INTO operator_log
         (project_id, section_id, log_date, shift, weather, completed_pipe_count, cumulative_pipe_count,
-         footage_m, issue_summary, remark, operator_userid, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         footage_m, cumulative_footage_m, main_thrust_mpa, main_thrust_text, chamber_pressure_mpa,
+         cutter_current_a, cutter_current_text, cutter_frequency_hz, soil_type,
+         deviation_direction, deviation_value_mm, horizontal_deviation_direction,
+         horizontal_deviation_mm, vertical_deviation_direction, vertical_deviation_mm,
+         issue_summary, remark, operator_userid, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
       .bind(
         body.project_id,
         body.section_id ?? null,
         body.log_date,
         body.shift,
-        body.weather ?? null,
+        nullableText(body.weather),
         completed,
         cumulative,
-        body.footage_m ?? null,
-        body.issue_summary ?? null,
-        body.remark ?? null,
+        nullableNumber(body.footage_m),
+        cumulativeFootage,
+        nullableNumber(body.main_thrust_mpa),
+        nullableText(body.main_thrust_text),
+        nullableNumber(body.chamber_pressure_mpa),
+        nullableNumber(body.cutter_current_a),
+        nullableText(body.cutter_current_text),
+        nullableNumber(body.cutter_frequency_hz),
+        nullableText(body.soil_type),
+        nullableText(body.deviation_direction),
+        nullableNumber(body.deviation_value_mm),
+        nullableText(body.horizontal_deviation_direction),
+        nullableNumber(body.horizontal_deviation_mm),
+        nullableText(body.vertical_deviation_direction),
+        nullableNumber(body.vertical_deviation_mm),
+        nullableText(body.issue_summary),
+        nullableText(body.remark),
         auth.sub,
         body.status ?? "draft",
         now,
@@ -206,18 +300,7 @@ logRoutes.put(
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
   async (c) => {
     const id = Number(c.req.param("id"));
-    const body = (await c.req.json()) as {
-      section_id?: number;
-      log_date?: string;
-      shift?: string;
-      weather?: string;
-      completed_pipe_count?: number;
-      cumulative_pipe_count?: number;
-      footage_m?: number;
-      issue_summary?: string;
-      remark?: string;
-      status?: string;
-    };
+    const body = (await c.req.json()) as OperatorLogPatchInput;
 
     const existing = await c.env.DB.prepare(
       "SELECT * FROM operator_log WHERE id = ? AND status != 'deleted'"
@@ -230,15 +313,24 @@ logRoutes.put(
 
     const nextLogDate = body.log_date ?? existing.log_date;
     const nextShift = body.shift ?? existing.shift;
+    const nextSectionId =
+      body.section_id === undefined ? existing.section_id : (body.section_id ?? null);
     const nextCompleted = Number(body.completed_pipe_count ?? existing.completed_pipe_count);
-    const previous = await getPreviousCumulative(
+    const nextFootage = Number(body.footage_m ?? existing.footage_m ?? 0);
+    const previous = await getPreviousProgress(
       c.env.DB,
       existing.project_id,
+      nextSectionId,
       nextLogDate,
       nextShift,
       id
     );
-    const nextCumulative = Number(body.cumulative_pipe_count ?? previous + nextCompleted);
+    const nextCumulative = Number(
+      body.cumulative_pipe_count ?? previous.cumulative_pipe_count + nextCompleted
+    );
+    const nextCumulativeFootage = Number(
+      body.cumulative_footage_m ?? previous.cumulative_footage_m + nextFootage
+    );
 
     await c.env.DB.prepare(
       `UPDATE operator_log SET
@@ -249,6 +341,20 @@ logRoutes.put(
          completed_pipe_count = ?,
          cumulative_pipe_count = ?,
          footage_m = COALESCE(?, footage_m),
+         cumulative_footage_m = ?,
+         main_thrust_mpa = COALESCE(?, main_thrust_mpa),
+         main_thrust_text = COALESCE(?, main_thrust_text),
+         chamber_pressure_mpa = COALESCE(?, chamber_pressure_mpa),
+         cutter_current_a = COALESCE(?, cutter_current_a),
+         cutter_current_text = COALESCE(?, cutter_current_text),
+         cutter_frequency_hz = COALESCE(?, cutter_frequency_hz),
+         soil_type = COALESCE(?, soil_type),
+         deviation_direction = COALESCE(?, deviation_direction),
+         deviation_value_mm = COALESCE(?, deviation_value_mm),
+         horizontal_deviation_direction = COALESCE(?, horizontal_deviation_direction),
+         horizontal_deviation_mm = COALESCE(?, horizontal_deviation_mm),
+         vertical_deviation_direction = COALESCE(?, vertical_deviation_direction),
+         vertical_deviation_mm = COALESCE(?, vertical_deviation_mm),
          issue_summary = COALESCE(?, issue_summary),
          remark = COALESCE(?, remark),
          status = COALESCE(?, status),
@@ -259,12 +365,26 @@ logRoutes.put(
         body.section_id ?? null,
         body.log_date ?? null,
         body.shift ?? null,
-        body.weather ?? null,
+        nullableText(body.weather),
         nextCompleted,
         nextCumulative,
-        body.footage_m ?? null,
-        body.issue_summary ?? null,
-        body.remark ?? null,
+        nullableNumber(body.footage_m),
+        nextCumulativeFootage,
+        nullableNumber(body.main_thrust_mpa),
+        nullableText(body.main_thrust_text),
+        nullableNumber(body.chamber_pressure_mpa),
+        nullableNumber(body.cutter_current_a),
+        nullableText(body.cutter_current_text),
+        nullableNumber(body.cutter_frequency_hz),
+        nullableText(body.soil_type),
+        nullableText(body.deviation_direction),
+        nullableNumber(body.deviation_value_mm),
+        nullableText(body.horizontal_deviation_direction),
+        nullableNumber(body.horizontal_deviation_mm),
+        nullableText(body.vertical_deviation_direction),
+        nullableNumber(body.vertical_deviation_mm),
+        nullableText(body.issue_summary),
+        nullableText(body.remark),
         body.status ?? null,
         nowIso(),
         id
@@ -295,9 +415,11 @@ logRoutes.post(
   async (c) => {
     const body = (await c.req.json()) as {
       project_id: number;
+      section_id?: number | null;
       log_date: string;
       shift: string;
       completed_pipe_count?: number;
+      footage_m?: number;
     };
     if (!body.project_id || !body.log_date?.trim() || !body.shift?.trim()) {
       return c.json(
@@ -306,14 +428,30 @@ logRoutes.post(
       );
     }
 
-    const previous = await c.env.DB.prepare(
-      "SELECT * FROM operator_log WHERE project_id = ? AND status != 'deleted' ORDER BY log_date DESC, CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, id DESC LIMIT 1"
-    )
-      .bind(body.project_id)
+    let previousSql = "SELECT * FROM operator_log WHERE project_id = ? AND status != 'deleted'";
+    const previousParams: Array<number> = [body.project_id];
+    if (body.section_id) {
+      previousSql += " AND section_id = ?";
+      previousParams.push(body.section_id);
+    }
+    previousSql +=
+      " ORDER BY log_date DESC, CASE shift WHEN 'day' THEN 1 WHEN 'night' THEN 2 ELSE 3 END DESC, id DESC LIMIT 1";
+
+    const previous = await c.env.DB.prepare(previousSql)
+      .bind(...previousParams)
       .first<OperatorLog>();
 
     const completed = Number(body.completed_pipe_count ?? 0);
-    const cumulative = Number((previous?.cumulative_pipe_count ?? 0) + completed);
+    const footage = Number(body.footage_m ?? 0);
+    const previousProgress = await getPreviousProgress(
+      c.env.DB,
+      body.project_id,
+      body.section_id ?? null,
+      body.log_date,
+      body.shift
+    );
+    const cumulative = Number(previousProgress.cumulative_pipe_count + completed);
+    const cumulativeFootage = Number(previousProgress.cumulative_footage_m + footage);
 
     const task = await createTask(c.env, {
       task_type: "log_smart_fill",
@@ -321,11 +459,14 @@ logRoutes.post(
       biz_id: body.project_id,
       payload: {
         project_id: body.project_id,
+        section_id: body.section_id ?? null,
         log_date: body.log_date,
         shift: body.shift,
         previous_log: previous,
         completed_pipe_count: completed,
-        cumulative_pipe_count: cumulative
+        cumulative_pipe_count: cumulative,
+        footage_m: footage,
+        cumulative_footage_m: cumulativeFootage
       },
       priority: 5
     });
@@ -339,7 +480,8 @@ logRoutes.post(
         prefill: {
           weather: previous?.weather ?? "",
           issue_summary: previous?.issue_summary ?? "",
-          cumulative_pipe_count: cumulative
+          cumulative_pipe_count: cumulative,
+          cumulative_footage_m: cumulativeFootage
         },
         task_id: task.id
       }

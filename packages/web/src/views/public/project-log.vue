@@ -65,6 +65,15 @@ const form = ref({
   completed_pipe_count: 0,
   cumulative_pipe_count: 0,
   footage_m: undefined as number | undefined,
+  cumulative_footage_m: undefined as number | undefined,
+  cutter_current_text: "",
+  cutter_frequency_hz: undefined as number | undefined,
+  chamber_pressure_mpa: undefined as number | undefined,
+  main_thrust_text: "",
+  horizontal_deviation_direction: "",
+  horizontal_deviation_mm: undefined as number | undefined,
+  vertical_deviation_direction: "",
+  vertical_deviation_mm: undefined as number | undefined,
   soil_type: "",
   issue_summary: "",
   remark: "",
@@ -78,6 +87,21 @@ const shiftOptions = [
   { label: "白班", value: "day" },
   { label: "夜班", value: "night" }
 ];
+
+const horizontalDeviationOptions = [
+  { label: "左偏", value: "left" },
+  { label: "右偏", value: "right" }
+];
+
+const verticalDeviationOptions = [
+  { label: "高", value: "high" },
+  { label: "低", value: "low" }
+];
+
+const deviationDirectionLabel = (value?: string | null) => {
+  const options = [...horizontalDeviationOptions, ...verticalDeviationOptions];
+  return options.find(item => item.value === value)?.label || value || "";
+};
 
 const modeTitle = computed(() => {
   if (mode.value === "view_project") return "查看项目日志";
@@ -113,10 +137,44 @@ const sectionLabel = (section?: PublicProjectLogSection | null) => {
   return `${section.section_code} ${section.section_name}`;
 };
 
+const selectedSection = computed(() =>
+  sections.value.find(item => item.id === form.value.section_id)
+);
+
+const sectionMetaText = (section?: PublicProjectLogSection | null) => {
+  if (!section) return "";
+  return [
+    section.pipe_model ||
+      (section.pipe_diameter_mm ? `DN${section.pipe_diameter_mm}` : ""),
+    section.section_length ? `总长${section.section_length}m` : "",
+    section.design_slope !== null && section.design_slope !== undefined
+      ? `坡度${section.design_slope}%`
+      : "",
+    section.jacking_method ? `顶进方式：${section.jacking_method}` : ""
+  ]
+    .filter(Boolean)
+    .join(" · ");
+};
+
 const shiftLabel = (shift?: string | null) => {
   if (shift === "day") return "白班";
   if (shift === "night") return "夜班";
   return shift || "-";
+};
+
+const deviationLabel = (item: PublicOperatorLogItem) => {
+  const horizontalDirection =
+    item.horizontal_deviation_direction || item.deviation_direction || "";
+  const horizontalValue = item.horizontal_deviation_mm ?? item.deviation_value_mm;
+  const parts = [
+    horizontalDirection && typeof horizontalValue === "number"
+      ? `${deviationDirectionLabel(horizontalDirection)}${horizontalValue}mm`
+      : "",
+    item.vertical_deviation_direction && typeof item.vertical_deviation_mm === "number"
+      ? `${deviationDirectionLabel(item.vertical_deviation_direction)}${item.vertical_deviation_mm}mm`
+      : ""
+  ].filter(Boolean);
+  return parts.length ? parts.join("，") : "-";
 };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -249,6 +307,8 @@ const loadLatestOperatorLog = async () => {
       !form.value.completed_pipe_count
     ) {
       form.value.cumulative_pipe_count = result.data.cumulative_pipe_count;
+      form.value.cumulative_footage_m =
+        result.data.cumulative_footage_m ?? undefined;
     }
   } catch (error) {
     message(getErrorMessage(error, "上一条工作段日志加载失败"), {
@@ -333,6 +393,26 @@ const removePhoto = (index: number) => {
 const usePreviousWeather = () => {
   if (!latestOperatorLog.value) return;
   form.value.weather = latestOperatorLog.value.weather || form.value.weather;
+  form.value.cutter_current_text =
+    latestOperatorLog.value.cutter_current_text || form.value.cutter_current_text;
+  form.value.cutter_frequency_hz =
+    latestOperatorLog.value.cutter_frequency_hz ?? form.value.cutter_frequency_hz;
+  form.value.chamber_pressure_mpa =
+    latestOperatorLog.value.chamber_pressure_mpa ?? form.value.chamber_pressure_mpa;
+  form.value.main_thrust_text =
+    latestOperatorLog.value.main_thrust_text || form.value.main_thrust_text;
+  form.value.horizontal_deviation_direction =
+    latestOperatorLog.value.horizontal_deviation_direction ||
+    form.value.horizontal_deviation_direction;
+  form.value.horizontal_deviation_mm =
+    latestOperatorLog.value.horizontal_deviation_mm ??
+    form.value.horizontal_deviation_mm;
+  form.value.vertical_deviation_direction =
+    latestOperatorLog.value.vertical_deviation_direction ||
+    form.value.vertical_deviation_direction;
+  form.value.vertical_deviation_mm =
+    latestOperatorLog.value.vertical_deviation_mm ??
+    form.value.vertical_deviation_mm;
   form.value.issue_summary =
     latestOperatorLog.value.issue_summary || form.value.issue_summary;
   form.value.remark = latestOperatorLog.value.remark || form.value.remark;
@@ -342,6 +422,8 @@ const usePreviousCumulative = () => {
   if (!latestOperatorLog.value) return;
   form.value.cumulative_pipe_count =
     latestOperatorLog.value.cumulative_pipe_count;
+  form.value.cumulative_footage_m =
+    latestOperatorLog.value.cumulative_footage_m ?? undefined;
 };
 
 const submit = async () => {
@@ -390,6 +472,17 @@ const submit = async () => {
         completed_pipe_count: form.value.completed_pipe_count,
         cumulative_pipe_count: form.value.cumulative_pipe_count,
         footage_m: form.value.footage_m,
+        cumulative_footage_m: form.value.cumulative_footage_m,
+        cutter_current_text: form.value.cutter_current_text.trim() || undefined,
+        cutter_frequency_hz: form.value.cutter_frequency_hz,
+        chamber_pressure_mpa: form.value.chamber_pressure_mpa,
+        main_thrust_text: form.value.main_thrust_text.trim() || undefined,
+        horizontal_deviation_direction:
+          form.value.horizontal_deviation_direction || undefined,
+        horizontal_deviation_mm: form.value.horizontal_deviation_mm,
+        vertical_deviation_direction:
+          form.value.vertical_deviation_direction || undefined,
+        vertical_deviation_mm: form.value.vertical_deviation_mm,
         soil_type: form.value.soil_type.trim() || undefined,
         issue_summary: form.value.issue_summary.trim() || undefined,
         remark: form.value.remark.trim() || undefined
@@ -635,6 +728,13 @@ onMounted(() => {
             :value="item.id"
           />
         </el-select>
+        <div class="section-meta">
+          {{
+            sectionMetaText(
+              sections.find(item => item.id === selectedViewSectionId)
+            ) || "该工作段暂无补充参数"
+          }}
+        </div>
         <div v-loading="operatorLogLoading" class="log-list">
           <el-empty v-if="!operatorLogs.length" description="暂无工作段日志" />
           <article v-for="item in operatorLogs" :key="item.id" class="log-card">
@@ -655,7 +755,24 @@ onMounted(() => {
                 <small>本班进尺</small>
                 <strong>{{ item.footage_m ?? "-" }}m</strong>
               </div>
+              <div>
+                <small>累计顶进</small>
+                <strong>{{ item.cumulative_footage_m ?? "-" }}m</strong>
+              </div>
+              <div>
+                <small>泥仓压力</small>
+                <strong>{{ item.chamber_pressure_mpa ?? "-" }}MPa</strong>
+              </div>
+              <div>
+                <small>偏差</small>
+                <strong>{{ deviationLabel(item) }}</strong>
+              </div>
             </div>
+            <p class="log-card__muted">
+              刀盘电流：{{ item.cutter_current_text || "-" }} · 刀盘频率：{{
+                item.cutter_frequency_hz ?? "-"
+              }}Hz · 顶力：{{ item.main_thrust_text || "-" }}
+            </p>
             <p v-if="item.issue_summary" class="log-card__text">
               {{ item.issue_summary }}
             </p>
@@ -721,6 +838,11 @@ onMounted(() => {
                   :value="item.id"
                 />
               </el-select>
+              <div class="section-meta">
+                {{
+                  sectionMetaText(selectedSection) || "该工作段暂无补充参数"
+                }}
+              </div>
             </el-form-item>
             <el-form-item label="日志日期" required>
               <el-date-picker
@@ -770,6 +892,22 @@ onMounted(() => {
                   <small>本班进尺</small>
                   <strong>{{ latestOperatorLog.footage_m ?? "-" }}m</strong>
                 </div>
+                <div>
+                  <small>累计顶进</small>
+                  <strong>{{
+                    latestOperatorLog.cumulative_footage_m ?? "-"
+                  }}m</strong>
+                </div>
+                <div>
+                  <small>偏差</small>
+                  <strong>{{ deviationLabel(latestOperatorLog) }}</strong>
+                </div>
+                <div>
+                  <small>泥仓压力</small>
+                  <strong>{{
+                    latestOperatorLog.chamber_pressure_mpa ?? "-"
+                  }}MPa</strong>
+                </div>
               </div>
               <p v-if="latestOperatorLog.issue_summary" class="log-card__text">
                 {{ latestOperatorLog.issue_summary }}
@@ -782,7 +920,7 @@ onMounted(() => {
                   沿用累计下管
                 </el-button>
                 <el-button @click="usePreviousWeather">
-                  沿用天气/问题
+                  沿用现场参数
                 </el-button>
               </div>
             </template>
@@ -817,6 +955,102 @@ onMounted(() => {
                     :precision="2"
                     style="width: 100%"
                   />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="8">
+                <el-form-item label="累计顶进(m)">
+                  <el-input-number
+                    v-model="form.cumulative_footage_m"
+                    :min="0"
+                    :precision="2"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="刀盘电流">
+                  <el-input
+                    v-model="form.cutter_current_text"
+                    placeholder="例如 2*35A"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="刀盘频率(Hz)">
+                  <el-input-number
+                    v-model="form.cutter_frequency_hz"
+                    :min="0"
+                    :precision="2"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="泥仓压力(MPa)">
+                  <el-input-number
+                    v-model="form.chamber_pressure_mpa"
+                    :min="0"
+                    :precision="3"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="顶力">
+                  <el-input
+                    v-model="form.main_thrust_text"
+                    placeholder="例如 4×12MPa"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="12">
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="水平偏差">
+                  <el-input-number
+                    v-model="form.horizontal_deviation_mm"
+                    :min="0"
+                    :precision="1"
+                    style="width: 48%"
+                  />
+                  <el-select
+                    v-model="form.horizontal_deviation_direction"
+                    clearable
+                    style="width: 48%; margin-left: 4%"
+                  >
+                    <el-option
+                      v-for="opt in horizontalDeviationOptions"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
+                  </el-select>
+                </el-form-item>
+              </el-col>
+              <el-col :xs="24" :sm="12">
+                <el-form-item label="高程偏差">
+                  <el-input-number
+                    v-model="form.vertical_deviation_mm"
+                    :min="0"
+                    :precision="1"
+                    style="width: 48%"
+                  />
+                  <el-select
+                    v-model="form.vertical_deviation_direction"
+                    clearable
+                    style="width: 48%; margin-left: 4%"
+                  >
+                    <el-option
+                      v-for="opt in verticalDeviationOptions"
+                      :key="opt.value"
+                      :label="opt.label"
+                      :value="opt.value"
+                    />
+                  </el-select>
                 </el-form-item>
               </el-col>
             </el-row>
@@ -1052,6 +1286,14 @@ onMounted(() => {
 .section-select {
   width: 100%;
   margin-bottom: 14px;
+}
+
+.section-meta {
+  width: 100%;
+  margin: 8px 0 14px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: #64748b;
 }
 
 .log-list {

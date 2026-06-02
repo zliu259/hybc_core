@@ -412,7 +412,20 @@ class LocalRulesProvider(AiProvider):
             if isinstance(previous_cumulative_raw, (int, float, str))
             else 0.0
         )
+        footage_raw = payload.get("footage_m", 0)
+        footage = (
+            float(footage_raw)
+            if isinstance(footage_raw, (int, float, str))
+            else 0.0
+        )
+        previous_footage_raw = previous.get("cumulative_footage_m", 0)
+        previous_footage = (
+            float(previous_footage_raw)
+            if isinstance(previous_footage_raw, (int, float, str))
+            else 0.0
+        )
         cumulative = previous_cumulative + completed
+        cumulative_footage = previous_footage + footage
         return json.dumps(
             {
                 "prefill": {
@@ -420,8 +433,9 @@ class LocalRulesProvider(AiProvider):
                     "issue_summary": previous.get("issue_summary")
                     or "延续上一班次关注事项",
                     "cumulative_pipe_count": round(cumulative, 2),
+                    "cumulative_footage_m": round(cumulative_footage, 2),
                 },
-                "summary": "已按上一班次自动预填并计算累计下管数量。",
+                "summary": "已按上一班次自动预填并计算累计下管和累计顶进。",
             },
             ensure_ascii=False,
         )
@@ -473,11 +487,20 @@ class LocalRulesProvider(AiProvider):
         issues: list[dict[str, str]] = []
         completed = as_float(operator.get("completed_pipe_count"))
         cumulative = as_float(operator.get("cumulative_pipe_count"))
+        footage = as_float(operator.get("footage_m"))
+        cumulative_footage = as_float(operator.get("cumulative_footage_m"))
         if cumulative < completed:
             issues.append(
                 {
                     "severity": "high",
                     "message": "累计下管数量小于本班次下管数量，需要人工核对。",
+                }
+            )
+        if cumulative_footage and cumulative_footage < footage:
+            issues.append(
+                {
+                    "severity": "high",
+                    "message": "累计顶进小于本班顶进，需要人工核对。",
                 }
             )
 
@@ -494,6 +517,26 @@ class LocalRulesProvider(AiProvider):
                 {
                     "severity": "high",
                     "message": "累计下管数量低于最近历史记录，需要人工核对连续性。",
+                }
+            )
+
+        previous_footage = None
+        for item in previous:
+            if isinstance(item, dict):
+                value = item.get("cumulative_footage_m")
+                parsed = as_float(value)
+                if parsed > 0:
+                    previous_footage = parsed
+                    break
+        if (
+            previous_footage is not None
+            and cumulative_footage
+            and cumulative_footage < previous_footage
+        ):
+            issues.append(
+                {
+                    "severity": "high",
+                    "message": "累计顶进低于最近历史记录，需要人工核对连续性。",
                 }
             )
 

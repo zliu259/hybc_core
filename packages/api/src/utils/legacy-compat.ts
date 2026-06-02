@@ -23,7 +23,9 @@ const normalizeShift = (value: unknown): string | undefined => {
   return undefined;
 };
 
-const suggestMachineByDiameter = (diameterMm: number | undefined): { type: string; score: number } => {
+const suggestMachineByDiameter = (
+  diameterMm: number | undefined
+): { type: string; score: number } => {
   if (!diameterMm) return { type: "通用泥水平衡顶管机", score: 0.4 };
   if (diameterMm <= 800) return { type: "小型土压平衡顶管机", score: 0.7 };
   if (diameterMm <= 1200) return { type: "中型泥水平衡顶管机", score: 0.78 };
@@ -121,8 +123,7 @@ export const hydrateLegacySection = (input: Row): Row => {
     const suggestion = suggestMachineByDiameter(diameter);
     const soil = asText(row.soil_type);
     const diameterText = diameter ? `${diameter}mm` : "未知管径";
-    row.ai_machine_match_note =
-      `基于管径(${diameterText})${soil ? `与土质(${soil})` : ""}的启发式匹配，建议机型：${suggestion.type}`;
+    row.ai_machine_match_note = `基于管径(${diameterText})${soil ? `与土质(${soil})` : ""}的启发式匹配，建议机型：${suggestion.type}`;
     usedCompat = true;
   }
 
@@ -170,6 +171,38 @@ export const hydrateLegacyOperatorLog = (input: Row): Row => {
     const fallback = asText(row.section_text) ?? asText(row.soil_type);
     if (fallback) {
       row.issue_summary = fallback;
+      usedCompat = true;
+    }
+  }
+
+  if (!asText(row.cutter_current_text)) {
+    const current = asNumber(row.cutter_current_a);
+    if (current !== undefined) {
+      row.cutter_current_text = `${current}A`;
+      usedCompat = true;
+    }
+  }
+
+  if (!asText(row.main_thrust_text)) {
+    const thrust = asNumber(row.main_thrust_mpa);
+    if (thrust !== undefined) {
+      row.main_thrust_text = `${thrust}MPa`;
+      usedCompat = true;
+    }
+  }
+
+  if (!asText(row.horizontal_deviation_direction)) {
+    const direction = asText(row.deviation_direction);
+    if (direction) {
+      row.horizontal_deviation_direction = direction;
+      usedCompat = true;
+    }
+  }
+
+  if (asNumber(row.horizontal_deviation_mm) === undefined) {
+    const value = asNumber(row.deviation_value_mm);
+    if (value !== undefined) {
+      row.horizontal_deviation_mm = value;
       usedCompat = true;
     }
   }

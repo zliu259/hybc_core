@@ -15,9 +15,12 @@ export type PublicProjectLogSection = {
   section_name: string;
   section_length: number | null;
   status: string;
+  design_slope: number | null;
+  pipe_diameter_mm: number | null;
   pipe_material: string | null;
   pipe_model: string | null;
   soil_type: string | null;
+  jacking_method: string | null;
   assigned_machine_type: string | null;
 };
 
@@ -30,6 +33,20 @@ export type PublicOperatorLogItem = {
   completed_pipe_count: number;
   cumulative_pipe_count: number;
   footage_m: number | null;
+  cumulative_footage_m: number | null;
+  main_thrust_mpa: number | null;
+  main_thrust_text: string | null;
+  chamber_pressure_mpa: number | null;
+  cutter_current_a: number | null;
+  cutter_current_text: string | null;
+  cutter_frequency_hz: number | null;
+  soil_type: string | null;
+  deviation_direction: string | null;
+  deviation_value_mm: number | null;
+  horizontal_deviation_direction: string | null;
+  horizontal_deviation_mm: number | null;
+  vertical_deviation_direction: string | null;
+  vertical_deviation_mm: number | null;
   issue_summary: string | null;
   remark: string | null;
   status: string;

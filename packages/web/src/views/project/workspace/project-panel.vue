@@ -85,9 +85,12 @@ const sectionBaseSaving = ref(false);
 const sectionBaseForm = ref({
   section_name: "",
   section_length: undefined as number | undefined,
+  design_slope: undefined as number | undefined,
+  pipe_diameter_mm: undefined as number | undefined,
   pipe_material: "",
   pipe_model: "",
-  soil_type: [] as string[]
+  soil_type: [] as string[],
+  jacking_method: ""
 });
 
 const operatorLogDetailVisible = ref(false);
@@ -115,9 +118,12 @@ const createSectionForm = ref({
   section_name: "",
   section_length: undefined as number | undefined,
   status: "planning",
+  design_slope: undefined as number | undefined,
+  pipe_diameter_mm: undefined as number | undefined,
   pipe_material: "",
   pipe_model: "",
-  soil_type: [] as string[]
+  soil_type: [] as string[],
+  jacking_method: ""
 });
 
 const soilTypeOptions = [
@@ -158,6 +164,15 @@ const operatorLogForm = ref({
   completed_pipe_count: 0,
   cumulative_pipe_count: 0,
   footage_m: undefined as number | undefined,
+  cumulative_footage_m: undefined as number | undefined,
+  main_thrust_text: "",
+  chamber_pressure_mpa: undefined as number | undefined,
+  cutter_current_text: "",
+  cutter_frequency_hz: undefined as number | undefined,
+  horizontal_deviation_direction: "",
+  horizontal_deviation_mm: undefined as number | undefined,
+  vertical_deviation_direction: "",
+  vertical_deviation_mm: undefined as number | undefined,
   issue_summary: "",
   remark: ""
 });
@@ -267,12 +282,54 @@ const sectionStatusOptions = computed(() => [
 
 const sectionProgressMilestones = [0, 25, 50, 75, 100];
 
+const deviationDirectionOptions = [
+  { value: "left", label: "左偏" },
+  { value: "right", label: "右偏" },
+  { value: "high", label: "高" },
+  { value: "low", label: "低" }
+];
+
+const horizontalDeviationOptions = deviationDirectionOptions.filter(item =>
+  ["left", "right"].includes(item.value)
+);
+
+const verticalDeviationOptions = deviationDirectionOptions.filter(item =>
+  ["high", "low"].includes(item.value)
+);
+
+const deviationDirectionLabel = (value: string | null | undefined) => {
+  if (!value) return "";
+  return deviationDirectionOptions.find(item => item.value === value)?.label || value;
+};
+
+const formatDeviation = (row: OperatorLog | null | undefined) => {
+  if (!row) return "-";
+  const horizontalDirection =
+    row.horizontal_deviation_direction || row.deviation_direction || "";
+  const horizontalValue =
+    row.horizontal_deviation_mm ?? row.deviation_value_mm ?? null;
+  const parts = [
+    horizontalDirection && typeof horizontalValue === "number"
+      ? `${deviationDirectionLabel(horizontalDirection)}${horizontalValue}mm`
+      : "",
+    row.vertical_deviation_direction && typeof row.vertical_deviation_mm === "number"
+      ? `${deviationDirectionLabel(row.vertical_deviation_direction)}${row.vertical_deviation_mm}mm`
+      : ""
+  ].filter(Boolean);
+  return parts.length ? parts.join("，") : "-";
+};
+
+const resolveAdvancedFootage = (logs: OperatorLog[]) => {
+  const cumulativeValues = logs
+    .map(item => item.cumulative_footage_m)
+    .filter((value): value is number => typeof value === "number");
+  if (cumulativeValues.length > 0) return Math.max(...cumulativeValues);
+  return logs.reduce((sum, item) => sum + (item.footage_m || 0), 0);
+};
+
 const sectionDrawerProgress = computed(() => {
   const sectionLength = currentSection.value?.section_length || 0;
-  const advanced = sectionOperatorLogs.value.reduce(
-    (sum, item) => sum + (item.footage_m || 0),
-    0
-  );
+  const advanced = resolveAdvancedFootage(sectionOperatorLogs.value);
   const percent =
     sectionLength > 0 ? Math.min(100, (advanced / sectionLength) * 100) : 0;
   const remaining = Math.max(0, sectionLength - advanced);
@@ -297,10 +354,7 @@ const sectionMetrics = computed(() => {
     const sectionLogs = operatorLogs.value.filter(
       item => item.section_id === section.id
     );
-    const footage = sectionLogs.reduce(
-      (sum, item) => sum + (item.footage_m || 0),
-      0
-    );
+    const footage = resolveAdvancedFootage(sectionLogs);
     const sectionLength = section.section_length || 0;
     const progress =
       sectionLength > 0 ? Math.min(100, (footage / sectionLength) * 100) : 0;
@@ -442,9 +496,18 @@ const syncSectionBaseForm = (section: ProjectSection) => {
       section.section_length === null || section.section_length === undefined
         ? undefined
         : section.section_length,
+    design_slope:
+      section.design_slope === null || section.design_slope === undefined
+        ? undefined
+        : section.design_slope,
+    pipe_diameter_mm:
+      section.pipe_diameter_mm === null || section.pipe_diameter_mm === undefined
+        ? undefined
+        : section.pipe_diameter_mm,
     pipe_material: section.pipe_material || "",
     pipe_model: section.pipe_model || "",
-    soil_type: parseSoilTypes(section.soil_type)
+    soil_type: parseSoilTypes(section.soil_type),
+    jacking_method: section.jacking_method || ""
   };
 };
 
@@ -544,11 +607,14 @@ const saveSectionBase = async () => {
     const payload = {
       section_name: sectionName,
       section_length: formData.section_length ?? null,
+      design_slope: formData.design_slope ?? null,
+      pipe_diameter_mm: formData.pipe_diameter_mm ?? null,
       pipe_material: formData.pipe_material.trim() || null,
       pipe_model: formData.pipe_model.trim() || null,
       soil_type: formData.soil_type.length
         ? formData.soil_type.join("、")
-        : null
+        : null,
+      jacking_method: formData.jacking_method.trim() || null
     };
     await updateProjectSection(
       props.projectId,
@@ -582,9 +648,12 @@ const resetCreateSectionForm = () => {
     section_name: "",
     section_length: undefined,
     status: "planning",
+    design_slope: undefined,
+    pipe_diameter_mm: undefined,
     pipe_material: "",
     pipe_model: "",
-    soil_type: []
+    soil_type: [],
+    jacking_method: ""
   };
 };
 
@@ -613,11 +682,14 @@ const submitCreateSection = async () => {
       section_name: sectionName,
       section_length: formData.section_length ?? null,
       status: formData.status,
+      design_slope: formData.design_slope ?? null,
+      pipe_diameter_mm: formData.pipe_diameter_mm ?? null,
       pipe_material: formData.pipe_material.trim() || null,
       pipe_model: formData.pipe_model.trim() || null,
       soil_type: formData.soil_type.length
         ? formData.soil_type.join("、")
-        : null
+        : null,
+      jacking_method: formData.jacking_method.trim() || null
     });
     message("标段已创建", { type: "success" });
     createSectionDialogVisible.value = false;
@@ -648,6 +720,15 @@ const resetOperatorLogForm = () => {
     completed_pipe_count: 0,
     cumulative_pipe_count: 0,
     footage_m: undefined,
+    cumulative_footage_m: undefined,
+    main_thrust_text: "",
+    chamber_pressure_mpa: undefined,
+    cutter_current_text: "",
+    cutter_frequency_hz: undefined,
+    horizontal_deviation_direction: "",
+    horizontal_deviation_mm: undefined,
+    vertical_deviation_direction: "",
+    vertical_deviation_mm: undefined,
     issue_summary: "",
     remark: ""
   };
@@ -668,6 +749,23 @@ const openEditOperatorLog = (row: OperatorLog) => {
     completed_pipe_count: row.completed_pipe_count,
     cumulative_pipe_count: row.cumulative_pipe_count,
     footage_m: row.footage_m === null ? undefined : row.footage_m,
+    cumulative_footage_m:
+      row.cumulative_footage_m === null ? undefined : row.cumulative_footage_m,
+    main_thrust_text: row.main_thrust_text || "",
+    chamber_pressure_mpa:
+      row.chamber_pressure_mpa === null ? undefined : row.chamber_pressure_mpa,
+    cutter_current_text: row.cutter_current_text || "",
+    cutter_frequency_hz:
+      row.cutter_frequency_hz === null ? undefined : row.cutter_frequency_hz,
+    horizontal_deviation_direction:
+      row.horizontal_deviation_direction || row.deviation_direction || "",
+    horizontal_deviation_mm:
+      typeof row.horizontal_deviation_mm === "number"
+        ? row.horizontal_deviation_mm
+        : (row.deviation_value_mm ?? undefined),
+    vertical_deviation_direction: row.vertical_deviation_direction || "",
+    vertical_deviation_mm:
+      row.vertical_deviation_mm === null ? undefined : row.vertical_deviation_mm,
     issue_summary: row.issue_summary || "",
     remark: row.remark || ""
   };
@@ -691,6 +789,17 @@ const submitOperatorLog = async () => {
       completed_pipe_count: operatorLogForm.value.completed_pipe_count,
       cumulative_pipe_count: operatorLogForm.value.cumulative_pipe_count,
       footage_m: operatorLogForm.value.footage_m,
+      cumulative_footage_m: operatorLogForm.value.cumulative_footage_m,
+      main_thrust_text: operatorLogForm.value.main_thrust_text || undefined,
+      chamber_pressure_mpa: operatorLogForm.value.chamber_pressure_mpa,
+      cutter_current_text: operatorLogForm.value.cutter_current_text || undefined,
+      cutter_frequency_hz: operatorLogForm.value.cutter_frequency_hz,
+      horizontal_deviation_direction:
+        operatorLogForm.value.horizontal_deviation_direction || undefined,
+      horizontal_deviation_mm: operatorLogForm.value.horizontal_deviation_mm,
+      vertical_deviation_direction:
+        operatorLogForm.value.vertical_deviation_direction || undefined,
+      vertical_deviation_mm: operatorLogForm.value.vertical_deviation_mm,
       issue_summary: operatorLogForm.value.issue_summary || undefined,
       remark: operatorLogForm.value.remark || undefined,
       status: "submitted"
@@ -1260,6 +1369,18 @@ onMounted(loadWecomUsers);
               <span>累计顶进: {{ item.footage.toFixed(1) }}m</span>
             </div>
             <div class="section-card__meta">
+              <span>
+                管径:
+                {{
+                  item.section.pipe_model ||
+                  (item.section.pipe_diameter_mm
+                    ? `DN${item.section.pipe_diameter_mm}`
+                    : "-")
+                }}
+              </span>
+              <span>坡度: {{ item.section.design_slope ?? "-" }}%</span>
+            </div>
+            <div class="section-card__meta">
               <span>施工日志: {{ item.logCount }}</span>
               <span>贯通报告: {{ item.breakthroughCount }}</span>
             </div>
@@ -1376,6 +1497,18 @@ onMounted(loadWecomUsers);
           <el-descriptions-item label="里程(m)">{{
             currentSection?.section_length || "-"
           }}</el-descriptions-item>
+          <el-descriptions-item label="管径">{{
+            currentSection?.pipe_model ||
+            (currentSection?.pipe_diameter_mm
+              ? `DN${currentSection.pipe_diameter_mm}`
+              : "-")
+          }}</el-descriptions-item>
+          <el-descriptions-item label="坡度(%)">{{
+            currentSection?.design_slope ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="顶进方式">{{
+            currentSection?.jacking_method || "-"
+          }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{
             sectionStatusLabel(currentSection?.status)
           }}</el-descriptions-item>
@@ -1416,6 +1549,29 @@ onMounted(loadWecomUsers);
                 </el-form-item>
               </el-col>
               <el-col :span="8">
+                <el-form-item label="管径(mm)">
+                  <el-input-number
+                    v-model="sectionBaseForm.pipe_diameter_mm"
+                    :disabled="!canManageSections"
+                    :min="0"
+                    :precision="0"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="坡度(%)">
+                  <el-input-number
+                    v-model="sectionBaseForm.design_slope"
+                    :disabled="!canManageSections"
+                    :precision="4"
+                    style="width: 100%"
+                  />
+                </el-form-item>
+              </el-col>
+            </el-row>
+            <el-row :gutter="16">
+              <el-col :span="8">
                 <el-form-item label="管材">
                   <el-input
                     v-model="sectionBaseForm.pipe_material"
@@ -1426,12 +1582,23 @@ onMounted(loadWecomUsers);
                 </el-form-item>
               </el-col>
               <el-col :span="8">
-                <el-form-item label="管型">
+                <el-form-item label="管型/规格">
                   <el-input
                     v-model="sectionBaseForm.pipe_model"
                     :disabled="!canManageSections"
                     maxlength="60"
                     show-word-limit
+                  />
+                </el-form-item>
+              </el-col>
+              <el-col :span="8">
+                <el-form-item label="顶进方式">
+                  <el-input
+                    v-model="sectionBaseForm.jacking_method"
+                    :disabled="!canManageSections"
+                    maxlength="80"
+                    show-word-limit
+                    placeholder="例如 卵石破碎"
                   />
                 </el-form-item>
               </el-col>
@@ -1552,7 +1719,23 @@ onMounted(loadWecomUsers);
                   label="累计管节"
                   width="100"
                 />
-                <el-table-column prop="footage_m" label="里程(m)" width="100" />
+                <el-table-column prop="footage_m" label="本班顶进(m)" width="110" />
+                <el-table-column
+                  prop="cumulative_footage_m"
+                  label="累计顶进(m)"
+                  width="110"
+                />
+                <el-table-column
+                  prop="main_thrust_text"
+                  label="顶力"
+                  width="110"
+                  show-overflow-tooltip
+                />
+                <el-table-column label="偏差" width="130">
+                  <template #default="scope">{{
+                    formatDeviation(scope.row)
+                  }}</template>
+                </el-table-column>
                 <el-table-column
                   prop="issue_summary"
                   label="问题摘要"
@@ -1807,6 +1990,27 @@ onMounted(loadWecomUsers);
             style="width: 220px"
           />
         </el-form-item>
+        <el-row :gutter="16">
+          <el-col :span="12">
+            <el-form-item label="管径(mm)">
+              <el-input-number
+                v-model="createSectionForm.pipe_diameter_mm"
+                :min="0"
+                :precision="0"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="坡度(%)">
+              <el-input-number
+                v-model="createSectionForm.design_slope"
+                :precision="4"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-form-item label="初始状态">
           <el-select v-model="createSectionForm.status" style="width: 220px">
             <el-option
@@ -1829,7 +2033,7 @@ onMounted(loadWecomUsers);
             </el-form-item>
           </el-col>
           <el-col :span="12">
-            <el-form-item label="管型">
+            <el-form-item label="管型/规格">
               <el-input
                 v-model="createSectionForm.pipe_model"
                 maxlength="60"
@@ -1839,6 +2043,14 @@ onMounted(loadWecomUsers);
             </el-form-item>
           </el-col>
         </el-row>
+        <el-form-item label="顶进方式">
+          <el-input
+            v-model="createSectionForm.jacking_method"
+            maxlength="80"
+            show-word-limit
+            placeholder="例如 卵石破碎"
+          />
+        </el-form-item>
         <el-form-item label="土质">
           <el-select
             v-model="createSectionForm.soil_type"
@@ -1913,6 +2125,99 @@ onMounted(loadWecomUsers);
             :precision="2"
           />
         </el-form-item>
+        <el-form-item label="累计顶进(m)">
+          <el-input-number
+            v-model="operatorLogForm.cumulative_footage_m"
+            :min="0"
+            :precision="2"
+          />
+        </el-form-item>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="刀盘电流">
+              <el-input
+                v-model="operatorLogForm.cutter_current_text"
+                placeholder="例如 2*35A"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="刀盘频率(Hz)">
+              <el-input-number
+                v-model="operatorLogForm.cutter_frequency_hz"
+                :min="0"
+                :precision="2"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="泥仓压力(MPa)">
+              <el-input-number
+                v-model="operatorLogForm.chamber_pressure_mpa"
+                :min="0"
+                :precision="3"
+                style="width: 100%"
+              />
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="顶力">
+              <el-input
+                v-model="operatorLogForm.main_thrust_text"
+                placeholder="例如 4×12MPa"
+              />
+            </el-form-item>
+          </el-col>
+        </el-row>
+        <el-row :gutter="12">
+          <el-col :span="12">
+            <el-form-item label="水平偏差">
+              <el-input-number
+                v-model="operatorLogForm.horizontal_deviation_mm"
+                :min="0"
+                :precision="1"
+                style="width: 120px"
+              />
+              <el-select
+                v-model="operatorLogForm.horizontal_deviation_direction"
+                clearable
+                style="width: 120px; margin-left: 8px"
+              >
+                <el-option
+                  v-for="opt in horizontalDeviationOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+          <el-col :span="12">
+            <el-form-item label="高程偏差">
+              <el-input-number
+                v-model="operatorLogForm.vertical_deviation_mm"
+                :min="0"
+                :precision="1"
+                style="width: 120px"
+              />
+              <el-select
+                v-model="operatorLogForm.vertical_deviation_direction"
+                clearable
+                style="width: 120px; margin-left: 8px"
+              >
+                <el-option
+                  v-for="opt in verticalDeviationOptions"
+                  :key="opt.value"
+                  :label="opt.label"
+                  :value="opt.value"
+                />
+              </el-select>
+            </el-form-item>
+          </el-col>
+        </el-row>
         <el-form-item label="问题摘要">
           <el-input
             v-model="operatorLogForm.issue_summary"
@@ -2044,6 +2349,24 @@ onMounted(loadWecomUsers);
           }}</el-descriptions-item>
           <el-descriptions-item label="当日顶进(m)">{{
             operatorLogDetail?.footage_m ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="累计顶进(m)">{{
+            operatorLogDetail?.cumulative_footage_m ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="刀盘电流">{{
+            operatorLogDetail?.cutter_current_text || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="刀盘频率(Hz)">{{
+            operatorLogDetail?.cutter_frequency_hz ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="泥仓压力(MPa)">{{
+            operatorLogDetail?.chamber_pressure_mpa ?? "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="顶力">{{
+            operatorLogDetail?.main_thrust_text || "-"
+          }}</el-descriptions-item>
+          <el-descriptions-item label="偏差">{{
+            formatDeviation(operatorLogDetail)
           }}</el-descriptions-item>
           <el-descriptions-item label="问题摘要">{{
             operatorLogDetail?.issue_summary || "-"

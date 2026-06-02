@@ -21,9 +21,28 @@ const form = ref({
   completed_pipe_count: 0,
   cumulative_pipe_count: 0,
   footage_m: undefined as number | undefined,
+  cumulative_footage_m: undefined as number | undefined,
+  cutter_current_text: "",
+  cutter_frequency_hz: undefined as number | undefined,
+  chamber_pressure_mpa: undefined as number | undefined,
+  main_thrust_text: "",
+  horizontal_deviation_direction: "",
+  horizontal_deviation_mm: undefined as number | undefined,
+  vertical_deviation_direction: "",
+  vertical_deviation_mm: undefined as number | undefined,
   issue_summary: "",
   remark: ""
 });
+
+const horizontalDeviationOptions = [
+  { label: "左偏", value: "left" },
+  { label: "右偏", value: "right" }
+];
+
+const verticalDeviationOptions = [
+  { label: "高", value: "high" },
+  { label: "低", value: "low" }
+];
 
 const smartFill = async () => {
   if (!form.value.project_id || !form.value.log_date || !form.value.shift) {
@@ -34,15 +53,19 @@ const smartFill = async () => {
   try {
     const result = await smartFillOperatorLog({
       project_id: form.value.project_id,
+      section_id: form.value.section_id ?? null,
       log_date: form.value.log_date,
       shift: form.value.shift,
-      completed_pipe_count: form.value.completed_pipe_count
+      completed_pipe_count: form.value.completed_pipe_count,
+      footage_m: form.value.footage_m
     });
     form.value.weather = result.data.prefill.weather || form.value.weather;
     form.value.issue_summary =
       result.data.prefill.issue_summary || form.value.issue_summary;
     form.value.cumulative_pipe_count =
       result.data.prefill.cumulative_pipe_count;
+    form.value.cumulative_footage_m =
+      result.data.prefill.cumulative_footage_m;
     message(`AI预填完成，任务ID: ${result.data.task_id}`, { type: "success" });
   } finally {
     filling.value = false;
@@ -65,6 +88,17 @@ const submit = async () => {
       completed_pipe_count: form.value.completed_pipe_count,
       cumulative_pipe_count: form.value.cumulative_pipe_count,
       footage_m: form.value.footage_m,
+      cumulative_footage_m: form.value.cumulative_footage_m,
+      cutter_current_text: form.value.cutter_current_text || undefined,
+      cutter_frequency_hz: form.value.cutter_frequency_hz,
+      chamber_pressure_mpa: form.value.chamber_pressure_mpa,
+      main_thrust_text: form.value.main_thrust_text || undefined,
+      horizontal_deviation_direction:
+        form.value.horizontal_deviation_direction || undefined,
+      horizontal_deviation_mm: form.value.horizontal_deviation_mm,
+      vertical_deviation_direction:
+        form.value.vertical_deviation_direction || undefined,
+      vertical_deviation_mm: form.value.vertical_deviation_mm,
       issue_summary: form.value.issue_summary || undefined,
       remark: form.value.remark || undefined,
       status: "submitted"
@@ -125,8 +159,8 @@ onMounted(loadProjects);
       </el-form-item>
       <el-form-item label="班次">
         <el-select v-model="form.shift" style="width: 160px">
-          <el-option label="day" value="day" />
-          <el-option label="night" value="night" />
+          <el-option label="白班" value="day" />
+          <el-option label="夜班" value="night" />
         </el-select>
       </el-form-item>
       <el-form-item label="天气">
@@ -141,6 +175,93 @@ onMounted(loadProjects);
       <el-form-item label="当日进尺(m)">
         <el-input-number v-model="form.footage_m" :min="0" :precision="2" />
       </el-form-item>
+      <el-form-item label="累计顶进(m)">
+        <el-input-number
+          v-model="form.cumulative_footage_m"
+          :min="0"
+          :precision="2"
+        />
+      </el-form-item>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="刀盘电流">
+            <el-input v-model="form.cutter_current_text" placeholder="2*35A" />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="刀盘频率(Hz)">
+            <el-input-number
+              v-model="form.cutter_frequency_hz"
+              :min="0"
+              :precision="2"
+              style="width: 220px"
+            />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="泥仓压力(MPa)">
+            <el-input-number
+              v-model="form.chamber_pressure_mpa"
+              :min="0"
+              :precision="3"
+              style="width: 220px"
+            />
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="顶力">
+            <el-input v-model="form.main_thrust_text" placeholder="4×12MPa" />
+          </el-form-item>
+        </el-col>
+      </el-row>
+      <el-row :gutter="12">
+        <el-col :span="12">
+          <el-form-item label="水平偏差">
+            <el-input-number
+              v-model="form.horizontal_deviation_mm"
+              :min="0"
+              :precision="1"
+              style="width: 120px"
+            />
+            <el-select
+              v-model="form.horizontal_deviation_direction"
+              clearable
+              style="width: 120px; margin-left: 8px"
+            >
+              <el-option
+                v-for="opt in horizontalDeviationOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+        <el-col :span="12">
+          <el-form-item label="高程偏差">
+            <el-input-number
+              v-model="form.vertical_deviation_mm"
+              :min="0"
+              :precision="1"
+              style="width: 120px"
+            />
+            <el-select
+              v-model="form.vertical_deviation_direction"
+              clearable
+              style="width: 120px; margin-left: 8px"
+            >
+              <el-option
+                v-for="opt in verticalDeviationOptions"
+                :key="opt.value"
+                :label="opt.label"
+                :value="opt.value"
+              />
+            </el-select>
+          </el-form-item>
+        </el-col>
+      </el-row>
       <el-form-item label="问题摘要">
         <el-input v-model="form.issue_summary" type="textarea" :rows="3" />
       </el-form-item>

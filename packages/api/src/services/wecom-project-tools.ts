@@ -28,9 +28,12 @@ type SectionRow = {
   section_code: string;
   section_name: string;
   section_length: number | null;
+  design_slope?: number | null;
+  pipe_diameter_mm?: number | null;
   pipe_material?: string | null;
   pipe_model?: string | null;
   soil_type?: string | null;
+  jacking_method?: string | null;
   status: string;
   updated_at: string;
 };
@@ -55,6 +58,15 @@ type OperatorLogRow = {
   completed_pipe_count: number;
   cumulative_pipe_count: number;
   footage_m: number | null;
+  cumulative_footage_m: number | null;
+  main_thrust_text: string | null;
+  chamber_pressure_mpa: number | null;
+  cutter_current_text: string | null;
+  cutter_frequency_hz: number | null;
+  horizontal_deviation_direction: string | null;
+  horizontal_deviation_mm: number | null;
+  vertical_deviation_direction: string | null;
+  vertical_deviation_mm: number | null;
   issue_summary: string | null;
   remark: string | null;
   status: string;
@@ -114,9 +126,12 @@ const mapSection = (row: SectionRow): Record<string, unknown> => ({
   section_code: row.section_code,
   section_name: row.section_name,
   section_length: row.section_length,
+  design_slope: row.design_slope ?? null,
+  pipe_diameter_mm: row.pipe_diameter_mm ?? null,
   pipe_material: row.pipe_material ?? null,
   pipe_model: row.pipe_model ?? null,
   soil_type: row.soil_type ?? null,
+  jacking_method: row.jacking_method ?? null,
   status: row.status,
   updated_at: row.updated_at
 });
@@ -180,6 +195,7 @@ const getSectionProgress = async (
 
   const progress = await env.DB.prepare(
     `SELECT MAX(cumulative_pipe_count) AS cumulative_pipe_count,
+            MAX(cumulative_footage_m) AS cumulative_footage_m,
             SUM(IFNULL(footage_m, 0)) AS total_footage_m,
             MAX(log_date) AS latest_log_date
        FROM operator_log
@@ -188,6 +204,7 @@ const getSectionProgress = async (
     .bind(projectId, sectionId)
     .first<{
       cumulative_pipe_count: number | null;
+      cumulative_footage_m: number | null;
       total_footage_m: number | null;
       latest_log_date: string | null;
     }>();
@@ -196,6 +213,7 @@ const getSectionProgress = async (
     ...mapSection(section),
     project_id: projectId,
     cumulative_pipe_count: progress?.cumulative_pipe_count ?? 0,
+    cumulative_footage_m: progress?.cumulative_footage_m ?? progress?.total_footage_m ?? 0,
     total_footage_m: progress?.total_footage_m ?? 0,
     latest_log_date: progress?.latest_log_date ?? null
   };
@@ -243,7 +261,11 @@ const getLatestOperatorLogs = async (
   const rows = sectionId
     ? await env.DB.prepare(
         `SELECT id, project_id, section_id, log_date, shift, completed_pipe_count,
-                cumulative_pipe_count, footage_m, issue_summary, remark, status, updated_at
+                cumulative_pipe_count, footage_m, cumulative_footage_m, main_thrust_text,
+                chamber_pressure_mpa, cutter_current_text, cutter_frequency_hz,
+                horizontal_deviation_direction, horizontal_deviation_mm,
+                vertical_deviation_direction, vertical_deviation_mm,
+                issue_summary, remark, status, updated_at
            FROM operator_log
           WHERE project_id = ? AND section_id = ? AND status != 'deleted'
           ORDER BY log_date DESC, id DESC
@@ -253,7 +275,11 @@ const getLatestOperatorLogs = async (
         .all<OperatorLogRow>()
     : await env.DB.prepare(
         `SELECT id, project_id, section_id, log_date, shift, completed_pipe_count,
-                cumulative_pipe_count, footage_m, issue_summary, remark, status, updated_at
+                cumulative_pipe_count, footage_m, cumulative_footage_m, main_thrust_text,
+                chamber_pressure_mpa, cutter_current_text, cutter_frequency_hz,
+                horizontal_deviation_direction, horizontal_deviation_mm,
+                vertical_deviation_direction, vertical_deviation_mm,
+                issue_summary, remark, status, updated_at
            FROM operator_log
           WHERE project_id = ? AND status != 'deleted'
           ORDER BY log_date DESC, id DESC
@@ -273,6 +299,15 @@ const getLatestOperatorLogs = async (
       completed_pipe_count: row.completed_pipe_count,
       cumulative_pipe_count: row.cumulative_pipe_count,
       footage_m: row.footage_m,
+      cumulative_footage_m: row.cumulative_footage_m,
+      main_thrust_text: row.main_thrust_text,
+      chamber_pressure_mpa: row.chamber_pressure_mpa,
+      cutter_current_text: row.cutter_current_text,
+      cutter_frequency_hz: row.cutter_frequency_hz,
+      horizontal_deviation_direction: row.horizontal_deviation_direction,
+      horizontal_deviation_mm: row.horizontal_deviation_mm,
+      vertical_deviation_direction: row.vertical_deviation_direction,
+      vertical_deviation_mm: row.vertical_deviation_mm,
       issue_summary: row.issue_summary,
       remark: row.remark,
       status: row.status,

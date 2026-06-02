@@ -155,6 +155,8 @@ export const adoptExternalSubmission = async (
   const photoKeys = safeParseStringArray(submission.photo_keys_json);
   const completed = toNumber(operatorPayload.completed_pipe_count, 0);
   const cumulative = toNumber(operatorPayload.cumulative_pipe_count, completed);
+  const footage = toNumber(operatorPayload.footage_m, 0);
+  const cumulativeFootage = toNumber(operatorPayload.cumulative_footage_m, footage);
   const now = nowIso();
   const sourceUserid = `external:${submission.submitter_name}`.slice(0, 120);
   let operatorLogId: number | null = null;
@@ -164,9 +166,13 @@ export const adoptExternalSubmission = async (
     const operatorResult = await env.DB.prepare(
       `INSERT INTO operator_log
         (project_id, section_id, log_date, shift, weather, completed_pipe_count, cumulative_pipe_count,
-         footage_m, issue_summary, remark, operator_userid, source_type, external_submission_id,
+         footage_m, cumulative_footage_m, main_thrust_mpa, main_thrust_text, chamber_pressure_mpa,
+         cutter_current_a, cutter_current_text, cutter_frequency_hz, soil_type,
+         deviation_direction, deviation_value_mm, horizontal_deviation_direction,
+         horizontal_deviation_mm, vertical_deviation_direction, vertical_deviation_mm,
+         issue_summary, remark, operator_userid, source_type, external_submission_id,
          external_submitter_name, external_submitter_company, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external', ?, ?, ?, 'submitted', ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'external', ?, ?, ?, 'submitted', ?, ?)`
     )
       .bind(
         submission.project_id,
@@ -176,7 +182,35 @@ export const adoptExternalSubmission = async (
         toText(operatorPayload.weather) || null,
         completed,
         cumulative,
-        operatorPayload.footage_m === undefined ? null : toNumber(operatorPayload.footage_m, 0),
+        operatorPayload.footage_m === undefined ? null : footage,
+        cumulativeFootage,
+        operatorPayload.main_thrust_mpa === undefined
+          ? null
+          : toNumber(operatorPayload.main_thrust_mpa, 0),
+        toText(operatorPayload.main_thrust_text) || null,
+        operatorPayload.chamber_pressure_mpa === undefined
+          ? null
+          : toNumber(operatorPayload.chamber_pressure_mpa, 0),
+        operatorPayload.cutter_current_a === undefined
+          ? null
+          : toNumber(operatorPayload.cutter_current_a, 0),
+        toText(operatorPayload.cutter_current_text) || null,
+        operatorPayload.cutter_frequency_hz === undefined
+          ? null
+          : toNumber(operatorPayload.cutter_frequency_hz, 0),
+        toText(operatorPayload.soil_type) || null,
+        toText(operatorPayload.deviation_direction) || null,
+        operatorPayload.deviation_value_mm === undefined
+          ? null
+          : toNumber(operatorPayload.deviation_value_mm, 0),
+        toText(operatorPayload.horizontal_deviation_direction) || null,
+        operatorPayload.horizontal_deviation_mm === undefined
+          ? null
+          : toNumber(operatorPayload.horizontal_deviation_mm, 0),
+        toText(operatorPayload.vertical_deviation_direction) || null,
+        operatorPayload.vertical_deviation_mm === undefined
+          ? null
+          : toNumber(operatorPayload.vertical_deviation_mm, 0),
         toText(operatorPayload.issue_summary) || null,
         toText(operatorPayload.remark) || null,
         sourceUserid,

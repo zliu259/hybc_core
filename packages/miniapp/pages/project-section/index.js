@@ -26,6 +26,32 @@ const shiftText = {
   night: "夜班"
 };
 
+const deviationText = {
+  left: "左偏",
+  right: "右偏",
+  high: "高",
+  low: "低"
+};
+
+const formatDeviation = (item) => {
+  const horizontalDirection = item.horizontal_deviation_direction || item.deviation_direction || "";
+  const horizontalValue =
+    item.horizontal_deviation_mm === null || item.horizontal_deviation_mm === undefined
+      ? item.deviation_value_mm
+      : item.horizontal_deviation_mm;
+  const parts = [
+    horizontalDirection && horizontalValue !== null && horizontalValue !== undefined
+      ? `${deviationText[horizontalDirection] || horizontalDirection}${horizontalValue}mm`
+      : "",
+    item.vertical_deviation_direction &&
+    item.vertical_deviation_mm !== null &&
+    item.vertical_deviation_mm !== undefined
+      ? `${deviationText[item.vertical_deviation_direction] || item.vertical_deviation_direction}${item.vertical_deviation_mm}mm`
+      : ""
+  ].filter(Boolean);
+  return parts.length ? parts.join("，") : "-";
+};
+
 Page({
   data: {
     loading: false,
@@ -88,7 +114,8 @@ Page({
         .sort((a, b) => String(b.log_date || "").localeCompare(String(a.log_date || "")))
         .map((item) => ({
           ...item,
-          shiftText: shiftText[item.shift] || item.shift || "-"
+          shiftText: shiftText[item.shift] || item.shift || "-",
+          deviationText: formatDeviation(item)
         }));
 
       const breakthroughReports = (Array.isArray(breakthroughRes.data) ? breakthroughRes.data : [])
@@ -103,7 +130,10 @@ Page({
         section: section
           ? {
               ...section,
-              statusText: this.toSectionStatus(section.status)
+              statusText: this.toSectionStatus(section.status),
+              pipeText: section.pipe_model || (section.pipe_diameter_mm ? `DN${section.pipe_diameter_mm}` : "-"),
+              slopeText: section.design_slope === null || section.design_slope === undefined ? "-" : `${section.design_slope}%`,
+              jackingMethodText: section.jacking_method || "-"
             }
           : null,
         operatorLogs,

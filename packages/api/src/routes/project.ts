@@ -850,9 +850,12 @@ projectRoutes.post(
       section_name: string;
       section_length?: number | null;
       status?: ProjectStatus;
+      design_slope?: number | null;
+      pipe_diameter_mm?: number | null;
       pipe_material?: string | null;
       pipe_model?: string | null;
       soil_type?: string | null;
+      jacking_method?: string | null;
       assigned_machine_type?: string | null;
       ai_machine_match_note?: string | null;
       ai_machine_match_score?: number | null;
@@ -860,7 +863,7 @@ projectRoutes.post(
 
     const createdAt = nowIso();
     const result = await c.env.DB.prepare(
-      "INSERT INTO project_section (project_id, section_code, section_name, section_length, status, pipe_material, pipe_model, soil_type, assigned_machine_type, ai_machine_match_note, ai_machine_match_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+      "INSERT INTO project_section (project_id, section_code, section_name, section_length, status, design_slope, pipe_diameter_mm, pipe_material, pipe_model, soil_type, jacking_method, assigned_machine_type, ai_machine_match_note, ai_machine_match_score, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
       .bind(
         projectId,
@@ -868,9 +871,12 @@ projectRoutes.post(
         body.section_name,
         body.section_length ?? null,
         body.status ?? "planning",
+        body.design_slope ?? null,
+        body.pipe_diameter_mm ?? null,
         body.pipe_material ?? null,
         body.pipe_model ?? null,
         body.soil_type ?? null,
+        body.jacking_method ?? null,
         body.assigned_machine_type ?? null,
         body.ai_machine_match_note ?? null,
         body.ai_machine_match_score ?? null,
@@ -892,24 +898,30 @@ projectRoutes.put(
       section_name?: string;
       section_length?: number | null;
       status?: ProjectStatus;
+      design_slope?: number | null;
+      pipe_diameter_mm?: number | null;
       pipe_material?: string | null;
       pipe_model?: string | null;
       soil_type?: string | null;
+      jacking_method?: string | null;
       assigned_machine_type?: string | null;
       ai_machine_match_note?: string | null;
       ai_machine_match_score?: number | null;
     };
 
     await c.env.DB.prepare(
-      "UPDATE project_section SET section_name = COALESCE(?, section_name), section_length = ?, status = COALESCE(?, status), pipe_material = COALESCE(?, pipe_material), pipe_model = COALESCE(?, pipe_model), soil_type = COALESCE(?, soil_type), assigned_machine_type = COALESCE(?, assigned_machine_type), ai_machine_match_note = COALESCE(?, ai_machine_match_note), ai_machine_match_score = COALESCE(?, ai_machine_match_score), updated_at = ? WHERE id = ?"
+      "UPDATE project_section SET section_name = COALESCE(?, section_name), section_length = ?, status = COALESCE(?, status), design_slope = COALESCE(?, design_slope), pipe_diameter_mm = COALESCE(?, pipe_diameter_mm), pipe_material = COALESCE(?, pipe_material), pipe_model = COALESCE(?, pipe_model), soil_type = COALESCE(?, soil_type), jacking_method = COALESCE(?, jacking_method), assigned_machine_type = COALESCE(?, assigned_machine_type), ai_machine_match_note = COALESCE(?, ai_machine_match_note), ai_machine_match_score = COALESCE(?, ai_machine_match_score), updated_at = ? WHERE id = ?"
     )
       .bind(
         body.section_name ?? null,
         body.section_length ?? null,
         body.status ?? null,
+        body.design_slope ?? null,
+        body.pipe_diameter_mm ?? null,
         body.pipe_material ?? null,
         body.pipe_model ?? null,
         body.soil_type ?? null,
+        body.jacking_method ?? null,
         body.assigned_machine_type ?? null,
         body.ai_machine_match_note ?? null,
         body.ai_machine_match_score ?? null,
