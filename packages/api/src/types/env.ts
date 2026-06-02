@@ -28,6 +28,7 @@ export interface Env {
   WECOM_BOT_TOOL_TOKEN?: string;
   WECOM_TOOL_WEB_BASE_URL?: string;
   WECOM_GROUP_WEBHOOK_PROXY_MODE?: "direct" | "bridge";
+  WECOM_DEFAULT_PROJECT_PUSH_WEBHOOK_SECRET_REF?: string;
   PASSKEY_RP_ID: string;
   PASSKEY_RP_NAME: string;
   REIMBURSEMENT_REQUIRE_PAYEE?: string;

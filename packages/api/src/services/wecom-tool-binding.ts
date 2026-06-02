@@ -9,6 +9,7 @@ import {
 } from "../types/wecom-tools";
 
 const nowIso = () => new Date().toISOString();
+const DEFAULT_PROJECT_PUSH_BINDING_NAME = "内部日志通知群";
 
 export interface ProjectWeComBindingInput {
   project_id: number;
@@ -68,6 +69,13 @@ export const sanitizeAllowedWeComTools = (
   }
 
   return result.length > 0 ? result : [...defaultAllowedWeComToolNames];
+};
+
+export const getDefaultProjectWeComPushWebhookSecretRef = (env: Env): string | null => {
+  const secretRef = cleanText(env.WECOM_DEFAULT_PROJECT_PUSH_WEBHOOK_SECRET_REF);
+  if (!secretRef) return null;
+  assertValidWebhookSecretRef(secretRef);
+  return secretRef;
 };
 
 const parseAllowedTools = (binding: ProjectWeComBotBinding): string[] => {
@@ -145,6 +153,34 @@ export const createProjectWeComBinding = async (
     throw new Error("Failed to create WeCom binding");
   }
   return binding;
+};
+
+export const createDefaultProjectWeComPushBinding = async (
+  env: Env,
+  projectId: number,
+  actorUserid: string | null = null,
+  webhookSecretRef = getDefaultProjectWeComPushWebhookSecretRef(env)
+): Promise<ProjectWeComBotBinding | null> => {
+  if (!webhookSecretRef) return null;
+
+  try {
+    return await createProjectWeComBinding(
+      env,
+      {
+        project_id: projectId,
+        binding_name: DEFAULT_PROJECT_PUSH_BINDING_NAME,
+        group_chat_id: null,
+        bot_id: null,
+        push_webhook_secret_ref: webhookSecretRef,
+        push_enabled: true,
+        qa_enabled: false
+      },
+      actorUserid
+    );
+  } catch (error) {
+    if (isMissingWeComMigrationError(error)) return null;
+    throw error;
+  }
 };
 
 export const listProjectWeComBindings = async (

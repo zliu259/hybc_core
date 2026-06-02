@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 
 import type { Env } from "../types/env";
 import {
+  createDefaultProjectWeComPushBinding,
   createProjectWeComBinding,
   disableProjectWeComBinding,
+  getDefaultProjectWeComPushWebhookSecretRef,
   listProjectWeComBindings,
   listProjectWeComPushEvents,
   listWeComToolCallAudits,
@@ -201,7 +203,8 @@ class MissingBindingMigrationDb {
   }
 }
 
-const createEnv = () => ({ DB: new BindingDb() }) as unknown as Env & { DB: BindingDb };
+const createEnv = (vars: Partial<Env> = {}) =>
+  ({ DB: new BindingDb(), ...vars }) as unknown as Env & { DB: BindingDb };
 
 describe("wecom tool binding service", () => {
   it("creates bindings with read-only allowed tools only", async () => {
@@ -223,6 +226,45 @@ describe("wecom tool binding service", () => {
     expect(binding.id).toBe(1);
     expect(JSON.parse(binding.allowed_tools_json)).toEqual(["get_project_overview"]);
     expect(binding.created_by).toBe("manager-a");
+  });
+
+  it("creates default project push binding as push-only when configured", async () => {
+    const env = createEnv({
+      WECOM_DEFAULT_PROJECT_PUSH_WEBHOOK_SECRET_REF: "project-144-test"
+    });
+
+    const binding = await createDefaultProjectWeComPushBinding(env, 7, "manager-a");
+
+    expect(binding).toMatchObject({
+      id: 1,
+      project_id: 7,
+      binding_name: "内部日志通知群",
+      group_chat_id: null,
+      bot_id: null,
+      push_webhook_secret_ref: "project-144-test",
+      push_enabled: 1,
+      qa_enabled: 0,
+      status: "active",
+      created_by: "manager-a"
+    });
+  });
+
+  it("skips default project push binding when no default webhook ref is configured", async () => {
+    const env = createEnv();
+
+    await expect(createDefaultProjectWeComPushBinding(env, 7, "manager-a")).resolves.toBeNull();
+    expect(env.DB.rows).toHaveLength(0);
+  });
+
+  it("validates the default project push webhook secret ref", () => {
+    const env = createEnv({
+      WECOM_DEFAULT_PROJECT_PUSH_WEBHOOK_SECRET_REF:
+        "https://qyapi.weixin.qq.com/cgi-bin/webhook/send?key=abc"
+    });
+
+    expect(() => getDefaultProjectWeComPushWebhookSecretRef(env)).toThrow(
+      "push_webhook_secret_ref must be a saved secret ref"
+    );
   });
 
   it("requires a webhook secret ref when push is enabled", async () => {

@@ -3,6 +3,10 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { adoptExternalSubmission } from "../services/external-log-audit";
+import {
+  createDefaultProjectWeComPushBinding,
+  getDefaultProjectWeComPushWebhookSecretRef
+} from "../services/wecom-tool-binding";
 import type { UserRole } from "../types/auth";
 import type { Env } from "../types/env";
 import { hydrateLegacyProject, hydrateLegacySection } from "../utils/legacy-compat";
@@ -244,6 +248,7 @@ projectRoutes.get("/:id", async (c) => {
 });
 
 projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"]), async (c) => {
+  const auth = c.get("auth");
   const body = (await c.req.json()) as {
     project_code?: string;
     project_name: string;
@@ -284,6 +289,7 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
   }
 
   const projectCode = String(body.project_code ?? "").trim() || generateProjectCode();
+  const defaultWeComPushWebhookSecretRef = getDefaultProjectWeComPushWebhookSecretRef(c.env);
 
   const createdAt = nowIso();
   const result = await c.env.DB.prepare(
@@ -307,7 +313,24 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
     )
     .run();
 
-  return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+  const projectId = Number(result.meta.last_row_id);
+  const defaultWeComBinding = await createDefaultProjectWeComPushBinding(
+    c.env,
+    projectId,
+    auth.sub,
+    defaultWeComPushWebhookSecretRef
+  );
+
+  return c.json(
+    {
+      success: true,
+      data: {
+        id: projectId,
+        default_wecom_binding_id: defaultWeComBinding?.id ?? null
+      }
+    },
+    201
+  );
 });
 
 projectRoutes.put("/:id", requireRoles(["super_admin", "manager", "site_manager"]), async (c) => {
