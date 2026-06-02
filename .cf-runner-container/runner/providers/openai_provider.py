@@ -124,15 +124,18 @@ class OpenAIProvider(AiProvider):
 
         start = time.monotonic()
         try:
-            response = self.client.chat.completions.create(
-                model=selected_model,
-                messages=[
+            request_kwargs: dict[str, Any] = {
+                "model": selected_model,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message_content},
                 ],
-                temperature=0.2,
-                max_completion_tokens=2048,
-            )
+                "max_completion_tokens": 2048,
+            }
+            if not self._requires_default_temperature(selected_model):
+                request_kwargs["temperature"] = 0.2
+
+            response = self.client.chat.completions.create(**request_kwargs)
             latency = int((time.monotonic() - start) * 1000)
             content = ""
             if response.choices:
@@ -181,3 +184,7 @@ class OpenAIProvider(AiProvider):
             return self.model_overrides[task_type]
 
         return self.model
+
+    @staticmethod
+    def _requires_default_temperature(model: str) -> bool:
+        return model.strip().lower().startswith("gpt-5")

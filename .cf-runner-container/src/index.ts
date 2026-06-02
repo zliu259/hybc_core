@@ -20,10 +20,10 @@ export class RunnerContainer extends Container {
     HEARTBEAT_INTERVAL_SECONDS: "60",
     CAPABILITIES: "contract_review,risk_assessment,payment_risk_assessment,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,external_log_audit,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,ocr_extract,file_generate,voice_stt,approval_ai_gate",
     MOCK_AI_ONLY: "false",
-    OPENAI_MODEL: "gpt-5.2",
-    OPENAI_MODEL_CONTRACT_REVIEW_TEXT: "gpt-5.2",
+    OPENAI_MODEL: "gpt-5.5",
+    OPENAI_MODEL_CONTRACT_REVIEW_TEXT: "gpt-5.5",
     OPENAI_MODEL_CONTRACT_REVIEW_VISION: "gpt-4o",
-    OPENAI_MODEL_APPROVAL_AI_GATE_TEXT: "gpt-5.2",
+    OPENAI_MODEL_APPROVAL_AI_GATE_TEXT: "gpt-5.5",
     OPENAI_MODEL_APPROVAL_AI_GATE_VISION: "gpt-4o",
     OPENAI_MODEL_VISION_FALLBACK: "gpt-4o",
     OPENAI_BASE_URL: "https://api.openai.com/v1",
@@ -34,7 +34,7 @@ export class RunnerContainer extends Container {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
-    const container = env.RUNNER.getByName("singleton-v5");
+    const container = env.RUNNER.getByName("singleton-v6");
 
     if (url.pathname === "/health") {
       return new Response("ok", { status: 200 });
@@ -66,7 +66,7 @@ export default {
       return;
     }
 
-    const container = env.RUNNER.getByName("singleton-v5");
+    const container = env.RUNNER.getByName("singleton-v6");
     await container.fetch("http://container/");
   }
 };

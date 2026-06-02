@@ -11,6 +11,7 @@ import type {
   TaskQueueItem,
   ComputeNode
 } from "../types/ai";
+import { failTask } from "../services/ai-slot";
 import { pollForNode, submitResult, registerNode, heartbeat } from "../services/task-queue";
 
 export const taskRoutes = new Hono<{
@@ -72,6 +73,16 @@ taskRoutes.post("/:id/result", apiKeyMiddleware, async (c) => {
   }
 
   try {
+    const metadata = body.metadata;
+    const executionError =
+      metadata && typeof metadata === "object" && typeof metadata.error === "string"
+        ? metadata.error
+        : "";
+    if (executionError && (!body.output || body.output.trim().length === 0)) {
+      await failTask(c.env, taskId, nodeId, executionError);
+      return c.json({ success: true });
+    }
+
     await submitResult(c.env, taskId, nodeId, body);
     return c.json({ success: true });
   } catch (err) {
