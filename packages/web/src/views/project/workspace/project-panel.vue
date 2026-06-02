@@ -70,6 +70,8 @@ const generatedPublicQr = ref("");
 const externalSubmissions = ref<ExternalLogSubmission[]>([]);
 const externalSubmissionsLoading = ref(false);
 const externalReviewingId = ref<number | null>(null);
+const externalAiDetailVisible = ref(false);
+const externalAiDetailRow = ref<ExternalLogSubmission | null>(null);
 
 const sectionDrawerVisible = ref(false);
 const sectionDrawerLoading = ref(false);
@@ -248,6 +250,27 @@ const externalReviewStatusLabelMap: Record<string, string> = {
   rejected: "已驳回"
 };
 
+type AiReviewIssue = {
+  severity?: string;
+  message?: string;
+};
+
+const aiIssueSeverityLabelMap: Record<string, string> = {
+  critical: "严重",
+  high: "高",
+  medium: "中",
+  low: "低",
+  info: "提示"
+};
+
+const aiIssueSeverityWeightMap: Record<string, number> = {
+  critical: 5,
+  high: 4,
+  medium: 3,
+  low: 2,
+  info: 1
+};
+
 const projectStatusLabel = computed(() => {
   const raw = project.value?.status || "";
   return statusLabelMap[raw] || raw || "-";
@@ -299,7 +322,9 @@ const verticalDeviationOptions = deviationDirectionOptions.filter(item =>
 
 const deviationDirectionLabel = (value: string | null | undefined) => {
   if (!value) return "";
-  return deviationDirectionOptions.find(item => item.value === value)?.label || value;
+  return (
+    deviationDirectionOptions.find(item => item.value === value)?.label || value
+  );
 };
 
 const formatDeviation = (row: OperatorLog | null | undefined) => {
@@ -312,7 +337,8 @@ const formatDeviation = (row: OperatorLog | null | undefined) => {
     horizontalDirection && typeof horizontalValue === "number"
       ? `${deviationDirectionLabel(horizontalDirection)}${horizontalValue}mm`
       : "",
-    row.vertical_deviation_direction && typeof row.vertical_deviation_mm === "number"
+    row.vertical_deviation_direction &&
+    typeof row.vertical_deviation_mm === "number"
       ? `${deviationDirectionLabel(row.vertical_deviation_direction)}${row.vertical_deviation_mm}mm`
       : ""
   ].filter(Boolean);
@@ -501,7 +527,8 @@ const syncSectionBaseForm = (section: ProjectSection) => {
         ? undefined
         : section.design_slope,
     pipe_diameter_mm:
-      section.pipe_diameter_mm === null || section.pipe_diameter_mm === undefined
+      section.pipe_diameter_mm === null ||
+      section.pipe_diameter_mm === undefined
         ? undefined
         : section.pipe_diameter_mm,
     pipe_material: section.pipe_material || "",
@@ -765,7 +792,9 @@ const openEditOperatorLog = (row: OperatorLog) => {
         : (row.deviation_value_mm ?? undefined),
     vertical_deviation_direction: row.vertical_deviation_direction || "",
     vertical_deviation_mm:
-      row.vertical_deviation_mm === null ? undefined : row.vertical_deviation_mm,
+      row.vertical_deviation_mm === null
+        ? undefined
+        : row.vertical_deviation_mm,
     issue_summary: row.issue_summary || "",
     remark: row.remark || ""
   };
@@ -792,7 +821,8 @@ const submitOperatorLog = async () => {
       cumulative_footage_m: operatorLogForm.value.cumulative_footage_m,
       main_thrust_text: operatorLogForm.value.main_thrust_text || undefined,
       chamber_pressure_mpa: operatorLogForm.value.chamber_pressure_mpa,
-      cutter_current_text: operatorLogForm.value.cutter_current_text || undefined,
+      cutter_current_text:
+        operatorLogForm.value.cutter_current_text || undefined,
       cutter_frequency_hz: operatorLogForm.value.cutter_frequency_hz,
       horizontal_deviation_direction:
         operatorLogForm.value.horizontal_deviation_direction || undefined,
@@ -1085,16 +1115,61 @@ const reviewExternalSubmission = async (
   }
 };
 
-const parseAiIssues = (row: ExternalLogSubmission) => {
+const parseAiIssues = (row: ExternalLogSubmission): AiReviewIssue[] => {
   if (!row.ai_review_result_json) return [];
   try {
     const parsed = JSON.parse(row.ai_review_result_json) as {
-      issues?: Array<{ severity?: string; message?: string }>;
+      issues?: AiReviewIssue[];
     };
     return Array.isArray(parsed.issues) ? parsed.issues : [];
   } catch {
     return [];
   }
+};
+
+const externalAiDetailIssues = computed(() =>
+  externalAiDetailRow.value ? parseAiIssues(externalAiDetailRow.value) : []
+);
+
+const externalSubmissionReviewed = (row: ExternalLogSubmission) =>
+  ["approved_auto", "approved_manual", "rejected"].includes(row.review_status);
+
+const openExternalAiDetail = (row: ExternalLogSubmission) => {
+  externalAiDetailRow.value = row;
+  externalAiDetailVisible.value = true;
+};
+
+const hasExternalAiDetail = (row: ExternalLogSubmission) =>
+  Boolean(
+    row.ai_review_summary ||
+    row.ai_review_result_json ||
+    (row.ai_review_score !== null && row.ai_review_score !== undefined) ||
+    row.ai_review_risk_level
+  );
+
+const aiIssueSeverityLabel = (severity: string | undefined) => {
+  const key = (severity || "info").toLowerCase();
+  return aiIssueSeverityLabelMap[key] || severity || "提示";
+};
+
+const aiIssueSeverityTagType = (severity: string | undefined) => {
+  const key = (severity || "info").toLowerCase();
+  if (["critical", "high"].includes(key)) return "danger";
+  if (key === "medium") return "warning";
+  if (key === "low") return "success";
+  return "info";
+};
+
+const highestAiIssueSeverity = (row: ExternalLogSubmission) => {
+  const issues = parseAiIssues(row);
+  return issues.reduce<string | undefined>((current, item) => {
+    const itemKey = (item.severity || "info").toLowerCase();
+    const currentKey = (current || "info").toLowerCase();
+    return (aiIssueSeverityWeightMap[itemKey] || 1) >
+      (aiIssueSeverityWeightMap[currentKey] || 1)
+      ? item.severity
+      : current;
+  }, undefined);
 };
 
 watch(
@@ -1247,21 +1322,44 @@ onMounted(loadWecomUsers);
           </template>
         </el-table-column>
         <el-table-column prop="ai_review_score" label="AI分" width="80" />
-        <el-table-column
-          prop="ai_review_summary"
-          label="AI摘要"
-          min-width="220"
-          show-overflow-tooltip
-        />
+        <el-table-column label="AI摘要" min-width="260">
+          <template #default="scope">
+            <div class="external-ai-summary">
+              <span class="external-ai-summary__text">
+                {{ scope.row.ai_review_summary || "-" }}
+              </span>
+              <el-button
+                v-if="hasExternalAiDetail(scope.row)"
+                link
+                type="primary"
+                @click="openExternalAiDetail(scope.row)"
+              >
+                详情
+              </el-button>
+            </div>
+          </template>
+        </el-table-column>
         <el-table-column label="AI问题" min-width="220">
           <template #default="scope">
-            <div v-if="parseAiIssues(scope.row).length === 0">-</div>
+            <div
+              v-if="parseAiIssues(scope.row).length === 0"
+              class="external-ai-issues"
+            >
+              <el-tag size="small" type="info">无问题</el-tag>
+            </div>
             <template v-else>
-              <div
-                v-for="item in parseAiIssues(scope.row)"
-                :key="`${item.severity || 'info'}-${item.message}`"
-              >
-                {{ item.severity || "info" }}：{{ item.message }}
+              <div class="external-ai-issues">
+                <el-tag
+                  size="small"
+                  :type="
+                    aiIssueSeverityTagType(highestAiIssueSeverity(scope.row))
+                  "
+                >
+                  {{ parseAiIssues(scope.row).length }} 个问题
+                </el-tag>
+                <span class="external-ai-issues__preview">
+                  {{ parseAiIssues(scope.row)[0]?.message || "查看详情" }}
+                </span>
               </div>
             </template>
           </template>
@@ -1272,11 +1370,7 @@ onMounted(loadWecomUsers);
               link
               type="primary"
               :loading="externalReviewingId === scope.row.id"
-              :disabled="
-                ['approved_auto', 'approved_manual', 'rejected'].includes(
-                  scope.row.review_status
-                )
-              "
+              :disabled="externalSubmissionReviewed(scope.row)"
               @click="reviewExternalSubmission(scope.row, 'approve')"
             >
               通过
@@ -1285,11 +1379,7 @@ onMounted(loadWecomUsers);
               link
               type="danger"
               :loading="externalReviewingId === scope.row.id"
-              :disabled="
-                ['approved_auto', 'approved_manual', 'rejected'].includes(
-                  scope.row.review_status
-                )
-              "
+              :disabled="externalSubmissionReviewed(scope.row)"
               @click="reviewExternalSubmission(scope.row, 'reject')"
             >
               驳回
@@ -1298,6 +1388,71 @@ onMounted(loadWecomUsers);
         </el-table-column>
       </el-table>
     </el-card>
+
+    <el-dialog
+      v-model="externalAiDetailVisible"
+      title="AI复核详情"
+      width="min(760px, 92vw)"
+    >
+      <template v-if="externalAiDetailRow">
+        <el-descriptions :column="3" border>
+          <el-descriptions-item label="审计状态">
+            {{ externalReviewStatusLabel(externalAiDetailRow.review_status) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="AI分">
+            {{ externalAiDetailRow.ai_review_score ?? "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="风险等级">
+            {{ externalAiDetailRow.ai_review_risk_level || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="填报人">
+            {{ externalAiDetailRow.submitter_name || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="外包单位">
+            {{ externalAiDetailRow.submitter_company || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="日志日期">
+            {{ externalAiDetailRow.log_date || "-" }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="external-ai-detail__section">
+          <div class="external-ai-detail__title">AI摘要</div>
+          <div class="external-ai-detail__summary">
+            {{ externalAiDetailRow.ai_review_summary || "暂无AI摘要" }}
+          </div>
+        </div>
+
+        <div class="external-ai-detail__section">
+          <div class="external-ai-detail__title">AI问题</div>
+          <el-empty
+            v-if="externalAiDetailIssues.length === 0"
+            description="暂无AI问题"
+            :image-size="72"
+          />
+          <div v-else class="external-ai-detail__issues">
+            <div
+              v-for="(item, index) in externalAiDetailIssues"
+              :key="`${index}-${item.severity || 'info'}-${item.message}`"
+              class="external-ai-detail__issue"
+            >
+              <el-tag
+                size="small"
+                :type="aiIssueSeverityTagType(item.severity)"
+              >
+                {{ aiIssueSeverityLabel(item.severity) }}
+              </el-tag>
+              <div class="external-ai-detail__issue-message">
+                {{ item.message || "-" }}
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+      <template #footer>
+        <el-button @click="externalAiDetailVisible = false">关闭</el-button>
+      </template>
+    </el-dialog>
 
     <div>
       <el-card shadow="never" class="mt-3">
@@ -1719,7 +1874,11 @@ onMounted(loadWecomUsers);
                   label="累计管节"
                   width="100"
                 />
-                <el-table-column prop="footage_m" label="本班顶进(m)" width="110" />
+                <el-table-column
+                  prop="footage_m"
+                  label="本班顶进(m)"
+                  width="110"
+                />
                 <el-table-column
                   prop="cumulative_footage_m"
                   label="累计顶进(m)"
@@ -2468,6 +2627,73 @@ onMounted(loadWecomUsers);
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.external-ai-summary,
+.external-ai-issues {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.external-ai-summary__text,
+.external-ai-issues__preview {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--el-text-color-regular);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.external-ai-summary__text {
+  flex: 1;
+}
+
+.external-ai-issues__preview {
+  color: var(--el-text-color-secondary);
+}
+
+.external-ai-detail__section {
+  margin-top: 18px;
+}
+
+.external-ai-detail__title {
+  margin-bottom: 8px;
+  font-weight: 700;
+  color: var(--el-text-color-primary);
+}
+
+.external-ai-detail__summary,
+.external-ai-detail__issue-message {
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.external-ai-detail__summary {
+  padding: 12px;
+  border: 1px solid var(--el-border-color-lighter);
+  border-radius: 6px;
+  background: var(--el-fill-color-lighter);
+}
+
+.external-ai-detail__issues {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.external-ai-detail__issue {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--el-border-color-lighter);
+}
+
+.external-ai-detail__issue-message {
+  flex: 1;
 }
 
 .public-qr-print {
