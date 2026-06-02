@@ -271,7 +271,13 @@ logRoutes.post(
       )
       .run();
 
-    return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);
+    const id = Number(result.meta.last_row_id);
+    await publishEvent(c.env, "OPERATOR_LOG_CREATED", "log.operator.create", {
+      project_id: body.project_id,
+      operator_log_id: id
+    });
+
+    return c.json({ success: true, data: { id } }, 201);
   }
 );
 
@@ -390,6 +396,11 @@ logRoutes.put(
         id
       )
       .run();
+
+    await publishEvent(c.env, "OPERATOR_LOG_UPDATED", "log.operator.update", {
+      project_id: existing.project_id,
+      operator_log_id: id
+    });
 
     return c.json({ success: true });
   }

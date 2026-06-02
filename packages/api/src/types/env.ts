@@ -27,6 +27,7 @@ export interface Env {
   WECOM_APPROVAL_DEFAULT_TARGET?: "web" | "miniapp";
   WECOM_BOT_TOOL_TOKEN?: string;
   WECOM_TOOL_WEB_BASE_URL?: string;
+  WECOM_PUSH_API_BASE_URL?: string;
   WECOM_GROUP_WEBHOOK_PROXY_MODE?: "direct" | "bridge";
   WECOM_DEFAULT_PROJECT_PUSH_WEBHOOK_SECRET_REF?: string;
   PASSKEY_RP_ID: string;

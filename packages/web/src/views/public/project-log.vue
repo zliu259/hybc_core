@@ -165,12 +165,14 @@ const shiftLabel = (shift?: string | null) => {
 const deviationLabel = (item: PublicOperatorLogItem) => {
   const horizontalDirection =
     item.horizontal_deviation_direction || item.deviation_direction || "";
-  const horizontalValue = item.horizontal_deviation_mm ?? item.deviation_value_mm;
+  const horizontalValue =
+    item.horizontal_deviation_mm ?? item.deviation_value_mm;
   const parts = [
     horizontalDirection && typeof horizontalValue === "number"
       ? `${deviationDirectionLabel(horizontalDirection)}${horizontalValue}mm`
       : "",
-    item.vertical_deviation_direction && typeof item.vertical_deviation_mm === "number"
+    item.vertical_deviation_direction &&
+    typeof item.vertical_deviation_mm === "number"
       ? `${deviationDirectionLabel(item.vertical_deviation_direction)}${item.vertical_deviation_mm}mm`
       : ""
   ].filter(Boolean);
@@ -210,6 +212,10 @@ const syncModeFromRoute = () => {
   ].includes(nextMode)
     ? (nextMode as PageMode)
     : "home";
+  const routeSectionId = Number(route.query.section_id ?? "0");
+  if (routeSectionId > 0) {
+    selectedViewSectionId.value = routeSectionId;
+  }
 };
 
 const goMode = async (nextMode: PageMode) => {
@@ -394,11 +400,14 @@ const usePreviousWeather = () => {
   if (!latestOperatorLog.value) return;
   form.value.weather = latestOperatorLog.value.weather || form.value.weather;
   form.value.cutter_current_text =
-    latestOperatorLog.value.cutter_current_text || form.value.cutter_current_text;
+    latestOperatorLog.value.cutter_current_text ||
+    form.value.cutter_current_text;
   form.value.cutter_frequency_hz =
-    latestOperatorLog.value.cutter_frequency_hz ?? form.value.cutter_frequency_hz;
+    latestOperatorLog.value.cutter_frequency_hz ??
+    form.value.cutter_frequency_hz;
   form.value.chamber_pressure_mpa =
-    latestOperatorLog.value.chamber_pressure_mpa ?? form.value.chamber_pressure_mpa;
+    latestOperatorLog.value.chamber_pressure_mpa ??
+    form.value.chamber_pressure_mpa;
   form.value.main_thrust_text =
     latestOperatorLog.value.main_thrust_text || form.value.main_thrust_text;
   form.value.horizontal_deviation_direction =
@@ -839,9 +848,7 @@ onMounted(() => {
                 />
               </el-select>
               <div class="section-meta">
-                {{
-                  sectionMetaText(selectedSection) || "该工作段暂无补充参数"
-                }}
+                {{ sectionMetaText(selectedSection) || "该工作段暂无补充参数" }}
               </div>
             </el-form-item>
             <el-form-item label="日志日期" required>
@@ -894,9 +901,11 @@ onMounted(() => {
                 </div>
                 <div>
                   <small>累计顶进</small>
-                  <strong>{{
-                    latestOperatorLog.cumulative_footage_m ?? "-"
-                  }}m</strong>
+                  <strong
+                    >{{
+                      latestOperatorLog.cumulative_footage_m ?? "-"
+                    }}m</strong
+                  >
                 </div>
                 <div>
                   <small>偏差</small>
@@ -904,9 +913,11 @@ onMounted(() => {
                 </div>
                 <div>
                   <small>泥仓压力</small>
-                  <strong>{{
-                    latestOperatorLog.chamber_pressure_mpa ?? "-"
-                  }}MPa</strong>
+                  <strong
+                    >{{
+                      latestOperatorLog.chamber_pressure_mpa ?? "-"
+                    }}MPa</strong
+                  >
                 </div>
               </div>
               <p v-if="latestOperatorLog.issue_summary" class="log-card__text">

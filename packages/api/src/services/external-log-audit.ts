@@ -285,10 +285,11 @@ export const adoptExternalSubmission = async (
     )
     .run();
 
-  if (managerLogId) {
+  if (managerLogId || operatorLogId) {
     await publishEvent(env, "EXTERNAL_LOG_ADOPTED", "external-log-audit.adopt", {
       project_id: submission.project_id,
       manager_log_id: managerLogId,
+      operator_log_id: operatorLogId,
       external_submission_id: submission.id
     });
   }

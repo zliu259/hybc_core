@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { adoptExternalSubmission } from "../services/external-log-audit";
+import { ensureActiveProjectPublicLogLink } from "../services/public-log-link";
 import {
   createDefaultProjectWeComPushBinding,
   getDefaultProjectWeComPushWebhookSecretRef
@@ -320,13 +321,15 @@ projectRoutes.post("/", requireRoles(["super_admin", "manager", "site_manager"])
     auth.sub,
     defaultWeComPushWebhookSecretRef
   );
+  const defaultPublicLogLink = await ensureActiveProjectPublicLogLink(c.env, projectId, auth.sub);
 
   return c.json(
     {
       success: true,
       data: {
         id: projectId,
-        default_wecom_binding_id: defaultWeComBinding?.id ?? null
+        default_wecom_binding_id: defaultWeComBinding?.id ?? null,
+        default_public_log_link_id: defaultPublicLogLink?.id ?? null
       }
     },
     201

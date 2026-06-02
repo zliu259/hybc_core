@@ -718,14 +718,20 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
         }
         case "MANAGER_LOG_CREATED":
         case "MANAGER_LOG_UPDATED":
+        case "OPERATOR_LOG_CREATED":
+        case "OPERATOR_LOG_UPDATED":
         case "EXTERNAL_LOG_ADOPTED": {
           const projectId = Number(event.payload?.project_id ?? 0);
           const managerLogId = Number(event.payload?.manager_log_id ?? 0);
-          if (projectId > 0 && managerLogId > 0) {
+          const operatorLogId = Number(event.payload?.operator_log_id ?? 0);
+          const externalSubmissionId = Number(event.payload?.external_submission_id ?? 0);
+          if (projectId > 0 && (managerLogId > 0 || operatorLogId > 0)) {
             await pushProjectLogEventToWeComGroups(env, {
               event_type: event.type,
               project_id: projectId,
-              manager_log_id: managerLogId
+              manager_log_id: managerLogId || null,
+              operator_log_id: operatorLogId || null,
+              external_submission_id: externalSubmissionId || null
             });
           }
           break;
