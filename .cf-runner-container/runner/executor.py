@@ -164,7 +164,7 @@ class TaskExecutor:
 
             selected_model = model if isinstance(model, str) and model else runtime.get("OPENAI_MODEL")
             if not isinstance(selected_model, str) or not selected_model:
-                selected_model = os.getenv("OPENAI_MODEL", "gpt-5.2")
+                selected_model = os.getenv("OPENAI_MODEL", "gpt-5.5")
 
             model_overrides: dict[str, str] = {}
             runtime_map = runtime if isinstance(runtime, dict) else {}
@@ -331,9 +331,10 @@ class TaskExecutor:
             ),
             "user": (
                 "Extract invoice fields from attachment evidence and output strict JSON: "
-                '{"invoice_no":string|null,"invoice_number":string|null,"issue_date":string|null,'
-                '"amount":number|null,"amount_with_tax":number|null,"seller_name":string|null,'
-                '"buyer_name":string|null,"tax_no":string|null,"raw_text_summary":string}. '
+                '{"invoice_no":string|null,"invoice_code":string|null,"invoice_number":string|null,'
+                '"check_code":string|null,"issue_date":string|null,"amount":number|null,'
+                '"amount_with_tax":number|null,"seller_name":string|null,"buyer_name":string|null,'
+                '"tax_no":string|null,"qr_code_text":string|null,"raw_text_summary":string}. '
                 "Use null when unknown. amount/amount_with_tax must be numeric when available."
             ),
         }

@@ -64,6 +64,7 @@ class ClaudeProvider(AiProvider):
             "log_smart_fill",
             "log_analysis",
             "log_summary",
+            "external_log_audit",
             "consumable_estimation",
             "inventory_alert_analysis",
             "consumption_anomaly",

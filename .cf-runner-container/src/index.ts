@@ -18,7 +18,7 @@ export class RunnerContainer extends Container {
     NODE_TYPE: "cloudflare_container",
     POLL_INTERVAL_SECONDS: "3",
     HEARTBEAT_INTERVAL_SECONDS: "60",
-    CAPABILITIES: "contract_review,risk_assessment,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate,voice_stt",
+    CAPABILITIES: "contract_review,risk_assessment,payment_risk_assessment,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,external_log_audit,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,ocr_extract,file_generate,voice_stt,approval_ai_gate",
     MOCK_AI_ONLY: "false",
     OPENAI_MODEL: "gpt-5.2",
     OPENAI_MODEL_CONTRACT_REVIEW_TEXT: "gpt-5.2",

@@ -29,6 +29,7 @@ class Settings:
             "log_smart_fill",
             "log_analysis",
             "log_summary",
+            "external_log_audit",
             "equipment_recommend",
             "consumable_estimation",
             "inventory_alert_analysis",

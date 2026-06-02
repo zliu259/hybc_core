@@ -304,6 +304,13 @@ export const applyExternalLogAuditResult = async (
 ): Promise<ExternalLogAiReview> => {
   const review = normalizeAiReview(result);
   const now = nowIso();
+  const submission = await loadExternalSubmission(env, submissionId);
+
+  if (!submission || submission.ai_review_task_id !== taskId) {
+    return review;
+  }
+
+  const canApplyDecision = submission.review_status === "pending_ai_review";
 
   await env.DB.prepare(
     `UPDATE external_log_submission SET
@@ -311,7 +318,10 @@ export const applyExternalLogAuditResult = async (
        ai_review_score = ?,
        ai_review_risk_level = ?,
        ai_review_summary = ?,
-       review_status = ?,
+       review_status = CASE
+         WHEN review_status = 'pending_ai_review' THEN ?
+         ELSE review_status
+       END,
        updated_at = ?
      WHERE id = ? AND ai_review_task_id = ?`
   )
@@ -327,7 +337,7 @@ export const applyExternalLogAuditResult = async (
     )
     .run();
 
-  if (review.decision === "auto_approve") {
+  if (review.decision === "auto_approve" && canApplyDecision) {
     await adoptExternalSubmission(env, submissionId, "ai:auto", review.summary);
   }
 

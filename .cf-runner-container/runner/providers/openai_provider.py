@@ -17,7 +17,7 @@ class OpenAIProvider(AiProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gpt-5.2",
+        model: str = "gpt-5.5",
         base_url: str | None = None,
         organization: str | None = None,
         project: str | None = None,
@@ -52,6 +52,7 @@ class OpenAIProvider(AiProvider):
             "log_smart_fill",
             "log_analysis",
             "log_summary",
+            "external_log_audit",
             "ocr_extract",
             "approval_ai_gate",
         ]

@@ -12,7 +12,7 @@ services:
       - NODE_TYPE=${NODE_TYPE:-docker}
       - POLL_INTERVAL_SECONDS=${POLL_INTERVAL_SECONDS:-3}
       - HEARTBEAT_INTERVAL_SECONDS=${HEARTBEAT_INTERVAL_SECONDS:-30}
-      - CAPABILITIES=${CAPABILITIES:-contract_review,payment_risk_assessment,approval_ai_gate,reimbursement_check,reimbursement_anomaly,log_analysis,ocr_extract,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,file_generate,voice_stt}
+      - CAPABILITIES=${CAPABILITIES:-contract_review,risk_assessment,payment_risk_assessment,reimbursement_check,reimbursement_anomaly,log_smart_fill,log_analysis,log_summary,external_log_audit,equipment_recommend,consumable_estimation,inventory_alert_analysis,consumption_anomaly,ocr_extract,file_generate,voice_stt,approval_ai_gate}
       - MOCK_AI_ONLY=${MOCK_AI_ONLY:-false}
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENAI_MODEL=${OPENAI_MODEL:-gpt-5.5}
