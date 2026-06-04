@@ -1554,3 +1554,9 @@
 ### 8.17 上传 URL API 域名修正（2026-06）
 
 - Web 端所有仍直接使用签名返回 `uploadUrl` 的上传入口统一通过 `resolveUploadUrl()` 解析到 API 域名，避免相对路径在 `web.hybcdg.com` 下发起 PUT 导致 405：`packages/web/src/views/project/workspace/project-panel.vue`、`packages/web/src/views/project/workspace/file-panel.vue`、`packages/web/src/components/PhaseUpload/index.vue`、`packages/web/src/layout/components/lay-support/index.vue`
+
+### 8.18 工作段趋势与预测（2026-06）
+
+- 项目工作台的工作段抽屉新增“趋势与预测”区：展示剩余里程、历史日均、近三日日均、预计剩余天数，并以“进度/设备/偏差”三组折线图展示累计顶进、本班顶进、下管数、泥仓压力、刀盘频率、刀盘电流、水平/垂直偏差趋势；最近日志关键指标同步以表格展示：`packages/web/src/views/project/workspace/project-panel.vue`
+- 外部日志查看页的“查看工作段日志”入口同步新增“趋势与预测”区，外包人员通过公开链接也可查看同一工作段最近 20 条日志的剩余里程、速度估算、预计剩余天数、趋势折线图与最近指标表：`packages/web/src/views/public/project-log.vue`
+- 新增前端纯计算工具，按施工日志和工作段长度直接计算剩余米数、进度百分比、日均速度、近三日速度、预计剩余天数与偏差正负值：`packages/web/src/utils/project-section-progress.ts`

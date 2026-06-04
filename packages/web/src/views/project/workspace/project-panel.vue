@@ -1,13 +1,18 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import QRCode from "qrcode";
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
+import echarts from "@/plugins/echarts";
 import { message } from "@/utils/message";
 import { ElMessageBox } from "element-plus";
 import { statusLabel } from "@/utils/enum-labels";
 import { useUserStoreHook } from "@/store/modules/user";
 import { formatToken, getToken } from "@/utils/auth";
+import {
+  buildSectionProgressInsight,
+  type SectionTrendRow
+} from "@/utils/project-section-progress";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   createProjectSection,
@@ -94,6 +99,17 @@ const sectionBaseForm = ref({
   soil_type: [] as string[],
   jacking_method: ""
 });
+const sectionTrendChartRef = ref<HTMLElement | null>(null);
+const sectionTrendGroup = ref<"progress" | "equipment" | "deviation">(
+  "progress"
+);
+let sectionTrendChart: ReturnType<typeof echarts.init> | null = null;
+
+const sectionTrendGroupOptions = [
+  { label: "进度", value: "progress" },
+  { label: "设备", value: "equipment" },
+  { label: "偏差", value: "deviation" }
+];
 
 const operatorLogDetailVisible = ref(false);
 const operatorLogDetailLoading = ref(false);
@@ -374,6 +390,188 @@ const sectionDrawerProgress = computed(() => {
     phase
   };
 });
+
+const sectionProgressInsight = computed(() =>
+  buildSectionProgressInsight(
+    currentSection.value?.section_length,
+    sectionOperatorLogs.value
+  )
+);
+
+const sectionTrendSummary = computed(
+  () => sectionProgressInsight.value.summary
+);
+
+const formatTrendNumber = (
+  value: number | null | undefined,
+  suffix = "",
+  digits = 1
+) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return `${value.toFixed(digits)}${suffix}`;
+};
+
+const formatEstimateDays = (value: number | null) => {
+  if (typeof value !== "number" || !Number.isFinite(value)) return "-";
+  return `${value}天`;
+};
+
+const formatTrendDeviation = (row: SectionTrendRow) => {
+  const parts = [
+    typeof row.horizontalDeviationMm === "number"
+      ? `水平${row.horizontalDeviationMm > 0 ? "+" : ""}${row.horizontalDeviationMm}mm`
+      : "",
+    typeof row.verticalDeviationMm === "number"
+      ? `垂直${row.verticalDeviationMm > 0 ? "+" : ""}${row.verticalDeviationMm}mm`
+      : ""
+  ].filter(Boolean);
+  return parts.length ? parts.join("，") : "-";
+};
+
+const buildSectionTrendOption = () => {
+  const rows = sectionProgressInsight.value.trendRows;
+  const labels = rows.map(item => item.label);
+  const emptyGraphic = rows.length
+    ? undefined
+    : {
+        type: "text",
+        left: "center",
+        top: "middle",
+        style: {
+          text: "暂无施工日志趋势数据",
+          fill: "#909399",
+          fontSize: 14
+        }
+      };
+
+  const base = {
+    tooltip: { trigger: "axis" },
+    legend: { top: 0 },
+    grid: { top: 48, right: 48, bottom: 42, left: 56 },
+    dataZoom:
+      rows.length > 8
+        ? [
+            {
+              type: "inside",
+              start: Math.max(0, 100 - (8 / rows.length) * 100),
+              end: 100
+            },
+            { type: "slider", height: 18, bottom: 6 }
+          ]
+        : [],
+    graphic: emptyGraphic,
+    xAxis: {
+      type: "category",
+      boundaryGap: false,
+      data: labels,
+      axisLabel: { rotate: rows.length > 5 ? 28 : 0 }
+    }
+  };
+
+  if (sectionTrendGroup.value === "equipment") {
+    return {
+      ...base,
+      legend: { top: 0, data: ["泥仓压力", "刀盘频率", "刀盘电流"] },
+      yAxis: [
+        { type: "value", name: "MPa" },
+        { type: "value", name: "Hz/A" }
+      ],
+      series: [
+        {
+          name: "泥仓压力",
+          type: "line",
+          smooth: true,
+          data: rows.map(item => item.chamberPressureMpa),
+          itemStyle: { color: "#2f6f6d" }
+        },
+        {
+          name: "刀盘频率",
+          type: "line",
+          yAxisIndex: 1,
+          smooth: true,
+          data: rows.map(item => item.cutterFrequencyHz),
+          itemStyle: { color: "#b66b3d" }
+        },
+        {
+          name: "刀盘电流",
+          type: "line",
+          yAxisIndex: 1,
+          smooth: true,
+          data: rows.map(item => item.cutterCurrentA),
+          itemStyle: { color: "#5b6fa8" }
+        }
+      ]
+    };
+  }
+
+  if (sectionTrendGroup.value === "deviation") {
+    return {
+      ...base,
+      legend: { top: 0, data: ["水平偏差", "垂直偏差"] },
+      yAxis: [{ type: "value", name: "mm" }],
+      series: [
+        {
+          name: "水平偏差",
+          type: "line",
+          smooth: true,
+          data: rows.map(item => item.horizontalDeviationMm),
+          itemStyle: { color: "#3f7f72" }
+        },
+        {
+          name: "垂直偏差",
+          type: "line",
+          smooth: true,
+          data: rows.map(item => item.verticalDeviationMm),
+          itemStyle: { color: "#b35f49" }
+        }
+      ]
+    };
+  }
+
+  return {
+    ...base,
+    legend: { top: 0, data: ["累计顶进", "本班顶进", "完成管节"] },
+    yAxis: [
+      { type: "value", name: "米" },
+      { type: "value", name: "节" }
+    ],
+    series: [
+      {
+        name: "累计顶进",
+        type: "line",
+        smooth: true,
+        data: rows.map(item => item.cumulativeFootageM),
+        areaStyle: { opacity: 0.08 },
+        itemStyle: { color: "#2f6f6d" }
+      },
+      {
+        name: "本班顶进",
+        type: "line",
+        smooth: true,
+        data: rows.map(item => item.footageM),
+        itemStyle: { color: "#c58a3a" }
+      },
+      {
+        name: "完成管节",
+        type: "line",
+        yAxisIndex: 1,
+        smooth: true,
+        data: rows.map(item => item.completedPipeCount),
+        itemStyle: { color: "#6672a7" }
+      }
+    ]
+  };
+};
+
+const renderSectionTrendChart = async () => {
+  await nextTick();
+  if (!sectionDrawerVisible.value || !sectionTrendChartRef.value) return;
+  if (!sectionTrendChart) {
+    sectionTrendChart = echarts.init(sectionTrendChartRef.value);
+  }
+  sectionTrendChart.setOption(buildSectionTrendOption(), true);
+  sectionTrendChart.resize();
+};
 
 const sectionMetrics = computed(() => {
   return sections.value.map(section => {
@@ -1179,8 +1377,38 @@ watch(
   }
 );
 
+watch(sectionProgressInsight, () => {
+  void renderSectionTrendChart();
+});
+
+watch(sectionTrendGroup, () => {
+  void renderSectionTrendChart();
+});
+
+watch(sectionDrawerVisible, visible => {
+  if (visible) {
+    void renderSectionTrendChart();
+    return;
+  }
+  sectionTrendChart?.dispose();
+  sectionTrendChart = null;
+});
+
+const resizeSectionTrendChart = () => {
+  sectionTrendChart?.resize();
+};
+
 onMounted(loadData);
 onMounted(loadWecomUsers);
+onMounted(() => {
+  window.addEventListener("resize", resizeSectionTrendChart);
+});
+
+onUnmounted(() => {
+  window.removeEventListener("resize", resizeSectionTrendChart);
+  sectionTrendChart?.dispose();
+  sectionTrendChart = null;
+});
 </script>
 
 <template>
@@ -1847,6 +2075,101 @@ onMounted(loadWecomUsers);
             >
             <span>剩余：{{ sectionDrawerProgress.remaining.toFixed(1) }}m</span>
           </div>
+        </el-card>
+
+        <el-card shadow="never" class="mb-3">
+          <template #header>
+            <div class="card-header card-header--with-action">
+              <span>趋势与预测</span>
+              <el-segmented
+                v-model="sectionTrendGroup"
+                :options="sectionTrendGroupOptions"
+              />
+            </div>
+          </template>
+
+          <div class="trend-summary-grid">
+            <div class="trend-summary-item">
+              <span>剩余里程</span>
+              <strong>{{
+                formatTrendNumber(sectionTrendSummary.remainingM, "m")
+              }}</strong>
+              <small
+                >总长
+                {{
+                  formatTrendNumber(sectionTrendSummary.sectionLengthM, "m")
+                }}</small
+              >
+            </div>
+            <div class="trend-summary-item">
+              <span>历史日均</span>
+              <strong>{{
+                formatTrendNumber(
+                  sectionTrendSummary.averageDailyFootageM,
+                  "m/天"
+                )
+              }}</strong>
+              <small>有效施工 {{ sectionTrendSummary.activeDays }} 天</small>
+            </div>
+            <div class="trend-summary-item">
+              <span>近三日日均</span>
+              <strong>{{
+                formatTrendNumber(
+                  sectionTrendSummary.recentDailyFootageM,
+                  "m/天"
+                )
+              }}</strong>
+              <small>按最近有顶进记录日期估算</small>
+            </div>
+            <div class="trend-summary-item trend-summary-item--accent">
+              <span>预计剩余</span>
+              <strong>{{
+                formatEstimateDays(sectionTrendSummary.estimatedDaysRemaining)
+              }}</strong>
+              <small>按近三日优先、历史日均兜底</small>
+            </div>
+          </div>
+
+          <div ref="sectionTrendChartRef" class="section-trend-chart" />
+
+          <el-table
+            :data="sectionProgressInsight.recentRows"
+            size="small"
+            max-height="260"
+            class="mt-3"
+          >
+            <el-table-column prop="label" label="记录" min-width="150" />
+            <el-table-column label="累计顶进" width="105">
+              <template #default="scope">
+                {{ formatTrendNumber(scope.row.cumulativeFootageM, "m") }}
+              </template>
+            </el-table-column>
+            <el-table-column label="本班顶进" width="105">
+              <template #default="scope">
+                {{ formatTrendNumber(scope.row.footageM, "m") }}
+              </template>
+            </el-table-column>
+            <el-table-column label="下管" width="90">
+              <template #default="scope">
+                {{ formatTrendNumber(scope.row.completedPipeCount, "节", 0) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="泥仓压力" width="105">
+              <template #default="scope">
+                {{ formatTrendNumber(scope.row.chamberPressureMpa, "MPa", 2) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="刀盘频率" width="105">
+              <template #default="scope">
+                {{ formatTrendNumber(scope.row.cutterFrequencyHz, "Hz", 0) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="偏差" min-width="150">
+              <template #default="scope">
+                {{ formatTrendDeviation(scope.row) }}
+              </template>
+            </el-table-column>
+          </el-table>
         </el-card>
 
         <el-row :gutter="16">
@@ -2831,5 +3154,48 @@ onMounted(loadWecomUsers);
   gap: 12px;
   color: #6e6458;
   font-size: 12px;
+}
+
+.trend-summary-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.trend-summary-item {
+  display: flex;
+  min-height: 86px;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 12px;
+  border: 1px solid #e7ded0;
+  border-radius: 8px;
+  background: #fffdf8;
+}
+
+.trend-summary-item span {
+  color: #6e6458;
+  font-size: 12px;
+}
+
+.trend-summary-item strong {
+  color: #25372f;
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.trend-summary-item small {
+  color: #8b8172;
+}
+
+.trend-summary-item--accent {
+  border-color: #b9d7c5;
+  background: #f5fbf7;
+}
+
+.section-trend-chart {
+  width: 100%;
+  height: 320px;
 }
 </style>
