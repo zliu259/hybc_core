@@ -10,6 +10,68 @@
     </view>
   </hy-panel-card>
 
+  <hy-panel-card title="趋势与预测" icon="📈" subtitle="按该工作段最近施工日志估算">
+    <view class="trend-summary-grid">
+      <view wx:for="{{trendPanel.summaryItems}}" wx:key="label" class="trend-summary-item {{item.accent ? 'trend-summary-item--accent' : ''}}">
+        <view class="trend-summary-label">{{item.label}}</view>
+        <view class="trend-summary-value">{{item.value}}</view>
+        <view class="trend-summary-sub">{{item.sub}}</view>
+      </view>
+    </view>
+
+    <view class="trend-tabs">
+      <view
+        wx:for="{{trendPanel.groupOptions}}"
+        wx:key="value"
+        class="trend-tab {{item.active ? 'trend-tab--active' : ''}}"
+        data-group="{{item.value}}"
+        bindtap="onTrendGroupChange"
+      >
+        {{item.label}}
+      </view>
+    </view>
+
+    <view wx:if="{{!trendPanel.hasRows}}" class="empty-tip">暂无施工日志趋势数据</view>
+    <block wx:else>
+      <view wx:if="{{trendPanel.chartSeries.length === 0}}" class="empty-tip">该分组暂无可绘制指标</view>
+      <block wx:else>
+        <view class="ucharts-card">
+          <qiun-wx-ucharts
+            type="line"
+            canvas-id="sectionTrendChart"
+            canvas2d="{{true}}"
+            chartData="{{trendPanel.chartData}}"
+            opts="{{trendPanel.chartOpts}}"
+            ontouch="{{true}}"
+          />
+        </view>
+      </block>
+
+      <scroll-view scroll-x class="trend-table-scroll">
+        <view class="trend-table">
+          <view class="trend-table-row trend-table-head">
+            <view class="trend-table-cell trend-table-cell--record">记录</view>
+            <view class="trend-table-cell">累计</view>
+            <view class="trend-table-cell">本班</view>
+            <view class="trend-table-cell">下管</view>
+            <view class="trend-table-cell">压力</view>
+            <view class="trend-table-cell">频率</view>
+            <view class="trend-table-cell trend-table-cell--deviation">偏差</view>
+          </view>
+          <view wx:for="{{trendPanel.recentRows}}" wx:key="id" class="trend-table-row">
+            <view class="trend-table-cell trend-table-cell--record">{{item.label}}</view>
+            <view class="trend-table-cell">{{item.cumulativeFootageText}}</view>
+            <view class="trend-table-cell">{{item.footageText}}</view>
+            <view class="trend-table-cell">{{item.pipeText}}</view>
+            <view class="trend-table-cell">{{item.pressureText}}</view>
+            <view class="trend-table-cell">{{item.frequencyText}}</view>
+            <view class="trend-table-cell trend-table-cell--deviation">{{item.deviationText}}</view>
+          </view>
+        </view>
+      </scroll-view>
+    </block>
+  </hy-panel-card>
+
   <hy-panel-card title="施工日志" icon="edit-1" subtitle="按日期排序，适合现场快速回看">
     <view class="toolbar">
       <t-button size="small" theme="primary" disabled="{{readonly}}" bindtap="goCreateOperatorLog">新增施工日志</t-button>

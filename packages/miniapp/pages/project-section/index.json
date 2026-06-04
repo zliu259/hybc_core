@@ -1,3 +1,6 @@
 {
-  "navigationBarTitleText": "标段详情"
+  "navigationBarTitleText": "标段详情",
+  "usingComponents": {
+    "qiun-wx-ucharts": "../../components/qiun-wx-ucharts/index"
+  }
 }

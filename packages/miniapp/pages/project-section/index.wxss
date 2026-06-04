@@ -49,6 +49,128 @@
   font-size: 24rpx;
 }
 
+.trend-summary-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12rpx;
+}
+
+.trend-summary-item {
+  min-height: 132rpx;
+  border: 1px solid #e2e8f0;
+  border-radius: 14rpx;
+  background: #fbfcfe;
+  padding: 16rpx;
+  box-sizing: border-box;
+}
+
+.trend-summary-item--accent {
+  border-color: #b7d8c9;
+  background: #f3faf7;
+}
+
+.trend-summary-label {
+  font-size: 22rpx;
+  color: #64748b;
+}
+
+.trend-summary-value {
+  margin-top: 8rpx;
+  font-size: 34rpx;
+  font-weight: 700;
+  color: #1f2d3d;
+  line-height: 1.15;
+}
+
+.trend-summary-sub {
+  margin-top: 8rpx;
+  font-size: 21rpx;
+  color: #7b8798;
+  line-height: 1.35;
+}
+
+.trend-tabs {
+  display: flex;
+  gap: 8rpx;
+  margin-top: 18rpx;
+  padding: 6rpx;
+  border-radius: 12rpx;
+  background: #eef3f8;
+}
+
+.trend-tab {
+  flex: 1;
+  height: 58rpx;
+  line-height: 58rpx;
+  text-align: center;
+  border-radius: 10rpx;
+  font-size: 24rpx;
+  color: #5c667a;
+}
+
+.trend-tab--active {
+  background: #1677ff;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.ucharts-card {
+  margin-top: 16rpx;
+  border: 1px solid #e4e9f2;
+  border-radius: 14rpx;
+  background: #ffffff;
+  height: 520rpx;
+  padding: 8rpx;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.trend-table-scroll {
+  width: 100%;
+  margin-top: 18rpx;
+}
+
+.trend-table {
+  min-width: 980rpx;
+  border: 1px solid #e4e9f2;
+  border-radius: 12rpx;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.trend-table-row {
+  display: flex;
+  min-height: 64rpx;
+  border-top: 1px solid #eef2f6;
+}
+
+.trend-table-row:first-child {
+  border-top: 0;
+}
+
+.trend-table-head {
+  background: #f7f9fc;
+  font-weight: 600;
+  color: #1f2d3d;
+}
+
+.trend-table-cell {
+  flex: 0 0 110rpx;
+  padding: 14rpx 10rpx;
+  box-sizing: border-box;
+  font-size: 22rpx;
+  color: #5c667a;
+  line-height: 1.35;
+}
+
+.trend-table-cell--record {
+  flex-basis: 190rpx;
+}
+
+.trend-table-cell--deviation {
+  flex-basis: 220rpx;
+}
+
 .dialog-mask {
   position: fixed;
   inset: 0;

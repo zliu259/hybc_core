@@ -1559,4 +1559,6 @@
 
 - 项目工作台的工作段抽屉新增“趋势与预测”区：展示剩余里程、历史日均、近三日日均、预计剩余天数，并以“进度/设备/偏差”三组折线图展示累计顶进、本班顶进、下管数、泥仓压力、刀盘频率、刀盘电流、水平/垂直偏差趋势；最近日志关键指标同步以表格展示：`packages/web/src/views/project/workspace/project-panel.vue`
 - 外部日志查看页的“查看工作段日志”入口同步新增“趋势与预测”区，外包人员通过公开链接也可查看同一工作段最近 20 条日志的剩余里程、速度估算、预计剩余天数、趋势折线图与最近指标表：`packages/web/src/views/public/project-log.vue`
+- 小程序工作段详情页新增同口径“趋势与预测”区：展示剩余里程、历史日均、近三日日均、预计剩余天数，并通过本地 uCharts canvas 组件按“进度 / 设备 / 偏差”三组切换展示累计顶进、本班顶进、下管数、泥仓压力、刀盘频率、刀盘电流、水平/高程偏差；最近日志关键指标以横向滚动表补充：`packages/miniapp/pages/project-section/index.{js,wxml,wxss,json}`、`packages/miniapp/components/qiun-wx-ucharts/*`
 - 新增前端纯计算工具，按施工日志和工作段长度直接计算剩余米数、进度百分比、日均速度、近三日速度、预计剩余天数与偏差正负值：`packages/web/src/utils/project-section-progress.ts`
+- 新增小程序端同口径纯计算工具与测试，供工作段详情页复用：`packages/miniapp/utils/project-section-progress.js`、`packages/miniapp/utils/project-section-progress.test.js`
