@@ -1657,11 +1657,12 @@ receiptRoutes.post(
     }
 
     if (contract.received_amount + body.amount > contract.total_amount) {
+      const remaining = contract.total_amount - contract.received_amount;
       return c.json(
         {
           success: false,
           error: {
-            message: `Received overflow: existing ${contract.received_amount} + current ${body.amount} > contract ${contract.total_amount}`
+            message: `本次收款 ${body.amount} 元超出合同可收款余额（合同总额 ${contract.total_amount} 元，已收 ${contract.received_amount} 元，剩余 ${remaining} 元）`
           }
         },
         400
@@ -1673,7 +1674,10 @@ receiptRoutes.post(
         .bind(body.invoice_id)
         .first<Invoice>();
       if (!invoice || invoice.contract_id !== contract.id) {
-        return c.json({ success: false, error: { message: "invoice_id not valid for this contract" } }, 400);
+        return c.json(
+          { success: false, error: { message: "所选发票不属于当前合同，请重新选择发票或合同" } },
+          400
+        );
       }
 
       const receivedOnInvoice = await c.env.DB.prepare(
@@ -1683,11 +1687,12 @@ receiptRoutes.post(
         .first<{ total: number }>();
       const invoiceReceived = receivedOnInvoice?.total ?? 0;
       if (invoiceReceived + body.amount > invoice.amount) {
+        const invoiceRemaining = invoice.amount - invoiceReceived;
         return c.json(
           {
             success: false,
             error: {
-              message: `Receipt overflow for invoice: existing ${invoiceReceived} + current ${body.amount} > invoice ${invoice.amount}`
+              message: `本次收款 ${body.amount} 元超出发票 ${invoice.invoice_no} 可收款余额（发票金额 ${invoice.amount} 元，已收 ${invoiceReceived} 元，剩余 ${invoiceRemaining} 元）`
             }
           },
           400

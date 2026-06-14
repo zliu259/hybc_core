@@ -19,6 +19,7 @@ import {
   type ReceiptAccountOption
 } from "@/api/receipt";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import { resolveApiErrorMessage } from "@/utils/api-error";
 
 defineOptions({ name: "ReceiptList" });
 
@@ -197,6 +198,10 @@ const submitCreate = async () => {
     message(`收款登记成功：${result.data.receipt_no}`, { type: "success" });
     createDialogVisible.value = false;
     await loadData();
+  } catch (error) {
+    message(resolveApiErrorMessage(error, "收款登记失败，请稍后重试"), {
+      type: "error"
+    });
   } finally {
     creating.value = false;
   }
@@ -241,15 +246,25 @@ const submitRefund = async () => {
       type: "success"
     });
     refundDialogVisible.value = false;
+  } catch (error) {
+    message(resolveApiErrorMessage(error, "发起退款失败，请稍后重试"), {
+      type: "error"
+    });
   } finally {
     refunding.value = false;
   }
 };
 
 const onDelete = async (row: Receipt) => {
-  await deleteReceipt(row.id);
-  message("删除成功", { type: "success" });
-  await loadData();
+  try {
+    await deleteReceipt(row.id);
+    message("删除成功", { type: "success" });
+    await loadData();
+  } catch (error) {
+    message(resolveApiErrorMessage(error, "删除失败，请稍后重试"), {
+      type: "error"
+    });
+  }
 };
 
 const goDetail = (row: Receipt) => {
