@@ -13,6 +13,10 @@ import {
   type Payee
 } from "@/api/payment";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import {
+  buildInvoiceAttachments,
+  type InvoiceAttachment
+} from "@/utils/invoice-attachments";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import {
   deleteInvoice,
@@ -747,6 +751,50 @@ const runVerify = async (row: Invoice) => {
   await loadData();
 };
 
+const invoiceStatusLabelMap: Record<string, string> = {
+  issued: "已签发",
+  voided: "已作废",
+  red_flushed: "已红冲",
+  cancelled: "已取消"
+};
+const verificationStatusLabelMap: Record<string, string> = {
+  none: "未校验",
+  pending: "校验中",
+  verified: "已核验",
+  failed: "校验失败",
+  mismatch: "信息不一致"
+};
+const paymentStatusLabelMap: Record<string, string> = {
+  unpaid: "未收款",
+  partial: "部分收款",
+  paid: "已收款"
+};
+const sendStatusLabelMap: Record<string, string> = {
+  unsent: "未发送",
+  sent: "已发送"
+};
+const labelOf = (map: Record<string, string>, value: string | null) =>
+  value ? (map[value] ?? value) : "-";
+
+const detailDrawerVisible = ref(false);
+const detailInvoice = ref<Invoice | null>(null);
+
+const detailAttachments = computed<InvoiceAttachment[]>(() =>
+  detailInvoice.value ? buildInvoiceAttachments(detailInvoice.value) : []
+);
+
+const openInvoiceDetail = (row: Invoice) => {
+  detailInvoice.value = row;
+  detailDrawerVisible.value = true;
+};
+
+const attachmentUrl = (key: string) =>
+  resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(key)}`);
+
+const downloadAttachment = (attachment: InvoiceAttachment) => {
+  window.open(attachmentUrl(attachment.key), "_blank", "noopener,noreferrer");
+};
+
 onMounted(async () => {
   const queryKeyword = route.query.keyword;
   if (typeof queryKeyword === "string" && queryKeyword.trim()) {
@@ -944,8 +992,11 @@ onMounted(async () => {
         label="校验状态"
         width="110"
       />
-      <el-table-column label="操作" width="220" fixed="right">
+      <el-table-column label="操作" width="300" fixed="right">
         <template #default="scope">
+          <el-button link type="primary" @click="openInvoiceDetail(scope.row)">
+            查看详情
+          </el-button>
           <el-button
             v-if="scope.row.status === 'issued'"
             link
@@ -1320,4 +1371,107 @@ onMounted(async () => {
       >
     </template>
   </el-dialog>
+
+  <el-drawer
+    v-model="detailDrawerVisible"
+    title="正式发票详情"
+    direction="rtl"
+    size="520px"
+  >
+    <template v-if="detailInvoice">
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="系统单号">{{
+          detailInvoice.invoice_no
+        }}</el-descriptions-item>
+        <el-descriptions-item label="税务发票号">{{
+          detailInvoice.invoice_number || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="发票代码">{{
+          detailInvoice.invoice_code || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="校验码">{{
+          detailInvoice.check_code || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="合同号">{{
+          contractMap[detailInvoice.contract_id] || detailInvoice.contract_id
+        }}</el-descriptions-item>
+        <el-descriptions-item label="发票抬头">{{
+          detailInvoice.title
+        }}</el-descriptions-item>
+        <el-descriptions-item label="对方税号">{{
+          detailInvoice.tax_no || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="开票日期">{{
+          detailInvoice.issue_date
+        }}</el-descriptions-item>
+        <el-descriptions-item label="金额（税前）">{{
+          detailInvoice.amount
+        }}</el-descriptions-item>
+        <el-descriptions-item label="税额">{{
+          detailInvoice.tax_amount ?? "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="价税合计">{{
+          detailInvoice.amount_with_tax ?? detailInvoice.amount
+        }}</el-descriptions-item>
+        <el-descriptions-item label="发票状态">{{
+          labelOf(invoiceStatusLabelMap, detailInvoice.status)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="收款状态">{{
+          labelOf(paymentStatusLabelMap, detailInvoice.payment_status)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="发送状态">{{
+          labelOf(sendStatusLabelMap, detailInvoice.send_status)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="校验状态">{{
+          labelOf(verificationStatusLabelMap, detailInvoice.verification_status)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{
+          detailInvoice.remark || "-"
+        }}</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="detail-attachments">
+        <div class="detail-attachments__title">发票附件</div>
+        <template v-if="detailAttachments.length">
+          <div
+            v-for="attachment in detailAttachments"
+            :key="attachment.key"
+            class="detail-attachments__item"
+          >
+            <span>{{ attachment.label }}</span>
+            <el-button
+              link
+              type="primary"
+              @click="downloadAttachment(attachment)"
+              >下载</el-button
+            >
+          </div>
+        </template>
+        <el-empty v-else description="暂无可下载的发票附件" :image-size="80" />
+      </div>
+    </template>
+  </el-drawer>
 </template>
+
+<style scoped>
+.detail-attachments {
+  margin-top: 20px;
+}
+
+.detail-attachments__title {
+  margin-bottom: 12px;
+  font-weight: 600;
+  color: #1f2937;
+}
+
+.detail-attachments__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+  background: #f8fafc;
+  border: 1px solid #ebeef5;
+  border-radius: 6px;
+}
+</style>
