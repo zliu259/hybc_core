@@ -47,6 +47,9 @@ importers:
 
   packages/miniapp:
     dependencies:
+      '@qiun/wx-ucharts':
+        specifier: ^2.5.0-20230101
+        version: 2.5.0-20230101
       miniprogram-api-typings:
         specifier: ^4.0.0
         version: 4.1.3
@@ -1174,6 +1177,9 @@ packages:
         optional: true
       vue:
         optional: true
+
+  '@qiun/wx-ucharts@2.5.0-20230101':
+    resolution: {integrity: sha512-sAaNUf4U6r4/0JZMTlfNwrtfT0v8qFO02B/wYsj4yZGTDAQ/QctGgKI7hVUDUSrqZnjH6xWqE+ql0FOIs1fTuQ==}
 
   '@rolldown/pluginutils@1.0.0-rc.2':
     resolution: {integrity: sha512-izyXV/v+cHiRfozX62W9htOAvwMo4/bXKDrQ+vom1L1qRuexPock/7VZDAhnpHCLNejd3NJ6hiab+tO0D44Rgw==}
@@ -5077,6 +5083,8 @@ snapshots:
     optionalDependencies:
       echarts: 6.0.0
       vue: 3.5.28(typescript@5.9.3)
+
+  '@qiun/wx-ucharts@2.5.0-20230101': {}
 
   '@rolldown/pluginutils@1.0.0-rc.2': {}
 
