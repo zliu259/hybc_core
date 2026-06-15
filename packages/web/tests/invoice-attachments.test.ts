@@ -6,6 +6,33 @@ const loadFn = async () => {
   return mod.buildInvoiceAttachments;
 };
 
+const loadParse = async () => {
+  const mod = await import("../src/utils/invoice-attachments.ts");
+  return mod.parseAttachmentEntries;
+};
+
+test("parseAttachmentEntries reads file_name as label and file_key as key", async () => {
+  const parseAttachmentEntries = await loadParse();
+  const result = parseAttachmentEntries(
+    JSON.stringify([
+      { file_key: "payment/a.pdf", file_name: "汇款凭证1.pdf" },
+      { file_key: "payment/b.jpg", file_name: "汇款凭证2.jpg" }
+    ])
+  );
+  assert.deepEqual(result, [
+    { label: "汇款凭证1.pdf", key: "payment/a.pdf" },
+    { label: "汇款凭证2.jpg", key: "payment/b.jpg" }
+  ]);
+});
+
+test("parseAttachmentEntries returns empty array for null/blank/malformed input", async () => {
+  const parseAttachmentEntries = await loadParse();
+  assert.deepEqual(parseAttachmentEntries(null), []);
+  assert.deepEqual(parseAttachmentEntries(""), []);
+  assert.deepEqual(parseAttachmentEntries("not-json{"), []);
+  assert.deepEqual(parseAttachmentEntries(JSON.stringify({})), []);
+});
+
 test("builds all four legacy attachment slots in a stable order", async () => {
   const buildInvoiceAttachments = await loadFn();
   const result = buildInvoiceAttachments({

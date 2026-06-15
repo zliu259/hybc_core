@@ -21,7 +21,12 @@ export interface InvoiceAttachment {
 const normalizeKey = (key: string | null | undefined): string =>
   typeof key === "string" ? key.trim() : "";
 
-const parseSupplementaryAttachments = (
+/**
+ * 解析以 JSON 数组形式存储的附件（[{ file_key, file_name }]），
+ * 兼容 key/name 别名，label 取 file_name，缺失时回退 key。
+ * 适用于开票申请的 attachments_json、发票补充附件等场景。
+ */
+export const parseAttachmentEntries = (
   raw: string | null | undefined
 ): InvoiceAttachment[] => {
   if (!raw || !raw.trim()) return [];
@@ -63,7 +68,7 @@ export function buildInvoiceAttachments(
     ...legacySlots
       .map(slot => ({ label: slot.label, key: normalizeKey(slot.key) }))
       .filter(slot => slot.key.length > 0),
-    ...parseSupplementaryAttachments(invoice.attachments_json)
+    ...parseAttachmentEntries(invoice.attachments_json)
   ];
 
   const seen = new Set<string>();

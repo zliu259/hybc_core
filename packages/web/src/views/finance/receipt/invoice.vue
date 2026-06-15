@@ -15,6 +15,7 @@ import {
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import {
   buildInvoiceAttachments,
+  parseAttachmentEntries,
   type InvoiceAttachment
 } from "@/utils/invoice-attachments";
 import { useProjectOptions } from "@/composables/useProjectOptions";
@@ -516,11 +517,15 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       throw new Error(`upload_failed_${uploadResp.status}`);
     }
 
-    remittanceAttachments.value.unshift({
-      file_key: signRes.data.key,
-      file_name: rawFile.name,
-      file_size: rawFile.size
-    });
+    // 不可变追加，确保多次/批量上传时不会覆盖已上传的附件
+    remittanceAttachments.value = [
+      ...remittanceAttachments.value,
+      {
+        file_key: signRes.data.key,
+        file_name: rawFile.name,
+        file_size: rawFile.size
+      }
+    ];
     message("附件上传成功", { type: "success" });
     options.onSuccess?.({});
   } catch {
@@ -856,6 +861,55 @@ const uploadDetailAttachment = async (options: UploadRequestOptions) => {
   }
 };
 
+type ParsedInvoiceItem = {
+  name: string;
+  specification: string;
+  unit: string;
+  quantity: number;
+  amount_with_tax: number;
+};
+
+const requestDetailDrawerVisible = ref(false);
+const detailRequest = ref<InvoiceRequest | null>(null);
+
+const requestDetailAttachments = computed<InvoiceAttachment[]>(() =>
+  detailRequest.value
+    ? parseAttachmentEntries(detailRequest.value.attachments_json)
+    : []
+);
+
+const requestDetailItems = computed<ParsedInvoiceItem[]>(() => {
+  const raw = detailRequest.value?.items_json;
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map(item => {
+      const row = (item ?? {}) as Record<string, unknown>;
+      return {
+        name: typeof row.name === "string" ? row.name : "",
+        specification:
+          typeof row.specification === "string" ? row.specification : "",
+        unit: typeof row.unit === "string" ? row.unit : "",
+        quantity: typeof row.quantity === "number" ? row.quantity : 0,
+        amount_with_tax:
+          typeof row.amount_with_tax === "number"
+            ? row.amount_with_tax
+            : typeof row.amount === "number"
+              ? row.amount
+              : 0
+      };
+    });
+  } catch {
+    return [];
+  }
+});
+
+const openRequestDetail = (row: InvoiceRequest) => {
+  detailRequest.value = row;
+  requestDetailDrawerVisible.value = true;
+};
+
 onMounted(async () => {
   const queryKeyword = route.query.keyword;
   if (typeof queryKeyword === "string" && queryKeyword.trim()) {
@@ -997,8 +1051,11 @@ onMounted(async () => {
           toInvoiceRequestStatusLabel(scope.row.status)
         }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="300" fixed="right">
+      <el-table-column label="操作" width="360" fixed="right">
         <template #default="scope">
+          <el-button link type="primary" @click="openRequestDetail(scope.row)">
+            查看详情
+          </el-button>
           <el-button
             v-if="
               scope.row.status === 'draft' || scope.row.status === 'rejected'
@@ -1338,6 +1395,7 @@ onMounted(async () => {
         <div style="width: 100%">
           <el-upload
             drag
+            multiple
             action="#"
             :show-file-list="false"
             :disabled="uploadingAttachment"
@@ -1345,7 +1403,7 @@ onMounted(async () => {
             accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
           >
             <div class="el-upload__text">
-              拖拽文件到这里，或 <em>点击上传</em>
+              拖拽文件到这里，或 <em>点击上传</em>（可多选）
             </div>
           </el-upload>
           <el-table
@@ -1527,6 +1585,94 @@ onMounted(async () => {
             </div>
           </template>
         </el-upload>
+      </div>
+    </template>
+  </el-drawer>
+
+  <el-drawer
+    v-model="requestDetailDrawerVisible"
+    title="开票申请详情"
+    direction="rtl"
+    size="560px"
+  >
+    <template v-if="detailRequest">
+      <el-descriptions :column="1" border>
+        <el-descriptions-item label="申请单号">{{
+          detailRequest.request_no
+        }}</el-descriptions-item>
+        <el-descriptions-item label="合同号">{{
+          contractMap[detailRequest.contract_id] || detailRequest.contract_id
+        }}</el-descriptions-item>
+        <el-descriptions-item label="对方名称">{{
+          detailRequest.customer_name
+        }}</el-descriptions-item>
+        <el-descriptions-item label="对方税号">{{
+          detailRequest.customer_tax_no || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="发票类型">{{
+          toInvoiceTypeLabel(detailRequest.invoice_type)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="开票类目">{{
+          detailRequest.invoice_category || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="税率">{{
+          detailRequest.tax_rate
+        }}</el-descriptions-item>
+        <el-descriptions-item label="不含税金额">{{
+          detailRequest.amount_without_tax
+        }}</el-descriptions-item>
+        <el-descriptions-item label="预计税额">{{
+          detailRequest.tax_amount_estimated
+        }}</el-descriptions-item>
+        <el-descriptions-item label="价税合计">{{
+          detailRequest.amount_with_tax
+        }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{
+          toInvoiceRequestStatusLabel(detailRequest.status)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="申请人">{{
+          detailRequest.applicant_userid
+        }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{
+          detailRequest.remark || "-"
+        }}</el-descriptions-item>
+      </el-descriptions>
+
+      <div class="detail-attachments">
+        <div class="detail-attachments__title">开票明细</div>
+        <el-table
+          v-if="requestDetailItems.length"
+          :data="requestDetailItems"
+          size="small"
+          border
+        >
+          <el-table-column prop="name" label="名称" min-width="140" />
+          <el-table-column prop="specification" label="规格" width="100" />
+          <el-table-column prop="unit" label="单位" width="70" />
+          <el-table-column prop="quantity" label="数量" width="80" />
+          <el-table-column prop="amount_with_tax" label="含税金额" width="110" />
+        </el-table>
+        <el-empty v-else description="暂无开票明细" :image-size="60" />
+      </div>
+
+      <div class="detail-attachments">
+        <div class="detail-attachments__title">汇款凭证 / 附件</div>
+        <template v-if="requestDetailAttachments.length">
+          <div
+            v-for="attachment in requestDetailAttachments"
+            :key="attachment.key"
+            class="detail-attachments__item"
+          >
+            <span>{{ attachment.label }}</span>
+            <el-button
+              link
+              type="primary"
+              @click="downloadAttachment(attachment)"
+              >下载</el-button
+            >
+          </div>
+        </template>
+        <el-empty v-else description="暂无附件" :image-size="80" />
       </div>
     </template>
   </el-drawer>
