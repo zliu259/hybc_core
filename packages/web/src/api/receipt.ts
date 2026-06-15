@@ -37,6 +37,7 @@ export type Invoice = {
   verification_status: string;
   verification_task_id: number | null;
   verification_result: string | null;
+  attachments_json: string | null;
   remark: string | null;
   created_at: string;
   updated_at: string;
@@ -346,6 +347,16 @@ export const deleteInvoice = (id: number) => {
     "delete",
     `/api/v1/receipt/invoice/${id}`
   );
+};
+
+export const appendInvoiceAttachments = (
+  id: number,
+  data: { attachments_json: string; append?: boolean }
+) => {
+  return http.request<{
+    success: boolean;
+    data: { id: number; attachments_json: string };
+  }>("patch", `/api/v1/receipt/invoice/${id}/attachments`, { data });
 };
 
 export const listReceipts = (params?: {

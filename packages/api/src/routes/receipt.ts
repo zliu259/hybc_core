@@ -914,6 +914,54 @@ receiptRoutes.put(
   }
 );
 
+receiptRoutes.patch(
+  "/invoice/:id/attachments",
+  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json().catch(() => ({}))) as {
+      attachments_json?: string;
+      append?: boolean;
+    };
+
+    if (!body.attachments_json?.trim()) {
+      return c.json(
+        { success: false, error: { message: "attachments_json is required" } },
+        400
+      );
+    }
+
+    const invoice = await c.env.DB.prepare("SELECT * FROM invoice WHERE id = ? AND status != 'deleted'")
+      .bind(id)
+      .first<Invoice>();
+    if (!invoice) {
+      return c.json({ success: false, error: { message: "Invoice not found" } }, 404);
+    }
+
+    const incoming = parseAttachmentDrafts(body.attachments_json);
+    if (!incoming.length) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "attachments_json must be a non-empty attachment array" }
+        },
+        400
+      );
+    }
+
+    const next = body.append
+      ? mergeAttachmentDrafts(parseAttachmentDrafts(invoice.attachments_json), incoming)
+      : incoming;
+    const now = nowIso();
+
+    await c.env.DB.prepare("UPDATE invoice SET attachments_json = ?, updated_at = ? WHERE id = ?")
+      .bind(JSON.stringify(next), now, id)
+      .run();
+
+    return c.json({ success: true, data: { id, attachments_json: JSON.stringify(next) } });
+  }
+);
+
 receiptRoutes.delete(
   "/invoice/:id",
   requireRoles(["super_admin", "manager"]),

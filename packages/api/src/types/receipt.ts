@@ -57,6 +57,7 @@ export interface Invoice {
   verification_status: string;
   verification_task_id: number | null;
   verification_result: string | null;
+  attachments_json: string | null;
   remark: string | null;
   created_at: string;
   updated_at: string;

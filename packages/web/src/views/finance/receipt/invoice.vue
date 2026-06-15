@@ -26,6 +26,7 @@ import {
   submitInvoiceRequestApproval,
   issueInvoiceFromRequest,
   triggerInvoiceVerify,
+  appendInvoiceAttachments,
   type Invoice,
   type InvoiceRequest
 } from "@/api/receipt";
@@ -795,6 +796,66 @@ const downloadAttachment = (attachment: InvoiceAttachment) => {
   window.open(attachmentUrl(attachment.key), "_blank", "noopener,noreferrer");
 };
 
+const detailUploading = ref(false);
+
+const uploadDetailAttachment = async (options: UploadRequestOptions) => {
+  const invoice = detailInvoice.value;
+  if (!invoice) return;
+  const rawFile = options.file;
+  detailUploading.value = true;
+  try {
+    const signRes = await createUploadSignature({
+      fileName: rawFile.name,
+      contentType: rawFile.type,
+      category: "receipt"
+    });
+
+    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
+      method: "PUT",
+      headers: {
+        "content-type": rawFile.type || "application/octet-stream",
+        Authorization: formatToken(getToken().accessToken)
+      },
+      body: rawFile
+    });
+    if (!uploadResp.ok) {
+      throw new Error(`upload_failed_${uploadResp.status}`);
+    }
+
+    const result = await appendInvoiceAttachments(invoice.id, {
+      attachments_json: JSON.stringify([
+        {
+          file_key: signRes.data.key,
+          file_name: rawFile.name,
+          file_size: rawFile.size
+        }
+      ]),
+      append: true
+    });
+
+    // 同步抽屉与列表，立即反映新增附件
+    detailInvoice.value = {
+      ...invoice,
+      attachments_json: result.data.attachments_json
+    };
+    const index = invoiceList.value.findIndex(item => item.id === invoice.id);
+    if (index >= 0) {
+      invoiceList.value = invoiceList.value.map(item =>
+        item.id === invoice.id
+          ? { ...item, attachments_json: result.data.attachments_json }
+          : item
+      );
+    }
+    message("附件上传成功", { type: "success" });
+    options.onSuccess?.({});
+  } catch {
+    message("附件上传失败", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    detailUploading.value = false;
+  }
+};
+
 onMounted(async () => {
   const queryKeyword = route.query.keyword;
   if (typeof queryKeyword === "string" && queryKeyword.trim()) {
@@ -1448,6 +1509,24 @@ onMounted(async () => {
           </div>
         </template>
         <el-empty v-else description="暂无可下载的发票附件" :image-size="80" />
+
+        <el-upload
+          class="detail-attachments__upload"
+          action="#"
+          :show-file-list="false"
+          :disabled="detailUploading"
+          :http-request="uploadDetailAttachment"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.ofd,.xml,.doc,.docx,.xls,.xlsx"
+        >
+          <el-button type="primary" plain :loading="detailUploading">
+            继续上传附件
+          </el-button>
+          <template #tip>
+            <div class="detail-attachments__tip">
+              支持补充上传 PDF、图片、OFD、XML 等发票相关文件
+            </div>
+          </template>
+        </el-upload>
       </div>
     </template>
   </el-drawer>
@@ -1473,5 +1552,15 @@ onMounted(async () => {
   background: #f8fafc;
   border: 1px solid #ebeef5;
   border-radius: 6px;
+}
+
+.detail-attachments__upload {
+  margin-top: 12px;
+}
+
+.detail-attachments__tip {
+  margin-top: 6px;
+  font-size: 12px;
+  color: #909399;
 }
 </style>
