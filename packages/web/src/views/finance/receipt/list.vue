@@ -20,6 +20,7 @@ import {
 } from "@/api/receipt";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { resolveApiErrorMessage } from "@/utils/api-error";
+import { invoiceReceivableAmount } from "@/utils/invoice-amount";
 
 defineOptions({ name: "ReceiptList" });
 
@@ -54,6 +55,20 @@ const invoiceMap = computed(() => {
     map[item.id] = item.invoice_no;
   });
   return map;
+});
+
+// 新增收款登记时，发票必须归属所选合同；金额统一展示价税合计（税后）
+const createInvoiceOptions = computed(() => {
+  const contractId = createForm.value.contract_id;
+  if (!contractId) {
+    return [] as Array<{ id: number; label: string }>;
+  }
+  return invoices.value
+    .filter(item => item.contract_id === contractId)
+    .map(item => ({
+      id: item.id,
+      label: `${item.invoice_no} | ¥${invoiceReceivableAmount(item)}`
+    }));
 });
 
 const createDialogVisible = ref(false);
@@ -117,9 +132,19 @@ const loadData = async () => {
 };
 
 const openCreate = () => {
+  const contractId = filters.value.contract_id;
+  // 仅当预填发票确实归属该合同时才保留，否则置空，避免合同/发票不匹配
+  const invoiceId =
+    filters.value.invoice_id &&
+    invoices.value.some(
+      item =>
+        item.id === filters.value.invoice_id && item.contract_id === contractId
+    )
+      ? filters.value.invoice_id
+      : undefined;
   createForm.value = {
-    contract_id: filters.value.contract_id,
-    invoice_id: filters.value.invoice_id,
+    contract_id: contractId,
+    invoice_id: invoiceId,
     received_date: "",
     amount: 0,
     receiver_account_id: undefined,
@@ -127,6 +152,11 @@ const openCreate = () => {
   };
   createVoucherList.value = [];
   createDialogVisible.value = true;
+};
+
+// 切换合同后，清空已选发票（旧发票可能不属于新合同）
+const onCreateContractChange = () => {
+  createForm.value = { ...createForm.value, invoice_id: undefined };
 };
 
 const uploadVoucher = async (options: UploadRequestOptions) => {
@@ -400,6 +430,7 @@ onMounted(async () => {
           v-model="createForm.contract_id"
           filterable
           style="width: 100%"
+          @change="onCreateContractChange"
         >
           <el-option
             v-for="item in contracts"
@@ -415,11 +446,15 @@ onMounted(async () => {
           clearable
           filterable
           style="width: 100%"
+          :disabled="!createForm.contract_id"
+          :placeholder="
+            createForm.contract_id ? '请选择该合同下的发票' : '请先选择合同'
+          "
         >
           <el-option
-            v-for="item in invoices"
+            v-for="item in createInvoiceOptions"
             :key="item.id"
-            :label="`${item.invoice_no} | ${item.amount}`"
+            :label="item.label"
             :value="item.id"
           />
         </el-select>
