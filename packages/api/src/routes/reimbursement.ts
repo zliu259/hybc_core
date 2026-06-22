@@ -3755,6 +3755,7 @@ reimbursementRoutes.post(
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateEnvelopeRequest;
+    const idempotencyKey = c.req.header("Idempotency-Key");
 
     if (!body.project_id || body.project_id <= 0) {
       return c.json({ success: false, error: { message: "project_id is required" } }, 400);
@@ -3830,108 +3831,146 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: decision.message } }, decision.status);
     }
 
-    if (decision.kind === "bind-existing") {
-      await c.env.DB.prepare(
-        `UPDATE reimbursement_envelope SET
-           envelope_no = ?,
-           project_id = COALESCE(?, project_id),
-           applicant_userid = ?,
-           channel = ?,
-           invoice_unique_no = COALESCE(?, invoice_unique_no),
-           invoice_no = COALESCE(?, invoice_no),
-           expense_date = COALESCE(?, expense_date),
-           amount = COALESCE(?, amount),
-           category = COALESCE(?, category),
-           description = COALESCE(?, description),
-           status = ?,
-           updated_at = ?
-         WHERE id = ?`
-      )
-        .bind(
-          decision.envelopeNo,
-          body.project_id ?? null,
-          decision.applicantToPersist,
-          decision.channelToPersist,
-          sanitizeInvoiceUniqueNo(body.invoice_no),
-          body.invoice_no ?? null,
-          body.expense_date ?? null,
-          body.amount ?? null,
-          body.category ?? null,
-          body.description ?? null,
-          decision.nextStatus,
-          now,
-          decision.envelopeId
-        )
-        .run();
+    // Idempotency guard: the web client sends an Idempotency-Key and its HTTP
+    // layer transparently re-sends the same POST on network/timeout fallback
+    // (utils/http retryWithRelay). Without this guard a create that already
+    // succeeded server-side but timed out client-side produces a duplicate
+    // draft envelope. Keyed per actor so replays return the original payload.
+    const idempotencyScope = `reimbursement:create:${auth.sub}`;
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { id: number; envelope_no: string; envelope_uuid: string };
+    }>(c.env.DB, idempotencyScope, auth.sub, idempotencyKey);
 
-      await insertAttachments(c.env.DB, decision.envelopeId, body.attachments);
-
-      await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
-        envelope_id: decision.envelopeId,
-        envelope_no: decision.envelopeNo,
-        envelope_uuid: decision.envelopeUuid,
-        created_by: auth.sub,
-        bound_existing: true
-      });
-
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload, { status: idempotency.statusCode as 201 });
+    }
+    if (idempotency.kind === "pending") {
       return c.json(
-        {
-          success: true,
+        { success: false, error: { message: "Reimbursement create already in progress" } },
+        409
+      );
+    }
+
+    try {
+      if (decision.kind === "bind-existing") {
+        await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope SET
+             envelope_no = ?,
+             project_id = COALESCE(?, project_id),
+             applicant_userid = ?,
+             channel = ?,
+             invoice_unique_no = COALESCE(?, invoice_unique_no),
+             invoice_no = COALESCE(?, invoice_no),
+             expense_date = COALESCE(?, expense_date),
+             amount = COALESCE(?, amount),
+             category = COALESCE(?, category),
+             description = COALESCE(?, description),
+             status = ?,
+             updated_at = ?
+           WHERE id = ?`
+        )
+          .bind(
+            decision.envelopeNo,
+            body.project_id ?? null,
+            decision.applicantToPersist,
+            decision.channelToPersist,
+            sanitizeInvoiceUniqueNo(body.invoice_no),
+            body.invoice_no ?? null,
+            body.expense_date ?? null,
+            body.amount ?? null,
+            body.category ?? null,
+            body.description ?? null,
+            decision.nextStatus,
+            now,
+            decision.envelopeId
+          )
+          .run();
+
+        await insertAttachments(c.env.DB, decision.envelopeId, body.attachments);
+
+        await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
+          envelope_id: decision.envelopeId,
+          envelope_no: decision.envelopeNo,
+          envelope_uuid: decision.envelopeUuid,
+          created_by: auth.sub,
+          bound_existing: true
+        });
+
+        const payload = {
+          success: true as const,
           data: {
             id: decision.envelopeId,
             envelope_no: decision.envelopeNo,
             envelope_uuid: decision.envelopeUuid
           }
-        },
-        201
-      );
-    }
+        };
+        await completeIdempotentRequest(
+          c.env.DB,
+          idempotencyScope,
+          auth.sub,
+          idempotencyKey,
+          201,
+          payload
+        );
+        return c.json(payload, 201);
+      }
 
-    const envelopeUuid = decision.envelopeUuid;
-    const envelopeNo = decision.envelopeNo;
+      const envelopeUuid = decision.envelopeUuid;
+      const envelopeNo = decision.envelopeNo;
 
-    const result = await c.env.DB.prepare(
-      `INSERT INTO reimbursement_envelope
-        (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
-         invoice_unique_no, invoice_no, expense_date, amount, category, description,
-         status, precheck_status, verification_status,
-         created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', 'pending', ?, ?)`
-    )
-      .bind(
-        envelopeNo,
-        envelopeUuid,
-        body.project_id,
-        requestedApplicant,
-        requestedChannel,
-        sanitizeInvoiceUniqueNo(body.invoice_no),
-        body.invoice_no ?? null,
-        body.expense_date ?? null,
-        body.amount ?? 0,
-        body.category ?? null,
-        body.description ?? null,
-        now,
-        now
+      const result = await c.env.DB.prepare(
+        `INSERT INTO reimbursement_envelope
+          (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
+           invoice_unique_no, invoice_no, expense_date, amount, category, description,
+           status, precheck_status, verification_status,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', 'pending', ?, ?)`
       )
-      .run();
+        .bind(
+          envelopeNo,
+          envelopeUuid,
+          body.project_id,
+          requestedApplicant,
+          requestedChannel,
+          sanitizeInvoiceUniqueNo(body.invoice_no),
+          body.invoice_no ?? null,
+          body.expense_date ?? null,
+          body.amount ?? 0,
+          body.category ?? null,
+          body.description ?? null,
+          now,
+          now
+        )
+        .run();
 
-    const envelopeId = result.meta.last_row_id as number;
-    await insertAttachments(c.env.DB, envelopeId, body.attachments);
+      const envelopeId = result.meta.last_row_id as number;
+      await insertAttachments(c.env.DB, envelopeId, body.attachments);
 
-    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
-      envelope_id: envelopeId,
-      envelope_no: envelopeNo,
-      envelope_uuid: envelopeUuid,
-      created_by: auth.sub
-    });
+      await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
+        envelope_id: envelopeId,
+        envelope_no: envelopeNo,
+        envelope_uuid: envelopeUuid,
+        created_by: auth.sub
+      });
 
-    return c.json(
-      {
-        success: true,
+      const payload = {
+        success: true as const,
         data: { id: envelopeId, envelope_no: envelopeNo, envelope_uuid: envelopeUuid }
-      },
-      201
-    );
+      };
+      await completeIdempotentRequest(
+        c.env.DB,
+        idempotencyScope,
+        auth.sub,
+        idempotencyKey,
+        201,
+        payload
+      );
+      return c.json(payload, 201);
+    } catch (err) {
+      await abandonIdempotentRequest(c.env.DB, idempotencyScope, auth.sub, idempotencyKey);
+      throw err;
+    }
   }
 );
 

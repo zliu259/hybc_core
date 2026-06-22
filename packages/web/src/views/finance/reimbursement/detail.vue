@@ -734,6 +734,10 @@ const previewAttachment = (item: EnvelopeAttachmentDraft) => {
 };
 
 const save = async () => {
+  // Debounce: block re-entrant submits (double-click / Enter spam) so a single
+  // intent never creates multiple draft envelopes. The backend idempotency key
+  // covers transparent HTTP retries; this covers separate user-triggered calls.
+  if (saving.value) return;
   if (
     isCreate.value &&
     form.value.channel === "physical" &&
