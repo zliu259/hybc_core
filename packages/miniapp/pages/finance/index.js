@@ -63,6 +63,13 @@ Page({
         disabled: false
       },
       {
+        title: "🔧 车辆保养记录",
+        desc: "填写保养里程、内容、费用并上传附件",
+        path: "/pages/vehicle-maintenance/index",
+        tone: "blue",
+        disabled: false
+      },
+      {
         title: "🗂️ 我发起的申请",
         desc: "进入审批视图查看我发起的申请（只读）",
         path: "/pages/approval-initiated/index",

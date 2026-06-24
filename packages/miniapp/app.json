@@ -25,6 +25,7 @@
     "pages/approval-detail/index",
     "pages/payment-apply/index",
     "pages/fuel-apply/index",
+    "pages/vehicle-maintenance/index",
     "pages/reimbursement-list/index",
     "pages/reimbursement/index",
     "pages/reimbursement-archive/index",

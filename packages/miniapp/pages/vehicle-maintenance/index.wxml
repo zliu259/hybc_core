@@ -1,0 +1,55 @@
+<view class="page">
+  <hy-panel-card title="🔧 车辆保养记录" subtitle="填写里程、保养内容、保养人、费用并上传附件">
+    <view class="label required">车辆</view>
+    <picker mode="selector" range="{{vehicleLabels}}" value="{{vehicleIndex}}" bindchange="onVehicleChange">
+      <view class="picker-value">{{vehicleLabels[vehicleIndex]}}</view>
+    </picker>
+
+    <view class="label required">保养类型</view>
+    <picker mode="selector" range="{{typeLabels}}" value="{{typeIndex}}" bindchange="onTypeChange">
+      <view class="picker-value">{{typeLabels[typeIndex]}}</view>
+    </picker>
+
+    <view class="label required">保养内容</view>
+    <textarea class="textarea" value="{{form.content}}" data-key="content" bindinput="onInput" placeholder="保养/维修内容" disabled="{{submitting}}" />
+
+    <view class="label required">里程 (km)</view>
+    <input class="input" type="digit" value="{{form.mileage_km}}" data-key="mileage_km" bindinput="onInput" placeholder="请输入保养时里程" disabled="{{submitting}}" />
+
+    <view class="label">保养人</view>
+    <input class="input" value="{{form.service_provider}}" data-key="service_provider" bindinput="onInput" placeholder="修理厂/4S店/保养人" disabled="{{submitting}}" />
+
+    <view class="label">费用 (元)</view>
+    <input class="input" type="digit" value="{{form.cost}}" data-key="cost" bindinput="onInput" placeholder="可选" disabled="{{submitting}}" />
+
+    <view class="label">保养时间</view>
+    <picker mode="date" value="{{form.serviced_at}}" bindchange="onDateChange">
+      <view class="picker-value">{{form.serviced_at}}</view>
+    </picker>
+
+    <view class="label">附件</view>
+    <view class="row">
+      <t-button class="btn" variant="outline" bindtap="chooseAttachments" disabled="{{submitting}}">上传附件</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">提交记录</t-button>
+    </view>
+
+    <view wx:if="{{attachmentList.length === 0}}" class="empty-tip">暂无附件</view>
+    <view wx:for="{{attachmentList}}" wx:key="file_key" class="photo-item">
+      <view class="photo-name">{{item.file_name}}</view>
+      <view class="photo-size">{{item.file_size || 0}} bytes</view>
+      <t-button class="mini-btn" size="small" variant="outline" data-index="{{index}}" bindtap="removeAttachment" disabled="{{submitting}}">移除</t-button>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card title="📒 我的保养记录" subtitle="展示我提交的保养记录">
+    <view wx:if="{{myRecords.length === 0}}" class="empty-tip">暂无记录</view>
+    <view wx:for="{{myRecords}}" wx:key="id" class="record-item">
+      <view class="record-title">{{item.record_no}}</view>
+      <view class="record-line">车辆：{{item.current_plate_no || '-'}} ｜ 类型：{{item.typeLabel}}</view>
+      <view class="record-line">里程：{{item.mileage_km}} km ｜ 费用：{{item.cost || '-'}}</view>
+      <view class="record-line">保养人：{{item.service_provider || '-'}}</view>
+      <view class="record-line">保养时间：{{item.serviced_at}}</view>
+      <view class="record-status">状态：{{item.statusLabel}}</view>
+    </view>
+  </hy-panel-card>
+</view>
