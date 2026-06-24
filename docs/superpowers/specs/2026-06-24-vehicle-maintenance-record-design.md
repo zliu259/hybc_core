@@ -22,6 +22,7 @@
 | 保养人字段 | 自由文本（可填修理厂/4S 店或人名） |
 | 保养内容 | 分类（字典）+ 详情文本 |
 | 权限模型 | 分级：全员可新增；管理层看全部并可编辑/作废；普通操作员只看自己填的 |
+| Web 菜单 | 独立顶层菜单"车辆保养"，对全角色可见（含 operator）；页面内按角色区分，operator 仅见本人记录且无编辑/作废按钮 |
 | 里程存储 | 记录自带 `mileage_km`，**不**自动写入现有里程登记表（避免耦合） |
 | 费用 | 仅作为台账数字记录，**不**联动报销/付款 |
 | 里程必填性 | 必填 |
@@ -115,13 +116,13 @@
 ## 6. 前端（Web）
 
 - `packages/web/src/api/vehicle-maintenance.ts`：API 封装 + TypeScript 类型（`VehicleMaintenanceRecord` 等）
-- `packages/web/src/views/finance/fleet/maintenance.vue`：新页面
+- `packages/web/src/views/vehicle-maintenance/index.vue`：新页面
   - 顶部筛选栏：车辆、保养类型（拉字典）、日期区间、状态
   - "新增保养记录"对话框：车辆下拉（拉 `/fleet/vehicles?status=active`）、类型下拉（拉字典）、里程、内容（多行）、保养人、费用、保养日期、附件上传
   - 列表表格：单号、车辆/车牌、类型、里程、费用、保养时间、登记人、状态、操作（详情/编辑/作废）
   - **详情抽屉**：展示完整信息 + 附件列表（查看/下载），沿用最近发票/报销的抽屉模式
-  - 编辑/作废按钮仅对管理层可见
-- 路由：在 `packages/web/src/router/modules/finance.ts` 的"车辆油卡"（fleet-center）菜单下新增子路由 `/finance/fleet/maintenance`，标题"保养记录"
+  - 角色区分：operator 仅见本人记录、无编辑/作废按钮；管理层见全部并可编辑/作废
+- 路由：**新建独立顶层菜单** `packages/web/src/router/modules/vehicle-maintenance.ts`，菜单标题"车辆保养"，路径 `/vehicle-maintenance`，对全角色可见（含 operator）。router/modules 目录会被 `import.meta.glob` 自动加载，无需手动注册
 - 保养类型 label：通过 `/api/v1/dict?dict_type=vehicle_maintenance_type` 拉取并映射
 
 ## 7. 小程序
@@ -140,28 +141,28 @@
 
 **新增：**
 - `packages/api/migrations/0052_vehicle_maintenance_record.sql`
-- `packages/api/src/routes/vehicle-maintenance.ts`
-- `packages/api/src/routes/vehicle-maintenance.test.ts`
+- `packages/api/src/routes/vehicle-maintenance-policy.ts`（纯函数：校验/权限范围）
+- `packages/api/src/routes/vehicle-maintenance-policy.test.ts`（vitest 单测）
+- `packages/api/src/routes/vehicle-maintenance.ts`（Hono 路由）
 - `packages/web/src/api/vehicle-maintenance.ts`
-- `packages/web/src/views/finance/fleet/maintenance.vue`
+- `packages/web/src/views/vehicle-maintenance/index.vue`
+- `packages/web/src/router/modules/vehicle-maintenance.ts`（独立顶层菜单）
 - `packages/miniapp/pages/vehicle-maintenance/index.{js,wxml,wxss,json}`
 
 **修改：**
-- `packages/api/src/index.ts`（挂载路由）
-- `packages/web/src/router/modules/finance.ts`（新增子路由）
+- `packages/api/src/index.ts`（挂载路由，须在 `/api/v1/fleet` 之前）
 - `packages/miniapp/app.json`（注册页面）
-- 小程序工作台/财务入口页（加按钮）
+- `packages/miniapp/pages/finance/index.js`（在 `applyActions` 加入口卡片）
 - `doc/开发记录.md`（追加）、`doc/UI设计文档.md`（更新）
 
 ## 9. 测试计划
 
-`packages/api/src/routes/vehicle-maintenance.test.ts`（仿 `reimbursement-create-policy.test.ts`）覆盖：
-- 创建校验：必填项缺失、无效字典值、车辆不存在、负数 cost/mileage
-- 权限分级：operator 列表仅见本人；管理层见全部；operator 无法编辑/作废
-- 作废：软删除后 `status = voided` 且记录作废人/时间/原因
-- 单号生成与唯一性
+遵循项目既有的"纯函数 + vitest 单测"模式（参照 `reimbursement-create-policy.ts` / `.test.ts`）：把校验与权限范围抽成纯函数放 `vehicle-maintenance-policy.ts`，由 `vehicle-maintenance-policy.test.ts` 覆盖：
+- 创建校验：必填项缺失、无效字典值、负数 cost/mileage、非法 attachments_json
+- 列表权限范围：operator 强制限定本人；管理层不限定；privileged + mine=true 限定本人
+- 管理判定：`canManageMaintenance` 对管理层为真、对 operator 为假
 
-目标覆盖率 80%+。
+路由处理器（`vehicle-maintenance.ts`）调用上述纯函数；DB 交互通过 `npm run typecheck` 与本地 wrangler 验证。目标覆盖率 80%+。
 
 ## 10. 明确不做（YAGNI，v1）
 
