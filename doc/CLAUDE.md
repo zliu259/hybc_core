@@ -297,7 +297,7 @@ hengyue-system/
 cd packages/api
 npm run dev                    # 本地开发 (wrangler dev)
 npm run deploy                 # 部署到CF Workers
-npx wrangler d1 migrations apply hengyue-db  # 执行数据库迁移
+npx wrangler d1 migrations apply hybcdg-prod-db  # 执行数据库迁移（远程加 --remote）
 
 # 前端开发
 cd packages/web

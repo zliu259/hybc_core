@@ -50,7 +50,7 @@ python -m runner.main    # Direct run (after venv + pip install -r requirements.
 # Local
 npm run db:migrate:local
 # Remote
-npx wrangler d1 migrations apply hengyue-db
+npx wrangler d1 migrations apply hybcdg-prod-db --remote
 ```
 Migration files: `packages/api/migrations/NNNN_description.sql` (sequential numbering).
 

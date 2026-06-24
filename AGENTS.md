@@ -39,7 +39,7 @@
 ### Backend (`packages/api`) - documented
 - Dev: `npm run dev`
 - Deploy: `npm run deploy`
-- DB migration apply: `npx wrangler d1 migrations apply hengyue-db`
+- DB migration apply: `npx wrangler d1 migrations apply hybcdg-prod-db --remote`
 - Local migration apply: `npm run db:migrate:local`
 - Lint: `npm run lint`
 - Format check: `npm run format`

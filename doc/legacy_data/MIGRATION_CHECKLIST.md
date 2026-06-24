@@ -530,9 +530,9 @@ python3 scripts/legacy_fin_import.py --mode dry-run --tables reimbursement_batch
 本地验证示例：
 
 ```bash
-wrangler d1 execute hengyue-db --local --command "SELECT COUNT(*) FROM payment_request WHERE legacy_data_id IS NOT NULL;"
-wrangler d1 execute hengyue-db --local --command "SELECT COUNT(*) FROM contract WHERE legacy_data_id IS NOT NULL;"
-wrangler d1 execute hengyue-db --local --command "SELECT COUNT(*) FROM reimbursement_envelope WHERE legacy_data_id IS NOT NULL;"
+wrangler d1 execute hybcdg-prod-db --local --command "SELECT COUNT(*) FROM payment_request WHERE legacy_data_id IS NOT NULL;"
+wrangler d1 execute hybcdg-prod-db --local --command "SELECT COUNT(*) FROM contract WHERE legacy_data_id IS NOT NULL;"
+wrangler d1 execute hybcdg-prod-db --local --command "SELECT COUNT(*) FROM reimbursement_envelope WHERE legacy_data_id IS NOT NULL;"
 ```
 
 ---
