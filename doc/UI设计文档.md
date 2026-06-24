@@ -1562,3 +1562,10 @@
 - 小程序工作段详情页新增同口径“趋势与预测”区：展示剩余里程、历史日均、近三日日均、预计剩余天数，并通过本地 uCharts canvas 组件按“进度 / 设备 / 偏差”三组切换展示累计顶进、本班顶进、下管数、泥仓压力、刀盘频率、刀盘电流、水平/高程偏差；最近日志关键指标以横向滚动表补充：`packages/miniapp/pages/project-section/index.{js,wxml,wxss,json}`、`packages/miniapp/components/qiun-wx-ucharts/*`
 - 新增前端纯计算工具，按施工日志和工作段长度直接计算剩余米数、进度百分比、日均速度、近三日速度、预计剩余天数与偏差正负值：`packages/web/src/utils/project-section-progress.ts`
 - 新增小程序端同口径纯计算工具与测试，供工作段详情页复用：`packages/miniapp/utils/project-section-progress.js`、`packages/miniapp/utils/project-section-progress.test.js`
+
+### 8.19 车辆保养记录（2026-06）
+
+- 新增独立顶层菜单"车辆保养"（全角色可见），Web 页面采用"标题与新增动作 + 筛选栏 + 列表表格 + 详情抽屉 + 新增/编辑对话框"结构：筛选支持车辆、保养类型、状态与保养日期区间；列表展示保养单号、车辆、类型、里程、费用、保养时间、登记人、状态；管理层额外显示编辑/作废动作，operator 仅见本人记录且无编辑/作废：`packages/web/src/views/vehicle-maintenance/index.vue`、`packages/web/src/router/modules/vehicle-maintenance.ts`、`packages/web/src/api/vehicle-maintenance.ts`
+- 新增/编辑对话框字段：车辆、保养类型（拉字典 `vehicle_maintenance_type`）、保养内容、里程、保养人、费用、保养时间、备注、附件（直传 R2，可移除）；详情抽屉以描述列表展示完整信息并提供附件下载。
+- 小程序新增"车辆保养记录"页面：选车辆、选保养类型、填里程/内容/保养人/费用/保养日期、上传附件，并在下方展示"我的保养记录"；从财务页入口卡片进入：`packages/miniapp/pages/vehicle-maintenance/index.{js,wxml,wxss,json}`、`packages/miniapp/pages/finance/index.js`
+- 后端路由 `/api/v1/fleet/maintenance`（列表/详情/新增/编辑/作废），数据落表 `vehicle_maintenance_record`，挂钩 `company_vehicle`，软删除并保留作废人/时间/原因：`packages/api/src/routes/vehicle-maintenance.ts`
