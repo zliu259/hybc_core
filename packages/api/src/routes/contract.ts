@@ -23,6 +23,7 @@ import {
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
+import { amountChangeFloor } from "./contract-amount-change-floor";
 
 const nowIso = () => new Date().toISOString();
 
@@ -962,11 +963,12 @@ contractRoutes.post(
       );
     }
 
-    if (body.new_amount < contract.paid_amount) {
+    const floor = amountChangeFloor(contract);
+    if (body.new_amount < floor.floor) {
       return c.json(
         {
           success: false,
-          error: { message: `New amount (${body.new_amount}) cannot be less than already paid (${contract.paid_amount})` }
+          error: { message: `New amount (${body.new_amount}) cannot be less than ${floor.label} (${floor.floor})` }
         },
         400
       );

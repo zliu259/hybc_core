@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { message } from "@/utils/message";
 import { statusLabel } from "@/utils/enum-labels";
-import { listContracts, type Contract } from "@/api/contract";
+import {
+  listContracts,
+  createAmountChange,
+  submitAmountChangeApproval,
+  type Contract
+} from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
 
 defineOptions({ name: "InboundContractList" });
@@ -15,6 +21,11 @@ const projects = ref<Project[]>([]);
 const page = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
+
+const drawerVisible = ref(false);
+const submitting = ref(false);
+const activeRow = ref<Contract | null>(null);
+const amountForm = ref({ new_amount: 0, reason: "" });
 
 const filters = ref({
   project_id: undefined as number | undefined,
@@ -59,6 +70,43 @@ const goCreate = () => {
 
 const goDetail = (id: number) => {
   router.push(`/finance/contract/detail/${id}`);
+};
+
+const openAmountDrawer = (row: Contract) => {
+  activeRow.value = row;
+  amountForm.value = {
+    new_amount: Number(row.total_amount),
+    reason: ""
+  };
+  drawerVisible.value = true;
+};
+
+const submitAmountChange = async () => {
+  if (!activeRow.value || !amountForm.value.reason.trim()) {
+    message("请填写变更原因", { type: "warning" });
+    return;
+  }
+
+  submitting.value = true;
+  try {
+    const change = await createAmountChange(activeRow.value.id, {
+      change_type: "adjust",
+      new_amount: amountForm.value.new_amount,
+      reason: amountForm.value.reason.trim()
+    });
+
+    await submitAmountChangeApproval(activeRow.value.id, change.data.id, {
+      instance_config: {
+        note: "收款合同金额变更发起自收款合同管理"
+      }
+    });
+
+    message("已提交变更审批", { type: "success" });
+    drawerVisible.value = false;
+    await loadData();
+  } finally {
+    submitting.value = false;
+  }
 };
 
 onMounted(async () => {
@@ -133,10 +181,17 @@ onMounted(async () => {
           statusLabel(scope.row.status)
         }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="120" fixed="right">
+      <el-table-column label="操作" width="170" fixed="right">
         <template #default="scope">
           <el-button link type="primary" @click="goDetail(scope.row.id)"
             >详情</el-button
+          >
+          <el-button
+            v-if="scope.row.status === 'active'"
+            link
+            type="primary"
+            @click="openAmountDrawer(scope.row)"
+            >变更金额</el-button
           >
         </template>
       </el-table-column>
@@ -157,4 +212,51 @@ onMounted(async () => {
       "
     />
   </el-card>
+
+  <el-drawer
+    v-model="drawerVisible"
+    title="发起收款合同金额变更"
+    size="480px"
+    destroy-on-close
+  >
+    <el-form label-width="110px">
+      <el-form-item label="合同号">
+        <el-input :model-value="activeRow?.contract_no" disabled />
+      </el-form-item>
+      <el-form-item label="原合同金额">
+        <el-input
+          :model-value="String(activeRow?.total_amount ?? '')"
+          disabled
+        />
+      </el-form-item>
+      <el-form-item label="已收款">
+        <el-input
+          :model-value="String(activeRow?.received_amount ?? '')"
+          disabled
+        />
+      </el-form-item>
+      <el-form-item label="新合同金额" required>
+        <el-input-number
+          v-model="amountForm.new_amount"
+          :min="Number(activeRow?.received_amount ?? 0)"
+          :precision="2"
+          style="width: 100%"
+        />
+      </el-form-item>
+      <el-form-item label="变更缘由" required>
+        <el-input v-model="amountForm.reason" type="textarea" :rows="4" />
+      </el-form-item>
+    </el-form>
+
+    <template #footer>
+      <el-button @click="drawerVisible = false">取消</el-button>
+      <el-button
+        type="primary"
+        :loading="submitting"
+        @click="submitAmountChange"
+      >
+        提交审批
+      </el-button>
+    </template>
+  </el-drawer>
 </template>
