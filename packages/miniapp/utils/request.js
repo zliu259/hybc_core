@@ -8,6 +8,7 @@ const { getToken, setToken, clearToken } = require("./auth");
 
 const DEFAULT_TIMEOUT_MS = 20000;
 const LOGIN_TIMEOUT_MS = 30000;
+const UPLOAD_TIMEOUT_MS = 60000;
 const MUTATION_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 const pendingMutationRequests = new Map();
@@ -104,6 +105,17 @@ const buildUrl = (path) => {
   if (!path) return getBaseUrl();
   if (/^https?:\/\//.test(path)) return path;
   return `${getBaseUrl()}${path.startsWith("/") ? path : `/${path}`}`;
+};
+
+// Strip scheme + host from an absolute URL, keeping path + query. Used so an
+// absolute upload URL signed by the Worker can be re-based onto the current
+// API base (the HK bridge) instead of pinning the request to the Worker origin.
+const toRelativeApiPath = (rawPath) => {
+  const value = String(rawPath || "");
+  if (!value || !/^https?:\/\//i.test(value)) return value;
+  const withoutScheme = value.replace(/^https?:\/\//i, "");
+  const slashIndex = withoutScheme.indexOf("/");
+  return slashIndex === -1 ? "/" : withoutScheme.slice(slashIndex);
 };
 
 const isArrayBuffer = (value) => {
@@ -499,14 +511,25 @@ const loginRequest = ({
 };
 
 const uploadBinary = ({ path, arrayBuffer, contentType }) => {
+  // The backend signs an absolute Worker URL (https://api.hybcdg.com/...).
+  // Using it verbatim makes the PUT bypass the HK bridge and hit Cloudflare
+  // directly — exactly the unreliable mainland-China path the bridge exists to
+  // avoid, and the path every other request is routed away from via
+  // FORCE_HK_BRIDGE_PRIMARY. The upload signature only covers key + expiry
+  // (host-independent), so re-basing onto a relative path lets the upload
+  // follow the same bridge + fallback route as the rest of the app.
+  const relativePath = toRelativeApiPath(path);
   return ensureSessionReady().then(() => {
     return requestWithFallback({
       method: "PUT",
-      path,
+      path: relativePath,
       data: arrayBuffer,
-      timeout: 30000,
+      timeout: UPLOAD_TIMEOUT_MS,
       header: {
-        "content-type": contentType || "application/octet-stream"
+        "content-type": contentType || "application/octet-stream",
+        // PUT to a fixed object key is idempotent; this header also opts the
+        // upload into bridge -> direct-Worker fallback (see canAutoFallback).
+        "Idempotency-Key": buildRandomKey("miniapp-upload")
       }
     });
   });
