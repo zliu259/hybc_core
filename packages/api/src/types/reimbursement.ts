@@ -211,6 +211,10 @@ export interface ElectronicUploadRequest {
   amount?: number;
   issue_date?: string;
   description?: string;
+  // When set to the caller's own unsubmitted electronic draft, the upload
+  // replaces that draft's invoice in place instead of creating a new envelope.
+  // Prevents duplicate drafts when a user re-uploads on an active draft.
+  envelope_id?: number;
 }
 
 export interface PrecheckEnvelopeRequest {

@@ -678,6 +678,11 @@ Page({
       fileKey: file.key,
       fileName: uploadName
     });
+    // Reuse the draft we are currently editing instead of creating a new
+    // envelope on every upload. The server only honours this when it is the
+    // caller's own unsubmitted electronic draft, so submitted records are
+    // never touched and stale ids simply create a fresh envelope.
+    const activeDraftId = Number(this.data.latestEnvelopeId || 0) || undefined;
     let res;
     try {
       res = await request({
@@ -685,6 +690,7 @@ Page({
         path: "/api/v1/reimbursement/electronic-upload",
         data: {
           project_id: Number(this.data.draft.project_id || 0),
+          envelope_id: activeDraftId,
           file_key: file.key,
           file_name: uploadName,
           invoice_no: this.data.draft.invoice_no || undefined,

@@ -3005,6 +3005,50 @@ reimbursementRoutes.put(
   }
 );
 
+type ReusableElectronicDraft = {
+  id: number;
+  envelope_no: string;
+  envelope_uuid: string;
+};
+
+/**
+ * Returns the envelope only when it is a reusable, in-place-updatable
+ * electronic draft owned by the caller (or accessible to an office role).
+ * Any other case (missing / wrong channel / already submitted / not owned)
+ * returns null so the caller falls back to creating a fresh envelope —
+ * distinct reimbursement records are never silently merged.
+ */
+export const resolveReusableElectronicDraft = async (
+  db: D1Database,
+  envelopeId: number | undefined,
+  auth: { sub: string; roles: string[] }
+): Promise<ReusableElectronicDraft | null> => {
+  if (!envelopeId || envelopeId <= 0) return null;
+  const envelope = await db
+    .prepare(
+      `SELECT id, envelope_no, envelope_uuid, applicant_userid, channel, status
+         FROM reimbursement_envelope WHERE id = ?`
+    )
+    .bind(envelopeId)
+    .first<{
+      id: number;
+      envelope_no: string;
+      envelope_uuid: string;
+      applicant_userid: string;
+      channel: string;
+      status: string;
+    }>();
+  if (!envelope) return null;
+  if (envelope.channel !== "electronic") return null;
+  if (envelope.status !== "draft" && envelope.status !== "unregistered") return null;
+  if (!hasOfficeRole(auth.roles) && envelope.applicant_userid !== auth.sub) return null;
+  return {
+    id: envelope.id,
+    envelope_no: envelope.envelope_no,
+    envelope_uuid: envelope.envelope_uuid
+  };
+};
+
 reimbursementRoutes.post(
   "/electronic-upload",
   requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
@@ -3038,6 +3082,72 @@ reimbursementRoutes.post(
 
     try {
       const now = nowIso();
+
+      // In-place replace: when the caller passes one of their own unsubmitted
+      // electronic drafts, swap its invoice attachment instead of creating a
+      // new envelope. This is what stops re-uploads on an active draft from
+      // spawning duplicate drafts. resolveReusableElectronicDraft is the safety
+      // gate — anything not the caller's own electronic draft returns null and
+      // falls through to create-new below.
+      const reusableDraft = await resolveReusableElectronicDraft(c.env.DB, body.envelope_id, auth);
+      if (reusableDraft) {
+        await c.env.DB.prepare(
+          "UPDATE envelope_attachment SET status = 'deleted' WHERE envelope_id = ? AND status = 'active'"
+        )
+          .bind(reusableDraft.id)
+          .run();
+
+        await insertAttachments(c.env.DB, reusableDraft.id, [
+          {
+            attachment_type: "invoice",
+            file_key: body.file_key,
+            file_name: body.file_name,
+            file_size: body.file_size,
+            invoice_no: body.invoice_no,
+            amount: body.amount,
+            issue_date: body.issue_date
+          }
+        ]);
+
+        await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope SET
+             invoice_unique_no = ?, invoice_no = ?, expense_date = ?, amount = ?,
+             description = ?, updated_at = ?
+           WHERE id = ?`
+        )
+          .bind(
+            sanitizeInvoiceUniqueNo(body.invoice_no),
+            body.invoice_no ?? null,
+            body.issue_date ?? null,
+            body.amount ?? 0,
+            body.description ?? null,
+            now,
+            reusableDraft.id
+          )
+          .run();
+
+        const reusePayload = {
+          success: true as const,
+          data: {
+            id: reusableDraft.id,
+            envelope_no: reusableDraft.envelope_no,
+            envelope_uuid: reusableDraft.envelope_uuid,
+            ocr_task_id: null
+          }
+        };
+
+        await completeIdempotentRequest(
+          c.env.DB,
+          idempotencyScope,
+          auth.sub,
+          idempotencyKey,
+          200,
+          reusePayload
+        );
+
+        return c.json(reusePayload, 200);
+      }
+
       const envelopeUuid = crypto.randomUUID();
       const envelopeNo = envelopeUuid;
 
@@ -4336,6 +4446,7 @@ reimbursementRoutes.post(
     }
 
     if (envelope.channel === "physical" && !isValidUuid(envelope.envelope_uuid)) {
+      await abandonIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey);
       return c.json(
         {
           success: false,
@@ -4354,6 +4465,7 @@ reimbursementRoutes.post(
       .first<{ file_key: string | null }>();
 
     if (!attachmentRow?.file_key) {
+      await abandonIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey);
       return c.json({ success: false, error: { message: "At least one attachment is required before submit" } }, 400);
     }
 
