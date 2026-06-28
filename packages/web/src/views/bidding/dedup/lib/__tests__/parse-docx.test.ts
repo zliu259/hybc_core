@@ -24,7 +24,7 @@ describe("parseDocxArrayBuffer", () => {
     const arrayBuffer = buffer.buffer.slice(
       buffer.byteOffset,
       buffer.byteOffset + buffer.byteLength
-    );
+    ) as ArrayBuffer;
     const paras = await parseDocxArrayBuffer(arrayBuffer);
     expect(paras).toContain("第一段内容。");
     expect(paras).toContain("第二段内容。");
