@@ -27,4 +27,15 @@ describe("buildParsedDoc", () => {
     expect(doc.paragraphs).toHaveLength(1);
     expect(doc.paragraphs[0].text).toBe("有效段落。");
   });
+
+  it("drops sentences that normalize to empty and the paragraphs they leave empty", () => {
+    const doc = buildParsedDoc({
+      id: "d1",
+      name: "a.docx",
+      role: "compare",
+      paragraphTexts: ["——", "有效段落。"],
+    });
+    expect(doc.paragraphs).toHaveLength(1);
+    expect(doc.paragraphs[0].text).toBe("有效段落。");
+  });
 });

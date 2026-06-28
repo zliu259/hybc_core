@@ -16,4 +16,9 @@ describe("hashString", () => {
   it("differs for different inputs", () => {
     expect(hashString("abc")).not.toBe(hashString("abd"));
   });
+
+  it("matches FNV-1a 32-bit reference vectors", () => {
+    expect(hashString("")).toBe(2166136261);
+    expect(hashString("a")).toBe(3826002220);
+  });
 });

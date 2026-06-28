@@ -17,4 +17,8 @@ describe("jaccard", () => {
   it("returns 0 for disjoint sets", () => {
     expect(jaccard(new Set([1]), new Set([2]))).toBe(0);
   });
+
+  it("returns 0 when one set is empty and the other is not", () => {
+    expect(jaccard(new Set(), new Set([1, 2]))).toBe(0);
+  });
 });
