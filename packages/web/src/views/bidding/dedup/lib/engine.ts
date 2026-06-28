@@ -66,6 +66,8 @@ export function compareToMaster(
       dupSentences++;
     }
   }
+  // Rates are measured over the COMPARE document only (asymmetric by design):
+  // "how much of this compare doc duplicates the master".
   return {
     compareDocId: compare.id,
     matches,
@@ -85,16 +87,10 @@ export function pairSimilarity(
   const yx = compareToMaster(x, y, threshold);
   const xChars = flatten(x).reduce((n, s) => n + s.text.length, 0);
   const yChars = flatten(y).reduce((n, s) => n + s.text.length, 0);
-  const dupX = xy.matches.reduce((n, m) => {
-    const s = flatten(x).find((t) => t.id === m.compareSentenceId);
-    return n + (s ? s.text.length : 0);
-  }, 0);
-  const dupY = yx.matches.reduce((n, m) => {
-    const s = flatten(y).find((t) => t.id === m.compareSentenceId);
-    return n + (s ? s.text.length : 0);
-  }, 0);
   const total = xChars + yChars;
-  return total === 0 ? 0 : (dupX + dupY) / total;
+  return total === 0
+    ? 0
+    : (xy.charDuplicateRate * xChars + yx.charDuplicateRate * yChars) / total;
 }
 
 export function buildSimilarityMatrix(
