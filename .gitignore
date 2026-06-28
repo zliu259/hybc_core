@@ -28,6 +28,9 @@ n8n/data/
 # Local brainstorming/mockup artifacts
 .superpowers/
 
+# Git worktrees (isolated workspaces)
+.worktrees/
+
 # Local DB backups (do NOT commit production data dumps)
 backups/
 
