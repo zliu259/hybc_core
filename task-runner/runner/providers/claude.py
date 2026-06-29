@@ -70,6 +70,7 @@ class ClaudeProvider(AiProvider):
             "consumption_anomaly",
             "ocr_extract",
             "approval_ai_gate",
+            "bidding_dedup_rewrite",
         ]
 
     def execute(

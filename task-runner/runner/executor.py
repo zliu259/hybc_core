@@ -14,6 +14,7 @@ import httpx
 from .providers.base import AiProvider
 from .providers.claude import ClaudeProvider
 from .providers.openai_provider import OpenAIProvider
+from .rewrite_prompt import build_rewrite_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,9 @@ class TaskExecutor:
 
         if prompt is None:
             prompt = self._default_prompt_for_task(task_type)
+
+        if prompt is None and task_type == "bidding_dedup_rewrite":
+            prompt = build_rewrite_prompt(payload)
 
         if not isinstance(preferred_provider_key, str):
             preferred_provider_key = ""
