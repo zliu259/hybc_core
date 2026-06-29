@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
 import type { DocRole } from "./lib/types";
 import { useDedupTool } from "./composables/useDedupTool";
@@ -44,6 +44,13 @@ const dupParagraphs = computed(() =>
     : []
 );
 const canRewrite = computed(() => dupParagraphs.value.length > 0);
+const isRunning = computed(
+  () =>
+    ai.status.value === "pending" ||
+    ai.status.value === "assigned" ||
+    ai.status.value === "running"
+);
+watch(selectedCompareId, () => ai.reset());
 
 function onSetRole(payload: { id: string; role: DocRole }): void {
   setRole(payload.id, payload.role);
@@ -90,8 +97,8 @@ async function onExport() {
       <el-button type="primary" :disabled="!canCompute" @click="onCompute"
         >开始查重</el-button
       >
-      <el-button :disabled="!canRewrite" @click="onRewrite">AI 一键去重</el-button>
-      <el-button :disabled="!selectedCompareDoc" @click="onExport"
+      <el-button :disabled="!canRewrite || isRunning" @click="onRewrite">AI 一键去重</el-button>
+      <el-button :disabled="!selectedCompareDoc || isRunning" @click="onExport"
         >导出去重 docx</el-button
       >
     </div>

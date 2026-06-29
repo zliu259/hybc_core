@@ -43,22 +43,34 @@ export function useDedupAI(deps: Deps = {}) {
     error.value = "";
     rewrites.value = new Map();
     accepted.value = new Map();
-    const taskId = await request(paragraphs);
-    for (let i = 0; i < maxPolls; i++) {
-      const res = await poll(taskId);
-      status.value = res.status;
-      if (res.status === "completed") {
-        rewrites.value = new Map((res.rewrites ?? []).map((r) => [r.id, r.text]));
-        return;
+    try {
+      const taskId = await request(paragraphs);
+      for (let i = 0; i < maxPolls; i++) {
+        const res = await poll(taskId);
+        status.value = res.status;
+        if (res.status === "completed") {
+          rewrites.value = new Map((res.rewrites ?? []).map((r) => [r.id, r.text]));
+          return;
+        }
+        if (res.status === "failed" || res.status === "timeout") {
+          error.value = res.error ?? "AI 去重失败";
+          return;
+        }
+        await sleep(intervalMs);
       }
-      if (res.status === "failed" || res.status === "timeout") {
-        error.value = res.error ?? "AI 去重失败";
-        return;
-      }
-      await sleep(intervalMs);
+      status.value = "timeout";
+      error.value = "AI 去重超时，请重试";
+    } catch (e: unknown) {
+      status.value = "failed";
+      error.value = e instanceof Error ? e.message : "网络异常，请重试";
     }
-    status.value = "timeout";
-    error.value = "AI 去重超时，请重试";
+  }
+
+  function reset(): void {
+    status.value = "idle";
+    error.value = "";
+    rewrites.value = new Map();
+    accepted.value = new Map();
   }
 
   function accept(id: string): void {
@@ -77,5 +89,5 @@ export function useDedupAI(deps: Deps = {}) {
     accepted.value = new Map(rewrites.value);
   }
 
-  return { status, error, rewrites, accepted, start, accept, skip, acceptAll };
+  return { status, error, rewrites, accepted, start, accept, skip, acceptAll, reset };
 }

@@ -39,4 +39,21 @@ describe("useDedupAI", () => {
     expect(ai.status.value).toBe("failed");
     expect(ai.error.value).toBe("boom");
   });
+
+  it("sets failed status when poll throws", async () => {
+    const request = vi.fn(async () => 9);
+    const poll = vi.fn().mockRejectedValue(new Error("network down"));
+    const ai = useDedupAI({ request, poll, sleep: async () => {} });
+    await ai.start([{ id: "c#0", text: "原文。" }]);
+    expect(ai.status.value).toBe("failed");
+    expect(ai.error.value).toBe("network down");
+  });
+
+  it("times out after maxPolls exhausted", async () => {
+    const request = vi.fn(async () => 9);
+    const poll = vi.fn().mockResolvedValue({ status: "running" });
+    const ai = useDedupAI({ request, poll, sleep: async () => {}, maxPolls: 1 });
+    await ai.start([{ id: "c#0", text: "原文。" }]);
+    expect(ai.status.value).toBe("timeout");
+  });
 });

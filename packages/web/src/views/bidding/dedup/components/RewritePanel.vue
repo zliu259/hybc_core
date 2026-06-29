@@ -17,7 +17,7 @@ const emit = defineEmits<{
 
 <template>
   <div class="rewrite-panel">
-    <div v-if="props.status === 'pending' || props.status === 'running'" class="hint">
+    <div v-if="props.status === 'pending' || props.status === 'assigned' || props.status === 'running'" class="hint">
       AI 改写中…
     </div>
     <div v-else-if="props.status === 'failed' || props.status === 'timeout'" class="hint err">
