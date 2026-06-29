@@ -3,11 +3,14 @@ import { computed, ref } from "vue";
 import { ElMessage } from "element-plus";
 import type { DocRole } from "./lib/types";
 import { useDedupTool } from "./composables/useDedupTool";
+import { useDedupAI } from "./composables/useDedupAI";
+import { collectDuplicateParagraphs, applyRewrites } from "./lib/rewrite";
 import { downloadDocx } from "./lib/docx-export";
 import FileDropZone from "./components/FileDropZone.vue";
 import SummaryCards from "./components/SummaryCards.vue";
 import PairCompareView from "./components/PairCompareView.vue";
 import MatrixView from "./components/MatrixView.vue";
+import RewritePanel from "./components/RewritePanel.vue";
 
 const {
   docs,
@@ -19,6 +22,7 @@ const {
   setRole,
   compute
 } = useDedupTool();
+const ai = useDedupAI();
 const tab = ref<"star" | "matrix">("star");
 const selectedCompareId = ref<string>("");
 
@@ -34,6 +38,12 @@ const canCompute = computed(
     docs.value.some((d) => d.role === "master") &&
     docs.value.some((d) => d.role === "compare")
 );
+const dupParagraphs = computed(() =>
+  selectedCompareDoc.value && selectedResult.value
+    ? collectDuplicateParagraphs(selectedCompareDoc.value, selectedResult.value)
+    : []
+);
+const canRewrite = computed(() => dupParagraphs.value.length > 0);
 
 function onSetRole(payload: { id: string; role: DocRole }): void {
   setRole(payload.id, payload.role);
@@ -50,10 +60,18 @@ function onCompute() {
   }
 }
 
+async function onRewrite() {
+  try {
+    await ai.start(dupParagraphs.value);
+  } catch (err) {
+    ElMessage.error(err instanceof Error ? err.message : "AI 去重失败");
+  }
+}
+
 async function onExport() {
   const doc = selectedCompareDoc.value;
   if (!doc) return;
-  const paras = doc.paragraphs.map((p) => p.text);
+  const paras = applyRewrites(doc, ai.accepted.value);
   await downloadDocx(paras, `去重_${doc.name}`);
 }
 </script>
@@ -72,6 +90,7 @@ async function onExport() {
       <el-button type="primary" :disabled="!canCompute" @click="onCompute"
         >开始查重</el-button
       >
+      <el-button :disabled="!canRewrite" @click="onRewrite">AI 一键去重</el-button>
       <el-button :disabled="!selectedCompareDoc" @click="onExport"
         >导出去重 docx</el-button
       >
@@ -99,6 +118,16 @@ async function onExport() {
         :master="master"
         :compare="selectedCompareDoc"
         :result="selectedResult"
+      />
+      <RewritePanel
+        :status="ai.status.value"
+        :error="ai.error.value"
+        :originals="dupParagraphs"
+        :rewrites="ai.rewrites.value"
+        :accepted="ai.accepted.value"
+        @accept="ai.accept"
+        @skip="ai.skip"
+        @accept-all="ai.acceptAll"
       />
     </template>
 
