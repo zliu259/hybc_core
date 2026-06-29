@@ -1,14 +1,17 @@
 import { Document, Packer, Paragraph, TextRun } from "docx";
 
+// docx requires at least one paragraph, so empty input yields one blank paragraph.
+function buildChildren(paragraphTexts: string[]): Paragraph[] {
+  return paragraphTexts.length > 0
+    ? paragraphTexts.map(t => new Paragraph({ children: [new TextRun(t)] }))
+    : [new Paragraph({ children: [new TextRun("")] })];
+}
+
 // 生成结构干净的 docx（不保留原版式，见 spec 第 9 节取舍）。
 export async function buildDocxBuffer(paragraphTexts: string[]): Promise<Buffer> {
-  const children =
-    paragraphTexts.length > 0
-      ? paragraphTexts.map(
-          t => new Paragraph({ children: [new TextRun(t)] })
-        )
-      : [new Paragraph({ children: [new TextRun("")] })];
-  const doc = new Document({ sections: [{ children }] });
+  const doc = new Document({
+    sections: [{ children: buildChildren(paragraphTexts) }]
+  });
   return Packer.toBuffer(doc);
 }
 
@@ -16,15 +19,8 @@ export async function downloadDocx(
   paragraphTexts: string[],
   filename: string
 ): Promise<void> {
-  const { Document, Packer, Paragraph, TextRun } = await import("docx");
-  const children =
-    paragraphTexts.length > 0
-      ? paragraphTexts.map(
-          t => new Paragraph({ children: [new TextRun(t)] })
-        )
-      : [new Paragraph({ children: [new TextRun("")] })];
   const blob = await Packer.toBlob(
-    new Document({ sections: [{ children }] })
+    new Document({ sections: [{ children: buildChildren(paragraphTexts) }] })
   );
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");

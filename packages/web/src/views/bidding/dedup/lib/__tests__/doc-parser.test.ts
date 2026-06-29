@@ -11,4 +11,8 @@ describe("detectKind", () => {
     expect(() => detectKind("old.doc")).toThrow(/不支持/);
     expect(() => detectKind("note.txt")).toThrow(/不支持/);
   });
+
+  it("handles filenames with multiple dots", () => {
+    expect(detectKind("my.v2.docx")).toBe("docx");
+  });
 });

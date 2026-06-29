@@ -1,4 +1,5 @@
 import * as pdfjsLib from "pdfjs-dist";
+import type { TextItem } from "pdfjs-dist/types/src/display/api";
 // Vite 会把 worker 作为独立资源处理。
 import workerSrc from "pdfjs-dist/build/pdf.worker.min.mjs?url";
 
@@ -34,7 +35,9 @@ export async function parsePdfArrayBuffer(
   for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
     const page = await pdf.getPage(pageNum);
     const content = await page.getTextContent();
-    const items = content.items as PdfTextItem[];
+    const items = content.items.filter(
+      (item): item is TextItem => "str" in item
+    );
     if (items.length === 0) continue;
     all.push(...pdfItemsToParagraphs(items));
   }

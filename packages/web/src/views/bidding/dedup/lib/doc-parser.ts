@@ -13,7 +13,12 @@ export function detectKind(filename: string): DocKind {
 export async function parseFile(file: File): Promise<string[]> {
   const kind = detectKind(file.name);
   const arrayBuffer = await file.arrayBuffer();
-  return kind === "docx"
-    ? parseDocxArrayBuffer(arrayBuffer)
-    : parsePdfArrayBuffer(arrayBuffer);
+  try {
+    return kind === "docx"
+      ? await parseDocxArrayBuffer(arrayBuffer)
+      : await parsePdfArrayBuffer(arrayBuffer);
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(`解析 "${file.name}" 失败：${msg}`);
+  }
 }
