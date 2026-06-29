@@ -11,6 +11,7 @@ export interface RewriteParagraph {
 
 const MAX_PARAGRAPHS = 200;
 const MAX_TEXT = 5000;
+// 投标查重为业务/投标部门工具，权限与前端「投标」菜单一致（不含 finance）。
 const ROLES = ["super_admin", "manager", "site_manager", "operator"] as const;
 
 type ParseOk = { ok: true; paragraphs: RewriteParagraph[] };
@@ -126,16 +127,23 @@ biddingDedupRoutes.get(
     }
     const response = parseRewriteResult(task);
     // On terminal status: purge sensitive payload/result text, keep metadata for audit.
+    // payload_json is TEXT NOT NULL; use a valid-JSON sentinel '{}' for both columns.
+    // A purge failure must NOT steal the already-computed response from the client.
     if (
       task.status === "completed" ||
       task.status === "failed" ||
       task.status === "timeout"
     ) {
-      await c.env.DB.prepare(
-        "UPDATE task_queue SET payload_json = '', result_json = '' WHERE id = ?"
-      )
-        .bind(taskId)
-        .run();
+      try {
+        await c.env.DB.prepare(
+          "UPDATE task_queue SET payload_json = '{}', result_json = '{}' WHERE id = ?"
+        )
+          .bind(taskId)
+          .run();
+      } catch (err) {
+        // 清除失败不影响已取回的结果；记录后继续返回。
+        console.error("dedup-rewrite purge failed", taskId, err);
+      }
     }
     return c.json({ success: true, data: response });
   }

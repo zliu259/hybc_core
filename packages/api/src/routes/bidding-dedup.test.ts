@@ -52,4 +52,14 @@ describe("parseRewriteResult", () => {
     expect(res.status).toBe("completed");
     expect(res.rewrites).toEqual([]);
   });
+
+  it("passes through the assigned in-flight status", () => {
+    expect(parseRewriteResult({ status: "assigned", result_json: null }).status).toBe("assigned");
+  });
+
+  it("treats a purged '{}' result as completed with empty rewrites", () => {
+    const res = parseRewriteResult({ status: "completed", result_json: "{}" });
+    expect(res.status).toBe("completed");
+    expect(res.rewrites).toEqual([]);
+  });
 });
