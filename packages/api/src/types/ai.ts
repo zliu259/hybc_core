@@ -21,7 +21,8 @@ export const taskTypes = [
   "warehouse_task_dispatch_recommendation",
   "tbm_composition_recommendation",
   "warehouse_manual_draft",
-  "warehouse_task_summary"
+  "warehouse_task_summary",
+  "bidding_dedup_rewrite"
 ] as const;
 export type TaskType = (typeof taskTypes)[number];
 

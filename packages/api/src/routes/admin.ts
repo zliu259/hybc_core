@@ -1005,6 +1005,9 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
         result_summary: "检查正常"
       },
       evidence: []
+    },
+    bidding_dedup_rewrite: {
+      paragraphs: [{ id: "test#0", text: "测试段落内容。" }]
     }
   };
 
