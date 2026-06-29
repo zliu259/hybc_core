@@ -29,6 +29,11 @@ const selectedResult = computed(() =>
 const selectedCompareDoc = computed(() =>
   docs.value.find((d) => d.id === selectedCompareId.value)
 );
+const canCompute = computed(
+  () =>
+    docs.value.some((d) => d.role === "master") &&
+    docs.value.some((d) => d.role === "compare")
+);
 
 function onSetRole(payload: { id: string; role: DocRole }): void {
   setRole(payload.id, payload.role);
@@ -64,7 +69,9 @@ async function onExport() {
     <div class="controls">
       <span>相似阈值 {{ threshold.toFixed(2) }}</span>
       <el-slider v-model="threshold" :min="0.5" :max="1" :step="0.05" />
-      <el-button type="primary" @click="onCompute">开始查重</el-button>
+      <el-button type="primary" :disabled="!canCompute" @click="onCompute"
+        >开始查重</el-button
+      >
       <el-button :disabled="!selectedCompareDoc" @click="onExport"
         >导出去重 docx</el-button
       >
