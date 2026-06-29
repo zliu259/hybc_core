@@ -165,6 +165,9 @@ importers:
       vue-demi:
         specifier: ^0.14.10
         version: 0.14.10(vue@3.5.28(typescript@5.9.3))
+      vue-echarts:
+        specifier: ^8.0.1
+        version: 8.0.1(echarts@6.0.0)(vue@3.5.28(typescript@5.9.3))
       vue-router:
         specifier: ^4.6.3
         version: 4.6.4(vue@3.5.28(typescript@5.9.3))
@@ -4368,6 +4371,12 @@ packages:
     peerDependenciesMeta:
       '@vue/composition-api':
         optional: true
+
+  vue-echarts@8.0.1:
+    resolution: {integrity: sha512-23rJTFLu1OUEGRWjJGmdGt8fP+8+ja1gVgzMYPIPaHWpXegcO1viIAaeu2H4QHESlVeHzUAHIxKXGrwjsyXAaA==}
+    peerDependencies:
+      echarts: ^6.0.0
+      vue: ^3.3.0
 
   vue-eslint-parser@10.2.0:
     resolution: {integrity: sha512-CydUvFOQKD928UzZhTp4pr2vWz1L+H99t7Pkln2QSPdvmURT0MoC4wUccfCnuEaihNsu9aYYyk+bep8rlfkUXw==}
@@ -8722,6 +8731,11 @@ snapshots:
 
   vue-demi@0.14.10(vue@3.5.28(typescript@5.9.3)):
     dependencies:
+      vue: 3.5.28(typescript@5.9.3)
+
+  vue-echarts@8.0.1(echarts@6.0.0)(vue@3.5.28(typescript@5.9.3)):
+    dependencies:
+      echarts: 6.0.0
       vue: 3.5.28(typescript@5.9.3)
 
   vue-eslint-parser@10.2.0(eslint@9.39.2(jiti@2.6.1)):
