@@ -17,7 +17,10 @@ export const runInTransaction = async <T>(
   work: () => Promise<T>,
   options: RunInTransactionOptions = {}
 ): Promise<T> => {
-  const allowFallback = options.allowUnsupportedFallback ?? false;
+  // D1 (Cloudflare Workers) does not support SQL BEGIN/COMMIT transactions, so the
+  // unsupported-transaction error must degrade to non-transactional execution by default.
+  // Pass allowUnsupportedFallback: false only to deliberately fail loud (e.g. in tests).
+  const allowFallback = options.allowUnsupportedFallback ?? true;
   try {
     await db.exec("BEGIN IMMEDIATE TRANSACTION");
   } catch (error) {

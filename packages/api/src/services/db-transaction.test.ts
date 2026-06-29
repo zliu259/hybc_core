@@ -60,17 +60,37 @@ describe("runInTransaction", () => {
     expect(calls).toEqual(["BEGIN IMMEDIATE TRANSACTION", "work"]);
   });
 
-  it("rethrows unsupported SQL transaction error by default", async () => {
+  it("falls back to non-transactional execution by default on D1", async () => {
+    const { db, calls } = createDb({
+      beginError: new Error(
+        "D1_EXEC_ERROR: BEGIN IMMEDIATE TRANSACTION: To execute a transaction, please use the state.storage.transaction() APIs instead of the SQL BEGIN TRANSACTION or SAVEPOINT statements"
+      )
+    });
+
+    const result = await runInTransaction(db, async () => {
+      calls.push("work");
+      return 16;
+    });
+
+    expect(result).toBe(16);
+    expect(calls).toEqual(["BEGIN IMMEDIATE TRANSACTION", "work"]);
+  });
+
+  it("rethrows unsupported SQL transaction error when fallback is explicitly disabled", async () => {
     const unsupportedError = new Error(
       "D1_EXEC_ERROR: BEGIN IMMEDIATE TRANSACTION: To execute a transaction, please use the state.storage.transaction() APIs instead of the SQL BEGIN TRANSACTION or SAVEPOINT statements"
     );
     const { db, calls } = createDb({ beginError: unsupportedError });
 
     await expect(
-      runInTransaction(db, async () => {
-        calls.push("work");
-        return 16;
-      })
+      runInTransaction(
+        db,
+        async () => {
+          calls.push("work");
+          return 16;
+        },
+        { allowUnsupportedFallback: false }
+      )
     ).rejects.toThrow("state.storage.transaction()");
 
     expect(calls).toEqual(["BEGIN IMMEDIATE TRANSACTION"]);
