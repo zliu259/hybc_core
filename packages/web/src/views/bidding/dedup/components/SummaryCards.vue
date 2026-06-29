@@ -27,3 +27,19 @@ function tone(v: number): string {
     </el-card>
   </div>
 </template>
+
+<style scoped>
+.value {
+  font-size: 24px;
+  font-weight: 500;
+}
+.value.danger {
+  color: var(--el-color-danger);
+}
+.value.warning {
+  color: var(--el-color-warning);
+}
+.value.success {
+  color: var(--el-color-success);
+}
+</style>

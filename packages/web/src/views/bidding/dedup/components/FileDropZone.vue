@@ -18,23 +18,28 @@ async function onFiles(event: Event) {
   const input = event.target as HTMLInputElement;
   if (!input.files) return;
   loading.value = true;
-  for (const file of Array.from(input.files)) {
-    try {
-      const paragraphTexts = await parseFile(file);
-      const hasMaster = props.docs.some((d) => d.role === "master");
-      const doc = buildParsedDoc({
-        id: `${Date.now()}-${file.name}`,
-        name: file.name,
-        role: hasMaster ? "compare" : "master",
-        paragraphTexts
-      });
-      emit("add", doc);
-    } catch (err) {
-      ElMessage.error(err instanceof Error ? err.message : "解析失败");
+  let masterAssigned = props.docs.some((d) => d.role === "master");
+  try {
+    for (const file of Array.from(input.files)) {
+      try {
+        const paragraphTexts = await parseFile(file);
+        const role: DocRole = masterAssigned ? "compare" : "master";
+        if (role === "master") masterAssigned = true;
+        const doc = buildParsedDoc({
+          id: `${Date.now()}-${file.name}`,
+          name: file.name,
+          role,
+          paragraphTexts
+        });
+        emit("add", doc);
+      } catch (err) {
+        ElMessage.error(err instanceof Error ? err.message : "解析失败");
+      }
     }
+  } finally {
+    loading.value = false;
+    input.value = "";
   }
-  loading.value = false;
-  input.value = "";
 }
 </script>
 

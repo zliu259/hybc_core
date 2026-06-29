@@ -40,4 +40,30 @@ describe("useDedupTool", () => {
     );
     expect(() => tool.compute()).toThrow(/母本/);
   });
+
+  it("removeDoc removes the doc and clears stale results", () => {
+    const tool = useDedupTool();
+    tool.addDoc(
+      buildParsedDoc({
+        id: "m",
+        name: "母本",
+        role: "master",
+        paragraphTexts: ["质量管理体系健全。"]
+      })
+    );
+    tool.addDoc(
+      buildParsedDoc({
+        id: "c",
+        name: "对比1",
+        role: "compare",
+        paragraphTexts: ["质量管理体系健全。其他内容。"]
+      })
+    );
+    tool.compute();
+    expect(tool.starResults.value.length).toBe(1);
+    tool.removeDoc("c");
+    expect(tool.docs.value.some((d) => d.id === "c")).toBe(false);
+    expect(tool.starResults.value).toEqual([]);
+    expect(tool.matrix.value).toEqual([]);
+  });
 });

@@ -33,7 +33,13 @@ const data = computed(() => {
 });
 
 const option = computed<EChartsOption>(() => ({
-  tooltip: { position: "top" },
+  tooltip: {
+    position: "top",
+    formatter: (p: CallbackDataParams) => {
+      const v = p.value as [number, number, number];
+      return `${names.value[v[1]]} ↔ ${names.value[v[0]]}: ${v[2]}%`;
+    }
+  },
   grid: { containLabel: true },
   xAxis: { type: "category", data: names.value },
   yAxis: { type: "category", data: names.value },
