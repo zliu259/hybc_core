@@ -9,7 +9,16 @@ def build_rewrite_prompt(payload: dict[str, object]) -> dict[str, str]:
     paragraphs = payload.get("paragraphs")
     if not isinstance(paragraphs, list):
         paragraphs = []
-    paragraphs_json = json.dumps(paragraphs, ensure_ascii=False, indent=2)
+    valid = [
+        {"id": p["id"], "text": p["text"]}
+        for p in paragraphs
+        if isinstance(p, dict)
+        and isinstance(p.get("id"), str)
+        and p["id"]
+        and isinstance(p.get("text"), str)
+        and p["text"]
+    ]
+    paragraphs_json = json.dumps(valid, ensure_ascii=False, indent=2)
     system = (
         "你是投标文件润色专家。任务：在完整保留原意与专业表述的前提下，"
         "改写下列段落，使其与原文在字面上尽量不同（降低重复/雷同），"

@@ -15,3 +15,17 @@ def test_build_rewrite_prompt_embeds_paragraphs_and_demands_json():
 def test_build_rewrite_prompt_handles_empty():
     prompt = build_rewrite_prompt({"paragraphs": []})
     assert "rewrites" in prompt["user"]
+
+
+def test_build_rewrite_prompt_drops_invalid_items():
+    prompt = build_rewrite_prompt(
+        {
+            "paragraphs": [
+                "bad",
+                {"id": "d#0", "text": "好段落。"},
+                {"id": "", "text": "x"},
+            ]
+        }
+    )
+    assert "好段落。" in prompt["user"]
+    assert "bad" not in prompt["user"]

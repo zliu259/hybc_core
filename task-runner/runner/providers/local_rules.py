@@ -687,6 +687,8 @@ class LocalRulesProvider(AiProvider):
             if not isinstance(item, dict):
                 continue
             pid = str(item.get("id", ""))
+            if not pid:
+                continue
             text = str(item.get("text", ""))
             # 本地 mock：确定性改写（非真实 AI），保证与原文不同。
             rewritten = f"【已降重】{text}" if text else text

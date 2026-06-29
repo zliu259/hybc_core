@@ -66,9 +66,8 @@ class TaskExecutor:
 
         if prompt is None:
             prompt = self._default_prompt_for_task(task_type)
-
-        if prompt is None and task_type == "bidding_dedup_rewrite":
-            prompt = build_rewrite_prompt(payload)
+            if prompt is None and task_type == "bidding_dedup_rewrite":
+                prompt = build_rewrite_prompt(payload)
 
         if not isinstance(preferred_provider_key, str):
             preferred_provider_key = ""

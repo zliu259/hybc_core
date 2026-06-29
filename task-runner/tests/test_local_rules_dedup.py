@@ -21,3 +21,12 @@ def test_mock_rewrites_each_paragraph_preserving_ids_and_changing_text():
     for original, rewritten in zip(payload["paragraphs"], parsed["rewrites"]):
         assert rewritten["text"]
         assert rewritten["text"] != original["text"]
+
+
+def test_mock_skips_items_without_id():
+    provider = LocalRulesProvider()
+    payload = {
+        "paragraphs": [{"text": "无 id 段落。"}, {"id": "d#1", "text": "正常。"}]
+    }
+    parsed = json.loads(provider.execute("bidding_dedup_rewrite", payload).output)
+    assert [r["id"] for r in parsed["rewrites"]] == ["d#1"]
