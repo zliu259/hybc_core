@@ -26,9 +26,11 @@ type InstanceRow = {
   biz_id: number;
   initiator_userid: string;
   status: string;
+  current_node_key: string | null;
 };
 
 const STATUS_LITERAL = /SET\s+status\s*=\s*'([a-z_]+)'/i;
+const CLEARS_CURRENT_NODE = /current_node_key\s*=\s*NULL/i;
 
 const createFakeEnv = (
   task: TaskRow,
@@ -44,6 +46,9 @@ const createFakeEnv = (
                 const match = sql.match(STATUS_LITERAL);
                 if (match) {
                   instance.status = match[1];
+                }
+                if (CLEARS_CURRENT_NODE.test(sql)) {
+                  instance.current_node_key = null;
                 }
               }
               return { success: true, meta: { last_row_id: 1 } };
@@ -89,7 +94,8 @@ describe("returnToInitiator", () => {
       biz_type: "payment_request",
       biz_id: 99,
       initiator_userid: "initiator-1",
-      status: "in_progress"
+      status: "in_progress",
+      current_node_key: "sequential_gm_node"
     };
 
     const { env } = createFakeEnv(task, instance);
@@ -98,5 +104,8 @@ describe("returnToInitiator", () => {
 
     // The initiator's "退回待处理" bucket keys off instance.status = 'returned'.
     expect(instance.status).toBe("returned");
+    // The flow is no longer at any approval node — clearing current_node_key stops
+    // every "current node" view from showing it still parked at the returning node.
+    expect(instance.current_node_key).toBeNull();
   });
 });

@@ -197,10 +197,14 @@ export const returnToInitiator = async (
     .bind(now, now, task.node_instance_id)
     .run();
 
-  // Mark instance as returned (awaiting initiator resubmit). This status is what
-  // the initiator's "退回待处理" supervisory bucket keys off — see routes/approval.ts.
+  // Mark instance as returned (awaiting initiator resubmit) and clear the current
+  // node pointer: the flow is no longer at any approval node, it is back with the
+  // initiator. Leaving current_node_key set makes every "current node" view (detail
+  // timeline highlight, list "当前节点") show it still parked at the returning node.
+  // 'returned' is also what the initiator's "退回待处理" supervisory bucket keys off
+  // — see routes/approval.ts.
   await env.DB.prepare(
-    `UPDATE approval_instance SET status = 'returned', updated_at = ?
+    `UPDATE approval_instance SET status = 'returned', current_node_key = NULL, updated_at = ?
      WHERE id = ?`
   )
     .bind(now, task.instance_id)
