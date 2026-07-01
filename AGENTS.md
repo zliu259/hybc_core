@@ -17,6 +17,12 @@
 - Timestamp section format: `## YYYY-MM-DD HH:mm (TZ)`.
 - UI changes must update page-level mapping in `doc/UI设计文档.md` with concrete file-path pointers.
 
+## Documentation Layout (three areas)
+- `doc/` — long-lived, still-authoritative docs: `CLAUDE.md`, `开发计划.md`, `开发记录.md`, `UI设计文档.md`, `background_inv.md`, `local-dev-setup.md`, plus `guide/` and `legacy_data/`. This is where active work is tracked.
+- `docs/archive/` — **implemented / shipped** one-off design docs, implementation plans, and phase notes. Historical reference only; do NOT treat as current instructions. Index: `docs/archive/README.md`.
+- `docs/planned/` — **not-yet-implemented** design/plan docs (e.g. `docs/planned/2026-07-01-approval-return-resubmit-design.md`). Index: `docs/planned/README.md`.
+- When a planned doc is implemented, move it from `docs/planned/` to `docs/archive/`, update both indexes and `doc/README.md`, and append an implementation record to `doc/开发记录.md`.
+
 ## How To Use This File
 - Treat this as operational guidance for agentic coding in this repo.
 - Prefer explicit rules from `doc/CLAUDE.md` over assumptions.

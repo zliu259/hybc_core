@@ -1,19 +1,20 @@
 # 文档索引
 
-## 核心文档
+> 文档分三处：`doc/`（长期有效的核心文档与手册）、`docs/archive/`（已实现的历史设计与计划，仅留档）、`docs/planned/`（尚未实现的计划文档）。
+
+## 核心文档（doc/，长期有效）
 
 - 架构与约束：`doc/CLAUDE.md`
 - 开发计划：`doc/开发计划.md`
 - 业务背景：`doc/background_inv.md`
 - 本地开发指南：`doc/local-dev-setup.md`
 - UI 页面级设计：`doc/UI设计文档.md`
-- 库房系统升级架构设计：`doc/库房系统升级架构设计.md`
-- 库房与资产任务队列重构方案：`doc/库房与资产任务队列重构方案.md`
-- 库房与资产任务队列重构实施计划：`doc/库房与资产任务队列重构实施计划.md`
-- 库房与资产重构进度与下一阶段：`doc/库房与资产重构进度与下一阶段.md`
-- 库房小程序任务执行接口规划：`doc/库房小程序任务执行接口规划.md`
 - 统一开发记录：`doc/开发记录.md`
-- 岗位培训手册目录：`doc/guide/`
+- 库房与资产重构进度与下一阶段：`doc/库房与资产重构进度与下一阶段.md`
+- 企业微信智能机器人任务包 0 配置教程：`doc/企业微信智能机器人任务包0配置教程.md`
+
+## 岗位培训手册（doc/guide/）
+
 - 培训总览：`doc/guide/00-总览与快速开始.md`
 - 超级管理员手册：`doc/guide/01-超级管理员手册.md`
 - 经理手册：`doc/guide/02-经理手册.md`
@@ -22,31 +23,21 @@
 - 财务手册：`doc/guide/05-财务手册.md`
 - 运维与部署手册：`doc/guide/06-运维与部署手册.md`
 - 附录（命令与参考）：`doc/guide/07-附录-命令与参考.md`
+
+## 旧数据迁移（doc/legacy_data/）
+
 - 旧数据迁移兼容计划（测试阶段）：`doc/legacy_data/迁移兼容计划.md`
 - 财务旧数据结构映射（fin_data）：`doc/legacy_data/SCHEMA_MAP.md`
 - 财务旧数据迁移检查清单（fin_data）：`doc/legacy_data/MIGRATION_CHECKLIST.md`
-- Phase 8 本地与正式部署：`doc/Phase8本地部署与正式部署.md`
-- Azure 企业微信桥接设计：`bridge/README.md`
-- 大陆访问优化方案：`doc/大陆访问优化-Worker主入口与AzureHKBridge兜底方案.md`
-- 企业微信智能机器人工具优先架构设计：`doc/企业微信智能机器人工具优先架构设计.md`
-- 企业微信智能机器人工具优先架构开发计划：`doc/企业微信智能机器人工具优先架构开发计划.md`
-- 企业微信智能机器人任务包 0 配置教程：`doc/企业微信智能机器人任务包0配置教程.md`
 
-## 当前执行主线（2026-05）
+## 已归档设计与计划（docs/archive/，已实现，仅留档）
 
-- Phase 12（Passkey + 项目化视图）：`doc/开发计划.md`
-- Phase 13（Azure 企业微信桥接）：`doc/开发计划.md`
-- 大陆访问优化（Worker 主入口 + Azure HK bridge 兜底）：`doc/大陆访问优化-Worker主入口与AzureHKBridge兜底方案.md`
-- Phase 14（CosmosDB + 机器学习，后续规划）：`doc/开发计划.md`
-- 库房系统升级架构设计（文档先行）：`doc/库房系统升级架构设计.md`
-- 库房与资产任务队列重构（Web 管理端四板块 + 后端任务队列闭环 + 小程序执行端后端契约）：`doc/库房与资产任务队列重构方案.md`、`doc/库房与资产任务队列重构实施计划.md`、`doc/库房与资产重构进度与下一阶段.md`、`doc/库房小程序任务执行接口规划.md`
-- Web 项目工作区 IA 设计：`doc/UI设计文档.md`（3.4）
-- 小程序项目模块重构约束：`doc/UI设计文档.md`（4.4）
-- WeCom-first + Passkey 安全边界：`doc/CLAUDE.md`（认证模型章节）
-- 企业微信智能机器人工具优先架构：`doc/企业微信智能机器人工具优先架构设计.md`
-- 企业微信智能机器人工具优先架构任务包：`doc/企业微信智能机器人工具优先架构开发计划.md`
-- 企业微信智能机器人任务包 0 配置教程：`doc/企业微信智能机器人任务包0配置教程.md`
-- 决策与风险记录：`doc/开发记录.md`
+- 详见 `docs/archive/README.md`。含：库房系统升级 / 任务队列重构、企业微信智能机器人工具优先架构、大陆访问优化（Azure HK Bridge 兜底）、Phase 8 部署、早期 UI 重设计，以及 superpowers 各功能特性 specs/plans。
+- Azure 企业微信桥接说明：`bridge/README.md`（随包，非归档）。
+
+## 待实现计划（docs/planned/，尚未实现）
+
+- 详见 `docs/planned/README.md`。含：退回发起人 → 编辑业务单 → 重新提交（彻底方案）`docs/planned/2026-07-01-approval-return-resubmit-design.md`。
 
 ## 开发记录规则（强制）
 
@@ -60,3 +51,4 @@
 - 功能或流程变更时，需同步更新相关文档指向。
 - UI 页面新增时，必须在 `doc/UI设计文档.md` 增加页面条目与路径指向。
 - 若目录结构变动，先更新本索引，再改具体文档。
+- 计划文档实现落地后，从 `docs/planned/` 移动到 `docs/archive/`，并在 `doc/开发记录.md` 追加实现记录。
