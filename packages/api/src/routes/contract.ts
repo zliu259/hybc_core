@@ -22,6 +22,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
+import { isResubmittable } from "../services/approval/status";
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
 import { amountChangeFloor } from "./contract-amount-change-floor";
 
@@ -717,7 +718,7 @@ contractRoutes.post(
         return c.json(payload);
       }
 
-      if (existing && (existing.status === "pending" || existing.status === "withdrawn")) {
+      if (existing && isResubmittable(existing.status)) {
         try {
           await resubmitOp(c.env, effectiveApprovalInstanceId, auth.sub);
           await c.env.DB.prepare(

@@ -25,6 +25,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
+import { isResubmittable } from "../services/approval/status";
 
 const nowIso = () => new Date().toISOString();
 
@@ -1122,7 +1123,7 @@ paymentRoutes.post(
         );
       }
 
-      if (existing && (existing.status === "pending" || existing.status === "withdrawn")) {
+      if (existing && isResubmittable(existing.status)) {
         try {
           await resubmitOp(c.env, request.approval_instance_id, auth.sub);
           await c.env.DB.prepare(
