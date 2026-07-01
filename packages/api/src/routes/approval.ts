@@ -56,7 +56,15 @@ const isInitiatedBucket = (value: string): value is InitiatedBucket => {
   return (initiatedBuckets as readonly string[]).includes(value);
 };
 
-const buildReturnedNeedsActionSql = (instanceAlias: string): string => {
+// A return-to-initiator sets instance.status = 'returned' (see
+// services/approval/operations.ts). Legacy rows may still carry 'pending', which
+// historically only ever meant the same "returned, awaiting resubmit" state.
+const returnedStatusesSql = "'returned', 'pending'";
+
+// Informational derived signal only: does the initiator currently hold a pending
+// task? Bucket membership is driven by instance status, not by this — a
+// return-to-initiator intentionally creates no task for the initiator.
+const buildInitiatorHasPendingTaskSql = (instanceAlias: string): string => {
   return `EXISTS (
     SELECT 1
     FROM approval_task at_init
@@ -70,23 +78,18 @@ const buildInitiatedBucketWhereSql = (
   instanceAlias: string,
   initiatedBucket: InitiatedBucket
 ): string => {
-  const returnedNeedsActionSql = buildReturnedNeedsActionSql(instanceAlias);
   if (initiatedBucket === "returned_needs_action") {
-    return `(${instanceAlias}.status = 'returned' AND ${returnedNeedsActionSql})`;
+    return `${instanceAlias}.status IN (${returnedStatusesSql})`;
   }
   if (initiatedBucket === "done") {
     return `${instanceAlias}.status IN (${doneStatusesSql})`;
   }
-  return `(
-    ${instanceAlias}.status IN ('pending', 'in_progress', 'transferred')
-    OR (${instanceAlias}.status = 'returned' AND NOT ${returnedNeedsActionSql})
-  )`;
+  return `${instanceAlias}.status IN ('in_progress', 'transferred')`;
 };
 
 const buildInitiatedBucketCaseSql = (instanceAlias: string): string => {
-  const returnedNeedsActionSql = buildReturnedNeedsActionSql(instanceAlias);
   return `CASE
-    WHEN ${instanceAlias}.status = 'returned' AND ${returnedNeedsActionSql} THEN 'returned_needs_action'
+    WHEN ${instanceAlias}.status IN (${returnedStatusesSql}) THEN 'returned_needs_action'
     WHEN ${instanceAlias}.status IN (${doneStatusesSql}) THEN 'done'
     ELSE 'in_progress'
   END`;
@@ -133,13 +136,13 @@ approvalRoutes.get("/", async (c) => {
     }
     initiatedBucket = initiatedBucketRaw;
   }
-  const returnedNeedsActionSql = buildReturnedNeedsActionSql("ai");
+  const initiatorHasPendingTaskSql = buildInitiatorHasPendingTaskSql("ai");
   const initiatedBucketCaseSql = buildInitiatedBucketCaseSql("ai");
 
   let sql = `SELECT DISTINCT ai.*,
     ${approvalBizDetailSql("ai")} as biz_detail,
     ${initiatedBucketCaseSql} as initiated_bucket,
-    CASE WHEN ${returnedNeedsActionSql} THEN 1 ELSE 0 END as has_pending_task_for_initiator,
+    CASE WHEN ${initiatorHasPendingTaskSql} THEN 1 ELSE 0 END as has_pending_task_for_initiator,
     CASE
       WHEN ai.initiator_userid = ?
         AND ai.status IN ('pending', 'in_progress')

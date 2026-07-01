@@ -853,7 +853,12 @@ const determineAvailableActions = (
     }
   }
 
-  if (isInitiator && (instance.status === "pending" || instance.status === "withdrawn")) {
+  if (
+    isInitiator &&
+    (instance.status === "returned" ||
+      instance.status === "pending" ||
+      instance.status === "withdrawn")
+  ) {
     actions.push("resubmit");
   }
 

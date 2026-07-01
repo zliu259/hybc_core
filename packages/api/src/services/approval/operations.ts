@@ -197,9 +197,10 @@ export const returnToInitiator = async (
     .bind(now, now, task.node_instance_id)
     .run();
 
-  // Mark instance as pending (awaiting resubmit)
+  // Mark instance as returned (awaiting initiator resubmit). This status is what
+  // the initiator's "退回待处理" supervisory bucket keys off — see routes/approval.ts.
   await env.DB.prepare(
-    `UPDATE approval_instance SET status = 'pending', updated_at = ?
+    `UPDATE approval_instance SET status = 'returned', updated_at = ?
      WHERE id = ?`
   )
     .bind(now, task.instance_id)
@@ -596,9 +597,13 @@ export const resubmit = async (
     throw new Error("Only the initiator can resubmit");
   }
 
-  if (instance.status !== "pending" && instance.status !== "withdrawn") {
+  if (
+    instance.status !== "returned" &&
+    instance.status !== "pending" &&
+    instance.status !== "withdrawn"
+  ) {
     throw new Error(
-      `Cannot resubmit instance in status: ${instance.status}. Must be pending or withdrawn.`
+      `Cannot resubmit instance in status: ${instance.status}. Must be returned or withdrawn.`
     );
   }
 

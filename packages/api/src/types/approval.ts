@@ -26,6 +26,7 @@ export type ApprovalAction = (typeof approvalActions)[number];
 export const instanceStatuses = [
   "pending",
   "in_progress",
+  "returned",
   "approved",
   "rejected",
   "cancelled",
