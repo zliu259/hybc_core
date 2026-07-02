@@ -19,3 +19,13 @@ export const isResubmittable = (status: string): boolean =>
 
 /** True when an approval is actively running and should block re-submission/edits. */
 export const isApprovalActive = (status: string): boolean => status === "in_progress";
+
+export type ExistingApprovalSubmissionDecision = "active" | "resubmit" | "new";
+
+export const getExistingApprovalSubmissionDecision = (
+  status: string
+): ExistingApprovalSubmissionDecision => {
+  if (isApprovalActive(status)) return "active";
+  if (isResubmittable(status)) return "resubmit";
+  return "new";
+};

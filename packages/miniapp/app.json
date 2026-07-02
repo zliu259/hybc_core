@@ -23,6 +23,7 @@
     "pages/approval/index",
     "pages/approval-initiated/index",
     "pages/approval-detail/index",
+    "pages/returned-approval-edit/index",
     "pages/payment-apply/index",
     "pages/fuel-apply/index",
     "pages/vehicle-maintenance/index",

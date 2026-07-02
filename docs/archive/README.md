@@ -9,6 +9,7 @@
 - 车辆维保记录：`2026-06-24-vehicle-maintenance-record-design.md`、`2026-06-24-vehicle-maintenance-record.md`
 - 外部项目日志：`2026-05-14-external-project-log.md`
 - 投标查重（前端 + AI 去重）：`2026-06-28-bidding-dedup-design.md`、`2026-06-28-bidding-dedup-frontend.md`、`2026-06-29-bidding-dedup-ai-rewrite.md`
+- 退回发起人 → 编辑业务单 → 重新提交：`2026-07-01-approval-return-resubmit-design.md`
 
 ### 架构与重构（历史 doc/）
 - 库房与资产系统：`库房系统升级架构设计.md`、`库房与资产任务队列重构方案.md`、`库房与资产任务队列重构实施计划.md`、`库房小程序任务执行接口规划.md`

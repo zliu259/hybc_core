@@ -790,6 +790,8 @@
 - 操作员日志：`packages/miniapp/pages/operator-log/index`
 - 管理员日志：`packages/miniapp/pages/manager-log/index`
 - 审批待办：`packages/miniapp/pages/approval/index`
+- 我发起的申请：`packages/miniapp/pages/approval-initiated/index`
+- 退回申请编辑与重新提交：`packages/miniapp/pages/returned-approval-edit/index`
 - 发起对外付款（智能发单台）：`packages/miniapp/pages/payment-apply/index`
 - 员工加油申请：`packages/miniapp/pages/fuel-apply/index`
 - 我的报销提交（列表）：`packages/miniapp/pages/reimbursement-list/index`
@@ -1169,6 +1171,8 @@
 - 审批流程默认折叠，支持一键展开/收起节点，降低初始阅读负担：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.js`
 - 操作按钮显示增加兜底策略（当接口未回传 `available_actions` 时按待办任务推断），避免底部操作区缺失：`packages/miniapp/pages/approval-detail/index.js`
 - 底部操作布局优化为单排 40/40/20（通过/退回/更多），其余动作收纳到“更多”弹层，减少主操作区噪音：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.js`、`packages/miniapp/pages/approval-detail/index.wxss`
+- 退回发起人后，发起人在审批详情页可见“编辑并重新提交”固定操作，跳转统一退回编辑页；该入口不受只读详情模式影响，用于从“我发起的申请”列表进入后完成移动端闭环：`packages/miniapp/pages/approval-detail/index.{js,wxml,wxss}`、`packages/miniapp/utils/returned-approval.js`
+- 退回申请编辑页按 `biz_type` 加载对应业务单，支持付款、报销批次、库房出入库单、库房工单、收/付款合同和开票申请的业务字段修正，保存后调用各业务 `submit-approval` 接口重新启动同一审批实例的新轮次：`packages/miniapp/pages/returned-approval-edit/index.{js,wxml,wxss,json}`
 
 ### 4.8 工作台待办入口与提醒模块优化（2026-03）
 

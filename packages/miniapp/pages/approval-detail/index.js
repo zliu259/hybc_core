@@ -1,6 +1,10 @@
 const { request, buildUrl } = require("../../utils/request");
 const { getToken, getUserProfile } = require("../../utils/auth");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
+const {
+  canEditReturnedApproval,
+  getReturnedApprovalEditRoute
+} = require("../../utils/returned-approval");
 
 Page({
   data: {
@@ -40,6 +44,7 @@ Page({
     canReturn: false,
     canTransfer: false,
     canMoreAction: false,
+    canEditReturnedBusiness: false,
     userAlreadyActed: false
   },
 
@@ -109,7 +114,8 @@ Page({
       cancelled: "已取消",
       withdrawn: "已撤回",
       completed: "已完成",
-      transferred: "已转签"
+      transferred: "已转签",
+      returned: "已退回"
     };
     return map[status] || "未知";
   },
@@ -119,7 +125,10 @@ Page({
       outbound_contract: "对外合同审批",
       inbound_contract: "收款合同审批",
       payment_request: "付款审批",
-      reimbursement_batch: "报销审批"
+      reimbursement_batch: "报销审批",
+      stock_order: "库房出入库审批",
+      warehouse_asset_work_order: "库房工单审批",
+      invoice_request: "开票审批"
     };
     return map[value] || "未知";
   },
@@ -801,6 +810,7 @@ Page({
       const userAlreadyActed = userId
         ? allTasks.some((t) => t.assignee_userid === userId && t.status === "completed")
         : false;
+      const canEditReturnedBusiness = canEditReturnedApproval(detail.instance, userId);
 
       this.setData({
         detail: {
@@ -826,6 +836,7 @@ Page({
         detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
         detailTimelineNodes: this.buildTimelineNodes(detail),
         availableActions: this.data.readOnlyView ? [] : availableActions,
+        canEditReturnedBusiness,
         userAlreadyActed,
         detailState: "ready",
         detailErrorText: "",
@@ -844,6 +855,21 @@ Page({
     } finally {
       this.setData({ loading: false });
     }
+  },
+
+  goEditReturnedBusiness() {
+    const instance = this.data.detail && this.data.detail.instance;
+    if (!instance) return;
+    const route = getReturnedApprovalEditRoute({
+      approvalId: instance.id || this.data.id,
+      bizType: instance.biz_type,
+      bizId: instance.biz_id
+    });
+    if (!route) {
+      wx.showToast({ title: "该业务暂不支持小程序编辑", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: route });
   },
 
   onCommentInput(e) {

@@ -40,6 +40,7 @@ const createFakeEnv = (
     prepare(sql: string) {
       return {
         bind(..._args: unknown[]) {
+          void _args;
           return {
             async run() {
               if (/UPDATE\s+approval_instance/i.test(sql)) {

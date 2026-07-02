@@ -12,6 +12,11 @@ import {
   completeIdempotentRequest
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
+import { resubmit as resubmitOp } from "../services/approval/operations";
+import {
+  getExistingApprovalSubmissionDecision,
+  isApprovalActive
+} from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import { canUpdateBatchPayoutPlan } from "./reimbursement-batch-payout-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
@@ -2291,7 +2296,7 @@ reimbursementRoutes.post(
     const idempotencyKey = c.req.header("Idempotency-Key");
     const idempotency = await beginIdempotentRequest<{
       success: boolean;
-      data: { approval_instance_id: number; instance_no: string };
+      data: { approval_instance_id: number; instance_no: string; resubmitted?: boolean };
     }>(c.env.DB, `reimbursement:batch-submit-approval:${id}`, auth.sub, idempotencyKey);
     if (idempotency.kind === "replay") {
       return c.json(idempotency.payload);
@@ -2305,11 +2310,72 @@ reimbursementRoutes.post(
         .bind(batch.approval_instance_id)
         .first<{ status: string }>();
 
-      if (existing && (existing.status === "pending" || existing.status === "in_progress")) {
+      const decision = existing
+        ? getExistingApprovalSubmissionDecision(existing.status)
+        : "new";
+      if (decision === "active") {
         return c.json(
           { success: false, error: { message: "Approval instance already in progress" } },
           400
         );
+      }
+
+      if (decision === "resubmit") {
+        try {
+          await resubmitOp(c.env, batch.approval_instance_id, auth.sub, body.biz_summary);
+          const now = nowIso();
+          await runInTransaction(c.env.DB, async () => {
+            await c.env.DB.prepare(
+              `UPDATE reimbursement_batch
+                  SET status = 'pending_approval',
+                      payment_method = ?,
+                      payment_entity_id = ?,
+                      payment_entity_bank_account_id = ?,
+                      payment_account = ?,
+                      payee_id = COALESCE(?, payee_id),
+                      updated_at = ?
+                WHERE id = ?`
+            )
+              .bind(
+                payoutPlan.value.payment_method,
+                payoutPlan.value.payment_entity_id,
+                payoutPlan.value.payment_entity_bank_account_id,
+                payoutPlan.value.payment_account,
+                payeeIdUpdate ?? null,
+                now,
+                id
+              )
+              .run();
+
+            await c.env.DB.prepare(
+              "UPDATE reimbursement_envelope SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE batch_id = ?"
+            )
+              .bind(batch.approval_instance_id, now, id)
+              .run();
+          });
+
+          const payload = {
+            success: true,
+            data: {
+              approval_instance_id: batch.approval_instance_id,
+              instance_no: "",
+              resubmitted: true
+            }
+          };
+          await completeIdempotentRequest(
+            c.env.DB,
+            `reimbursement:batch-submit-approval:${id}`,
+            auth.sub,
+            idempotencyKey,
+            200,
+            payload
+          );
+          return c.json(payload);
+        } catch (error) {
+          await abandonIdempotentRequest(c.env.DB, `reimbursement:batch-submit-approval:${id}`, auth.sub, idempotencyKey);
+          const message = error instanceof Error ? error.message : "Resubmit failed";
+          return c.json({ success: false, error: { message } }, 400);
+        }
       }
     }
 
@@ -2679,7 +2745,7 @@ reimbursementRoutes.put(
         .first<{ status: string }>();
       approvalStatus = approval?.status ?? null;
 
-      const approvalInProgress = approvalStatus === "pending" || approvalStatus === "in_progress";
+      const approvalInProgress = approvalStatus ? isApprovalActive(approvalStatus) : false;
       if (approvalInProgress) {
         const approverTask = await c.env.DB.prepare(
           `SELECT id FROM approval_task

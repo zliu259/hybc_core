@@ -37,7 +37,7 @@
 
 ## 待实现计划（docs/planned/，尚未实现）
 
-- 详见 `docs/planned/README.md`。含：退回发起人 → 编辑业务单 → 重新提交（彻底方案）`docs/planned/2026-07-01-approval-return-resubmit-design.md`。
+- 详见 `docs/planned/README.md`。当前暂无待实现计划。
 
 ## 开发记录规则（强制）
 

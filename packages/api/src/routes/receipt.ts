@@ -4,6 +4,8 @@ import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
+import { resubmit as resubmitOp } from "../services/approval/operations";
+import { getExistingApprovalSubmissionDecision } from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import type { Env } from "../types/env";
 import type { Contract } from "../types/contract";
@@ -503,6 +505,39 @@ receiptRoutes.post(
       `${request.request_no} | ${request.customer_name} | ${request.amount_with_tax}`;
 
     await ensureInvoiceRequestTemplate(c.env);
+
+    if (request.approval_instance_id) {
+      const existing = await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+        .bind(request.approval_instance_id)
+        .first<{ status: string }>();
+      const decision = existing
+        ? getExistingApprovalSubmissionDecision(existing.status)
+        : "new";
+
+      if (decision === "active") {
+        return c.json(
+          { success: false, error: { message: "Approval instance already in progress" } },
+          400
+        );
+      }
+
+      if (decision === "resubmit") {
+        await resubmitOp(c.env, request.approval_instance_id, auth.sub, summary);
+        await c.env.DB.prepare(
+          "UPDATE invoice_request SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(request.approval_instance_id, nowIso(), id)
+          .run();
+        return c.json({
+          success: true,
+          data: {
+            approval_instance_id: request.approval_instance_id,
+            instance_no: "",
+            resubmitted: true
+          }
+        });
+      }
+    }
 
     const instance = await submitForApproval(
       c.env,

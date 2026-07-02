@@ -4,6 +4,8 @@ import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
+import { resubmit as resubmitOp } from "../services/approval/operations";
+import { getExistingApprovalSubmissionDecision } from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import { buildSignedObjectUrl, signObjectAccess } from "../services/upload-signature";
 import { canAccessWarehouseTaskEvidence } from "../services/warehouse-evidence-access";
@@ -1181,6 +1183,46 @@ warehouseAssetWorkOrderRoutes.post(
         { success: false, error: { message: "only draft work order can submit approval" } },
         400
       );
+    }
+
+    if (row.approval_instance_id) {
+      const existing = await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+        .bind(row.approval_instance_id)
+        .first<{ status: string }>();
+      const decision = existing
+        ? getExistingApprovalSubmissionDecision(existing.status)
+        : "new";
+
+      if (decision === "active") {
+        return c.json(
+          { success: false, error: { message: "Approval instance already in progress" } },
+          400
+        );
+      }
+
+      if (decision === "resubmit") {
+        await resubmitOp(c.env, row.approval_instance_id, auth.sub, body.biz_summary);
+        await c.env.DB.prepare(
+          "UPDATE warehouse_asset_work_order SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(row.approval_instance_id, nowIso(), id)
+          .run();
+        await emitWarehouseTaskTimelineEvent(
+          c.env,
+          row,
+          auth.sub,
+          "work_order_submitted",
+          `status=pending_approval; approval_instance_id=${row.approval_instance_id}`
+        );
+        return c.json({
+          success: true,
+          data: {
+            approval_instance_id: row.approval_instance_id,
+            instance_no: "",
+            resubmitted: true
+          }
+        });
+      }
     }
 
     const instance = await submitForApproval(

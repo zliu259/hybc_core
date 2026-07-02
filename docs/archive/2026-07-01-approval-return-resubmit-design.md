@@ -1,9 +1,9 @@
 # 设计：退回发起人 → 编辑业务单 → 重新提交（彻底方案）
 
-- 状态：**未实现（计划）**
+- 状态：**已实现并归档**
 - 日期：2026-07-01
 - 触发：`SP-20260629-0002`（付款申请被总经理退回后，小程序端无法重新发起——流程单里改不了业务单内容）
-- 关联代码：`packages/api/src/services/approval/*`、`packages/api/src/routes/{payment,contract,reimbursement,approval}.ts`、`packages/miniapp/pages/{approval-detail,payment-apply,...}`
+- 关联代码：`packages/api/src/services/approval/*`、`packages/api/src/routes/{payment,contract,reimbursement,warehouse,warehouse-work-order,receipt,approval}.ts`、`packages/miniapp/pages/{approval-detail,returned-approval-edit}`、`packages/miniapp/utils/returned-approval.js`
 - 关联记忆/日志：`doc/开发记录.md` 2026-07-01 两条（退回状态 `returned` 修复、清空 `current_node_key`）
 
 ---
@@ -14,7 +14,7 @@
 
 Web 端可用：业务详情页在 `draft` 状态解锁编辑（如 `payment/detail.vue` `unlockedStatuses:["draft"]`），改完经 `POST /:biz/:id/submit-approval` 重新提交；该接口会识别已存在的退回实例并调用 `resubmitOp` 走"同实例新一轮"，而非新建。
 
-小程序端不可用，且后端在把 `pending` 统一为 `returned` 后出现了新的不一致。本设计给出**彻底方案**：先把后端"退回态"口径统一，再补齐小程序编辑+重提闭环。
+小程序端曾不可用，且后端在把 `pending` 统一为 `returned` 后出现了新的不一致。本方案已落地：先把后端"退回态"口径统一，再补齐小程序编辑+重提闭环。
 
 ## 2. 问题分解（两层）
 
@@ -51,52 +51,44 @@ export const isApprovalActive = (s: string) => s === "in_progress";
 
 ### 层二：小程序端缺"编辑被退回业务单 + 重新提交"闭环
 
-- **不显示任何可操作项**：`pages/approval-detail/index.js:415` `inferAvailableActions` 对非 `pending/in_progress` 状态直接返回 `[]`，`returned` 实例连"重新提交/编辑"入口都没有；`actionFlags` 无 `resubmit` 概念。
+- **不显示任何可操作项**：`pages/approval-detail/index.js` 原先对非 `pending/in_progress` 状态直接返回 `[]`，`returned` 实例连"重新提交/编辑"入口都没有。
 - **业务申请页是"只创建"**：`payment-apply` 等仅构造新记录并 submit-approval，没有"按 id 载入被退回 draft → 编辑 → 重提"模式。
-- **无从流程单跳到业务表单的路径**：审批详情不知道每种 `biz_type` 对应哪个小程序申请页。
+- **无从流程单跳到业务表单的路径**：审批详情不知道每种 `biz_type` 对应哪个小程序编辑入口。
 
 ## 3. 设计原则
 
 1. **单一退回态**：`returned` 为唯一正式态，`pending` 仅作历史兼容读取，不再新写。
 2. **单一重提路径**：业务侧 `submit-approval` 统一负责"识别退回实例 → resubmit 同实例新一轮"；审批详情"重新提交"按钮仅用于无需改业务内容的场景。
 3. **小程序与 Web 口径一致**：`available_actions` 尽量由后端下发，前端不再自行按状态推断（消除 `inferAvailableActions` 的状态白名单）。
-4. **可扩展的业务类型映射**：`biz_type → 小程序申请页 route` 用一处注册表维护。
+4. **可扩展的业务类型映射**：`biz_type → 小程序退回编辑 route` 用一处注册表维护。
 
 ## 4. 方案与备选
 
-### 推荐：原生编辑（分阶段），后端口径先收敛
+### 已采用：统一退回编辑页，后端口径先收敛
 
-- **后端**：先做层一收敛（含回归修复），使任意 `biz_type` 的退回实例重提都走对路径。
+- **后端**：业务侧 `submit-approval` 统一识别 `returned/pending/withdrawn` 为可重提，调用 `resubmitOp` 复用同一审批实例；仅 `in_progress` 被视为审批进行中并拦截。
 - **小程序**：
-  1. 审批详情对 `returned` + 发起人 显示"编辑并重新提交"入口；
-  2. 各申请页新增 `mode=edit&bizId=..` 模式：`GET` 业务详情预填 → 编辑 → `PUT` 业务 → `POST /:biz/:id/submit-approval`（后端识别退回实例自动 resubmit）；
-  3. 新增 `biz_type → route` 注册表，供审批详情跳转。
-- **落地顺序**：Phase 0 后端回归/审计修复；Phase 1 付款（payment）打通闭环并作模板；Phase 2 复制到报销/库房出入库/工单等有小程序申请页的类型；Phase 3 合同/发票等无小程序申请页的类型走"引导回 Web"兜底。
-
-### 备选 A：仅打通付款
-范围最小、交付最快，但"这类问题"只解决一个类型；作为 Phase 1 的子集。
-
-### 备选 B：小程序只引导回 Web
-小程序仅补"重新提交"与退回原因展示，复杂业务编辑引导用户回 Web。工作量最小，但移动端不能彻底闭环——不满足"彻底解决"。
-
-> 推荐"推荐方案"：后端收敛是必须项（否则各端重提都不稳），小程序按 Phase 1→2→3 渐进，Phase 3 用备选 B 兜底 Web-only 类型。
+  1. 审批详情对 `returned` + 发起人显示"编辑并重新提交"入口；
+  2. `utils/returned-approval.js` 维护支持编辑的 `biz_type` 注册表；
+  3. `pages/returned-approval-edit` 根据 `biz_type` 加载对应业务详情，编辑业务字段，保存后调用该业务 `submit-approval` 重新启动流程。
+- **取舍**：合同与发票不再引导回 Web，而是纳入统一小程序退回编辑页；后续可按体验需求把通用编辑页拆成更精细的业务专页。
 
 ## 5. 受影响业务类型与小程序申请页
 
-| biz_type | 退回置 draft | 小程序申请页 | Phase |
+| biz_type | 退回置 draft | 小程序编辑入口 | 状态 |
 |---|---|---|---|
-| payment_request | ✓ | `payment-apply` | 1 |
-| reimbursement_batch | ✓ | `reimbursement` | 2 |
-| stock_order | ✓ | `warehouse-stock-order` | 2 |
-| warehouse_asset_work_order | ✓ | `warehouse-task`/`dispatch` | 2 |
-| outbound/inbound_contract | ✓ | 无（Web 创建） | 3（引导回 Web） |
-| invoice_request | ✓ | 无 | 3（引导回 Web） |
+| payment_request | ✓ | `returned-approval-edit` | 已支持 |
+| reimbursement_batch | ✓ | `returned-approval-edit` | 已支持付款方案字段 |
+| stock_order | ✓ | `returned-approval-edit` | 已支持单据头与数量行 |
+| warehouse_asset_work_order | ✓ | `returned-approval-edit` | 已支持工单业务字段 |
+| outbound/inbound_contract | ✓ | `returned-approval-edit` | 已支持 |
+| invoice_request | ✓ | `returned-approval-edit` | 已支持 |
 
 ## 6. 测试
 
 - 单测：`isResubmittable`/`isApprovalActive`；各 `submit-approval` 在 `returned` 下走 resubmit（新增用例，复刻 payment/contract 回归）。
 - 集成：退回 → 编辑 draft → 重提 → 新一轮 round，`approval_instance` 仍单条、round+1。
-- 小程序：付款退回→编辑→重提端到端（`MOCK_AI_ONLY` 本地）。
+- 小程序：退回详情入口注册表单测；返回编辑页需在企业微信开发者工具中按业务类型手测。
 
 ## 7. 风险与回滚
 
@@ -104,8 +96,8 @@ export const isApprovalActive = (s: string) => s === "in_progress";
 - 小程序编辑模式须复用既有 `PUT` 校验，避免绕过金额/附件校验。
 - 每阶段独立可回滚；后端收敛用共享 helper，减少再次遗漏。
 
-## 8. 待确认（Open Questions）
+## 8. 后续增强
 
-1. Phase 0 回归（`payment.ts:1125`、`contract.ts:720`）是否**立即热修**（当前生产已受影响），还是并入本计划一起做？
-2. Phase 2/3 的优先级与是否需要合同/发票的移动端编辑。
-3. `available_actions` 全量后端下发（移除小程序 `inferAvailableActions` 状态白名单）是否本轮一并做。
+1. 将 `returned-approval-edit` 的数字 ID 输入逐步替换为项目、仓库、实体、收款方、经办人等选择器。
+2. 报销批次如需移动端编辑每条发票基础信息，可在统一页内接入 `/batch/:id/items/:envelopeId/basic-info`。
+3. `available_actions` 可继续后端全量下发，减少小程序本地动作推断。

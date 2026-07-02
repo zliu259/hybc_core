@@ -1,0 +1,78 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="state">加载申请中...</view>
+
+  <view wx:elif="{{loadError}}" class="state state-error">{{loadError}}</view>
+
+  <view wx:else class="content">
+    <hy-panel-card title="{{pageTitle}}" subtitle="{{summaryText}}">
+      <block wx:for="{{fieldRows}}" wx:key="key">
+        <view class="field">
+          <view class="field-label">{{item.label}}</view>
+
+          <picker
+            wx:if="{{item.type === 'select'}}"
+            mode="selector"
+            range="{{item.optionLabels}}"
+            value="{{item.optionIndex}}"
+            data-key="{{item.key}}"
+            bindchange="onSelectField"
+          >
+            <view class="picker-value">{{item.displayValue || '请选择'}}</view>
+          </picker>
+
+          <picker
+            wx:elif="{{item.type === 'date'}}"
+            mode="date"
+            value="{{item.value}}"
+            data-key="{{item.key}}"
+            bindchange="onDateField"
+          >
+            <view class="picker-value">{{item.displayValue || '请选择日期'}}</view>
+          </picker>
+
+          <textarea
+            wx:elif="{{item.type === 'textarea'}}"
+            class="textarea"
+            value="{{item.value}}"
+            data-key="{{item.key}}"
+            maxlength="{{item.maxlength || 500}}"
+            bindinput="onInputField"
+          />
+
+          <input
+            wx:else
+            class="input"
+            type="{{item.type === 'number' ? 'digit' : 'text'}}"
+            value="{{item.value}}"
+            data-key="{{item.key}}"
+            bindinput="onInputField"
+          />
+        </view>
+      </block>
+    </hy-panel-card>
+
+    <view class="section" wx:if="{{itemRows.length > 0}}">
+      <hy-panel-card title="明细行">
+        <block wx:for="{{itemRows}}" wx:key="id">
+          <view class="item-row">
+            <view class="item-title">{{item.title}}</view>
+            <input
+              class="input item-input"
+              type="digit"
+              value="{{item.quantity}}"
+              data-index="{{index}}"
+              bindinput="onItemQuantityInput"
+            />
+          </view>
+        </block>
+      </hy-panel-card>
+    </view>
+
+    <view class="footer-space"></view>
+  </view>
+
+  <view class="footer" wx:if="{{!loading && !loadError}}">
+    <t-button class="footer-btn" variant="outline" loading="{{saving}}" disabled="{{saving || submitting}}" bindtap="saveDraft">保存修改</t-button>
+    <t-button class="footer-btn" theme="primary" loading="{{submitting}}" disabled="{{saving || submitting}}" bindtap="saveAndSubmit">保存并重新提交</t-button>
+  </view>
+</view>

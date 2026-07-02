@@ -4,6 +4,8 @@ import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
+import { resubmit as resubmitOp } from "../services/approval/operations";
+import { getExistingApprovalSubmissionDecision } from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import {
   createReturnInspectionTaskForStockOrderItem,
@@ -752,6 +754,101 @@ warehouseRoutes.post(
   }
 );
 
+warehouseRoutes.put(
+  "/stock-order/:id",
+  requireRoles(["super_admin", "manager", "site_manager", "operator"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const body = (await c.req.json()) as Partial<CreateStockOrderRequest>;
+    const order = await c.env.DB.prepare("SELECT * FROM stock_order WHERE id = ?")
+      .bind(id)
+      .first<StockOrder>();
+
+    if (!order) return c.json({ success: false, error: { message: "Stock order not found" } }, 404);
+    if (order.status !== "draft") {
+      return c.json(
+        { success: false, error: { message: "Only draft stock order can be edited" } },
+        400
+      );
+    }
+
+    if (body.items !== undefined) {
+      if (!Array.isArray(body.items) || body.items.length === 0) {
+        return c.json({ success: false, error: { message: "items must not be empty" } }, 400);
+      }
+      if (body.items.some(item => Number(item.quantity || 0) <= 0)) {
+        return c.json({ success: false, error: { message: "item quantity must be > 0" } }, 400);
+      }
+    }
+
+    const now = nowIso();
+    await c.env.DB.prepare(
+      `UPDATE stock_order SET
+         order_type = COALESCE(?, order_type),
+         project_id = CASE WHEN ? IS NULL THEN project_id ELSE ? END,
+         from_warehouse_id = CASE WHEN ? IS NULL THEN from_warehouse_id ELSE ? END,
+         to_warehouse_id = CASE WHEN ? IS NULL THEN to_warehouse_id ELSE ? END,
+         rental_term_id = CASE WHEN ? IS NULL THEN rental_term_id ELSE ? END,
+         override_status = COALESCE(?, override_status),
+         override_reason = CASE WHEN ? IS NULL THEN override_reason ELSE ? END,
+         override_risk_acknowledged = COALESCE(?, override_risk_acknowledged),
+         remark = CASE WHEN ? IS NULL THEN remark ELSE ? END,
+         updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(
+        body.order_type ?? null,
+        body.project_id === undefined ? null : body.project_id,
+        body.project_id ?? null,
+        body.from_warehouse_id === undefined ? null : body.from_warehouse_id,
+        body.from_warehouse_id ?? null,
+        body.to_warehouse_id === undefined ? null : body.to_warehouse_id,
+        body.to_warehouse_id ?? null,
+        body.rental_term_id === undefined ? null : body.rental_term_id,
+        body.rental_term_id ?? null,
+        body.override_status ?? null,
+        body.override_reason === undefined ? null : body.override_reason,
+        body.override_reason ?? null,
+        body.override_risk_acknowledged ?? null,
+        body.remark === undefined ? null : body.remark,
+        body.remark ?? null,
+        now,
+        id
+      )
+      .run();
+
+    if (body.items !== undefined) {
+      await c.env.DB.prepare("DELETE FROM stock_order_item WHERE stock_order_id = ?")
+        .bind(id)
+        .run();
+
+      for (const item of body.items) {
+        await c.env.DB.prepare(
+          `INSERT INTO stock_order_item
+            (stock_order_id, asset_type_id, tracked_asset_id, configuration_role, configuration_group_key,
+             requires_modification, quantity, unit, remark, status, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)`
+        )
+          .bind(
+            id,
+            item.asset_type_id ?? null,
+            item.tracked_asset_id ?? null,
+            item.configuration_role ?? null,
+            item.configuration_group_key ?? null,
+            item.requires_modification ?? 0,
+            item.quantity,
+            item.unit ?? null,
+            item.remark ?? null,
+            now
+          )
+          .run();
+      }
+    }
+
+    return c.json({ success: true });
+  }
+);
+
 warehouseRoutes.get(
   "/stock-order/:id/gate-check",
   requireRoles(["super_admin", "manager", "site_manager", "operator"]),
@@ -788,6 +885,39 @@ warehouseRoutes.post(
         { success: false, error: { message: "Only draft stock order can submit approval" } },
         400
       );
+    }
+
+    if (order.approval_instance_id) {
+      const existing = await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+        .bind(order.approval_instance_id)
+        .first<{ status: string }>();
+      const decision = existing
+        ? getExistingApprovalSubmissionDecision(existing.status)
+        : "new";
+
+      if (decision === "active") {
+        return c.json(
+          { success: false, error: { message: "Approval instance already in progress" } },
+          400
+        );
+      }
+
+      if (decision === "resubmit") {
+        await resubmitOp(c.env, order.approval_instance_id, auth.sub, body.biz_summary);
+        await c.env.DB.prepare(
+          "UPDATE stock_order SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(order.approval_instance_id, nowIso(), id)
+          .run();
+        return c.json({
+          success: true,
+          data: {
+            approval_instance_id: order.approval_instance_id,
+            instance_no: "",
+            resubmitted: true
+          }
+        });
+      }
     }
 
     const instance = await submitForApproval(

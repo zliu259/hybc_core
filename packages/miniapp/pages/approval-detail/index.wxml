@@ -201,6 +201,16 @@
     </view>
   </view>
 
+  <view class="footer-actions" wx:if="{{canEditReturnedBusiness}}">
+    <view class="footer-row">
+      <view class="footer-col col-100">
+        <view class="footer-cell">
+          <t-button class="action-btn" theme="primary" block loading="{{acting}}" bindtap="goEditReturnedBusiness">编辑并重新提交</t-button>
+        </view>
+      </view>
+    </view>
+  </view>
+
   <view class="footer-actions footer-acted" wx:if="{{!readOnlyView && !hasAnyAction && userAlreadyActed && !loading}}">
     <view class="acted-hint">
       <t-icon name="check-circle" size="36rpx" color="#67c23a" />
