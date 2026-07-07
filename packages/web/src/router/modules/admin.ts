@@ -48,6 +48,15 @@ export default {
       }
     },
     {
+      path: "/admin/vertex-bridge",
+      name: "AdminVertexBridge",
+      component: () => import("@/views/admin/vertex-bridge.vue"),
+      meta: {
+        title: "Vertex现场控制区",
+        roles: ["super_admin", "manager", "site_manager"]
+      }
+    },
+    {
       path: "/admin/ai-gate-tasks",
       name: "AdminAiGateTasks",
       component: () => import("@/views/admin/ai-gate-tasks.vue"),
