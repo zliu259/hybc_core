@@ -222,29 +222,27 @@
 - 操作：新增、编辑、软删除。
 - API 指向：`/api/v1/payment/payee/*`
 
-#### F. 报销付款工作台 `views/finance/reimbursement/list.vue`
+#### F. 报销付款工作台 `views/finance/reimbursement/office-workbench.vue`（2026-07-08 重构为三步流水线工作台，取代原财务中心三视图 `list.vue`）
 
-- 展示维度：信封编号、项目、填报人（姓名）、金额、报销内容（`description`，超长省略悬浮提示）、状态、PDF状态（2026-07-08 新增报销内容列）。
-- 财务中心入口默认打开“核对签收与复核”，办公室人员进入后优先看到待处理单据。
-- “报销提交”默认仅展示 `unregistered/draft/submitted`，不再混入 `pending_approval/approved/paid` 等审批或付款阶段条目。
-- 工作台入口仍展示“我的提交”，但同样按早期提交状态默认过滤，避免把审批完成数据误认为待提交。
-- 角色化流程视图：
-  - 报销提交：新建、草稿、已提交（含代员工发起入口）
-  - 核对签收与复核：收件核查、异常标记、二次静默审查、复核通过/补充/驳回
-  - 提交审批：嵌入 `packages/web/src/views/finance/reimbursement/batch.vue`，按项目和被报销人汇总可送审条目并创建批次
-  - 付款标记：嵌入 `packages/web/src/views/finance/reimbursement/payout.vue`，对已审批批次登记付款流水、付款账户和凭证
-- 支持入口：UUID快速打开信封（办公室）、进入详情执行登记/提交/收件核查/预审动作。
-- 页面收敛：移除“批量生成未登记信封”入口，实体信封由办公室线下发放并通过 UUID 入流。
-- 员工视图收敛为单一“发起报销”按钮，不再提供独立“电子发票上传”与“扫码/输入UUID打开信封”重复入口。
-- 功能融合：复核提示、智能核查、复核通过/补充/驳回直接并入业务列表操作，不再依赖独立功能页。
-- 报销处理页（财务中心入口）常驻“信封生成器”按钮，避免因分段切换看不到入口。
-- 页面信息架构收敛为“顶部标题/动作 + 流程步骤条 + 当前步骤内容”，流程步骤条按办公室实际顺序展示：报销提交 → 核对签收与复核 → 提交审批 → 付款标记。
-- 财务中心“报销提交 / 核对签收与复核 / 提交审批 / 付款标记”中的报销条目详情统一改为右侧抽屉打开，复用详情页能力并保留当前列表筛选、分页与标签状态：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/views/finance/reimbursement/detail.vue`
-- 报销提交列表默认隐藏 `cancelled` 记录；仅在状态筛选显式选择“已废止”时展示：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
-- 报销提交列表“状态”筛选支持多选，前端将多选状态合并为逗号参数传递，后端按 `IN` 条件过滤，避免多选后筛选报错：`packages/web/src/views/finance/reimbursement/list.vue`、`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
-- 报销集中审批中心候选条目改为“后端强约束可送审清单”：仅返回 `status=received + precheck_status=approved + batch_id IS NULL` 且项目/被报销人匹配的条目，避免草稿/待审批/已提交条目混入候选并导致重复批次审批：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/api/reimbursement.ts`、`packages/api/src/routes/reimbursement.ts`
-- 员工侧不再暴露 OCR/异常检测/预审 等技术步骤名词；员工仅看到“提交后后台静默核查”的业务提示：`packages/web/src/views/workspace/reimbursement/list.vue`、`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/miniapp/pages/reimbursement/index.{js,wxml}`
-- API 指向：`/api/v1/reimbursement`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`
+- 财务中心报销入口改为 `office-workbench.vue`：单页承载「① 签收与复核 → ② 成批送审 → ③ 付款」三步流水线，顶部步骤条替代原“报销提交/核对签收与复核/提交审批/付款标记”四段视图。
+- 步骤条徽标口径（来自 `workbench-summary` 聚合接口，非前端本地计数）：
+  - ① 签收与复核 = `to_receive`（待签收）+ `to_precheck`（待复核）
+  - ② 成批送审 = `to_batch`（待成批）+ `batches_to_submit`（待送审批次，`reimbursement_batch.status='draft'`）
+  - ③ 付款 = `batches_to_pay`（待付批次，`reimbursement_batch.status='approved'`）
+  - 计数排除 `cancelled` 信封；无数据时接口回退为 `0` 而非报错，前端徽标为 `0` 时不渲染。
+- 第①步「签收与复核」内含三个服务端精确过滤 + 分页的子页签，切换页签即重新请求（带 `loadSeq` 竞态防护，丢弃过期响应）：
+  - 待签收：`status=submitted`，行内动作「签收」（打开详情抽屉执行签收）。
+  - 待复核：`status=received` 且 `precheck_status IN (none,pending,supplement)`，行内动作「复核通过 / 补充材料 / 复核驳回 / 智能核查 / 二次静默审查」。
+  - 待成批：`status=received` 且 `precheck_status=approved`，行内动作「去成批 →」（切到第②步）。
+  - 表格列：信封编号、项目、填报人（企微姓名映射）、通道（实物/电子标签）、金额、报销内容（`description`，超长省略悬浮提示）、异常提示（复用 `reimbursement-labels.ts` 的 `rowAnomalyTags`）、复核状态、状态标签。
+- 第②步「成批送审」嵌入 `packages/web/src/views/finance/reimbursement/batch.vue`（按项目 + 被报销人汇总可送审条目并创建批次，候选清单后端强约束 `status=received + precheck_status=approved + batch_id IS NULL`）。
+- 第③步「付款」嵌入 `packages/web/src/views/finance/reimbursement/payout.vue`（对已审批批次登记付款流水、付款账户和凭证）。
+- 步骤/子页签切换后台自动刷新徽标（`switchStep`/`switchIntakeTab` 均触发 `loadSummary`），详情抽屉内动作完成后（签收/复核/触发核查）联动刷新当前列表与徽标。
+- 顶部工具区常驻三个入口：「代员工发起」（新建报销）、「UUID 快速签收」（弹窗输入 UUID 直接定位并打开对应信封详情抽屉）、「信封生成器」（`envelope-generator.vue`）。
+- 全流程查询：顶部输入框支持信封号 / UUID / 发票号 / 事由关键字模糊查询（不受当前步骤限制，`exclude_cancelled=false`，带 `querySeq` 竞态防护），查询结果模式下替换主视图为结果表格，新增「当前站点」列——由纯函数 `resolveStation(row)`（`packages/web/src/views/finance/reimbursement/reimbursement-station.ts`）按状态/复核状态/批次归属推导条目当前所处流程节点的中文标签，命中批次的行可「批次详情」直达 `batch/:id`；「返回工作台」退出查询模式。
+- 状态标签与异常标签逻辑收敛进共享模块 `packages/web/src/views/finance/reimbursement/reimbursement-labels.ts`（`reimbursementStatusTagType`、`rowAnomalyTags`、`tableRowClassName`，命名类型导出），工作台与查询结果表格共用，避免逻辑漂移。
+- `/workspace/my-reimbursement` 员工工作台**仍使用** `list.vue`（仅“我的提交”单一列表视图，不含财务中心三视图/子页签），零回归；`list.vue` 已配套移除财务中心三视图相关死代码（833→510 行）并收敛过时文案。
+- API 指向：`/api/v1/reimbursement`、`/api/v1/reimbursement/workbench-summary`（2026-07-08 新增，`requireRoles(super_admin/manager/finance)`，聚合返回 `to_receive/to_precheck/to_batch/batches_to_submit/batches_to_pay` 五项计数）、`/api/v1/reimbursement/:id/trigger-anomaly-check`、`/api/v1/reimbursement/:id/precheck`；列表接口新增服务端过滤参数 `precheck_status`（逗号分隔多值，`IN` 条件过滤，与既有 `status` 参数正交组合）。
 
 #### F-1. 报销信封生成器（正式离线版） `views/finance/reimbursement/envelope-generator.vue`
 
