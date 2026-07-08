@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { message } from "@/utils/message";
 import {
   channelLabel,
   precheckStatusLabel,
@@ -12,14 +11,9 @@ import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
 import {
   listReimbursementEnvelopes,
-  precheckEnvelope,
-  resolveReimbursementEnvelopeByUuid,
-  triggerEnvelopeAnomalyCheck,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
-import ReimbursementBatchCenter from "./batch.vue";
 import ReimbursementDetail from "./detail.vue";
-import ReimbursementPayoutCenter from "./payout.vue";
 import {
   isHighRiskRow,
   reimbursementStatusTagType,
@@ -63,9 +57,8 @@ const canFinanceCenter = computed(() =>
 );
 const isWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
-type WorkflowView = "submission" | "office" | "approval" | "payout";
+type WorkflowView = "submission";
 const workflowView = ref<WorkflowView>("submission");
-const workflowReady = ref(false);
 const submissionStatuses = ["unregistered", "draft", "submitted"];
 
 const projectMap = computed(() => {
@@ -89,83 +82,13 @@ const toApplicantLabel = (userid: string | null | undefined) => {
   return userNameMap.value.get(userid) ?? userid;
 };
 
-const currentViewTitle = computed(() => {
-  if (workflowView.value === "office") return "核对签收与复核";
-  if (workflowView.value === "approval") return "报销提交审批";
-  if (workflowView.value === "payout") return "付款标记";
-  return "报销提交";
-});
+const currentViewTitle = "报销提交";
 
-const currentViewHint = computed(() => {
-  if (workflowView.value === "office") {
-    return "办公室在这里完成信封核对签收、异常标记、二次静默审查和复核处理。";
-  }
-  if (workflowView.value === "approval") {
-    return "把已签收且复核通过的报销按项目和被报销人汇总，创建批次并提交审批。";
-  }
-  if (workflowView.value === "payout") {
-    return "审批通过后的报销批次在这里登记付款日期、流水号、付款账户和凭证。";
-  }
-  return isWorkspaceRoute.value
+const currentViewHint = computed(() =>
+  isWorkspaceRoute.value
     ? "查看我的报销提交，并可继续发起报销。"
-    : "只展示未登记、草稿和已提交条目；后续审批和付款状态请在右侧流程页签处理。";
-});
-
-const isEnvelopeWorkflow = computed(() =>
-  ["submission", "office"].includes(workflowView.value)
+    : "只展示未登记、草稿和已提交条目；后续审批和付款状态请在右侧流程页签处理。"
 );
-
-const workflowStepItems = computed(() => {
-  const items: Array<{
-    name: WorkflowView;
-    title: string;
-    subtitle: string;
-  }> = [
-    {
-      name: "submission",
-      title: "1. 报销提交",
-      subtitle: "新建、草稿、已提交"
-    }
-  ];
-
-  if (!isWorkspaceRoute.value && canOfficeOps.value) {
-    items.push({
-      name: "office",
-      title: "2. 核对签收与复核",
-      subtitle: "签收、异常、复核"
-    });
-  }
-
-  if (!isWorkspaceRoute.value && canFinanceCenter.value) {
-    items.push(
-      {
-        name: "approval",
-        title: "3. 提交审批",
-        subtitle: "汇总批次并送审"
-      },
-      {
-        name: "payout",
-        title: "4. 付款标记",
-        subtitle: "登记流水和凭证"
-      }
-    );
-  }
-
-  return items;
-});
-
-const switchWorkflow = (name: WorkflowView) => {
-  workflowView.value = name;
-};
-
-const workflowFromQuery = (): WorkflowView | null => {
-  if (isWorkspaceRoute.value) return null;
-  const step = String(route.query.step || "");
-  if (["submission", "office", "approval", "payout"].includes(step)) {
-    return step as WorkflowView;
-  }
-  return null;
-};
 
 const listedAmountTotal = computed(() =>
   list.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
@@ -173,12 +96,8 @@ const listedAmountTotal = computed(() =>
 
 const highRiskCount = computed(() => list.value.filter(isHighRiskRow).length);
 
-const quickScanDialogVisible = ref(false);
-const quickScanUuid = ref("");
 const detailDrawerVisible = ref(false);
 const activeDetailId = ref<number | null>(null);
-const createIdempotencyKey = (scope: string) =>
-  `${scope}-${crypto.randomUUID()}`;
 
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
@@ -240,130 +159,19 @@ const goEnvelopeGenerator = () => {
   router.push("/finance/reimbursement/envelope-generator");
 };
 
-const openQuickScan = () => {
-  quickScanUuid.value = "";
-  quickScanDialogVisible.value = true;
-};
-
-const submitQuickScan = async () => {
-  if (!quickScanUuid.value.trim()) {
-    message("请填写信封UUID", { type: "warning" });
-    return;
-  }
-  const result = await resolveReimbursementEnvelopeByUuid(
-    quickScanUuid.value.trim()
-  );
-  message("已打开对应报销信封", { type: "success" });
-  quickScanDialogVisible.value = false;
-  goDetail(result.data.id);
-};
-
-const onTriggerAnomaly = async (id: number) => {
-  await triggerEnvelopeAnomalyCheck(id);
-  message("已触发智能核查", { type: "success" });
-  await loadData();
-};
-
-const onRerunSilentReview = async (id: number) => {
-  await triggerEnvelopeAnomalyCheck(
-    id,
-    {
-      rerun_full: true,
-      reason: "office_manual_second_silent_review"
-    },
-    {
-      idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review")
-    }
-  );
-  message("已触发二次静默审查", { type: "success" });
-  await loadData();
-};
-
-const onPrecheck = async (
-  id: number,
-  action: "approved" | "supplement" | "rejected"
-) => {
-  try {
-    await precheckEnvelope(id, { action });
-    message(`复核已处理：${action}`, {
-      type: action === "approved" ? "success" : "warning"
-    });
-    await loadData();
-  } catch (error) {
-    const err = error as {
-      response?: {
-        status?: number;
-        data?: { data?: { wait_for_audit?: boolean } };
-      };
-    };
-    const waitForAudit =
-      err.response?.status === 409 &&
-      err.response?.data?.data?.wait_for_audit === true;
-    if (!waitForAudit) throw error;
-    message("后台静默审查尚未完成，系统已自动触发处理，请稍后再执行复核通过", {
-      type: "warning"
-    });
-    await loadData();
-  }
-};
-
-const applyWorkflowPreset = (mode: WorkflowView) => {
-  if (mode === "submission") {
-    filters.value.applicant_userid = isWorkspaceRoute.value
-      ? currentUserid.value
-      : "";
-    filters.value.status = [...submissionStatuses];
-    filters.value.channel = "";
-    return;
-  }
-
-  if (mode === "office") {
-    filters.value.applicant_userid = "";
-    filters.value.status = ["submitted", "received"];
-    filters.value.channel = "";
-    return;
-  }
-
-  filters.value.applicant_userid = "";
-  filters.value.status = [];
+const applyWorkflowPreset = () => {
+  filters.value.applicant_userid = isWorkspaceRoute.value
+    ? currentUserid.value
+    : "";
+  filters.value.status = [...submissionStatuses];
   filters.value.channel = "";
 };
 
-const onWorkflowChange = async (mode: WorkflowView) => {
-  applyWorkflowPreset(mode);
-  page.value = 1;
-  if (isEnvelopeWorkflow.value) {
-    await loadData();
-  }
-};
-
 onMounted(async () => {
-  workflowView.value =
-    workflowFromQuery() ||
-    (!isWorkspaceRoute.value && canOfficeOps.value ? "office" : "submission");
-
-  applyWorkflowPreset(workflowView.value);
-
+  applyWorkflowPreset();
   await Promise.all([loadProjects(), loadWecomUsers()]);
-  if (isEnvelopeWorkflow.value) {
-    await loadData();
-  }
-  workflowReady.value = true;
+  await loadData();
 });
-
-watch(workflowView, mode => {
-  if (!workflowReady.value) return;
-  onWorkflowChange(mode);
-});
-
-watch(
-  () => route.query.step,
-  () => {
-    const target = workflowFromQuery();
-    if (!target || target === workflowView.value) return;
-    workflowView.value = target;
-  }
-);
 </script>
 
 <template>
@@ -383,9 +191,6 @@ watch(
             !isWorkspaceRoute && canOfficeOps ? "代员工发起报销" : "发起报销"
           }}
         </el-button>
-        <el-button v-if="workflowView === 'office'" @click="openQuickScan">
-          扫码/输入UUID
-        </el-button>
         <el-button
           v-if="!isWorkspaceRoute && canFinanceCenter"
           type="primary"
@@ -397,21 +202,7 @@ watch(
       </el-space>
     </div>
 
-    <nav v-if="!isWorkspaceRoute" class="workflow-steps">
-      <button
-        v-for="item in workflowStepItems"
-        :key="item.name"
-        class="workflow-step"
-        :class="{ 'workflow-step--active': workflowView === item.name }"
-        type="button"
-        @click="switchWorkflow(item.name)"
-      >
-        <span>{{ item.title }}</span>
-        <small>{{ item.subtitle }}</small>
-      </button>
-    </nav>
-
-    <div v-if="isEnvelopeWorkflow" class="summary-grid">
+    <div class="summary-grid">
       <div class="summary-tile">
         <span>当前列表</span>
         <strong>{{ total }}</strong>
@@ -429,24 +220,9 @@ watch(
     <section class="filter-panel">
       <el-tabs v-model="workflowView">
         <el-tab-pane label="报销提交" name="submission" />
-        <el-tab-pane
-          v-if="canOfficeOps && !isWorkspaceRoute"
-          label="核对签收与复核"
-          name="office"
-        />
-        <el-tab-pane
-          v-if="canFinanceCenter && !isWorkspaceRoute"
-          label="提交审批"
-          name="approval"
-        />
-        <el-tab-pane
-          v-if="canFinanceCenter && !isWorkspaceRoute"
-          label="付款标记"
-          name="payout"
-        />
       </el-tabs>
 
-      <el-form v-if="isEnvelopeWorkflow" class="filter-form" label-width="72px">
+      <el-form class="filter-form" label-width="72px">
         <div class="filter-grid">
           <el-form-item label="所属项目">
             <el-select
@@ -528,7 +304,7 @@ watch(
       </el-form>
     </section>
 
-    <section v-if="isEnvelopeWorkflow" class="table-panel">
+    <section class="table-panel">
       <el-table
         :data="list"
         :loading="loading"
@@ -596,39 +372,6 @@ watch(
             <el-button link type="primary" @click="goDetail(scope.row.id)"
               >详情</el-button
             >
-            <template v-if="workflowView !== 'submission' && canOfficeOps">
-              <el-button link @click="onTriggerAnomaly(scope.row.id)"
-                >智能核查</el-button
-              >
-              <el-button
-                v-if="['submitted', 'received'].includes(scope.row.status)"
-                link
-                type="info"
-                @click="onRerunSilentReview(scope.row.id)"
-                >二次静默审查</el-button
-              >
-              <el-button
-                v-if="scope.row.status === 'received'"
-                link
-                type="success"
-                @click="onPrecheck(scope.row.id, 'approved')"
-                >复核通过</el-button
-              >
-              <el-button
-                v-if="scope.row.status === 'received'"
-                link
-                type="warning"
-                @click="onPrecheck(scope.row.id, 'supplement')"
-                >补充材料</el-button
-              >
-              <el-button
-                v-if="scope.row.status === 'received'"
-                link
-                type="danger"
-                @click="onPrecheck(scope.row.id, 'rejected')"
-                >复核驳回</el-button
-              >
-            </template>
           </template>
         </el-table-column>
       </el-table>
@@ -648,34 +391,7 @@ watch(
         "
       />
     </section>
-
-    <section v-else-if="workflowView === 'approval'" class="embedded-workflow">
-      <ReimbursementBatchCenter />
-    </section>
-
-    <section v-else-if="workflowView === 'payout'" class="embedded-workflow">
-      <ReimbursementPayoutCenter />
-    </section>
   </div>
-
-  <el-dialog
-    v-model="quickScanDialogVisible"
-    title="扫码/输入UUID打开信封"
-    width="500px"
-  >
-    <el-form label-width="90px">
-      <el-form-item label="信封UUID" required>
-        <el-input
-          v-model="quickScanUuid"
-          placeholder="请粘贴或扫码录入信封UUID"
-        />
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <el-button @click="quickScanDialogVisible = false">取消</el-button>
-      <el-button type="primary" @click="submitQuickScan">打开信封</el-button>
-    </template>
-  </el-dialog>
 
   <el-drawer
     v-model="detailDrawerVisible"
@@ -737,40 +453,6 @@ watch(
   gap: 12px;
 }
 
-.workflow-steps {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-}
-
-.workflow-step {
-  display: flex;
-  min-height: 72px;
-  padding: 12px 14px;
-  text-align: left;
-  cursor: pointer;
-  background: #ffffff;
-  border: 1px solid #dcdfe6;
-  border-radius: 8px;
-  flex-direction: column;
-  justify-content: center;
-}
-
-.workflow-step span {
-  font-weight: 600;
-  color: #1f2937;
-}
-
-.workflow-step small {
-  margin-top: 6px;
-  color: #6b7280;
-}
-
-.workflow-step--active {
-  background: #ecf5ff;
-  border-color: #409eff;
-}
-
 .summary-tile {
   min-height: 78px;
   padding: 14px 16px;
@@ -810,10 +492,6 @@ watch(
   margin-top: 12px;
 }
 
-.embedded-workflow :deep(.page-header) {
-  margin-top: 0;
-}
-
 :deep(.el-table .reimbursement-row-high-risk > td) {
   background: #fff2f0 !important;
 }
@@ -825,7 +503,6 @@ watch(
   }
 
   .summary-grid,
-  .workflow-steps,
   .filter-grid {
     grid-template-columns: 1fr;
   }
