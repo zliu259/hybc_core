@@ -4,4 +4,4 @@
 
 ## 清单
 
-暂无待实现计划。
+- [2026-07-08-payment-uiux-console-design.md](./2026-07-08-payment-uiux-console-design.md) — 对外付款 UI/UX 全面优化（付款处理台）：增查管动线统一，Web + 小程序 + API 增量。
