@@ -20,10 +20,14 @@ import {
 import ReimbursementBatchCenter from "./batch.vue";
 import ReimbursementDetail from "./detail.vue";
 import ReimbursementPayoutCenter from "./payout.vue";
+import {
+  isHighRiskRow,
+  reimbursementStatusTagType,
+  rowAnomalyTags,
+  tableRowClassName
+} from "./reimbursement-labels";
 
 defineOptions({ name: "ReimbursementList" });
-
-type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
 const router = useRouter();
 const route = useRoute();
@@ -83,80 +87,6 @@ const userNameMap = computed(() => {
 const toApplicantLabel = (userid: string | null | undefined) => {
   if (!userid) return "-";
   return userNameMap.value.get(userid) ?? userid;
-};
-
-const statusTagType: Record<string, TagType> = {
-  unregistered: "info",
-  draft: "info",
-  submitted: "warning",
-  received: "success",
-  batched: "primary",
-  pending_approval: "warning",
-  approved: "success",
-  paid: "primary",
-  rejected: "danger",
-  cancelled: "info"
-};
-
-const riskTagTypeMap: Record<string, TagType> = {
-  high: "danger",
-  medium: "warning",
-  low: "success"
-};
-
-const toDuplicateCount = (value: unknown) => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string" && value.trim()) {
-    const parsed = Number(value);
-    if (Number.isFinite(parsed)) return parsed;
-  }
-  return 0;
-};
-
-const duplicateRiskLabel = (level: unknown) => {
-  if (level === "high") return "高风险重复";
-  if (level === "medium") return "中风险重复";
-  if (level === "low") return "低风险重复";
-  return "重复风险";
-};
-
-const toDuplicateRiskTagType = (level: unknown): TagType => {
-  if (typeof level !== "string") return "warning";
-  return riskTagTypeMap[level] ?? "warning";
-};
-
-const rowAnomalyTags = (row: ReimbursementEnvelope) => {
-  const tags: Array<{ label: string; type: TagType }> = [];
-  const duplicateCount = toDuplicateCount(row.duplicate_count);
-  if (duplicateCount > 0) {
-    tags.push({
-      label: `${duplicateRiskLabel(row.duplicate_risk_level)} x${duplicateCount}`,
-      type: toDuplicateRiskTagType(row.duplicate_risk_level)
-    });
-  }
-  if (row.verification_status === "mismatch") {
-    tags.push({ label: "收件核对异常", type: "danger" });
-  }
-  if (row.precheck_status === "supplement") {
-    tags.push({ label: "待补充材料", type: "warning" });
-  }
-  if (row.precheck_status === "rejected") {
-    tags.push({ label: "复核驳回", type: "danger" });
-  }
-  return tags;
-};
-
-const isHighRiskRow = (row: ReimbursementEnvelope) => {
-  const duplicateCount = toDuplicateCount(row.duplicate_count);
-  return (
-    (duplicateCount > 0 && row.duplicate_risk_level === "high") ||
-    row.verification_status === "mismatch" ||
-    row.precheck_status === "rejected"
-  );
-};
-
-const tableRowClassName = ({ row }: { row: ReimbursementEnvelope }) => {
-  return isHighRiskRow(row) ? "reimbursement-row-high-risk" : "";
 };
 
 const currentViewTitle = computed(() => {
@@ -654,9 +584,10 @@ watch(
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="scope">
-            <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
-              statusLabel(scope.row.status)
-            }}</el-tag>
+            <el-tag
+              :type="reimbursementStatusTagType[scope.row.status] || 'info'"
+              >{{ statusLabel(scope.row.status) }}</el-tag
+            >
           </template>
         </el-table-column>
         <el-table-column prop="created_at" label="创建时间" width="180" />
