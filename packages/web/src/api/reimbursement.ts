@@ -96,10 +96,10 @@ export type ReimbursementWorkbenchSummary = {
 };
 
 export const getReimbursementWorkbenchSummary = () => {
-  return http.request<{ success: boolean; data: ReimbursementWorkbenchSummary }>(
-    "get",
-    "/api/v1/reimbursement/workbench-summary"
-  );
+  return http.request<{
+    success: boolean;
+    data: ReimbursementWorkbenchSummary;
+  }>("get", "/api/v1/reimbursement/workbench-summary");
 };
 
 export const getReimbursementEnvelope = (id: number) => {
@@ -698,7 +698,11 @@ export const updateBatchItemBasicInfo = (
       category: string | null;
       description: string | null;
     };
-  }>("put", `/api/v1/reimbursement/batch/${batchId}/items/${envelopeId}/basic-info`, {
-    data
-  });
+  }>(
+    "put",
+    `/api/v1/reimbursement/batch/${batchId}/items/${envelopeId}/basic-info`,
+    {
+      data
+    }
+  );
 };
