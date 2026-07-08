@@ -202,6 +202,7 @@ Page({
       remark: ""
     },
     directProjectValue: 0,
+    directProjectName: "",
     contractForm: {
       project_id: "",
       entity_id: "",
@@ -212,6 +213,7 @@ Page({
       remark: ""
     },
     contractProjectValue: 0,
+    contractProjectName: "",
     withFirstPayment: false,
     firstPaymentForm: {
       amount: "",
@@ -530,6 +532,7 @@ Page({
     const projectId = Number(e.detail.projectId || 0);
     this.setData({
       directProjectValue: projectId,
+      directProjectName: String(e.detail.projectName || ""),
       "directForm.project_id": String(projectId || "")
     });
   },
@@ -538,6 +541,7 @@ Page({
     const projectId = Number(e.detail.projectId || 0);
     this.setData({
       contractProjectValue: projectId,
+      contractProjectName: String(e.detail.projectName || ""),
       "contractForm.project_id": String(projectId || "")
     });
   },
@@ -781,6 +785,10 @@ Page({
   },
 
   goNextStep() {
+    if (this.data.quickPayeeVisible) {
+      wx.showToast({ title: "请先完成或收起收款人添加", icon: "none" });
+      return;
+    }
     if (this.data.currentStep === 0) {
       const amount = Number(this.data.amountInput || 0);
       if (!(amount > 0)) {

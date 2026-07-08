@@ -1,7 +1,7 @@
 <view class="page">
   <hy-panel-card title="💸 资金流出智能发单台" subtitle="与 Web 智能发单台对齐：阈值识别、直付或合同流程、附件与审批联动">
     <view class="step-indicator">
-      <view class="step-dot {{currentStep >= 0 ? 'on' : ''}}">1 金额</view>
+      <view class="step-dot on">1 金额</view>
       <view class="step-dot {{currentStep >= 1 ? 'on' : ''}}">2 信息</view>
       <view class="step-dot {{currentStep >= 2 ? 'on' : ''}}">3 提交</view>
     </view>
@@ -24,7 +24,7 @@
       </view>
     </view>
 
-    <view wx:if="{{currentStep === 1}}">
+    <view hidden="{{currentStep !== 1}}">
     <view wx:if="{{quickPayeeVisible}}" class="section-block quick-payee-box">
       <view class="section-title">快速添加外部收款人</view>
 
@@ -279,19 +279,28 @@
       <view class="confirm-row">流程：{{shouldUseContractFlow ? '合同流程（超阈值）' : '直付流程'}}</view>
 
       <block wx:if="{{!shouldUseContractFlow}}">
+        <view class="confirm-row">所属项目：{{directProjectName || '-'}}</view>
+        <view wx:if="{{directForm.contract_id > 0}}" class="confirm-row">关联合同：{{contractLabels[directContractIndex] || '-'}}</view>
         <view class="confirm-row">收款方：{{selectedDirectPayee.name || '-'}}</view>
         <view class="confirm-row">付款日期：{{directForm.expected_payment_date || '-'}}</view>
         <view class="confirm-row">付款类别：{{directForm.category || '-'}}</view>
         <view class="confirm-row">付款方式：{{directForm.payment_method || '-'}}</view>
         <view class="confirm-row">付款事由：{{directForm.content || '-'}}</view>
+        <view class="confirm-row">附件：{{directPaymentAttachments.length}} 个</view>
       </block>
       <block wx:else>
+        <view class="confirm-row">所属项目：{{contractProjectName || '-'}}</view>
         <view class="confirm-row">我方主体：{{entityLabels[contractEntityIndex] || '-'}}</view>
         <view class="confirm-row">对方单位：{{selectedContractPayee.name || '-'}}</view>
         <view class="confirm-row">合同类型：{{contractForm.contract_type || '-'}}</view>
         <view class="confirm-row">合同日期：{{contractForm.contract_date || '-'}}</view>
         <view class="confirm-row">经办人：{{wecomUserLabels[contractHandlerIndex] || '-'}}</view>
+        <view class="confirm-row">附件：{{contractAttachments.length}} 个</view>
         <view class="confirm-row">同时发起首笔预付款：{{withFirstPayment ? '是' : '否'}}</view>
+        <block wx:if="{{withFirstPayment}}">
+          <view class="confirm-row">首笔金额：{{firstPaymentForm.amount || '-'}}</view>
+          <view class="confirm-row">首笔付款日期：{{firstPaymentForm.expected_payment_date || '-'}}</view>
+        </block>
       </block>
 
       <view class="row">
@@ -315,8 +324,8 @@
     </view>
 
     <view class="step-nav">
-      <t-button wx:if="{{currentStep > 0}}" variant="outline" bindtap="goPrevStep">上一步</t-button>
-      <t-button wx:if="{{currentStep < 2}}" theme="primary" bindtap="goNextStep">下一步</t-button>
+      <t-button wx:if="{{currentStep > 0}}" variant="outline" disabled="{{busy || submitting}}" bindtap="goPrevStep">上一步</t-button>
+      <t-button wx:if="{{currentStep < 2}}" theme="primary" disabled="{{busy || submitting}}" bindtap="goNextStep">下一步</t-button>
     </view>
 
   </hy-panel-card>
