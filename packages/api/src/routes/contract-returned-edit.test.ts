@@ -55,6 +55,7 @@ class ContractReturnedEditDb {
     private readonly options: {
       handlerUserid?: string;
       approvalInitiatorUserid?: string;
+      approvalStatus?: string;
     } = {}
   ) {}
 
@@ -91,7 +92,7 @@ class ContractReturnedEditDb {
     }
     if (sql.includes("FROM approval_instance WHERE id = ?")) {
       return {
-        status: "returned",
+        status: this.options.approvalStatus ?? "returned",
         initiator_userid: this.options.approvalInitiatorUserid ?? "handler-a"
       } as T;
     }
@@ -175,6 +176,36 @@ describe("contract returned draft edit", () => {
       new ContractReturnedEditDb({
         handlerUserid: "handler-b",
         approvalInitiatorUserid: "initiator-a"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
+  });
+
+  it("allows the initiator to edit a draft contract after its prior approval was rejected", async () => {
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "rejected"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("UPDATE contract SET"))).toBe(true);
+  });
+
+  it("does not force privileged edit mode for a super admin initiator editing a draft after rejection", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      roles: ["super_admin"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "rejected"
       })
     );
 

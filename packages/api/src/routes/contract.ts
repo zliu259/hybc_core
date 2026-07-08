@@ -475,8 +475,7 @@ contractRoutes.put(
     const approvalInProgress = approval ? isApprovalActive(approval.status) : false;
     const approvalAwaitingResubmit = approval ? isResubmittable(approval.status) : false;
     const approvalFinished = approval ? !approvalInProgress && !approvalAwaitingResubmit : false;
-    const isReturnedHandlerDraftEdit =
-      approvalAwaitingResubmit &&
+    const isDraftOwnerEdit =
       existing.status === "draft" &&
       (existing.handler_userid === auth.sub || approval?.initiator_userid === auth.sub);
 
@@ -493,7 +492,7 @@ contractRoutes.put(
         );
       }
 
-      if (approvalFinished && hasNonAttachmentMutation) {
+      if (approvalFinished && hasNonAttachmentMutation && !isDraftOwnerEdit) {
         return c.json(
           {
             success: false,
@@ -519,7 +518,7 @@ contractRoutes.put(
       }
     }
 
-    if (isSuperAdmin && hasNonAttachmentMutation && !isReturnedHandlerDraftEdit) {
+    if (isSuperAdmin && hasNonAttachmentMutation && !isDraftOwnerEdit) {
       if (body.admin_edit_mode !== true) {
         return c.json(
           { success: false, error: { message: "Super admin must enable edit mode for privileged modification" } },
@@ -535,7 +534,7 @@ contractRoutes.put(
     }
 
     const auditRemark =
-      isSuperAdmin && hasNonAttachmentMutation && !isReturnedHandlerDraftEdit
+      isSuperAdmin && hasNonAttachmentMutation && !isDraftOwnerEdit
         ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
         : body.remark;
 
@@ -566,7 +565,7 @@ contractRoutes.put(
       )
       .run();
 
-    if (isSuperAdmin && hasNonAttachmentMutation && !isReturnedHandlerDraftEdit) {
+    if (isSuperAdmin && hasNonAttachmentMutation && !isDraftOwnerEdit) {
       await writeAuditLog(c.env.DB, {
         actorUserId: auth.sub,
         actorRoles: auth.roles,
