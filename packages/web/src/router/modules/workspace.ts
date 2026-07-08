@@ -71,6 +71,12 @@ export default {
       }
     },
     {
+      path: "/workspace/payment/detail/create",
+      name: "WorkspacePaymentDetailCreateRedirect",
+      redirect: "/workspace/payment/wizard",
+      meta: { title: "发起对外付款", showLink: false }
+    },
+    {
       path: "/workspace/payment/detail/:id",
       name: "WorkspacePaymentDetail",
       component: () => import("@/views/finance/payment/detail.vue"),

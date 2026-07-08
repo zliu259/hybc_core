@@ -148,6 +148,12 @@ export default {
           }
         },
         {
+          path: "/finance/payment/detail/create",
+          name: "PaymentDetailCreateRedirect",
+          redirect: "/finance/payment/wizard",
+          meta: { title: "发起付款", showLink: false }
+        },
+        {
           path: "/finance/payment/detail/:id",
           name: "PaymentDetail",
           component: () => import("@/views/finance/payment/detail.vue"),
