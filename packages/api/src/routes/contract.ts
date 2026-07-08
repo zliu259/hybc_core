@@ -468,9 +468,9 @@ contractRoutes.put(
       body.status !== undefined;
 
     const approval = existing.approval_instance_id
-      ? await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+      ? await c.env.DB.prepare("SELECT status, initiator_userid FROM approval_instance WHERE id = ?")
           .bind(existing.approval_instance_id)
-          .first<{ status: string }>()
+          .first<{ status: string; initiator_userid: string }>()
       : null;
     const approvalInProgress = approval ? isApprovalActive(approval.status) : false;
     const approvalAwaitingResubmit = approval ? isResubmittable(approval.status) : false;
@@ -478,7 +478,7 @@ contractRoutes.put(
     const isReturnedHandlerDraftEdit =
       approvalAwaitingResubmit &&
       existing.status === "draft" &&
-      existing.handler_userid === auth.sub;
+      (existing.handler_userid === auth.sub || approval?.initiator_userid === auth.sub);
 
     if (!isSuperAdmin) {
       if (approvalInProgress && hasDetailMutation) {

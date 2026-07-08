@@ -51,6 +51,13 @@ class ContractReturnedEditStatement {
 class ContractReturnedEditDb {
   readonly runs: Array<{ sql: string; params: unknown[] }> = [];
 
+  constructor(
+    private readonly options: {
+      handlerUserid?: string;
+      approvalInitiatorUserid?: string;
+    } = {}
+  ) {}
+
   prepare(sql: string) {
     return new ContractReturnedEditStatement(this, sql);
   }
@@ -66,7 +73,7 @@ class ContractReturnedEditDb {
         entity_id: 1,
         counterparty: "Original Counterparty",
         contract_type: "purchase",
-        handler_userid: "handler-a",
+        handler_userid: this.options.handlerUserid ?? "handler-a",
         contract_date: "2026-07-01",
         total_amount: 1000,
         paid_amount: 0,
@@ -82,8 +89,11 @@ class ContractReturnedEditDb {
         updated_at: "2026-07-01T00:00:00.000Z"
       } as T;
     }
-    if (sql.includes("SELECT status FROM approval_instance WHERE id = ?")) {
-      return { status: "returned" } as T;
+    if (sql.includes("FROM approval_instance WHERE id = ?")) {
+      return {
+        status: "returned",
+        initiator_userid: this.options.approvalInitiatorUserid ?? "handler-a"
+      } as T;
     }
     return null;
   }
@@ -148,6 +158,25 @@ describe("contract returned draft edit", () => {
       roles: ["super_admin"]
     };
     const env = createEnv();
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
+  });
+
+  it("does not force privileged edit mode when the approval initiator is not the contract handler", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "initiator-a",
+      roles: ["super_admin"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        handlerUserid: "handler-b",
+        approvalInitiatorUserid: "initiator-a"
+      })
+    );
 
     const response = await putReturnedContract(env);
 
