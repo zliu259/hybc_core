@@ -1,21 +1,30 @@
 <view class="page">
   <hy-panel-card title="💸 资金流出智能发单台" subtitle="与 Web 智能发单台对齐：阈值识别、直付或合同流程、附件与审批联动">
-    <view class="amount-wrap">
-      <view class="label required">预计付款总额</view>
-      <input
-        class="input amount-input"
-        type="digit"
-        value="{{amountInput}}"
-        bindinput="onAmountInput"
-        placeholder="请输入金额"
-        disabled="{{busy || submitting}}"
-      />
-      <view class="amount-display">{{amountDisplay}}</view>
-      <view class="threshold-hint {{exceedsThreshold ? 'warn' : 'ok'}}">
-        {{checking ? '阈值校验中...' : (exceedsThreshold ? (directForm.contract_id ? ('金额超过阈值 ' + thresholdLimit + '，已关联现有合同，可直接发起付款') : ('金额超过阈值 ' + thresholdLimit + '，请先关联已审批合同或走新建合同流程')) : ('金额未超过阈值 ' + thresholdLimit + '，可直接走付款申请'))}}
+    <view class="step-indicator">
+      <view class="step-dot {{currentStep >= 0 ? 'on' : ''}}">1 金额</view>
+      <view class="step-dot {{currentStep >= 1 ? 'on' : ''}}">2 信息</view>
+      <view class="step-dot {{currentStep >= 2 ? 'on' : ''}}">3 提交</view>
+    </view>
+
+    <view wx:if="{{currentStep === 0}}">
+      <view class="amount-wrap">
+        <view class="label required">预计付款总额</view>
+        <input
+          class="input amount-input"
+          type="digit"
+          value="{{amountInput}}"
+          bindinput="onAmountInput"
+          placeholder="请输入金额"
+          disabled="{{busy || submitting}}"
+        />
+        <view class="amount-display">{{amountDisplay}}</view>
+        <view class="threshold-hint {{exceedsThreshold ? 'warn' : 'ok'}}">
+          {{checking ? '阈值校验中...' : (exceedsThreshold ? (directForm.contract_id ? ('金额超过阈值 ' + thresholdLimit + '，已关联现有合同，可直接发起付款') : ('金额超过阈值 ' + thresholdLimit + '，请先关联已审批合同或走新建合同流程')) : ('金额未超过阈值 ' + thresholdLimit + '，可直接走付款申请'))}}
+        </view>
       </view>
     </view>
 
+    <view wx:if="{{currentStep === 1}}">
     <view wx:if="{{quickPayeeVisible}}" class="section-block quick-payee-box">
       <view class="section-title">快速添加外部收款人</view>
 
@@ -139,10 +148,6 @@
         <view class="attachment-meta">{{item.file_size || '-'}} bytes</view>
         <t-button class="mini-btn" size="small" variant="outline" data-group="direct" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
       </view>
-
-      <view class="row">
-        <t-button class="btn btn-primary" theme="primary" loading="{{submitting}}" disabled="{{busy || submitting}}" bindtap="submitDirect">创建付款并提审</t-button>
-      </view>
     </view>
 
     <view wx:else class="section-block">
@@ -265,10 +270,53 @@
           <t-button class="mini-btn" size="small" variant="outline" data-group="first" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
         </view>
       </view>
+    </view>
+    </view>
+
+    <view wx:if="{{currentStep === 2}}" class="confirm-panel">
+      <view class="section-title">确认提交</view>
+      <view class="confirm-row">预计付款总额：¥{{amountDisplay}}</view>
+      <view class="confirm-row">流程：{{shouldUseContractFlow ? '合同流程（超阈值）' : '直付流程'}}</view>
+
+      <block wx:if="{{!shouldUseContractFlow}}">
+        <view class="confirm-row">收款方：{{selectedDirectPayee.name || '-'}}</view>
+        <view class="confirm-row">付款日期：{{directForm.expected_payment_date || '-'}}</view>
+        <view class="confirm-row">付款类别：{{directForm.category || '-'}}</view>
+        <view class="confirm-row">付款方式：{{directForm.payment_method || '-'}}</view>
+        <view class="confirm-row">付款事由：{{directForm.content || '-'}}</view>
+      </block>
+      <block wx:else>
+        <view class="confirm-row">我方主体：{{entityLabels[contractEntityIndex] || '-'}}</view>
+        <view class="confirm-row">对方单位：{{selectedContractPayee.name || '-'}}</view>
+        <view class="confirm-row">合同类型：{{contractForm.contract_type || '-'}}</view>
+        <view class="confirm-row">合同日期：{{contractForm.contract_date || '-'}}</view>
+        <view class="confirm-row">经办人：{{wecomUserLabels[contractHandlerIndex] || '-'}}</view>
+        <view class="confirm-row">同时发起首笔预付款：{{withFirstPayment ? '是' : '否'}}</view>
+      </block>
 
       <view class="row">
-        <t-button class="btn btn-primary" theme="primary" loading="{{submitting}}" disabled="{{busy || submitting}}" bindtap="submitContractFlow">创建合同并提审</t-button>
+        <t-button
+          wx:if="{{!shouldUseContractFlow}}"
+          class="btn btn-primary"
+          theme="primary"
+          loading="{{submitting}}"
+          disabled="{{busy || submitting}}"
+          bindtap="submitDirect"
+        >创建付款并提审</t-button>
+        <t-button
+          wx:else
+          class="btn btn-primary"
+          theme="primary"
+          loading="{{submitting}}"
+          disabled="{{busy || submitting}}"
+          bindtap="submitContractFlow"
+        >创建合同并提审</t-button>
       </view>
+    </view>
+
+    <view class="step-nav">
+      <t-button wx:if="{{currentStep > 0}}" variant="outline" bindtap="goPrevStep">上一步</t-button>
+      <t-button wx:if="{{currentStep < 2}}" theme="primary" bindtap="goNextStep">下一步</t-button>
     </view>
 
   </hy-panel-card>

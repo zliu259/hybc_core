@@ -172,6 +172,7 @@ const buildDirectPaymentSummary = ({ form, amount, payee, contract }) => {
 Page({
   data: {
     loadingMeta: false,
+    currentStep: 0,
     busy: false,
     checking: false,
     submitting: false,
@@ -779,6 +780,31 @@ Page({
     wx.showToast({ title: "附件上传成功", icon: "success" });
   },
 
+  goNextStep() {
+    if (this.data.currentStep === 0) {
+      const amount = Number(this.data.amountInput || 0);
+      if (!(amount > 0)) {
+        wx.showToast({ title: "请先填写预计付款总额", icon: "none" });
+        return;
+      }
+    }
+    if (this.data.currentStep === 1 && !this.validateFlowFields()) return;
+    this.setData({ currentStep: Math.min(this.data.currentStep + 1, 2) });
+  },
+
+  goPrevStep() {
+    this.setData({ currentStep: Math.max(this.data.currentStep - 1, 0) });
+  },
+
+  validateFlowFields() {
+    const errorText = this.data.shouldUseContractFlow ? this.validateContractFlow() : this.validateDirect();
+    if (errorText) {
+      wx.showToast({ title: errorText, icon: "none" });
+      return false;
+    }
+    return true;
+  },
+
   validateDirect() {
     const form = this.data.directForm;
     const amount = Number(this.data.amountInput || 0);
@@ -842,11 +868,7 @@ Page({
 
   async submitDirect() {
     if (this.data.submitting) return;
-    const errorText = this.validateDirect();
-    if (errorText) {
-      wx.showToast({ title: errorText, icon: "none" });
-      return;
-    }
+    if (!this.validateFlowFields()) return;
 
     this.setData({ submitting: true });
     wx.showLoading({ title: "提交中...", mask: true });
@@ -888,6 +910,7 @@ Page({
 
       wx.hideLoading();
       wx.showToast({ title: "提交成功", icon: "success" });
+      this.setData({ currentStep: 0 });
       setTimeout(() => wx.navigateBack({ delta: 1 }), 500);
     } catch {
       wx.hideLoading();
@@ -899,11 +922,7 @@ Page({
 
   async submitContractFlow() {
     if (this.data.submitting) return;
-    const errorText = this.validateContractFlow();
-    if (errorText) {
-      wx.showToast({ title: errorText, icon: "none" });
-      return;
-    }
+    if (!this.validateFlowFields()) return;
 
     this.setData({ submitting: true });
     wx.showLoading({ title: "提交中...", mask: true });
@@ -981,6 +1000,7 @@ Page({
         title: "提交成功",
         icon: "success"
       });
+      this.setData({ currentStep: 0 });
       setTimeout(() => wx.navigateBack({ delta: 1 }), 500);
     } catch {
       wx.hideLoading();

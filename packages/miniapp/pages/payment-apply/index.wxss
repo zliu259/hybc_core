@@ -1,3 +1,37 @@
+.step-indicator {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.step-dot {
+  flex: 1;
+  text-align: center;
+  padding: 12rpx 0;
+  border-radius: 8rpx;
+  background: #f3f4f6;
+  color: #9ca3af;
+  font-size: 26rpx;
+}
+
+.step-dot.on {
+  background: #dbeafe;
+  color: #1d4ed8;
+  font-weight: 600;
+}
+
+.step-nav {
+  display: flex;
+  gap: 20rpx;
+  margin-top: 24rpx;
+}
+
+.confirm-panel .confirm-row {
+  padding: 8rpx 0;
+  font-size: 28rpx;
+  color: #374151;
+}
+
 .amount-wrap {
   background: #f8fbff;
   border: 1rpx solid #dce8f8;
