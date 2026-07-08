@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ElMessageBox, type UploadRequestOptions } from "element-plus";
+import { type UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
@@ -8,9 +8,6 @@ import {
   createPaymentRequest,
   getPaymentRequest,
   getRiskReport,
-  markPaymentPaid,
-  reactivatePayment,
-  voidPayment,
   submitPaymentApproval,
   triggerRiskAssessment,
   updatePaymentRequest,
@@ -40,6 +37,7 @@ import {
 } from "../shared/approvalLock";
 import AdminEditPanel from "./components/AdminEditPanel.vue";
 import ApprovalActionPanel from "./components/ApprovalActionPanel.vue";
+import PayoutPanel from "./components/PayoutPanel.vue";
 
 defineOptions({ name: "PaymentDetail" });
 
@@ -48,8 +46,6 @@ const router = useRouter();
 const userStore = useUserStoreHook();
 const loading = ref(false);
 const saving = ref(false);
-const voiding = ref(false);
-const reactivating = ref(false);
 const submitApprovalLoading = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
@@ -423,98 +419,6 @@ const applyApprovalNoteTemplate = (value: string) => {
   approvalFormConfig.value.note = value;
 };
 
-const paidDialogVisible = ref(false);
-const paidSubmitting = ref(false);
-const payoutSaving = ref(false);
-const paidForm = ref({
-  paid_at: "",
-  payment_reference: "",
-  payment_account: "",
-  remark: ""
-});
-
-const payoutForm = ref({
-  payment_entity_id: undefined as number | undefined,
-  payment_entity_bank_account_id: undefined as number | undefined,
-  payment_account: ""
-});
-
-const payoutEntity = computed(() => {
-  if (!payoutForm.value.payment_entity_id) return null;
-  return (
-    entities.value.find(
-      item => item.id === payoutForm.value.payment_entity_id
-    ) ?? null
-  );
-});
-
-const payoutEntityAccounts = computed(() => {
-  if (!payoutForm.value.payment_entity_id) return [];
-  return (
-    entityBankAccountMap.value[payoutForm.value.payment_entity_id] ?? []
-  ).filter(item => item.status === "active");
-});
-
-const canAdjustPayoutInApproval = computed(() => {
-  if (isCreate.value || !inApprovalFlow.value) return false;
-  return Boolean(approvalDetail.value);
-});
-
-const onPayoutEntityChange = (entityId: number | undefined) => {
-  if (!entityId) {
-    payoutForm.value.payment_entity_bank_account_id = undefined;
-    payoutForm.value.payment_account = "";
-    return;
-  }
-  const accounts = (entityBankAccountMap.value[entityId] ?? []).filter(
-    item => item.status === "active"
-  );
-  if (accounts.length > 0) {
-    payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
-    payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
-  } else {
-    payoutForm.value.payment_entity_bank_account_id = undefined;
-    payoutForm.value.payment_account = "";
-  }
-};
-
-const onPayoutAccountChange = (accountId: number | undefined) => {
-  if (!accountId) {
-    payoutForm.value.payment_account = "";
-    return;
-  }
-  const target = payoutEntityAccounts.value.find(item => item.id === accountId);
-  payoutForm.value.payment_account = target
-    ? `${target.bank_name} / ${target.account_no}`
-    : "";
-};
-
-const savePayoutSelection = async () => {
-  if (!detail.value || isCreate.value) return;
-  if (!payoutForm.value.payment_entity_id) {
-    message("请选择付款主体", { type: "warning" });
-    return;
-  }
-  if (!payoutForm.value.payment_entity_bank_account_id) {
-    message("请选择付款账户", { type: "warning" });
-    return;
-  }
-
-  payoutSaving.value = true;
-  try {
-    await updatePaymentRequest(detail.value.id, {
-      payment_entity_id: payoutForm.value.payment_entity_id,
-      payment_entity_bank_account_id:
-        payoutForm.value.payment_entity_bank_account_id,
-      payment_account: payoutForm.value.payment_account || null
-    });
-    message("付款主体与账户已更新", { type: "success" });
-    await loadDetail();
-  } finally {
-    payoutSaving.value = false;
-  }
-};
-
 const loadRefs = async () => {
   const [contractRes, payeeRes, projectRes, entityRes] = await Promise.all([
     listContracts({ page: 1, pageSize: 400, direction: "outbound" }),
@@ -573,15 +477,6 @@ const loadDetail = async () => {
       payment_method: result.data.payment_method,
       remark: result.data.remark ?? ""
     };
-    payoutForm.value = {
-      payment_entity_id:
-        result.data.payment_entity_id ??
-        selectedContract.value?.entity_id ??
-        undefined,
-      payment_entity_bank_account_id:
-        result.data.payment_entity_bank_account_id ?? undefined,
-      payment_account: result.data.payment_account ?? ""
-    };
     superEditMode.value = false;
     superEditNote.value = "";
     attachmentItems.value = parseAttachments(result.data.attachments_json);
@@ -589,21 +484,6 @@ const loadDetail = async () => {
     riskStatus.value = rr.data.status;
     riskReport.value = rr.data.result;
     await loadApprovalDetail(result.data.approval_instance_id);
-    if (
-      payoutForm.value.payment_entity_id &&
-      !payoutForm.value.payment_entity_bank_account_id
-    ) {
-      const accounts =
-        entityBankAccountMap.value[payoutForm.value.payment_entity_id]?.filter(
-          item => item.status === "active"
-        ) ?? [];
-      if (accounts.length > 0) {
-        payoutForm.value.payment_entity_bank_account_id = accounts[0].id;
-        if (!payoutForm.value.payment_account) {
-          payoutForm.value.payment_account = `${accounts[0].bank_name} / ${accounts[0].account_no}`;
-        }
-      }
-    }
   } finally {
     loading.value = false;
   }
@@ -866,97 +746,6 @@ const removeAttachment = async (index: number) => {
   await persistAttachments();
 };
 
-const onMarkPaid = async () => {
-  if (isCreate.value) return;
-  paidForm.value = {
-    paid_at: new Date().toISOString().slice(0, 10),
-    payment_reference: "",
-    payment_account:
-      detail.value?.payment_account ??
-      (selectedEntityAccount.value
-        ? `${selectedEntityAccount.value.bank_name} / ${selectedEntityAccount.value.account_no}`
-        : ""),
-    remark: ""
-  };
-  paidDialogVisible.value = true;
-};
-
-const confirmMarkPaid = async () => {
-  if (isCreate.value) return;
-  paidSubmitting.value = true;
-  try {
-    await markPaymentPaid(requestId.value, {
-      paid_at: paidForm.value.paid_at || undefined,
-      payment_reference: paidForm.value.payment_reference || undefined,
-      payment_account: paidForm.value.payment_account || undefined,
-      remark: paidForm.value.remark || undefined
-    });
-    paidDialogVisible.value = false;
-    message("已标记为已付款", { type: "success" });
-    await loadDetail();
-  } finally {
-    paidSubmitting.value = false;
-  }
-};
-
-const onVoidPayment = async () => {
-  if (isCreate.value || !isSuperAdmin.value || !detail.value) return;
-  try {
-    await ElMessageBox.confirm(
-      "确认废除该付款申请？废除后将不再出现在付款列表中。",
-      "废除付款",
-      {
-        confirmButtonText: "确认废除",
-        cancelButtonText: "取消",
-        type: "warning"
-      }
-    );
-  } catch {
-    return;
-  }
-
-  voiding.value = true;
-  try {
-    await voidPayment(requestId.value);
-    message("付款已废除", { type: "success" });
-    await loadDetail();
-  } finally {
-    voiding.value = false;
-  }
-};
-
-const onReactivatePayment = async () => {
-  if (
-    isCreate.value ||
-    !isSuperAdmin.value ||
-    detail.value?.status !== "cancelled"
-  ) {
-    return;
-  }
-  try {
-    await ElMessageBox.confirm(
-      "确认重新激活该付款申请？激活后将恢复为草稿状态，可重新编辑并提审。",
-      "重新激活付款",
-      {
-        confirmButtonText: "确认激活",
-        cancelButtonText: "取消",
-        type: "warning"
-      }
-    );
-  } catch {
-    return;
-  }
-
-  reactivating.value = true;
-  try {
-    await reactivatePayment(requestId.value);
-    message("付款已重新激活", { type: "success" });
-    await loadDetail();
-  } finally {
-    reactivating.value = false;
-  }
-};
-
 onMounted(async () => {
   await Promise.all([loadRefs(), loadWecomUsers()]);
   await loadDetail();
@@ -1003,34 +792,6 @@ onMounted(async () => {
             @click="onRiskAssessment"
             >触发风险评估</el-button
           >
-          <el-button
-            type="primary"
-            plain
-            :disabled="isCreate || detail?.status !== 'approved'"
-            @click="onMarkPaid"
-          >
-            标记付款
-          </el-button>
-          <el-button
-            v-if="isSuperAdmin"
-            type="danger"
-            plain
-            :loading="voiding"
-            :disabled="isCreate || detail?.status === 'cancelled'"
-            @click="onVoidPayment"
-          >
-            废除付款
-          </el-button>
-          <el-button
-            v-if="isSuperAdmin"
-            type="primary"
-            plain
-            :loading="reactivating"
-            :disabled="isCreate || detail?.status !== 'cancelled'"
-            @click="onReactivatePayment"
-          >
-            重新激活
-          </el-button>
         </div>
       </div>
     </template>
@@ -1051,61 +812,15 @@ onMounted(async () => {
       style="margin-bottom: 12px"
     />
 
-    <el-card
-      v-if="canAdjustPayoutInApproval"
-      shadow="never"
-      style="margin-bottom: 12px; border: 1px solid #f3d19e"
-    >
-      <template #header>
-        <span>审批操作区 - 付款主体与账户调整</span>
-      </template>
-      <el-form inline>
-        <el-form-item label="付款主体">
-          <el-select
-            v-model="payoutForm.payment_entity_id"
-            clearable
-            filterable
-            style="width: 260px"
-            @change="onPayoutEntityChange"
-          >
-            <el-option
-              v-for="item in entities"
-              :key="item.id"
-              :label="item.entity_name"
-              :value="item.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item label="付款账户">
-          <el-select
-            v-model="payoutForm.payment_entity_bank_account_id"
-            clearable
-            filterable
-            style="width: 360px"
-            @change="onPayoutAccountChange"
-          >
-            <el-option
-              v-for="item in payoutEntityAccounts"
-              :key="item.id"
-              :label="`${item.bank_name} / ${item.account_no}`"
-              :value="item.id"
-            />
-          </el-select>
-        </el-form-item>
-        <el-form-item>
-          <el-button
-            type="primary"
-            :loading="payoutSaving"
-            @click="savePayoutSelection"
-            >保存出纳账户选择</el-button
-          >
-        </el-form-item>
-      </el-form>
-      <div style="margin-top: 8px; color: #8c6a2f; font-size: 12px">
-        当前选择：{{ payoutEntity?.entity_name || "-" }} /
-        {{ payoutForm.payment_account || "-" }}
-      </div>
-    </el-card>
+    <PayoutPanel
+      :detail="detail"
+      :entities="entities"
+      :entity-bank-account-map="entityBankAccountMap"
+      :in-approval-flow="inApprovalFlow"
+      :contracts="contracts"
+      :approval-detail="approvalDetail"
+      @refresh="loadDetail"
+    />
 
     <AdminEditPanel
       :visible="isSuperAdmin && !isCreate"
@@ -1509,45 +1224,5 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <el-dialog
-      v-model="paidDialogVisible"
-      title="登记付款执行信息"
-      width="560px"
-    >
-      <el-form label-width="120px">
-        <el-form-item label="支付日期">
-          <el-date-picker
-            v-model="paidForm.paid_at"
-            type="date"
-            value-format="YYYY-MM-DD"
-            style="width: 220px"
-          />
-        </el-form-item>
-        <el-form-item label="支付流水号">
-          <el-input
-            v-model="paidForm.payment_reference"
-            placeholder="例如网银流水号"
-          />
-        </el-form-item>
-        <el-form-item label="付款账户">
-          <el-input
-            v-model="paidForm.payment_account"
-            placeholder="例如 建行-XX支行-1234"
-          />
-        </el-form-item>
-        <el-form-item label="付款备注">
-          <el-input v-model="paidForm.remark" type="textarea" :rows="2" />
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="paidDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="paidSubmitting"
-          @click="confirmMarkPaid"
-          >确认标记</el-button
-        >
-      </template>
-    </el-dialog>
   </el-card>
 </template>
