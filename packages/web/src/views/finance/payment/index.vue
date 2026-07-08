@@ -15,13 +15,13 @@ import {
   formatBeijingDateTime,
   paymentStatusTagType,
   toPaymentMethodLabel,
-  toPaymentStatusLabel
+  toPaymentStatusLabel,
+  type PaymentTagType
 } from "./payment-labels";
 
 defineOptions({ name: "PaymentList" });
 
 type Stage = "pending" | "in_approval" | "to_pay" | "paid" | "all";
-type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
 const STAGE_STATUS: Record<Stage, string> = {
   pending: "draft",
@@ -33,7 +33,7 @@ const STAGE_STATUS: Record<Stage, string> = {
 
 const RESUBMITTABLE = new Set(["returned", "pending", "withdrawn"]);
 
-const aiTagType: Record<string, TagType> = {
+const aiTagType: Record<string, PaymentTagType> = {
   none: "info",
   pending: "warning",
   completed: "success",
@@ -128,7 +128,10 @@ const loadSummary = async () => {
   }
 };
 
+let loadSeq = 0;
+
 const loadData = async () => {
+  const seq = ++loadSeq;
   loading.value = true;
   try {
     const result = await listPaymentRequests({
@@ -139,10 +142,11 @@ const loadData = async () => {
       status: STAGE_STATUS[stage.value] || undefined,
       keyword: filters.value.keyword || undefined
     });
+    if (seq !== loadSeq) return;
     list.value = result.data;
     total.value = result.pagination.total;
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 };
 
@@ -284,8 +288,8 @@ onMounted(async () => {
     </div>
 
     <el-table
+      v-loading="loading"
       :data="displayList"
-      :loading="loading"
       style="margin-top: 12px"
       :row-class-name="
         ({ row }) => (isOverdue(row) ? 'payment-row-overdue' : '')
@@ -352,7 +356,7 @@ onMounted(async () => {
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="scope">
           <el-button
-            v-if="stage === 'pending'"
+            v-if="stage === 'pending' || isReturned(scope.row)"
             link
             type="danger"
             @click="goEdit(scope.row.id)"
