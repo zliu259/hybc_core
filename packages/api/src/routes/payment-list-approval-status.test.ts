@@ -103,5 +103,6 @@ describe("payment list approval_status", () => {
     };
     expect(payload.data[0].approval_status).toBe("returned");
     expect(db.listSql).toContain("LEFT JOIN approval_instance");
+    expect(db.listSql).toContain("ai.status AS approval_status");
   });
 });

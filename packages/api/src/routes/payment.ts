@@ -25,7 +25,12 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
-import { isApprovalActive, isOwnerReworkState, isResubmittable } from "../services/approval/status";
+import {
+  isApprovalActive,
+  isOwnerReworkState,
+  isResubmittable,
+  RESUBMITTABLE_STATUSES
+} from "../services/approval/status";
 
 const nowIso = () => new Date().toISOString();
 
@@ -192,6 +197,8 @@ const mergeAttachments = (...groups: AttachmentMeta[][]): AttachmentMeta[] => {
   }
   return merged;
 };
+
+const RESUBMITTABLE_SQL_LIST = RESUBMITTABLE_STATUSES.map((s) => `'${s}'`).join(", ");
 
 const DEFAULT_NO_CONTRACT_THRESHOLD = 10000;
 
@@ -491,6 +498,47 @@ paymentRoutes.delete(
       .run();
 
     return c.json({ success: true });
+  }
+);
+
+paymentRoutes.get(
+  "/console-summary",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const row = await c.env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN p.status = 'draft' THEN 1 ELSE 0 END) AS pending_count,
+         SUM(CASE WHEN p.status = 'draft' AND ai.status IN (${RESUBMITTABLE_SQL_LIST}) THEN 1 ELSE 0 END) AS returned_count,
+         SUM(CASE WHEN p.status = 'pending_approval' THEN 1 ELSE 0 END) AS in_approval_count,
+         SUM(CASE WHEN p.status = 'approved' THEN 1 ELSE 0 END) AS to_pay_count,
+         SUM(CASE WHEN p.status = 'approved' THEN p.amount ELSE 0 END) AS to_pay_total,
+         SUM(CASE WHEN p.status = 'approved' AND p.expected_payment_date < date('now') THEN 1 ELSE 0 END) AS overdue_count,
+         SUM(CASE WHEN p.status = 'paid' AND substr(p.paid_at, 1, 7) = strftime('%Y-%m', 'now') THEN p.amount ELSE 0 END) AS paid_month_total
+       FROM payment_request p
+       LEFT JOIN approval_instance ai ON ai.id = p.approval_instance_id
+       WHERE p.status != 'cancelled'`
+    ).first<{
+      pending_count: number | null;
+      returned_count: number | null;
+      in_approval_count: number | null;
+      to_pay_count: number | null;
+      to_pay_total: number | null;
+      overdue_count: number | null;
+      paid_month_total: number | null;
+    }>();
+
+    return c.json({
+      success: true,
+      data: {
+        pending_count: row?.pending_count ?? 0,
+        returned_count: row?.returned_count ?? 0,
+        in_approval_count: row?.in_approval_count ?? 0,
+        to_pay_count: row?.to_pay_count ?? 0,
+        to_pay_total: row?.to_pay_total ?? 0,
+        overdue_count: row?.overdue_count ?? 0,
+        paid_month_total: row?.paid_month_total ?? 0
+      }
+    });
   }
 );
 
