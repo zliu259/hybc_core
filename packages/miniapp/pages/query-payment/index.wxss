@@ -1,5 +1,4 @@
 .stage-tabs {
-  display: flex;
   white-space: nowrap;
   margin-bottom: 16rpx;
 }

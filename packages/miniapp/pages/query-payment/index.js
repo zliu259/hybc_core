@@ -1,5 +1,6 @@
 const { request } = require("../../utils/request");
 const { getUserProfile } = require("../../utils/auth");
+const { getReturnedApprovalEditRoute } = require("../../utils/returned-approval");
 
 const canAccessQuery = (roles) => {
   return roles.includes("super_admin") || roles.includes("finance") || roles.includes("manager");
@@ -74,6 +75,7 @@ Page({
     dateTo: "",
     stage: "all",
     stageTabs: STAGE_TABS,
+    currentUserid: "",
     list: []
   },
 
@@ -85,6 +87,7 @@ Page({
       setTimeout(() => wx.navigateBack({ delta: 1 }), 300);
       return;
     }
+    this.setData({ currentUserid: String(profile.username || profile.id || "").trim() });
     await Promise.all([this.loadApplicantOptions(), this.loadProjectData()]);
     await this.loadList();
   },
@@ -189,9 +192,16 @@ Page({
 
   goReturnedEdit(e) {
     const { approvalId, bizId } = e.currentTarget.dataset;
-    wx.navigateTo({
-      url: `/pages/returned-approval-edit/index?approvalId=${approvalId}&bizType=payment_request&bizId=${bizId}`
+    const route = getReturnedApprovalEditRoute({
+      approvalId,
+      bizType: "payment_request",
+      bizId
     });
+    if (!route) {
+      wx.showToast({ title: "退回申请参数无效", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: route });
   },
 
   prevPage() {
@@ -219,6 +229,7 @@ Page({
 
       const res = await request({ method: "GET", path: `/api/v1/payment?${query.join("&")}` });
       const rows = Array.isArray(res.data) ? res.data : [];
+      const currentUserid = this.data.currentUserid;
       const list = rows.map((item) => ({
         id: item.id,
         serialNo: item.serial_no,
@@ -230,6 +241,10 @@ Page({
         statusText: statusText(item.status),
         statusTheme: statusTheme(item.status),
         isReturned: item.status === "draft" && RESUBMITTABLE.includes(item.approval_status || ""),
+        canGoEdit:
+          item.approval_status === "returned" &&
+          Boolean(currentUserid) &&
+          String(item.applicant_userid || "") === currentUserid,
         approvalInstanceId: item.approval_instance_id || 0
       }));
 

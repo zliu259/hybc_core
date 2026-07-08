@@ -48,6 +48,7 @@
       <view wx:if="{{item.isReturned}}" class="item-returned">
         <text class="item-returned-text">已退回，待修改重提</text>
         <t-button
+          wx:if="{{item.canGoEdit}}"
           size="extra-small"
           theme="danger"
           variant="outline"
