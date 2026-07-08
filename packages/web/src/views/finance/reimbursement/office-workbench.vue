@@ -26,6 +26,7 @@ import {
 import ReimbursementBatchCenter from "./batch.vue";
 import ReimbursementPayoutCenter from "./payout.vue";
 import ReimbursementDetail from "./detail.vue";
+import { resolveStation } from "./reimbursement-station";
 
 defineOptions({ name: "ReimbursementOfficeWorkbench" });
 
@@ -154,6 +155,49 @@ const loadData = async () => {
   }
 };
 
+const queryMode = ref(false);
+const queryKeyword = ref("");
+const queryList = ref<ReimbursementEnvelope[]>([]);
+const queryLoading = ref(false);
+
+const runQuery = async () => {
+  const kw = queryKeyword.value.trim();
+  if (!kw) {
+    message("请输入信封号 / UUID / 发票号 / 事由关键字", { type: "warning" });
+    return;
+  }
+  queryMode.value = true;
+  queryLoading.value = true;
+  try {
+    const result = await listReimbursementEnvelopes({
+      page: 1,
+      pageSize: 50,
+      keyword: kw,
+      exclude_cancelled: false
+    });
+    queryList.value = result.data;
+  } finally {
+    queryLoading.value = false;
+  }
+};
+
+const exitQuery = () => {
+  queryMode.value = false;
+  queryKeyword.value = "";
+  queryList.value = [];
+};
+
+const stationLabel = (row: ReimbursementEnvelope) => resolveStation(row).label;
+
+const goBatchDetail = (row: ReimbursementEnvelope) => {
+  const station = resolveStation(row);
+  if (station.batchId) {
+    router.push(`/finance/reimbursement/batch/${station.batchId}`);
+  } else {
+    openDetail(row.id);
+  }
+};
+
 const switchStep = (next: Step) => {
   step.value = next;
   // 从成批/付款步骤操作后回来,徽标需刷新
@@ -268,108 +312,231 @@ onMounted(async () => {
 
 <template>
   <el-card shadow="never" style="background: #fffaf2">
-    <!-- 顶部动作区(全流程查询在下个任务加入此处) -->
+    <!-- 顶部动作区 -->
     <div class="office-toolbar">
       <el-space wrap>
+        <el-input
+          v-model="queryKeyword"
+          placeholder="全流程查询:信封号 / UUID / 发票号 / 事由"
+          clearable
+          style="width: 320px; margin-right: 12px"
+          @keyup.enter="runQuery"
+          @clear="exitQuery"
+        >
+          <template #append>
+            <el-button @click="runQuery">查询</el-button>
+          </template>
+        </el-input>
         <el-button type="success" @click="goCreate">代员工发起</el-button>
         <el-button @click="openQuickScan">UUID 快速签收</el-button>
         <el-button @click="goEnvelopeGenerator">信封生成器</el-button>
       </el-space>
     </div>
 
-    <!-- 步骤条 -->
-    <div class="office-steps">
-      <button
-        v-for="s in steps"
-        :key="s.key"
-        type="button"
-        class="office-step"
-        :class="{ 'office-step--active': step === s.key }"
-        @click="switchStep(s.key)"
-      >
-        <span>{{ s.label }}</span>
-        <el-badge
-          v-if="s.count > 0"
-          :value="s.count"
-          :max="99"
-          class="office-step__badge"
+    <template v-if="!queryMode">
+      <!-- 步骤条 -->
+      <div class="office-steps">
+        <button
+          v-for="s in steps"
+          :key="s.key"
+          type="button"
+          class="office-step"
+          :class="{ 'office-step--active': step === s.key }"
+          @click="switchStep(s.key)"
+        >
+          <span>{{ s.label }}</span>
+          <el-badge
+            v-if="s.count > 0"
+            :value="s.count"
+            :max="99"
+            class="office-step__badge"
+          />
+        </button>
+      </div>
+
+      <!-- 第①步:签收与复核 -->
+      <section v-if="step === 'intake'">
+        <el-tabs
+          :model-value="intakeTab"
+          @tab-change="key => switchIntakeTab(key as IntakeTab)"
+        >
+          <el-tab-pane v-for="tab in intakeTabs" :key="tab.key" :name="tab.key">
+            <template #label>
+              {{ tab.label
+              }}<el-badge
+                v-if="tab.count"
+                :value="tab.count"
+                :max="99"
+                class="tab-badge"
+              />
+            </template>
+          </el-tab-pane>
+        </el-tabs>
+
+        <el-table
+          v-loading="loading"
+          :data="list"
+          :row-class-name="tableRowClassName"
+        >
+          <el-table-column prop="envelope_no" label="信封编号" width="150" />
+          <el-table-column label="项目" width="160">
+            <template #default="scope">{{
+              projectMap[scope.row.project_id] || scope.row.project_id
+            }}</template>
+          </el-table-column>
+          <el-table-column label="填报人" width="130">
+            <template #default="scope">{{
+              toApplicantLabel(scope.row.applicant_userid)
+            }}</template>
+          </el-table-column>
+          <el-table-column label="通道" width="90">
+            <template #default="scope">
+              <el-tag
+                :type="scope.row.channel === 'physical' ? 'info' : 'success'"
+                effect="light"
+              >
+                {{ channelLabel(scope.row.channel) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="amount" label="金额" width="100" />
+          <el-table-column
+            label="报销内容"
+            min-width="160"
+            show-overflow-tooltip
+          >
+            <template #default="scope">{{
+              scope.row.description || "-"
+            }}</template>
+          </el-table-column>
+          <el-table-column label="异常提示" min-width="200">
+            <template #default="scope">
+              <el-space wrap>
+                <el-tag
+                  v-for="tag in rowAnomalyTags(scope.row)"
+                  :key="tag.label"
+                  :type="tag.type"
+                  size="small"
+                  effect="light"
+                >
+                  {{ tag.label }}
+                </el-tag>
+                <span v-if="rowAnomalyTags(scope.row).length === 0">-</span>
+              </el-space>
+            </template>
+          </el-table-column>
+          <el-table-column label="复核" width="90">
+            <template #default="scope">{{
+              precheckStatusLabel(scope.row.precheck_status)
+            }}</template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="scope">
+              <el-tag
+                :type="reimbursementStatusTagType[scope.row.status] || 'info'"
+                >{{ statusLabel(scope.row.status) }}</el-tag
+              >
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="300" fixed="right">
+            <template #default="scope">
+              <el-button
+                v-if="intakeTab === 'to_receive'"
+                link
+                type="success"
+                @click="openDetail(scope.row.id)"
+                >签收</el-button
+              >
+              <template v-if="intakeTab === 'to_precheck'">
+                <el-button
+                  link
+                  type="success"
+                  @click="onPrecheck(scope.row.id, 'approved')"
+                  >复核通过</el-button
+                >
+                <el-button
+                  link
+                  type="warning"
+                  @click="onPrecheck(scope.row.id, 'supplement')"
+                  >补充材料</el-button
+                >
+                <el-button
+                  link
+                  type="danger"
+                  @click="onPrecheck(scope.row.id, 'rejected')"
+                  >复核驳回</el-button
+                >
+                <el-button link @click="onTriggerAnomaly(scope.row.id)"
+                  >智能核查</el-button
+                >
+                <el-button
+                  link
+                  type="info"
+                  @click="onRerunSilentReview(scope.row.id)"
+                  >二次静默审查</el-button
+                >
+              </template>
+              <el-button
+                v-if="intakeTab === 'to_batch'"
+                link
+                type="primary"
+                @click="goToBatchStep"
+                >去成批 →</el-button
+              >
+              <el-button link type="primary" @click="openDetail(scope.row.id)"
+                >详情</el-button
+              >
+            </template>
+          </el-table-column>
+        </el-table>
+
+        <el-pagination
+          class="pagination"
+          background
+          layout="prev, pager, next, total"
+          :current-page="page"
+          :page-size="pageSize"
+          :total="total"
+          @current-change="
+            (val: number) => {
+              page = val;
+              loadData();
+            }
+          "
         />
-      </button>
-    </div>
+      </section>
 
-    <!-- 第①步:签收与复核 -->
-    <section v-if="step === 'intake'">
-      <el-tabs
-        :model-value="intakeTab"
-        @tab-change="key => switchIntakeTab(key as IntakeTab)"
-      >
-        <el-tab-pane v-for="tab in intakeTabs" :key="tab.key" :name="tab.key">
-          <template #label>
-            {{ tab.label
-            }}<el-badge
-              v-if="tab.count"
-              :value="tab.count"
-              :max="99"
-              class="tab-badge"
-            />
-          </template>
-        </el-tab-pane>
-      </el-tabs>
+      <!-- 第②步:成批送审 -->
+      <section v-else-if="step === 'batch'" class="embedded-workflow">
+        <ReimbursementBatchCenter />
+      </section>
 
-      <el-table
-        v-loading="loading"
-        :data="list"
-        :row-class-name="tableRowClassName"
-      >
+      <!-- 第③步:付款 -->
+      <section v-else-if="step === 'payout'" class="embedded-workflow">
+        <ReimbursementPayoutCenter />
+      </section>
+    </template>
+
+    <!-- 全流程查询结果 -->
+    <section v-else class="query-panel">
+      <div class="query-panel__head">
+        <span>全流程查询结果（{{ queryList.length }}）</span>
+        <el-button link type="primary" @click="exitQuery">返回工作台</el-button>
+      </div>
+      <el-table v-loading="queryLoading" :data="queryList">
         <el-table-column prop="envelope_no" label="信封编号" width="150" />
-        <el-table-column label="项目" width="160">
-          <template #default="scope">{{
-            projectMap[scope.row.project_id] || scope.row.project_id
-          }}</template>
-        </el-table-column>
         <el-table-column label="填报人" width="130">
           <template #default="scope">{{
             toApplicantLabel(scope.row.applicant_userid)
           }}</template>
         </el-table-column>
-        <el-table-column label="通道" width="90">
-          <template #default="scope">
-            <el-tag
-              :type="scope.row.channel === 'physical' ? 'info' : 'success'"
-              effect="light"
-            >
-              {{ channelLabel(scope.row.channel) }}
-            </el-tag>
-          </template>
+        <el-table-column label="项目" width="160">
+          <template #default="scope">{{
+            projectMap[scope.row.project_id] || scope.row.project_id
+          }}</template>
         </el-table-column>
         <el-table-column prop="amount" label="金额" width="100" />
-        <el-table-column label="报销内容" min-width="160" show-overflow-tooltip>
-          <template #default="scope">{{
-            scope.row.description || "-"
-          }}</template>
-        </el-table-column>
-        <el-table-column label="异常提示" min-width="200">
-          <template #default="scope">
-            <el-space wrap>
-              <el-tag
-                v-for="tag in rowAnomalyTags(scope.row)"
-                :key="tag.label"
-                :type="tag.type"
-                size="small"
-                effect="light"
-              >
-                {{ tag.label }}
-              </el-tag>
-              <span v-if="rowAnomalyTags(scope.row).length === 0">-</span>
-            </el-space>
-          </template>
-        </el-table-column>
-        <el-table-column label="复核" width="90">
-          <template #default="scope">{{
-            precheckStatusLabel(scope.row.precheck_status)
-          }}</template>
-        </el-table-column>
-        <el-table-column label="状态" width="100">
+        <el-table-column label="状态" width="110">
           <template #default="scope">
             <el-tag
               :type="reimbursementStatusTagType[scope.row.status] || 'info'"
@@ -377,82 +544,26 @@ onMounted(async () => {
             >
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="300" fixed="right">
+        <el-table-column label="当前站点" min-width="150">
           <template #default="scope">
-            <el-button
-              v-if="intakeTab === 'to_receive'"
-              link
-              type="success"
-              @click="openDetail(scope.row.id)"
-              >签收</el-button
-            >
-            <template v-if="intakeTab === 'to_precheck'">
-              <el-button
-                link
-                type="success"
-                @click="onPrecheck(scope.row.id, 'approved')"
-                >复核通过</el-button
-              >
-              <el-button
-                link
-                type="warning"
-                @click="onPrecheck(scope.row.id, 'supplement')"
-                >补充材料</el-button
-              >
-              <el-button
-                link
-                type="danger"
-                @click="onPrecheck(scope.row.id, 'rejected')"
-                >复核驳回</el-button
-              >
-              <el-button link @click="onTriggerAnomaly(scope.row.id)"
-                >智能核查</el-button
-              >
-              <el-button
-                link
-                type="info"
-                @click="onRerunSilentReview(scope.row.id)"
-                >二次静默审查</el-button
-              >
-            </template>
-            <el-button
-              v-if="intakeTab === 'to_batch'"
-              link
-              type="primary"
-              @click="goToBatchStep"
-              >去成批 →</el-button
-            >
+            <strong>{{ stationLabel(scope.row) }}</strong>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="160" fixed="right">
+          <template #default="scope">
             <el-button link type="primary" @click="openDetail(scope.row.id)"
               >详情</el-button
+            >
+            <el-button
+              v-if="scope.row.batch_id"
+              link
+              type="warning"
+              @click="goBatchDetail(scope.row)"
+              >批次详情</el-button
             >
           </template>
         </el-table-column>
       </el-table>
-
-      <el-pagination
-        class="pagination"
-        background
-        layout="prev, pager, next, total"
-        :current-page="page"
-        :page-size="pageSize"
-        :total="total"
-        @current-change="
-          (val: number) => {
-            page = val;
-            loadData();
-          }
-        "
-      />
-    </section>
-
-    <!-- 第②步:成批送审 -->
-    <section v-else-if="step === 'batch'" class="embedded-workflow">
-      <ReimbursementBatchCenter />
-    </section>
-
-    <!-- 第③步:付款 -->
-    <section v-else-if="step === 'payout'" class="embedded-workflow">
-      <ReimbursementPayoutCenter />
     </section>
 
     <el-dialog v-model="quickScanVisible" title="UUID 快速签收" width="420px">
@@ -518,6 +629,13 @@ onMounted(async () => {
 }
 .embedded-workflow {
   margin-top: 8px;
+}
+.query-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  font-weight: 600;
 }
 :deep(.reimbursement-row-high-risk) {
   background: #fef2f2;
