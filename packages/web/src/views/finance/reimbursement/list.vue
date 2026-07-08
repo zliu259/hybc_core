@@ -84,11 +84,7 @@ const toApplicantLabel = (userid: string | null | undefined) => {
 
 const currentViewTitle = "报销提交";
 
-const currentViewHint = computed(() =>
-  isWorkspaceRoute.value
-    ? "查看我的报销提交，并可继续发起报销。"
-    : "只展示未登记、草稿和已提交条目；后续审批和付款状态请在右侧流程页签处理。"
-);
+const currentViewHint = "查看我的报销提交，并可继续发起报销。";
 
 const listedAmountTotal = computed(() =>
   list.value.reduce((sum, item) => sum + Number(item.amount || 0), 0)
