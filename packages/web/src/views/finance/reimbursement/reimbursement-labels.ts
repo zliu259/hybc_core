@@ -21,6 +21,11 @@ export const reimbursementStatusTagType: Record<string, ReimbursementTagType> =
     cancelled: "info"
   };
 
+export type ReimbursementAnomalyTag = {
+  label: string;
+  type: ReimbursementTagType;
+};
+
 const riskTagTypeMap: Record<string, ReimbursementTagType> = {
   high: "danger",
   medium: "warning",
@@ -50,8 +55,8 @@ const toDuplicateRiskTagType = (level: unknown): ReimbursementTagType => {
 
 export const rowAnomalyTags = (
   row: ReimbursementEnvelope
-): Array<{ label: string; type: ReimbursementTagType }> => {
-  const tags: Array<{ label: string; type: ReimbursementTagType }> = [];
+): ReimbursementAnomalyTag[] => {
+  const tags: ReimbursementAnomalyTag[] = [];
   const duplicateCount = toDuplicateCount(row.duplicate_count);
   if (duplicateCount > 0) {
     tags.push({
