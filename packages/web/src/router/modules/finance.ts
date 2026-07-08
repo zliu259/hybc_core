@@ -24,7 +24,8 @@ export default {
         {
           path: "/finance/reimbursement",
           name: "ReimbursementList",
-          component: () => import("@/views/finance/reimbursement/list.vue"),
+          component: () =>
+            import("@/views/finance/reimbursement/office-workbench.vue"),
           meta: {
             title: "报销付款工作台",
             roles: ["super_admin", "manager", "finance"]
