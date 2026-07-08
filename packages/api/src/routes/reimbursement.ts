@@ -1276,6 +1276,46 @@ export const reimbursementRoutes = new Hono<{
 
 reimbursementRoutes.use("*", authMiddleware);
 
+reimbursementRoutes.get(
+  "/workbench-summary",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const envelopeRow = await c.env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS to_receive,
+         SUM(CASE WHEN status = 'received' AND precheck_status IN ('none', 'pending', 'supplement') THEN 1 ELSE 0 END) AS to_precheck,
+         SUM(CASE WHEN status = 'received' AND precheck_status = 'approved' AND batch_id IS NULL THEN 1 ELSE 0 END) AS to_batch
+       FROM reimbursement_envelope
+       WHERE status != 'deleted'`
+    ).first<{
+      to_receive: number | null;
+      to_precheck: number | null;
+      to_batch: number | null;
+    }>();
+
+    const batchRow = await c.env.DB.prepare(
+      `SELECT
+         SUM(CASE WHEN status = 'draft' THEN 1 ELSE 0 END) AS batches_to_submit,
+         SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS batches_to_pay
+       FROM reimbursement_batch`
+    ).first<{
+      batches_to_submit: number | null;
+      batches_to_pay: number | null;
+    }>();
+
+    return c.json({
+      success: true,
+      data: {
+        to_receive: envelopeRow?.to_receive ?? 0,
+        to_precheck: envelopeRow?.to_precheck ?? 0,
+        to_batch: envelopeRow?.to_batch ?? 0,
+        batches_to_submit: batchRow?.batches_to_submit ?? 0,
+        batches_to_pay: batchRow?.batches_to_pay ?? 0
+      }
+    });
+  }
+);
+
 reimbursementRoutes.get("/", async (c) => {
   const auth = c.get("auth");
   const rawStatus = c.req.query("status") ?? "";
