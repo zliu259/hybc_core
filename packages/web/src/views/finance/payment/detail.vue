@@ -38,6 +38,7 @@ import {
   isApprovalFinishedLocked,
   isApprovalInProgress
 } from "../shared/approvalLock";
+import AdminEditPanel from "./components/AdminEditPanel.vue";
 
 defineOptions({ name: "PaymentDetail" });
 
@@ -1275,30 +1276,10 @@ onMounted(async () => {
       </div>
     </el-card>
 
-    <el-form
-      v-if="isSuperAdmin && !isCreate"
-      inline
-      style="margin-bottom: 10px"
-    >
-      <el-form-item label="超管编辑模式">
-        <el-switch v-model="superEditMode" />
-      </el-form-item>
-      <el-form-item label="修改说明">
-        <el-input
-          v-model="superEditNote"
-          :disabled="!superEditMode"
-          placeholder="开启后必填，将写入备注留痕"
-          style="width: 380px"
-        />
-      </el-form-item>
-    </el-form>
-
-    <el-alert
-      v-if="isSuperAdmin && superEditMode"
-      title="超管编辑模式已开启：保存业务字段时将强制要求修改说明，并把留痕写入备注。"
-      type="warning"
-      :closable="false"
-      style="margin-bottom: 12px"
+    <AdminEditPanel
+      :visible="isSuperAdmin && !isCreate"
+      v-model:edit-mode="superEditMode"
+      v-model:edit-note="superEditNote"
     />
 
     <el-form label-width="120px" style="max-width: 900px">
