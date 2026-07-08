@@ -186,14 +186,15 @@
 - AI区：审查状态、风险等级、分数、总结、建议。
 - API 指向：`/api/v1/contract/:id`, `/api/v1/contract/:id/ai-review`
 
-#### F. 对外付款申请列表 `views/finance/payment/index.vue`
+#### F. 对外付款处理台（原「申请列表」）`views/finance/payment/index.vue`（2026-07-08 重构为阶段式付款处理台）
 
-- 固定筛选：合同号、项目、审批状态、金额区间。
-- 表格列：申请单号、项目、付款内容、金额、申请人、付款方式（中文）、状态、提交时间、支付时间（2026-07-08：移除合同号列，新增付款内容列）。
-- 「付款内容」列表头内嵌全局搜索框：回车/清空即触发服务端模糊检索（`serial_no`/`content`），替代原筛选表单中的关键字输入。
-- 强约束：超额风险标红并显示剩余额度。
-- 状态筛选支持显式查看“已取消/已废止”记录（选择 `cancelled` 时返回该状态列表）。
-- API 指向：`/api/v1/payment`
+- 顶部汇总条：4 块可点击汇总，点击即切换到对应阶段页签——待付总额（`approved` 状态未付金额之和）、本月已付（`paid_at` 落在当月的 `paid` 金额之和）、超期未付（`approved` 且 `expected_payment_date` 早于今天的笔数，标红）、退回待改（`draft` 且关联审批实例状态为 `returned`/`pending`/`withdrawn` 的笔数，标红）。
+- 五阶段页签（`el-tabs` + 徽标计数）：待处理（`draft`，退回件叠加「已退回」标签）、审批中（`pending_approval`）、待付款（`approved`，超期行标红且置顶排序）、已付款（`paid`）、全部（不筛状态）。
+- 表格列：流水号、所属项目、付款内容（表头内嵌全局搜索框，回车/清空即触发服务端模糊检索 `serial_no`/`content`）、金额、金额大写、付款方式（中文）、标签（已退回/超期/状态）、AI风险、申请时间、支付时间（2026-07-08：移除合同号列，新增付款内容列）。
+- 筛选保留：所属项目、申请人（企微通讯录选择）；已移除合同号筛选与状态下拉筛选（阶段页签取代原状态筛选）。
+- 行内动作随页签/行状态变化：待处理页签或退回行显示「去修改」（跳转 `detail/:id?edit=1`）；退回行或审批中页签显示「审批详情」（跳转 `/approval/detail/:id`）；`approved` 行显示「标记付款」；始终显示「详情」。
+- 发起付款统一跳转智能发单向导（`/finance/payment/wizard`），列表页不再承担创建职责。
+- API 指向：`/api/v1/payment`、`/api/v1/payment/console-summary`（2026-07-08 新增，聚合五阶段计数/待付总额/本月已付金额/超期数/退回数）。
 
 #### G. 对外付款申请详情 `views/finance/payment/detail.vue`
 
@@ -204,6 +205,14 @@
 - 审批中显示“付款主体与账户调整”操作区（随审批流展示，不再依赖 `available_actions` 才可见），避免审批人看不到付款实体/账户选择控件。
 - 支持从付款详情直接跳转到对应审批详情（`/approval/detail/:id`），用于条目状态不一致时快速核对：`packages/web/src/views/finance/payment/detail.vue`
 - 付款附件预览统一改为抽屉模式（`el-drawer`），在详情页内完成预览与下载：`packages/web/src/views/finance/payment/detail.vue`
+- （2026-07-08）创建模式已废除：`/finance/payment/detail/create`、`/workspace/payment/detail/create` 均重定向至智能发单向导 `wizard.vue`，详情页专注查看/编辑/审批/付款。
+- （2026-07-08）页面容器化拆分为 1 个容器 + 4 个子组件：
+  - `detail.vue`：容器，加载详情/审批/风险数据并编排子组件与整体锁定状态。
+  - `components/PayoutPanel.vue`：付款执行面板，登记支付日期/流水号/付款账户/备注、标记付款、付款主体与账户调整。
+  - `components/PaymentInfoCard.vue`：申请信息卡，展示与编辑申请信息、合同信息、附件，支持超管绕锁编辑与 `?edit=1` 自动进入编辑态。
+  - `components/ApprovalActionPanel.vue`：审批与风险面板，审批轨迹、风险评估报告、通过/拒绝/退回/转签动作。
+  - `components/AdminEditPanel.vue`：超管编辑面板，绕锁开关与编辑备注输入。
+- （2026-07-08）支持 `?edit=1` 深链：从付款处理台「去修改」跳转时自动进入编辑态并滚动定位到申请信息卡。
 - API 指向：`/api/v1/payment/:id`, `/api/v1/payment/:id/mark-paid`, `/api/v1/approval/:id/*`
 
 #### H. 收款人管理 `views/finance/payee/index.vue`
@@ -794,12 +803,14 @@
 - 我发起的申请：`packages/miniapp/pages/approval-initiated/index`
 - 退回申请编辑与重新提交：`packages/miniapp/pages/returned-approval-edit/index`
 - 发起对外付款（智能发单台）：`packages/miniapp/pages/payment-apply/index`
+- 付款申请三步分段（金额识别→信息填写→确认提交，2026-07-08，与 Web 智能发单向导同构）：`packages/miniapp/pages/payment-apply/index`
 - 员工加油申请：`packages/miniapp/pages/fuel-apply/index`
 - 我的报销提交（列表）：`packages/miniapp/pages/reimbursement-list/index`
 - 报销提交详情/新建：`packages/miniapp/pages/reimbursement/index`
 - 查询中心（高权限入口）：`packages/miniapp/pages/query/index`
 - 合同查询（高权限）：`packages/miniapp/pages/query-contract/index`
 - 付款查询（高权限）：`packages/miniapp/pages/query-payment/index`
+- 付款查询五阶段页签与退回件「去修改」入口（2026-07-08，仅发起人本人可见）：`packages/miniapp/pages/query-payment/index`
 - 收款查询（高权限）：`packages/miniapp/pages/query-receipt/index`
 - 合同查询详情（高权限）：`packages/miniapp/pages/query-contract-detail/index`
 - 付款查询详情（高权限）：`packages/miniapp/pages/query-payment-detail/index`
