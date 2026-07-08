@@ -17,6 +17,7 @@ import {
   type EntityBankAccount
 } from "@/api/entity";
 import { listProjects, type Project } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
 import {
   isApprovalFinishedLocked,
@@ -33,6 +34,7 @@ const route = useRoute();
 const router = useRouter();
 const userStore = useUserStoreHook();
 const loading = ref(false);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const requestId = computed(() => Number(route.params.id));
 const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
@@ -126,7 +128,7 @@ const loadDetail = async () => {
 };
 
 onMounted(async () => {
-  await loadRefs();
+  await Promise.all([loadRefs(), loadWecomUsers()]);
   await loadDetail();
 });
 </script>
@@ -191,6 +193,7 @@ onMounted(async () => {
       :super-edit-mode="superEditMode"
       :super-edit-note="superEditNote"
       :auto-edit="autoEdit"
+      :wecom-users="wecomUsers"
       @refresh="loadDetail"
     />
 
@@ -199,6 +202,7 @@ onMounted(async () => {
       :approval-detail="approvalDetail"
       :risk-status="riskStatus"
       :risk-report="riskReport"
+      :wecom-users="wecomUsers"
     />
   </el-card>
 </template>

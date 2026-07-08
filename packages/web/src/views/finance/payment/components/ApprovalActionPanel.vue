@@ -1,27 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
+import { computed } from "vue";
 import { useRouter } from "vue-router";
 import type { PaymentRequestDetail } from "@/api/payment";
 import type { ApprovalDetailResponse } from "@/api/approval";
-import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import type { WeComUser } from "@/api/wecom";
+import type { PaymentTagType } from "../payment-labels";
 
 defineOptions({ name: "PaymentApprovalActionPanel" });
-
-type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
 const props = defineProps<{
   detail: PaymentRequestDetail | null;
   approvalDetail: ApprovalDetailResponse | null;
   riskStatus: string;
   riskReport: Record<string, unknown> | null;
+  wecomUsers: WeComUser[];
 }>();
 
 const router = useRouter();
-const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const userNameMap = computed(() => {
   const map = new Map<string, string>();
-  for (const item of wecomUsers.value) {
+  for (const item of props.wecomUsers) {
     map.set(item.userid, item.name || item.userid);
   }
   return map;
@@ -32,7 +31,7 @@ const toUserLabel = (userid: string | null | undefined) => {
   return userNameMap.value.get(userid) ?? userid;
 };
 
-const riskTagType: Record<string, TagType> = {
+const riskTagType: Record<string, PaymentTagType> = {
   none: "info",
   pending: "warning",
   completed: "success",
@@ -92,7 +91,7 @@ const riskLevelLabelMap: Record<string, string> = {
   low: "低风险"
 };
 
-const riskLevelTagTypeMap: Record<string, TagType> = {
+const riskLevelTagTypeMap: Record<string, PaymentTagType> = {
   high: "danger",
   medium: "warning",
   low: "success"
@@ -133,7 +132,7 @@ const toAiOutcomeLabel = (outcome: string | null | undefined) => {
   return aiOutcomeLabelMap[outcome] ?? outcome;
 };
 
-const toRiskLevelTagType = (level: unknown): TagType => {
+const toRiskLevelTagType = (level: unknown): PaymentTagType => {
   if (typeof level !== "string" || !level) return "info";
   return riskLevelTagTypeMap[level] ?? "info";
 };
@@ -181,10 +180,6 @@ const goToApprovalDetail = () => {
   if (!approvalInstanceId) return;
   router.push(`/approval/detail/${approvalInstanceId}`);
 };
-
-onMounted(() => {
-  loadWecomUsers().catch(() => {});
-});
 </script>
 
 <template>

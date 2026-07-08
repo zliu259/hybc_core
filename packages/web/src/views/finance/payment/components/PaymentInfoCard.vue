@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { type UploadRequestOptions } from "element-plus";
-import { computed, nextTick, onMounted, ref, watch } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
@@ -15,7 +15,7 @@ import type { Contract, InstanceConfig } from "@/api/contract";
 import type { Entity, EntityBankAccount } from "@/api/entity";
 import type { Project } from "@/api/project";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
-import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import type { WeComUser } from "@/api/wecom";
 import { useUserStoreHook } from "@/store/modules/user";
 import {
   isApprovalFinishedLocked,
@@ -40,6 +40,7 @@ const props = defineProps<{
   superEditMode: boolean;
   superEditNote: string;
   autoEdit: boolean;
+  wecomUsers: WeComUser[];
 }>();
 
 const emit = defineEmits<{ (e: "refresh"): void }>();
@@ -47,7 +48,6 @@ const emit = defineEmits<{ (e: "refresh"): void }>();
 const route = useRoute();
 const requestId = computed(() => Number(route.params.id));
 const userStore = useUserStoreHook();
-const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const isSuperAdmin = computed(() =>
   (userStore.roles ?? []).includes("super_admin")
@@ -587,10 +587,6 @@ watch(
   },
   { immediate: true }
 );
-
-onMounted(() => {
-  loadWecomUsers().catch(() => {});
-});
 </script>
 
 <template>
