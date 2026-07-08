@@ -23,7 +23,8 @@ type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
 const statusMap: Record<string, { label: string; type: TagType }> = {
   draft: { label: "草稿", type: "info" },
-  active: { label: "执行中", type: "success" },
+  pending_approval: { label: "审批中", type: "warning" },
+  active: { label: "生效", type: "success" },
   completed: { label: "已完成", type: "primary" }
 };
 
@@ -131,7 +132,8 @@ onMounted(loadData);
       <el-form-item label="状态">
         <el-select v-model="filters.status" clearable style="width: 160px">
           <el-option label="草稿" value="draft" />
-          <el-option label="执行中" value="active" />
+          <el-option label="审批中" value="pending_approval" />
+          <el-option label="生效" value="active" />
           <el-option label="已完成" value="completed" />
         </el-select>
       </el-form-item>
