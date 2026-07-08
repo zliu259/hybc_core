@@ -86,6 +86,21 @@ export const listReimbursementEnvelopes = (params?: {
   }>("get", "/api/v1/reimbursement", { params });
 };
 
+export type ReimbursementWorkbenchSummary = {
+  to_receive: number;
+  to_precheck: number;
+  to_batch: number;
+  batches_to_submit: number;
+  batches_to_pay: number;
+};
+
+export const getReimbursementWorkbenchSummary = () => {
+  return http.request<{ success: boolean; data: ReimbursementWorkbenchSummary }>(
+    "get",
+    "/api/v1/reimbursement/workbench-summary"
+  );
+};
+
 export const getReimbursementEnvelope = (id: number) => {
   return http.request<{ success: boolean; data: ReimbursementEnvelopeDetail }>(
     "get",
