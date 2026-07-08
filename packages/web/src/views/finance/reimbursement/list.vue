@@ -626,6 +626,11 @@ watch(
           </template>
         </el-table-column>
         <el-table-column prop="amount" label="金额" width="100" />
+        <el-table-column label="报销内容" min-width="180" show-overflow-tooltip>
+          <template #default="scope">{{
+            scope.row.description || "-"
+          }}</template>
+        </el-table-column>
         <el-table-column label="异常提示" min-width="220">
           <template #default="scope">
             <el-space wrap>

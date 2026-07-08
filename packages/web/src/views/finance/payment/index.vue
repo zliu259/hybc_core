@@ -115,14 +115,6 @@ const projectMap = computed(() => {
   return map;
 });
 
-const contractMap = computed(() => {
-  const map: Record<number, string> = {};
-  contracts.value.forEach(item => {
-    map[item.id] = item.contract_no;
-  });
-  return map;
-});
-
 const loadRefs = async () => {
   const [projectRes, contractRes] = await Promise.all([
     listProjects({ page: 1, pageSize: 300 }),
@@ -148,6 +140,11 @@ const loadData = async () => {
   } finally {
     loading.value = false;
   }
+};
+
+const onHeaderSearch = () => {
+  page.value = 1;
+  loadData();
 };
 
 const goCreate = () => {
@@ -213,28 +210,32 @@ onMounted(async () => {
           <el-option label="已取消" value="cancelled" />
         </el-select>
       </el-form-item>
-      <el-form-item label="关键字">
-        <el-input
-          v-model="filters.keyword"
-          clearable
-          placeholder="流水号/付款内容"
-        />
-      </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
       <el-button @click="goCreate">新建申请</el-button>
     </el-form>
 
     <el-table :data="list" :loading="loading" style="margin-top: 12px">
       <el-table-column prop="serial_no" label="流水号" width="150" />
-      <el-table-column label="合同号" width="150">
-        <template #default="scope">{{
-          contractMap[scope.row.contract_id] || scope.row.contract_id
-        }}</template>
-      </el-table-column>
       <el-table-column label="所属项目" width="180">
         <template #default="scope">{{
           projectMap[scope.row.project_id] || scope.row.project_id
         }}</template>
+      </el-table-column>
+      <el-table-column min-width="220" show-overflow-tooltip>
+        <template #header>
+          <div class="content-search-header">
+            <span>付款内容</span>
+            <el-input
+              v-model="filters.keyword"
+              size="small"
+              clearable
+              placeholder="全局搜索内容/流水号"
+              @keyup.enter="onHeaderSearch"
+              @clear="onHeaderSearch"
+            />
+          </div>
+        </template>
+        <template #default="scope">{{ scope.row.content || "-" }}</template>
       </el-table-column>
       <el-table-column prop="amount" label="金额" width="120" />
       <el-table-column prop="amount_cn" label="金额大写" min-width="160" />
@@ -300,3 +301,19 @@ onMounted(async () => {
     />
   </el-card>
 </template>
+
+<style scoped>
+.content-search-header {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.content-search-header span {
+  flex-shrink: 0;
+}
+
+.content-search-header .el-input {
+  max-width: 200px;
+}
+</style>
