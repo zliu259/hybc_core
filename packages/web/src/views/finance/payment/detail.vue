@@ -34,7 +34,6 @@ const router = useRouter();
 const userStore = useUserStoreHook();
 const loading = ref(false);
 
-const isCreate = computed(() => route.params.id === "create");
 const requestId = computed(() => Number(route.params.id));
 const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 const paymentListPath = computed(() =>
@@ -63,7 +62,7 @@ const inApprovalFlow = computed(() =>
 );
 const approvalFinishedLock = computed(() =>
   isApprovalFinishedLocked({
-    isCreate: isCreate.value,
+    isCreate: false,
     approvalInstanceId: detail.value?.approval_instance_id,
     bizStatus: detail.value?.status,
     unlockedStatuses: ["draft"]
@@ -71,7 +70,6 @@ const approvalFinishedLock = computed(() =>
 );
 const canEditFields = computed(
   () =>
-    isCreate.value ||
     (!inApprovalFlow.value && !approvalFinishedLock.value) ||
     (isSuperAdmin.value && superEditMode.value)
 );
@@ -112,7 +110,6 @@ const loadApprovalDetail = async (approvalInstanceId: number | null) => {
 };
 
 const loadDetail = async () => {
-  if (isCreate.value) return;
   loading.value = true;
   try {
     const result = await getPaymentRequest(requestId.value);
@@ -144,9 +141,7 @@ onMounted(async () => {
           align-items: center;
         "
       >
-        <span>{{
-          isCreate ? "新建付款申请" : `付款详情 - ${detail?.serial_no || ""}`
-        }}</span>
+        <span>付款详情 - {{ detail?.serial_no || "" }}</span>
         <div>
           <el-button @click="router.push(paymentListPath)">返回</el-button>
         </div>
@@ -180,7 +175,7 @@ onMounted(async () => {
     />
 
     <AdminEditPanel
-      :visible="isSuperAdmin && !isCreate"
+      :visible="isSuperAdmin"
       v-model:edit-mode="superEditMode"
       v-model:edit-note="superEditNote"
     />
