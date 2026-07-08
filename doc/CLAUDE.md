@@ -290,20 +290,28 @@ hengyue-system/
 - 迁移文件按序号命名: 0001_init.sql, 0002_xxx.sql
 - 索引命名: idx_{表名}_{字段}
 
+## 部署方式（2026-07-08 起固定）
+
+**push 到 `main` 即部署**：仓库已接入 Cloudflare Git 集成，push 到 `main` 后自动构建并部署 `packages/api`（Workers Builds）与 `packages/web`（Pages），无需手动执行 deploy 命令。提交合并到 main 就是发布动作。
+
+- 唯一需要手动执行的生产步骤是 D1 数据库迁移：`cd packages/api && npx wrangler d1 migrations apply hybcdg-prod-db --remote`（在推送依赖该迁移的代码前后执行）。
+- 部署后健康检查：`https://api.hybcdg.com/api/v1/system/health` 返回 `ok=true`。
+- `npm run deploy` 仅作为紧急旁路保留，日常禁用；历史记录中「仅 push 不会自动部署」的说法作废。
+
 ## 常用命令
 
 ```bash
 # 后端开发
 cd packages/api
 npm run dev                    # 本地开发 (wrangler dev)
-npm run deploy                 # 部署到CF Workers
+npm run deploy                 # 手动部署CF Workers（日常不用：push main 自动部署）
 npx wrangler d1 migrations apply hybcdg-prod-db  # 执行数据库迁移（远程加 --remote）
 
 # 前端开发
 cd packages/web
 npm run dev                    # 本地开发
 npm run build                  # 构建
-npm run deploy                 # 部署到CF Pages
+npm run deploy                 # 手动部署CF Pages（日常不用：push main 自动部署）
 
 # 计算节点
 cd task-runner

@@ -17,10 +17,19 @@ npm run dev:web          # Start web dev server
 npm run typecheck        # Typecheck both api & web
 ```
 
+### Deployment — push to main IS the deploy
+**Pushing to `main` auto-deploys via Cloudflare Git integration** (Workers Builds for `packages/api`, Pages for `packages/web`). Do NOT run manual production deploys; committing and pushing to `main` is the release action. Confirmed by owner 2026-07-08 — any older note claiming manual deploy is required is obsolete.
+
+The only manual production step is D1 migrations:
+```bash
+cd packages/api && npx wrangler d1 migrations apply hybcdg-prod-db --remote
+```
+Apply migrations before (or immediately after) pushing dependent code; verify with `https://api.hybcdg.com/api/v1/system/health` (expect `ok=true`).
+
 ### Backend (packages/api) — Hono on Cloudflare Workers
 ```bash
 npm run dev              # wrangler dev --local (port 8787)
-npm run deploy           # Deploy to CF Workers
+npm run deploy           # Manual CF Workers deploy — NOT needed normally; push to main auto-deploys
 npm run db:migrate:local # Apply D1 migrations locally
 npm run db:seed:mock:local # Seed mock data (MOCK-* prefix, safe to re-run)
 npm run typecheck        # tsc --noEmit
