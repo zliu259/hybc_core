@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { useRoute } from "vue-router";
 import {
   Link,
   Lock,
@@ -138,6 +139,29 @@ const openVertex = async () => {
     opening.value = false;
   }
 };
+
+// Mac 控制台等外部工具经 ?auto=vertex 进入时：自动签发授权并在当前标签页
+// 跳转 Vertex（同页跳转不需要用户手势，不会被弹窗拦截）。未登录时守卫已在
+// 到达本页前跳去登录，因此这里仅处理已登录场景。
+const route = useRoute();
+
+const autoOpenVertex = async () => {
+  opening.value = true;
+  try {
+    const handoff = await requestHandoff();
+    if (!handoff?.launch_url) return;
+    message("授权已签发，正在进入 Vertex…", { type: "success" });
+    window.location.href = handoff.launch_url;
+  } finally {
+    opening.value = false;
+  }
+};
+
+onMounted(() => {
+  if (route.query.auto === "vertex" && loggedIn.value) {
+    void autoOpenVertex();
+  }
+});
 
 const refreshHandoff = async () => {
   const handoff = await requestHandoff();
