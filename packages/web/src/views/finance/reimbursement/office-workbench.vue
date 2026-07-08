@@ -130,8 +130,11 @@ const loadSummary = async () => {
   }
 };
 
+let loadSeq = 0;
+
 const loadData = async () => {
   if (step.value !== "intake") return;
+  const seq = ++loadSeq;
   loading.value = true;
   try {
     const preset = INTAKE_QUERY[intakeTab.value];
@@ -139,21 +142,22 @@ const loadData = async () => {
       page: page.value,
       pageSize: pageSize.value,
       status: preset.status.join(","),
+      precheck_status: preset.precheck?.join(","),
       exclude_cancelled: false
     });
-    // 待复核/待成批需按 precheck_status 二次过滤(列表 API 无 precheck 参数)
-    const rows = result.data;
-    list.value = preset.precheck
-      ? rows.filter(r => preset.precheck!.includes(r.precheck_status))
-      : rows;
-    total.value = preset.precheck ? list.value.length : result.pagination.total;
+    // 竞态防护:快速切换子页签时,丢弃过期响应
+    if (seq !== loadSeq) return;
+    list.value = result.data;
+    total.value = result.pagination.total;
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 };
 
 const switchStep = (next: Step) => {
   step.value = next;
+  // 从成批/付款步骤操作后回来,徽标需刷新
+  loadSummary();
   if (next === "intake") {
     page.value = 1;
     loadData();
@@ -426,7 +430,6 @@ onMounted(async () => {
       </el-table>
 
       <el-pagination
-        v-if="intakeTab === 'to_receive'"
         class="pagination"
         background
         layout="prev, pager, next, total"

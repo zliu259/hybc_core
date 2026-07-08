@@ -70,6 +70,7 @@ type Pagination = { page: number; pageSize: number; total: number };
 
 export const listReimbursementEnvelopes = (params?: {
   status?: string | string[];
+  precheck_status?: string;
   project_id?: number;
   applicant_userid?: string;
   creator_id?: string;
