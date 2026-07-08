@@ -10,10 +10,7 @@ export type ReimbursementStation = {
  * 用于全流程查询回答「这单到哪了」。纯前端派生,不改后端。
  */
 export const resolveStation = (
-  env: Pick<
-    ReimbursementEnvelope,
-    "status" | "precheck_status" | "batch_id"
-  >
+  env: Pick<ReimbursementEnvelope, "status" | "precheck_status" | "batch_id">
 ): ReimbursementStation => {
   const batchId = env.batch_id ?? null;
   switch (env.status) {
@@ -30,6 +27,8 @@ export const resolveStation = (
       }
       return { label: "待复核(办公室)", batchId: null };
     case "batched":
+      // 已成批但批次尚未送审:仍在办公室手中待送审,不是「审批中」
+      return { label: "待送审(办公室)", batchId };
     case "pending_approval":
       return { label: "审批中", batchId };
     case "approved":
