@@ -25,7 +25,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
-import { isResubmittable } from "../services/approval/status";
+import { isApprovalActive, isOwnerReworkState, isResubmittable } from "../services/approval/status";
 
 const nowIso = () => new Date().toISOString();
 
@@ -824,51 +824,51 @@ paymentRoutes.put(
           .bind(existing.approval_instance_id)
           .first<{ status: string }>()
       : null;
-    const approvalInProgress = approval ? approval.status === "pending" || approval.status === "in_progress" : false;
-    const approvalFinished = approval ? !approvalInProgress : false;
+    // 'pending' is the legacy alias for returned-awaiting-resubmit, so only
+    // 'in_progress' counts as an actively running approval — see
+    // services/approval/status.ts.
+    const approvalInProgress = approval ? isApprovalActive(approval.status) : false;
+    const approvalAwaitingResubmit = approval ? isResubmittable(approval.status) : false;
+    const approvalFinished = approval ? !approvalInProgress && !approvalAwaitingResubmit : false;
+    const ownerRework = isOwnerReworkState(existing.status, approval?.status ?? null);
 
-    if (!isSuperAdmin) {
-      if (existing.status !== "draft") {
-        if (approvalInProgress && hasPayoutMutation && !hasBusinessMutationExcludingPayout) {
-          const approverTask = existing.approval_instance_id
-            ? await c.env.DB.prepare(
-                `SELECT id FROM approval_task
-                 WHERE instance_id = ?
-                   AND assignee_userid = ?
-                   AND status IN ('pending', 'in_progress')
-                 ORDER BY id DESC LIMIT 1`
-              )
-                .bind(existing.approval_instance_id, auth.sub)
-                .first<{ id: number }>()
-            : null;
+    // Locks that apply to ordinary roles. A super admin may bypass them, but
+    // only with explicit edit mode + note (audited below). In rework states
+    // (draft or returned awaiting resubmit) nothing is locked.
+    let normalRoleBlockMessage: string | null = null;
+    if (!ownerRework) {
+      if (approvalInProgress && hasPayoutMutation && !hasBusinessMutationExcludingPayout) {
+        const approverTask = existing.approval_instance_id
+          ? await c.env.DB.prepare(
+              `SELECT id FROM approval_task
+               WHERE instance_id = ?
+                 AND assignee_userid = ?
+                 AND status IN ('pending', 'in_progress')
+               ORDER BY id DESC LIMIT 1`
+            )
+              .bind(existing.approval_instance_id, auth.sub)
+              .first<{ id: number }>()
+          : null;
 
-          if (!approverTask) {
-            return c.json(
-              {
-                success: false,
-                error: {
-                  message: "Only current approver can adjust payout entity/account during approval"
-                }
-              },
-              400
-            );
-          }
-        } else if (!(approvalFinished && !hasNonAttachmentMutation)) {
-          return c.json(
-            {
-              success: false,
-              error: {
-                message:
-                  "Payment request is locked after approval lifecycle. Only attachment upload is allowed."
-              }
-            },
-            400
-          );
+        if (!approverTask) {
+          normalRoleBlockMessage =
+            "Only current approver can adjust payout entity/account during approval";
         }
+      } else if (!(approvalFinished && !hasNonAttachmentMutation)) {
+        normalRoleBlockMessage =
+          "Payment request is locked after approval lifecycle. Only attachment upload is allowed.";
       }
     }
 
-    if (isSuperAdmin && hasNonAttachmentMutation) {
+    if (normalRoleBlockMessage && !isSuperAdmin) {
+      return c.json(
+        { success: false, error: { message: normalRoleBlockMessage } },
+        400
+      );
+    }
+
+    const isPrivilegedBypass = isSuperAdmin && normalRoleBlockMessage !== null;
+    if (isPrivilegedBypass) {
       if (body.admin_edit_mode !== true) {
         return c.json(
           { success: false, error: { message: "Super admin must enable edit mode for privileged modification" } },
@@ -950,10 +950,9 @@ paymentRoutes.put(
       normalizedPaymentAccount = body.payment_account?.trim() || null;
     }
 
-    const auditRemark =
-      isSuperAdmin && hasNonAttachmentMutation
-        ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
-        : body.remark;
+    const auditRemark = isPrivilegedBypass
+      ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
+      : body.remark;
 
     await c.env.DB.prepare(
       `UPDATE payment_request SET
@@ -992,7 +991,7 @@ paymentRoutes.put(
       )
       .run();
 
-    if (isSuperAdmin && hasNonAttachmentMutation) {
+    if (isPrivilegedBypass) {
       await writeAuditLog(c.env.DB, {
         actorUserId: auth.sub,
         actorRoles: auth.roles,
@@ -1001,6 +1000,7 @@ paymentRoutes.put(
         targetId: id,
         detail: {
           edit_note: body.edit_note?.trim() ?? null,
+          bypassed_lock: normalRoleBlockMessage,
           has_payout_mutation: hasPayoutMutation,
           has_non_attachment_mutation: hasNonAttachmentMutation
         }

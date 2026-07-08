@@ -22,7 +22,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
-import { isApprovalActive, isResubmittable } from "../services/approval/status";
+import { isApprovalActive, isOwnerReworkState, isResubmittable } from "../services/approval/status";
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
 import { amountChangeFloor } from "./contract-amount-change-floor";
 
@@ -475,50 +475,33 @@ contractRoutes.put(
     const approvalInProgress = approval ? isApprovalActive(approval.status) : false;
     const approvalAwaitingResubmit = approval ? isResubmittable(approval.status) : false;
     const approvalFinished = approval ? !approvalInProgress && !approvalAwaitingResubmit : false;
-    const isDraftOwnerEdit =
-      existing.status === "draft" &&
-      (existing.handler_userid === auth.sub || approval?.initiator_userid === auth.sub);
+    const ownerRework = isOwnerReworkState(existing.status, approval?.status ?? null);
 
-    if (!isSuperAdmin) {
+    // Locks that apply to ordinary roles. A super admin may bypass them, but
+    // only with explicit edit mode + note (audited below). In rework states
+    // nothing is locked, so no role — super admin included — needs edit mode.
+    const normalRoleBlockMessage = (() => {
       if (approvalInProgress && hasDetailMutation) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              message: "Contract details are locked while approval is in progress"
-            }
-          },
-          400
-        );
+        return "Contract details are locked while approval is in progress";
       }
+      if (approvalFinished && hasNonAttachmentMutation && !ownerRework) {
+        return "Approval is finished. Only attachment upload is allowed. To modify amount, use contract amount change flow.";
+      }
+      if (!ownerRework && body.total_amount !== undefined) {
+        return "Cannot modify total_amount on non-draft contract. Use amount change API instead.";
+      }
+      return null;
+    })();
 
-      if (approvalFinished && hasNonAttachmentMutation && !isDraftOwnerEdit) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              message:
-                "Approval is finished. Only attachment upload is allowed. To modify amount, use contract amount change flow."
-            }
-          },
-          400
-        );
-      }
-
-      if (existing.status !== "draft" && body.total_amount !== undefined) {
-        return c.json(
-          {
-            success: false,
-            error: {
-              message: "Cannot modify total_amount on non-draft contract. Use amount change API instead."
-            }
-          },
-          400
-        );
-      }
+    if (normalRoleBlockMessage && !isSuperAdmin) {
+      return c.json(
+        { success: false, error: { message: normalRoleBlockMessage } },
+        400
+      );
     }
 
-    if (isSuperAdmin && hasNonAttachmentMutation && !isDraftOwnerEdit) {
+    const isPrivilegedBypass = isSuperAdmin && normalRoleBlockMessage !== null;
+    if (isPrivilegedBypass) {
       if (body.admin_edit_mode !== true) {
         return c.json(
           { success: false, error: { message: "Super admin must enable edit mode for privileged modification" } },
@@ -533,10 +516,9 @@ contractRoutes.put(
       }
     }
 
-    const auditRemark =
-      isSuperAdmin && hasNonAttachmentMutation && !isDraftOwnerEdit
-        ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
-        : body.remark;
+    const auditRemark = isPrivilegedBypass
+      ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
+      : body.remark;
 
     await c.env.DB.prepare(
       `UPDATE contract SET
@@ -565,7 +547,7 @@ contractRoutes.put(
       )
       .run();
 
-    if (isSuperAdmin && hasNonAttachmentMutation && !isDraftOwnerEdit) {
+    if (isPrivilegedBypass) {
       await writeAuditLog(c.env.DB, {
         actorUserId: auth.sub,
         actorRoles: auth.roles,
@@ -574,6 +556,7 @@ contractRoutes.put(
         targetId: id,
         detail: {
           edit_note: body.edit_note?.trim() ?? null,
+          bypassed_lock: normalRoleBlockMessage,
           has_detail_mutation: hasDetailMutation,
           has_non_attachment_mutation: hasNonAttachmentMutation
         }

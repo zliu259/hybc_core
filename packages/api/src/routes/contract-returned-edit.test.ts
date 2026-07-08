@@ -56,6 +56,7 @@ class ContractReturnedEditDb {
       handlerUserid?: string;
       approvalInitiatorUserid?: string;
       approvalStatus?: string;
+      contractStatus?: string;
     } = {}
   ) {}
 
@@ -80,7 +81,7 @@ class ContractReturnedEditDb {
         paid_amount: 0,
         invoiced_amount: 0,
         received_amount: 0,
-        status: "draft",
+        status: this.options.contractStatus ?? "draft",
         ai_review_status: "none",
         ai_review_result: null,
         approval_instance_id: 88,
@@ -213,5 +214,217 @@ describe("contract returned draft edit", () => {
 
     expect(response.status).toBe(200);
     expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
+  });
+});
+
+describe("super admin edits in owner-rework states without edit mode", () => {
+  beforeEach(() => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "boss-a",
+      roles: ["super_admin"]
+    };
+  });
+
+  it("allows a super admin who is neither handler nor initiator to edit a returned draft contract", async () => {
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        handlerUserid: "handler-b",
+        approvalInitiatorUserid: "initiator-c",
+        approvalStatus: "returned"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
+  });
+
+  it("allows a super admin non-owner to edit a rejected draft contract (contract 629 scenario)", async () => {
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        handlerUserid: "handler-b",
+        approvalInitiatorUserid: "initiator-c",
+        approvalStatus: "rejected"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
+  });
+
+  it("allows a super admin non-owner to edit a stale returned contract never reverted to draft", async () => {
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        handlerUserid: "handler-b",
+        approvalInitiatorUserid: "initiator-c",
+        approvalStatus: "returned",
+        contractStatus: "pending_approval"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
+  });
+});
+
+describe("owner rework on stale returned rows", () => {
+  it("allows the initiator to fix total_amount on a returned contract stuck in pending_approval", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "handler-a",
+      roles: ["manager"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "returned",
+        contractStatus: "pending_approval"
+      })
+    );
+
+    const response = await createApp().request(
+      "/contract/629",
+      {
+        method: "PUT",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify({ total_amount: 2000, remark: "退回修正金额" })
+      },
+      env
+    );
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("UPDATE contract SET"))).toBe(true);
+  });
+});
+
+describe("locks retained outside rework states", () => {
+  it("still blocks manager detail edits while approval is in progress", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "handler-a",
+      roles: ["manager"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "in_progress",
+        contractStatus: "pending_approval"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("still requires edit mode for a super admin while approval is in progress", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "boss-a",
+      roles: ["super_admin"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "in_progress",
+        contractStatus: "pending_approval"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { error: { message: string } };
+    expect(payload.error.message).toContain("edit mode");
+  });
+
+  it("locks the resubmitted round even though the biz record stayed draft", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "handler-a",
+      roles: ["manager"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "in_progress",
+        contractStatus: "draft"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("allows a super admin to bypass the in-progress lock with edit mode and note, writing audit", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "boss-a",
+      roles: ["super_admin"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "in_progress",
+        contractStatus: "pending_approval"
+      })
+    );
+
+    const response = await createApp().request(
+      "/contract/629",
+      {
+        method: "PUT",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify({
+          counterparty: "Corrected Counterparty",
+          admin_edit_mode: true,
+          edit_note: "审批中纠正对方名称"
+        })
+      },
+      env
+    );
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO api_audit_log"))).toBe(true);
+  });
+
+  it("still blocks manager detail edits after approval finished on a non-draft contract", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "handler-a",
+      roles: ["manager"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "approved",
+        contractStatus: "active"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(400);
+  });
+
+  it("still requires edit mode for a super admin on a finished non-draft contract", async () => {
+    mockAuthState.payload = {
+      ...mockAuthState.payload,
+      sub: "boss-a",
+      roles: ["super_admin"]
+    };
+    const env = createEnv(
+      new ContractReturnedEditDb({
+        approvalStatus: "approved",
+        contractStatus: "active"
+      })
+    );
+
+    const response = await putReturnedContract(env);
+
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as { error: { message: string } };
+    expect(payload.error.message).toContain("edit mode");
   });
 });

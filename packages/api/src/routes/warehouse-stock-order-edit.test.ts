@@ -55,12 +55,22 @@ class StockOrderEditStatement {
 class StockOrderEditDb {
   readonly runs: Array<{ sql: string; params: unknown[] }> = [];
 
+  constructor(
+    private readonly options: {
+      orderStatus?: string;
+      approvalStatus?: string;
+    } = {}
+  ) {}
+
   prepare(sql: string) {
     return new StockOrderEditStatement(this, sql);
   }
 
   async first<T>(sql: string, _params: unknown[]): Promise<T | null> {
     void _params;
+    if (sql.includes("FROM approval_instance WHERE id = ?")) {
+      return { status: this.options.approvalStatus ?? "returned" } as T;
+    }
     if (sql.includes("FROM stock_order WHERE id = ?")) {
       return {
         id: 9,
@@ -70,7 +80,7 @@ class StockOrderEditDb {
         from_warehouse_id: 1,
         to_warehouse_id: null,
         applicant_userid: "initiator-a",
-        status: "draft",
+        status: this.options.orderStatus ?? "draft",
         approval_instance_id: 19,
         rental_term_id: null,
         override_status: "none",
@@ -133,5 +143,48 @@ describe("stock order returned draft edit", () => {
     expect(env.DB.runs.some((call) => call.sql.includes("UPDATE stock_order SET"))).toBe(true);
     expect(env.DB.runs.some((call) => call.sql.includes("DELETE FROM stock_order_item"))).toBe(true);
     expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO stock_order_item"))).toBe(true);
+  });
+
+  it("allows editing a stale returned order whose status was never reverted to draft", async () => {
+    const env = createEnv(
+      new StockOrderEditDb({
+        orderStatus: "pending_approval",
+        approvalStatus: "returned"
+      })
+    );
+
+    const response = await createApp().request(
+      "/warehouse/stock-order/9",
+      {
+        method: "PUT",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify({ remark: "退回后修订" })
+      },
+      env
+    );
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("UPDATE stock_order SET"))).toBe(true);
+  });
+
+  it("still blocks edits while the approval is actively running", async () => {
+    const env = createEnv(
+      new StockOrderEditDb({
+        orderStatus: "pending_approval",
+        approvalStatus: "in_progress"
+      })
+    );
+
+    const response = await createApp().request(
+      "/warehouse/stock-order/9",
+      {
+        method: "PUT",
+        headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+        body: JSON.stringify({ remark: "试图审批中修改" })
+      },
+      env
+    );
+
+    expect(response.status).toBe(400);
   });
 });

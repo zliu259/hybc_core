@@ -20,6 +20,24 @@ export const isResubmittable = (status: string): boolean =>
 /** True when an approval is actively running and should block re-submission/edits. */
 export const isApprovalActive = (status: string): boolean => status === "in_progress";
 
+/**
+ * True when a business document is back in the owner's hands for rework and
+ * ordinary edit locks must not apply: a plain draft (fresh, reverted on
+ * return, or left draft after a failed resubmit/rejection) or an instance
+ * awaiting resubmit whose business status was never reverted (legacy rows
+ * from the 2026-07-01 conversion, e.g. payment_request stuck in
+ * pending_approval). An actively running approval is never rework, even if
+ * the business record still reads 'draft'.
+ */
+export const isOwnerReworkState = (
+  bizStatus: string,
+  approvalStatus: string | null
+): boolean => {
+  if (approvalStatus !== null && isApprovalActive(approvalStatus)) return false;
+  if (bizStatus === "draft") return true;
+  return approvalStatus !== null && isResubmittable(approvalStatus);
+};
+
 export type ExistingApprovalSubmissionDecision = "active" | "resubmit" | "new";
 
 export const getExistingApprovalSubmissionDecision = (

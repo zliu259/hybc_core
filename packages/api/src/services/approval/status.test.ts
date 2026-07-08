@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 
-import { getExistingApprovalSubmissionDecision, isResubmittable } from "./status";
+import {
+  getExistingApprovalSubmissionDecision,
+  isOwnerReworkState,
+  isResubmittable
+} from "./status";
 
 describe("isResubmittable", () => {
   it("treats a returned-to-initiator instance as resubmittable", () => {
@@ -39,5 +43,36 @@ describe("getExistingApprovalSubmissionDecision", () => {
     expect(getExistingApprovalSubmissionDecision("approved")).toBe("new");
     expect(getExistingApprovalSubmissionDecision("rejected")).toBe("new");
     expect(getExistingApprovalSubmissionDecision("cancelled")).toBe("new");
+  });
+});
+
+describe("isOwnerReworkState", () => {
+  it("treats a plain draft without approval instance as rework", () => {
+    expect(isOwnerReworkState("draft", null)).toBe(true);
+  });
+
+  it("treats a draft reverted after return or rejection as rework", () => {
+    expect(isOwnerReworkState("draft", "returned")).toBe(true);
+    expect(isOwnerReworkState("draft", "rejected")).toBe(true);
+  });
+
+  it("treats stale returned rows (biz status never reverted) as rework", () => {
+    // Legacy 2026-07-01 conversion set instances to 'returned' without
+    // reverting the business record, e.g. payment_request 108 stuck in
+    // pending_approval.
+    expect(isOwnerReworkState("pending_approval", "returned")).toBe(true);
+    expect(isOwnerReworkState("pending_approval", "pending")).toBe(true);
+    expect(isOwnerReworkState("pending_approval", "withdrawn")).toBe(true);
+  });
+
+  it("never treats an actively running approval as rework", () => {
+    expect(isOwnerReworkState("pending_approval", "in_progress")).toBe(false);
+    // Resubmit may leave the biz record 'draft' while round 2 runs.
+    expect(isOwnerReworkState("draft", "in_progress")).toBe(false);
+  });
+
+  it("does not treat finished non-draft records as rework", () => {
+    expect(isOwnerReworkState("active", "approved")).toBe(false);
+    expect(isOwnerReworkState("pending_approval", "rejected")).toBe(false);
   });
 });

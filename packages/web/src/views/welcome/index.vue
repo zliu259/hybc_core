@@ -12,6 +12,7 @@ import {
 } from "@/api/reimbursement";
 import { getFuelQuotaPendingSummary } from "@/api/fleet";
 import { message } from "@/utils/message";
+import AwaitingMyAction from "./components/AwaitingMyAction.vue";
 
 defineOptions({
   name: "Welcome"
@@ -28,6 +29,7 @@ const pendingApprovalItems = ref<PendingApprovalItem[]>([]);
 const pendingApprovalTotal = ref(0);
 const fuelOfficePendingCount = ref(0);
 const projects = ref<Project[]>([]);
+const awaitingMyActionCount = ref(0);
 
 type PersonalCertificate = {
   id: number;
@@ -283,13 +285,25 @@ const onCertUpload = (file: UploadFile) => {
           >
             {{ perm }}
           </el-tag>
-          <el-tag v-if="permissionLabels.length > 4" size="small" effect="plain">
+          <el-tag
+            v-if="permissionLabels.length > 4"
+            size="small"
+            effect="plain"
+          >
             +{{ permissionLabels.length - 4 }}
           </el-tag>
         </div>
       </div>
 
       <div class="workspace-stats">
+        <button
+          class="workspace-stat workspace-stat--alert"
+          type="button"
+          @click="goMyApplications"
+        >
+          <span>等待我处理</span>
+          <strong>{{ awaitingMyActionCount }}</strong>
+        </button>
         <button class="workspace-stat" type="button" @click="goApprovalDesk">
           <span>待我审批</span>
           <strong>{{ pendingApprovalCount }}</strong>
@@ -324,11 +338,16 @@ const onCertUpload = (file: UploadFile) => {
         <div class="section-subtitle">发起、查看和处理个人高频事项。</div>
       </div>
       <div class="action-grid">
-        <el-button type="primary" @click="goCreateReimbursement">发起报销</el-button>
+        <el-button type="primary" @click="goCreateReimbursement"
+          >发起报销</el-button
+        >
         <el-button @click="router.push('/workspace/my-reimbursement')">
           我的报销提交
         </el-button>
-        <el-button :disabled="!canLaunchOutboundPayment" @click="goPaymentWizard">
+        <el-button
+          :disabled="!canLaunchOutboundPayment"
+          @click="goPaymentWizard"
+        >
           发起对外付款
         </el-button>
         <el-button @click="goFuelApplication">油卡额度申请</el-button>
@@ -354,6 +373,8 @@ const onCertUpload = (file: UploadFile) => {
 
     <div class="workspace-content">
       <div class="workspace-content__main">
+        <AwaitingMyAction @count="awaitingMyActionCount = $event" />
+
         <el-card shadow="never" class="workspace-card todo-card">
           <template #header>
             <div class="card-header card-header--with-action">
@@ -420,7 +441,10 @@ const onCertUpload = (file: UploadFile) => {
               <span class="reimbursement-progress-list__dot" />
               <div class="reimbursement-progress-list__content">
                 <div class="reimbursement-progress-list__main">
-                  <el-link type="primary" @click="goReimbursementDetail(item.id)">
+                  <el-link
+                    type="primary"
+                    @click="goReimbursementDetail(item.id)"
+                  >
                     {{ reimbursementProjectLabel(item) }} · ¥{{
                       formatAmount(item.amount)
                     }}
@@ -443,7 +467,9 @@ const onCertUpload = (file: UploadFile) => {
           <template #header>
             <div class="card-header card-header--with-action">
               <span>个人资质与证书</span>
-              <el-tag size="small" type="info">{{ certificates.length }} 项</el-tag>
+              <el-tag size="small" type="info"
+                >{{ certificates.length }} 项</el-tag
+              >
             </div>
           </template>
 
@@ -454,7 +480,9 @@ const onCertUpload = (file: UploadFile) => {
             :on-change="onCertUpload"
           >
             <div class="cert-upload-text">拖拽证书文件到此处，或点击上传</div>
-            <div class="cert-upload-hint">支持 PDF/图片，上传后可查看和下载</div>
+            <div class="cert-upload-hint">
+              支持 PDF/图片，上传后可查看和下载
+            </div>
           </el-upload>
 
           <div class="cert-grid">
@@ -470,7 +498,9 @@ const onCertUpload = (file: UploadFile) => {
               <el-tag :type="certStatus(cert.expireDate).type">
                 {{ certStatus(cert.expireDate).text }}
               </el-tag>
-              <div class="cert-item__file">{{ cert.fileName || "未上传附件" }}</div>
+              <div class="cert-item__file">
+                {{ cert.fileName || "未上传附件" }}
+              </div>
               <div class="cert-item__actions">
                 <el-button
                   size="small"
@@ -568,6 +598,24 @@ button.workspace-stat {
 button.workspace-stat:hover {
   border-color: #409eff;
   box-shadow: 0 4px 14px rgb(64 158 255 / 12%);
+}
+
+.workspace-stat--alert {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.workspace-stat--alert span {
+  color: #b91c1c;
+}
+
+.workspace-stat--alert strong {
+  color: #dc2626;
+}
+
+button.workspace-stat--alert:hover {
+  border-color: #f56c6c;
+  box-shadow: 0 4px 14px rgb(245 108 108 / 15%);
 }
 
 .workspace-stat span {

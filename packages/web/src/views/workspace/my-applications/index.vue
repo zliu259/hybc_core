@@ -19,6 +19,7 @@ import {
   type InitiatedBucket
 } from "@/api/approval";
 import { toBizTypeLabel, toStatusLabel } from "@/views/approval/labels";
+import { resolveBizEditRoute } from "@/views/approval/biz-edit-routes";
 
 defineOptions({ name: "WorkspaceMyApplications" });
 
@@ -58,6 +59,20 @@ const refreshInitiatedApprovalList = async (bucket: InitiatedBucket) => {
     pageSize: 8
   });
   approvalList.value = approvalResult.data;
+};
+
+const canEditBiz = (item: ApprovalInstance) =>
+  resolveBizEditRoute(item.biz_type, item.biz_id, item.biz_summary) !== null;
+
+const goEditBiz = (item: ApprovalInstance) => {
+  const route = resolveBizEditRoute(
+    item.biz_type,
+    item.biz_id,
+    item.biz_summary
+  );
+  if (route) {
+    router.push(route);
+  }
 };
 
 const paymentStatusLabel = (status: string) => {
@@ -116,8 +131,7 @@ const loadData = async () => {
       fuelResult,
       approvalSummaryResult,
       approvalResult
-    ] =
-      await Promise.all([
+    ] = await Promise.all([
       listPaymentRequests({ mine: true, page: 1, pageSize: 8 }),
       listReimbursementEnvelopes({
         creator_id: "me",
@@ -312,7 +326,9 @@ onMounted(loadData);
         <el-row :gutter="12" style="margin-bottom: 12px">
           <el-col :md="8" :xs="24">
             <el-card shadow="never">
-              <div style="font-size: 13px; color: #f56c6c">被退回（待处理）</div>
+              <div style="font-size: 13px; color: #f56c6c">
+                被退回（待处理）
+              </div>
               <div style="font-size: 24px; font-weight: 700">
                 {{ approvalSummary.returned_needs_action }}
               </div>
@@ -338,7 +354,9 @@ onMounted(loadData);
 
         <el-space style="margin-bottom: 12px" wrap>
           <el-button
-            :type="approvalBucket === 'returned_needs_action' ? 'danger' : 'default'"
+            :type="
+              approvalBucket === 'returned_needs_action' ? 'danger' : 'default'
+            "
             @click="refreshInitiatedApprovalList('returned_needs_action')"
             >被退回（待处理）</el-button
           >
@@ -355,26 +373,56 @@ onMounted(loadData);
         </el-space>
 
         <el-table :data="approvalList" stripe>
-          <el-table-column prop="instance_no" label="审批单号" min-width="170" />
+          <el-table-column
+            prop="instance_no"
+            label="审批单号"
+            min-width="170"
+          />
           <el-table-column label="业务类型" width="140">
-            <template #default="scope">{{ toBizTypeLabel(scope.row.biz_type) }}</template>
+            <template #default="scope">{{
+              toBizTypeLabel(scope.row.biz_type)
+            }}</template>
           </el-table-column>
           <el-table-column prop="biz_summary" label="摘要" min-width="220" />
           <el-table-column label="监管分组" width="150">
             <template #default="scope">
               <el-tag
-                :type="initiatedBucketTagType(scope.row.initiated_bucket || 'in_progress')"
+                :type="
+                  initiatedBucketTagType(
+                    scope.row.initiated_bucket || 'in_progress'
+                  )
+                "
               >
-                {{ initiatedBucketLabel(scope.row.initiated_bucket || "in_progress") }}
+                {{
+                  initiatedBucketLabel(
+                    scope.row.initiated_bucket || "in_progress"
+                  )
+                }}
               </el-tag>
             </template>
           </el-table-column>
           <el-table-column label="状态" width="120">
-            <template #default="scope">{{ toStatusLabel(scope.row.status) }}</template>
+            <template #default="scope">{{
+              toStatusLabel(scope.row.status)
+            }}</template>
           </el-table-column>
-          <el-table-column prop="last_updated_at" label="更新时间" width="180" />
-          <el-table-column label="操作" width="110" fixed="right">
+          <el-table-column
+            prop="last_updated_at"
+            label="更新时间"
+            width="180"
+          />
+          <el-table-column label="操作" width="160" fixed="right">
             <template #default="scope">
+              <el-button
+                v-if="
+                  scope.row.initiated_bucket === 'returned_needs_action' &&
+                  canEditBiz(scope.row)
+                "
+                link
+                type="danger"
+                @click="goEditBiz(scope.row)"
+                >去修改</el-button
+              >
               <el-button
                 link
                 type="primary"

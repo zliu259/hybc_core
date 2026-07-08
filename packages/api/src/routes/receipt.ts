@@ -5,7 +5,7 @@ import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
-import { getExistingApprovalSubmissionDecision } from "../services/approval/status";
+import { getExistingApprovalSubmissionDecision, isOwnerReworkState } from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import type { Env } from "../types/env";
 import type { Contract } from "../types/contract";
@@ -392,7 +392,16 @@ receiptRoutes.put(
 
     const editableStates = new Set(["draft", "rejected"]);
     if (!editableStates.has(existing.status) && body.status === undefined) {
-      return c.json({ success: false, error: { message: `Request in status ${existing.status} cannot be edited` } }, 400);
+      // Stale returned requests (legacy rows whose status was never reverted
+      // to draft) stay editable while the instance awaits resubmit.
+      const approval = existing.approval_instance_id
+        ? await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+            .bind(existing.approval_instance_id)
+            .first<{ status: string }>()
+        : null;
+      if (!isOwnerReworkState(existing.status, approval?.status ?? null)) {
+        return c.json({ success: false, error: { message: `Request in status ${existing.status} cannot be edited` } }, 400);
+      }
     }
 
     if (body.items_json) {

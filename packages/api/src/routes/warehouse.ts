@@ -5,7 +5,7 @@ import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
-import { getExistingApprovalSubmissionDecision } from "../services/approval/status";
+import { getExistingApprovalSubmissionDecision, isOwnerReworkState } from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import {
   createReturnInspectionTaskForStockOrderItem,
@@ -766,10 +766,19 @@ warehouseRoutes.put(
 
     if (!order) return c.json({ success: false, error: { message: "Stock order not found" } }, 404);
     if (order.status !== "draft") {
-      return c.json(
-        { success: false, error: { message: "Only draft stock order can be edited" } },
-        400
-      );
+      // Stale returned orders (legacy rows whose status was never reverted to
+      // draft) stay editable while the instance awaits resubmit.
+      const approval = order.approval_instance_id
+        ? await c.env.DB.prepare("SELECT status FROM approval_instance WHERE id = ?")
+            .bind(order.approval_instance_id)
+            .first<{ status: string }>()
+        : null;
+      if (!isOwnerReworkState(order.status, approval?.status ?? null)) {
+        return c.json(
+          { success: false, error: { message: "Only draft stock order can be edited" } },
+          400
+        );
+      }
     }
 
     if (body.items !== undefined) {
