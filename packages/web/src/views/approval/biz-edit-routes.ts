@@ -13,7 +13,7 @@ export const resolveBizEditRoute = (
   bizSummary?: string | null
 ): RouteLocationRaw | null => {
   if (bizType === "payment_request") {
-    return `/workspace/payment/detail/${bizId}`;
+    return `/workspace/payment/detail/${bizId}?edit=1`;
   }
   if (bizType === "outbound_contract" || bizType === "inbound_contract") {
     return `/finance/contract/detail/${bizId}`;
