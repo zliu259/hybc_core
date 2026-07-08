@@ -298,8 +298,9 @@
         <view class="confirm-row">附件：{{contractAttachments.length}} 个</view>
         <view class="confirm-row">同时发起首笔预付款：{{withFirstPayment ? '是' : '否'}}</view>
         <block wx:if="{{withFirstPayment}}">
-          <view class="confirm-row">首笔金额：{{firstPaymentForm.amount || '-'}}</view>
+          <view class="confirm-row">首笔金额：{{firstPaymentAmountText || '-'}}</view>
           <view class="confirm-row">首笔付款日期：{{firstPaymentForm.expected_payment_date || '-'}}</view>
+          <view class="confirm-row">首笔附件：{{firstPaymentAttachments.length}} 个</view>
         </block>
       </block>
 

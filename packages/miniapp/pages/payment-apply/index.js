@@ -223,6 +223,7 @@ Page({
       expected_payment_date: today(),
       remark: ""
     },
+    firstPaymentAmountText: "",
 
     directContractIndex: 0,
     directContractRemaining: null,
@@ -652,7 +653,13 @@ Page({
 
   onFirstPaymentInput(e) {
     const key = e.currentTarget.dataset.key;
-    this.setData({ [`firstPaymentForm.${key}`]: e.detail.value || "" });
+    const value = e.detail.value || "";
+    const patch = { [`firstPaymentForm.${key}`]: value };
+    if (key === "amount") {
+      const amount = Number(value || 0);
+      patch.firstPaymentAmountText = amount > 0 ? formatAmountNumber(amount) : "";
+    }
+    this.setData(patch);
   },
 
   onFirstPaymentToggle(e) {
@@ -785,7 +792,7 @@ Page({
   },
 
   goNextStep() {
-    if (this.data.quickPayeeVisible) {
+    if (this.data.currentStep === 1 && this.data.quickPayeeVisible) {
       wx.showToast({ title: "请先完成或收起收款人添加", icon: "none" });
       return;
     }
