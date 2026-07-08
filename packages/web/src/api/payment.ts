@@ -28,6 +28,7 @@ export type PaymentRequest = {
   remark: string | null;
   created_at: string;
   updated_at: string;
+  approval_status?: string | null;
 };
 
 export type PaymentRequestDetail = PaymentRequest & {
@@ -75,6 +76,23 @@ export const listPaymentRequests = (params?: {
     data: PaymentRequest[];
     pagination: Pagination;
   }>("get", "/api/v1/payment", { params });
+};
+
+export type PaymentConsoleSummary = {
+  pending_count: number;
+  returned_count: number;
+  in_approval_count: number;
+  to_pay_count: number;
+  to_pay_total: number;
+  overdue_count: number;
+  paid_month_total: number;
+};
+
+export const getPaymentConsoleSummary = () => {
+  return http.request<{ success: boolean; data: PaymentConsoleSummary }>(
+    "get",
+    "/api/v1/payment/console-summary"
+  );
 };
 
 export const getPaymentRequest = (id: number) => {
