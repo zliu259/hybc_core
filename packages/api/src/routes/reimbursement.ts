@@ -1323,6 +1323,11 @@ reimbursementRoutes.get("/", async (c) => {
     .split(",")
     .map((item) => item.trim())
     .filter((item) => Boolean(item) && reimbursementStatusSet.has(item));
+  const rawPrecheck = c.req.query("precheck_status") ?? "";
+  const precheckFilters = rawPrecheck
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
   const projectId = c.req.query("project_id");
   const creatorId = c.req.query("creator_id");
   const applicantUserid = c.req.query("applicant_userid");
@@ -1379,6 +1384,12 @@ reimbursementRoutes.get("/", async (c) => {
   } else if (excludeCancelled) {
     sql += " AND e.status != 'cancelled'";
     countSql += " AND e.status != 'cancelled'";
+  }
+  if (precheckFilters.length > 0) {
+    const placeholders = precheckFilters.map(() => "?").join(", ");
+    sql += ` AND e.precheck_status IN (${placeholders})`;
+    countSql += ` AND e.precheck_status IN (${placeholders})`;
+    params.push(...precheckFilters);
   }
   if (projectId) {
     sql += " AND e.project_id = ?";
