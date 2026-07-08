@@ -114,7 +114,11 @@ const intakeTabs = computed(() => [
     label: "待复核",
     count: summary.value?.to_precheck
   },
-  { key: "to_batch" as IntakeTab, label: "待成批", count: summary.value?.to_batch }
+  {
+    key: "to_batch" as IntakeTab,
+    label: "待成批",
+    count: summary.value?.to_batch
+  }
 ]);
 
 const loadSummary = async () => {
@@ -208,7 +212,9 @@ const onRerunSilentReview = async (id: number) => {
   await triggerEnvelopeAnomalyCheck(
     id,
     { rerun_full: true, reason: "office_manual_second_silent_review" },
-    { idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review") }
+    {
+      idempotencyKey: createIdempotencyKey("reimbursement-rerun-silent-review")
+    }
   );
   message("已触发二次静默审查", { type: "success" });
   await refreshAll();
@@ -226,7 +232,10 @@ const onPrecheck = async (
     await refreshAll();
   } catch (error) {
     const err = error as {
-      response?: { status?: number; data?: { data?: { wait_for_audit?: boolean } } };
+      response?: {
+        status?: number;
+        data?: { data?: { wait_for_audit?: boolean } };
+      };
     };
     const waitForAudit =
       err.response?.status === 409 &&
@@ -304,8 +313,8 @@ onMounted(async () => {
       </el-tabs>
 
       <el-table
-        :data="list"
         v-loading="loading"
+        :data="list"
         :row-class-name="tableRowClassName"
       >
         <el-table-column prop="envelope_no" label="信封编号" width="150" />
@@ -331,7 +340,9 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column prop="amount" label="金额" width="100" />
         <el-table-column label="报销内容" min-width="160" show-overflow-tooltip>
-          <template #default="scope">{{ scope.row.description || "-" }}</template>
+          <template #default="scope">{{
+            scope.row.description || "-"
+          }}</template>
         </el-table-column>
         <el-table-column label="异常提示" min-width="200">
           <template #default="scope">
@@ -356,9 +367,10 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="scope">
-            <el-tag :type="reimbursementStatusTagType[scope.row.status] || 'info'">{{
-              statusLabel(scope.row.status)
-            }}</el-tag>
+            <el-tag
+              :type="reimbursementStatusTagType[scope.row.status] || 'info'"
+              >{{ statusLabel(scope.row.status) }}</el-tag
+            >
           </template>
         </el-table-column>
         <el-table-column label="操作" width="300" fixed="right">
