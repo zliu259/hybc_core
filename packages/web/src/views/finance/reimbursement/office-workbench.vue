@@ -158,7 +158,10 @@ const loadData = async () => {
 const queryMode = ref(false);
 const queryKeyword = ref("");
 const queryList = ref<ReimbursementEnvelope[]>([]);
+const queryTotal = ref(0);
 const queryLoading = ref(false);
+
+let querySeq = 0;
 
 const runQuery = async () => {
   const kw = queryKeyword.value.trim();
@@ -166,6 +169,7 @@ const runQuery = async () => {
     message("请输入信封号 / UUID / 发票号 / 事由关键字", { type: "warning" });
     return;
   }
+  const seq = ++querySeq;
   queryMode.value = true;
   queryLoading.value = true;
   try {
@@ -175,9 +179,16 @@ const runQuery = async () => {
       keyword: kw,
       exclude_cancelled: false
     });
+    // 竞态防护:快速连查慢响应,丢弃过期结果
+    if (seq !== querySeq) return;
     queryList.value = result.data;
+    queryTotal.value = result.pagination.total;
+  } catch {
+    if (seq === querySeq) {
+      message("查询失败,请稍后重试", { type: "error" });
+    }
   } finally {
-    queryLoading.value = false;
+    if (seq === querySeq) queryLoading.value = false;
   }
 };
 
@@ -185,6 +196,7 @@ const exitQuery = () => {
   queryMode.value = false;
   queryKeyword.value = "";
   queryList.value = [];
+  queryTotal.value = 0;
 };
 
 const stationLabel = (row: ReimbursementEnvelope) => resolveStation(row).label;
@@ -230,7 +242,12 @@ const onDetailDrawerClosed = () => {
   activeDetailId.value = null;
 };
 const onDetailChanged = async () => {
-  await refreshAll();
+  if (queryMode.value) {
+    // 查询模式下抽屉里签收/复核后,重查以刷新「当前站点」
+    await Promise.all([runQuery(), loadSummary()]);
+  } else {
+    await refreshAll();
+  }
 };
 
 const openQuickScan = () => {
@@ -520,7 +537,10 @@ onMounted(async () => {
     <!-- 全流程查询结果 -->
     <section v-else class="query-panel">
       <div class="query-panel__head">
-        <span>全流程查询结果（{{ queryList.length }}）</span>
+        <span
+          >全流程查询结果（显示 {{ queryList.length }} / 共
+          {{ queryTotal }} 条）</span
+        >
         <el-button link type="primary" @click="exitQuery">返回工作台</el-button>
       </div>
       <el-table v-loading="queryLoading" :data="queryList">
