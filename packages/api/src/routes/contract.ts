@@ -22,7 +22,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
-import { isResubmittable } from "../services/approval/status";
+import { isApprovalActive, isResubmittable } from "../services/approval/status";
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
 import { amountChangeFloor } from "./contract-amount-change-floor";
 
@@ -472,8 +472,13 @@ contractRoutes.put(
           .bind(existing.approval_instance_id)
           .first<{ status: string }>()
       : null;
-    const approvalInProgress = approval ? approval.status === "pending" || approval.status === "in_progress" : false;
-    const approvalFinished = approval ? !approvalInProgress : false;
+    const approvalInProgress = approval ? isApprovalActive(approval.status) : false;
+    const approvalAwaitingResubmit = approval ? isResubmittable(approval.status) : false;
+    const approvalFinished = approval ? !approvalInProgress && !approvalAwaitingResubmit : false;
+    const isReturnedHandlerDraftEdit =
+      approvalAwaitingResubmit &&
+      existing.status === "draft" &&
+      existing.handler_userid === auth.sub;
 
     if (!isSuperAdmin) {
       if (approvalInProgress && hasDetailMutation) {
@@ -514,7 +519,7 @@ contractRoutes.put(
       }
     }
 
-    if (isSuperAdmin && hasNonAttachmentMutation) {
+    if (isSuperAdmin && hasNonAttachmentMutation && !isReturnedHandlerDraftEdit) {
       if (body.admin_edit_mode !== true) {
         return c.json(
           { success: false, error: { message: "Super admin must enable edit mode for privileged modification" } },
@@ -530,7 +535,7 @@ contractRoutes.put(
     }
 
     const auditRemark =
-      isSuperAdmin && hasNonAttachmentMutation
+      isSuperAdmin && hasNonAttachmentMutation && !isReturnedHandlerDraftEdit
         ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
         : body.remark;
 
@@ -561,7 +566,7 @@ contractRoutes.put(
       )
       .run();
 
-    if (isSuperAdmin && hasNonAttachmentMutation) {
+    if (isSuperAdmin && hasNonAttachmentMutation && !isReturnedHandlerDraftEdit) {
       await writeAuditLog(c.env.DB, {
         actorUserId: auth.sub,
         actorRoles: auth.roles,
