@@ -59,6 +59,8 @@ type ApprovalInstanceLite = {
   status: string;
 };
 
+type PaymentRequestListRow = PaymentRequest & { approval_status: string | null };
+
 const isPaymentNoLongerApprovedError = (error: unknown): boolean => {
   return (
     error instanceof Error &&
@@ -510,64 +512,64 @@ paymentRoutes.get("/", async (c) => {
 
   const includeCancelled = status === "cancelled";
   let sql = includeCancelled
-    ? "SELECT * FROM payment_request WHERE 1=1"
-    : "SELECT * FROM payment_request WHERE status != 'cancelled'";
+    ? "SELECT p.*, ai.status AS approval_status FROM payment_request p LEFT JOIN approval_instance ai ON ai.id = p.approval_instance_id WHERE 1=1"
+    : "SELECT p.*, ai.status AS approval_status FROM payment_request p LEFT JOIN approval_instance ai ON ai.id = p.approval_instance_id WHERE p.status != 'cancelled'";
   let countSql = includeCancelled
-    ? "SELECT COUNT(*) as total FROM payment_request WHERE 1=1"
-    : "SELECT COUNT(*) as total FROM payment_request WHERE status != 'cancelled'";
+    ? "SELECT COUNT(*) as total FROM payment_request p WHERE 1=1"
+    : "SELECT COUNT(*) as total FROM payment_request p WHERE p.status != 'cancelled'";
   const params: (string | number)[] = [];
 
   if (contractId) {
-    sql += " AND contract_id = ?";
-    countSql += " AND contract_id = ?";
+    sql += " AND p.contract_id = ?";
+    countSql += " AND p.contract_id = ?";
     params.push(Number(contractId));
   }
   if (projectId) {
-    sql += " AND project_id = ?";
-    countSql += " AND project_id = ?";
+    sql += " AND p.project_id = ?";
+    countSql += " AND p.project_id = ?";
     params.push(Number(projectId));
   }
   if (projectName) {
-    sql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
-    countSql += " AND project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+    sql += " AND p.project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
+    countSql += " AND p.project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
     params.push(`%${projectName}%`, `%${projectName}%`);
   }
   if (status) {
-    sql += " AND status = ?";
-    countSql += " AND status = ?";
+    sql += " AND p.status = ?";
+    countSql += " AND p.status = ?";
     params.push(status);
   }
   if (keyword) {
-    sql += " AND (serial_no LIKE ? OR content LIKE ?)";
-    countSql += " AND (serial_no LIKE ? OR content LIKE ?)";
+    sql += " AND (p.serial_no LIKE ? OR p.content LIKE ?)";
+    countSql += " AND (p.serial_no LIKE ? OR p.content LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`);
   }
   if (legacyDataId) {
-    sql += " AND legacy_data_id = ?";
-    countSql += " AND legacy_data_id = ?";
+    sql += " AND p.legacy_data_id = ?";
+    countSql += " AND p.legacy_data_id = ?";
     params.push(legacyDataId);
   }
   if (mine) {
-    sql += " AND applicant_userid = ?";
-    countSql += " AND applicant_userid = ?";
+    sql += " AND p.applicant_userid = ?";
+    countSql += " AND p.applicant_userid = ?";
     params.push(auth.sub);
   } else if (applicantUserid) {
-    sql += " AND applicant_userid = ?";
-    countSql += " AND applicant_userid = ?";
+    sql += " AND p.applicant_userid = ?";
+    countSql += " AND p.applicant_userid = ?";
     params.push(applicantUserid);
   }
   if (dateFrom) {
-    sql += " AND expected_payment_date >= ?";
-    countSql += " AND expected_payment_date >= ?";
+    sql += " AND p.expected_payment_date >= ?";
+    countSql += " AND p.expected_payment_date >= ?";
     params.push(dateFrom);
   }
   if (dateTo) {
-    sql += " AND expected_payment_date <= ?";
-    countSql += " AND expected_payment_date <= ?";
+    sql += " AND p.expected_payment_date <= ?";
+    countSql += " AND p.expected_payment_date <= ?";
     params.push(dateTo);
   }
 
-  sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
+  sql += " ORDER BY p.id DESC LIMIT ? OFFSET ?";
 
   const countResult = await c.env.DB.prepare(countSql)
     .bind(...params)
@@ -576,7 +578,7 @@ paymentRoutes.get("/", async (c) => {
 
   const rows = await c.env.DB.prepare(sql)
     .bind(...params, pageSize, offset)
-    .all<PaymentRequest>();
+    .all<PaymentRequestListRow>();
 
   return c.json({
     success: true,
