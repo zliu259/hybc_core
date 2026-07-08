@@ -3,57 +3,41 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
+  getPaymentConsoleSummary,
   listPaymentRequests,
   markPaymentPaid,
+  type PaymentConsoleSummary,
   type PaymentRequest
 } from "@/api/payment";
-import { listContracts, type Contract } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import {
+  formatBeijingDateTime,
+  paymentStatusTagType,
+  toPaymentMethodLabel,
+  toPaymentStatusLabel
+} from "./payment-labels";
 
 defineOptions({ name: "PaymentList" });
 
+type Stage = "pending" | "in_approval" | "to_pay" | "paid" | "all";
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
-const router = useRouter();
-const loading = ref(false);
-const list = ref<PaymentRequest[]>([]);
-const contracts = ref<Contract[]>([]);
-const projects = ref<Project[]>([]);
-
-const page = ref(1);
-const pageSize = ref(20);
-const total = ref(0);
-
-const filters = ref({
-  project_id: undefined as number | undefined,
-  contract_id: undefined as number | undefined,
-  status: "",
-  keyword: ""
-});
-
-const statusTagType: Record<string, TagType> = {
-  draft: "info",
-  pending_approval: "warning",
-  approved: "success",
-  paid: "primary",
-  rejected: "danger",
-  cancelled: "info"
+const STAGE_STATUS: Record<Stage, string> = {
+  pending: "draft",
+  in_approval: "pending_approval",
+  to_pay: "approved",
+  paid: "paid",
+  all: ""
 };
+
+const RESUBMITTABLE = new Set(["returned", "pending", "withdrawn"]);
 
 const aiTagType: Record<string, TagType> = {
   none: "info",
   pending: "warning",
   completed: "success",
   failed: "danger"
-};
-
-const statusLabelMap: Record<string, string> = {
-  draft: "草稿",
-  pending_approval: "待审批",
-  approved: "已审批",
-  paid: "已付款",
-  rejected: "已拒绝",
-  cancelled: "已取消"
 };
 
 const aiRiskLabelMap: Record<string, string> = {
@@ -63,49 +47,41 @@ const aiRiskLabelMap: Record<string, string> = {
   failed: "评估失败"
 };
 
-const paymentMethodLabelMap: Record<string, string> = {
-  bank_transfer: "对公转账",
-  cash: "现金",
-  bill: "票据",
-  other: "其他",
-  对公转账: "对公转账",
-  现金: "现金",
-  票据: "票据",
-  其他: "其他"
-};
-
-const toStatusLabel = (value: string | null | undefined) => {
-  if (!value) return "-";
-  return statusLabelMap[value] ?? value;
-};
-
-const toAiRiskLabel = (value: string | null | undefined) => {
+const toAiRiskLabel = (value: string | null | undefined): string => {
   if (!value) return "-";
   return aiRiskLabelMap[value] ?? value;
 };
 
-const toPaymentMethodLabel = (value: string | null | undefined) => {
-  if (!value) return "-";
-  return paymentMethodLabelMap[value] ?? value;
-};
+const router = useRouter();
+const loading = ref(false);
+const list = ref<PaymentRequest[]>([]);
+const projects = ref<Project[]>([]);
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const summary = ref<PaymentConsoleSummary | null>(null);
+const stage = ref<Stage>("pending");
+const page = ref(1);
+const pageSize = ref(20);
+const total = ref(0);
+const filters = ref({
+  project_id: undefined as number | undefined,
+  applicant_userid: "",
+  keyword: ""
+});
 
-const formatBeijingDateTime = (value: string | null | undefined) => {
-  if (!value) return "-";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return date
-    .toLocaleString("zh-CN", {
-      timeZone: "Asia/Shanghai",
-      hour12: false,
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    })
-    .replace(/\//g, "-");
-};
+const todayStr = new Date().toISOString().slice(0, 10);
+
+const isReturned = (row: PaymentRequest) =>
+  row.status === "draft" && RESUBMITTABLE.has(row.approval_status ?? "");
+
+const isOverdue = (row: PaymentRequest) =>
+  row.status === "approved" && row.expected_payment_date < todayStr;
+
+const displayList = computed(() => {
+  if (stage.value !== "to_pay") return list.value;
+  return [...list.value].sort(
+    (a, b) => Number(isOverdue(b)) - Number(isOverdue(a))
+  );
+});
 
 const projectMap = computed(() => {
   const map: Record<number, string> = {};
@@ -115,13 +91,41 @@ const projectMap = computed(() => {
   return map;
 });
 
-const loadRefs = async () => {
-  const [projectRes, contractRes] = await Promise.all([
-    listProjects({ page: 1, pageSize: 300 }),
-    listContracts({ page: 1, pageSize: 300, direction: "outbound" })
-  ]);
-  projects.value = projectRes.data;
-  contracts.value = contractRes.data;
+const stageTabs = computed(() => [
+  {
+    key: "pending" as Stage,
+    label: "待处理",
+    count: summary.value?.pending_count
+  },
+  {
+    key: "in_approval" as Stage,
+    label: "审批中",
+    count: summary.value?.in_approval_count
+  },
+  {
+    key: "to_pay" as Stage,
+    label: "待付款",
+    count: summary.value?.to_pay_count
+  },
+  { key: "paid" as Stage, label: "已付款", count: undefined },
+  { key: "all" as Stage, label: "全部", count: undefined }
+]);
+
+const formatMoney = (value: number | null | undefined) =>
+  value === null || value === undefined
+    ? "-"
+    : value.toLocaleString("zh-CN", {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      });
+
+const loadSummary = async () => {
+  try {
+    const result = await getPaymentConsoleSummary();
+    summary.value = result.data;
+  } catch {
+    summary.value = null; // 汇总失败不阻塞列表,显示 "-"
+  }
 };
 
 const loadData = async () => {
@@ -131,8 +135,8 @@ const loadData = async () => {
       page: page.value,
       pageSize: pageSize.value,
       project_id: filters.value.project_id,
-      contract_id: filters.value.contract_id,
-      status: filters.value.status || undefined,
+      applicant_userid: filters.value.applicant_userid || undefined,
+      status: STAGE_STATUS[stage.value] || undefined,
       keyword: filters.value.keyword || undefined
     });
     list.value = result.data;
@@ -142,40 +146,116 @@ const loadData = async () => {
   }
 };
 
+const switchStage = (next: Stage) => {
+  stage.value = next;
+  page.value = 1;
+  loadData();
+};
+
 const onHeaderSearch = () => {
   page.value = 1;
   loadData();
 };
 
-const goCreate = () => {
-  router.push("/finance/payment/detail/create");
-};
-
-const goDetail = (id: number) => {
-  router.push(`/finance/payment/detail/${id}`);
+const goCreate = () => router.push("/finance/payment/wizard");
+const goDetail = (id: number) => router.push(`/finance/payment/detail/${id}`);
+const goEdit = (id: number) =>
+  router.push(`/finance/payment/detail/${id}?edit=1`);
+const goApproval = (row: PaymentRequest) => {
+  if (row.approval_instance_id)
+    router.push(`/approval/detail/${row.approval_instance_id}`);
 };
 
 const onMarkPaid = async (id: number) => {
   await markPaymentPaid(id);
   message("已标记为已付款", { type: "success" });
-  await loadData();
+  await Promise.all([loadData(), loadSummary()]);
 };
 
 onMounted(async () => {
-  await loadRefs();
+  await Promise.all([
+    listProjects({ page: 1, pageSize: 300 }).then(res => {
+      projects.value = res.data;
+    }),
+    loadWecomUsers(),
+    loadSummary()
+  ]);
   await loadData();
 });
 </script>
 
 <template>
   <el-card shadow="never" style="background: #fffaf2">
-    <el-form inline>
-      <el-form-item label="所属项目">
+    <!-- 汇总条:4 块可点击 -->
+    <el-row :gutter="12" class="summary-strip">
+      <el-col :md="6" :xs="12">
+        <button
+          class="summary-block"
+          type="button"
+          @click="switchStage('to_pay')"
+        >
+          <span>待付总额</span>
+          <strong>¥ {{ formatMoney(summary?.to_pay_total) }}</strong>
+        </button>
+      </el-col>
+      <el-col :md="6" :xs="12">
+        <button
+          class="summary-block"
+          type="button"
+          @click="switchStage('paid')"
+        >
+          <span>本月已付</span>
+          <strong>¥ {{ formatMoney(summary?.paid_month_total) }}</strong>
+        </button>
+      </el-col>
+      <el-col :md="6" :xs="12">
+        <button
+          class="summary-block summary-block--alert"
+          type="button"
+          @click="switchStage('to_pay')"
+        >
+          <span>超期未付</span>
+          <strong>{{ summary?.overdue_count ?? "-" }} 笔</strong>
+        </button>
+      </el-col>
+      <el-col :md="6" :xs="12">
+        <button
+          class="summary-block summary-block--alert"
+          type="button"
+          @click="switchStage('pending')"
+        >
+          <span>退回待改</span>
+          <strong>{{ summary?.returned_count ?? "-" }} 笔</strong>
+        </button>
+      </el-col>
+    </el-row>
+
+    <!-- 阶段页签 + 筛选 -->
+    <div class="console-toolbar">
+      <el-tabs
+        :model-value="stage"
+        @tab-change="key => switchStage(String(key) as Stage)"
+      >
+        <el-tab-pane v-for="tab in stageTabs" :key="tab.key" :name="tab.key">
+          <template #label>
+            {{ tab.label
+            }}<el-badge
+              v-if="tab.count"
+              :value="tab.count"
+              :max="99"
+              class="tab-badge"
+            />
+          </template>
+        </el-tab-pane>
+      </el-tabs>
+      <el-space wrap>
         <el-select
           v-model="filters.project_id"
           clearable
           filterable
-          style="width: 220px"
+          placeholder="所属项目"
+          style="width: 200px"
+          @change="onHeaderSearch"
         >
           <el-option
             v-for="item in projects"
@@ -184,37 +264,33 @@ onMounted(async () => {
             :value="item.id"
           />
         </el-select>
-      </el-form-item>
-      <el-form-item label="关联合同">
         <el-select
-          v-model="filters.contract_id"
+          v-model="filters.applicant_userid"
           clearable
           filterable
-          style="width: 220px"
+          placeholder="申请人"
+          style="width: 160px"
+          @change="onHeaderSearch"
         >
           <el-option
-            v-for="item in contracts"
-            :key="item.id"
-            :label="item.contract_no"
-            :value="item.id"
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="item.name || item.userid"
+            :value="item.userid"
           />
         </el-select>
-      </el-form-item>
-      <el-form-item label="状态">
-        <el-select v-model="filters.status" clearable style="width: 150px">
-          <el-option label="草稿" value="draft" />
-          <el-option label="待审批" value="pending_approval" />
-          <el-option label="已审批" value="approved" />
-          <el-option label="已付款" value="paid" />
-          <el-option label="已拒绝" value="rejected" />
-          <el-option label="已取消" value="cancelled" />
-        </el-select>
-      </el-form-item>
-      <el-button type="primary" @click="loadData">查询</el-button>
-      <el-button @click="goCreate">新建申请</el-button>
-    </el-form>
+        <el-button type="primary" @click="goCreate">发起付款</el-button>
+      </el-space>
+    </div>
 
-    <el-table :data="list" :loading="loading" style="margin-top: 12px">
+    <el-table
+      :data="displayList"
+      :loading="loading"
+      style="margin-top: 12px"
+      :row-class-name="
+        ({ row }) => (isOverdue(row) ? 'payment-row-overdue' : '')
+      "
+    >
       <el-table-column prop="serial_no" label="流水号" width="150" />
       <el-table-column label="所属项目" width="180">
         <template #default="scope">{{
@@ -244,11 +320,16 @@ onMounted(async () => {
           toPaymentMethodLabel(scope.row.payment_method)
         }}</template>
       </el-table-column>
-      <el-table-column label="状态" width="110">
+      <el-table-column label="标签" width="110">
         <template #default="scope">
-          <el-tag :type="statusTagType[scope.row.status] || 'info'">{{
-            toStatusLabel(scope.row.status)
-          }}</el-tag>
+          <el-tag v-if="isReturned(scope.row)" type="danger">已退回</el-tag>
+          <el-tag v-else-if="isOverdue(scope.row)" type="danger">超期</el-tag>
+          <el-tag
+            v-else
+            :type="paymentStatusTagType[scope.row.status] || 'info'"
+          >
+            {{ toPaymentStatusLabel(scope.row.status) }}
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="AI风险" width="110">
@@ -268,19 +349,32 @@ onMounted(async () => {
           formatBeijingDateTime(scope.row.paid_at)
         }}</template>
       </el-table-column>
-      <el-table-column label="操作" width="180" fixed="right">
+      <el-table-column label="操作" width="200" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="goDetail(scope.row.id)"
-            >详情</el-button
+          <el-button
+            v-if="stage === 'pending'"
+            link
+            type="danger"
+            @click="goEdit(scope.row.id)"
+            >去修改</el-button
+          >
+          <el-button
+            v-if="isReturned(scope.row) || stage === 'in_approval'"
+            link
+            type="warning"
+            @click="goApproval(scope.row)"
+            >审批详情</el-button
           >
           <el-button
             v-if="scope.row.status === 'approved'"
             link
             type="success"
             @click="onMarkPaid(scope.row.id)"
+            >标记付款</el-button
           >
-            标记付款
-          </el-button>
+          <el-button link type="primary" @click="goDetail(scope.row.id)"
+            >详情</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -303,10 +397,61 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.summary-strip {
+  margin-bottom: 12px;
+}
+
+.summary-block {
+  width: 100%;
+  padding: 12px 16px;
+  text-align: left;
+  cursor: pointer;
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+}
+
+.summary-block span {
+  display: block;
+  font-size: 13px;
+  color: #6b7280;
+}
+
+.summary-block strong {
+  display: block;
+  margin-top: 6px;
+  font-size: 20px;
+}
+
+.summary-block--alert {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.summary-block--alert strong {
+  color: #dc2626;
+}
+
+.console-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.tab-badge {
+  margin-left: 4px;
+}
+
+:deep(.payment-row-overdue) {
+  background: #fef2f2;
+}
+
 .content-search-header {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 8px;
 }
 
 .content-search-header span {
