@@ -28,6 +28,7 @@ const statusMap: Record<string, { label: string; type: TagType }> = {
 };
 
 const progressColor = (ratio: number) => {
+  if (ratio >= 100) return "#3f9c5c";
   if (ratio > 95) return "#bd3f3f";
   if (ratio >= 80) return "#c4872b";
   return "#2d5f9a";
@@ -39,6 +40,7 @@ const paidRatio = (row: Contract) => {
 };
 
 const riskTag = (ratio: number): { type: TagType; label: string } => {
+  if (ratio >= 100) return { type: "success", label: "合同执行完成" };
   if (ratio > 95) return { type: "danger", label: "超高风险" };
   if (ratio >= 80) return { type: "warning", label: "阈值预警" };
   return { type: "success", label: "正常" };
@@ -100,7 +102,8 @@ const submitAmountChange = async () => {
 const tableRows = computed(() => rows.value);
 
 const tableRowClassName = ({ row }: { row: Contract }) => {
-  return paidRatio(row) > 90 ? "danger-row" : "";
+  const ratio = paidRatio(row);
+  return ratio > 90 && ratio < 100 ? "danger-row" : "";
 };
 
 onMounted(loadData);
