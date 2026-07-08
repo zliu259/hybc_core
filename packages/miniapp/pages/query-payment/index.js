@@ -37,6 +37,24 @@ const formatAmount = (amount) => {
   });
 };
 
+const STAGE_TABS = [
+  { key: "all", label: "全部" },
+  { key: "pending", label: "待处理" },
+  { key: "in_approval", label: "审批中" },
+  { key: "to_pay", label: "待付款" },
+  { key: "paid", label: "已付款" }
+];
+
+const STAGE_STATUS = {
+  all: "",
+  pending: "draft",
+  in_approval: "pending_approval",
+  to_pay: "approved",
+  paid: "paid"
+};
+
+const RESUBMITTABLE = ["returned", "pending", "withdrawn"];
+
 Page({
   data: {
     loading: false,
@@ -54,6 +72,8 @@ Page({
     projectId: "",
     dateFrom: "",
     dateTo: "",
+    stage: "all",
+    stageTabs: STAGE_TABS,
     list: []
   },
 
@@ -161,6 +181,19 @@ Page({
     );
   },
 
+  onStageTap(e) {
+    const key = String(e.currentTarget.dataset.key || "all");
+    if (key === this.data.stage) return;
+    this.setData({ stage: key, page: 1 }, () => this.loadList());
+  },
+
+  goReturnedEdit(e) {
+    const { approvalId, bizId } = e.currentTarget.dataset;
+    wx.navigateTo({
+      url: `/pages/returned-approval-edit/index?approvalId=${approvalId}&bizType=payment_request&bizId=${bizId}`
+    });
+  },
+
   prevPage() {
     if (this.data.loading || this.data.page <= 1) return;
     this.setData({ page: this.data.page - 1 }, () => this.loadList());
@@ -175,12 +208,14 @@ Page({
     if (this.data.loading) return;
     this.setData({ loading: true });
     try {
-      const { page, pageSize, applicantUserid, projectId, dateFrom, dateTo } = this.data;
+      const { page, pageSize, applicantUserid, projectId, dateFrom, dateTo, stage } = this.data;
+      const stageStatus = STAGE_STATUS[stage] || "";
       const query = [`page=${page}`, `pageSize=${pageSize}`];
       if (applicantUserid) query.push(`applicant_userid=${encodeURIComponent(applicantUserid)}`);
       if (projectId) query.push(`project_id=${encodeURIComponent(projectId)}`);
       if (dateFrom) query.push(`date_from=${encodeURIComponent(dateFrom)}`);
       if (dateTo) query.push(`date_to=${encodeURIComponent(dateTo)}`);
+      if (stageStatus) query.push(`status=${stageStatus}`);
 
       const res = await request({ method: "GET", path: `/api/v1/payment?${query.join("&")}` });
       const rows = Array.isArray(res.data) ? res.data : [];
@@ -193,7 +228,9 @@ Page({
         expectDate: item.expected_payment_date || "-",
         content: item.content || "-",
         statusText: statusText(item.status),
-        statusTheme: statusTheme(item.status)
+        statusTheme: statusTheme(item.status),
+        isReturned: item.status === "draft" && RESUBMITTABLE.includes(item.approval_status || ""),
+        approvalInstanceId: item.approval_instance_id || 0
       }));
 
       this.setData({

@@ -1,5 +1,15 @@
 <view class="page">
   <hy-panel-card title="💸 付款查询" subtitle="每页10条，支持申请人/时间/项目筛选">
+    <scroll-view scroll-x class="stage-tabs">
+      <view
+        wx:for="{{stageTabs}}"
+        wx:key="key"
+        class="stage-tab {{stage === item.key ? 'stage-tab--active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onStageTap"
+      >{{item.label}}</view>
+    </scroll-view>
+
     <view class="toolbar">
       <picker mode="selector" range="{{applicantOptions}}" range-key="label" value="{{applicantIndex}}" bindchange="onApplicantChange">
         <view class="picker-value">{{applicantOptions[applicantIndex].label}}</view>
@@ -35,6 +45,17 @@
       <view class="item-sub">付款日期：{{item.expectDate}}</view>
       <view class="item-sub">付款事由：{{item.content}}</view>
       <view class="item-amount">¥{{item.amountText}}</view>
+      <view wx:if="{{item.isReturned}}" class="item-returned">
+        <text class="item-returned-text">已退回，待修改重提</text>
+        <t-button
+          size="extra-small"
+          theme="danger"
+          variant="outline"
+          catchtap="goReturnedEdit"
+          data-approval-id="{{item.approvalInstanceId}}"
+          data-biz-id="{{item.id}}"
+        >去修改</t-button>
+      </view>
     </view>
 
     <view class="pager">

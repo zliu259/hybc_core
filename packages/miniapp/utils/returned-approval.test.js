@@ -17,6 +17,10 @@ const expectedBizTypes = [
 ];
 
 assert.deepStrictEqual(RETURNED_APPROVAL_EDIT_BIZ_TYPES.slice().sort(), expectedBizTypes.slice().sort());
+assert.ok(
+  RETURNED_APPROVAL_EDIT_BIZ_TYPES.includes("payment_request"),
+  "RETURNED_APPROVAL_EDIT_BIZ_TYPES should contain payment_request"
+);
 
 for (const bizType of expectedBizTypes) {
   const route = getReturnedApprovalEditRoute({

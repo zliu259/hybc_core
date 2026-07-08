@@ -1,3 +1,24 @@
+.stage-tabs {
+  display: flex;
+  white-space: nowrap;
+  margin-bottom: 16rpx;
+}
+
+.stage-tab {
+  display: inline-block;
+  padding: 10rpx 24rpx;
+  margin-right: 12rpx;
+  border-radius: 999rpx;
+  background: #f3f4f6;
+  color: #4b5563;
+  font-size: 26rpx;
+}
+
+.stage-tab--active {
+  background: #2563eb;
+  color: #fff;
+}
+
 .toolbar {
   display: flex;
   gap: 16rpx;
@@ -56,6 +77,18 @@
   color: #174ea6;
   font-size: 30rpx;
   font-weight: 700;
+}
+
+.item-returned {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8rpx;
+}
+
+.item-returned-text {
+  color: #dc2626;
+  font-size: 24rpx;
 }
 
 .pager {
