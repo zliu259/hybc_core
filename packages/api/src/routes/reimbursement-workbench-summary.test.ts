@@ -120,12 +120,30 @@ describe("reimbursement workbench summary", () => {
     const envelopeSql = db.capturedSql.find(s => s.includes("to_receive")) ?? "";
     expect(envelopeSql).toContain("precheck_status IN ('none', 'pending', 'supplement')");
     expect(envelopeSql).toContain("batch_id IS NULL");
+    expect(envelopeSql).toContain("status != 'cancelled'");
   });
 
   it("falls back to all-zero when aggregate rows are null", async () => {
     const db = new SummaryDb();
     db.envelopeRow = null;
     db.batchRow = null;
+    const response = await requestSummary(db);
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { data: Record<string, number> };
+    expect(payload.data).toEqual({
+      to_receive: 0,
+      to_precheck: 0,
+      to_batch: 0,
+      batches_to_submit: 0,
+      batches_to_pay: 0
+    });
+  });
+
+  it("falls back to zero when empty-table SUM yields all-null fields", async () => {
+    const db = new SummaryDb();
+    db.envelopeRow = { to_receive: null, to_precheck: null, to_batch: null };
+    db.batchRow = { batches_to_submit: null, batches_to_pay: null };
     const response = await requestSummary(db);
 
     expect(response.status).toBe(200);

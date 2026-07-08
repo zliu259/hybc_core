@@ -1286,7 +1286,7 @@ reimbursementRoutes.get(
          SUM(CASE WHEN status = 'received' AND precheck_status IN ('none', 'pending', 'supplement') THEN 1 ELSE 0 END) AS to_precheck,
          SUM(CASE WHEN status = 'received' AND precheck_status = 'approved' AND batch_id IS NULL THEN 1 ELSE 0 END) AS to_batch
        FROM reimbursement_envelope
-       WHERE status != 'deleted'`
+       WHERE status != 'cancelled'`
     ).first<{
       to_receive: number | null;
       to_precheck: number | null;
