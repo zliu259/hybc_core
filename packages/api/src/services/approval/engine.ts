@@ -685,6 +685,45 @@ export const handleResubmit = async (
 // ─── Instance Detail ──────────
 
 /**
+ * Thrown when a user requests an approval instance they are not allowed to view.
+ * Distinct from the generic "not found" error so the route can map it to 403.
+ */
+export class ApprovalAccessDeniedError extends Error {
+  constructor(message = "无权查看该审批实例") {
+    super(message);
+    this.name = "ApprovalAccessDeniedError";
+  }
+}
+
+/**
+ * View-level authorization for an approval instance.
+ *
+ * Visible to:
+ * - super_admin / manager — monitoring scope (any instance)
+ * - the initiator — "我发起的"
+ * - any current-or-historical assignee — approvers across all rounds,
+ *   including transfer targets (each has an approval_task row)
+ * - cc recipients — cc nodes create completed approval_task rows with
+ *   assignee_userid, so they are covered by the same task check
+ *
+ * Everyone else is unrelated to the instance and must be denied.
+ */
+export const isInstanceViewer = (
+  instance: ApprovalInstance,
+  tasks: ApprovalTask[],
+  userId: string,
+  userRoles: string[]
+): boolean => {
+  if (userRoles.includes("super_admin") || userRoles.includes("manager")) {
+    return true;
+  }
+  if (instance.initiator_userid === userId) {
+    return true;
+  }
+  return tasks.some((task) => task.assignee_userid === userId);
+};
+
+/**
  * Get full approval instance detail with timeline, tasks, available actions.
  */
 export const getInstanceDetail = async (
@@ -734,6 +773,12 @@ export const getInstanceDetail = async (
     .all<ApprovalTask>();
 
   const tasks = taskRows.results ?? [];
+
+  // View-level authorization — reject users unrelated to this instance
+  // before exposing timeline / approver / comment data.
+  if (!isInstanceViewer(instance, tasks, userId, userRoles)) {
+    throw new ApprovalAccessDeniedError();
+  }
 
   // Load transfers
   const transferRows = await env.DB.prepare(

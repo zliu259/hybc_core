@@ -14,7 +14,8 @@ import type {
 import {
   submitForApproval,
   getInstanceDetail,
-  advanceWorkflow
+  advanceWorkflow,
+  ApprovalAccessDeniedError
 } from "../services/approval/engine";
 import { createAiGateHandler } from "../services/ai-slot";
 import {
@@ -740,6 +741,9 @@ approvalRoutes.get("/:id", async (c) => {
     const detail = await getInstanceDetail(c.env, id, auth.sub, auth.roles);
     return c.json({ success: true, data: detail });
   } catch (err) {
+    if (err instanceof ApprovalAccessDeniedError) {
+      return c.json({ success: false, error: { message: err.message } }, 403);
+    }
     const message = err instanceof Error ? err.message : "Not found";
     return c.json({ success: false, error: { message } }, 404);
   }
