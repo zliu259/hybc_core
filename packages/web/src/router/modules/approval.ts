@@ -17,7 +17,6 @@ export default {
       component: () => import("@/views/approval/index.vue"),
       meta: {
         title: "审批中心",
-        showLink: false,
         roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
       }
     },
