@@ -181,6 +181,8 @@ const submitQuickAction = async () => {
     }
     quickDialogVisible.value = false;
     await loadPending();
+  } catch {
+    message("操作失败,请重试", { type: "error" });
   } finally {
     quickLoading.value = false;
   }
