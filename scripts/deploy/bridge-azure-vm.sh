@@ -40,13 +40,37 @@ if [[ "$LOCAL_BUNDLE" != "true" && -z "$GIT_REPO_URL" ]]; then
   exit 1
 fi
 
-require_cmd git
-
 if [[ "$INSTALL_DEPS" == "true" ]]; then
   as_root apt-get update -y
-  as_root apt-get install -y python3 python3-venv python3-pip git caddy
+  as_root apt-get install -y \
+    python3 \
+    python3-venv \
+    python3-pip \
+    git \
+    curl \
+    debian-keyring \
+    debian-archive-keyring \
+    apt-transport-https
+
+  if ! command -v caddy >/dev/null 2>&1; then
+    as_root apt-get install -y gnupg
+
+    CADDY_KEY_TMP="$(mktemp)"
+    CADDY_LIST_TMP="$(mktemp)"
+    curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/gpg.key -o "$CADDY_KEY_TMP"
+    curl -fsSL https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt -o "$CADDY_LIST_TMP"
+    as_root gpg --dearmor --yes -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg "$CADDY_KEY_TMP"
+    as_root cp "$CADDY_LIST_TMP" /etc/apt/sources.list.d/caddy-stable.list
+    rm -f "$CADDY_KEY_TMP" "$CADDY_LIST_TMP"
+
+    as_root apt-get update -y
+    as_root apt-get install -y caddy
+  fi
 fi
 
+if [[ "$LOCAL_BUNDLE" != "true" ]]; then
+  require_cmd git
+fi
 require_cmd python3
 
 if [[ "$LOCAL_BUNDLE" == "true" ]]; then

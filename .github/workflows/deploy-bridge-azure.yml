@@ -32,10 +32,14 @@ jobs:
           host: ${{ secrets.AZURE_BRIDGE_HOST }}
           username: ${{ secrets.AZURE_BRIDGE_USER }}
           key: ${{ secrets.AZURE_BRIDGE_SSH_KEY }}
+          script_stop: true
           script: |
+            set -euo pipefail
+
             export DEPLOY_ROOT=/opt/hybc_core
             export GIT_BRANCH=main
             export SERVICE_NAME=hybc-bridge
+            export BRIDGE_SERVICE_NAME=hybc-bridge
 
             sudo mkdir -p "$DEPLOY_ROOT"
             sudo chown -R "$USER":"$USER" "$DEPLOY_ROOT"
@@ -48,12 +52,23 @@ jobs:
               exit 1
             fi
 
+            ENV_BACKUP=""
+            if [ -f "$DEPLOY_ROOT/bridge/.env" ]; then
+              ENV_BACKUP="/tmp/hybc-bridge.env.$$"
+              cp "$DEPLOY_ROOT/bridge/.env" "$ENV_BACKUP"
+            fi
+
             rm -rf "$DEPLOY_ROOT/bridge"
             mkdir -p "$DEPLOY_ROOT"
             cp -a "$SOURCE_BRIDGE_DIR" "$DEPLOY_ROOT/bridge"
             cp "$SOURCE_DEPLOY_DIR/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/"
             cp "$SOURCE_DEPLOY_DIR/bridge-azure-update.sh" "$DEPLOY_ROOT/scripts/deploy/"
             chmod +x "$DEPLOY_ROOT/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/bridge-azure-update.sh"
+
+            if [ -n "$ENV_BACKUP" ]; then
+              cp "$ENV_BACKUP" "$DEPLOY_ROOT/bridge/.env"
+              rm -f "$ENV_BACKUP"
+            fi
 
             export BRIDGE_PROXY_TOKEN="${{ secrets.AZURE_BRIDGE_PROXY_TOKEN }}"
             export WORKER_API_BASE_URL="${{ vars.AZURE_BRIDGE_WORKER_API_BASE_URL }}"
@@ -62,7 +77,7 @@ jobs:
             : "${RELAY_API_TIMEOUT_SECONDS:=30}"
 
             cd "$DEPLOY_ROOT"
-            bash scripts/deploy/bridge-azure-update.sh
+            LOCAL_BUNDLE=true bash scripts/deploy/bridge-azure-vm.sh
 
             sudo systemctl status hybc-bridge --no-pager
             curl -fsS --max-time 8 http://127.0.0.1:9001/health
