@@ -73,10 +73,8 @@
 - 发票管理：`packages/web/src/views/finance/receipt/invoice.vue`
 - 收款登记列表：`packages/web/src/views/finance/receipt/list.vue`
 - 收款统计仪表盘：`packages/web/src/views/finance/receipt/dashboard.vue`
-- 审批中心：`packages/web/src/views/approval/index.vue`
-- 审批统一工作台：`packages/web/src/views/approval/unified-tasklist.vue`
-- 资产任务中心（复用审批统一工作台资产模式）：`packages/web/src/views/approval/unified-tasklist.vue`
-- 审批监控台（超管）：`packages/web/src/views/approval/admin-monitor.vue`
+- 审批中心（唯一审批台）：`packages/web/src/views/approval/index.vue`
+- 审批监控台（超管/经理只读）：`packages/web/src/views/approval/admin-monitor.vue`
 - 审批详情：`packages/web/src/views/approval/detail.vue`
 - 审批模板配置：`packages/web/src/views/approval/template-config.vue`
 - 金额阈值配置：`packages/web/src/views/approval/threshold-config.vue`
@@ -384,10 +382,15 @@
 
 #### H. 审批中心 `views/approval/index.vue`
 
+- 唯一审批台：原“统一审批台”（`unified-tasklist.vue`）已删除，旧路径 `/approval/unified-tasklist` 302 重定向到 `/approval/index`，导航菜单不再出现独立入口，全部审批处理动作收敛到本页。
 - Tab：待审批、已处理、抄送我。
 - 待审批/已处理列表列：业务类型、审批单号、所属项目、金额、业务明细、摘要、发起人、节点/操作、时间、状态（用于审批快速识别）。
+- 待审批表格新增“操作”列：通过 / 驳回 / 转签 / 详情，无需进详情页即可处理当前节点：
+  - 通过 / 驳回 / 转签点击打开共享轻量对话框：通过意见可选，驳回意见必填，转签需选择企微人员并填写原因（必填）。
+  - 提交成功后提示并刷新当前页签，条目随即流出待办；提交失败显示错误提示，不静默吞错。
+  - “详情”按钮进入 `detail.vue`，带 `?from=desk`，供详情页返回时定位回本页；已处理/抄送页签行点击进详情同样带 `?from=desk`，行为不变。
 - 报销审批条目的“业务明细”支持直接点击跳转对应报销批次详情，便于从我的待办直接核对报销业务：`packages/web/src/views/approval/index.vue`
-- API 指向：`/api/v1/approval/pending`
+- API 指向：`/api/v1/approval/pending`、`/api/v1/approval/:id/approve`、`/api/v1/approval/:id/reject`、`/api/v1/approval/:id/transfer`
 
 #### I. 审批详情 `views/approval/detail.vue`
 
@@ -400,16 +403,19 @@
 - 跳转可点击态需与财务域路由权限一致：无财务域访问权限时显示为只读文本，避免误导点击。
 - 下区：动作区（通过/拒绝/退回/转签/撤回）。
 - Web 端审批动作完成（通过/驳回/退回/转办）后，先显示成功提示，再自动跳转到“待我审批”列表（`/approval/index`），与 miniapp `pages/approval-detail/index.js` 行为对齐：`packages/web/src/views/approval/detail.vue`
+- 页头“返回”按钮（`el-page-header @back`）来源感知：按进入详情时的 `?from=` 回到来处——`from=monitor` 回审批监控台（`/approval/admin-monitor`），`from=desk` 回审批中心（`/approval/index`）；无 `from` 时优先用浏览器历史 `router.back()`，历史不可用再兜底 `/approval/index`。该逻辑与上一条“动作完成后跳转待我审批”相互独立，动作后跳转不受 `from` 影响：`packages/web/src/views/approval/detail.vue`
 - API 指向：`/api/v1/approval/:id/*`、`/api/v1/receipt/refund/:id`
 
-#### I-1. 审批监控台（超管） `views/approval/admin-monitor.vue`
+#### I-1. 审批监控台（超管/经理只读） `views/approval/admin-monitor.vue`
 
 - 列表维度：审批单号、业务类型、摘要、发起人、当前节点、状态、提交时间、完成时间。
-- 筛选条件：业务类型、状态（支持多选，默认：进行中/已通过/已驳回）、发起人（企微成员下拉，仅显示姓名）、摘要关键字。
-- 筛选条件本地持久化：按“当前登录用户 + 当前浏览器设备”保存上次筛选值，刷新/重进页面自动恢复，重置时同步清空本地缓存。
-- 行动作：查看详情、强制通过、强制转签（仅 `in_progress` 且 `super_admin` 可见）。
-- 强制通过流程：先拉取审批详情并列出 pending 任务，再选择任务 + 填写意见后执行。
-- API 指向：`/api/v1/approval/admin/all`、`/api/v1/approval/:id/force-approve`、`/api/v1/approval/:id/force-transfer`
+- 状态筛选改为四个页签：进行中 / 已通过 / 已驳回 / 全部（不传 status）；切页签即查询并页码归零。页签徽标计数取自 `GET /api/v1/approval/admin/summary`（`in_progress`/`approved`/`rejected`/`total` 四项全局聚合计数，不随下方次级筛选变化），计数接口失败时徽标不显示、不阻塞列表加载。
+- 次级筛选保留：业务类型、发起人（企微成员下拉，仅显示姓名）、摘要关键字；查询/重置只作用于这三项，不影响当前页签。
+- 已移除筛选条件本地持久化（不再按“当前登录用户 + 当前浏览器设备”保存/恢复状态筛选到 localStorage）。
+- 行动作：查看详情（链接带 `?from=monitor`，供详情页“返回”定位回本页）、强制通过、强制转签（仅 `in_progress` 且 `super_admin` 可见；manager 无强制按钮，仅只读浏览列表）。
+- 强制通过流程：先拉取审批详情并列出 pending 任务，再选择任务 + 填写意见后执行；强制通过/强制转签成功后同步刷新列表与页签徽标计数。
+- 页面访问角色：`super_admin`、`manager`（放开只读监控，无强制操作入口）。
+- API 指向：`/api/v1/approval/admin/all`（`super_admin`/`manager` 可读）、`/api/v1/approval/admin/summary`（同权限，四项聚合计数）、`/api/v1/approval/:id/force-approve`、`/api/v1/approval/:id/force-transfer`（仅 `super_admin`）。
 
 #### I-2. 审批模板配置 `views/approval/template-config.vue`
 

@@ -12,6 +12,7 @@
 - 退回发起人 → 编辑业务单 → 重新提交：`2026-07-01-approval-return-resubmit-design.md`
 - 对外付款 UI/UX 全面优化（付款处理台）：`2026-07-08-payment-uiux-console-design.md`、`2026-07-08-payment-uiux-console-plan.md`
 - 报销付款工作台三步流水线（办公室一条龙）：`2026-07-08-reimbursement-office-workbench-design.md`、`2026-07-08-reimbursement-office-workbench-plan.md`
+- 审批流转优化（统一审批台/监控台 Tabs + manager 只读/返回来源感知）：`2026-07-09-approval-flow-optimization-design.md`、`2026-07-09-approval-flow-optimization-plan.md`
 
 ### 架构与重构（历史 doc/）
 - 库房与资产系统：`库房系统升级架构设计.md`、`库房与资产任务队列重构方案.md`、`库房与资产任务队列重构实施计划.md`、`库房小程序任务执行接口规划.md`

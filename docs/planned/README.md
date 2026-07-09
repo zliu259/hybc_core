@@ -4,4 +4,4 @@
 
 ## 清单
 
-- [2026-07-09-approval-flow-optimization-design.md](./2026-07-09-approval-flow-optimization-design.md) — 审批流转优化:统一审批台(删薄版)、详情页返回来源感知修复、监控台状态改 Tabs + manager 只读 + admin/summary 计数端点。
+暂无待实现计划。
