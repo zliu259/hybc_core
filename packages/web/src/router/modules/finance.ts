@@ -280,7 +280,7 @@ export default {
       component: Layout,
       redirect: "/finance/fleet/dashboard",
       meta: {
-        title: "车辆油卡",
+        title: "车辆中心",
         roles: ["super_admin", "manager", "finance"]
       },
       children: [
@@ -338,6 +338,21 @@ export default {
           meta: {
             title: "用油健康总览",
             roles: ["super_admin", "manager", "finance"]
+          }
+        },
+        {
+          path: "/finance/fleet/maintenance",
+          name: "FleetMaintenanceRecords",
+          component: () => import("@/views/vehicle-maintenance/index.vue"),
+          meta: {
+            title: "车辆保养记录",
+            roles: [
+              "super_admin",
+              "manager",
+              "finance",
+              "site_manager",
+              "operator"
+            ]
           }
         }
       ]
