@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+import { useRouter } from "vue-router";
 import {
   channelLabel,
   precheckStatusLabel,
@@ -13,7 +13,6 @@ import {
   listReimbursementEnvelopes,
   type ReimbursementEnvelope
 } from "@/api/reimbursement";
-import ReimbursementDetail from "./detail.vue";
 import {
   isHighRiskRow,
   reimbursementStatusTagType,
@@ -24,7 +23,6 @@ import {
 defineOptions({ name: "ReimbursementList" });
 
 const router = useRouter();
-const route = useRoute();
 const userStore = useUserStoreHook();
 const loading = ref(false);
 const list = ref<ReimbursementEnvelope[]>([]);
@@ -43,22 +41,7 @@ const filters = ref({
   keyword: ""
 });
 
-const roleSet = computed(() => new Set(userStore.roles ?? []));
 const currentUserid = computed(() => userStore.username || "");
-const canOfficeOps = computed(() =>
-  ["super_admin", "manager", "site_manager", "finance"].some(role =>
-    roleSet.value.has(role)
-  )
-);
-const canFinanceCenter = computed(() =>
-  ["super_admin", "manager", "site_manager", "finance"].some(role =>
-    roleSet.value.has(role)
-  )
-);
-const isWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
-
-type WorkflowView = "submission";
-const workflowView = ref<WorkflowView>("submission");
 const submissionStatuses = ["unregistered", "draft", "submitted"];
 
 const projectMap = computed(() => {
@@ -92,9 +75,6 @@ const listedAmountTotal = computed(() =>
 
 const highRiskCount = computed(() => list.value.filter(isHighRiskRow).length);
 
-const detailDrawerVisible = ref(false);
-const activeDetailId = ref<number | null>(null);
-
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
   projects.value = result.data;
@@ -123,42 +103,15 @@ const loadData = async () => {
 };
 
 const goCreate = () => {
-  if (isWorkspaceRoute.value) {
-    router.push("/workspace/my-reimbursement/detail/create");
-    return;
-  }
-  router.push("/finance/reimbursement/detail/create");
+  router.push("/workspace/my-reimbursement/detail/create");
 };
 
 const goDetail = (id: number) => {
-  if (isWorkspaceRoute.value) {
-    router.push(`/workspace/my-reimbursement/detail/${id}`);
-    return;
-  }
-  activeDetailId.value = id;
-  detailDrawerVisible.value = true;
-};
-
-const closeDetailDrawer = () => {
-  detailDrawerVisible.value = false;
-};
-
-const onDetailDrawerClosed = () => {
-  activeDetailId.value = null;
-};
-
-const onDetailChanged = async () => {
-  await loadData();
-};
-
-const goEnvelopeGenerator = () => {
-  router.push("/finance/reimbursement/envelope-generator");
+  router.push(`/workspace/my-reimbursement/detail/${id}`);
 };
 
 const applyWorkflowPreset = () => {
-  filters.value.applicant_userid = isWorkspaceRoute.value
-    ? currentUserid.value
-    : "";
+  filters.value.applicant_userid = currentUserid.value;
   filters.value.status = [...submissionStatuses];
   filters.value.channel = "";
 };
@@ -178,23 +131,7 @@ onMounted(async () => {
         <div class="page-subtitle">{{ currentViewHint }}</div>
       </div>
       <el-space wrap>
-        <el-button
-          v-if="workflowView === 'submission'"
-          type="success"
-          @click="goCreate"
-        >
-          {{
-            !isWorkspaceRoute && canOfficeOps ? "代员工发起报销" : "发起报销"
-          }}
-        </el-button>
-        <el-button
-          v-if="!isWorkspaceRoute && canFinanceCenter"
-          type="primary"
-          plain
-          @click="goEnvelopeGenerator"
-        >
-          信封生成器
-        </el-button>
+        <el-button type="success" @click="goCreate">发起报销</el-button>
       </el-space>
     </div>
 
@@ -214,10 +151,6 @@ onMounted(async () => {
     </div>
 
     <section class="filter-panel">
-      <el-tabs v-model="workflowView">
-        <el-tab-pane label="报销提交" name="submission" />
-      </el-tabs>
-
       <el-form class="filter-form" label-width="72px">
         <div class="filter-grid">
           <el-form-item label="所属项目">
@@ -271,12 +204,8 @@ onMounted(async () => {
               v-model="filters.applicant_userid"
               clearable
               filterable
-              :disabled="isWorkspaceRoute && workflowView === 'submission'"
-              :placeholder="
-                isWorkspaceRoute && workflowView === 'submission'
-                  ? '我的提交'
-                  : '全部申请人'
-              "
+              disabled
+              placeholder="我的提交"
             >
               <el-option
                 v-for="item in wecomUsers"
@@ -388,25 +317,6 @@ onMounted(async () => {
       />
     </section>
   </div>
-
-  <el-drawer
-    v-model="detailDrawerVisible"
-    title="报销详情"
-    size="82%"
-    destroy-on-close
-    append-to-body
-    class="reimbursement-detail-drawer"
-    @closed="onDetailDrawerClosed"
-  >
-    <ReimbursementDetail
-      v-if="activeDetailId !== null"
-      :envelope-id="activeDetailId"
-      drawer-mode
-      :workspace-view="isWorkspaceRoute"
-      @close="closeDetailDrawer"
-      @changed="onDetailChanged"
-    />
-  </el-drawer>
 </template>
 
 <style scoped>
