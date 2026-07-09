@@ -24,10 +24,10 @@ export default {
     {
       path: "/approval/unified-tasklist",
       name: "ApprovalUnifiedTasklist",
-      component: () => import("@/views/approval/unified-tasklist.vue"),
+      redirect: "/approval/index",
       meta: {
-        title: "统一审批台",
-        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+        title: "统一审批台(旧路径)",
+        showLink: false
       }
     },
     {
@@ -36,7 +36,7 @@ export default {
       component: () => import("@/views/approval/admin-monitor.vue"),
       meta: {
         title: "审批监控台",
-        roles: ["super_admin"]
+        roles: ["super_admin", "manager"]
       }
     },
     {
