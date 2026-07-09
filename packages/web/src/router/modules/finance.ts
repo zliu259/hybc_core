@@ -257,19 +257,19 @@ export default {
       path: "/finance/entity-center",
       name: "FinanceEntityCenter",
       component: Layout,
-      redirect: "/finance/entity/profile",
+      redirect: "/admin/system-base/entity",
       meta: {
-        title: "实体公司资料",
-        roles: ["super_admin", "manager", "finance"]
+        title: "实体公司资料(旧路径)",
+        showLink: false
       },
       children: [
         {
           path: "/finance/entity/profile",
           name: "FinanceEntityProfile",
-          component: () => import("@/views/entity/index.vue"),
+          redirect: "/admin/system-base/entity",
           meta: {
-            title: "实体资料管理",
-            roles: ["super_admin", "manager", "finance"]
+            title: "实体资料管理(旧路径)",
+            showLink: false
           }
         }
       ]
