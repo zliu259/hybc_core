@@ -364,13 +364,7 @@ export default {
       redirect: "/approval/index",
       meta: {
         title: "审批流转",
-        roles: [
-          "super_admin",
-          "manager",
-          "site_manager",
-          "finance",
-          "operator"
-        ]
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
       },
       children: [
         {
