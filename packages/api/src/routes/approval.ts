@@ -634,6 +634,37 @@ approvalRoutes.get("/initiated/summary", async (c) => {
   });
 });
 
+approvalRoutes.get("/admin/summary", async (c) => {
+  const auth = c.get("auth");
+  if (!auth.roles.includes("super_admin") && !auth.roles.includes("manager")) {
+    return c.json({ success: false, error: { message: "Forbidden" } }, 403);
+  }
+
+  const row = await c.env.DB.prepare(
+    `SELECT
+       SUM(CASE WHEN status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress,
+       SUM(CASE WHEN status = 'approved' THEN 1 ELSE 0 END) AS approved,
+       SUM(CASE WHEN status = 'rejected' THEN 1 ELSE 0 END) AS rejected,
+       COUNT(*) AS total
+     FROM approval_instance`
+  ).first<{
+    in_progress: number | null;
+    approved: number | null;
+    rejected: number | null;
+    total: number | null;
+  }>();
+
+  return c.json({
+    success: true,
+    data: {
+      in_progress: row?.in_progress ?? 0,
+      approved: row?.approved ?? 0,
+      rejected: row?.rejected ?? 0,
+      total: row?.total ?? 0
+    }
+  });
+});
+
 approvalRoutes.get("/admin/all", async (c) => {
   const auth = c.get("auth");
   if (!auth.roles.includes("super_admin")) {
