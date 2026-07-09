@@ -1309,10 +1309,10 @@ const goBack = () => {
     return;
   }
   if (from === "desk") {
-    router.push({ path: "/approval/index" });
+    router.push(pendingApprovalRoute);
     return;
   }
-  if (typeof window !== "undefined" && window.history.length > 1) {
+  if (window.history.state?.back) {
     router.back();
     return;
   }
