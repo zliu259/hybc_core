@@ -48,7 +48,7 @@ const isWorkspaceView = computed(
 );
 
 const effectiveEnvelopeId = computed(() => props.envelopeId ?? route.params.id);
-const envelopeId = computed(() => Number(effectiveEnvelopeId.value));
+const resolvedEnvelopeId = computed(() => Number(effectiveEnvelopeId.value));
 const isCreate = computed(() => effectiveEnvelopeId.value === "create");
 
 const baseDataLoading = ref(false);
@@ -597,7 +597,7 @@ const loadDetail = async (options?: { showLoading?: boolean }) => {
     detailLoading.value = true;
   }
   try {
-    const result = await getReimbursementEnvelope(envelopeId.value);
+    const result = await getReimbursementEnvelope(resolvedEnvelopeId.value);
     detail.value = result.data;
     form.value = {
       project_id: result.data.project_id,
@@ -785,7 +785,7 @@ const save = async () => {
         router.replace(`/finance/reimbursement/detail/${result.data.id}`);
       }
     } else {
-      await updateReimbursementEnvelope(envelopeId.value, {
+      await updateReimbursementEnvelope(resolvedEnvelopeId.value, {
         project_id: form.value.project_id,
         applicant_userid: form.value.applicant_userid || undefined,
         channel: form.value.channel,

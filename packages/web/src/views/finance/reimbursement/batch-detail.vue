@@ -51,7 +51,7 @@ const userStore = useUserStoreHook();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const effectiveBatchId = computed(() => props.batchId ?? route.params.id);
-const batchId = computed(() => Number(effectiveBatchId.value));
+const resolvedBatchId = computed(() => Number(effectiveBatchId.value));
 const isSuperAdmin = computed(() =>
   (userStore.roles ?? []).includes("super_admin")
 );
@@ -532,10 +532,10 @@ const loadMeta = async () => {
 const loadDetail = async () => {
   loading.value = true;
   try {
-    const result = await getReimbursementBatch(batchId.value);
+    const result = await getReimbursementBatch(resolvedBatchId.value);
     detail.value = result.data;
 
-    const report = await getBatchAuditReport(batchId.value);
+    const report = await getBatchAuditReport(resolvedBatchId.value);
     auditStatus.value = report.data.status;
     auditResult.value = report.data.result;
     syncVoucherEditorFromDetail();
@@ -551,7 +551,7 @@ const loadDetail = async () => {
 const runAudit = async () => {
   actionLoading.value = true;
   try {
-    await triggerBatchAudit(batchId.value);
+    await triggerBatchAudit(resolvedBatchId.value);
     message("已触发智能审核", { type: "success" });
     await loadDetail();
     notifyChanged();
@@ -561,7 +561,7 @@ const runAudit = async () => {
 };
 
 const refreshAudit = async () => {
-  const report = await getBatchAuditReport(batchId.value);
+  const report = await getBatchAuditReport(resolvedBatchId.value);
   auditStatus.value = report.data.status;
   auditResult.value = report.data.result;
   message(`智能审核状态：${report.data.status}`, { type: "info" });
@@ -570,7 +570,7 @@ const refreshAudit = async () => {
 const submitApproval = async () => {
   actionLoading.value = true;
   try {
-    const result = await submitBatchApproval(batchId.value, undefined, {
+    const result = await submitBatchApproval(resolvedBatchId.value, undefined, {
       idempotencyKey: `reimbursement-batch-submit-${crypto.randomUUID()}`
     });
     message(`已提交审批：${result.data.instance_no}`, { type: "success" });
@@ -582,7 +582,9 @@ const submitApproval = async () => {
 };
 
 const doMarkPaid = async () => {
-  router.push(`/finance/reimbursement?step=payout&batch_id=${batchId.value}`);
+  router.push(
+    `/finance/reimbursement?step=payout&batch_id=${resolvedBatchId.value}`
+  );
 };
 
 onMounted(async () => {
