@@ -199,12 +199,12 @@ watch(
 const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
 const goBackAfterSubmit = () => {
-  if (typeof window !== "undefined" && window.history.length > 1) {
+  if (typeof window !== "undefined" && window.history.state?.back) {
     router.back();
     return;
   }
   router.push(
-    inWorkspaceRoute.value ? "/workspace/payment" : "/finance/payment"
+    inWorkspaceRoute.value ? "/workspace/payment/wizard" : "/finance/payment"
   );
 };
 
