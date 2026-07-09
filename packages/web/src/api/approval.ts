@@ -209,6 +209,20 @@ export const listAllApprovalInstances = (params?: {
   );
 };
 
+export type ApprovalAdminSummary = {
+  in_progress: number;
+  approved: number;
+  rejected: number;
+  total: number;
+};
+
+export const getApprovalAdminSummary = () => {
+  return http.request<{ success: boolean; data: ApprovalAdminSummary }>(
+    "get",
+    "/api/v1/approval/admin/summary"
+  );
+};
+
 export const listPendingApprovals = (params?: {
   biz_type?: string;
   keyword?: string;
