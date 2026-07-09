@@ -107,15 +107,30 @@ describe("approval admin summary", () => {
     const db = new SummaryDb();
     await requestSummary(db);
     const sql = db.capturedSql.find(s => s.includes("in_progress")) ?? "";
-    expect(sql).toContain("status = 'in_progress'");
-    expect(sql).toContain("status = 'approved'");
-    expect(sql).toContain("status = 'rejected'");
-    expect(sql).toContain("COUNT(*)");
+    expect(sql).toContain("status = 'in_progress' THEN 1 ELSE 0 END) AS in_progress");
+    expect(sql).toContain("status = 'approved' THEN 1 ELSE 0 END) AS approved");
+    expect(sql).toContain("status = 'rejected' THEN 1 ELSE 0 END) AS rejected");
+    expect(sql).toContain("COUNT(*) AS total");
   });
 
   it("falls back to zero when the aggregate row is null", async () => {
     const db = new SummaryDb();
     db.row = null;
+    const response = await requestSummary(db);
+
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as { data: Record<string, number> };
+    expect(payload.data).toEqual({
+      in_progress: 0,
+      approved: 0,
+      rejected: 0,
+      total: 0
+    });
+  });
+
+  it("falls back to zero per field when counts are null on an empty table", async () => {
+    const db = new SummaryDb();
+    db.row = { in_progress: null, approved: null, rejected: null, total: 0 };
     const response = await requestSummary(db);
 
     expect(response.status).toBe(200);
