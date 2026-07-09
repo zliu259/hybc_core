@@ -5,10 +5,14 @@ import {
   listPendingApprovals,
   listProcessedApprovals,
   listCcApprovals,
+  approveApproval,
+  rejectApproval,
+  transferApproval,
   type PendingApprovalItem,
   type ProcessedApprovalItem,
   type ApprovalInstance
 } from "@/api/approval";
+import { message } from "@/utils/message";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 import { formatBeijingDateTime } from "@/utils/datetime";
@@ -116,7 +120,70 @@ const loadCurrentTab = () => {
 const onTabChange = () => loadCurrentTab();
 
 const gotoDetail = (id: number) => {
-  router.push(`/approval/detail/${id}`);
+  router.push(`/approval/detail/${id}?from=desk`);
+};
+
+type QuickAction = "approve" | "reject" | "transfer";
+
+const quickDialogVisible = ref(false);
+const quickAction = ref<QuickAction>("approve");
+const quickRow = ref<PendingApprovalItem | null>(null);
+const quickComment = ref("");
+const quickTransferTo = ref("");
+const quickLoading = ref(false);
+
+const quickDialogTitle = computed(() => {
+  if (quickAction.value === "approve") return "通过审批";
+  if (quickAction.value === "reject") return "驳回审批";
+  return "转签审批";
+});
+
+const openQuickAction = (row: PendingApprovalItem, action: QuickAction) => {
+  quickRow.value = row;
+  quickAction.value = action;
+  quickComment.value = "";
+  quickTransferTo.value = "";
+  quickDialogVisible.value = true;
+};
+
+const submitQuickAction = async () => {
+  const row = quickRow.value;
+  if (!row) return;
+  const comment = quickComment.value.trim();
+  if (quickAction.value === "reject" && !comment) {
+    message("驳回时请填写意见", { type: "warning" });
+    return;
+  }
+  if (quickAction.value === "transfer") {
+    if (!quickTransferTo.value.trim()) {
+      message("请选择转签对象", { type: "warning" });
+      return;
+    }
+    if (!comment) {
+      message("转签时请填写原因", { type: "warning" });
+      return;
+    }
+  }
+  quickLoading.value = true;
+  try {
+    if (quickAction.value === "approve") {
+      await approveApproval(row.id, { comment: comment || undefined });
+      message("已通过", { type: "success" });
+    } else if (quickAction.value === "reject") {
+      await rejectApproval(row.id, { comment });
+      message("已驳回", { type: "success" });
+    } else {
+      await transferApproval(row.id, {
+        to_userid: quickTransferTo.value.trim(),
+        reason: comment
+      });
+      message("已转签", { type: "success" });
+    }
+    quickDialogVisible.value = false;
+    await loadPending();
+  } finally {
+    quickLoading.value = false;
+  }
 };
 
 const businessDetailRoute = (row: { biz_type: string; biz_id?: number }) => {
@@ -290,6 +357,31 @@ onMounted(async () => {
               >
                 {{ toStatusLabel(row.task_status) }}
               </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column label="操作" width="220" fixed="right">
+            <template #default="{ row }">
+              <el-button
+                link
+                type="success"
+                @click.stop="openQuickAction(row, 'approve')"
+                >通过</el-button
+              >
+              <el-button
+                link
+                type="danger"
+                @click.stop="openQuickAction(row, 'reject')"
+                >驳回</el-button
+              >
+              <el-button
+                link
+                type="warning"
+                @click.stop="openQuickAction(row, 'transfer')"
+                >转签</el-button
+              >
+              <el-button link type="primary" @click.stop="gotoDetail(row.id)"
+                >详情</el-button
+              >
             </template>
           </el-table-column>
         </el-table>
@@ -468,5 +560,54 @@ onMounted(async () => {
         />
       </el-tab-pane>
     </el-tabs>
+
+    <el-dialog
+      v-model="quickDialogVisible"
+      :title="quickDialogTitle"
+      width="520px"
+    >
+      <div
+        v-if="quickRow"
+        style="margin-bottom: 10px; color: #6b7280; font-size: 13px"
+      >
+        {{ bizTypeLabel(quickRow.biz_type) }} · {{ quickRow.biz_summary }}
+      </div>
+      <el-select
+        v-if="quickAction === 'transfer'"
+        v-model="quickTransferTo"
+        clearable
+        filterable
+        placeholder="选择转签人员"
+        style="width: 100%; margin-bottom: 10px"
+      >
+        <el-option
+          v-for="item in wecomUsers"
+          :key="item.userid"
+          :label="`${item.name} (${item.userid})`"
+          :value="item.userid"
+        />
+      </el-select>
+      <el-input
+        v-model="quickComment"
+        type="textarea"
+        :rows="3"
+        :placeholder="
+          quickAction === 'approve'
+            ? '审批意见(可选)'
+            : quickAction === 'reject'
+              ? '驳回意见(必填)'
+              : '转签原因(必填)'
+        "
+      />
+      <template #footer>
+        <el-button @click="quickDialogVisible = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="quickLoading"
+          @click="submitQuickAction"
+          >确认</el-button
+        >
+      </template>
+    </el-dialog>
   </el-card>
 </template>
