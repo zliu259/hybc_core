@@ -137,3 +137,6 @@ If you use additional relay subdomains (for example `bridge-hk-2.hybcdg.com`, `b
 - `BRIDGE_EXTRA_DOMAINS`: comma-separated extra hostnames
 
 The deployment script writes a Caddy config for all listed hosts and auto-manages TLS certificates.
+
+### 手动更新
+- 手动切换azure hk bridge 到 aws lighsail jp bridge

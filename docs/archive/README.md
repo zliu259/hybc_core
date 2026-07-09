@@ -20,3 +20,6 @@
 - 大陆访问优化（Worker 主入口 + Azure HK Bridge 兜底）：`大陆访问优化-Worker主入口与AzureHKBridge兜底方案.md`
 - 部署：`Phase8本地部署与正式部署.md`
 - UI 重设计（早期，已并入 `doc/UI设计文档.md`）：`Re-design UI.md`、`Re-design Miniapp UI.md`
+
+### 手动更新
+- 手动切换azure hk bridge 到 aws lighsail jp bridge
