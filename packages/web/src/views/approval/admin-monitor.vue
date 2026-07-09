@@ -33,6 +33,7 @@ const isSuperAdmin = computed(() =>
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 
 const loading = ref(false);
+let loadSeq = 0;
 const list = ref<ApprovalInstance[]>([]);
 const page = ref(1);
 const pageSize = ref(30);
@@ -56,6 +57,7 @@ const TAB_STATUS: Record<MonitorTab, string> = {
 const activeTab = ref<MonitorTab>("in_progress");
 const summary = ref<ApprovalAdminSummary | null>(null);
 
+// 徽标为全局计数,不随 biz_type/发起人/关键字次级筛选变化
 const monitorTabs = computed(() => [
   {
     key: "in_progress" as MonitorTab,
@@ -129,6 +131,7 @@ const toUserLabel = (userid: string | null | undefined) => {
 };
 
 const loadList = async () => {
+  const seq = ++loadSeq;
   loading.value = true;
   try {
     const statusParam = TAB_STATUS[activeTab.value];
@@ -140,10 +143,11 @@ const loadList = async () => {
       page: page.value,
       pageSize: pageSize.value
     });
+    if (seq !== loadSeq) return;
     list.value = result.data;
     total.value = result.pagination.total;
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 };
 
@@ -375,7 +379,15 @@ onMounted(async () => {
       <el-form-item>
         <el-button type="primary" @click="handleSearch">查询</el-button>
         <el-button @click="handleReset">重置</el-button>
-        <el-button @click="loadList">刷新</el-button>
+        <el-button
+          @click="
+            () => {
+              loadList();
+              loadSummary();
+            }
+          "
+          >刷新</el-button
+        >
       </el-form-item>
     </el-form>
 
