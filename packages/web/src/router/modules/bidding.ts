@@ -6,8 +6,8 @@ export default {
   component: Layout,
   redirect: "/bidding/dedup",
   meta: {
-    icon: "ri:file-copy-2-line",
-    title: "投标",
+    icon: "ri:tools-line",
+    title: "小工具",
     rank: 20
   },
   children: [
