@@ -1302,7 +1302,22 @@ const handleResubmit = async () => {
   }
 };
 
-const goBack = () => router.push(pendingApprovalRoute);
+const goBack = () => {
+  const from = route.query.from;
+  if (from === "monitor") {
+    router.push({ path: "/approval/admin-monitor" });
+    return;
+  }
+  if (from === "desk") {
+    router.push({ path: "/approval/index" });
+    return;
+  }
+  if (typeof window !== "undefined" && window.history.length > 1) {
+    router.back();
+    return;
+  }
+  router.push(pendingApprovalRoute);
+};
 
 onMounted(async () => {
   await Promise.all([loadWecomUsers(), loadMetaOptions()]);
