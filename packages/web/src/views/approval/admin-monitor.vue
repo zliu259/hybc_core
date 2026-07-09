@@ -1,12 +1,13 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref, watch } from "vue";
-import { storageLocal } from "@pureadmin/utils";
+import { computed, onMounted, reactive, ref } from "vue";
 import { message } from "@/utils/message";
 import {
   forceApproveTask,
   forceTransferApproval,
+  getApprovalAdminSummary,
   getApprovalDetail,
   listAllApprovalInstances,
+  type ApprovalAdminSummary,
   type ApprovalInstance,
   type ApprovalTask
 } from "@/api/approval";
@@ -37,66 +38,50 @@ const page = ref(1);
 const pageSize = ref(30);
 const total = ref(0);
 
-type AdminMonitorFilterState = {
-  biz_type: string;
-  status: string[];
-  initiator: string;
-  keyword: string;
-};
-
-const defaultStatusFilter = ["in_progress", "approved", "rejected"];
-
-const defaultFilters = (): AdminMonitorFilterState => ({
+const filters = reactive({
   biz_type: "",
-  status: [...defaultStatusFilter],
   initiator: "",
   keyword: ""
 });
 
-const filters = reactive<AdminMonitorFilterState>(defaultFilters());
+type MonitorTab = "in_progress" | "approved" | "rejected" | "all";
 
-const filterStorageKey = computed(() => {
-  const userIdentity = userStore.username?.trim() || userStore.nickname?.trim();
-  if (!userIdentity) return "";
-  return `approval-admin-monitor:filters:${userIdentity}`;
-});
-
-const restoreFilters = () => {
-  if (!filterStorageKey.value) return;
-  const saved = storageLocal().getItem<{
-    biz_type?: unknown;
-    status?: string | string[];
-    initiator?: unknown;
-    keyword?: unknown;
-  }>(filterStorageKey.value);
-  if (!saved || typeof saved !== "object") return;
-
-  const defaults = defaultFilters();
-
-  filters.biz_type = typeof saved.biz_type === "string" ? saved.biz_type : "";
-  const restoredStatus = Array.isArray(saved.status)
-    ? saved.status.filter(item => typeof item === "string" && item.trim())
-    : typeof saved.status === "string" && saved.status.trim()
-      ? saved.status
-          .split(",")
-          .map(item => item.trim())
-          .filter(Boolean)
-      : [];
-  filters.status =
-    restoredStatus.length > 0 ? restoredStatus : [...defaults.status];
-  filters.initiator =
-    typeof saved.initiator === "string" ? saved.initiator : "";
-  filters.keyword = typeof saved.keyword === "string" ? saved.keyword : "";
+const TAB_STATUS: Record<MonitorTab, string> = {
+  in_progress: "in_progress",
+  approved: "approved",
+  rejected: "rejected",
+  all: ""
 };
 
-const persistFilters = () => {
-  if (!filterStorageKey.value) return;
-  storageLocal().setItem(filterStorageKey.value, {
-    biz_type: filters.biz_type,
-    status: [...filters.status],
-    initiator: filters.initiator.trim(),
-    keyword: filters.keyword.trim()
-  });
+const activeTab = ref<MonitorTab>("in_progress");
+const summary = ref<ApprovalAdminSummary | null>(null);
+
+const monitorTabs = computed(() => [
+  {
+    key: "in_progress" as MonitorTab,
+    label: "进行中",
+    count: summary.value?.in_progress
+  },
+  {
+    key: "approved" as MonitorTab,
+    label: "已通过",
+    count: summary.value?.approved
+  },
+  {
+    key: "rejected" as MonitorTab,
+    label: "已驳回",
+    count: summary.value?.rejected
+  },
+  { key: "all" as MonitorTab, label: "全部", count: undefined }
+]);
+
+const loadSummary = async () => {
+  try {
+    const result = await getApprovalAdminSummary();
+    summary.value = result.data;
+  } catch {
+    summary.value = null;
+  }
 };
 
 const statusTagType: Record<string, TagType> = {
@@ -118,16 +103,6 @@ const bizTypeOptions = [
   { label: "报销审批", value: "reimbursement_batch" },
   { label: "出入库审批", value: "stock_order" },
   { label: "合同金额变更", value: "contract_amount_change" }
-];
-
-const statusOptions = [
-  { label: "待处理", value: "pending" },
-  { label: "进行中", value: "in_progress" },
-  { label: "已通过", value: "approved" },
-  { label: "已驳回", value: "rejected" },
-  { label: "已完成", value: "completed" },
-  { label: "已取消", value: "cancelled" },
-  { label: "已撤回", value: "withdrawn" }
 ];
 
 const initiatorOptions = computed(() => {
@@ -156,9 +131,10 @@ const toUserLabel = (userid: string | null | undefined) => {
 const loadList = async () => {
   loading.value = true;
   try {
+    const statusParam = TAB_STATUS[activeTab.value];
     const result = await listAllApprovalInstances({
       biz_type: filters.biz_type || undefined,
-      status: filters.status.length > 0 ? filters.status.join(",") : undefined,
+      status: statusParam || undefined,
       initiator: filters.initiator.trim() || undefined,
       keyword: filters.keyword.trim() || undefined,
       page: page.value,
@@ -171,28 +147,24 @@ const loadList = async () => {
   }
 };
 
+const switchTab = (tab: MonitorTab) => {
+  activeTab.value = tab;
+  page.value = 1;
+  loadList();
+};
+
 const handleSearch = async () => {
   page.value = 1;
   await loadList();
 };
 
 const handleReset = async () => {
-  const defaults = defaultFilters();
-  filters.biz_type = defaults.biz_type;
-  filters.status = defaults.status;
-  filters.initiator = defaults.initiator;
-  filters.keyword = defaults.keyword;
+  filters.biz_type = "";
+  filters.initiator = "";
+  filters.keyword = "";
   page.value = 1;
   await loadList();
 };
-
-watch(
-  filters,
-  () => {
-    persistFilters();
-  },
-  { deep: true }
-);
 
 const forceApproveDialogVisible = ref(false);
 const forceApproveLoading = ref(false);
@@ -270,6 +242,7 @@ const submitForceApprove = async () => {
     message("已强制通过", { type: "success" });
     forceApproveDialogVisible.value = false;
     await loadList();
+    await loadSummary();
   } catch {
     message("强制通过失败", { type: "error" });
   } finally {
@@ -324,6 +297,7 @@ const submitForceTransfer = async () => {
     message("已强制改派", { type: "success" });
     forceTransferDialogVisible.value = false;
     await loadList();
+    await loadSummary();
   } catch {
     message("强制改派失败", { type: "error" });
   } finally {
@@ -332,8 +306,7 @@ const submitForceTransfer = async () => {
 };
 
 onMounted(async () => {
-  restoreFilters();
-  await Promise.all([loadWecomUsers(), loadList()]);
+  await Promise.all([loadWecomUsers(), loadSummary(), loadList()]);
 });
 </script>
 
@@ -343,30 +316,29 @@ onMounted(async () => {
       <div style="font-size: 18px; font-weight: 600">审批监控台</div>
     </template>
 
+    <el-tabs
+      :model-value="activeTab"
+      style="margin-bottom: 8px"
+      @tab-change="key => switchTab(key as MonitorTab)"
+    >
+      <el-tab-pane v-for="tab in monitorTabs" :key="tab.key" :name="tab.key">
+        <template #label>
+          {{ tab.label
+          }}<el-badge
+            v-if="tab.count"
+            :value="tab.count"
+            :max="999"
+            style="margin-left: 4px"
+          />
+        </template>
+      </el-tab-pane>
+    </el-tabs>
+
     <el-form inline>
       <el-form-item label="业务类型">
         <el-select v-model="filters.biz_type" clearable placeholder="全部" style="width: 160px">
           <el-option
             v-for="item in bizTypeOptions"
-            :key="item.value"
-            :label="item.label"
-            :value="item.value"
-          />
-        </el-select>
-      </el-form-item>
-
-      <el-form-item label="状态">
-        <el-select
-          v-model="filters.status"
-          multiple
-          clearable
-          collapse-tags
-          collapse-tags-tooltip
-          placeholder="默认（进行中/已通过/已驳回）"
-          style="width: 260px"
-        >
-          <el-option
-            v-for="item in statusOptions"
             :key="item.value"
             :label="item.label"
             :value="item.value"
@@ -448,7 +420,9 @@ onMounted(async () => {
 
       <el-table-column label="操作" width="300" fixed="right">
         <template #default="{ row }">
-          <router-link :to="`/approval/detail/${row.id}`">查看详情</router-link>
+          <router-link :to="`/approval/detail/${row.id}?from=monitor`"
+            >查看详情</router-link
+          >
           <el-button
             v-if="isSuperAdmin && row.status === 'in_progress'"
             link
