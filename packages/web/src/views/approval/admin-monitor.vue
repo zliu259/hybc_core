@@ -21,7 +21,10 @@ defineOptions({ name: "ApprovalAdminMonitor" });
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
-type PendingTaskOption = Pick<ApprovalTask, "id" | "assignee_userid" | "status"> & {
+type PendingTaskOption = Pick<
+  ApprovalTask,
+  "id" | "assignee_userid" | "status"
+> & {
   node_name: string;
 };
 
@@ -196,7 +199,10 @@ const currentTransferTaskAssignee = computed(() => {
   return task?.assignee_userid ?? "";
 });
 
-const pickPendingTasks = (tasks: ApprovalTask[], nodes: Array<{ id: number; node_name: string }>) => {
+const pickPendingTasks = (
+  tasks: ApprovalTask[],
+  nodes: Array<{ id: number; node_name: string }>
+) => {
   const nodeMap = new Map<number, string>();
   for (const node of nodes) {
     nodeMap.set(node.id, node.node_name);
@@ -232,7 +238,10 @@ const openForceApproveDialog = async (row: ApprovalInstance) => {
 
 const submitForceApprove = async () => {
   if (!activeApproveInstanceId.value) return;
-  if (!Number.isFinite(forceApproveForm.task_id) || forceApproveForm.task_id <= 0) {
+  if (
+    !Number.isFinite(forceApproveForm.task_id) ||
+    forceApproveForm.task_id <= 0
+  ) {
     message("请选择任务", { type: "warning" });
     return;
   }
@@ -257,9 +266,10 @@ const submitForceApprove = async () => {
 const openForceTransferDialog = async (row: ApprovalInstance) => {
   try {
     const result = await getApprovalDetail(row.id);
-    const pendingTasks = pickPendingTasks(result.data.tasks, result.data.nodes).filter(
-      item => item.assignee_userid !== "AI_GATE"
-    );
+    const pendingTasks = pickPendingTasks(
+      result.data.tasks,
+      result.data.nodes
+    ).filter(item => item.assignee_userid !== "AI_GATE");
     if (!pendingTasks.length) {
       message("该实例无可改派的待处理任务", { type: "warning" });
       return;
@@ -278,7 +288,10 @@ const openForceTransferDialog = async (row: ApprovalInstance) => {
 
 const submitForceTransfer = async () => {
   if (!activeTransferInstanceId.value) return;
-  if (!Number.isFinite(forceTransferForm.task_id) || forceTransferForm.task_id <= 0) {
+  if (
+    !Number.isFinite(forceTransferForm.task_id) ||
+    forceTransferForm.task_id <= 0
+  ) {
     message("请选择任务", { type: "warning" });
     return;
   }
@@ -286,7 +299,9 @@ const submitForceTransfer = async () => {
     message("请填写改派目标和原因", { type: "warning" });
     return;
   }
-  if (forceTransferForm.to_userid.trim() === currentTransferTaskAssignee.value) {
+  if (
+    forceTransferForm.to_userid.trim() === currentTransferTaskAssignee.value
+  ) {
     message("目标审批人与当前审批人相同", { type: "warning" });
     return;
   }
@@ -340,7 +355,12 @@ onMounted(async () => {
 
     <el-form inline>
       <el-form-item label="业务类型">
-        <el-select v-model="filters.biz_type" clearable placeholder="全部" style="width: 160px">
+        <el-select
+          v-model="filters.biz_type"
+          clearable
+          placeholder="全部"
+          style="width: 160px"
+        >
           <el-option
             v-for="item in bizTypeOptions"
             :key="item.value"
@@ -400,7 +420,12 @@ onMounted(async () => {
         </template>
       </el-table-column>
 
-      <el-table-column prop="biz_summary" label="摘要" min-width="260" show-overflow-tooltip />
+      <el-table-column
+        prop="biz_summary"
+        label="摘要"
+        min-width="260"
+        show-overflow-tooltip
+      />
 
       <el-table-column label="发起人" min-width="160">
         <template #default="{ row }">
@@ -408,7 +433,11 @@ onMounted(async () => {
         </template>
       </el-table-column>
 
-      <el-table-column prop="current_node_key" label="当前节点" min-width="140" />
+      <el-table-column
+        prop="current_node_key"
+        label="当前节点"
+        min-width="140"
+      />
 
       <el-table-column label="状态" width="110">
         <template #default="{ row }">
@@ -479,7 +508,11 @@ onMounted(async () => {
     />
   </el-card>
 
-  <el-dialog v-model="forceApproveDialogVisible" title="强制通过审批任务" width="760px">
+  <el-dialog
+    v-model="forceApproveDialogVisible"
+    title="强制通过审批任务"
+    width="760px"
+  >
     <el-alert
       type="warning"
       :closable="false"
@@ -490,7 +523,9 @@ onMounted(async () => {
     <el-table :data="pendingTasksForApprove" border max-height="280">
       <el-table-column label="选择" width="90">
         <template #default="{ row }">
-          <el-radio v-model="forceApproveForm.task_id" :value="row.id">选中</el-radio>
+          <el-radio v-model="forceApproveForm.task_id" :value="row.id"
+            >选中</el-radio
+          >
         </template>
       </el-table-column>
       <el-table-column prop="id" label="任务ID" width="100" />
@@ -520,13 +555,20 @@ onMounted(async () => {
 
     <template #footer>
       <el-button @click="forceApproveDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="forceApproveLoading" @click="submitForceApprove"
+      <el-button
+        type="primary"
+        :loading="forceApproveLoading"
+        @click="submitForceApprove"
         >确认强制通过</el-button
       >
     </template>
   </el-dialog>
 
-  <el-dialog v-model="forceTransferDialogVisible" title="强制转签" width="760px">
+  <el-dialog
+    v-model="forceTransferDialogVisible"
+    title="强制转签"
+    width="760px"
+  >
     <el-alert
       type="warning"
       :closable="false"
@@ -537,7 +579,9 @@ onMounted(async () => {
     <el-table :data="pendingTasksForTransfer" border max-height="280">
       <el-table-column label="选择" width="90">
         <template #default="{ row }">
-          <el-radio v-model="forceTransferForm.task_id" :value="row.id">选中</el-radio>
+          <el-radio v-model="forceTransferForm.task_id" :value="row.id"
+            >选中</el-radio
+          >
         </template>
       </el-table-column>
       <el-table-column prop="id" label="任务ID" width="100" />
@@ -572,13 +616,20 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="改派原因">
-        <el-input v-model="forceTransferForm.reason" type="textarea" :rows="3" />
+        <el-input
+          v-model="forceTransferForm.reason"
+          type="textarea"
+          :rows="3"
+        />
       </el-form-item>
     </el-form>
 
     <template #footer>
       <el-button @click="forceTransferDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="forceTransferLoading" @click="submitForceTransfer"
+      <el-button
+        type="primary"
+        :loading="forceTransferLoading"
+        @click="submitForceTransfer"
         >确认强制转签</el-button
       >
     </template>
