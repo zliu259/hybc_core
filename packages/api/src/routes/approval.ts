@@ -667,7 +667,7 @@ approvalRoutes.get("/admin/summary", async (c) => {
 
 approvalRoutes.get("/admin/all", async (c) => {
   const auth = c.get("auth");
-  if (!auth.roles.includes("super_admin")) {
+  if (!auth.roles.includes("super_admin") && !auth.roles.includes("manager")) {
     return c.json({ success: false, error: { message: "Forbidden" } }, 403);
   }
 
