@@ -29,6 +29,7 @@ cd packages/api && npm run db:migrate:local                    # 本地迁移
 |---|---|---|
 | `packages/api/migrations/0057_reimbursement_split_lineage.sql` | 新建 | 拆单溯源列 |
 | `packages/api/src/types/reimbursement.ts` | 修改 | 信封类型加拆单字段；新增 Split/Precheck 请求类型 |
+| `packages/api/src/services/event-bus.ts` | 修改 | 注册 3 个新领域事件（SPLIT / BULK_VOIDED / BULK_DELETED） |
 | `packages/api/src/routes/reimbursement-split-policy.ts` + `.test.ts` | 新建 | 拆单资格/金额/附件校验 |
 | `packages/api/src/routes/reimbursement-einvoice-guard.ts` + `.test.ts` | 新建 | 电子发票混入实物信封检测 |
 | `packages/api/src/routes/reimbursement-bulk-lifecycle-policy.ts` + `.test.ts` | 新建 | 批量废止/删除状态机 |
@@ -688,7 +689,20 @@ git commit -m "feat(api): 批次建议分组与收款人唯一匹配策略（TDD
 
 **Files:**
 - Modify: `packages/api/src/types/reimbursement.ts`（加请求类型）
+- Modify: `packages/api/src/services/event-bus.ts`（注册 `REIMBURSEMENT_ENVELOPE_SPLIT` 等 3 个事件类型）
 - Modify: `packages/api/src/routes/reimbursement.ts`（新端点，插在 `POST /:id/void` 定义之后，约 4724 行处）
+
+- [ ] **Step 0: 注册领域事件类型**
+
+在 `packages/api/src/services/event-bus.ts` 的 `domainEventTypes` 数组中，紧跟现有的 `"REIMBURSEMENT_ENVELOPE_CANCELLED",` 之后加三行（保持信封级事件在批次级事件之前）：
+
+```ts
+  "REIMBURSEMENT_ENVELOPE_SPLIT",
+  "REIMBURSEMENT_ENVELOPE_BULK_VOIDED",
+  "REIMBURSEMENT_ENVELOPE_BULK_DELETED",
+```
+
+`publishEvent` 的 `type` 参数是 `DomainEventType` 字面量联合，未注册的事件名无法通过 `tsc`。Task 9 的 `REIMBURSEMENT_ENVELOPE_BULK_VOIDED` / `_BULK_DELETED` 一并在此注册，避免 Task 9 重复踩坑。
 
 - [ ] **Step 1: 请求类型**
 
@@ -1184,6 +1198,8 @@ git commit -m "feat(api): 批次建议只读端点与列表排除未分配空白
 
 **Files:**
 - Modify: `packages/api/src/routes/reimbursement.ts`（插在 `POST /:id/void` 之前）
+
+> 备注：事件类型 `REIMBURSEMENT_ENVELOPE_BULK_VOIDED` / `_BULK_DELETED` 已在 Task 6 于 `event-bus.ts` 注册，本任务无需再改该文件。
 
 - [ ] **Step 1: 实现两个端点**
 
