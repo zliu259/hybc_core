@@ -26,6 +26,7 @@ import {
 import { listPayees, createPayee, type Payee } from "@/api/payment";
 import ReimbursementBatchDetail from "./batch-detail.vue";
 import ReimbursementDetail from "./detail.vue";
+import AiBatchProposalsDrawer from "./components/AiBatchProposalsDrawer.vue";
 
 defineOptions({ name: "ReimbursementBatchList" });
 
@@ -420,6 +421,18 @@ const onBatchDetailChanged = async () => {
   await Promise.all([loadData(), loadHistory(), loadCandidates()]);
 };
 
+const aiProposalsVisible = ref(false);
+const userNameMap = computed(() => {
+  const map = new Map<string, string>();
+  wecomUsers.value.forEach(item =>
+    map.set(item.userid, item.name || item.userid)
+  );
+  return map;
+});
+const onAiProposalsDone = async () => {
+  await Promise.all([loadData(), loadHistory(), loadCandidates()]);
+};
+
 onMounted(async () => {
   await Promise.all([loadProjects(), loadWecomUsers(), loadEntities()]);
   await Promise.all([loadData(), loadHistory()]);
@@ -444,6 +457,9 @@ watch(
         </div>
       </div>
       <el-space wrap>
+        <el-button type="success" @click="aiProposalsVisible = true">
+          AI 一键成批
+        </el-button>
         <el-button @click="loadCandidates">刷新候选</el-button>
         <el-button
           type="primary"
@@ -854,6 +870,14 @@ watch(
         >
       </template>
     </el-dialog>
+
+    <AiBatchProposalsDrawer
+      v-model:visible="aiProposalsVisible"
+      :project-name-map="projectMap"
+      :user-name-map="userNameMap"
+      @done="onAiProposalsDone"
+      @open-batch="openDetail"
+    />
   </div>
 </template>
 
