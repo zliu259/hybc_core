@@ -1276,6 +1276,7 @@ reimbursementRoutes.get(
   "/workbench-summary",
   requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
+    const auth = c.get("auth");
     const envelopeRow = await c.env.DB.prepare(
       `SELECT
          SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS to_receive,
@@ -1299,6 +1300,33 @@ reimbursementRoutes.get(
       batches_to_pay: number | null;
     }>();
 
+    let adminCounts: {
+      admin_draft: number;
+      admin_returned: number;
+      admin_cancelled: number;
+    } | null = null;
+    if (auth.roles.includes("super_admin")) {
+      const adminRow = await c.env.DB.prepare(
+        `SELECT
+           SUM(CASE WHEN status IN ('draft', 'unregistered') AND applicant_userid != ? THEN 1 ELSE 0 END) AS admin_draft,
+           SUM(CASE WHEN status = 'submitted' AND precheck_status IN ('rejected', 'supplement') THEN 1 ELSE 0 END) AS admin_returned,
+           SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS admin_cancelled
+         FROM reimbursement_envelope
+         WHERE status != 'deleted'`
+      )
+        .bind(UNASSIGNED_APPLICANT)
+        .first<{
+          admin_draft: number | null;
+          admin_returned: number | null;
+          admin_cancelled: number | null;
+        }>();
+      adminCounts = {
+        admin_draft: adminRow?.admin_draft ?? 0,
+        admin_returned: adminRow?.admin_returned ?? 0,
+        admin_cancelled: adminRow?.admin_cancelled ?? 0
+      };
+    }
+
     return c.json({
       success: true,
       data: {
@@ -1306,7 +1334,8 @@ reimbursementRoutes.get(
         to_precheck: envelopeRow?.to_precheck ?? 0,
         to_batch: envelopeRow?.to_batch ?? 0,
         batches_to_submit: batchRow?.batches_to_submit ?? 0,
-        batches_to_pay: batchRow?.batches_to_pay ?? 0
+        batches_to_pay: batchRow?.batches_to_pay ?? 0,
+        ...(adminCounts ?? {})
       }
     });
   }
