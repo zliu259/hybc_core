@@ -19,6 +19,10 @@ import {
 } from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import { canUpdateBatchPayoutPlan } from "./reimbursement-batch-payout-policy";
+import {
+  groupBatchProposals,
+  matchUniqueInternalPayee
+} from "./reimbursement-batch-proposal-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
@@ -1331,6 +1335,9 @@ reimbursementRoutes.get("/", async (c) => {
   const excludeCancelled = ["1", "true", "yes"].includes(
     (c.req.query("exclude_cancelled") ?? "").toLowerCase()
   );
+  const excludeUnassigned = ["1", "true", "yes"].includes(
+    (c.req.query("exclude_unassigned") ?? "").toLowerCase()
+  );
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
@@ -1403,6 +1410,11 @@ reimbursementRoutes.get("/", async (c) => {
     sql += " AND e.legacy_data_id = ?";
     countSql += " AND e.legacy_data_id = ?";
     params.push(legacyDataId);
+  }
+  if (excludeUnassigned) {
+    sql += " AND e.applicant_userid != ?";
+    countSql += " AND e.applicant_userid != ?";
+    params.push(UNASSIGNED_APPLICANT);
   }
 
   sql += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
@@ -1594,6 +1606,102 @@ reimbursementRoutes.get(
       success: true,
       data: rows.results ?? []
     });
+  }
+);
+
+reimbursementRoutes.get(
+  "/batch/proposals",
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  async (c) => {
+    const eligible = await c.env.DB.prepare(
+      `SELECT
+         e.id, e.envelope_no, e.project_id, e.applicant_userid, e.amount,
+         e.description, e.channel,
+         (
+           SELECT CASE MAX(
+             CASE d.risk_level WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END
+           ) WHEN 3 THEN 'high' WHEN 2 THEN 'medium' WHEN 1 THEN 'low' ELSE NULL END
+             FROM reimbursement_duplicate_check d
+            WHERE d.envelope_id = e.id
+         ) AS duplicate_risk_level
+       FROM reimbursement_envelope e
+       WHERE e.status = 'received'
+         AND e.precheck_status = 'approved'
+         AND e.batch_id IS NULL
+         AND e.approval_instance_id IS NULL
+       ORDER BY e.applicant_userid ASC, e.project_id ASC, e.id ASC`
+    ).all<{
+      id: number;
+      envelope_no: string;
+      project_id: number;
+      applicant_userid: string;
+      amount: number;
+      description: string | null;
+      channel: string;
+      duplicate_risk_level: "high" | "medium" | "low" | null;
+    }>();
+
+    const rows = eligible.results ?? [];
+    const groups = groupBatchProposals(rows);
+
+    const applicantIds = [...new Set(rows.map((row) => row.applicant_userid))];
+    let payees: {
+      id: number;
+      name: string;
+      bank_name: string;
+      bank_account: string;
+      linked_userid: string | null;
+      status: string;
+      type: string;
+    }[] = [];
+    if (applicantIds.length > 0) {
+      const placeholders = applicantIds.map(() => "?").join(", ");
+      const payeeRows = await c.env.DB.prepare(
+        `SELECT id, name, bank_name, bank_account, linked_userid, status, type
+           FROM payee
+          WHERE type = 'internal' AND status = 'active' AND linked_userid IN (${placeholders})`
+      )
+        .bind(...applicantIds)
+        .all<(typeof payees)[number]>();
+      payees = payeeRows.results ?? [];
+    }
+
+    const envelopeById = new Map(rows.map((row) => [row.id, row]));
+    const requirePayee =
+      (c.env.REIMBURSEMENT_REQUIRE_PAYEE ?? "false").toLowerCase() === "true";
+
+    const proposals = groups.map((group) => {
+      const matched = matchUniqueInternalPayee(payees, group.applicant_userid);
+      return {
+        project_id: group.project_id,
+        applicant_userid: group.applicant_userid,
+        item_count: group.item_count,
+        total_amount: group.total_amount,
+        envelopes: group.envelope_ids.map((envelopeId) => {
+          const row = envelopeById.get(envelopeId);
+          return {
+            id: envelopeId,
+            envelope_no: row?.envelope_no ?? "",
+            amount: row?.amount ?? 0,
+            description: row?.description ?? null,
+            channel: row?.channel ?? "physical",
+            duplicate_risk_level: row?.duplicate_risk_level ?? null
+          };
+        }),
+        matched_payee: matched
+          ? {
+              id: matched.id,
+              name: matched.name,
+              bank_name: matched.bank_name,
+              bank_account: matched.bank_account
+            }
+          : null,
+        payee_required: requirePayee,
+        suggested_payment_method: "personal_transfer"
+      };
+    });
+
+    return c.json({ success: true, data: proposals });
   }
 );
 
