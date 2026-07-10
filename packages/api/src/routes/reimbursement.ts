@@ -1108,13 +1108,8 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
     await applyDuplicateChecks(env, envelopeId, hints);
     await applyInvoiceReviewDuplicateChecks(env, envelopeId, rows);
 
-    const nextStatus =
-      envelope.status === "received"
-        ? "received"
-        : envelope.status === "draft" || envelope.status === "unregistered"
-          ? envelope.status
-          : "submitted";
-
+    // 审计同步只回写 OCR/审查字段;业务状态(成批/送审/付款等)由各自动作显式流转,
+    // 此处绝不能改写 status,否则已进入后续流程的信封会被打回「待签收」
     await env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          ocr_status = ?,
@@ -1122,7 +1117,6 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
          ocr_invoice_unique_no_hint = ?,
          ocr_invoice_no_hint = ?,
          ocr_expense_date_hint = ?,
-         status = ?,
          duplicate_check_status = CASE WHEN ? > 0 THEN 'pending' ELSE 'completed' END,
          silent_review_result = COALESCE(silent_review_result, ?),
          updated_at = ?
@@ -1134,7 +1128,6 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
         hints.invoice_unique_no,
         hints.invoice_no,
         hints.expense_date,
-        nextStatus,
         pendingCount,
         JSON.stringify({
           review_round: latestReviewRound,
@@ -1181,13 +1174,7 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
 
     if (ocrTask?.status === "completed" && envelope.ocr_status !== "completed") {
       const hints = extractInvoiceRecognitionHints(ocrResult);
-      const nextStatus =
-        envelope.status === "received"
-          ? "received"
-          : envelope.status === "draft" || envelope.status === "unregistered"
-            ? envelope.status
-            : "submitted";
-
+      // 同上:审计同步不改写业务状态
       await env.DB.prepare(
         `UPDATE reimbursement_envelope SET
            ocr_status = 'completed',
@@ -1195,7 +1182,6 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
            ocr_invoice_unique_no_hint = ?,
            ocr_invoice_no_hint = ?,
            ocr_expense_date_hint = ?,
-           status = ?,
            updated_at = ?
          WHERE id = ?`
       )
@@ -1204,7 +1190,6 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
           hints.invoice_unique_no,
           hints.invoice_no,
           hints.expense_date,
-          nextStatus,
           nowIso(),
           envelopeId
         )
