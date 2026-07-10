@@ -4882,17 +4882,20 @@ const handleBulkLifecycle = async (
 
   for (const envelopeId of ids) {
     const envelope = await c.env.DB.prepare(
-      "SELECT id, status, envelope_uuid FROM reimbursement_envelope WHERE id = ?"
+      "SELECT id, status, envelope_uuid, applicant_userid FROM reimbursement_envelope WHERE id = ?"
     )
       .bind(envelopeId)
-      .first<{ id: number; status: string; envelope_uuid: string }>();
+      .first<{ id: number; status: string; envelope_uuid: string; applicant_userid: string }>();
 
     if (!envelope) {
       results.push({ id: envelopeId, ok: false, error: "not_found" });
       continue;
     }
 
-    const decision = decideBulkLifecycle(action, envelope.status);
+    const decision = decideBulkLifecycle(action, envelope.status, {
+      applicantUserid: envelope.applicant_userid,
+      unassignedApplicant: UNASSIGNED_APPLICANT
+    });
     if (!decision.allowed) {
       results.push({ id: envelopeId, ok: false, error: decision.message });
       continue;
