@@ -60,6 +60,8 @@ export interface ReimbursementEnvelope {
   silent_review_result: string | null;
   duplicate_override_requested: number;
   duplicate_override_reason: string | null;
+  split_from_envelope_id: number | null;
+  split_reason: string | null;
   submitted_at: string | null;
   received_at: string | null;
   created_at: string;
