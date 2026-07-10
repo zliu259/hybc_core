@@ -2,7 +2,10 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
-import { precheckStatusLabel } from "@/utils/enum-labels";
+import {
+  precheckActionLabel,
+  reimbursementPrecheckStatusLabel
+} from "./reimbursement-labels";
 import { listProjects, type Project } from "@/api/project";
 import {
   listPrecheckPendingEnvelopes,
@@ -69,7 +72,7 @@ const doPrecheck = async (
 ) => {
   try {
     await precheckEnvelope(id, { action });
-    message(`复核完成：${action}`, {
+    message(`复核完成：${precheckActionLabel(action)}`, {
       type: action === "approved" ? "success" : "warning"
     });
     await loadData();
@@ -145,7 +148,7 @@ onMounted(async () => {
       <el-table-column prop="duplicate_count" label="复核提示" width="110" />
       <el-table-column label="复核状态" width="120">
         <template #default="scope">{{
-          precheckStatusLabel(scope.row.precheck_status)
+          reimbursementPrecheckStatusLabel(scope.row.precheck_status)
         }}</template>
       </el-table-column>
       <el-table-column label="操作" min-width="380" fixed="right">

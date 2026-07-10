@@ -2,11 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
-import {
-  channelLabel,
-  precheckStatusLabel,
-  statusLabel
-} from "@/utils/enum-labels";
+import { channelLabel } from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
@@ -19,6 +15,9 @@ import {
   type ReimbursementWorkbenchSummary
 } from "@/api/reimbursement";
 import {
+  precheckActionLabel,
+  reimbursementPrecheckStatusLabel,
+  reimbursementStatusLabel,
   reimbursementStatusTagType,
   rowAnomalyTags,
   tableRowClassName
@@ -291,7 +290,7 @@ const onPrecheck = async (
 ) => {
   try {
     await precheckEnvelope(id, { action });
-    message(`复核已处理：${action}`, {
+    message(`复核已处理：${precheckActionLabel(action)}`, {
       type: action === "approved" ? "success" : "warning"
     });
     await refreshAll();
@@ -444,14 +443,14 @@ onMounted(async () => {
           </el-table-column>
           <el-table-column label="复核" width="90">
             <template #default="scope">{{
-              precheckStatusLabel(scope.row.precheck_status)
+              reimbursementPrecheckStatusLabel(scope.row.precheck_status)
             }}</template>
           </el-table-column>
           <el-table-column label="状态" width="100">
             <template #default="scope">
               <el-tag
                 :type="reimbursementStatusTagType[scope.row.status] || 'info'"
-                >{{ statusLabel(scope.row.status) }}</el-tag
+                >{{ reimbursementStatusLabel(scope.row.status) }}</el-tag
               >
             </template>
           </el-table-column>
@@ -560,7 +559,7 @@ onMounted(async () => {
           <template #default="scope">
             <el-tag
               :type="reimbursementStatusTagType[scope.row.status] || 'info'"
-              >{{ statusLabel(scope.row.status) }}</el-tag
+              >{{ reimbursementStatusLabel(scope.row.status) }}</el-tag
             >
           </template>
         </el-table-column>

@@ -2,12 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
-import {
-  aiAuditStatusLabel,
-  channelLabel,
-  precheckStatusLabel,
-  statusLabel
-} from "@/utils/enum-labels";
+import { aiAuditStatusLabel, channelLabel } from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import {
@@ -24,6 +19,10 @@ import {
   type ReimbursementEnvelope,
   type ReimbursementBatch
 } from "@/api/reimbursement";
+import {
+  reimbursementPrecheckStatusLabel,
+  reimbursementStatusLabel
+} from "./reimbursement-labels";
 import { listPayees, createPayee, type Payee } from "@/api/payment";
 import ReimbursementBatchDetail from "./batch-detail.vue";
 import ReimbursementDetail from "./detail.vue";
@@ -628,12 +627,12 @@ watch(
         <el-table-column prop="envelope_no" label="信封编号" width="160" />
         <el-table-column label="状态" width="130">
           <template #default="scope">{{
-            statusLabel(scope.row.status)
+            reimbursementStatusLabel(scope.row.status)
           }}</template>
         </el-table-column>
         <el-table-column label="复核状态" width="130">
           <template #default="scope">{{
-            precheckStatusLabel(scope.row.precheck_status)
+            reimbursementPrecheckStatusLabel(scope.row.precheck_status)
           }}</template>
         </el-table-column>
         <el-table-column label="通道" width="110">
@@ -708,7 +707,7 @@ watch(
             </el-table-column>
             <el-table-column label="审批状态" width="120">
               <template #default="scope">{{
-                statusLabel(scope.row.status)
+                reimbursementStatusLabel(scope.row.status)
               }}</template>
             </el-table-column>
             <el-table-column prop="created_at" label="创建时间" width="180" />
@@ -762,7 +761,7 @@ watch(
             <el-table-column prop="total_amount" label="总金额" width="120" />
             <el-table-column label="结果状态" width="120">
               <template #default="scope">{{
-                statusLabel(scope.row.status)
+                reimbursementStatusLabel(scope.row.status)
               }}</template>
             </el-table-column>
             <el-table-column
