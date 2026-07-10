@@ -1,7 +1,8 @@
 import { Hono } from "hono";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { handleError } from "../middleware/error";
+import type { CompensationFailureReport } from "../services/transaction-recovery";
 import type { AuthTokenPayload } from "../types/auth";
 import type { Env } from "../types/env";
 import { reimbursementRoutes } from "./reimbursement";
@@ -52,6 +53,19 @@ vi.mock("../services/approval/operations", () => ({
   resubmit: async () => {}
 }));
 
+// Task 6：批次创建的补偿失败上报走 reportCompensationFailure（services/transaction-recovery.ts）。
+// mock 掉整个模块，只用 vi.fn() 断言调用参数——真实实现还会写审计日志/发事件，
+// 与本文件要验证的「补偿三步是否执行 + 原始错误是否仍被重抛」无关。
+const transactionRecoveryMock = vi.hoisted(() => ({
+  reportCompensationFailure: vi.fn<(env: Env, report: CompensationFailureReport) => Promise<void>>(
+    async () => {}
+  )
+}));
+
+vi.mock("../services/transaction-recovery", () => ({
+  reportCompensationFailure: transactionRecoveryMock.reportCompensationFailure
+}));
+
 type CapturedStatement = { sql: string; args: unknown[] };
 
 class TxStatement {
@@ -100,10 +114,34 @@ class TxStatement {
   }
 
   async all<T>(): Promise<{ results: T[] }> {
+    // Task 6：批次创建按 envelope_ids 选取信封时用的是 `... id IN (...)`，
+    // 与 rebind-uuid/basic-info 等既有分支的 SQL 特征不重叠。
+    if (this.sql.includes("FROM reimbursement_envelope") && this.sql.includes("id IN (")) {
+      return { results: (this.db.envelopeSelectionRows ?? []) as T[] };
+    }
     return { results: [] as T[] };
   }
 
   async run() {
+    // Task 6：模拟补偿步骤自身失败——匹配到指定 SQL 片段时直接抛错，且不计入
+    // db.executed（真实 D1 里失败的单条语句不会留下已提交的写入痕迹）。
+    if (this.db.failOnSqlContains && this.sql.includes(this.db.failOnSqlContains)) {
+      throw new Error(`mock forced failure: ${this.db.failOnSqlContains}`);
+    }
+
+    // Task 6：批次创建的「单条多行认领 UPDATE」——影响行数取决于 IN (...) 里
+    // 实际绑定的 id 数量（bind 顺序为 batchId, now, ...ids），而不是固定 changes:1，
+    // 这样才能既让「全部认领成功」的默认路径自然通过，又能在显式设置
+    // claimResultOverride 时模拟「部分信封被抢先入批」的并发场景。
+    if (this.sql.includes("UPDATE reimbursement_envelope") && this.sql.includes("id IN (")) {
+      this.db.executed.push({ sql: this.sql, args: this.args });
+      if (this.db.claimResultOverride) {
+        return this.db.claimResultOverride;
+      }
+      const claimedCount = Math.max(this.args.length - 2, 0);
+      return { meta: { changes: claimedCount } };
+    }
+
     this.db.executed.push({ sql: this.sql, args: this.args });
     return { meta: { changes: 1, last_row_id: 1 } };
   }
@@ -127,6 +165,19 @@ class TxDb {
   // 而不是像默认桩那样一律返回 changes: 1。仅当设置时才覆盖默认行为。
   batchResultOverride: Array<{ meta: { changes: number; last_row_id?: number } }> | null = null;
 
+  // Task 6：批次创建按 envelope_ids 选取信封时，`SELECT ... id IN (...)` 返回的候选行。
+  envelopeSelectionRows: Record<string, unknown>[] = [];
+
+  // Task 6：显式覆盖「单条多行认领 UPDATE」的 changes，用于模拟部分信封被并发抢批。
+  claimResultOverride: { meta: { changes: number } } | null = null;
+
+  // Task 6：模拟 db.batch()（items 插入）本身失败——D1 官方语义下整批回滚，
+  // 因此仍记录本次尝试（batchCalls），但不写入 executed。
+  batchShouldThrow: Error | null = null;
+
+  // Task 6：模拟补偿链某一步自身失败——run() 内命中该子串时抛错（见 TxStatement.run）。
+  failOnSqlContains: string | null = null;
+
   prepare(sql: string) {
     return new TxStatement(this, sql);
   }
@@ -139,6 +190,9 @@ class TxDb {
   async batch(statements: TxStatement[]) {
     const captured = statements.map((stmt) => ({ sql: stmt.sql, args: stmt.capturedArgs }));
     this.batchCalls.push(captured);
+    if (this.batchShouldThrow) {
+      throw this.batchShouldThrow;
+    }
     this.executed.push(...captured);
     if (this.batchResultOverride) {
       return this.batchResultOverride;
@@ -620,6 +674,250 @@ describe("mark-paid（守卫 status='approved'）：必须走 db.batch 且守卫
       // 没有额外的审计日志 / 事件日志 / 补偿写入，更没有任何撤销 paid 状态的写入。
       expect(db.batchCalls.length).toBe(1);
       expect(db.executed.length).toBe(2);
+    }
+  );
+});
+
+// ─── POST /batch（Task 6：批次创建改为「原子认领 + 失败补偿」）──────────
+//
+// 原实现在 for 循环里逐条 INSERT batch_item + 带守卫 UPDATE 信封，一旦第 N 个信封
+// 已被别的请求抢先入批就 throw——但 D1 生产环境的 runInTransaction 不回滚，
+// 前 N-1 条 items 与前 N-1 个信封的 batched 标记已经落库，留下幽灵批次。
+// 改为三段式：INSERT batch（拿 batchId）→ 单条多行认领 UPDATE（changes 必须等于
+// selected.length，否则视为并发冲突）→ runAtomicBatch 一次性插入 items。
+// 任一步失败都按写入相反顺序补偿（DELETE items → 重置信封 → DELETE batch），
+// 每步吞掉自身异常，补偿自身失败则上报 reportCompensationFailure，最终原样重抛
+// 触发补偿的那个错误。
+
+describe("POST /batch 创建：三段式改造——原子认领 + 失败补偿（Task 6）", () => {
+  const buildEligibleEnvelope = (id: number, amount: number): Record<string, unknown> => ({
+    id,
+    project_id: 1,
+    applicant_userid: "finance-a",
+    batch_id: null,
+    approval_instance_id: null,
+    status: "received",
+    precheck_status: "approved",
+    amount
+  });
+
+  const requestCreateBatch = (db: TxDb, body: Record<string, unknown>) => {
+    const app = new Hono<{ Bindings: Env }>();
+    app.route("/reimbursement", reimbursementRoutes);
+    // 见前述 requestSubmitApproval 上方注释：挂载真实的全局错误处理，断言真实部署行为。
+    app.onError(handleError);
+    return app.request(
+      "/reimbursement/batch",
+      {
+        method: "POST",
+        headers: {
+          authorization: "Bearer test-token",
+          "content-type": "application/json"
+        },
+        body: JSON.stringify(body)
+      },
+      createEnv(db)
+    );
+  };
+
+  const findClaimStatement = (db: TxDb): CapturedStatement | undefined =>
+    db.executed.find(
+      (stmt) => stmt.sql.includes("UPDATE reimbursement_envelope") && stmt.sql.includes("id IN (")
+    );
+
+  const findCompensationDeleteItems = (db: TxDb): CapturedStatement | undefined =>
+    db.executed.find((stmt) => stmt.sql.includes("DELETE FROM reimbursement_batch_item"));
+
+  const findCompensationResetEnvelopes = (db: TxDb): CapturedStatement | undefined =>
+    db.executed.find((stmt) => stmt.sql.includes("SET batch_id = NULL"));
+
+  const findCompensationDeleteBatch = (db: TxDb): CapturedStatement | undefined =>
+    db.executed.find((stmt) => stmt.sql.includes("DELETE FROM reimbursement_batch "));
+
+  beforeEach(() => {
+    transactionRecoveryMock.reportCompensationFailure.mockClear();
+  });
+
+  it("认领成功：单条多行 UPDATE 带三条资格守卫、IN(...) 用占位符绑定，items 一次性走 db.batch 插入", async () => {
+    const db = new TxDb();
+    db.envelopeSelectionRows = [buildEligibleEnvelope(1, 100), buildEligibleEnvelope(2, 200)];
+
+    const response = await requestCreateBatch(db, {
+      project_id: 1,
+      applicant_userid: "finance-a",
+      envelope_ids: [1, 2]
+    });
+
+    expect(response.status).toBe(201);
+    expect(db.execCalls).not.toContain("BEGIN IMMEDIATE TRANSACTION");
+
+    // 单条多行语句：整个 executed 里只有一条匹配 claim 特征的 UPDATE，
+    // 而不是拆成两条各自 WHERE id = ? 的独立 UPDATE。
+    const claimStatements = db.executed.filter(
+      (stmt) => stmt.sql.includes("UPDATE reimbursement_envelope") && stmt.sql.includes("id IN (")
+    );
+    expect(claimStatements.length).toBe(1);
+    const claimStmt = claimStatements[0];
+
+    expect(claimStmt.sql).toContain("SET batch_id = ?, status = 'batched'");
+    expect(claimStmt.sql).toContain("id IN (?, ?)");
+    expect(claimStmt.sql).toContain("batch_id IS NULL");
+    expect(claimStmt.sql).toContain("status = 'received'");
+    expect(claimStmt.sql).toContain("precheck_status = 'approved'");
+
+    const batchId = claimStmt.args[0] as number;
+    const now = claimStmt.args[1] as string;
+    expect(typeof batchId).toBe("number");
+    expect(typeof now).toBe("string");
+    // id 通过占位符绑定，不是拼接进 SQL 字符串
+    expect(claimStmt.args.slice(2)).toEqual([1, 2]);
+
+    expect(db.batchCalls.length).toBe(1);
+    const itemStatements = db.batchCalls[0];
+    expect(itemStatements.length).toBe(2);
+    for (const stmt of itemStatements) {
+      expect(stmt.sql).toContain("INSERT INTO reimbursement_batch_item");
+    }
+    expect(itemStatements[0].args).toEqual([batchId, 1, 100, now]);
+    expect(itemStatements[1].args).toEqual([batchId, 2, 200, now]);
+
+    expect(transactionRecoveryMock.reportCompensationFailure).not.toHaveBeenCalled();
+
+    const body = (await response.json()) as {
+      success: boolean;
+      data: { id: number; batch_no: string; total_amount: number; item_count: number };
+    };
+    expect(body.success).toBe(true);
+    expect(body.data.id).toBe(batchId);
+    expect(body.data.total_amount).toBe(300);
+    expect(body.data.item_count).toBe(2);
+    expect(body.data.batch_no).toMatch(/^RM-\d{8}-\d{4}$/);
+  });
+
+  it(
+    "认领冲突（changes !== selected.length）：执行补偿三步、不进入 items 插入阶段、原样抛出错误",
+    async () => {
+      const db = new TxDb();
+      db.envelopeSelectionRows = [buildEligibleEnvelope(1, 100), buildEligibleEnvelope(2, 200)];
+      // 模拟其中一个信封已被另一个并发请求抢先入批：claim UPDATE 实际只影响 1 行
+      db.claimResultOverride = { meta: { changes: 1 } };
+
+      const response = await requestCreateBatch(db, {
+        project_id: 1,
+        applicant_userid: "finance-a",
+        envelope_ids: [1, 2]
+      });
+
+      // 原有实现在守卫失败时 throw Error，被外层 catch 撤销幂等记录后重新抛出，
+      // 最终由全局 onError 转换为 500——本次改造保持这一响应形状不变。
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as { ok: boolean; error: { message: string } };
+      expect(body.ok).toBe(false);
+      expect(typeof body.error.message).toBe("string");
+
+      // 从未进入 items 插入阶段
+      expect(db.batchCalls.length).toBe(0);
+
+      const claimStmt = findClaimStatement(db)!;
+      const batchId = claimStmt.args[0] as number;
+
+      const deleteItems = findCompensationDeleteItems(db);
+      expect(deleteItems).toBeDefined();
+      expect(deleteItems!.args).toEqual([batchId]);
+
+      const resetEnvelopes = findCompensationResetEnvelopes(db);
+      expect(resetEnvelopes).toBeDefined();
+      expect(resetEnvelopes!.sql).toContain("status = 'received'");
+      expect(resetEnvelopes!.args[resetEnvelopes!.args.length - 1]).toBe(batchId);
+
+      const deleteBatch = findCompensationDeleteBatch(db);
+      expect(deleteBatch).toBeDefined();
+      expect(deleteBatch!.args).toEqual([batchId]);
+
+      expect(transactionRecoveryMock.reportCompensationFailure).not.toHaveBeenCalled();
+    }
+  );
+
+  it(
+    "items 插入失败（db.batch 抛错）：同样走补偿三步撤销已认领的信封，并原样抛出该错误",
+    async () => {
+      const db = new TxDb();
+      db.envelopeSelectionRows = [buildEligibleEnvelope(1, 100), buildEligibleEnvelope(2, 200)];
+      db.batchShouldThrow = new Error("mock d1 batch failure while inserting items");
+
+      const response = await requestCreateBatch(db, {
+        project_id: 1,
+        applicant_userid: "finance-a",
+        envelope_ids: [1, 2]
+      });
+
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as { ok: boolean; error: { message: string } };
+      expect(body.error.message).toBe("mock d1 batch failure while inserting items");
+
+      // items 插入确实被尝试过一次（证明认领已经成功），但因为抛错而未提交（不在 executed 里）
+      expect(db.batchCalls.length).toBe(1);
+      expect(
+        db.executed.some((stmt) => stmt.sql.includes("INSERT INTO reimbursement_batch_item"))
+      ).toBe(false);
+
+      const claimStmt = findClaimStatement(db)!;
+      const batchId = claimStmt.args[0] as number;
+
+      expect(findCompensationDeleteItems(db)!.args).toEqual([batchId]);
+
+      const resetEnvelopes = findCompensationResetEnvelopes(db)!;
+      expect(resetEnvelopes.args[resetEnvelopes.args.length - 1]).toBe(batchId);
+
+      expect(findCompensationDeleteBatch(db)!.args).toEqual([batchId]);
+
+      expect(transactionRecoveryMock.reportCompensationFailure).not.toHaveBeenCalled();
+    }
+  );
+
+  it(
+    "补偿自身失败：调用 reportCompensationFailure 上报，其余两步仍尝试，原始错误仍被重抛（不被补偿错误掩盖）",
+    async () => {
+      const db = new TxDb();
+      db.envelopeSelectionRows = [buildEligibleEnvelope(1, 100), buildEligibleEnvelope(2, 200)];
+      db.claimResultOverride = { meta: { changes: 1 } }; // 触发补偿路径
+      db.failOnSqlContains = "DELETE FROM reimbursement_batch_item"; // 让补偿第一步自身失败
+
+      const response = await requestCreateBatch(db, {
+        project_id: 1,
+        applicant_userid: "finance-a",
+        envelope_ids: [1, 2]
+      });
+
+      expect(response.status).toBe(500);
+      const body = (await response.json()) as { ok: boolean; error: { message: string } };
+      // 原始错误（认领冲突）仍被重抛，没有被补偿失败的错误掩盖
+      expect(body.error.message).not.toContain("mock forced failure");
+
+      expect(transactionRecoveryMock.reportCompensationFailure).toHaveBeenCalledTimes(1);
+      const [, report] = transactionRecoveryMock.reportCompensationFailure.mock.calls[0];
+      expect(report.operation).toBe("reimbursement.batch.create");
+      expect(report.targetType).toBe("reimbursement_batch");
+      expect(report.actorUserId).toBe("finance-a");
+      expect(report.actorRoles).toEqual(["finance"]);
+      expect(typeof report.targetId).toBe("number");
+      expect(report.originalError).toBeInstanceOf(Error);
+      expect(report.compensationError).toBeInstanceOf(Error);
+      expect((report.compensationError as Error).message).toContain(
+        "DELETE FROM reimbursement_batch_item"
+      );
+      expect(report.context).toMatchObject({
+        project_id: 1,
+        applicant_userid: "finance-a",
+        envelope_ids: [1, 2]
+      });
+
+      // 其余两步补偿（重置信封 + 删批次）仍然被尝试且成功执行
+      expect(findCompensationResetEnvelopes(db)).toBeDefined();
+      expect(findCompensationDeleteBatch(db)).toBeDefined();
+
+      // 失败的那一步不会出现在 executed 里（抛错而非成功写入）
+      expect(findCompensationDeleteItems(db)).toBeUndefined();
     }
   );
 });

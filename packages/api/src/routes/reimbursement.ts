@@ -2132,60 +2132,149 @@ reimbursementRoutes.post(
     const batchNo = await generateSerial(c.env.DB, "RM", "reimbursement_batch", "batch_no");
     const totalAmount = selected.reduce((sum, item) => sum + (item.amount || 0), 0);
 
+    // Task 6（D1 事务加固）：批次创建改为「原子认领 + 失败补偿」，消除幽灵批次。
+    //
+    // runInTransaction 在 D1 生产环境降级为非事务执行，throw 不会回滚。原实现在
+    // for 循环里逐条 INSERT batch_item + 带守卫 UPDATE 信封，一旦第 N 个信封已被
+    // 别的并发请求抢先入批就 throw——但此时 batch 行、前 N-1 条 items、前 N-1 个
+    // 信封的 batched 标记已经落库且不会撤销，留下一个 item_count/total_amount 与
+    // 实际条目不符的幽灵批次，还有若干信封被错误标记为已入批。
+    //
+    // 改为三段式，每段各自都是单条 SQL 语句、因而各自天然原子：
+    //   1. INSERT INTO reimbursement_batch → 拿 batchId。
+    //   2. 单条多行认领 UPDATE：一条语句原子地认领本次全部候选信封，changes 必须
+    //      等于 selected.length，否则说明有信封被并发抢先入批。
+    //   3. runAtomicBatch 一次性插入全部 batch_item（D1 唯一真正原子的写原语）。
+    // 第 2、3 步任一失败都触发补偿：按写入相反顺序撤销（DELETE items → 重置信封
+    // → DELETE batch），每步吞掉自身异常以确保后续补偿步骤仍会执行；补偿自身失败
+    // 时上报 reportCompensationFailure（永不抛出），最终原样重抛触发补偿的错误。
+    const compensateBatchCreate = async (
+      batchIdToCompensate: number,
+      originalError: unknown
+    ): Promise<void> => {
+      const compensationContext = {
+        project_id: body.project_id,
+        applicant_userid: body.applicant_userid.trim(),
+        envelope_ids: selected.map((item) => item.id)
+      };
+
+      try {
+        await c.env.DB.prepare("DELETE FROM reimbursement_batch_item WHERE batch_id = ?")
+          .bind(batchIdToCompensate)
+          .run();
+      } catch (compensationError) {
+        await reportCompensationFailure(c.env, {
+          operation: "reimbursement.batch.create",
+          targetType: "reimbursement_batch",
+          targetId: batchIdToCompensate,
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          originalError,
+          compensationError,
+          context: compensationContext
+        });
+      }
+
+      try {
+        await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope
+              SET batch_id = NULL, status = 'received', updated_at = ?
+            WHERE batch_id = ?`
+        )
+          .bind(nowIso(), batchIdToCompensate)
+          .run();
+      } catch (compensationError) {
+        await reportCompensationFailure(c.env, {
+          operation: "reimbursement.batch.create",
+          targetType: "reimbursement_batch",
+          targetId: batchIdToCompensate,
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          originalError,
+          compensationError,
+          context: compensationContext
+        });
+      }
+
+      try {
+        await c.env.DB.prepare("DELETE FROM reimbursement_batch WHERE id = ?")
+          .bind(batchIdToCompensate)
+          .run();
+      } catch (compensationError) {
+        await reportCompensationFailure(c.env, {
+          operation: "reimbursement.batch.create",
+          targetType: "reimbursement_batch",
+          targetId: batchIdToCompensate,
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          originalError,
+          compensationError,
+          context: compensationContext
+        });
+      }
+    };
+
     let batchId = 0;
     try {
-      await runInTransaction(c.env.DB, async () => {
-        const insertBatch = await c.env.DB.prepare(
-          `INSERT INTO reimbursement_batch
-            (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status,
-             payment_method, payment_entity_id, payment_entity_bank_account_id, payment_account,
-             payee_id,
-             created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?, ?)`
+      const insertBatch = await c.env.DB.prepare(
+        `INSERT INTO reimbursement_batch
+          (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status,
+           payment_method, payment_entity_id, payment_entity_bank_account_id, payment_account,
+           payee_id,
+           created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?, ?)`
+      )
+        .bind(
+          batchNo,
+          body.project_id,
+          body.applicant_userid.trim(),
+          totalAmount,
+          selected.length,
+          payoutPlan.value.payment_method,
+          payoutPlan.value.payment_entity_id,
+          payoutPlan.value.payment_entity_bank_account_id,
+          payoutPlan.value.payment_account,
+          body.payee_id ?? null,
+          now,
+          now
         )
-          .bind(
-            batchNo,
-            body.project_id,
-            body.applicant_userid.trim(),
-            totalAmount,
-            selected.length,
-            payoutPlan.value.payment_method,
-            payoutPlan.value.payment_entity_id,
-            payoutPlan.value.payment_entity_bank_account_id,
-            payoutPlan.value.payment_account,
-            body.payee_id ?? null,
-            now,
-            now
-          )
+        .run();
+
+      batchId = insertBatch.meta.last_row_id as number;
+
+      try {
+        const claimPlaceholders = selected.map(() => "?").join(", ");
+        const claim = await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope
+              SET batch_id = ?, status = 'batched', updated_at = ?
+            WHERE id IN (${claimPlaceholders})
+              AND batch_id IS NULL
+              AND status = 'received'
+              AND precheck_status = 'approved'`
+        )
+          .bind(batchId, now, ...selected.map((item) => item.id))
           .run();
 
-        batchId = insertBatch.meta.last_row_id as number;
-
-        for (const envelope of selected) {
-          await c.env.DB.prepare(
-            `INSERT INTO reimbursement_batch_item
-              (batch_id, envelope_id, amount, status, created_at)
-             VALUES (?, ?, ?, 'active', ?)`
-          )
-            .bind(batchId, envelope.id, envelope.amount, now)
-            .run();
-
-          const updateResult = await c.env.DB.prepare(
-            `UPDATE reimbursement_envelope
-                SET batch_id = ?, status = 'batched', updated_at = ?
-              WHERE id = ?
-                AND batch_id IS NULL
-                AND status = 'received'
-                AND precheck_status = 'approved'`
-          )
-            .bind(batchId, now, envelope.id)
-            .run();
-
-          if ((updateResult.meta.changes ?? 0) !== 1) {
-            throw new Error(`Envelope ${envelope.id} is no longer eligible for batching`);
-          }
+        if ((claim.meta.changes ?? 0) !== selected.length) {
+          throw new Error(
+            "Some envelopes are no longer eligible for batching (already claimed by another request)"
+          );
         }
-      });
+
+        await runAtomicBatch(
+          c.env.DB,
+          selected.map((envelope) =>
+            c.env.DB.prepare(
+              `INSERT INTO reimbursement_batch_item
+                (batch_id, envelope_id, amount, status, created_at)
+               VALUES (?, ?, ?, 'active', ?)`
+            ).bind(batchId, envelope.id, envelope.amount, now)
+          )
+        );
+      } catch (innerError) {
+        await compensateBatchCreate(batchId, innerError);
+        throw innerError;
+      }
     } catch (error) {
       await abandonIdempotentRequest(
         c.env.DB,
