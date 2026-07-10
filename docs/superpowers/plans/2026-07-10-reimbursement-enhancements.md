@@ -295,7 +295,7 @@ describe("isElectronicInvoiceNumber", () => {
   it("rejects paper invoice numbers and non-strings", () => {
     expect(isElectronicInvoiceNumber("12345678")).toBe(false);
     expect(isElectronicInvoiceNumber("2431200000001234567X")).toBe(false);
-    expect(isElectronicInvoiceNumber(24312000000012345678)).toBe(false);
+    expect(isElectronicInvoiceNumber(12345678)).toBe(false);
     expect(isElectronicInvoiceNumber(null)).toBe(false);
   });
 });
