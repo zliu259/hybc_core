@@ -5091,15 +5091,36 @@ reimbursementRoutes.post(
         // 此时尚未写入任何新数据，失败时无需补偿。
         // 相比原校验额外增加 approval_instance_id IS NULL，与 decideSplitEnvelope 的
         // 前置检查保持一致，避免 SELECT 与 UPDATE 之间的 TOCTOU 窗口。
+        //
+        // 乐观锁：额外携带 amount / precheck_status 的快照比对（取自本请求开头的 SELECT）。
+        // 仅靠 batch_id / approval_instance_id / status 三列无法互斥"拆单 vs 拆单"——
+        // 两个并发拆单请求会看到同一份 status，都通过闸门各自 INSERT 一张子信封，
+        // 导致重复子单与原单金额错乱。拆单必然改写 amount（原单减额）或 precheck_status
+        // （重置为 'none'）中的至少一列，所以第二个并发请求的快照比对必然落空，
+        // changes=0，从而正确中止。
+        // 不能用 updated_at 做版本列：GET /:id 触发的 syncEnvelopeAuditState 会写
+        // updated_at，若以它做版本比对，"打开详情页再点拆单"会被误判为并发冲突。
+        // 残留边角：若原单金额被人为保持不变（系统不强制金额守恒）且原单 precheck_status
+        // 本就是 'none'，两个并发拆单仍可能都通过——这是刻意误用的极端情形，由"两张子单
+        // 都需重新复核+审批"兜底。
         const updated = await c.env.DB.prepare(
           `UPDATE reimbursement_envelope
               SET amount = ?, precheck_status = 'none', updated_at = ?
             WHERE id = ?
               AND batch_id IS NULL
               AND approval_instance_id IS NULL
-              AND status = ?`
+              AND status = ?
+              AND amount = ?
+              AND precheck_status = ?`
         )
-          .bind(Number(body.original_amount), now, id, envelope.status)
+          .bind(
+            Number(body.original_amount),
+            now,
+            id,
+            envelope.status,
+            envelope.amount,
+            envelope.precheck_status
+          )
           .run();
         if ((updated.meta.changes ?? 0) !== 1) {
           throw new Error("Envelope changed during split, aborted");
