@@ -302,6 +302,45 @@ describe("rebind-uuid：UUID 三步交换必须走 db.batch 原子提交", () =>
   );
 });
 
+describe("rebind-uuid：目标 UUID 未被占用时走 else 分支（单条 UPDATE，非 db.batch）", () => {
+  it("occupied 查询返回 null 时不触发三步交换，只执行一条 UPDATE，swapped_placeholder_id 为 null", async () => {
+    const db = new TxDb();
+    db.envelopeRow = buildPhysicalEnvelope();
+    db.occupiedRow = null;
+
+    const response = await requestRebindUuid(db);
+    expect(response.status).toBe(200);
+
+    // else 分支不应该调用 db.batch()——三步交换是 if 分支专属的原子写序列。
+    expect(db.batchCalls.length).toBe(0);
+
+    const rebindSql =
+      "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?";
+    const rebindCalls = db.executed.filter((stmt) => stmt.sql === rebindSql);
+    expect(rebindCalls).toHaveLength(1);
+    expect(rebindCalls[0].args).toEqual([NEXT_UUID, NEXT_UUID, expect.any(String), 1]);
+
+    const body = (await response.json()) as {
+      success: boolean;
+      data: {
+        id: number;
+        envelope_uuid: string;
+        envelope_no: string;
+        swapped_placeholder_id: number | null;
+      };
+    };
+    expect(body).toEqual({
+      success: true,
+      data: {
+        id: 1,
+        envelope_uuid: NEXT_UUID,
+        envelope_no: NEXT_UUID,
+        swapped_placeholder_id: null
+      }
+    });
+  });
+});
+
 // ─── basic-info ──────────
 
 const buildBoundItem = (): Record<string, unknown> => ({

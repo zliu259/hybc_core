@@ -417,7 +417,7 @@ export type IntegrityIssueKind =
   | "batch_totals_mismatch"        // batch.total_amount/item_count 与 active items 不符
   | "envelope_batched_without_batch" // status='batched' 但 batch_id IS NULL
   | "envelope_batch_missing"       // batch_id 指向不存在的批次
-  | "envelope_no_uuid_mismatch"    // envelope_no != envelope_uuid（rebind 部分失败的特征）
+  | "envelope_no_uuid_mismatch"    // envelope_no != envelope_uuid（不变式被破坏，不是 rebind 部分失败的特征——见 reimbursement-integrity.ts 内注释）
   | "orphan_split_child";          // split_from_envelope_id 指向不存在/已删除的信封
 
 export type IntegritySeverity = "high" | "medium";

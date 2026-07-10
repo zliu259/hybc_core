@@ -81,6 +81,18 @@ const ISSUE_QUERIES: IssueQuery[] = [
   },
   {
     kind: "envelope_no_uuid_mismatch",
+    // 本检查断言的是「envelope_no 恒等于 envelope_uuid」这条代码库不变式——
+    // 所有写路径（create-new / bind-existing，见
+    // routes/reimbursement-create-policy.ts；batch-generate；以及 rebind-uuid
+    // 三步交换的每一条 UPDATE）都成对写入相同的值。它检测的是**该不变式被
+    // 破坏**，不是 rebind-uuid 部分失败的特征信号——这是本检查曾经的错误声明：
+    // rebind-uuid 中途失败即使真的发生过，占位信封也会卡在
+    // envelope_no == envelope_uuid == tempUuid 上，二者仍然相等，本查询根本
+    // 发现不了，因此不能拿它当 rebind 部分失败的信号。
+    // 加固后（rebind-uuid 已改用 db.batch 原子提交）rebind 部分失败已不可能
+    // 再发生；历史上若已产生过卡死在 tempUuid 上的占位信封，无法用纯数据库
+    // 谓词判定（它与正常信封形状相同），只能靠
+    // `reimbursement.envelope.rebind_uuid` 审计日志人工比对。
     sql: `-- kind: envelope_no_uuid_mismatch
       SELECT id FROM reimbursement_envelope
       WHERE status != 'deleted' AND envelope_no != envelope_uuid`
