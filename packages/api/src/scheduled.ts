@@ -7,6 +7,7 @@ import {
   detectMissingLogs,
   markOverdueRentalTerms,
   refreshWeComContactsCache,
+  runReimbursementIntegrityCheck,
   shouldWakeRunner,
   wakeRunner,
   requeueTimedOutTasks
@@ -51,7 +52,7 @@ export const scheduled = async (
       }
 
       if (cron === "0 18 * * *") {
-        await detectMissingLogs(env);
+        await Promise.all([detectMissingLogs(env), runReimbursementIntegrityCheck(env)]);
         return;
       }
 

@@ -1,4 +1,6 @@
+import { writeAuditLog } from "./audit-log";
 import { publishEvent } from "./event-bus";
+import { findReimbursementIntegrityIssues, summarizeIntegrityIssues } from "./reimbursement-integrity";
 import { getWeComContactBook } from "./wecom-contact-book";
 import type { Env } from "../types/env";
 import type { ComputeNode, TaskQueueItem } from "../types/ai";
@@ -154,4 +156,37 @@ export const markOverdueRentalTerms = async (env: Env): Promise<number> => {
     });
   }
   return updated;
+};
+
+/**
+ * 每日巡检报销数据一致性（信封/批次的部分写入痕迹）。
+ * 有问题 → 写审计日志 + 发领域事件；无问题 → 不产生噪音。
+ * 本函数永不抛出——cron 里任何异常都要吞掉并 console.error，
+ * 避免拖垮同一批次里的其它 cron 任务。
+ */
+export const runReimbursementIntegrityCheck = async (env: Env): Promise<void> => {
+  try {
+    const issues = await findReimbursementIntegrityIssues(env.DB);
+    if (issues.length === 0) {
+      return;
+    }
+
+    const summary = summarizeIntegrityIssues(issues);
+
+    await writeAuditLog(env.DB, {
+      actorUserId: "system",
+      actorRoles: [],
+      action: "system.integrity.reimbursement_issues_found",
+      targetType: "system",
+      targetId: "reimbursement_integrity",
+      detail: { summary, issues }
+    });
+
+    await publishEvent(env, "REIMBURSEMENT_INTEGRITY_ISSUES_FOUND", "system", {
+      summary,
+      issues
+    });
+  } catch (error) {
+    console.error("Reimbursement integrity check failed", error);
+  }
 };
