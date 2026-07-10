@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
@@ -23,6 +23,10 @@ import {
   groupBatchProposals,
   matchUniqueInternalPayee
 } from "./reimbursement-batch-proposal-policy";
+import {
+  decideBulkLifecycle,
+  type BulkLifecycleAction
+} from "./reimbursement-bulk-lifecycle-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
@@ -4812,6 +4816,116 @@ reimbursementRoutes.post(
     await completeIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey, 200, payload);
     return c.json(payload);
   }
+);
+
+const MAX_BULK_LIFECYCLE_IDS = 500;
+
+const handleBulkLifecycle = async (
+  c: Context<{ Bindings: Env; Variables: AuthVariables }>,
+  action: BulkLifecycleAction
+) => {
+  const auth = c.get("auth");
+  const body = (await c.req.json().catch(() => ({}))) as {
+    envelope_ids?: unknown;
+    reason?: string;
+  };
+
+  const ids = Array.isArray(body.envelope_ids)
+    ? [...new Set(body.envelope_ids.map((value) => Number(value)))].filter(
+        (value) => Number.isInteger(value) && value > 0
+      )
+    : [];
+  if (ids.length === 0) {
+    return c.json({ success: false, error: { message: "envelope_ids is required" } }, 400);
+  }
+  if (ids.length > MAX_BULK_LIFECYCLE_IDS) {
+    return c.json(
+      {
+        success: false,
+        error: { message: `At most ${MAX_BULK_LIFECYCLE_IDS} envelopes per request` }
+      },
+      400
+    );
+  }
+
+  const now = nowIso();
+  const results: { id: number; ok: boolean; status?: string; error?: string }[] = [];
+
+  for (const envelopeId of ids) {
+    const envelope = await c.env.DB.prepare(
+      "SELECT id, status, envelope_uuid FROM reimbursement_envelope WHERE id = ?"
+    )
+      .bind(envelopeId)
+      .first<{ id: number; status: string; envelope_uuid: string }>();
+
+    if (!envelope) {
+      results.push({ id: envelopeId, ok: false, error: "not_found" });
+      continue;
+    }
+
+    const decision = decideBulkLifecycle(action, envelope.status);
+    if (!decision.allowed) {
+      results.push({ id: envelopeId, ok: false, error: decision.message });
+      continue;
+    }
+
+    const updated = await c.env.DB.prepare(
+      "UPDATE reimbursement_envelope SET status = ?, updated_at = ? WHERE id = ? AND status = ?"
+    )
+      .bind(decision.nextStatus, now, envelopeId, envelope.status)
+      .run();
+    if ((updated.meta.changes ?? 0) !== 1) {
+      results.push({ id: envelopeId, ok: false, error: "status_changed_concurrently" });
+      continue;
+    }
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action:
+        action === "void"
+          ? "reimbursement.envelope.bulk_void"
+          : "reimbursement.envelope.bulk_delete",
+      targetType: "reimbursement_envelope",
+      targetId: envelopeId,
+      detail: {
+        envelope_uuid: envelope.envelope_uuid,
+        previous_status: envelope.status,
+        next_status: decision.nextStatus,
+        reason: body.reason ?? null
+      }
+    });
+    results.push({ id: envelopeId, ok: true, status: decision.nextStatus });
+  }
+
+  const succeeded = results.filter((row) => row.ok).length;
+  await publishEvent(
+    c.env,
+    action === "void"
+      ? "REIMBURSEMENT_ENVELOPE_BULK_VOIDED"
+      : "REIMBURSEMENT_ENVELOPE_BULK_DELETED",
+    "reimbursement_envelope",
+    {
+      requested: ids.length,
+      succeeded,
+      failed: ids.length - succeeded,
+      operator: auth.sub,
+      reason: body.reason ?? null
+    }
+  );
+
+  return c.json({
+    success: true,
+    data: { results, succeeded, failed: ids.length - succeeded }
+  });
+};
+
+reimbursementRoutes.post("/void-batch", requireRoles(["super_admin"]), (c) =>
+  handleBulkLifecycle(c, "void")
+);
+
+reimbursementRoutes.post("/delete-batch", requireRoles(["super_admin"]), (c) =>
+  handleBulkLifecycle(c, "delete")
 );
 
 reimbursementRoutes.post(
