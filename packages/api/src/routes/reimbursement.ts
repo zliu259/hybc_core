@@ -2505,8 +2505,10 @@ reimbursementRoutes.post(
         try {
           await resubmitOp(c.env, batch.approval_instance_id, auth.sub, body.biz_summary);
           const now = nowIso();
-          await runInTransaction(c.env.DB, async () => {
-            await c.env.DB.prepare(
+          // 原有实现对这两条 UPDATE 本就没有 status 守卫（仅 WHERE id = ?），
+          // 这里只是把它们合入同一次 db.batch 原子提交，不凭空新增守卫改变行为。
+          await runAtomicBatch(c.env.DB, [
+            c.env.DB.prepare(
               `UPDATE reimbursement_batch
                   SET status = 'pending_approval',
                       payment_method = ?,
@@ -2516,24 +2518,19 @@ reimbursementRoutes.post(
                       payee_id = COALESCE(?, payee_id),
                       updated_at = ?
                 WHERE id = ?`
-            )
-              .bind(
-                payoutPlan.value.payment_method,
-                payoutPlan.value.payment_entity_id,
-                payoutPlan.value.payment_entity_bank_account_id,
-                payoutPlan.value.payment_account,
-                payeeIdUpdate ?? null,
-                now,
-                id
-              )
-              .run();
-
-            await c.env.DB.prepare(
+            ).bind(
+              payoutPlan.value.payment_method,
+              payoutPlan.value.payment_entity_id,
+              payoutPlan.value.payment_entity_bank_account_id,
+              payoutPlan.value.payment_account,
+              payeeIdUpdate ?? null,
+              now,
+              id
+            ),
+            c.env.DB.prepare(
               "UPDATE reimbursement_envelope SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE batch_id = ?"
-            )
-              .bind(batch.approval_instance_id, now, id)
-              .run();
-          });
+            ).bind(batch.approval_instance_id, now, id)
+          ]);
 
           const payload = {
             success: true,
@@ -2636,8 +2633,18 @@ reimbursementRoutes.post(
 
       const now = nowIso();
 
-      await runInTransaction(c.env.DB, async () => {
-        const batchUpdate = await c.env.DB.prepare(
+      // 守卫内嵌 + 全原子：把「批次仍为 draft」这一守卫复制进 batch 内的每一条语句，
+      // 并把改变该守卫所依赖状态的批次 UPDATE 排在最后——信封 UPDATE 的 EXISTS
+      // 子查询读到的是尚未被同一 batch 改写的旧状态。守卫不成立时两条都影响 0 行
+      // （零写入），而不是「先改批次、再无条件改信封」那种可能部分写入的顺序。
+      const results = await runAtomicBatch(c.env.DB, [
+        c.env.DB.prepare(
+          `UPDATE reimbursement_envelope
+              SET status = 'pending_approval', approval_instance_id = ?, updated_at = ?
+            WHERE batch_id = ?
+              AND EXISTS (SELECT 1 FROM reimbursement_batch WHERE id = ? AND status = 'draft')`
+        ).bind(instance.id, now, id, id),
+        c.env.DB.prepare(
           `UPDATE reimbursement_batch
               SET status = 'pending_approval',
                   approval_instance_id = ?,
@@ -2648,28 +2655,22 @@ reimbursementRoutes.post(
                   payee_id = COALESCE(?, payee_id),
                   updated_at = ?
              WHERE id = ? AND status = 'draft'`
+        ).bind(
+          instance.id,
+          payoutPlan.value.payment_method,
+          payoutPlan.value.payment_entity_id,
+          payoutPlan.value.payment_entity_bank_account_id,
+          payoutPlan.value.payment_account,
+          payeeIdUpdate ?? null,
+          now,
+          id
         )
-          .bind(
-            instance.id,
-            payoutPlan.value.payment_method,
-            payoutPlan.value.payment_entity_id,
-            payoutPlan.value.payment_entity_bank_account_id,
-            payoutPlan.value.payment_account,
-            payeeIdUpdate ?? null,
-            now,
-            id
-          )
-          .run();
-        if ((batchUpdate.meta.changes ?? 0) !== 1) {
-          throw new Error("Batch is no longer in draft status");
-        }
+      ]);
 
-        await c.env.DB.prepare(
-          "UPDATE reimbursement_envelope SET status = 'pending_approval', approval_instance_id = ?, updated_at = ? WHERE batch_id = ?"
-        )
-          .bind(instance.id, now, id)
-          .run();
-      });
+      const batchChanges = results[results.length - 1]?.meta?.changes ?? 0;
+      if (batchChanges !== 1) {
+        throw new Error("Batch is no longer in draft status");
+      }
     } catch (error) {
       await abandonIdempotentRequest(c.env.DB, `reimbursement:batch-submit-approval:${id}`, auth.sub, idempotencyKey);
       throw error;
@@ -2799,8 +2800,18 @@ reimbursementRoutes.post(
     const paymentReference = body.payment_reference.trim();
     const paymentAccountText = `${entity.entity_name} / ${bankAccount.bank_name} / ${bankAccount.account_no}`;
     try {
-      await runInTransaction(c.env.DB, async () => {
-        const updateBatch = await c.env.DB.prepare(
+      // 守卫内嵌 + 全原子：把「批次仍为 approved」这一守卫复制进 batch 内的每一条
+      // 语句，并把改变该守卫所依赖状态的批次 UPDATE 排在最后——信封 UPDATE 的
+      // EXISTS 子查询读到的是尚未被同一 batch 改写的旧状态。守卫不成立时两条都
+      // 影响 0 行（零写入），因此不需要、也绝不做任何撤销 paid 状态的补偿。
+      const results = await runAtomicBatch(c.env.DB, [
+        c.env.DB.prepare(
+          `UPDATE reimbursement_envelope
+              SET status = 'paid', updated_at = ?
+            WHERE batch_id = ?
+              AND EXISTS (SELECT 1 FROM reimbursement_batch WHERE id = ? AND status = 'approved')`
+        ).bind(now, id, id),
+        c.env.DB.prepare(
           `UPDATE reimbursement_batch SET
              status = 'paid',
              paid_at = ?,
@@ -2811,29 +2822,22 @@ reimbursementRoutes.post(
              payment_vouchers_json = ?,
              updated_at = ?
            WHERE id = ? AND status = 'approved'`
+        ).bind(
+          paidAt,
+          paymentReference,
+          body.payment_account?.trim() || paymentAccountText,
+          body.payment_entity_id,
+          body.payment_entity_bank_account_id,
+          vouchers.length > 0 ? JSON.stringify(vouchers) : null,
+          now,
+          id
         )
-          .bind(
-            paidAt,
-            paymentReference,
-            body.payment_account?.trim() || paymentAccountText,
-            body.payment_entity_id,
-            body.payment_entity_bank_account_id,
-            vouchers.length > 0 ? JSON.stringify(vouchers) : null,
-            now,
-            id
-          )
-          .run();
+      ]);
 
-        if ((updateBatch.meta.changes ?? 0) !== 1) {
-          throw new Error("Batch is no longer approved");
-        }
-
-        await c.env.DB.prepare(
-          "UPDATE reimbursement_envelope SET status = 'paid', updated_at = ? WHERE batch_id = ?"
-        )
-          .bind(now, id)
-          .run();
-      });
+      const batchChanges = results[results.length - 1]?.meta?.changes ?? 0;
+      if (batchChanges !== 1) {
+        throw new Error("Batch is no longer approved");
+      }
     } catch (error) {
       await abandonIdempotentRequest(c.env.DB, `reimbursement:batch-mark-paid:${id}`, auth.sub, idempotencyKey);
       throw error;
