@@ -20,6 +20,7 @@ import {
 import { generateSerial } from "../services/serial";
 import { canUpdateBatchPayoutPlan } from "./reimbursement-batch-payout-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
+import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import type { Env } from "../types/env";
 import { reimbursementChannels, reimbursementStatuses } from "../types/reimbursement";
 import type {
@@ -36,6 +37,7 @@ import type {
   ReimbursementEnvelope,
   ReimbursementPaymentVoucherInput,
   ScanEnvelopeRequest,
+  SplitEnvelopeRequest,
   SubmitEnvelopeRequest,
   SubmitReimbursementBatchApprovalRequest,
   UpdateReimbursementBatchItemBasicInfoRequest,
@@ -4720,6 +4722,195 @@ reimbursementRoutes.post(
     });
 
     return c.json({ success: true, data: { id, status: "cancelled" } });
+  }
+);
+
+reimbursementRoutes.post(
+  "/:id/split",
+  requireRoles(["super_admin", "finance"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as SplitEnvelopeRequest;
+
+    const envelope = await c.env.DB.prepare(
+      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<ReimbursementEnvelope>();
+
+    if (!envelope) {
+      return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    const ownedAttachments = await c.env.DB.prepare(
+      "SELECT id FROM envelope_attachment WHERE envelope_id = ? AND status = 'active'"
+    )
+      .bind(id)
+      .all<{ id: number }>();
+
+    const attachmentIds = (body.attachment_ids ?? []).map((value) => Number(value));
+    const decision = decideSplitEnvelope({
+      envelope: {
+        status: envelope.status,
+        batch_id: envelope.batch_id,
+        approval_instance_id: envelope.approval_instance_id,
+        amount: envelope.amount
+      },
+      newProjectId: Number(body.new_envelope?.project_id),
+      newAmount: Number(body.new_envelope?.amount),
+      originalAmount: Number(body.original_amount),
+      attachmentIds,
+      ownedActiveAttachmentIds: (ownedAttachments.results ?? []).map((row) => row.id)
+    });
+
+    if (!decision.allowed) {
+      return c.json({ success: false, error: { message: decision.message } }, 400);
+    }
+
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: {
+        new_envelope: { id: number; envelope_no: string; envelope_uuid: string };
+        original: { id: number; amount: number };
+        amount_delta: number;
+      };
+    }>(c.env.DB, `reimbursement:split:${id}`, auth.sub, idempotencyKey);
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload, { status: idempotency.statusCode as 201 });
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Split already in progress" } }, 409);
+    }
+
+    const now = nowIso();
+    const newUuid = crypto.randomUUID();
+    let newId = 0;
+
+    try {
+      await runInTransaction(c.env.DB, async () => {
+        const insert = await c.env.DB.prepare(
+          `INSERT INTO reimbursement_envelope
+             (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
+              expense_date, amount, category, description,
+              status, precheck_status, verification_status, verification_note,
+              split_from_envelope_id, split_reason,
+              submitted_at, received_at, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?)`
+        )
+          .bind(
+            newUuid,
+            newUuid,
+            Number(body.new_envelope.project_id),
+            envelope.applicant_userid,
+            envelope.channel,
+            body.new_envelope.expense_date ?? null,
+            Number(body.new_envelope.amount),
+            body.new_envelope.category ?? null,
+            body.new_envelope.description ?? null,
+            envelope.status,
+            envelope.verification_status,
+            envelope.verification_note,
+            id,
+            body.reason ?? null,
+            envelope.submitted_at,
+            envelope.received_at,
+            now,
+            now
+          )
+          .run();
+        newId = insert.meta.last_row_id as number;
+
+        if (attachmentIds.length > 0) {
+          const placeholders = attachmentIds.map(() => "?").join(", ");
+          const moved = await c.env.DB.prepare(
+            `UPDATE envelope_attachment SET envelope_id = ?
+              WHERE id IN (${placeholders}) AND envelope_id = ? AND status = 'active'`
+          )
+            .bind(newId, ...attachmentIds, id)
+            .run();
+          if ((moved.meta.changes ?? 0) !== attachmentIds.length) {
+            throw new Error("Attachment transfer mismatch, split aborted");
+          }
+        }
+
+        const updated = await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope
+              SET amount = ?, precheck_status = 'none', updated_at = ?
+            WHERE id = ? AND batch_id IS NULL AND status = ?`
+        )
+          .bind(Number(body.original_amount), now, id, envelope.status)
+          .run();
+        if ((updated.meta.changes ?? 0) !== 1) {
+          throw new Error("Envelope changed during split, aborted");
+        }
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(
+        c.env.DB,
+        `reimbursement:split:${id}`,
+        auth.sub,
+        idempotencyKey
+      );
+      throw error;
+    }
+
+    // 拆单后自动核查：两边各自重新静默审查（票据识别+重复校验+合理性）
+    await enqueueEnvelopeAiAudit(c.env, id, {
+      forceRerun: true,
+      triggeredBy: auth.sub,
+      reason: "envelope_split_source"
+    });
+    await enqueueEnvelopeAiAudit(c.env, newId, {
+      forceRerun: true,
+      triggeredBy: auth.sub,
+      reason: "envelope_split_child"
+    });
+
+    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SPLIT", "reimbursement_envelope", {
+      source_envelope_id: id,
+      new_envelope_id: newId,
+      new_envelope_uuid: newUuid,
+      moved_attachment_ids: attachmentIds,
+      operator: auth.sub
+    });
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.envelope.split",
+      targetType: "reimbursement_envelope",
+      targetId: id,
+      detail: {
+        new_envelope_id: newId,
+        new_envelope_uuid: newUuid,
+        new_project_id: Number(body.new_envelope.project_id),
+        new_amount: Number(body.new_envelope.amount),
+        original_amount: Number(body.original_amount),
+        moved_attachment_ids: attachmentIds,
+        reason: body.reason ?? null,
+        amount_delta: decision.amountDelta
+      }
+    });
+
+    const payload = {
+      success: true,
+      data: {
+        new_envelope: { id: newId, envelope_no: newUuid, envelope_uuid: newUuid },
+        original: { id, amount: Number(body.original_amount) },
+        amount_delta: decision.amountDelta
+      }
+    };
+    await completeIdempotentRequest(
+      c.env.DB,
+      `reimbursement:split:${id}`,
+      auth.sub,
+      idempotencyKey,
+      201,
+      payload
+    );
+    return c.json(payload, 201);
   }
 );
 

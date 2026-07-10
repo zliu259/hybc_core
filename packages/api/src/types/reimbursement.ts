@@ -193,6 +193,19 @@ export interface VerifyEnvelopeRequest {
   note?: string;
 }
 
+export interface SplitEnvelopeRequest {
+  new_envelope: {
+    project_id: number;
+    amount: number;
+    category?: string;
+    description?: string;
+    expense_date?: string;
+  };
+  attachment_ids?: number[];
+  original_amount: number;
+  reason?: string;
+}
+
 export interface RebindEnvelopeUuidRequest {
   envelope_uuid: string;
   reason?: string;
