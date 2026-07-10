@@ -20,6 +20,7 @@ import {
 import { generateSerial } from "../services/serial";
 import { canUpdateBatchPayoutPlan } from "./reimbursement-batch-payout-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
+import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import type { Env } from "../types/env";
 import { reimbursementChannels, reimbursementStatuses } from "../types/reimbursement";
@@ -3615,7 +3616,8 @@ reimbursementRoutes.post(
     }
 
     const envelope = await c.env.DB.prepare(
-      `SELECT id, status, duplicate_check_status, duplicate_override_requested, applicant_userid
+      `SELECT id, status, duplicate_check_status, duplicate_override_requested, applicant_userid,
+              channel, ocr_result_json, ocr_invoice_unique_no_hint
          FROM reimbursement_envelope
         WHERE id = ? AND status != 'deleted'`
     )
@@ -3626,6 +3628,9 @@ reimbursementRoutes.post(
         duplicate_check_status: string;
         duplicate_override_requested: number;
         applicant_userid: string;
+        channel: string;
+        ocr_result_json: string | null;
+        ocr_invoice_unique_no_hint: string | null;
       }>();
 
     if (!envelope) {
@@ -3696,6 +3701,47 @@ reimbursementRoutes.post(
           },
           400
         );
+      }
+
+      const einvoice = detectEInvoiceInPhysical({
+        channel: envelope.channel,
+        ocrResultJson: envelope.ocr_result_json,
+        invoiceUniqueNoHint: envelope.ocr_invoice_unique_no_hint
+      });
+      if (einvoice.detected) {
+        const overrideReason =
+          typeof body.override_einvoice_reason === "string"
+            ? body.override_einvoice_reason.trim()
+            : "";
+        const canOverride =
+          auth.roles.includes("super_admin") || auth.roles.includes("finance");
+        if (!overrideReason || !canOverride) {
+          return c.json(
+            {
+              success: false,
+              error: {
+                message:
+                  "Electronic invoice detected in a physical envelope. Reject the precheck and ask the applicant to resubmit via the electronic channel, or override with a reason (finance/super_admin only)."
+              },
+              data: {
+                einvoice_in_physical: true,
+                matched_invoice_nos: einvoice.matchedNumbers
+              }
+            },
+            400
+          );
+        }
+        await writeAuditLog(c.env.DB, {
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          action: "reimbursement.envelope.precheck_einvoice_override",
+          targetType: "reimbursement_envelope",
+          targetId: id,
+          detail: {
+            reason: overrideReason,
+            matched_invoice_nos: einvoice.matchedNumbers
+          }
+        });
       }
     }
 

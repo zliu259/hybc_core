@@ -235,6 +235,8 @@ export interface ElectronicUploadRequest {
 export interface PrecheckEnvelopeRequest {
   action: "approved" | "supplement" | "rejected";
   comment?: string;
+  /** 电子发票混入实物信封时的强制通过理由（仅 finance/super_admin） */
+  override_einvoice_reason?: string;
 }
 
 export interface CreateReimbursementBatchRequest {
