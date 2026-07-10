@@ -4,7 +4,7 @@ import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { writeAuditLog } from "../services/audit-log";
-import { runInTransaction } from "../services/db-transaction";
+import { runAtomicBatch, runInTransaction } from "../services/db-transaction";
 import { publishEvent } from "../services/event-bus";
 import {
   abandonIdempotentRequest,
@@ -4088,25 +4088,20 @@ reimbursementRoutes.post(
       }
 
       const tempUuid = crypto.randomUUID();
-      await runInTransaction(c.env.DB, async () => {
-        await c.env.DB.prepare(
+      // db.batch() 的语句在一个隐式 SQL 事务中顺序执行，任一语句报错即回滚整个序列——
+      // 这是 D1 上唯一真正原子的写原语。三步交换没有中间读取依赖，因此可以整体原子提交，
+      // 避免占位信封在中途失败时永久卡在随机 tempUuid 上（实体信封扫码失联）。
+      await runAtomicBatch(c.env.DB, [
+        c.env.DB.prepare(
           "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?"
-        )
-          .bind(tempUuid, tempUuid, now, occupied.id)
-          .run();
-
-        await c.env.DB.prepare(
+        ).bind(tempUuid, tempUuid, now, occupied.id),
+        c.env.DB.prepare(
           "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?"
-        )
-          .bind(nextUuid, nextUuid, now, envelope.id)
-          .run();
-
-        await c.env.DB.prepare(
+        ).bind(nextUuid, nextUuid, now, envelope.id),
+        c.env.DB.prepare(
           "UPDATE reimbursement_envelope SET envelope_uuid = ?, envelope_no = ?, updated_at = ? WHERE id = ?"
-        )
-          .bind(envelope.envelope_uuid, envelope.envelope_uuid, now, occupied.id)
-          .run();
-      });
+        ).bind(envelope.envelope_uuid, envelope.envelope_uuid, now, occupied.id)
+      ]);
       swappedPlaceholderId = occupied.id;
     } else {
       await c.env.DB.prepare(
