@@ -3170,8 +3170,12 @@ reimbursementRoutes.put(
       body.description === undefined ? boundItem.description : body.description?.trim() || null;
 
     const now = nowIso();
-    await runInTransaction(c.env.DB, async () => {
-      await c.env.DB.prepare(
+    // db.batch() 的语句在一个隐式 SQL 事务中顺序执行，任一语句报错即回滚整个序列——
+    // 这是 D1 上唯一真正原子的写原语。原先「先 SELECT SUM/COUNT 再回写批次」的中间
+    // 读取被改写为第三条 UPDATE 内的子查询，因此三条 UPDATE 之间不再有读取依赖，
+    // 可以整体原子提交，避免信封金额已改但批次总额陈旧的漂移窗口。
+    await runAtomicBatch(c.env.DB, [
+      c.env.DB.prepare(
         `UPDATE reimbursement_envelope
             SET invoice_unique_no = ?,
                 invoice_no = ?,
@@ -3181,47 +3185,36 @@ reimbursementRoutes.put(
                 description = ?,
                 updated_at = ?
           WHERE id = ?`
-      )
-        .bind(
-          sanitizeInvoiceUniqueNo(nextInvoiceNo),
-          nextInvoiceNo,
-          nextExpenseDate,
-          nextAmount,
-          nextCategory,
-          nextDescription,
-          now,
-          envelopeId
-        )
-        .run();
-
-      await c.env.DB.prepare(
+      ).bind(
+        sanitizeInvoiceUniqueNo(nextInvoiceNo),
+        nextInvoiceNo,
+        nextExpenseDate,
+        nextAmount,
+        nextCategory,
+        nextDescription,
+        now,
+        envelopeId
+      ),
+      c.env.DB.prepare(
         `UPDATE reimbursement_batch_item
             SET amount = ?
           WHERE batch_id = ? AND envelope_id = ?`
-      )
-        .bind(nextAmount, id, envelopeId)
-        .run();
-
-      const totalRow = await c.env.DB.prepare(
-        `SELECT COALESCE(SUM(amount), 0) AS total_amount,
-                COUNT(*) AS item_count
-           FROM reimbursement_batch_item
-          WHERE batch_id = ?
-            AND status = 'active'`
-      )
-        .bind(id)
-        .first<{ total_amount: number; item_count: number }>();
-
-      await c.env.DB.prepare(
+      ).bind(nextAmount, id, envelopeId),
+      // 总额/条数在同一原子序列内由子查询重算，避免「先读后写」的漂移窗口
+      c.env.DB.prepare(
         `UPDATE reimbursement_batch
-            SET total_amount = ?,
-                item_count = ?,
+            SET total_amount = (
+                  SELECT COALESCE(SUM(amount), 0) FROM reimbursement_batch_item
+                   WHERE batch_id = ? AND status = 'active'
+                ),
+                item_count = (
+                  SELECT COUNT(*) FROM reimbursement_batch_item
+                   WHERE batch_id = ? AND status = 'active'
+                ),
                 updated_at = ?
           WHERE id = ?`
-      )
-        .bind(totalRow?.total_amount ?? 0, totalRow?.item_count ?? 0, now, id)
-        .run();
-    });
+      ).bind(id, id, now, id)
+    ]);
 
     await writeAuditLog(c.env.DB, {
       actorUserId: auth.sub,

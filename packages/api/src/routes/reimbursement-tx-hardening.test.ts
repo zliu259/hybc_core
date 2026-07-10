@@ -214,3 +214,105 @@ describe("rebind-uuid：UUID 三步交换必须走 db.batch 原子提交", () =>
     }
   );
 });
+
+// ─── basic-info ──────────
+
+const buildBoundItem = (): Record<string, unknown> => ({
+  batch_item_id: 100,
+  id: 5,
+  project_id: 1,
+  applicant_userid: "finance-a",
+  invoice_no: "INV-OLD",
+  expense_date: "2026-07-01",
+  amount: 100,
+  category: "material",
+  description: "old desc"
+});
+
+const requestBasicInfo = (db: TxDb, body: Record<string, unknown>) => {
+  const app = new Hono<{ Bindings: Env }>();
+  app.route("/reimbursement", reimbursementRoutes);
+  return app.request(
+    "/reimbursement/batch/10/items/5/basic-info",
+    {
+      method: "PUT",
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json"
+      },
+      body: JSON.stringify(body)
+    },
+    createEnv(db)
+  );
+};
+
+describe("basic-info：批次条目基础信息编辑必须在同一次 db.batch 内重算总额", () => {
+  it(
+    "先 SELECT SUM/COUNT 再 UPDATE 批次总额，在降级模式下会让信封金额与批次总额漂移——" +
+      "因此总额/条数必须改写为 UPDATE 内的子查询，与另外两条 UPDATE 一起进同一次 db.batch",
+    async () => {
+      const db = new TxDb();
+      db.batchRow = { id: 10, status: "draft" };
+      db.boundItemRow = buildBoundItem();
+
+      const response = await requestBasicInfo(db, { amount: 555.55 });
+      expect(response.status).toBe(200);
+
+      expect(db.execCalls).not.toContain("BEGIN IMMEDIATE TRANSACTION");
+      expect(db.batchCalls.length).toBe(1);
+
+      const statements = db.batchCalls[0];
+      expect(statements.length).toBe(3);
+
+      const [envelopeUpdate, itemUpdate, batchUpdate] = statements;
+
+      expect(envelopeUpdate.sql).toContain("UPDATE reimbursement_envelope");
+      const now = envelopeUpdate.args[6];
+      expect(typeof now).toBe("string");
+      expect(envelopeUpdate.args).toEqual([
+        "INV-OLD",
+        "INV-OLD",
+        "2026-07-01",
+        555.55,
+        "material",
+        "old desc",
+        now,
+        5
+      ]);
+
+      expect(itemUpdate.sql).toContain("UPDATE reimbursement_batch_item");
+      expect(itemUpdate.sql).toContain("WHERE batch_id = ? AND envelope_id = ?");
+      expect(itemUpdate.args).toEqual([555.55, 10, 5]);
+
+      expect(batchUpdate.sql).toContain("UPDATE reimbursement_batch");
+      expect(batchUpdate.sql).toMatch(/SUM\(amount\)/);
+      expect(batchUpdate.sql).toMatch(/COUNT\(\*\)/);
+      // 总额/条数由子查询在同一原子序列内重算，而非先读一次再回写——
+      // 因此 batch_id 作为子查询参数出现两次，updated_at 与信封更新共用同一个 now。
+      expect(batchUpdate.args).toEqual([10, 10, now, 10]);
+
+      const body = (await response.json()) as {
+        success: boolean;
+        data: {
+          envelope_id: number;
+          invoice_no: string;
+          expense_date: string;
+          amount: number;
+          category: string;
+          description: string;
+        };
+      };
+      expect(body).toEqual({
+        success: true,
+        data: {
+          envelope_id: 5,
+          invoice_no: "INV-OLD",
+          expense_date: "2026-07-01",
+          amount: 555.55,
+          category: "material",
+          description: "old desc"
+        }
+      });
+    }
+  );
+});
