@@ -4790,60 +4790,101 @@ reimbursementRoutes.post(
 
     try {
       await runInTransaction(c.env.DB, async () => {
-        const insert = await c.env.DB.prepare(
-          `INSERT INTO reimbursement_envelope
-             (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
-              expense_date, amount, category, description,
-              status, precheck_status, verification_status, verification_note,
-              split_from_envelope_id, split_reason,
-              submitted_at, received_at, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-          .bind(
-            newUuid,
-            newUuid,
-            Number(body.new_envelope.project_id),
-            envelope.applicant_userid,
-            envelope.channel,
-            body.new_envelope.expense_date ?? null,
-            Number(body.new_envelope.amount),
-            body.new_envelope.category ?? null,
-            body.new_envelope.description ?? null,
-            envelope.status,
-            envelope.verification_status,
-            envelope.verification_note,
-            id,
-            body.reason ?? null,
-            envelope.submitted_at,
-            envelope.received_at,
-            now,
-            now
-          )
-          .run();
-        newId = insert.meta.last_row_id as number;
-
-        if (attachmentIds.length > 0) {
-          const placeholders = attachmentIds.map(() => "?").join(", ");
-          const moved = await c.env.DB.prepare(
-            `UPDATE envelope_attachment SET envelope_id = ?
-              WHERE id IN (${placeholders}) AND envelope_id = ? AND status = 'active'`
-          )
-            .bind(newId, ...attachmentIds, id)
-            .run();
-          if ((moved.meta.changes ?? 0) !== attachmentIds.length) {
-            throw new Error("Attachment transfer mismatch, split aborted");
-          }
-        }
-
+        // 并发闸门：原单 UPDATE 必须最先执行且独立成功，否则视为并发冲突直接中止。
+        // 此时尚未写入任何新数据，失败时无需补偿。
+        // 相比原校验额外增加 approval_instance_id IS NULL，与 decideSplitEnvelope 的
+        // 前置检查保持一致，避免 SELECT 与 UPDATE 之间的 TOCTOU 窗口。
         const updated = await c.env.DB.prepare(
           `UPDATE reimbursement_envelope
               SET amount = ?, precheck_status = 'none', updated_at = ?
-            WHERE id = ? AND batch_id IS NULL AND status = ?`
+            WHERE id = ?
+              AND batch_id IS NULL
+              AND approval_instance_id IS NULL
+              AND status = ?`
         )
           .bind(Number(body.original_amount), now, id, envelope.status)
           .run();
         if ((updated.meta.changes ?? 0) !== 1) {
           throw new Error("Envelope changed during split, aborted");
+        }
+
+        try {
+          const insert = await c.env.DB.prepare(
+            `INSERT INTO reimbursement_envelope
+               (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
+                expense_date, amount, category, description,
+                status, precheck_status, verification_status, verification_note,
+                split_from_envelope_id, split_reason,
+                submitted_at, received_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+            .bind(
+              newUuid,
+              newUuid,
+              Number(body.new_envelope.project_id),
+              envelope.applicant_userid,
+              envelope.channel,
+              body.new_envelope.expense_date ?? null,
+              Number(body.new_envelope.amount),
+              body.new_envelope.category ?? null,
+              body.new_envelope.description ?? null,
+              envelope.status,
+              envelope.verification_status,
+              envelope.verification_note,
+              id,
+              body.reason ?? null,
+              envelope.submitted_at,
+              envelope.received_at,
+              now,
+              now
+            )
+            .run();
+          newId = insert.meta.last_row_id as number;
+
+          if (attachmentIds.length > 0) {
+            const placeholders = attachmentIds.map(() => "?").join(", ");
+            const moved = await c.env.DB.prepare(
+              `UPDATE envelope_attachment SET envelope_id = ?
+                WHERE id IN (${placeholders}) AND envelope_id = ? AND status = 'active'`
+            )
+              .bind(newId, ...attachmentIds, id)
+              .run();
+            if ((moved.meta.changes ?? 0) !== attachmentIds.length) {
+              throw new Error("Attachment transfer mismatch, split aborted");
+            }
+          }
+        } catch (innerError) {
+          // D1 生产环境不支持 SQL 事务，runInTransaction 会降级为非事务执行，
+          // 因此这里必须显式补偿，否则会留下孤儿信封与错位的附件。
+          // 补偿顺序与写入顺序相反；每步都吞掉自身异常，确保原始错误能抛出。
+          if (newId > 0) {
+            try {
+              // 把已转移的附件全部移回原单（新信封此刻不可能有其他附件）
+              await c.env.DB.prepare(
+                "UPDATE envelope_attachment SET envelope_id = ? WHERE envelope_id = ?"
+              )
+                .bind(id, newId)
+                .run();
+              // 新信封刚创建、无任何外部引用，可安全硬删
+              await c.env.DB.prepare("DELETE FROM reimbursement_envelope WHERE id = ?")
+                .bind(newId)
+                .run();
+            } catch (compensationError) {
+              console.error("Split compensation failed", compensationError);
+            }
+            newId = 0;
+          }
+          try {
+            // 还原原单金额与复核状态
+            await c.env.DB.prepare(
+              "UPDATE reimbursement_envelope SET amount = ?, precheck_status = ?, updated_at = ? WHERE id = ?"
+            )
+              .bind(envelope.amount, envelope.precheck_status, nowIso(), id)
+              .run();
+          } catch (compensationError) {
+            console.error("Split compensation failed", compensationError);
+          }
+          throw innerError;
         }
       });
     } catch (error) {

@@ -938,6 +938,22 @@ git add packages/api/src/types/reimbursement.ts packages/api/src/routes/reimburs
 git commit -m "feat(api): 报销拆单端点（附件转移+溯源+自动核查+幂等）"
 ```
 
+### Task 6b: 并发安全加固（实施期发现）
+
+**背景：** `runInTransaction`（`services/db-transaction.ts`）在 D1 生产环境降级为**非事务执行**——
+D1 不支持 SQL `BEGIN TRANSACTION`，`throw` 不会回滚。原顺序（先 INSERT 新信封 + 转移附件，
+最后校验原单）在「A 拆单 / B 同时成批」的并发下会导致：附件已转走、新信封已建，而原单带着
+缺失的附件进入审批付款流。
+
+**修复：**
+1. 把带守卫的原单 `UPDATE` 提为第一步作并发闸门（并补 `approval_instance_id IS NULL` 守卫，防 TOCTOU）；
+   此步失败时尚未写入任何新数据。
+2. INSERT 新信封与转移附件包入内层 `try/catch`，失败时显式补偿（附件移回原单 → 硬删新信封 →
+   还原原单金额与复核状态），再重新抛出原错误。
+
+**遗留说明：** 本仓库其他端点（如批次创建）同样依赖 `runInTransaction`，在生产降级模式下存在
+同类风险，属既有系统性问题，不在本次范围内。
+
 ---
 
 ## Task 7: 复核通过的电子发票门槛
