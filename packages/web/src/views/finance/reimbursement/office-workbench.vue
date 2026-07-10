@@ -1,11 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
 import { channelLabel } from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 import {
+  bulkDeleteReimbursementEnvelopes,
+  bulkVoidReimbursementEnvelopes,
   getReimbursementWorkbenchSummary,
   listReimbursementEnvelopes,
   precheckEnvelope,
@@ -30,12 +34,18 @@ import { resolveStation } from "./reimbursement-station";
 defineOptions({ name: "ReimbursementOfficeWorkbench" });
 
 type Step = "intake" | "batch" | "payout";
-type IntakeTab = "to_receive" | "to_precheck" | "to_batch";
+type IntakeTab = "to_receive" | "to_precheck" | "to_batch" | "admin_zone";
+// admin_zone 走独立的 ADMIN_QUERY 预设，INTAKE_QUERY 只需覆盖其余三个 tab
+type NonAdminIntakeTab = Exclude<IntakeTab, "admin_zone">;
+type AdminSubTab = "draft" | "returned" | "cancelled";
 
-const INTAKE_QUERY: Record<
-  IntakeTab,
-  { status: string[]; precheck?: string[] }
-> = {
+type EnvelopeQueryPreset = {
+  status: string[];
+  precheck?: string[];
+  excludeUnassigned?: boolean;
+};
+
+const INTAKE_QUERY: Record<NonAdminIntakeTab, EnvelopeQueryPreset> = {
   to_receive: { status: ["submitted"] },
   to_precheck: {
     status: ["received"],
@@ -44,8 +54,21 @@ const INTAKE_QUERY: Record<
   to_batch: { status: ["received"], precheck: ["approved"] }
 };
 
+// 「草稿/未登记」必须排除信封生成器预生成的库存空白信封（applicant_userid === "__UNASSIGNED__"），
+// 否则管理员会把库存信封误当垃圾批量删除。exclude_unassigned=true 由后端负责过滤。
+const ADMIN_QUERY: Record<AdminSubTab, EnvelopeQueryPreset> = {
+  draft: { status: ["draft", "unregistered"], excludeUnassigned: true },
+  returned: { status: ["submitted"], precheck: ["rejected", "supplement"] },
+  cancelled: { status: ["cancelled"] }
+};
+
 const router = useRouter();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const userStore = useUserStoreHook();
+
+const isSuperAdmin = computed(() =>
+  (userStore.roles ?? []).includes("super_admin")
+);
 
 const step = ref<Step>("intake");
 const intakeTab = ref<IntakeTab>("to_receive");
@@ -61,6 +84,11 @@ const quickScanVisible = ref(false);
 const quickScanUuid = ref("");
 const detailDrawerVisible = ref(false);
 const activeDetailId = ref<number | null>(null);
+
+const adminSubTab = ref<AdminSubTab>("draft");
+const adminSelectedIds = ref<number[]>([]);
+const bulkActing = ref(false);
+const selectAllLoading = ref(false);
 
 const createIdempotencyKey = (scope: string) =>
   `${scope}-${crypto.randomUUID()}`;
@@ -103,23 +131,34 @@ const steps = computed(() => [
   }
 ]);
 
-const intakeTabs = computed(() => [
-  {
-    key: "to_receive" as IntakeTab,
-    label: "待签收",
-    count: summary.value?.to_receive
-  },
-  {
-    key: "to_precheck" as IntakeTab,
-    label: "待复核",
-    count: summary.value?.to_precheck
-  },
-  {
-    key: "to_batch" as IntakeTab,
-    label: "待成批",
-    count: summary.value?.to_batch
+const intakeTabs = computed(() => {
+  const tabs = [
+    {
+      key: "to_receive" as IntakeTab,
+      label: "待签收",
+      count: summary.value?.to_receive
+    },
+    {
+      key: "to_precheck" as IntakeTab,
+      label: "待复核",
+      count: summary.value?.to_precheck
+    },
+    {
+      key: "to_batch" as IntakeTab,
+      label: "待成批",
+      count: summary.value?.to_batch
+    }
+  ];
+  if (isSuperAdmin.value) {
+    tabs.push({
+      key: "admin_zone" as IntakeTab,
+      label: "草稿与异常",
+      count:
+        (summary.value?.admin_draft ?? 0) + (summary.value?.admin_returned ?? 0)
+    });
   }
-]);
+  return tabs;
+});
 
 const loadSummary = async () => {
   try {
@@ -137,13 +176,19 @@ const loadData = async () => {
   const seq = ++loadSeq;
   loading.value = true;
   try {
-    const preset = INTAKE_QUERY[intakeTab.value];
+    // 用局部 const 承接 intakeTab.value 以便 TS 按字面量缩小类型（admin_zone 分支之外即为 NonAdminIntakeTab）
+    const currentTab = intakeTab.value;
+    const preset: EnvelopeQueryPreset =
+      currentTab === "admin_zone"
+        ? ADMIN_QUERY[adminSubTab.value]
+        : INTAKE_QUERY[currentTab];
     const result = await listReimbursementEnvelopes({
       page: page.value,
       pageSize: pageSize.value,
       status: preset.status.join(","),
       precheck_status: preset.precheck?.join(","),
-      exclude_cancelled: false
+      exclude_cancelled: false,
+      exclude_unassigned: preset.excludeUnassigned
     });
     // 竞态防护:快速切换子页签时,丢弃过期响应
     if (seq !== loadSeq) return;
@@ -221,8 +266,114 @@ const switchStep = (next: Step) => {
 
 const switchIntakeTab = (tab: IntakeTab) => {
   intakeTab.value = tab;
+  // 离开/进入「草稿与异常」tab 都清空已选,防止跨筛选误操作
+  adminSelectedIds.value = [];
   page.value = 1;
   loadData();
+};
+
+const switchAdminSubTab = (tab: AdminSubTab) => {
+  adminSubTab.value = tab;
+  adminSelectedIds.value = [];
+  page.value = 1;
+  loadData();
+};
+
+const onAdminSelectionChange = (rowsSelected: ReimbursementEnvelope[]) => {
+  adminSelectedIds.value = rowsSelected.map(row => row.id);
+};
+
+const staleDays = (row: ReimbursementEnvelope) => {
+  const updated = new Date(row.updated_at).getTime();
+  if (!Number.isFinite(updated)) return "-";
+  const days = Math.floor((Date.now() - updated) / 86400000);
+  return days < 0 ? "0 天" : `${days} 天`;
+};
+
+const fetchAllAdminIds = async (): Promise<number[]> => {
+  const preset = ADMIN_QUERY[adminSubTab.value];
+  const ids: number[] = [];
+  let currentPage = 1;
+  for (;;) {
+    const result = await listReimbursementEnvelopes({
+      page: currentPage,
+      pageSize: 100,
+      status: preset.status.join(","),
+      precheck_status: preset.precheck?.join(","),
+      exclude_cancelled: false,
+      exclude_unassigned: preset.excludeUnassigned
+    });
+    result.data.forEach(row => ids.push(row.id));
+    if (
+      ids.length >= 500 ||
+      result.data.length === 0 ||
+      currentPage * 100 >= result.pagination.total
+    ) {
+      break;
+    }
+    currentPage += 1;
+  }
+  return ids.slice(0, 500);
+};
+
+const selectAllMatching = async () => {
+  selectAllLoading.value = true;
+  try {
+    const ids = await fetchAllAdminIds();
+    adminSelectedIds.value = ids;
+    message(`已按当前筛选选中全部 ${ids.length} 条（上限 500）`, {
+      type: "success"
+    });
+  } finally {
+    selectAllLoading.value = false;
+  }
+};
+
+const runBulkLifecycle = async (action: "void" | "delete") => {
+  if (adminSelectedIds.value.length === 0) {
+    message("请先勾选要操作的报销单", { type: "warning" });
+    return;
+  }
+  const label = action === "void" ? "废止" : "删除";
+  try {
+    await ElMessageBox.confirm(
+      `确认${label}所选 ${adminSelectedIds.value.length} 条报销？${
+        action === "delete"
+          ? "删除为软删除：列表不再可见，数据与审计日志保留。仅草稿/未登记/已废止的单据可删除。"
+          : "废止后单据不再参与流转，可在「已废止」子页查看。"
+      }`,
+      `一键${label}`,
+      {
+        type: "warning",
+        confirmButtonText: `确认${label}`,
+        cancelButtonText: "取消"
+      }
+    );
+  } catch {
+    return;
+  }
+  bulkActing.value = true;
+  try {
+    const request =
+      action === "void"
+        ? bulkVoidReimbursementEnvelopes
+        : bulkDeleteReimbursementEnvelopes;
+    const res = await request({
+      envelope_ids: adminSelectedIds.value,
+      reason: `管理员批量${label}`
+    });
+    const { succeeded, failed } = res.data;
+    message(
+      failed === 0
+        ? `已${label} ${succeeded} 条`
+        : `${label}完成：成功 ${succeeded} 条，失败 ${failed} 条（状态不允许的单已跳过）`,
+      { type: failed === 0 ? "success" : "warning" }
+    );
+    adminSelectedIds.value = [];
+    await refreshAll();
+  } finally {
+    bulkActing.value = false;
+  }
 };
 
 const refreshAll = async () => {
@@ -389,11 +540,61 @@ onMounted(async () => {
           </el-tab-pane>
         </el-tabs>
 
+        <div v-if="intakeTab === 'admin_zone'" class="admin-zone-bar">
+          <el-radio-group
+            :model-value="adminSubTab"
+            @update:model-value="
+              value => switchAdminSubTab(value as AdminSubTab)
+            "
+          >
+            <el-radio-button value="draft"
+              >草稿/未登记（{{ summary?.admin_draft ?? 0 }}）</el-radio-button
+            >
+            <el-radio-button value="returned"
+              >退回滞留（{{ summary?.admin_returned ?? 0 }}）</el-radio-button
+            >
+            <el-radio-button value="cancelled"
+              >已废止（{{ summary?.admin_cancelled ?? 0 }}）</el-radio-button
+            >
+          </el-radio-group>
+          <el-space wrap>
+            <el-button
+              :loading="selectAllLoading"
+              :disabled="bulkActing"
+              @click="selectAllMatching"
+              >全选全部（≤500）</el-button
+            >
+            <el-button
+              v-if="adminSubTab !== 'cancelled'"
+              type="warning"
+              :loading="bulkActing"
+              :disabled="adminSelectedIds.length === 0"
+              @click="runBulkLifecycle('void')"
+              >一键废止所选（{{ adminSelectedIds.length }}）</el-button
+            >
+            <el-button
+              v-if="adminSubTab !== 'returned'"
+              type="danger"
+              :loading="bulkActing"
+              :disabled="adminSelectedIds.length === 0"
+              @click="runBulkLifecycle('delete')"
+              >一键删除所选（{{ adminSelectedIds.length }}）</el-button
+            >
+          </el-space>
+        </div>
+
         <el-table
           v-loading="loading"
           :data="list"
+          row-key="id"
           :row-class-name="tableRowClassName"
+          @selection-change="onAdminSelectionChange"
         >
+          <el-table-column
+            v-if="intakeTab === 'admin_zone'"
+            type="selection"
+            width="48"
+          />
           <el-table-column prop="envelope_no" label="信封编号" width="150" />
           <el-table-column label="项目" width="160">
             <template #default="scope">{{
@@ -453,6 +654,13 @@ onMounted(async () => {
                 >{{ reimbursementStatusLabel(scope.row.status) }}</el-tag
               >
             </template>
+          </el-table-column>
+          <el-table-column
+            v-if="intakeTab === 'admin_zone'"
+            label="滞留天数"
+            width="100"
+          >
+            <template #default="scope">{{ staleDays(scope.row) }}</template>
           </el-table-column>
           <el-table-column label="操作" width="300" fixed="right">
             <template #default="scope">
@@ -612,6 +820,13 @@ onMounted(async () => {
 
 <style scoped>
 .office-toolbar {
+  margin-bottom: 12px;
+}
+.admin-zone-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   margin-bottom: 12px;
 }
 .office-steps {
