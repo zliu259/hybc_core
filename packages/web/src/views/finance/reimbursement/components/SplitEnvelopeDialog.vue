@@ -8,6 +8,7 @@ import {
   type SplitEnvelopeResult
 } from "@/api/reimbursement";
 import { printSingleEnvelope } from "../envelope-print";
+import { attachmentTypeLabel } from "../reimbursement-labels";
 
 defineOptions({ name: "SplitEnvelopeDialog" });
 
@@ -179,7 +180,11 @@ const openNewEnvelope = () => {
           min-width="220"
           show-overflow-tooltip
         />
-        <el-table-column prop="attachment_type" label="类型" width="100" />
+        <el-table-column label="类型" width="100">
+          <template #default="scope">
+            {{ attachmentTypeLabel(scope.row.attachment_type) }}
+          </template>
+        </el-table-column>
       </el-table>
 
       <div class="split-section-title">2. 新单信息</div>

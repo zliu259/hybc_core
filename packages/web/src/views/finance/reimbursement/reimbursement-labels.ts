@@ -110,6 +110,17 @@ export const reimbursementTaskStatusLabel = (v?: string | null): string => {
   return m[v] ?? v;
 };
 
+export const attachmentTypeLabel = (v?: string | null): string => {
+  const m: Record<string, string> = {
+    invoice: "发票",
+    receipt: "凭证",
+    contract: "合同",
+    other: "其他"
+  };
+  if (!v) return "其他";
+  return m[v] ?? v;
+};
+
 export const precheckActionLabel = (
   action: "approved" | "supplement" | "rejected"
 ): string => {
