@@ -1125,6 +1125,23 @@ onBeforeUnmount(() => {
   clearAuditPolling();
 });
 
+// The split dialog's attachment table snapshots `detail.attachments` when it
+// opens (see SplitEnvelopeDialog.vue). Background audit-status polling still
+// replaces `detail` with a new object every few seconds while the dialog is
+// open, which would otherwise keep re-triggering downstream reactivity for
+// no benefit to the user mid-edit. Pausing the poll while the dialog is open
+// avoids that churn; closing the dialog resumes polling if still needed.
+watch(
+  () => splitDialogVisible.value,
+  value => {
+    if (value) {
+      clearAuditPolling();
+    } else {
+      ensureAuditPolling();
+    }
+  }
+);
+
 watch(
   () => effectiveEnvelopeId.value,
   async () => {
