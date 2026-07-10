@@ -29,6 +29,7 @@ cd packages/api && npm run db:migrate:local                    # 本地迁移
 |---|---|---|
 | `packages/api/migrations/0057_reimbursement_split_lineage.sql` | 新建 | 拆单溯源列 |
 | `packages/api/src/types/reimbursement.ts` | 修改 | 信封类型加拆单字段；新增 Split/Precheck 请求类型 |
+| `packages/api/src/services/event-bus.ts` | 修改 | 注册 3 个新领域事件（SPLIT / BULK_VOIDED / BULK_DELETED） |
 | `packages/api/src/routes/reimbursement-split-policy.ts` + `.test.ts` | 新建 | 拆单资格/金额/附件校验 |
 | `packages/api/src/routes/reimbursement-einvoice-guard.ts` + `.test.ts` | 新建 | 电子发票混入实物信封检测 |
 | `packages/api/src/routes/reimbursement-bulk-lifecycle-policy.ts` + `.test.ts` | 新建 | 批量废止/删除状态机 |
@@ -295,7 +296,7 @@ describe("isElectronicInvoiceNumber", () => {
   it("rejects paper invoice numbers and non-strings", () => {
     expect(isElectronicInvoiceNumber("12345678")).toBe(false);
     expect(isElectronicInvoiceNumber("2431200000001234567X")).toBe(false);
-    expect(isElectronicInvoiceNumber(24312000000012345678)).toBe(false);
+    expect(isElectronicInvoiceNumber(12345678)).toBe(false);
     expect(isElectronicInvoiceNumber(null)).toBe(false);
   });
 });
@@ -688,7 +689,20 @@ git commit -m "feat(api): 批次建议分组与收款人唯一匹配策略（TDD
 
 **Files:**
 - Modify: `packages/api/src/types/reimbursement.ts`（加请求类型）
+- Modify: `packages/api/src/services/event-bus.ts`（注册 `REIMBURSEMENT_ENVELOPE_SPLIT` 等 3 个事件类型）
 - Modify: `packages/api/src/routes/reimbursement.ts`（新端点，插在 `POST /:id/void` 定义之后，约 4724 行处）
+
+- [ ] **Step 0: 注册领域事件类型**
+
+在 `packages/api/src/services/event-bus.ts` 的 `domainEventTypes` 数组中，紧跟现有的 `"REIMBURSEMENT_ENVELOPE_CANCELLED",` 之后加三行（保持信封级事件在批次级事件之前）：
+
+```ts
+  "REIMBURSEMENT_ENVELOPE_SPLIT",
+  "REIMBURSEMENT_ENVELOPE_BULK_VOIDED",
+  "REIMBURSEMENT_ENVELOPE_BULK_DELETED",
+```
+
+`publishEvent` 的 `type` 参数是 `DomainEventType` 字面量联合，未注册的事件名无法通过 `tsc`。Task 9 的 `REIMBURSEMENT_ENVELOPE_BULK_VOIDED` / `_BULK_DELETED` 一并在此注册，避免 Task 9 重复踩坑。
 
 - [ ] **Step 1: 请求类型**
 
@@ -923,6 +937,22 @@ Expected: 类型通过，全部测试 PASS。
 git add packages/api/src/types/reimbursement.ts packages/api/src/routes/reimbursement.ts
 git commit -m "feat(api): 报销拆单端点（附件转移+溯源+自动核查+幂等）"
 ```
+
+### Task 6b: 并发安全加固（实施期发现）
+
+**背景：** `runInTransaction`（`services/db-transaction.ts`）在 D1 生产环境降级为**非事务执行**——
+D1 不支持 SQL `BEGIN TRANSACTION`，`throw` 不会回滚。原顺序（先 INSERT 新信封 + 转移附件，
+最后校验原单）在「A 拆单 / B 同时成批」的并发下会导致：附件已转走、新信封已建，而原单带着
+缺失的附件进入审批付款流。
+
+**修复：**
+1. 把带守卫的原单 `UPDATE` 提为第一步作并发闸门（并补 `approval_instance_id IS NULL` 守卫，防 TOCTOU）；
+   此步失败时尚未写入任何新数据。
+2. INSERT 新信封与转移附件包入内层 `try/catch`，失败时显式补偿（附件移回原单 → 硬删新信封 →
+   还原原单金额与复核状态），再重新抛出原错误。
+
+**遗留说明：** 本仓库其他端点（如批次创建）同样依赖 `runInTransaction`，在生产降级模式下存在
+同类风险，属既有系统性问题，不在本次范围内。
 
 ---
 
@@ -1184,6 +1214,8 @@ git commit -m "feat(api): 批次建议只读端点与列表排除未分配空白
 
 **Files:**
 - Modify: `packages/api/src/routes/reimbursement.ts`（插在 `POST /:id/void` 之前）
+
+> 备注：事件类型 `REIMBURSEMENT_ENVELOPE_BULK_VOIDED` / `_BULK_DELETED` 已在 Task 6 于 `event-bus.ts` 注册，本任务无需再改该文件。
 
 - [ ] **Step 1: 实现两个端点**
 

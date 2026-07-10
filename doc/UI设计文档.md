@@ -241,6 +241,12 @@
 - 状态标签与异常标签逻辑收敛进共享模块 `packages/web/src/views/finance/reimbursement/reimbursement-labels.ts`（`reimbursementStatusTagType`、`rowAnomalyTags`、`tableRowClassName`，命名类型导出），工作台与查询结果表格共用，避免逻辑漂移。
 - `/workspace/my-reimbursement` 员工工作台**仍使用** `list.vue`（仅“我的提交”单一列表视图，不含财务中心三视图/子页签），零回归；`list.vue` 已配套移除财务中心三视图相关死代码（833→510 行）并收敛过时文案。
 - API 指向：`/api/v1/reimbursement`、`/api/v1/reimbursement/workbench-summary`（2026-07-08 新增，`requireRoles(super_admin/manager/finance)`，聚合返回 `to_receive/to_precheck/to_batch/batches_to_submit/batches_to_pay` 五项计数）、`/api/v1/reimbursement/:id/trigger-anomaly-check`、`/api/v1/reimbursement/:id/precheck`；列表接口新增服务端过滤参数 `precheck_status`（逗号分隔多值，`IN` 条件过滤，与既有 `status` 参数正交组合）。
+- **第 4 个 tab「草稿与异常」**（2026-07-10 新增，仅 `super_admin` 可见）：与前三个 tab 并列，`intakeTab='admin_zone'`，走独立的 `ADMIN_QUERY` 预设（不复用 `INTAKE_QUERY`），角标计数来自 `workbench-summary` 新增的 `admin_draft/admin_returned/admin_cancelled`（其余角色不请求、不下发）。
+  - 三个子筛选（`el-radio-button`）：「草稿/未登记」（`status IN (draft, unregistered)`，排除信封生成器预生成的库存空白信封 `applicant_userid==='__UNASSIGNED__'`，通过列表接口 `exclude_unassigned=true`）、「退回滞留」（`status='submitted' AND precheck_status IN (rejected, supplement)`）、「已废止」（`status='cancelled'`）。
+  - 表格新增「滞留天数」列（`updated_at` 距今天数）。
+  - 支持多选 + 批量「一键废止所选」/「一键删除所选」，操作前二次确认弹窗显示条数与金额合计；删除为软删除（列表不再可见，数据与审计日志保留），仅「草稿/未登记/已废止」可删除，其余状态需先废止；操作后刷新当前子筛选列表与四个 tab 角标。
+  - 切换主 tab 或子筛选时均清空已选批量项，避免跨筛选残留选择导致误操作。
+  - API 指向：`POST /api/v1/reimbursement/void-batch`、`POST /api/v1/reimbursement/delete-batch`（均 `requireRoles(["super_admin"])`，显式 `envelope_ids` 列表，逐条审计）。
 
 #### F-1. 报销信封生成器（正式离线版） `views/finance/reimbursement/envelope-generator.vue`
 
@@ -279,9 +285,19 @@
 - 附件预览补齐：报销详情附件区新增“预览”操作，与“下载”并列，预览统一使用右侧抽屉（`el-drawer`）承载，不再打开新页面，支持办公室在详情页快速核查附件：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 详情页加载反馈：进入报销详情时，基础选项数据与详情数据回填阶段统一显示 loading，避免空白等待与旧数据残留感知：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 后台静默审查提示：办公室详情页新增“后台静默审查提示”区，展示识别建议与智能核查摘要，供办公室签收处理参考：`packages/web/src/views/finance/reimbursement/detail.vue`
-- 详情页首屏新增状态摘要（当前状态、报销金额、报销通道、后台核查），后台静默审查与重复风险合并进折叠区，降低基础表单与审查信息同时展示的阅读压力：`packages/web/src/views/finance/reimbursement/detail.vue`
-- 详情页支持路由页与抽屉两种承载方式；抽屉模式通过 `envelopeId` 载入指定报销条目，并在保存、提交、签收、复核等动作后通知父页面刷新当前数据但不改变所在页面状态：`packages/web/src/views/finance/reimbursement/detail.vue`
-- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/resolve/by-uuid`
+- 详情页首屏新增状态摘要（当前状态、报销金额、报销通道、后台核查）。
+- **智能核查结果显眼化**（2026-07-10，取代原底部折叠区方案）：概要磁贴正下方新增全宽卡片「智能核查与风险提示」，office 视角**始终展开、不可折叠**，按最高风险等级（`highestRiskLevel`）着色左边框/标题；重复风险表并入该卡片；命中电子发票混入实物信封时卡片内新增红色 `el-alert` 提示「复核通过将被拦截，请复核驳回并引导员工改用电子发票通道」；员工视角维持现状（不展示 office 审查内容）。
+- **操作区三分组重组**（2026-07-10，取代原“保存/提交/核查签收/复核动作平铺一行”布局）：
+  - 顶部新增「当前环节」提示条（`stageHint`），如“当前：待签收 → 下一步：办公室核查签收或标记核查异常”，覆盖草稿/退回/待签收/待复核/已批次/审批中/已通过/已付款/已驳回/已废止全部阶段。
+  - 「员工操作」组：保存、实物扫码登记、提交。
+  - 「办公室签收与复核」组：核查签收、核查异常、复核三键（通过/要求补充/驳回，电子发票混入时复核通过默认拦截、`force_pass` 留痕强制通过）、拆单入口（接入 `SplitEnvelopeDialog.vue`）、二次静默审查。
+  - 「管理操作」组（危险区样式）：废止报销提交（仅 `super_admin`）。
+  - 每个分组内动作按钮统一 per-action loading（请求期间禁用同组按钮防重复点击）；当前阶段不可用的分组收起/置灰。
+- **报销拆单**（2026-07-10 新增）：办公室在「待复核」或「待成批」阶段（`status IN (submitted, received)` 且未挂批次/未挂审批实例）可对信封执行拆单——弹窗中多选要转移的附件、填写新信封项目与金额，提交后原单保留剩余金额与附件，新信封携带转移附件与拆单溯源（`split_from_envelope_id`/`split_reason`）；成功后可直接「打印新信封」二维码（`envelope-print.ts`，从 `envelope-generator.vue` 抽出的单信封版本）。拆单仅 `finance`/`super_admin` 可见。
+- **附件图片预览缩放**（2026-07-10）：预览抽屉中图片类附件改用 `el-image`（内置 viewer：滚轮缩放/旋转/拖拽/全屏），PDF 保持 iframe，其他类型维持下载提示。
+- **状态与附件类型全面汉化**（2026-07-10）：状态、复核状态、任务状态（新增 `assigned=已分派`、`running=处理中`、`queued=排队中`）与附件「类型」列（`invoice/receipt/contract/other` → 发票/凭证/合同/其他）统一走模块内 `reimbursement-labels.ts`，修复此前复核动作 toast 直接输出英文枚举原值的问题。
+- 详情页支持路由页与抽屉两种承载方式；抽屉模式通过 `envelopeId` 载入指定报销条目，并在保存、提交、签收、复核、拆单等动作后通知父页面刷新当前数据但不改变所在页面状态：`packages/web/src/views/finance/reimbursement/detail.vue`
+- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/:id/split`（2026-07-10 新增，拆单）, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
 
@@ -296,7 +312,8 @@
 - 新增“历史完成（财务/领导）”区域：展示已付款/已拒绝等过往批次，支持打开批次详情追踪。
 - 候选报销条目“查看”使用右侧详情抽屉，不离开集中审批页面：`packages/web/src/views/finance/reimbursement/batch.vue`
 - 审批批次“详情”使用右侧批次详情抽屉，创建并送审成功后也在当前页面打开批次详情，避免跳转导致候选区、筛选和历史区重新加载：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/views/finance/reimbursement/batch-detail.vue`
-- API 指向：`/api/v1/reimbursement/batch`
+- **「AI 一键成批」入口**（2026-07-10 新增）：候选条目工作区顶部新增按钮，打开 `AiBatchProposalsDrawer.vue` 建议批次确认抽屉——后端按「项目 + 收款人」自动分组给出建议批次列表（`GET /api/v1/reimbursement/batch/proposals`，`exclude_unassigned=true` 排除库存空白信封），抽屉内逐组勾选确认后，前端按组顺序编排调用既有 `POST /batch` → `POST /batch/:id/submit-approval` → `POST /batch/:id/trigger-audit` 创建并送审（无独立“确认批次”后端接口，前端编排、逐组独立成败）；每组结果（成功/失败原因）在抽屉内逐条展示，成功的组同步刷新候选区与历史区。
+- API 指向：`/api/v1/reimbursement/batch`、`/api/v1/reimbursement/batch/proposals`（2026-07-10 新增，只读）
 
 #### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
 

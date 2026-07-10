@@ -3,11 +3,7 @@ import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
-import {
-  aiAuditStatusLabel,
-  precheckStatusLabel,
-  statusLabel
-} from "@/utils/enum-labels";
+import { aiAuditStatusLabel } from "@/utils/enum-labels";
 import {
   getBatchAuditReport,
   getReimbursementBatch,
@@ -18,6 +14,10 @@ import {
   updateBatchPayoutPlan,
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
+import {
+  reimbursementPrecheckStatusLabel,
+  reimbursementStatusLabel
+} from "./reimbursement-labels";
 import { useUserStoreHook } from "@/store/modules/user";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
@@ -616,7 +616,7 @@ watch(
       <div class="summary-grid">
         <div class="summary-tile">
           <span class="tile-label">业务状态</span>
-          <strong>{{ statusLabel(detail.status) }}</strong>
+          <strong>{{ reimbursementStatusLabel(detail.status) }}</strong>
         </div>
         <div class="summary-tile">
           <span class="tile-label">总金额</span>
@@ -682,7 +682,7 @@ watch(
             }}</el-descriptions-item>
             <el-descriptions-item label="审批状态">{{
               detail.approval_instance
-                ? statusLabel(detail.approval_instance.status)
+                ? reimbursementStatusLabel(detail.approval_instance.status)
                 : "-"
             }}</el-descriptions-item>
             <el-descriptions-item label="创建时间">{{
@@ -931,12 +931,12 @@ watch(
           />
           <el-table-column label="复核状态" width="120">
             <template #default="scope">{{
-              precheckStatusLabel(scope.row.precheck_status)
+              reimbursementPrecheckStatusLabel(scope.row.precheck_status)
             }}</template>
           </el-table-column>
           <el-table-column label="信封状态" width="120">
             <template #default="scope">{{
-              statusLabel(scope.row.status)
+              reimbursementStatusLabel(scope.row.status)
             }}</template>
           </el-table-column>
           <el-table-column

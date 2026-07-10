@@ -34,6 +34,8 @@ export type ReimbursementEnvelope = {
   updated_at: string;
   duplicate_count?: number;
   duplicate_risk_level?: "high" | "medium" | "low" | null;
+  split_from_envelope_id?: number | null;
+  split_reason?: string | null;
 };
 
 export type EnvelopeAttachment = {
@@ -75,6 +77,7 @@ export const listReimbursementEnvelopes = (params?: {
   applicant_userid?: string;
   creator_id?: string;
   exclude_cancelled?: boolean;
+  exclude_unassigned?: boolean;
   channel?: string;
   keyword?: string;
   page?: number;
@@ -93,6 +96,9 @@ export type ReimbursementWorkbenchSummary = {
   to_batch: number;
   batches_to_submit: number;
   batches_to_pay: number;
+  admin_draft?: number;
+  admin_returned?: number;
+  admin_cancelled?: number;
 };
 
 export const getReimbursementWorkbenchSummary = () => {
@@ -381,7 +387,11 @@ export const getEnvelopeAnomalyStatus = (id: number) => {
 
 export const precheckEnvelope = (
   id: number,
-  data: { action: "approved" | "supplement" | "rejected"; comment?: string }
+  data: {
+    action: "approved" | "supplement" | "rejected";
+    comment?: string;
+    override_einvoice_reason?: string;
+  }
 ) => {
   return http.request<{
     success: boolean;
@@ -704,5 +714,97 @@ export const updateBatchItemBasicInfo = (
     {
       data
     }
+  );
+};
+
+export type SplitEnvelopeResult = {
+  new_envelope: { id: number; envelope_no: string; envelope_uuid: string };
+  original: { id: number; amount: number };
+  amount_delta: number;
+};
+
+export const splitReimbursementEnvelope = (
+  id: number,
+  data: {
+    new_envelope: {
+      project_id: number;
+      amount: number;
+      category?: string;
+      description?: string;
+      expense_date?: string;
+    };
+    attachment_ids?: number[];
+    original_amount: number;
+    reason?: string;
+  },
+  options?: { idempotencyKey?: string }
+) => {
+  return http.request<{ success: boolean; data: SplitEnvelopeResult }>(
+    "post",
+    `/api/v1/reimbursement/${id}/split`,
+    {
+      data,
+      headers: options?.idempotencyKey
+        ? { "Idempotency-Key": options.idempotencyKey }
+        : undefined
+    }
+  );
+};
+
+export type ReimbursementBatchProposal = {
+  project_id: number;
+  applicant_userid: string;
+  item_count: number;
+  total_amount: number;
+  envelopes: {
+    id: number;
+    envelope_no: string;
+    amount: number;
+    description: string | null;
+    channel: string;
+    duplicate_risk_level: "high" | "medium" | "low" | null;
+  }[];
+  matched_payee: {
+    id: number;
+    name: string;
+    bank_name: string;
+    bank_account: string;
+  } | null;
+  payee_required: boolean;
+  suggested_payment_method: string;
+};
+
+export const listReimbursementBatchProposals = () => {
+  return http.request<{ success: boolean; data: ReimbursementBatchProposal[] }>(
+    "get",
+    "/api/v1/reimbursement/batch/proposals"
+  );
+};
+
+export type BulkLifecycleResult = {
+  results: { id: number; ok: boolean; status?: string; error?: string }[];
+  succeeded: number;
+  failed: number;
+};
+
+export const bulkVoidReimbursementEnvelopes = (data: {
+  envelope_ids: number[];
+  reason?: string;
+}) => {
+  return http.request<{ success: boolean; data: BulkLifecycleResult }>(
+    "post",
+    "/api/v1/reimbursement/void-batch",
+    { data }
+  );
+};
+
+export const bulkDeleteReimbursementEnvelopes = (data: {
+  envelope_ids: number[];
+  reason?: string;
+}) => {
+  return http.request<{ success: boolean; data: BulkLifecycleResult }>(
+    "post",
+    "/api/v1/reimbursement/delete-batch",
+    { data }
   );
 };

@@ -1,4 +1,4 @@
-import { Hono } from "hono";
+import { Hono, type Context } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
@@ -19,7 +19,17 @@ import {
 } from "../services/approval/status";
 import { generateSerial } from "../services/serial";
 import { canUpdateBatchPayoutPlan } from "./reimbursement-batch-payout-policy";
+import {
+  groupBatchProposals,
+  matchUniqueInternalPayee
+} from "./reimbursement-batch-proposal-policy";
+import {
+  decideBulkLifecycle,
+  type BulkLifecycleAction
+} from "./reimbursement-bulk-lifecycle-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
+import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
+import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import type { Env } from "../types/env";
 import { reimbursementChannels, reimbursementStatuses } from "../types/reimbursement";
 import type {
@@ -36,6 +46,7 @@ import type {
   ReimbursementEnvelope,
   ReimbursementPaymentVoucherInput,
   ScanEnvelopeRequest,
+  SplitEnvelopeRequest,
   SubmitEnvelopeRequest,
   SubmitReimbursementBatchApprovalRequest,
   UpdateReimbursementBatchItemBasicInfoRequest,
@@ -1265,6 +1276,7 @@ reimbursementRoutes.get(
   "/workbench-summary",
   requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
+    const auth = c.get("auth");
     const envelopeRow = await c.env.DB.prepare(
       `SELECT
          SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS to_receive,
@@ -1288,6 +1300,33 @@ reimbursementRoutes.get(
       batches_to_pay: number | null;
     }>();
 
+    let adminCounts: {
+      admin_draft: number;
+      admin_returned: number;
+      admin_cancelled: number;
+    } | null = null;
+    if (auth.roles.includes("super_admin")) {
+      const adminRow = await c.env.DB.prepare(
+        `SELECT
+           SUM(CASE WHEN status IN ('draft', 'unregistered') AND applicant_userid != ? THEN 1 ELSE 0 END) AS admin_draft,
+           SUM(CASE WHEN status = 'submitted' AND precheck_status IN ('rejected', 'supplement') THEN 1 ELSE 0 END) AS admin_returned,
+           SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) AS admin_cancelled
+         FROM reimbursement_envelope
+         WHERE status != 'deleted'`
+      )
+        .bind(UNASSIGNED_APPLICANT)
+        .first<{
+          admin_draft: number | null;
+          admin_returned: number | null;
+          admin_cancelled: number | null;
+        }>();
+      adminCounts = {
+        admin_draft: adminRow?.admin_draft ?? 0,
+        admin_returned: adminRow?.admin_returned ?? 0,
+        admin_cancelled: adminRow?.admin_cancelled ?? 0
+      };
+    }
+
     return c.json({
       success: true,
       data: {
@@ -1295,7 +1334,8 @@ reimbursementRoutes.get(
         to_precheck: envelopeRow?.to_precheck ?? 0,
         to_batch: envelopeRow?.to_batch ?? 0,
         batches_to_submit: batchRow?.batches_to_submit ?? 0,
-        batches_to_pay: batchRow?.batches_to_pay ?? 0
+        batches_to_pay: batchRow?.batches_to_pay ?? 0,
+        ...(adminCounts ?? {})
       }
     });
   }
@@ -1327,6 +1367,9 @@ reimbursementRoutes.get("/", async (c) => {
   const legacyDataId = c.req.query("legacy_data_id");
   const excludeCancelled = ["1", "true", "yes"].includes(
     (c.req.query("exclude_cancelled") ?? "").toLowerCase()
+  );
+  const excludeUnassigned = ["1", "true", "yes"].includes(
+    (c.req.query("exclude_unassigned") ?? "").toLowerCase()
   );
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
@@ -1400,6 +1443,11 @@ reimbursementRoutes.get("/", async (c) => {
     sql += " AND e.legacy_data_id = ?";
     countSql += " AND e.legacy_data_id = ?";
     params.push(legacyDataId);
+  }
+  if (excludeUnassigned) {
+    sql += " AND e.applicant_userid != ?";
+    countSql += " AND e.applicant_userid != ?";
+    params.push(UNASSIGNED_APPLICANT);
   }
 
   sql += " ORDER BY e.id DESC LIMIT ? OFFSET ?";
@@ -1591,6 +1639,102 @@ reimbursementRoutes.get(
       success: true,
       data: rows.results ?? []
     });
+  }
+);
+
+reimbursementRoutes.get(
+  "/batch/proposals",
+  requireRoles(["super_admin", "manager", "site_manager", "finance"]),
+  async (c) => {
+    const eligible = await c.env.DB.prepare(
+      `SELECT
+         e.id, e.envelope_no, e.project_id, e.applicant_userid, e.amount,
+         e.description, e.channel,
+         (
+           SELECT CASE MAX(
+             CASE d.risk_level WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END
+           ) WHEN 3 THEN 'high' WHEN 2 THEN 'medium' WHEN 1 THEN 'low' ELSE NULL END
+             FROM reimbursement_duplicate_check d
+            WHERE d.envelope_id = e.id
+         ) AS duplicate_risk_level
+       FROM reimbursement_envelope e
+       WHERE e.status = 'received'
+         AND e.precheck_status = 'approved'
+         AND e.batch_id IS NULL
+         AND e.approval_instance_id IS NULL
+       ORDER BY e.applicant_userid ASC, e.project_id ASC, e.id ASC`
+    ).all<{
+      id: number;
+      envelope_no: string;
+      project_id: number;
+      applicant_userid: string;
+      amount: number;
+      description: string | null;
+      channel: string;
+      duplicate_risk_level: "high" | "medium" | "low" | null;
+    }>();
+
+    const rows = eligible.results ?? [];
+    const groups = groupBatchProposals(rows);
+
+    const applicantIds = [...new Set(rows.map((row) => row.applicant_userid))];
+    let payees: {
+      id: number;
+      name: string;
+      bank_name: string;
+      bank_account: string;
+      linked_userid: string | null;
+      status: string;
+      type: string;
+    }[] = [];
+    if (applicantIds.length > 0) {
+      const placeholders = applicantIds.map(() => "?").join(", ");
+      const payeeRows = await c.env.DB.prepare(
+        `SELECT id, name, bank_name, bank_account, linked_userid, status, type
+           FROM payee
+          WHERE type = 'internal' AND status = 'active' AND linked_userid IN (${placeholders})`
+      )
+        .bind(...applicantIds)
+        .all<(typeof payees)[number]>();
+      payees = payeeRows.results ?? [];
+    }
+
+    const envelopeById = new Map(rows.map((row) => [row.id, row]));
+    const requirePayee =
+      (c.env.REIMBURSEMENT_REQUIRE_PAYEE ?? "false").toLowerCase() === "true";
+
+    const proposals = groups.map((group) => {
+      const matched = matchUniqueInternalPayee(payees, group.applicant_userid);
+      return {
+        project_id: group.project_id,
+        applicant_userid: group.applicant_userid,
+        item_count: group.item_count,
+        total_amount: group.total_amount,
+        envelopes: group.envelope_ids.map((envelopeId) => {
+          const row = envelopeById.get(envelopeId);
+          return {
+            id: envelopeId,
+            envelope_no: row?.envelope_no ?? "",
+            amount: row?.amount ?? 0,
+            description: row?.description ?? null,
+            channel: row?.channel ?? "physical",
+            duplicate_risk_level: row?.duplicate_risk_level ?? null
+          };
+        }),
+        matched_payee: matched
+          ? {
+              id: matched.id,
+              name: matched.name,
+              bank_name: matched.bank_name,
+              bank_account: matched.bank_account
+            }
+          : null,
+        payee_required: requirePayee,
+        suggested_payment_method: "personal_transfer"
+      };
+    });
+
+    return c.json({ success: true, data: proposals });
   }
 );
 
@@ -3613,7 +3757,8 @@ reimbursementRoutes.post(
     }
 
     const envelope = await c.env.DB.prepare(
-      `SELECT id, status, duplicate_check_status, duplicate_override_requested, applicant_userid
+      `SELECT id, status, duplicate_check_status, duplicate_override_requested, applicant_userid,
+              channel, ocr_result_json, ocr_invoice_unique_no_hint
          FROM reimbursement_envelope
         WHERE id = ? AND status != 'deleted'`
     )
@@ -3624,6 +3769,9 @@ reimbursementRoutes.post(
         duplicate_check_status: string;
         duplicate_override_requested: number;
         applicant_userid: string;
+        channel: string;
+        ocr_result_json: string | null;
+        ocr_invoice_unique_no_hint: string | null;
       }>();
 
     if (!envelope) {
@@ -3694,6 +3842,47 @@ reimbursementRoutes.post(
           },
           400
         );
+      }
+
+      const einvoice = detectEInvoiceInPhysical({
+        channel: envelope.channel,
+        ocrResultJson: envelope.ocr_result_json,
+        invoiceUniqueNoHint: envelope.ocr_invoice_unique_no_hint
+      });
+      if (einvoice.detected) {
+        const overrideReason =
+          typeof body.override_einvoice_reason === "string"
+            ? body.override_einvoice_reason.trim()
+            : "";
+        const canOverride =
+          auth.roles.includes("super_admin") || auth.roles.includes("finance");
+        if (!overrideReason || !canOverride) {
+          return c.json(
+            {
+              success: false,
+              error: {
+                message:
+                  "Electronic invoice detected in a physical envelope. Reject the precheck and ask the applicant to resubmit via the electronic channel, or override with a reason (finance/super_admin only)."
+              },
+              data: {
+                einvoice_in_physical: true,
+                matched_invoice_nos: einvoice.matchedNumbers
+              }
+            },
+            400
+          );
+        }
+        await writeAuditLog(c.env.DB, {
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          action: "reimbursement.envelope.precheck_einvoice_override",
+          targetType: "reimbursement_envelope",
+          targetId: id,
+          detail: {
+            reason: overrideReason,
+            matched_invoice_nos: einvoice.matchedNumbers
+          }
+        });
       }
     }
 
@@ -4658,6 +4847,119 @@ reimbursementRoutes.post(
   }
 );
 
+const MAX_BULK_LIFECYCLE_IDS = 500;
+
+const handleBulkLifecycle = async (
+  c: Context<{ Bindings: Env; Variables: AuthVariables }>,
+  action: BulkLifecycleAction
+) => {
+  const auth = c.get("auth");
+  const body = (await c.req.json().catch(() => ({}))) as {
+    envelope_ids?: unknown;
+    reason?: string;
+  };
+
+  const ids = Array.isArray(body.envelope_ids)
+    ? [...new Set(body.envelope_ids.map((value) => Number(value)))].filter(
+        (value) => Number.isInteger(value) && value > 0
+      )
+    : [];
+  if (ids.length === 0) {
+    return c.json({ success: false, error: { message: "envelope_ids is required" } }, 400);
+  }
+  if (ids.length > MAX_BULK_LIFECYCLE_IDS) {
+    return c.json(
+      {
+        success: false,
+        error: { message: `At most ${MAX_BULK_LIFECYCLE_IDS} envelopes per request` }
+      },
+      400
+    );
+  }
+
+  const now = nowIso();
+  const results: { id: number; ok: boolean; status?: string; error?: string }[] = [];
+
+  for (const envelopeId of ids) {
+    const envelope = await c.env.DB.prepare(
+      "SELECT id, status, envelope_uuid, applicant_userid FROM reimbursement_envelope WHERE id = ?"
+    )
+      .bind(envelopeId)
+      .first<{ id: number; status: string; envelope_uuid: string; applicant_userid: string }>();
+
+    if (!envelope) {
+      results.push({ id: envelopeId, ok: false, error: "not_found" });
+      continue;
+    }
+
+    const decision = decideBulkLifecycle(action, envelope.status, {
+      applicantUserid: envelope.applicant_userid,
+      unassignedApplicant: UNASSIGNED_APPLICANT
+    });
+    if (!decision.allowed) {
+      results.push({ id: envelopeId, ok: false, error: decision.message });
+      continue;
+    }
+
+    const updated = await c.env.DB.prepare(
+      "UPDATE reimbursement_envelope SET status = ?, updated_at = ? WHERE id = ? AND status = ?"
+    )
+      .bind(decision.nextStatus, now, envelopeId, envelope.status)
+      .run();
+    if ((updated.meta.changes ?? 0) !== 1) {
+      results.push({ id: envelopeId, ok: false, error: "status_changed_concurrently" });
+      continue;
+    }
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action:
+        action === "void"
+          ? "reimbursement.envelope.bulk_void"
+          : "reimbursement.envelope.bulk_delete",
+      targetType: "reimbursement_envelope",
+      targetId: envelopeId,
+      detail: {
+        envelope_uuid: envelope.envelope_uuid,
+        previous_status: envelope.status,
+        next_status: decision.nextStatus,
+        reason: body.reason ?? null
+      }
+    });
+    results.push({ id: envelopeId, ok: true, status: decision.nextStatus });
+  }
+
+  const succeeded = results.filter((row) => row.ok).length;
+  await publishEvent(
+    c.env,
+    action === "void"
+      ? "REIMBURSEMENT_ENVELOPE_BULK_VOIDED"
+      : "REIMBURSEMENT_ENVELOPE_BULK_DELETED",
+    "reimbursement_envelope",
+    {
+      requested: ids.length,
+      succeeded,
+      failed: ids.length - succeeded,
+      operator: auth.sub,
+      reason: body.reason ?? null
+    }
+  );
+
+  return c.json({
+    success: true,
+    data: { results, succeeded, failed: ids.length - succeeded }
+  });
+};
+
+reimbursementRoutes.post("/void-batch", requireRoles(["super_admin"]), (c) =>
+  handleBulkLifecycle(c, "void")
+);
+
+reimbursementRoutes.post("/delete-batch", requireRoles(["super_admin"]), (c) =>
+  handleBulkLifecycle(c, "delete")
+);
+
 reimbursementRoutes.post(
   "/:id/void",
   requireRoles(["super_admin"]),
@@ -4720,6 +5022,257 @@ reimbursementRoutes.post(
     });
 
     return c.json({ success: true, data: { id, status: "cancelled" } });
+  }
+);
+
+reimbursementRoutes.post(
+  "/:id/split",
+  requireRoles(["super_admin", "finance"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json()) as SplitEnvelopeRequest;
+
+    const envelope = await c.env.DB.prepare(
+      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<ReimbursementEnvelope>();
+
+    if (!envelope) {
+      return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
+    }
+
+    const ownedAttachments = await c.env.DB.prepare(
+      "SELECT id FROM envelope_attachment WHERE envelope_id = ? AND status = 'active'"
+    )
+      .bind(id)
+      .all<{ id: number }>();
+
+    const attachmentIds = (body.attachment_ids ?? []).map((value) => Number(value));
+    const decision = decideSplitEnvelope({
+      envelope: {
+        status: envelope.status,
+        batch_id: envelope.batch_id,
+        approval_instance_id: envelope.approval_instance_id,
+        amount: envelope.amount
+      },
+      newProjectId: Number(body.new_envelope?.project_id),
+      newAmount: Number(body.new_envelope?.amount),
+      originalAmount: Number(body.original_amount),
+      attachmentIds,
+      ownedActiveAttachmentIds: (ownedAttachments.results ?? []).map((row) => row.id)
+    });
+
+    if (!decision.allowed) {
+      return c.json({ success: false, error: { message: decision.message } }, 400);
+    }
+
+    const idempotencyKey = c.req.header("Idempotency-Key");
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: {
+        new_envelope: { id: number; envelope_no: string; envelope_uuid: string };
+        original: { id: number; amount: number };
+        amount_delta: number;
+      };
+    }>(c.env.DB, `reimbursement:split:${id}`, auth.sub, idempotencyKey);
+    if (idempotency.kind === "replay") {
+      return c.json(idempotency.payload, { status: idempotency.statusCode as 201 });
+    }
+    if (idempotency.kind === "pending") {
+      return c.json({ success: false, error: { message: "Split already in progress" } }, 409);
+    }
+
+    const now = nowIso();
+    const newUuid = crypto.randomUUID();
+    let newId = 0;
+
+    try {
+      await runInTransaction(c.env.DB, async () => {
+        // 并发闸门：原单 UPDATE 必须最先执行且独立成功，否则视为并发冲突直接中止。
+        // 此时尚未写入任何新数据，失败时无需补偿。
+        // 相比原校验额外增加 approval_instance_id IS NULL，与 decideSplitEnvelope 的
+        // 前置检查保持一致，避免 SELECT 与 UPDATE 之间的 TOCTOU 窗口。
+        //
+        // 乐观锁：额外携带 amount / precheck_status 的快照比对（取自本请求开头的 SELECT）。
+        // 仅靠 batch_id / approval_instance_id / status 三列无法互斥"拆单 vs 拆单"——
+        // 两个并发拆单请求会看到同一份 status，都通过闸门各自 INSERT 一张子信封，
+        // 导致重复子单与原单金额错乱。拆单必然改写 amount（原单减额）或 precheck_status
+        // （重置为 'none'）中的至少一列，所以第二个并发请求的快照比对必然落空，
+        // changes=0，从而正确中止。
+        // 不能用 updated_at 做版本列：GET /:id 触发的 syncEnvelopeAuditState 会写
+        // updated_at，若以它做版本比对，"打开详情页再点拆单"会被误判为并发冲突。
+        // 残留边角：若原单金额被人为保持不变（系统不强制金额守恒）且原单 precheck_status
+        // 本就是 'none'，两个并发拆单仍可能都通过——这是刻意误用的极端情形，由"两张子单
+        // 都需重新复核+审批"兜底。
+        const updated = await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope
+              SET amount = ?, precheck_status = 'none', updated_at = ?
+            WHERE id = ?
+              AND batch_id IS NULL
+              AND approval_instance_id IS NULL
+              AND status = ?
+              AND amount = ?
+              AND precheck_status = ?`
+        )
+          .bind(
+            Number(body.original_amount),
+            now,
+            id,
+            envelope.status,
+            envelope.amount,
+            envelope.precheck_status
+          )
+          .run();
+        if ((updated.meta.changes ?? 0) !== 1) {
+          throw new Error("Envelope changed during split, aborted");
+        }
+
+        try {
+          const insert = await c.env.DB.prepare(
+            `INSERT INTO reimbursement_envelope
+               (envelope_no, envelope_uuid, project_id, applicant_userid, channel,
+                expense_date, amount, category, description,
+                status, precheck_status, verification_status, verification_note,
+                split_from_envelope_id, split_reason,
+                submitted_at, received_at, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?)`
+          )
+            .bind(
+              newUuid,
+              newUuid,
+              Number(body.new_envelope.project_id),
+              envelope.applicant_userid,
+              envelope.channel,
+              body.new_envelope.expense_date ?? null,
+              Number(body.new_envelope.amount),
+              body.new_envelope.category ?? null,
+              body.new_envelope.description ?? null,
+              envelope.status,
+              envelope.verification_status,
+              envelope.verification_note,
+              id,
+              body.reason ?? null,
+              envelope.submitted_at,
+              envelope.received_at,
+              now,
+              now
+            )
+            .run();
+          newId = insert.meta.last_row_id as number;
+
+          if (attachmentIds.length > 0) {
+            const placeholders = attachmentIds.map(() => "?").join(", ");
+            const moved = await c.env.DB.prepare(
+              `UPDATE envelope_attachment SET envelope_id = ?
+                WHERE id IN (${placeholders}) AND envelope_id = ? AND status = 'active'`
+            )
+              .bind(newId, ...attachmentIds, id)
+              .run();
+            if ((moved.meta.changes ?? 0) !== attachmentIds.length) {
+              throw new Error("Attachment transfer mismatch, split aborted");
+            }
+          }
+        } catch (innerError) {
+          // D1 生产环境不支持 SQL 事务，runInTransaction 会降级为非事务执行，
+          // 因此这里必须显式补偿，否则会留下孤儿信封与错位的附件。
+          // 补偿顺序与写入顺序相反；每步都吞掉自身异常，确保原始错误能抛出。
+          if (newId > 0) {
+            try {
+              // 把已转移的附件全部移回原单（新信封此刻不可能有其他附件）
+              await c.env.DB.prepare(
+                "UPDATE envelope_attachment SET envelope_id = ? WHERE envelope_id = ?"
+              )
+                .bind(id, newId)
+                .run();
+              // 新信封刚创建、无任何外部引用，可安全硬删
+              await c.env.DB.prepare("DELETE FROM reimbursement_envelope WHERE id = ?")
+                .bind(newId)
+                .run();
+            } catch (compensationError) {
+              console.error("Split compensation failed", compensationError);
+            }
+            newId = 0;
+          }
+          try {
+            // 还原原单金额与复核状态
+            await c.env.DB.prepare(
+              "UPDATE reimbursement_envelope SET amount = ?, precheck_status = ?, updated_at = ? WHERE id = ?"
+            )
+              .bind(envelope.amount, envelope.precheck_status, nowIso(), id)
+              .run();
+          } catch (compensationError) {
+            console.error("Split compensation failed", compensationError);
+          }
+          throw innerError;
+        }
+      });
+    } catch (error) {
+      await abandonIdempotentRequest(
+        c.env.DB,
+        `reimbursement:split:${id}`,
+        auth.sub,
+        idempotencyKey
+      );
+      throw error;
+    }
+
+    // 拆单后自动核查：两边各自重新静默审查（票据识别+重复校验+合理性）
+    await enqueueEnvelopeAiAudit(c.env, id, {
+      forceRerun: true,
+      triggeredBy: auth.sub,
+      reason: "envelope_split_source"
+    });
+    await enqueueEnvelopeAiAudit(c.env, newId, {
+      forceRerun: true,
+      triggeredBy: auth.sub,
+      reason: "envelope_split_child"
+    });
+
+    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SPLIT", "reimbursement_envelope", {
+      source_envelope_id: id,
+      new_envelope_id: newId,
+      new_envelope_uuid: newUuid,
+      moved_attachment_ids: attachmentIds,
+      operator: auth.sub
+    });
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.envelope.split",
+      targetType: "reimbursement_envelope",
+      targetId: id,
+      detail: {
+        new_envelope_id: newId,
+        new_envelope_uuid: newUuid,
+        new_project_id: Number(body.new_envelope.project_id),
+        new_amount: Number(body.new_envelope.amount),
+        original_amount: Number(body.original_amount),
+        moved_attachment_ids: attachmentIds,
+        reason: body.reason ?? null,
+        amount_delta: decision.amountDelta
+      }
+    });
+
+    const payload = {
+      success: true,
+      data: {
+        new_envelope: { id: newId, envelope_no: newUuid, envelope_uuid: newUuid },
+        original: { id, amount: Number(body.original_amount) },
+        amount_delta: decision.amountDelta
+      }
+    };
+    await completeIdempotentRequest(
+      c.env.DB,
+      `reimbursement:split:${id}`,
+      auth.sub,
+      idempotencyKey,
+      201,
+      payload
+    );
+    return c.json(payload, 201);
   }
 );
 

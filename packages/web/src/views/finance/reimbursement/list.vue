@@ -1,11 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
-import {
-  channelLabel,
-  precheckStatusLabel,
-  statusLabel
-} from "@/utils/enum-labels";
+import { channelLabel } from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
@@ -15,6 +11,8 @@ import {
 } from "@/api/reimbursement";
 import {
   isHighRiskRow,
+  reimbursementPrecheckStatusLabel,
+  reimbursementStatusLabel,
   reimbursementStatusTagType,
   rowAnomalyTags,
   tableRowClassName
@@ -280,14 +278,14 @@ onMounted(async () => {
         </el-table-column>
         <el-table-column label="复核" width="100">
           <template #default="scope">{{
-            precheckStatusLabel(scope.row.precheck_status)
+            reimbursementPrecheckStatusLabel(scope.row.precheck_status)
           }}</template>
         </el-table-column>
         <el-table-column label="状态" width="110">
           <template #default="scope">
             <el-tag
               :type="reimbursementStatusTagType[scope.row.status] || 'info'"
-              >{{ statusLabel(scope.row.status) }}</el-tag
+              >{{ reimbursementStatusLabel(scope.row.status) }}</el-tag
             >
           </template>
         </el-table-column>

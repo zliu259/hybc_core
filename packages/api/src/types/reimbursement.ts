@@ -60,6 +60,8 @@ export interface ReimbursementEnvelope {
   silent_review_result: string | null;
   duplicate_override_requested: number;
   duplicate_override_reason: string | null;
+  split_from_envelope_id: number | null;
+  split_reason: string | null;
   submitted_at: string | null;
   received_at: string | null;
   created_at: string;
@@ -191,6 +193,19 @@ export interface VerifyEnvelopeRequest {
   note?: string;
 }
 
+export interface SplitEnvelopeRequest {
+  new_envelope: {
+    project_id: number;
+    amount: number;
+    category?: string;
+    description?: string;
+    expense_date?: string;
+  };
+  attachment_ids?: number[];
+  original_amount: number;
+  reason?: string;
+}
+
 export interface RebindEnvelopeUuidRequest {
   envelope_uuid: string;
   reason?: string;
@@ -220,6 +235,8 @@ export interface ElectronicUploadRequest {
 export interface PrecheckEnvelopeRequest {
   action: "approved" | "supplement" | "rejected";
   comment?: string;
+  /** 电子发票混入实物信封时的强制通过理由（仅 finance/super_admin） */
+  override_einvoice_reason?: string;
 }
 
 export interface CreateReimbursementBatchRequest {

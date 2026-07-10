@@ -1,5 +1,9 @@
 <script setup lang="ts">
-import { ElMessageBox, type UploadRequestOptions } from "element-plus";
+import {
+  ElMessageBox,
+  type MessageBoxInputData,
+  type UploadRequestOptions
+} from "element-plus";
 import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
@@ -24,6 +28,16 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
+import SplitEnvelopeDialog from "./components/SplitEnvelopeDialog.vue";
+import { detectEInvoiceInPhysical } from "./reimbursement-einvoice";
+import {
+  attachmentTypeLabel,
+  precheckActionLabel,
+  reimbursementPrecheckStatusLabel as toPrecheckStatusLabel,
+  reimbursementStatusLabel as toStatusLabel,
+  reimbursementTaskStatusLabel as toTaskStatusLabel,
+  reimbursementVerificationStatusLabel as toVerificationStatusLabel
+} from "./reimbursement-labels";
 
 defineOptions({ name: "ReimbursementDetail" });
 
@@ -72,60 +86,6 @@ const createDefaultForm = () => ({
 });
 
 const form = ref(createDefaultForm());
-
-const statusLabelMap: Record<string, string> = {
-  unregistered: "未登记",
-  draft: "草稿",
-  submitted: "已提交",
-  received: "已收件",
-  batched: "已成批",
-  pending_approval: "待审批",
-  approved: "已审批",
-  paid: "已打款",
-  rejected: "已驳回",
-  cancelled: "已废止"
-};
-
-const verificationStatusLabelMap: Record<string, string> = {
-  pending: "待核对",
-  verified: "核对通过",
-  mismatch: "核对异常"
-};
-
-const precheckStatusLabelMap: Record<string, string> = {
-  none: "未复核",
-  pending: "待复核",
-  approved: "复核通过",
-  supplement: "待补充",
-  rejected: "复核驳回"
-};
-
-const taskStatusLabelMap: Record<string, string> = {
-  none: "未触发",
-  pending: "处理中",
-  completed: "已完成",
-  failed: "失败"
-};
-
-const toStatusLabel = (status?: string | null) => {
-  if (!status) return "草稿";
-  return statusLabelMap[status] ?? status;
-};
-
-const toVerificationStatusLabel = (status?: string | null) => {
-  if (!status) return "待核对";
-  return verificationStatusLabelMap[status] ?? status;
-};
-
-const toPrecheckStatusLabel = (status?: string | null) => {
-  if (!status) return "未复核";
-  return precheckStatusLabelMap[status] ?? status;
-};
-
-const toTaskStatusLabel = (status?: string | null) => {
-  if (!status) return "未触发";
-  return taskStatusLabelMap[status] ?? status;
-};
 
 type EnvelopeAttachmentDraft = {
   id?: number;
@@ -269,6 +229,12 @@ const previewInline = computed(() => {
     lower.endsWith(".gif") ||
     lower.endsWith(".txt")
   );
+});
+
+const IMAGE_EXTENSIONS = [".png", ".jpg", ".jpeg", ".webp", ".gif"];
+const previewIsImage = computed(() => {
+  const lower = previewFileName.value.toLowerCase();
+  return IMAGE_EXTENSIONS.some(ext => lower.endsWith(ext));
 });
 
 const parseReviewResult = (value?: string | null) => {
@@ -519,6 +485,86 @@ const auditPollingTimer = ref<number | null>(null);
 const auditPollingTicks = ref(0);
 const AUDIT_POLL_INTERVAL_MS = 3000;
 const AUDIT_POLL_MAX_TICKS = 20;
+
+const verifyingAction = ref<null | "verified" | "mismatch">(null);
+const precheckAction = ref<null | "approved" | "supplement" | "rejected">(null);
+const splitDialogVisible = ref(false);
+// scanningEnvelope / refreshingOcrStatus: not in the plan's literal Step 5
+// snippet, added so every request-firing button in the 员工操作/办公室 groups
+// carries its own loading flag and disables sibling buttons in the same
+// group while in flight (project hard constraint on double-submit guards).
+const scanningEnvelope = ref(false);
+const refreshingOcrStatus = ref(false);
+
+const employeeActionBusy = computed(
+  () => saving.value || submitting.value || scanningEnvelope.value
+);
+
+const officeActionBusy = computed(
+  () =>
+    verifyingAction.value !== null ||
+    precheckAction.value !== null ||
+    rerunningSilentReview.value ||
+    refreshingOcrStatus.value ||
+    voiding.value
+);
+
+const isFinanceOrSuperAdmin = computed(
+  () => roleSet.value.has("super_admin") || roleSet.value.has("finance")
+);
+
+const canSplit = computed(
+  () =>
+    !isCreate.value &&
+    !!detail.value &&
+    isFinanceOrSuperAdmin.value &&
+    !isWorkspaceView.value &&
+    ["submitted", "received"].includes(detail.value.status) &&
+    !detail.value.batch_id &&
+    !detail.value.approval_instance_id
+);
+
+const einvoiceDetected = computed(() =>
+  detectEInvoiceInPhysical({
+    channel: detail.value?.channel,
+    ocrResultJson: detail.value?.ocr_result_json ?? null,
+    invoiceUniqueNoHint: detail.value?.ocr_invoice_unique_no_hint ?? null
+  })
+);
+
+const highestRiskLevel = computed<"high" | "medium" | "low" | "none">(() => {
+  if (einvoiceDetected.value) return "high";
+  const levels = (detail.value?.duplicate_checks ?? []).map(
+    item => item.risk_level
+  );
+  if (levels.includes("high")) return "high";
+  if (levels.includes("medium")) return "medium";
+  if (levels.includes("low")) return "low";
+  return "none";
+});
+
+const stageHint = computed(() => {
+  if (isCreate.value) return "当前：新建草稿 → 下一步：保存后提交";
+  const s = detail.value?.status;
+  const p = detail.value?.precheck_status;
+  if (s === "draft" || s === "unregistered")
+    return "当前：草稿/未登记 → 下一步：完善信息并提交报销";
+  if (s === "submitted") {
+    if (p === "rejected")
+      return "当前：复核驳回已退回 → 下一步：修改后重新提交，或由办公室拆单/废止";
+    if (p === "supplement") return "当前：待补充材料 → 下一步：补充后重新提交";
+    return "当前：待签收 → 下一步：办公室核查签收或标记核查异常";
+  }
+  if (s === "received")
+    return "当前：已签收待复核 → 下一步：复核通过 / 要求补充 / 复核驳回";
+  if (s === "batched") return "当前：已进入批次 → 后续在批次详情中送审";
+  if (s === "pending_approval") return "当前：批次审批中";
+  if (s === "approved") return "当前：审批通过，等待付款";
+  if (s === "paid") return "当前：已打款，流程结束";
+  if (s === "rejected") return "当前：已驳回";
+  if (s === "cancelled") return "当前：已废止，不再流转";
+  return "";
+});
 
 const clearAuditPolling = () => {
   if (auditPollingTimer.value) {
@@ -805,28 +851,33 @@ const save = async () => {
 };
 
 const scanSubmit = async () => {
-  if (!detail.value) return;
+  if (!detail.value || scanningEnvelope.value) return;
   if (!submittableStatuses.has(detail.value.status)) {
     message("当前状态不允许扫码登记", { type: "warning" });
     return;
   }
-  const result = await scanReimbursementEnvelope({
-    envelope_uuid: detail.value.envelope_uuid,
-    project_id: form.value.project_id,
-    expense_date: form.value.expense_date || undefined,
-    amount: form.value.amount,
-    category: form.value.category || undefined,
-    description: form.value.description || undefined
-  });
-  if (result.data.registered) {
-    message(`扫码登记完成，已绑定填报人：${result.data.applicant_userid}`, {
-      type: "success"
+  scanningEnvelope.value = true;
+  try {
+    const result = await scanReimbursementEnvelope({
+      envelope_uuid: detail.value.envelope_uuid,
+      project_id: form.value.project_id,
+      expense_date: form.value.expense_date || undefined,
+      amount: form.value.amount,
+      category: form.value.category || undefined,
+      description: form.value.description || undefined
     });
-  } else {
-    message("扫码识别完成，已打开已有报销信封", { type: "info" });
+    if (result.data.registered) {
+      message(`扫码登记完成，已绑定填报人：${result.data.applicant_userid}`, {
+        type: "success"
+      });
+    } else {
+      message("扫码识别完成，已打开已有报销信封", { type: "info" });
+    }
+    await loadDetail();
+    notifyChanged();
+  } finally {
+    scanningEnvelope.value = false;
   }
-  await loadDetail();
-  notifyChanged();
 };
 
 const submitEnvelope = async () => {
@@ -910,23 +961,33 @@ const voidEnvelope = async () => {
 };
 
 const verify = async (result: "verified" | "mismatch") => {
-  if (!detail.value) return;
-  await verifyReimbursementEnvelope({
-    envelope_id: detail.value.id,
-    result,
-    note: verifyNote.value || undefined
-  });
-  message(result === "verified" ? "收件核对通过" : "已标记核对异常", {
-    type: result === "verified" ? "success" : "warning"
-  });
-  await loadDetail();
-  notifyChanged();
+  if (!detail.value || verifyingAction.value) return;
+  verifyingAction.value = result;
+  try {
+    await verifyReimbursementEnvelope({
+      envelope_id: detail.value.id,
+      result,
+      note: verifyNote.value || undefined
+    });
+    message(result === "verified" ? "收件核对通过" : "已标记核对异常", {
+      type: result === "verified" ? "success" : "warning"
+    });
+    await loadDetail();
+    notifyChanged();
+  } finally {
+    verifyingAction.value = null;
+  }
 };
 
 const refreshOcrStatus = async () => {
-  if (!detail.value) return;
-  await refreshAuditStatuses();
-  ensureAuditPolling();
+  if (!detail.value || refreshingOcrStatus.value) return;
+  refreshingOcrStatus.value = true;
+  try {
+    await refreshAuditStatuses();
+    ensureAuditPolling();
+  } finally {
+    refreshingOcrStatus.value = false;
+  }
 };
 
 const rerunSilentReview = async () => {
@@ -956,16 +1017,56 @@ const rerunSilentReview = async () => {
   }
 };
 
+// handleEInvoiceBlocked is defined ahead of submitPrecheck (which calls it)
+// because these are const arrow functions — unlike function declarations,
+// they are not hoisted, so the caller must appear after the callee.
+const handleEInvoiceBlocked = async () => {
+  if (!isFinanceOrSuperAdmin.value) {
+    message(
+      "检测到电子发票混入实物信封，复核通过被拦截。请复核驳回并引导员工走电子发票通道。",
+      { type: "error" }
+    );
+    return;
+  }
+  try {
+    // ElMessageBox.prompt's declared return type is
+    // `MessageBoxInputData | Action` (Element Plus's own typing), where
+    // `Action` ('confirm' | 'close' | 'cancel') has no `.value`. At runtime
+    // the promise only ever resolves (vs. rejects) with MessageBoxInputData,
+    // so this narrowing assertion is safe; destructuring `{ value }`
+    // directly off the raw union does not type-check (caught plan defect —
+    // the literal snippet fails `tsc --noEmit`).
+    const { value } = (await ElMessageBox.prompt(
+      "检测到电子发票混入实物信封。常规处置为复核驳回并让员工改走电子发票通道；如确认是识别误判，可填写理由强制通过（将记录审计日志）。",
+      "电子发票混入拦截",
+      {
+        confirmButtonText: "强制通过",
+        cancelButtonText: "取消",
+        inputPlaceholder: "强制通过理由（必填）",
+        inputValidator: (input: string) =>
+          input.trim() ? true : "理由不能为空",
+        type: "warning"
+      }
+    )) as MessageBoxInputData;
+    await submitPrecheck("approved", value.trim());
+  } catch {
+    // 用户取消
+  }
+};
+
 const submitPrecheck = async (
-  action: "approved" | "supplement" | "rejected"
+  action: "approved" | "supplement" | "rejected",
+  overrideEInvoiceReason?: string
 ) => {
-  if (!detail.value) return;
+  if (!detail.value || precheckAction.value) return;
+  precheckAction.value = action;
   try {
     await precheckEnvelope(detail.value.id, {
       action,
-      comment: verifyNote.value || undefined
+      comment: verifyNote.value || undefined,
+      override_einvoice_reason: overrideEInvoiceReason
     });
-    message(`复核已更新：${action}`, {
+    message(`复核已更新：${precheckActionLabel(action)}`, {
       type: action === "approved" ? "success" : "warning"
     });
     await loadDetail();
@@ -974,12 +1075,30 @@ const submitPrecheck = async (
     const err = error as {
       response?: {
         status?: number;
-        data?: { data?: { wait_for_audit?: boolean } };
+        data?: {
+          data?: { wait_for_audit?: boolean; einvoice_in_physical?: boolean };
+        };
       };
     };
     const waitForAudit =
       err.response?.status === 409 &&
       err.response?.data?.data?.wait_for_audit === true;
+    const einvoiceBlocked =
+      err.response?.status === 400 &&
+      err.response?.data?.data?.einvoice_in_physical === true;
+
+    if (einvoiceBlocked) {
+      // Release the busy guard before awaiting the override retry: this
+      // outer call's `finally` hasn't run yet (we're still inside its own
+      // catch), so without this reset, `handleEInvoiceBlocked`'s recursive
+      // `submitPrecheck("approved", reason)` call would see
+      // `precheckAction.value` still truthy and return immediately without
+      // ever sending the forced-override request. (Caught plan defect —
+      // the literal snippet silently no-ops the finance override retry.)
+      precheckAction.value = null;
+      await handleEInvoiceBlocked();
+      return;
+    }
     if (!waitForAudit) throw error;
     message("后台静默审查尚未完成，系统已自动触发处理，请稍后再执行复核通过", {
       type: "warning"
@@ -987,6 +1106,8 @@ const submitPrecheck = async (
     await loadDetail();
     notifyChanged();
     ensureAuditPolling("审计任务处理中，系统将自动刷新状态");
+  } finally {
+    precheckAction.value = null;
   }
 };
 
@@ -1025,8 +1146,9 @@ watch(
 
 <template>
   <el-card
+    v-loading="loading"
+    element-loading-text="正在加载报销详情…"
     shadow="never"
-    :loading="loading"
     class="reimbursement-detail-page"
     style="background: #fffaf2"
   >
@@ -1067,6 +1189,70 @@ watch(
         <strong>{{ toTaskStatusLabel(anomalyStatusText) }}</strong>
       </div>
     </div>
+
+    <el-card
+      v-if="detail && canSeeOfficeReview"
+      shadow="never"
+      class="review-card mt-3"
+      :class="`review-card--${highestRiskLevel}`"
+    >
+      <template #header>智能核查与风险提示</template>
+      <el-alert
+        v-if="einvoiceDetected"
+        type="error"
+        :closable="false"
+        title="检测到电子发票混入实物信封：复核通过将被拦截。请复核驳回并引导员工改用电子发票通道提交。"
+        style="margin-bottom: 12px"
+      />
+      <el-descriptions :column="1" border>
+        <el-descriptions-item
+          v-for="item in recognitionHintRows"
+          :key="item.label"
+          :label="item.label"
+        >
+          {{ item.value }}
+        </el-descriptions-item>
+        <el-descriptions-item label="智能核查摘要">
+          <pre class="review-pre">{{ reviewSummaryText }}</pre>
+        </el-descriptions-item>
+        <el-descriptions-item label="识别结果（可读版）">
+          <pre class="review-pre">{{ recognitionRawText }}</pre>
+        </el-descriptions-item>
+      </el-descriptions>
+
+      <el-table
+        v-if="detail.duplicate_checks.length > 0"
+        :data="detail.duplicate_checks"
+        style="margin-top: 12px"
+        size="small"
+      >
+        <el-table-column prop="match_type" label="匹配类型" width="120" />
+        <el-table-column prop="risk_level" label="风险等级" width="120">
+          <template #default="scope">
+            <el-tag
+              :type="toRiskLevelTagType(scope.row.risk_level)"
+              size="small"
+            >
+              {{ toRiskLevelLabel(scope.row.risk_level) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column
+          prop="matched_invoice_no"
+          label="匹配发票号"
+          width="200"
+        />
+        <el-table-column prop="summary" label="说明" min-width="240" />
+      </el-table>
+    </el-card>
+
+    <el-alert
+      v-else-if="detail && einvoiceDetected"
+      type="warning"
+      :closable="false"
+      title="检测到您上传的是电子发票（数电票）：实物信封通道不接受电子发票，请改用电子发票通道重新提交。"
+      class="mt-3"
+    />
 
     <el-row :gutter="16">
       <el-col :xs="24" :md="16">
@@ -1268,7 +1454,9 @@ watch(
       <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
         <el-table-column label="类型" width="120">
           <template #default="scope">
-            <el-tag size="small">{{ scope.row.attachment_type }}</el-tag>
+            <el-tag size="small">{{
+              attachmentTypeLabel(scope.row.attachment_type)
+            }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="文件名" min-width="260">
@@ -1315,71 +1503,167 @@ watch(
       </el-table>
     </el-card>
 
-    <el-card shadow="never" header="操作区" class="mt-3">
-      <el-space wrap>
-        <el-button
-          type="primary"
-          :loading="saving"
-          :disabled="!canEdit"
-          @click="save"
-          >保存</el-button
-        >
+    <el-card shadow="never" class="mt-3">
+      <template #header>
+        <div class="action-header">
+          <span>操作区</span>
+          <span v-if="stageHint" class="stage-hint">{{ stageHint }}</span>
+        </div>
+      </template>
 
-        <template v-if="!isCreate && detail">
+      <!-- 员工操作 -->
+      <div
+        v-if="
+          isCreate ||
+          (detail && submittableStatuses.has(detail.status)) ||
+          canEdit
+        "
+        class="action-group"
+      >
+        <div class="action-group__title">
+          员工操作
+          <span class="action-group__desc">保存修改、登记信封并提交报销</span>
+        </div>
+        <el-space wrap>
           <el-button
-            v-if="
-              detail.channel === 'physical' &&
-              submittableStatuses.has(detail.status)
-            "
-            @click="scanSubmit"
-            >扫码登记并绑定填报人</el-button
-          >
-          <el-button
-            v-if="
-              detail.channel === 'physical' &&
-              submittableStatuses.has(detail.status)
-            "
             type="primary"
-            :loading="submitting"
-            :disabled="submitting"
-            @click="submitEnvelope"
+            :loading="saving"
+            :disabled="!canEdit || employeeActionBusy"
+            @click="save"
+            >保存</el-button
           >
-            提交报销并寄送实物信封
-          </el-button>
-          <el-button
-            v-if="
-              detail.channel === 'electronic' &&
-              submittableStatuses.has(detail.status)
-            "
-            type="primary"
-            :loading="submitting"
-            :disabled="submitting"
-            @click="submitEnvelope"
+          <template v-if="!isCreate && detail">
+            <el-button
+              v-if="
+                detail.channel === 'physical' &&
+                submittableStatuses.has(detail.status)
+              "
+              :loading="scanningEnvelope"
+              :disabled="employeeActionBusy"
+              @click="scanSubmit"
+              >扫码登记并绑定填报人</el-button
+            >
+            <el-button
+              v-if="submittableStatuses.has(detail.status)"
+              type="primary"
+              :loading="submitting"
+              :disabled="employeeActionBusy"
+              @click="submitEnvelope"
+            >
+              {{
+                detail.channel === "physical"
+                  ? "提交报销并寄送实物信封"
+                  : "提交电子发票报销"
+              }}
+            </el-button>
+          </template>
+        </el-space>
+      </div>
+
+      <!-- 办公室签收与复核 -->
+      <div
+        v-if="
+          !isCreate &&
+          detail &&
+          canSeeOfficeReview &&
+          ['submitted', 'received'].includes(detail.status)
+        "
+        class="action-group"
+      >
+        <div class="action-group__title">
+          办公室签收与复核
+          <span class="action-group__desc"
+            >先核对实物/票据并签收；签收后进行复核或拆单</span
           >
-            提交电子发票报销
-          </el-button>
+        </div>
+        <el-space wrap>
+          <el-input
+            v-model="verifyNote"
+            style="width: 240px"
+            placeholder="办公室核查备注（可选）"
+          />
           <el-button
-            v-if="detail.channel === 'electronic' && canSeeOfficeReview"
-            @click="refreshOcrStatus"
-            >刷新识别状态</el-button
+            type="success"
+            :loading="verifyingAction === 'verified'"
+            :disabled="officeActionBusy"
+            @click="verify('verified')"
+            >核查签收</el-button
           >
           <el-button
-            v-if="
-              canSeeOfficeReview &&
-              ['submitted', 'received'].includes(detail.status)
-            "
+            type="warning"
+            :loading="verifyingAction === 'mismatch'"
+            :disabled="officeActionBusy"
+            @click="verify('mismatch')"
+            >核查异常</el-button
+          >
+          <template v-if="detail.status === 'received'">
+            <el-button
+              type="success"
+              :loading="precheckAction === 'approved'"
+              :disabled="officeActionBusy"
+              @click="submitPrecheck('approved')"
+              >复核通过</el-button
+            >
+            <el-button
+              type="warning"
+              :loading="precheckAction === 'supplement'"
+              :disabled="officeActionBusy"
+              @click="submitPrecheck('supplement')"
+              >补充材料</el-button
+            >
+            <el-button
+              type="danger"
+              :loading="precheckAction === 'rejected'"
+              :disabled="officeActionBusy"
+              @click="submitPrecheck('rejected')"
+              >复核驳回</el-button
+            >
+          </template>
+          <el-button
+            v-if="canSplit"
+            type="warning"
+            plain
+            :disabled="officeActionBusy"
+            @click="splitDialogVisible = true"
+            >拆单</el-button
+          >
+          <el-button
             type="info"
             :loading="rerunningSilentReview"
+            :disabled="officeActionBusy"
             @click="rerunSilentReview"
             >二次静默审查</el-button
           >
           <el-button
-            v-if="
-              isSuperAdmin &&
-              ['draft', 'submitted', 'received', 'unregistered'].includes(
-                detail.status
-              )
-            "
+            v-if="detail.channel === 'electronic'"
+            :loading="refreshingOcrStatus"
+            :disabled="officeActionBusy"
+            @click="refreshOcrStatus"
+            >刷新识别状态</el-button
+          >
+        </el-space>
+      </div>
+
+      <!-- 管理操作 -->
+      <div
+        v-if="
+          !isCreate &&
+          detail &&
+          isSuperAdmin &&
+          ['draft', 'submitted', 'received', 'unregistered'].includes(
+            detail.status
+          )
+        "
+        class="action-group action-group--danger"
+      >
+        <div class="action-group__title">
+          管理操作
+          <span class="action-group__desc"
+            >危险操作：废止后单据不再参与流转</span
+          >
+        </div>
+        <el-space wrap>
+          <el-button
             type="danger"
             plain
             :loading="voiding"
@@ -1387,44 +1671,9 @@ watch(
           >
             废止报销提交
           </el-button>
-          <template
-            v-if="
-              canSeeOfficeReview &&
-              ['submitted', 'received'].includes(detail.status)
-            "
-          >
-            <el-input
-              v-model="verifyNote"
-              style="width: 240px"
-              placeholder="办公室核查备注"
-            />
-            <el-button type="success" @click="verify('verified')"
-              >核查签收</el-button
-            >
-            <el-button type="warning" @click="verify('mismatch')"
-              >核查异常</el-button
-            >
-            <el-button
-              v-if="detail.status === 'received'"
-              type="success"
-              @click="submitPrecheck('approved')"
-              >复核通过</el-button
-            >
-            <el-button
-              v-if="detail.status === 'received'"
-              type="warning"
-              @click="submitPrecheck('supplement')"
-              >补充材料</el-button
-            >
-            <el-button
-              v-if="detail.status === 'received'"
-              type="danger"
-              @click="submitPrecheck('rejected')"
-              >复核驳回</el-button
-            >
-          </template>
-        </template>
-      </el-space>
+        </el-space>
+      </div>
+
       <el-alert
         v-if="hasDuplicateRisks"
         type="warning"
@@ -1433,6 +1682,30 @@ watch(
         title="检测到疑似重复报销。若申请人坚持提交，系统会记录坚持提交标记并要求办公室复核。"
       />
     </el-card>
+
+    <SplitEnvelopeDialog
+      v-if="detail"
+      v-model:visible="splitDialogVisible"
+      :detail="detail"
+      @done="
+        async () => {
+          await loadDetail();
+          notifyChanged();
+        }
+      "
+      @open-envelope="
+        (id: number) => {
+          if (props.drawerMode) {
+            emit('close');
+          }
+          router.push(
+            isWorkspaceView
+              ? `/workspace/my-reimbursement/detail/${id}`
+              : `/finance/reimbursement/detail/${id}`
+          );
+        }
+      "
+    />
 
     <el-descriptions v-if="detail" :column="2" border style="margin-top: 16px">
       <el-descriptions-item label="状态">{{
@@ -1454,66 +1727,30 @@ watch(
         detail.batch?.batch_no || "-"
       }}</el-descriptions-item>
       <el-descriptions-item v-if="canSeeOfficeReview" label="发票识别状态">{{
-        ocrStatusText
+        toTaskStatusLabel(ocrStatusText)
       }}</el-descriptions-item>
       <el-descriptions-item v-if="canSeeOfficeReview" label="智能核查状态">{{
-        anomalyStatusText
+        toTaskStatusLabel(anomalyStatusText)
       }}</el-descriptions-item>
     </el-descriptions>
-
-    <el-collapse
-      v-if="detail && canSeeOfficeReview"
-      class="review-collapse"
-      style="margin-top: 16px"
-    >
-      <el-collapse-item title="后台静默审查与重复风险" name="review">
-        <el-descriptions :column="1" border>
-          <el-descriptions-item
-            v-for="item in recognitionHintRows"
-            :key="item.label"
-            :label="item.label"
-          >
-            {{ item.value }}
-          </el-descriptions-item>
-          <el-descriptions-item label="智能核查摘要">
-            <pre class="review-pre">{{ reviewSummaryText }}</pre>
-          </el-descriptions-item>
-          <el-descriptions-item label="识别结果（可读版）">
-            <pre class="review-pre">{{ recognitionRawText }}</pre>
-          </el-descriptions-item>
-        </el-descriptions>
-
-        <el-table
-          v-if="detail.duplicate_checks.length > 0"
-          :data="detail.duplicate_checks"
-          style="margin-top: 12px"
-          size="small"
-        >
-          <el-table-column prop="match_type" label="匹配类型" width="120" />
-          <el-table-column prop="risk_level" label="风险等级" width="120">
-            <template #default="scope">
-              <el-tag
-                :type="toRiskLevelTagType(scope.row.risk_level)"
-                size="small"
-              >
-                {{ toRiskLevelLabel(scope.row.risk_level) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="matched_invoice_no"
-            label="匹配发票号"
-            width="200"
-          />
-          <el-table-column prop="summary" label="说明" min-width="240" />
-        </el-table>
-      </el-collapse-item>
-    </el-collapse>
 
     <el-drawer v-model="previewDrawerVisible" title="附件预览" size="70%">
       <div style="height: calc(100vh - 120px)">
         <div style="margin-bottom: 8px; color: #666">{{ previewFileName }}</div>
-        <template v-if="previewInline">
+        <template v-if="previewIsImage">
+          <el-image
+            :src="previewFileUrl"
+            :preview-src-list="[previewFileUrl]"
+            :initial-index="0"
+            preview-teleported
+            fit="contain"
+            style="width: 100%; height: calc(100% - 48px)"
+          />
+          <div style="margin-top: 8px; font-size: 12px; color: #999">
+            点击图片进入全屏查看，支持滚轮缩放、旋转与拖拽
+          </div>
+        </template>
+        <template v-else-if="previewInline">
           <iframe
             :src="previewFileUrl"
             style="width: 100%; height: 100%; border: none"
@@ -1572,11 +1809,17 @@ watch(
   white-space: nowrap;
 }
 
-.review-collapse {
-  padding: 0 16px;
-  background: #ffffff;
-  border: 1px solid #ebeef5;
-  border-radius: 8px;
+.review-card {
+  border-left: 4px solid #e5e7eb;
+}
+.review-card--high {
+  border-left-color: #ef4444;
+}
+.review-card--medium {
+  border-left-color: #f59e0b;
+}
+.review-card--low {
+  border-left-color: #10b981;
 }
 
 .review-pre {
@@ -1585,6 +1828,40 @@ watch(
   overflow: auto;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.action-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stage-hint {
+  font-size: 13px;
+  font-weight: 600;
+  color: #2563eb;
+}
+.action-group {
+  padding: 10px 12px;
+  margin-bottom: 10px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 8px;
+}
+.action-group--danger {
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+.action-group__title {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: #1f2937;
+}
+.action-group__desc {
+  margin-left: 8px;
+  font-size: 12px;
+  font-weight: 400;
+  color: #9ca3af;
 }
 
 @media (max-width: 960px) {
