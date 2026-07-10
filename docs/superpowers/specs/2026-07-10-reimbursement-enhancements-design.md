@@ -150,3 +150,29 @@
 - 不做 AI 决定分组；
 - 不做物理删除与附件文件清理；
 - 不改动审批引擎与批次审批流本身。
+
+## 实施修订（2026-07-10 计划与实施阶段确认）
+
+1. **批次确认改前端编排**：`POST /batch/proposals/confirm` 未实现；前端逐组调用既有
+   `POST /batch` → `POST /batch/:id/submit-approval` → `POST /batch/:id/trigger-audit`。
+   理由：避免重构 4900 行路由文件中的付款关键路径；逐组独立成败语义天然保留。
+2. **标签统一位置**：报销域规范汉化标签集中在模块内 `reimbursement-labels.ts` 而非全局
+   `utils/enum-labels.ts`（后者被其他业务域共用，措辞不同，避免跨域影响）。
+3. **新增 `exclude_unassigned` 列表参数**：信封生成器预生成的空白信封
+   （`unregistered` + `__UNASSIGNED__`）属于库存，「草稿/未登记」管理页必须排除，否则会被误删。
+4. **拆单端点并发加固**：`runInTransaction`（`services/db-transaction.ts`）在 D1 生产环境
+   降级为非事务执行——D1 不支持 SQL `BEGIN TRANSACTION`，`throw` 不会回滚。原语句顺序
+   （先建新信封+转移附件，最后校验原单）在「A 拆单 / B 同时成批」并发下会导致附件已转走、
+   新信封已建，而原单带着缺失的附件进入审批付款流。修复：带守卫的原单 UPDATE 前置为并发闸门
+   （并补 `approval_instance_id IS NULL` 守卫防 TOCTOU）；INSERT 与附件转移包入内层
+   try/catch，失败时显式补偿（附件移回 → 硬删新信封 → 还原原单金额与复核状态）后重抛。
+5. **附件类型汉化**：设计稿只提到状态表汉化，实施时补齐附件表「类型」列
+   （`invoice/receipt/contract/other` → 发票/凭证/合同/其他）。
+6. **事件类型注册**：`publishEvent` 的 `type` 是字面量联合，新增的
+   `REIMBURSEMENT_ENVELOPE_SPLIT` / `_BULK_VOIDED` / `_BULK_DELETED` 需在
+   `services/event-bus.ts` 注册后方可通过 `tsc`。
+
+### 遗留风险（记录，不在本次范围）
+- 本仓库其他端点（如批次创建）同样依赖 `runInTransaction`，在 D1 生产降级模式下存在同类
+  「部分写入不回滚」风险，属既有系统性问题。若后续要根治，方向是改用 D1 原生的
+  `db.batch([...])`（原生原子）或为关键写路径逐一补偿。
