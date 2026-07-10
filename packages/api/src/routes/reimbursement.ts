@@ -11,6 +11,7 @@ import {
   beginIdempotentRequest,
   completeIdempotentRequest
 } from "../services/idempotency";
+import { reportCompensationFailure } from "../services/transaction-recovery";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
 import {
@@ -5178,6 +5179,7 @@ reimbursementRoutes.post(
           // D1 生产环境不支持 SQL 事务，runInTransaction 会降级为非事务执行，
           // 因此这里必须显式补偿，否则会留下孤儿信封与错位的附件。
           // 补偿顺序与写入顺序相反；每步都吞掉自身异常，确保原始错误能抛出。
+          const attemptedNewEnvelopeId = newId;
           if (newId > 0) {
             try {
               // 把已转移的附件全部移回原单（新信封此刻不可能有其他附件）
@@ -5191,7 +5193,19 @@ reimbursementRoutes.post(
                 .bind(newId)
                 .run();
             } catch (compensationError) {
-              console.error("Split compensation failed", compensationError);
+              await reportCompensationFailure(c.env, {
+                operation: "reimbursement.envelope.split",
+                targetType: "reimbursement_envelope",
+                targetId: id,
+                actorUserId: auth.sub,
+                actorRoles: auth.roles,
+                originalError: innerError,
+                compensationError,
+                context: {
+                  new_envelope_id: attemptedNewEnvelopeId,
+                  moved_attachment_ids: attachmentIds
+                }
+              });
             }
             newId = 0;
           }
@@ -5203,7 +5217,19 @@ reimbursementRoutes.post(
               .bind(envelope.amount, envelope.precheck_status, nowIso(), id)
               .run();
           } catch (compensationError) {
-            console.error("Split compensation failed", compensationError);
+            await reportCompensationFailure(c.env, {
+              operation: "reimbursement.envelope.split",
+              targetType: "reimbursement_envelope",
+              targetId: id,
+              actorUserId: auth.sub,
+              actorRoles: auth.roles,
+              originalError: innerError,
+              compensationError,
+              context: {
+                new_envelope_id: attemptedNewEnvelopeId,
+                moved_attachment_ids: attachmentIds
+              }
+            });
           }
           throw innerError;
         }
