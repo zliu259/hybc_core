@@ -49,25 +49,34 @@ type IssueQuery = {
   params?: unknown[];
 };
 
-// 每类问题恰好一条 SQL；所有查询都排除 status = 'deleted' 的信封。
+// 每类问题恰好一条 SQL；除 batch_totals_mismatch（见下方专门说明）外，
+// 其余四类都排除 status = 'deleted' 的信封。
 const ISSUE_QUERIES: IssueQuery[] = [
   {
     kind: "batch_totals_mismatch",
     params: [AMOUNT_TOLERANCE],
+    // 本查询的「期望总额/条数」口径必须与运行时重算保持逐字一致，否则会产生
+    // 误报或漏报。运行时权威重算只按
+    // `reimbursement_batch_item WHERE batch_id = ? AND status = 'active'` 聚合
+    // ——不 JOIN reimbursement_envelope、不排除已软删的信封（见
+    // routes/reimbursement.ts 的 `PUT /batch/:id/items/:envelopeId/basic-info`
+    // 端点内 UPDATE reimbursement_batch 的子查询，以及 `POST /batch` 批次创建时
+    // 对 selected 的 JS reduce 求和）。曾经这里 JOIN 了 reimbursement_envelope
+    // 并加了 `e.status != 'deleted'` 过滤，导致「active 的 batch_item 但其信封
+    // 已被软删」的批次被误报 total_amount 不符——因为运行时权威值仍把该 item
+    // 计入，而巡检的期望值把它剔除了。因此这里刻意不 JOIN 信封表。
     sql: `-- kind: batch_totals_mismatch
       SELECT b.id as id
       FROM reimbursement_batch b
       WHERE ABS(b.total_amount - COALESCE((
               SELECT SUM(bi.amount)
               FROM reimbursement_batch_item bi
-              JOIN reimbursement_envelope e ON e.id = bi.envelope_id
-              WHERE bi.batch_id = b.id AND bi.status = 'active' AND e.status != 'deleted'
+              WHERE bi.batch_id = b.id AND bi.status = 'active'
             ), 0)) > ?
          OR b.item_count != (
               SELECT COUNT(*)
               FROM reimbursement_batch_item bi
-              JOIN reimbursement_envelope e ON e.id = bi.envelope_id
-              WHERE bi.batch_id = b.id AND bi.status = 'active' AND e.status != 'deleted'
+              WHERE bi.batch_id = b.id AND bi.status = 'active'
             )`
   },
   {

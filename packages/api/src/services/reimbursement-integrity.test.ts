@@ -146,3 +146,55 @@ describe("findReimbursementIntegrityIssues", () => {
     expect(issues[0].ids).toEqual(many.slice(0, 50).map((r) => r.id));
   });
 });
+
+/**
+ * batch_totals_mismatch's "expected total/count" must match the runtime's
+ * authoritative recompute exactly (routes/reimbursement.ts: the basic-info
+ * endpoint's UPDATE ... subquery, and batch creation's JS reduce over
+ * selected items) — both aggregate only
+ * `reimbursement_batch_item WHERE batch_id = ? AND status = 'active'`, with
+ * NO join to reimbursement_envelope and no envelope-status filter. This
+ * query used to JOIN reimbursement_envelope and filter `e.status !=
+ * 'deleted'`, which caused a false-positive `high`-severity report for any
+ * batch containing an active batch_item whose envelope had been soft
+ * deleted (the runtime total still counts that item; the old integrity
+ * query's expected total did not).
+ *
+ * Honesty note: `createFakeDb` above does not execute SQL — it routes on
+ * the `-- kind: <kind>` marker comment and returns canned rows, so it
+ * cannot exercise the query's actual WHERE/JOIN semantics. The repo also
+ * has no real D1/sqlite test harness (no `better-sqlite3`, no
+ * `@cloudflare/vitest-pool-workers`), so we cannot construct real "active
+ * item + deleted envelope" / "real mismatch" / "float noise" rows and
+ * observe the query select or skip them. This test is therefore a **SQL
+ * shape assertion**, not a semantic one: it inspects the literal SQL text
+ * bound for `batch_totals_mismatch` to guard against the JOIN/envelope
+ * filter regressing back in. It does not prove the query behaves correctly
+ * against a real database.
+ */
+describe("batch_totals_mismatch SQL shape (see honesty note above)", () => {
+  it("aggregates batch_item alone — no JOIN to reimbursement_envelope, no envelope-status filter", async () => {
+    let capturedSql = "";
+    const db = {
+      prepare(sql: string) {
+        if (sql.includes("-- kind: batch_totals_mismatch")) {
+          capturedSql = sql;
+        }
+        return {
+          bind() {
+            return { all: async () => ({ results: [] }) };
+          },
+          all: async () => ({ results: [] })
+        };
+      }
+    } as unknown as D1Database;
+
+    await findReimbursementIntegrityIssues(db);
+
+    expect(capturedSql).not.toBe("");
+    expect(capturedSql).not.toContain("JOIN reimbursement_envelope");
+    expect(capturedSql).not.toContain("e.status");
+    expect(capturedSql).toContain("bi.status = 'active'");
+    expect(capturedSql).toContain("ABS(");
+  });
+});
