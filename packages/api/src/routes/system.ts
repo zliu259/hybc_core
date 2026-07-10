@@ -8,6 +8,10 @@ import { checkApprovalTimeouts } from "../services/approval/engine";
 import { checkTimeouts } from "../services/ai-slot";
 import { createTask } from "../services/ai-slot";
 import { checkNodeHeartbeat, detectMissingLogs, requeueTimedOutTasks } from "../services/cron-jobs";
+import {
+  findReimbursementIntegrityIssues,
+  summarizeIntegrityIssues
+} from "../services/reimbursement-integrity";
 import { getWeComContactBook } from "../services/wecom-contact-book";
 
 export const systemRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
@@ -297,6 +301,16 @@ systemRoutes.get("/ops/wecom-bridge-config", async (c) => {
       has_bridge_token: Boolean(c.env.WECHAT_BRIDGE_TOKEN),
       relay_status_urls: relayStatusUrls,
     },
+  });
+});
+
+systemRoutes.use("/integrity/*", authMiddleware, requireRoles(["super_admin"]));
+
+systemRoutes.get("/integrity/reimbursement", async (c) => {
+  const issues = await findReimbursementIntegrityIssues(c.env.DB);
+  return c.json({
+    success: true,
+    data: { issues, summary: summarizeIntegrityIssues(issues) }
   });
 });
 
