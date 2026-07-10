@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
-import { runInTransaction } from "./db-transaction";
+import { runAtomicBatch, runInTransaction } from "./db-transaction";
 
 const createDb = (options?: {
   beginError?: Error;
@@ -122,5 +122,49 @@ describe("runInTransaction", () => {
     ).rejects.toThrow("database unavailable");
 
     expect(calls).toEqual(["BEGIN IMMEDIATE TRANSACTION"]);
+  });
+});
+
+describe("runAtomicBatch", () => {
+  const fakeStatement = (label: string): D1PreparedStatement =>
+    ({ __label: label }) as unknown as D1PreparedStatement;
+
+  it("passes statements as-is to db.batch and returns the results in order", async () => {
+    const statements = [fakeStatement("first"), fakeStatement("second")];
+    const batchResults = [
+      { success: true, meta: { changes: 1 } },
+      { success: true, meta: { changes: 2 } }
+    ] as unknown as D1Result[];
+
+    const batch = vi.fn().mockResolvedValue(batchResults);
+    const db = { batch } as unknown as D1Database;
+
+    const result = await runAtomicBatch(db, statements);
+
+    expect(batch).toHaveBeenCalledTimes(1);
+    expect(batch).toHaveBeenCalledWith(statements);
+    expect(result).toBe(batchResults);
+  });
+
+  it("rethrows when db.batch fails, without swallowing the error", async () => {
+    const statements = [fakeStatement("only")];
+    const batchError = new Error("D1_ERROR: UNIQUE constraint failed");
+    const batch = vi.fn().mockRejectedValue(batchError);
+    const db = { batch } as unknown as D1Database;
+
+    await expect(runAtomicBatch(db, statements)).rejects.toThrow(
+      "D1_ERROR: UNIQUE constraint failed"
+    );
+    expect(batch).toHaveBeenCalledTimes(1);
+  });
+
+  it("returns an empty array and does not call db.batch for an empty statement list", async () => {
+    const batch = vi.fn();
+    const db = { batch } as unknown as D1Database;
+
+    const result = await runAtomicBatch(db, []);
+
+    expect(result).toEqual([]);
+    expect(batch).not.toHaveBeenCalled();
   });
 });
