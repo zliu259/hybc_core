@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import {
   splitReimbursementEnvelope,
+  type EnvelopeAttachment,
   type ReimbursementEnvelopeDetail,
   type SplitEnvelopeResult
 } from "@/api/reimbursement";
@@ -28,6 +30,15 @@ const { projects, loadProjects } = useProjectOptions();
 const submitting = ref(false);
 const result = ref<SplitEnvelopeResult | null>(null);
 const selectedAttachmentIds = ref<number[]>([]);
+// Snapshotted once when the dialog opens (see resetForm). The parent's
+// background audit-status polling replaces `detail` with a brand-new object
+// every few seconds; if the table were bound to a computed derived straight
+// from props.detail, Element Plus would see a new data-array reference on
+// every poll tick and silently clear the user's checkbox selection
+// (store/index.mjs: dataInstanceChanged -> clearSelection()). Binding to a
+// stable local snapshot keeps the table's data reference constant for the
+// lifetime of the dialog regardless of how often the parent refreshes.
+const attachmentSnapshot = ref<EnvelopeAttachment[]>([]);
 const form = ref({
   project_id: undefined as number | undefined,
   amount: 0,
@@ -37,10 +48,6 @@ const form = ref({
   original_amount: 0,
   reason: ""
 });
-
-const activeAttachments = computed(() =>
-  (props.detail.attachments || []).filter(item => item.status === "active")
-);
 
 const amountSum = computed(
   () => Number(form.value.amount || 0) + Number(form.value.original_amount || 0)
@@ -52,6 +59,9 @@ const amountMismatch = computed(
 const resetForm = () => {
   result.value = null;
   selectedAttachmentIds.value = [];
+  attachmentSnapshot.value = (props.detail.attachments || []).filter(
+    item => item.status === "active"
+  );
   form.value = {
     project_id: undefined,
     amount: 0,
@@ -98,6 +108,21 @@ const submit = async () => {
   ) {
     message("新单金额与原单调整后金额都必须大于 0", { type: "warning" });
     return;
+  }
+  if (selectedAttachmentIds.value.length === 0) {
+    try {
+      await ElMessageBox.confirm(
+        "未勾选任何附件，拆出的新单将不带任何附件（原单附件保持不变）。若票据需要跟随新单，请返回勾选。确定继续？",
+        "确认拆单",
+        {
+          confirmButtonText: "仍然继续",
+          cancelButtonText: "返回勾选",
+          type: "warning"
+        }
+      );
+    } catch {
+      return;
+    }
   }
   submitting.value = true;
   try {
@@ -168,12 +193,13 @@ const openNewEnvelope = () => {
 
       <div class="split-section-title">1. 选择要转移到新单的附件（可不选）</div>
       <el-table
-        :data="activeAttachments"
+        :data="attachmentSnapshot"
+        row-key="id"
         size="small"
         max-height="220"
         @selection-change="onSelectionChange"
       >
-        <el-table-column type="selection" width="48" />
+        <el-table-column type="selection" width="48" reserve-selection />
         <el-table-column
           prop="file_name"
           label="文件名"
