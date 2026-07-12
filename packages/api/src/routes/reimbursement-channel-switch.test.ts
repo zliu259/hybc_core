@@ -69,6 +69,12 @@ class SwitchStatement {
     ) {
       return this.db.attachmentHeadRow as T;
     }
+    if (
+      this.sql.includes("FROM reimbursement_invoice_review") &&
+      this.sql.includes("ORDER BY id DESC")
+    ) {
+      return this.db.latestReviewRow as T;
+    }
     return null;
   }
 
@@ -96,6 +102,7 @@ class SwitchDb {
   executed: CapturedStatement[] = [];
   envelopeRow: Record<string, unknown> | null = null;
   attachmentHeadRow: Record<string, unknown> | null = null;
+  latestReviewRow: Record<string, unknown> | null = null;
   channelUpdateChanges = 1;
 
   prepare(sql: string) {
@@ -162,15 +169,18 @@ describe("POST /reimbursement/:id/switch-channel", () => {
     writeAuditLogMock.mockReset();
   });
 
-  it("rejects non-office roles with 403", async () => {
-    mockAuthState.payload = { ...mockAuthState.payload, roles: ["manager"] };
-    const db = new SwitchDb();
-    db.envelopeRow = buildEnvelope();
+  it.each(["manager", "site_manager", "operator"] as const)(
+    "rejects non-office role %s with 403",
+    async role => {
+      mockAuthState.payload = { ...mockAuthState.payload, roles: [role] };
+      const db = new SwitchDb();
+      db.envelopeRow = buildEnvelope();
 
-    const response = await requestSwitch(db, { channel: "electronic" });
-    expect(response.status).toBe(403);
-    expect(channelUpdates(db)).toHaveLength(0);
-  });
+      const response = await requestSwitch(db, { channel: "electronic" });
+      expect(response.status).toBe(403);
+      expect(channelUpdates(db)).toHaveLength(0);
+    }
+  );
 
   it("returns 404 when envelope is missing", async () => {
     const db = new SwitchDb();
@@ -220,6 +230,33 @@ describe("POST /reimbursement/:id/switch-channel", () => {
     expect(channelUpdates(db)).toHaveLength(0);
     expect(createTaskMock).not.toHaveBeenCalled();
     expect(publishEventMock).not.toHaveBeenCalled();
+  });
+
+  it("self-heals stale AI review on noop retry after interrupted switch", async () => {
+    const db = new SwitchDb();
+    db.envelopeRow = buildEnvelope();
+    db.latestReviewRow = { channel: "electronic" };
+    db.attachmentHeadRow = { id: 10 };
+
+    const response = await requestSwitch(db, { channel: "physical" });
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      success: boolean;
+      data: { changed: boolean; ai_audit_triggered: boolean };
+    };
+    expect(payload.data.changed).toBe(false);
+    expect(payload.data.ai_audit_triggered).toBe(true);
+    expect(channelUpdates(db)).toHaveLength(0);
+    expect(createTaskMock).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        task_type: "reimbursement_anomaly",
+        payload: expect.objectContaining({
+          rerun: true,
+          review_reason: "channel_switch_heal_to_physical"
+        })
+      })
+    );
   });
 
   it("returns 409 when optimistic lock hits concurrent change", async () => {

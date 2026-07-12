@@ -35,7 +35,7 @@
 2. 状态 ∈ `draft` / `unregistered` / `submitted`；其余状态一律 400
 3. 填报人不是 `__UNASSIGNED__`（信封生成器的库存空白信封不允许切通道）
 4. 目标通道非法（不在 electronic/physical 内）→ 400
-5. 目标通道与当前相同 → 200 `{ changed: false }` 幂等空操作，不触发 AI（天然防双击/重放）
+5. 目标通道与当前相同 → 200 `{ changed: false }` 幂等空操作，不触发 AI（天然防双击/重放）。noop 分支带自愈：若最近一轮发票复核的通道与当前通道不一致且有活跃附件，补触发 AI 核验整轮重跑（覆盖切换 UPDATE 后中断的补偿缺口）
 
 ### 写入（D1 无事务约束下的原子性）
 
@@ -46,7 +46,7 @@ UPDATE reimbursement_envelope SET channel = ?, updated_at = ?
  WHERE id = ? AND channel = ?/*旧通道*/ AND status IN ('draft','unregistered','submitted')
 ```
 
-变更行数为 0 → 重查信封后按并发冲突返回 409。
+变更行数为 0 → 直接按并发冲突返回 409（不重查）。
 
 **UUID 不变式**：`envelope_uuid` / `envelope_no` 保持不变（不触碰 uuid 不变式巡检，见提交 295ca72）。电子→实体后系统生成的 UUID 依旧是合法 UUID、可提交；如需绑定真实实体信封，走已有「换绑UUID」（`POST /:id/rebind-uuid`）功能。
 

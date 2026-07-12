@@ -19,7 +19,9 @@ export type ChannelSwitchDecision =
       toChannel: ReimbursementChannel;
     };
 
-const switchableStatusSet = new Set<string>(["draft", "unregistered", "submitted"]);
+export const switchableChannelStatuses = ["draft", "unregistered", "submitted"] as const;
+
+const switchableStatusSet = new Set<string>(switchableChannelStatuses);
 const validChannels = new Set<string>(reimbursementChannels);
 
 export const decideChannelSwitch = (

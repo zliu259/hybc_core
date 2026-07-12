@@ -28,7 +28,10 @@ import {
   decideBulkLifecycle,
   type BulkLifecycleAction
 } from "./reimbursement-bulk-lifecycle-policy";
-import { decideChannelSwitch } from "./reimbursement-channel-switch-policy";
+import {
+  decideChannelSwitch,
+  switchableChannelStatuses
+} from "./reimbursement-channel-switch-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
@@ -4270,13 +4273,44 @@ reimbursementRoutes.post(
     }
 
     if (decision.kind === "noop") {
+      // 自愈：若此前切换在 UPDATE 提交后中断（AI 重跑未入队），客户端重试会落到本分支。
+      // 以最近一轮发票复核记录的通道与当前通道不一致为信号，补触发整轮重跑。
+      // 自愈是尽力而为——任何失败都不能破坏 noop 语义。
+      let aiAuditTriggered = false;
+      try {
+        const staleReview = await c.env.DB.prepare(
+          `SELECT channel FROM reimbursement_invoice_review
+            WHERE envelope_id = ?
+            ORDER BY id DESC
+            LIMIT 1`
+        )
+          .bind(id)
+          .first<{ channel: string }>();
+        if (staleReview && staleReview.channel !== decision.channel) {
+          const activeAttachment = await c.env.DB.prepare(
+            "SELECT id FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' LIMIT 1"
+          )
+            .bind(id)
+            .first<{ id: number }>();
+          if (activeAttachment) {
+            await enqueueEnvelopeAiAudit(c.env, id, {
+              forceRerun: true,
+              triggeredBy: auth.sub,
+              reason: `channel_switch_heal_to_${decision.channel}`
+            });
+            aiAuditTriggered = true;
+          }
+        }
+      } catch {
+        // 表缺失或查询失败时退化为普通 noop
+      }
       return c.json({
         success: true,
         data: {
           id,
           channel: decision.channel,
           changed: false,
-          ai_audit_triggered: false
+          ai_audit_triggered: aiAuditTriggered
         }
       });
     }
@@ -4284,9 +4318,12 @@ reimbursementRoutes.post(
     // 单条 UPDATE 原子生效；WHERE 携带旧通道与合法状态集作乐观锁，
     // 防止 SELECT 与 UPDATE 之间信封被并发提交/签收/切换。
     const now = nowIso();
+    const switchableStatusSql = switchableChannelStatuses
+      .map((status) => `'${status}'`)
+      .join(", ");
     const result = await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET channel = ?, updated_at = ?
-        WHERE id = ? AND channel = ? AND status IN ('draft', 'unregistered', 'submitted')`
+        WHERE id = ? AND channel = ? AND status IN (${switchableStatusSql})`
     )
       .bind(decision.toChannel, now, id, decision.fromChannel)
       .run();
@@ -4303,7 +4340,7 @@ reimbursementRoutes.post(
 
     const reason =
       typeof body.reason === "string" && body.reason.trim()
-        ? body.reason.trim()
+        ? body.reason.trim().slice(0, 500)
         : null;
 
     const activeAttachment = await c.env.DB.prepare(
