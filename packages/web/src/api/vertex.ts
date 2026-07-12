@@ -41,3 +41,29 @@ export const createVertexHandoff = (data: VertexHandoffRequest) => {
     data
   });
 };
+
+// v2 门户：后端只发一次性不透明 code，浏览器带 code 跳转 vertex，
+// vertex 经 Service Binding 回 HYBC 换取身份，前端不再接触任何 token。
+export type VertexHandoffCodeRequest = {
+  vertexBaseUrl?: string;
+};
+
+export type VertexHandoffCodeResult = {
+  success: boolean;
+  data: {
+    code: string;
+    redirect_url: string;
+    expires_at: string;
+    expires_in_seconds: number;
+    vertex_base_url: string;
+    scopes: string[];
+  };
+};
+
+export const createVertexHandoffCode = (data: VertexHandoffCodeRequest) => {
+  return http.request<VertexHandoffCodeResult>(
+    "post",
+    "/api/v1/vertex/handoff/code",
+    { data }
+  );
+};

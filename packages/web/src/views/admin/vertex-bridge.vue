@@ -8,7 +8,10 @@ import {
   Refresh,
   SwitchButton
 } from "@element-plus/icons-vue";
-import { createVertexHandoff, type VertexHandoffResult } from "@/api/vertex";
+import {
+  createVertexHandoffCode,
+  type VertexHandoffCodeResult
+} from "@/api/vertex";
 import { useUserStoreHook } from "@/store/modules/user";
 import { getToken } from "@/utils/auth";
 import { message } from "@/utils/message";
@@ -21,8 +24,7 @@ const defaultVertexPort = "8788";
 const loading = ref(false);
 const opening = ref(false);
 const vertexBaseUrl = ref("");
-const entryPath = ref("/");
-const lastHandoff = ref<VertexHandoffResult["data"] | null>(null);
+const lastHandoff = ref<VertexHandoffCodeResult["data"] | null>(null);
 const userStore = useUserStoreHook();
 
 const configuredBaseUrl = computed(
@@ -47,7 +49,7 @@ const inferVertexBaseUrl = (): string => {
   const { protocol, hostname } = window.location;
   const hostForUrl = hostname.includes(":") ? `[${hostname}]` : hostname;
   if (hostname.endsWith("hybcdg.com")) {
-    return "https://vertex.hybcdg.com";
+    return "https://vertex-beta.hybcdg.com";
   }
   if (hostname === "localhost" || hostname === "127.0.0.1") {
     return `http://${hostForUrl}:${defaultVertexPort}`;
@@ -55,18 +57,10 @@ const inferVertexBaseUrl = (): string => {
   if (isPrivateIpv4(hostname) || hostname.includes(":")) {
     return `${protocol}//${hostForUrl}:${defaultVertexPort}`;
   }
-  return "https://vertex.hybcdg.com";
+  return "https://vertex-beta.hybcdg.com";
 };
 
 vertexBaseUrl.value = inferVertexBaseUrl();
-
-const hybcApiBaseUrl = computed(() => {
-  return (
-    import.meta.env.VITE_API_BASE_URL?.trim() ||
-    import.meta.env.VITE_API_TARGET?.trim() ||
-    window.location.origin
-  );
-});
 
 const rolesText = computed(() => {
   return userStore.roles.length ? userStore.roles.join(", ") : "-";
@@ -103,6 +97,9 @@ const saveBaseUrl = () => {
   }
 };
 
+// v2 换码流程：HYBC 只发一次性不透明 code（≤5 分钟），浏览器带 code 跳到
+// vertex 的 /portal/handoff，vertex 经 Service Binding 回 HYBC 换取身份。
+// 前端不再接触任何 token，code 一次性、读即删。
 const requestHandoff = async () => {
   if (!loggedIn.value) {
     message("当前未登录，请先完成 HYBC 登录", { type: "warning" });
@@ -111,10 +108,8 @@ const requestHandoff = async () => {
 
   loading.value = true;
   try {
-    const result = await createVertexHandoff({
-      vertexBaseUrl: vertexBaseUrl.value.trim(),
-      hybcApiBaseUrl: hybcApiBaseUrl.value,
-      entryPath: entryPath.value.trim() || "/"
+    const result = await createVertexHandoffCode({
+      vertexBaseUrl: vertexBaseUrl.value.trim()
     });
     lastHandoff.value = result.data;
     return result.data;
@@ -128,45 +123,38 @@ const requestHandoff = async () => {
   }
 };
 
+// 同页 location.href 跳转（不用 window.open）：code 一次性且短时效，
+// 新开标签页无意义；同页跳转也不需要用户手势、不会被弹窗拦截。
 const openVertex = async () => {
   opening.value = true;
   try {
     const handoff = await requestHandoff();
-    if (!handoff?.launch_url) return;
-    window.open(handoff.launch_url, "_blank", "noopener,noreferrer");
-    message("Vertex 控制区已打开", { type: "success" });
+    if (!handoff?.redirect_url) return;
+    message("授权已签发，正在进入 Vertex…", { type: "success" });
+    window.location.href = handoff.redirect_url;
   } finally {
     opening.value = false;
   }
 };
 
-// Mac 控制台等外部工具经 ?auto=vertex 进入时：自动签发授权并在当前标签页
-// 跳转 Vertex（同页跳转不需要用户手势，不会被弹窗拦截）。未登录时守卫已在
+// Mac 控制台等外部工具经 ?auto=vertex 进入时自动走同一跳转。未登录时守卫已在
 // 到达本页前跳去登录，因此这里仅处理已登录场景。
 const route = useRoute();
 
-const autoOpenVertex = async () => {
-  opening.value = true;
-  try {
-    const handoff = await requestHandoff();
-    if (!handoff?.launch_url) return;
-    message("授权已签发，正在进入 Vertex…", { type: "success" });
-    window.location.href = handoff.launch_url;
-  } finally {
-    opening.value = false;
-  }
-};
-
 onMounted(() => {
   if (route.query.auto === "vertex" && loggedIn.value) {
-    void autoOpenVertex();
+    void openVertex();
   }
 });
 
+// 测试签发仅用于确认当前账号可签发并预览 scopes；code 一次性，
+// 实际跳转时会重新签发，这里签出的 code 到期自动作废。
 const refreshHandoff = async () => {
   const handoff = await requestHandoff();
   if (handoff) {
-    message("Vertex 授权已刷新", { type: "success" });
+    message("测试签发成功，实际进入时会重新签发一次性授权码", {
+      type: "success"
+    });
   }
 };
 </script>
@@ -203,22 +191,16 @@ const refreshHandoff = async () => {
           <el-form-item label="Vertex 地址">
             <el-input
               v-model="vertexBaseUrl"
-              placeholder="https://vertex.hybcdg.com"
+              placeholder="https://vertex-beta.hybcdg.com"
               clearable
             />
-          </el-form-item>
-          <el-form-item label="入口路径">
-            <el-input v-model="entryPath" placeholder="/" />
-          </el-form-item>
-          <el-form-item label="HYBC 主 worker">
-            <el-input :model-value="hybcApiBaseUrl" disabled />
           </el-form-item>
         </el-form>
 
         <div class="vertex-panel__actions">
           <el-button :icon="Link" @click="saveBaseUrl">保存地址</el-button>
           <el-button :icon="Refresh" :loading="loading" @click="refreshHandoff">
-            预签发授权
+            测试签发
           </el-button>
         </div>
       </el-card>
