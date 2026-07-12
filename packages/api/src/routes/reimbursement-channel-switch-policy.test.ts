@@ -57,7 +57,8 @@ describe("decideChannelSwitch", () => {
     "pending_approval",
     "approved",
     "paid",
-    "cancelled"
+    "cancelled",
+    "rejected"
   ])("rejects switch from %s status", status => {
     const result = decideChannelSwitch({
       ...baseInput,

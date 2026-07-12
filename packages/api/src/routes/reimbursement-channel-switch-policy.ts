@@ -1,4 +1,4 @@
-import type { ReimbursementChannel } from "../types/reimbursement";
+import { reimbursementChannels, type ReimbursementChannel } from "../types/reimbursement";
 
 export type ChannelSwitchDecisionInput = {
   requestedChannel: string;
@@ -20,7 +20,7 @@ export type ChannelSwitchDecision =
     };
 
 const switchableStatusSet = new Set<string>(["draft", "unregistered", "submitted"]);
-const validChannels = new Set<string>(["physical", "electronic"]);
+const validChannels = new Set<string>(reimbursementChannels);
 
 export const decideChannelSwitch = (
   input: ChannelSwitchDecisionInput
