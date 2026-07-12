@@ -28,6 +28,7 @@ import {
   decideBulkLifecycle,
   type BulkLifecycleAction
 } from "./reimbursement-bulk-lifecycle-policy";
+import { decideChannelSwitch } from "./reimbursement-channel-switch-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
@@ -4227,6 +4228,133 @@ reimbursementRoutes.post(
         envelope_uuid: nextUuid,
         envelope_no: nextUuid,
         swapped_placeholder_id: swappedPlaceholderId
+      }
+    });
+  }
+);
+
+reimbursementRoutes.post(
+  "/:id/switch-channel",
+  requireRoles(["super_admin", "finance"]),
+  async (c) => {
+    const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as {
+      channel?: unknown;
+      reason?: unknown;
+    };
+
+    const envelope = await c.env.DB.prepare(
+      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
+    )
+      .bind(id)
+      .first<ReimbursementEnvelope>();
+
+    const decision = decideChannelSwitch({
+      requestedChannel: typeof body.channel === "string" ? body.channel : "",
+      envelope: envelope
+        ? {
+            status: envelope.status,
+            channel: envelope.channel,
+            applicant_userid: envelope.applicant_userid
+          }
+        : undefined,
+      unassignedApplicant: UNASSIGNED_APPLICANT
+    });
+
+    if (decision.kind === "error") {
+      return c.json(
+        { success: false, error: { message: decision.message } },
+        decision.status
+      );
+    }
+
+    if (decision.kind === "noop") {
+      return c.json({
+        success: true,
+        data: {
+          id,
+          channel: decision.channel,
+          changed: false,
+          ai_audit_triggered: false
+        }
+      });
+    }
+
+    // 单条 UPDATE 原子生效；WHERE 携带旧通道与合法状态集作乐观锁，
+    // 防止 SELECT 与 UPDATE 之间信封被并发提交/签收/切换。
+    const now = nowIso();
+    const result = await c.env.DB.prepare(
+      `UPDATE reimbursement_envelope SET channel = ?, updated_at = ?
+        WHERE id = ? AND channel = ? AND status IN ('draft', 'unregistered', 'submitted')`
+    )
+      .bind(decision.toChannel, now, id, decision.fromChannel)
+      .run();
+
+    if ((result.meta.changes ?? 0) === 0) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "Envelope changed concurrently; please refresh and retry" }
+        },
+        409
+      );
+    }
+
+    const reason =
+      typeof body.reason === "string" && body.reason.trim()
+        ? body.reason.trim()
+        : null;
+
+    const activeAttachment = await c.env.DB.prepare(
+      "SELECT id FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' LIMIT 1"
+    )
+      .bind(id)
+      .first<{ id: number }>();
+
+    let aiAuditTriggered = false;
+    if (activeAttachment) {
+      await enqueueEnvelopeAiAudit(c.env, id, {
+        forceRerun: true,
+        triggeredBy: auth.sub,
+        reason: `channel_switch_to_${decision.toChannel}`
+      });
+      aiAuditTriggered = true;
+    }
+
+    await publishEvent(
+      c.env,
+      "REIMBURSEMENT_ENVELOPE_CHANNEL_SWITCHED",
+      "reimbursement_envelope",
+      {
+        envelope_id: id,
+        from_channel: decision.fromChannel,
+        to_channel: decision.toChannel,
+        reason,
+        switched_by: auth.sub
+      }
+    );
+
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "reimbursement.envelope.switch_channel",
+      targetType: "reimbursement_envelope",
+      targetId: id,
+      detail: {
+        from_channel: decision.fromChannel,
+        to_channel: decision.toChannel,
+        reason
+      }
+    });
+
+    return c.json({
+      success: true,
+      data: {
+        id,
+        channel: decision.toChannel,
+        changed: true,
+        ai_audit_triggered: aiAuditTriggered
       }
     });
   }
