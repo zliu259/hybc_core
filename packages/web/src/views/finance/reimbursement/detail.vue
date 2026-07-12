@@ -19,6 +19,7 @@ import {
   rebindReimbursementEnvelopeUuid,
   scanReimbursementEnvelope,
   submitReimbursementEnvelope,
+  switchReimbursementChannel,
   triggerEnvelopeAnomalyCheck,
   updateReimbursementEnvelope,
   verifyReimbursementEnvelope,
@@ -703,6 +704,65 @@ const submitRebindEnvelopeUuid = async () => {
   notifyChanged();
 };
 
+const SWITCHABLE_CHANNEL_STATUSES = new Set([
+  "draft",
+  "unregistered",
+  "submitted"
+]);
+
+const canSwitchChannel = computed(() => {
+  if (isCreate.value || !detail.value) return false;
+  if (!roleSet.value.has("super_admin") && !roleSet.value.has("finance")) {
+    return false;
+  }
+  return SWITCHABLE_CHANNEL_STATUSES.has(detail.value.status);
+});
+
+const switchingChannel = ref(false);
+
+const onSwitchChannel = async () => {
+  if (!detail.value || switchingChannel.value) return;
+  const target =
+    detail.value.channel === "physical" ? "electronic" : "physical";
+  const targetLabel = target === "electronic" ? "电子发票" : "实物信封";
+  let reason = "";
+  try {
+    const promptResult = (await ElMessageBox.prompt(
+      `确认切换为「${targetLabel}」通道？切换后系统将自动重新进行 AI 核验。`,
+      "切换报销通道",
+      {
+        confirmButtonText: "确认切换",
+        cancelButtonText: "取消",
+        inputPlaceholder: "切换原因（选填）"
+      }
+    )) as MessageBoxInputData;
+    reason = (promptResult.value ?? "").trim();
+  } catch {
+    return;
+  }
+  switchingChannel.value = true;
+  try {
+    const result = await switchReimbursementChannel(detail.value.id, {
+      channel: target,
+      reason: reason || undefined
+    });
+    message(
+      result.data.ai_audit_triggered
+        ? `已切换为${targetLabel}通道，AI 核验已自动触发`
+        : `已切换为${targetLabel}通道`,
+      { type: "success" }
+    );
+    await loadDetail();
+    notifyChanged();
+  } catch (error) {
+    message(resolveApiErrorMessage(error, "通道切换失败，请稍后重试"), {
+      type: "error"
+    });
+  } finally {
+    switchingChannel.value = false;
+  }
+};
+
 const uploadAttachment = async (options: UploadRequestOptions) => {
   if (!canEdit.value) {
     message("当前状态不允许上传附件", { type: "warning" });
@@ -1314,11 +1374,25 @@ watch(
               <el-select
                 v-model="form.channel"
                 style="width: 200px"
-                :disabled="!canEdit"
+                :disabled="!isCreate"
               >
                 <el-option label="实物信封" value="physical" />
                 <el-option label="电子发票" value="electronic" />
               </el-select>
+              <el-button
+                v-if="canSwitchChannel"
+                type="warning"
+                plain
+                :loading="switchingChannel"
+                style="margin-left: 8px"
+                @click="onSwitchChannel"
+                >切换通道</el-button
+              >
+              <span
+                v-if="!isCreate && !canSwitchChannel"
+                class="channel-locked-hint"
+                >通道创建后不可修改</span
+              >
             </el-form-item>
 
             <el-form-item label="费用日期">
@@ -1885,5 +1959,11 @@ watch(
   .detail-summary-grid {
     grid-template-columns: 1fr;
   }
+}
+
+.channel-locked-hint {
+  margin-left: 8px;
+  font-size: 12px;
+  color: #909399;
 }
 </style>

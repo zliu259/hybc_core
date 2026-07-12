@@ -141,6 +141,21 @@ export const rebindReimbursementEnvelopeUuid = (
   }>("post", `/api/v1/reimbursement/${id}/rebind-uuid`, { data });
 };
 
+export const switchReimbursementChannel = (
+  id: number,
+  data: { channel: "physical" | "electronic"; reason?: string }
+) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      id: number;
+      channel: "physical" | "electronic";
+      changed: boolean;
+      ai_audit_triggered: boolean;
+    };
+  }>("post", `/api/v1/reimbursement/${id}/switch-channel`, { data });
+};
+
 export const createReimbursementEnvelope = (
   data: {
     project_id: number;
