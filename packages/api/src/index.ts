@@ -28,6 +28,7 @@ import { uploadRoutes } from "./routes/upload";
 import { userRoutes } from "./routes/user";
 import { vehicleMaintenanceRoutes } from "./routes/vehicle-maintenance";
 import { vertexRoutes } from "./routes/vertex";
+import { internalVertexHandoffRoutes } from "./routes/vertex-internal";
 import { voiceRoutes } from "./routes/voice";
 import { wecomToolRoutes } from "./routes/wecom-tools";
 import { warehouseRoutes } from "./routes/warehouse";
@@ -83,6 +84,8 @@ app.route("/api/v1/bidding", biddingDedupRoutes);
 app.route("/api/v1/dict", dictRoutes);
 app.route("/api/v1/upload", uploadRoutes);
 app.route("/api/v1/vertex", vertexRoutes);
+// 仅供 vertex Worker 经 Service Binding 调用；handler 内拒绝公网边缘请求。
+app.route("/internal/vertex-handoff", internalVertexHandoffRoutes);
 app.route("/api/v1/voice", voiceRoutes);
 app.route("/api/v1/wecom", wecomToolRoutes);
 app.route("/api/v1/admin", adminRoutes);

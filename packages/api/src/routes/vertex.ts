@@ -5,7 +5,9 @@ import { requireRoles } from "../middleware/rbac";
 import {
   buildVertexLaunchUrl,
   issueVertexHandoff,
+  issueVertexHandoffCode,
   verifyVertexHandoff,
+  VERTEX_HANDOFF_CODE_TTL_SECONDS,
   type VertexHandoffPayload
 } from "../services/vertex-handoff";
 import type { Env } from "../types/env";
@@ -37,6 +39,9 @@ export const vertexRoutes = new Hono<{
 
 const DEFAULT_VERTEX_BASE_URL = "https://vertex.hybcdg.com";
 const DEFAULT_VERTEX_ENTRY_PATH = "/";
+// v2 云端门户：换码在 vertex 侧经 Service Binding 完成，浏览器只带不透明 code 跳转。
+const DEFAULT_VERTEX_PORTAL_BASE_URL = "https://vertex-beta.hybcdg.com";
+const VERTEX_PORTAL_HANDOFF_PATH = "/portal/handoff";
 
 const parseJsonBody = async <T>(c: { req: { json: () => Promise<unknown> } }): Promise<T> => {
   try {
@@ -142,6 +147,47 @@ vertexRoutes.post(
           entry_path: entryPath,
           user: publicProfile(handoff.payload),
           scopes: handoff.payload.scopes
+        }
+      });
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: error instanceof Error ? error.message : "Invalid vertex handoff request"
+          }
+        },
+        400
+      );
+    }
+  }
+);
+
+// v2 门户发码：不签 JWT、不出示任何 HYBC 密钥，只发一次性不透明 code（KV、≤5 分钟）。
+// 旧的 POST /handoff（JWT）为 v0.1 门户遗留路径，保留并存，待确认无消费方后再移除。
+vertexRoutes.post(
+  "/handoff/code",
+  authMiddleware,
+  requireRoles(["super_admin", "manager", "site_manager"]),
+  async (c) => {
+    const body = await parseJsonBody<{ vertexBaseUrl?: string }>(c);
+
+    try {
+      const vertexBaseUrl = normalizeBaseUrl(body.vertexBaseUrl, DEFAULT_VERTEX_PORTAL_BASE_URL);
+      const auth = c.get("auth");
+      const issued = await issueVertexHandoffCode(c.env, auth);
+      const redirectUrl = new URL(`${vertexBaseUrl}${VERTEX_PORTAL_HANDOFF_PATH}`);
+      redirectUrl.searchParams.set("code", issued.code);
+
+      return c.json({
+        success: true,
+        data: {
+          code: issued.code,
+          redirect_url: redirectUrl.toString(),
+          expires_at: issued.expiresAt,
+          expires_in_seconds: VERTEX_HANDOFF_CODE_TTL_SECONDS,
+          vertex_base_url: vertexBaseUrl,
+          scopes: issued.identity.scopes
         }
       });
     } catch (error) {
