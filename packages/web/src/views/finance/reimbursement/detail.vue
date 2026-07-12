@@ -704,6 +704,7 @@ const submitRebindEnvelopeUuid = async () => {
   notifyChanged();
 };
 
+// 与后端 packages/api/src/routes/reimbursement-channel-switch-policy.ts 的 switchableChannelStatuses 保持一致
 const SWITCHABLE_CHANNEL_STATUSES = new Set([
   "draft",
   "unregistered",
@@ -728,7 +729,7 @@ const onSwitchChannel = async () => {
   let reason = "";
   try {
     const promptResult = (await ElMessageBox.prompt(
-      `确认切换为「${targetLabel}」通道？切换后系统将自动重新进行 AI 核验。`,
+      `确认切换为「${targetLabel}」通道？切换后系统将自动重新进行 AI 核验（如有附件）。`,
       "切换报销通道",
       {
         confirmButtonText: "确认切换",
@@ -746,12 +747,21 @@ const onSwitchChannel = async () => {
       channel: target,
       reason: reason || undefined
     });
-    message(
-      result.data.ai_audit_triggered
-        ? `已切换为${targetLabel}通道，AI 核验已自动触发`
-        : `已切换为${targetLabel}通道`,
-      { type: "success" }
-    );
+    if (!result.data.changed) {
+      message(
+        result.data.ai_audit_triggered
+          ? `通道已是${targetLabel}，已补触发 AI 核验`
+          : `通道已是${targetLabel}，无需切换`,
+        { type: "info" }
+      );
+    } else {
+      message(
+        result.data.ai_audit_triggered
+          ? `已切换为${targetLabel}通道，AI 核验已自动触发`
+          : `已切换为${targetLabel}通道`,
+        { type: "success" }
+      );
+    }
     await loadDetail();
     notifyChanged();
   } catch (error) {
@@ -1964,6 +1974,6 @@ watch(
 .channel-locked-hint {
   margin-left: 8px;
   font-size: 12px;
-  color: #909399;
+  color: var(--el-text-color-secondary);
 }
 </style>
