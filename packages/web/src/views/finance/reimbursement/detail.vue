@@ -112,7 +112,7 @@ type ApiErrorShape = {
     status?: number;
     data?: {
       message?: string;
-      error?: string;
+      error?: string | { message?: string };
       data?: {
         require_force_submit?: boolean;
       };
@@ -122,9 +122,14 @@ type ApiErrorShape = {
 
 const resolveApiErrorMessage = (error: unknown, fallback: string) => {
   const err = error as ApiErrorShape;
+  const rawError = err.response?.data?.error;
   const backendMessage =
-    err.response?.data?.message || err.response?.data?.error || err.message;
-  return backendMessage && backendMessage.trim() ? backendMessage : fallback;
+    err.response?.data?.message ||
+    (typeof rawError === "string" ? rawError : rawError?.message) ||
+    err.message;
+  return typeof backendMessage === "string" && backendMessage.trim()
+    ? backendMessage
+    : fallback;
 };
 
 const canEdit = computed(() => {

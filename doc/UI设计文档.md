@@ -296,8 +296,9 @@
 - **报销拆单**（2026-07-10 新增）：办公室在「待复核」或「待成批」阶段（`status IN (submitted, received)` 且未挂批次/未挂审批实例）可对信封执行拆单——弹窗中多选要转移的附件、填写新信封项目与金额，提交后原单保留剩余金额与附件，新信封携带转移附件与拆单溯源（`split_from_envelope_id`/`split_reason`）；成功后可直接「打印新信封」二维码（`envelope-print.ts`，从 `envelope-generator.vue` 抽出的单信封版本）。拆单仅 `finance`/`super_admin` 可见。
 - **附件图片预览缩放**（2026-07-10）：预览抽屉中图片类附件改用 `el-image`（内置 viewer：滚轮缩放/旋转/拖拽/全屏），PDF 保持 iframe，其他类型维持下载提示。
 - **状态与附件类型全面汉化**（2026-07-10）：状态、复核状态、任务状态（新增 `assigned=已分派`、`running=处理中`、`queued=排队中`）与附件「类型」列（`invoice/receipt/contract/other` → 发票/凭证/合同/其他）统一走模块内 `reimbursement-labels.ts`，修复此前复核动作 toast 直接输出英文枚举原值的问题。
+- **报销通道切换**（2026-07-12 新增）：「通道」表单项旁新增「切换通道」按钮，仅 `super_admin`/`finance` 且状态为草稿/未登记/待签收（`draft/unregistered/submitted`）时可见；点击弹出确认框，可填写切换原因（选填）；成功提示区分三种语义——实际切换、已是目标通道无需切换、已是目标通道但补触发 AI 核验（自愈）。编辑态通道下拉始终禁用（仅创建态可选，修复此前“看似可改、保存必被后端 400”的陷阱）；不可切换时显示「通道创建后不可修改」灰色提示。
 - 详情页支持路由页与抽屉两种承载方式；抽屉模式通过 `envelopeId` 载入指定报销条目，并在保存、提交、签收、复核、拆单等动作后通知父页面刷新当前数据但不改变所在页面状态：`packages/web/src/views/finance/reimbursement/detail.vue`
-- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/:id/split`（2026-07-10 新增，拆单）, `/api/v1/reimbursement/resolve/by-uuid`
+- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/:id/split`（2026-07-10 新增，拆单）, `/api/v1/reimbursement/:id/switch-channel`（2026-07-12 新增，通道切换）, `/api/v1/reimbursement/resolve/by-uuid`
 
 #### F-3. 功能页融合说明（预审/查重）
 
@@ -1606,3 +1607,9 @@
 - 新增/编辑对话框字段：车辆、保养类型（拉字典 `vehicle_maintenance_type`）、保养内容、里程、保养人、费用、保养时间、备注、附件（直传 R2，可移除）；详情抽屉以描述列表展示完整信息并提供附件下载。
 - 小程序新增"车辆保养记录"页面：选车辆、选保养类型、填里程/内容/保养人/费用/保养日期、上传附件，并在下方展示"我的保养记录"；从财务页入口卡片进入：`packages/miniapp/pages/vehicle-maintenance/index.{js,wxml,wxss,json}`、`packages/miniapp/pages/finance/index.js`
 - 后端路由 `/api/v1/fleet/maintenance`（列表/详情/新增/编辑/作废），数据落表 `vehicle_maintenance_record`，挂钩 `company_vehicle`，软删除并保留作废人/时间/原因：`packages/api/src/routes/vehicle-maintenance.ts`
+
+### 8.20 报销通道切换入口与编辑态通道锁定（2026-07-12）
+
+- 报销详情「通道」栏新增办公室「切换通道」按钮（仅 `super_admin`/`finance`，状态 `draft/unregistered/submitted` 可见）：点击弹出确认框并可填写切换原因（选填，后端 trim 后截断 500 字符）；成功提示区分“实际切换 / 已是目标通道无需切换 / 补触发 AI 核验（自愈）”三种语义：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/web/src/api/reimbursement.ts`
+- 编辑态通道下拉始终禁用（仅创建态可选），修复此前“看似可改、保存必被后端 400”的陷阱；不可切换时显示「通道创建后不可修改」灰色提示：`packages/web/src/views/finance/reimbursement/detail.vue`
+- 新增后端切换通道接口 `POST /api/v1/reimbursement/:id/switch-channel`（乐观锁 UPDATE 防并发漂移；切换成功且有活跃附件时自动补触发 AI 核验；同通道重复请求幂等返回 `changed: false` 并带自愈补偿）：`packages/api/src/routes/reimbursement.ts`、`packages/api/src/routes/reimbursement-channel-switch-policy.ts`

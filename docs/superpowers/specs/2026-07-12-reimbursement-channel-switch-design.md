@@ -25,7 +25,7 @@
 `POST /api/v1/reimbursement/:id/switch-channel`
 
 - 权限：`requireRoles(["super_admin", "finance"])`
-- 请求体：`{ channel: "electronic" | "physical", reason?: string }`
+- 请求体：`{ channel: "electronic" | "physical", reason?: string }`（reason 为选填切换原因，trim 后截断 500 字符）
 
 ### 准入规则（纯函数 `decideChannelSwitch`）
 
