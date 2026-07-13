@@ -1092,10 +1092,48 @@ const rerunSilentReview = async () => {
   }
 };
 
-// handleEInvoiceBlocked is defined ahead of submitPrecheck (which calls it)
-// because these are const arrow functions — unlike function declarations,
-// they are not hoisted, so the caller must appear after the callee.
-const handleEInvoiceBlocked = async () => {
+// 复核通过的强制放行理由：两类拦截（重复风险 / 电子发票混入）可能先后触发，
+// 重试时必须把已收集的理由一并带上，否则会在两个弹窗之间来回循环。
+type PrecheckOverrides = {
+  einvoiceReason?: string;
+  duplicateReason?: string;
+};
+
+// handleDuplicateBlocked / handleEInvoiceBlocked are defined ahead of
+// submitPrecheck (which calls them) because these are const arrow functions —
+// unlike function declarations, they are not hoisted, so the caller must
+// appear after the callee.
+const handleDuplicateBlocked = async (overrides: PrecheckOverrides) => {
+  if (!isFinanceOrSuperAdmin.value) {
+    message(
+      "查重发现疑似重复报销，且申请人未坚持提交，复核通过被拦截。请等待申请人坚持提交，或转交办公室财务处理。",
+      { type: "error" }
+    );
+    return;
+  }
+  try {
+    const { value } = (await ElMessageBox.prompt(
+      "查重发现疑似重复报销，且申请人未坚持提交。如已人工核实并确认非重复报销，可填写理由放行（将记录审计日志）。",
+      "重复风险拦截",
+      {
+        confirmButtonText: "确认放行",
+        cancelButtonText: "取消",
+        inputPlaceholder: "放行理由（必填）",
+        inputValidator: (input: string) =>
+          input.trim() ? true : "理由不能为空",
+        type: "warning"
+      }
+    )) as MessageBoxInputData;
+    await submitPrecheck("approved", {
+      ...overrides,
+      duplicateReason: value.trim()
+    });
+  } catch {
+    // 用户取消
+  }
+};
+
+const handleEInvoiceBlocked = async (overrides: PrecheckOverrides) => {
   if (!isFinanceOrSuperAdmin.value) {
     message(
       "检测到电子发票混入实物信封，复核通过被拦截。请复核驳回并引导员工走电子发票通道。",
@@ -1123,7 +1161,10 @@ const handleEInvoiceBlocked = async () => {
         type: "warning"
       }
     )) as MessageBoxInputData;
-    await submitPrecheck("approved", value.trim());
+    await submitPrecheck("approved", {
+      ...overrides,
+      einvoiceReason: value.trim()
+    });
   } catch {
     // 用户取消
   }
@@ -1131,7 +1172,7 @@ const handleEInvoiceBlocked = async () => {
 
 const submitPrecheck = async (
   action: "approved" | "supplement" | "rejected",
-  overrideEInvoiceReason?: string
+  overrides: PrecheckOverrides = {}
 ) => {
   if (!detail.value || precheckAction.value) return;
   precheckAction.value = action;
@@ -1139,7 +1180,8 @@ const submitPrecheck = async (
     await precheckEnvelope(detail.value.id, {
       action,
       comment: verifyNote.value || undefined,
-      override_einvoice_reason: overrideEInvoiceReason
+      override_einvoice_reason: overrides.einvoiceReason,
+      override_duplicate_reason: overrides.duplicateReason
     });
     message(`复核已更新：${precheckActionLabel(action)}`, {
       type: action === "approved" ? "success" : "warning"
@@ -1151,7 +1193,11 @@ const submitPrecheck = async (
       response?: {
         status?: number;
         data?: {
-          data?: { wait_for_audit?: boolean; einvoice_in_physical?: boolean };
+          data?: {
+            wait_for_audit?: boolean;
+            einvoice_in_physical?: boolean;
+            duplicate_risk_unconfirmed?: boolean;
+          };
         };
       };
     };
@@ -1161,17 +1207,24 @@ const submitPrecheck = async (
     const einvoiceBlocked =
       err.response?.status === 400 &&
       err.response?.data?.data?.einvoice_in_physical === true;
+    const duplicateBlocked =
+      err.response?.status === 400 &&
+      err.response?.data?.data?.duplicate_risk_unconfirmed === true;
 
-    if (einvoiceBlocked) {
+    if (duplicateBlocked || einvoiceBlocked) {
       // Release the busy guard before awaiting the override retry: this
       // outer call's `finally` hasn't run yet (we're still inside its own
-      // catch), so without this reset, `handleEInvoiceBlocked`'s recursive
-      // `submitPrecheck("approved", reason)` call would see
+      // catch), so without this reset, the handler's recursive
+      // `submitPrecheck("approved", overrides)` call would see
       // `precheckAction.value` still truthy and return immediately without
       // ever sending the forced-override request. (Caught plan defect —
       // the literal snippet silently no-ops the finance override retry.)
       precheckAction.value = null;
-      await handleEInvoiceBlocked();
+      if (duplicateBlocked) {
+        await handleDuplicateBlocked(overrides);
+      } else {
+        await handleEInvoiceBlocked(overrides);
+      }
       return;
     }
     if (!waitForAudit) throw error;

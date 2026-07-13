@@ -237,6 +237,8 @@ export interface PrecheckEnvelopeRequest {
   comment?: string;
   /** 电子发票混入实物信封时的强制通过理由（仅 finance/super_admin） */
   override_einvoice_reason?: string;
+  /** 存在重复风险且申请人未坚持提交时的放行理由（仅 finance/super_admin，写审计日志） */
+  override_duplicate_reason?: string;
 }
 
 export interface CreateReimbursementBatchRequest {

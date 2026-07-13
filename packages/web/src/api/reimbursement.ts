@@ -406,6 +406,7 @@ export const precheckEnvelope = (
     action: "approved" | "supplement" | "rejected";
     comment?: string;
     override_einvoice_reason?: string;
+    override_duplicate_reason?: string;
   }
 ) => {
   return http.request<{

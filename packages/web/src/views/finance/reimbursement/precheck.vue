@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { ElMessageBox, type MessageBoxInputData } from "element-plus";
 import { message } from "@/utils/message";
 import {
   precheckActionLabel,
@@ -66,12 +67,38 @@ const triggerAnomaly = async (id: number) => {
   message("已触发智能核查", { type: "success" });
 };
 
+// 重复风险拦截时向财务/超管收集放行理由后重试；是否有放行权限由后端
+// 在拦截响应里通过 can_override_duplicate 告知，前端无需自行判断角色。
+const promptDuplicateOverride = async (id: number) => {
+  try {
+    const { value } = (await ElMessageBox.prompt(
+      "查重发现疑似重复报销，且申请人未坚持提交。如已人工核实并确认非重复报销，可填写理由放行（将记录审计日志）。",
+      "重复风险拦截",
+      {
+        confirmButtonText: "确认放行",
+        cancelButtonText: "取消",
+        inputPlaceholder: "放行理由（必填）",
+        inputValidator: (input: string) =>
+          input.trim() ? true : "理由不能为空",
+        type: "warning"
+      }
+    )) as MessageBoxInputData;
+    await doPrecheck(id, "approved", value.trim());
+  } catch {
+    // 用户取消
+  }
+};
+
 const doPrecheck = async (
   id: number,
-  action: "approved" | "supplement" | "rejected"
+  action: "approved" | "supplement" | "rejected",
+  overrideDuplicateReason?: string
 ) => {
   try {
-    await precheckEnvelope(id, { action });
+    await precheckEnvelope(id, {
+      action,
+      override_duplicate_reason: overrideDuplicateReason
+    });
     message(`复核完成：${precheckActionLabel(action)}`, {
       type: action === "approved" ? "success" : "warning"
     });
@@ -80,12 +107,32 @@ const doPrecheck = async (
     const err = error as {
       response?: {
         status?: number;
-        data?: { data?: { wait_for_audit?: boolean } };
+        data?: {
+          data?: {
+            wait_for_audit?: boolean;
+            duplicate_risk_unconfirmed?: boolean;
+            can_override_duplicate?: boolean;
+          };
+        };
       };
     };
     const waitForAudit =
       err.response?.status === 409 &&
       err.response?.data?.data?.wait_for_audit === true;
+    const duplicateBlocked =
+      err.response?.status === 400 &&
+      err.response?.data?.data?.duplicate_risk_unconfirmed === true;
+    if (duplicateBlocked) {
+      if (err.response?.data?.data?.can_override_duplicate === true) {
+        await promptDuplicateOverride(id);
+      } else {
+        message(
+          "查重发现疑似重复报销，且申请人未坚持提交，复核通过被拦截。请等待申请人坚持提交，或转交办公室财务处理。",
+          { type: "error" }
+        );
+      }
+      return;
+    }
     if (!waitForAudit) throw error;
     message("后台静默审查尚未完成，系统已自动触发处理，请稍后再执行复核通过", {
       type: "warning"

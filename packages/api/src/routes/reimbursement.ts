@@ -33,6 +33,7 @@ import {
   switchableChannelStatuses
 } from "./reimbursement-channel-switch-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
+import { evaluateDuplicatePrecheckGate } from "./reimbursement-duplicate-gate";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import type { Env } from "../types/env";
@@ -3923,16 +3924,42 @@ reimbursementRoutes.post(
         .bind(id)
         .first<{ cnt: number }>();
       const duplicateCount = duplicateRow?.cnt ?? 0;
-      if (duplicateCount > 0 && envelope.duplicate_override_requested !== 1) {
+      const duplicateGate = evaluateDuplicatePrecheckGate({
+        duplicateCount,
+        overrideRequested: envelope.duplicate_override_requested === 1,
+        actorRoles: auth.roles,
+        overrideReason: body.override_duplicate_reason
+      });
+      if (duplicateGate.outcome === "blocked") {
         return c.json(
           {
             success: false,
             error: {
-              message: "Duplicate risk exists. Applicant insist-submit is required before office can approve precheck"
+              message: duplicateGate.canOverride
+                ? "Duplicate risk exists without applicant insist-submit. Provide an override reason to approve (finance/super_admin only)."
+                : "Duplicate risk exists. Applicant insist-submit is required before office can approve precheck"
+            },
+            data: {
+              duplicate_risk_unconfirmed: true,
+              duplicate_count: duplicateCount,
+              can_override_duplicate: duplicateGate.canOverride
             }
           },
           400
         );
+      }
+      if (duplicateGate.outcome === "override") {
+        await writeAuditLog(c.env.DB, {
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          action: "reimbursement.envelope.precheck_duplicate_override",
+          targetType: "reimbursement_envelope",
+          targetId: id,
+          detail: {
+            reason: duplicateGate.reason,
+            duplicate_count: duplicateCount
+          }
+        });
       }
 
       const einvoice = detectEInvoiceInPhysical({
