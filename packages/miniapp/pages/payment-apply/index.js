@@ -152,6 +152,58 @@ const sortContractsNewestFirst = (list) => {
   });
 };
 
+const resolveContractRemaining = (contract) => {
+  const total = Number((contract && contract.total_amount) || 0);
+  const paid = Number((contract && contract.paid_amount) || 0);
+  if (!Number.isFinite(total) || !Number.isFinite(paid)) return 0;
+  return Number((total - paid).toFixed(2));
+};
+
+const buildHandlerNameMap = (wecomUsers) => {
+  const map = {};
+  (Array.isArray(wecomUsers) ? wecomUsers : []).forEach((item) => {
+    if (item && item.userid) {
+      map[item.userid] = item.name || item.userid;
+    }
+  });
+  return map;
+};
+
+const resolveHandlerName = (contract, handlerNameMap) => {
+  const userid = String((contract && contract.handler_userid) || "").trim();
+  if (!userid) return "未知提交人";
+  return (handlerNameMap && handlerNameMap[userid]) || userid;
+};
+
+// 合同摘要：对方单位｜合同类型｜剩余额度｜提交人（经办人近似）
+const buildContractSummary = (contract, handlerNameMap) => {
+  const counterparty = String((contract && contract.counterparty) || "").trim() || "未填对方单位";
+  const contractType = String((contract && contract.contract_type) || "").trim() || "其他";
+  const remainingText = formatAmountNumber(resolveContractRemaining(contract));
+  const handlerName = resolveHandlerName(contract, handlerNameMap);
+  return `${counterparty}｜${contractType}｜剩余 ${remainingText}｜${handlerName}`;
+};
+
+// 默认仅显示"自己经办 + 剩余额度>0"的合同；showAll 时显示所有剩余>0 的合同
+const filterVisibleContracts = (contracts, { myUserid, showAll }) => {
+  const list = Array.isArray(contracts) ? contracts : [];
+  const mine = String(myUserid || "").trim();
+  return sortContractsNewestFirst(
+    list.filter((item) => {
+      if (resolveContractRemaining(item) <= 0) return false;
+      if (showAll) return true;
+      return String((item && item.handler_userid) || "").trim() === mine;
+    })
+  );
+};
+
+const buildContractLabels = (visibleContracts, handlerNameMap, { withNoneOption }) => {
+  const summaries = (Array.isArray(visibleContracts) ? visibleContracts : []).map((item) =>
+    buildContractSummary(item, handlerNameMap)
+  );
+  return withNoneOption ? ["无合同 / 无需合同"].concat(summaries) : summaries;
+};
+
 const buildPayeeLabels = (payees) => {
   return ["请选择外部收款方"].concat(
     (Array.isArray(payees) ? payees : []).map((item) => `${item.name} (${item.bank_name || "-"})`)
@@ -187,7 +239,12 @@ Page({
     entities: [],
     entityLabels: ["请选择我方主体"],
     contracts: [],
+    visibleContracts: [],
     contractLabels: ["无合同 / 无需合同"],
+    handlerNameMap: {},
+    myUserid: "",
+    showAllContracts: false,
+    contractEntryOpen: false,
     wecomUsers: [],
     wecomUserLabels: ["请选择经办人"],
 
@@ -313,14 +370,24 @@ Page({
           ? wecomRes.data.users.filter((item) => item && item.userid)
           : [];
 
+      const handlerNameMap = buildHandlerNameMap(wecomUsers);
+      const myUserid = String((getUserProfile() || {}).username || "").trim();
+      const visibleContracts = filterVisibleContracts(contracts, {
+        myUserid,
+        showAll: this.data.showAllContracts
+      });
+
       this.setData({
         thresholdLimit,
         payees,
         payeeLabels: buildPayeeLabels(payees),
         contracts,
-        contractLabels: ["无合同 / 无需合同"].concat(
-          contracts.map((item) => `${item.contract_no} - ${item.counterparty || "-"}`)
-        ),
+        handlerNameMap,
+        myUserid,
+        visibleContracts,
+        contractLabels: buildContractLabels(visibleContracts, handlerNameMap, {
+          withNoneOption: true
+        }),
         entities,
         entityLabels: ["请选择我方主体"].concat(
           entities.map((item) => item.entity_name || item.entity_code || `主体${item.id}`)
@@ -549,12 +616,85 @@ Page({
 
   onDirectContractChange(e) {
     const index = Number(e.detail.value || 0);
-    const contract = index > 0 ? this.data.contracts[index - 1] : null;
+    const contract = index > 0 ? this.data.visibleContracts[index - 1] : null;
     const contractId = contract ? Number(contract.id) : null;
     const exceedsThreshold = Boolean(this.data.exceedsThreshold);
     this.setData({
       directContractIndex: index,
       "directForm.contract_id": contractId,
+      shouldUseContractFlow: this.resolveShouldUseContractFlow(exceedsThreshold, contractId),
+      directContractRemaining: this.resolveDirectContractRemaining(contractId),
+      directContractRemainingText: this.resolveDirectContractRemainingText(contractId)
+    });
+  },
+
+  // 切换"只看我的" / "加载全部合同"（纯前端过滤，不重新请求）
+  toggleShowAllContracts() {
+    const showAll = !this.data.showAllContracts;
+    const visibleContracts = filterVisibleContracts(this.data.contracts, {
+      myUserid: this.data.myUserid,
+      showAll
+    });
+    const contractLabels = buildContractLabels(visibleContracts, this.data.handlerNameMap, {
+      withNoneOption: true
+    });
+    const currentId = Number(this.data.directForm.contract_id || 0);
+    const foundIndex =
+      currentId > 0 ? visibleContracts.findIndex((item) => Number(item.id) === currentId) : -1;
+    const stillVisible = foundIndex >= 0;
+    const nextContractId = stillVisible ? currentId : null;
+    const exceedsThreshold = Boolean(this.data.exceedsThreshold);
+    this.setData({
+      showAllContracts: showAll,
+      visibleContracts,
+      contractLabels,
+      directContractIndex: stillVisible ? foundIndex + 1 : 0,
+      "directForm.contract_id": nextContractId,
+      shouldUseContractFlow: this.resolveShouldUseContractFlow(exceedsThreshold, nextContractId),
+      directContractRemaining: this.resolveDirectContractRemaining(nextContractId),
+      directContractRemainingText: this.resolveDirectContractRemainingText(nextContractId)
+    });
+  },
+
+  // 第一步："通过已有合同发起付款"入口的展开/收起
+  toggleContractEntry() {
+    this.setData({ contractEntryOpen: !this.data.contractEntryOpen });
+  },
+
+  // 合同优先入口：选定合同后带入直付流程（合同/项目预填、尽量匹配收款方）
+  onContractEntryPick(e) {
+    const index = Number(e.detail.value || 0);
+    const contract = index > 0 ? this.data.visibleContracts[index - 1] : null;
+    const exceedsThreshold = Boolean(this.data.exceedsThreshold);
+    if (!contract) {
+      this.setData({
+        directContractIndex: 0,
+        "directForm.contract_id": null,
+        shouldUseContractFlow: this.resolveShouldUseContractFlow(exceedsThreshold, null),
+        directContractRemaining: null,
+        directContractRemainingText: ""
+      });
+      return;
+    }
+    const contractId = Number(contract.id);
+    const counterparty = String(contract.counterparty || "").trim();
+    const payees = Array.isArray(this.data.payees) ? this.data.payees : [];
+    const matchedPayee =
+      counterparty !== ""
+        ? payees.find((item) => String(item.name || "").trim() === counterparty) || null
+        : null;
+    const payeeIndex = matchedPayee
+      ? payees.findIndex((item) => Number(item.id) === Number(matchedPayee.id)) + 1
+      : this.data.directPayeeIndex;
+    this.setData({
+      directContractIndex: index,
+      "directForm.contract_id": contractId,
+      "directForm.project_id": String(contract.project_id || ""),
+      directProjectValue: Number(contract.project_id || 0),
+      directProjectName: "",
+      directPayeeIndex: payeeIndex,
+      "directForm.payee_id": matchedPayee ? String(matchedPayee.id) : this.data.directForm.payee_id,
+      selectedDirectPayee: matchedPayee || this.data.selectedDirectPayee,
       shouldUseContractFlow: this.resolveShouldUseContractFlow(exceedsThreshold, contractId),
       directContractRemaining: this.resolveDirectContractRemaining(contractId),
       directContractRemainingText: this.resolveDirectContractRemainingText(contractId)
@@ -668,8 +808,8 @@ Page({
 
   removeAttachment(e) {
     const group = e.currentTarget.dataset.group;
-    const index = Number(e.currentTarget.dataset.index || -1);
-    if (index < 0) return;
+    const index = Number(e.currentTarget.dataset.index);
+    if (!Number.isInteger(index) || index < 0) return;
     const groupMap = {
       direct: "directPaymentAttachments",
       contract: "contractAttachments",

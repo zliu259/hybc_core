@@ -57,6 +57,7 @@
 - 合同详情/创建：`packages/web/src/views/finance/contract/detail.vue`
 - 对外付款申请列表：`packages/web/src/views/finance/payment/index.vue`
 - 资金流出智能发单台：`packages/web/src/views/finance/payment/wizard.vue`
+  - （2026-07-14）合同选择改为「摘要」显示：`对方单位｜合同类型｜剩余额度｜提交人`（提交人取经办人 `handler_userid`）；默认仅列出"自己经办且剩余额度>0"的合同，「加载全部合同」按钮切换查看他人合同，剩余额度≤0（已执行完）不显示；金额区新增「按合同付款」入口（选合同后带入直付流程、项目预填、尽量匹配收款方）。
 - 对外付款申请详情：`packages/web/src/views/finance/payment/detail.vue`
 - 收款人管理：`packages/web/src/views/finance/payee/index.vue`
   - 个人工作台路径 `/workspace/payee` 下仅显示“与当前账号姓名匹配”的内部收款人记录（服务端按 `nickname/username` 与收款人姓名匹配过滤）。
@@ -827,6 +828,7 @@
 - 退回申请编辑与重新提交：`packages/miniapp/pages/returned-approval-edit/index`
 - 发起对外付款（智能发单台）：`packages/miniapp/pages/payment-apply/index`
 - 付款申请三步分段（金额识别→信息填写→确认提交，2026-07-08，与 Web 智能发单向导同构）：`packages/miniapp/pages/payment-apply/index`
+- 合同选择摘要化 + 合同优先入口（2026-07-14，与 Web 同构）：合同选择器标签改为摘要 `对方单位｜合同类型｜剩余额度｜提交人`，默认只显示"自己经办且剩余>0"的合同、可「加载全部合同」、剩余≤0 不显示；第一步新增「💼 通过已有合同发起付款」按钮，选中合同后带入直付流程。同时修复附件「移除」对首个附件失效的问题：`packages/miniapp/pages/payment-apply/index`
 - 员工加油申请：`packages/miniapp/pages/fuel-apply/index`
 - 我的报销提交（列表）：`packages/miniapp/pages/reimbursement-list/index`
 - 报销提交详情/新建：`packages/miniapp/pages/reimbursement/index`

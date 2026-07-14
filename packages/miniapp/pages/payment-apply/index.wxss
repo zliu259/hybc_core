@@ -183,3 +183,25 @@
 .payee-info-line .k {
   color: #50617a;
 }
+
+.contract-entry {
+  margin-bottom: 18rpx;
+}
+
+.contract-entry-body {
+  margin-top: 12rpx;
+  padding: 14rpx;
+  border-radius: 12rpx;
+  border: 1rpx dashed #cddff5;
+  background: #f8fbff;
+}
+
+.contract-entry-hint {
+  font-size: 22rpx;
+  color: #50617a;
+  line-height: 1.6;
+}
+
+.contract-entry-toolbar {
+  margin-top: 6rpx;
+}

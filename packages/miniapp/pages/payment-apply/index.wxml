@@ -22,6 +22,28 @@
           {{checking ? '阈值校验中...' : (exceedsThreshold ? (directForm.contract_id ? ('金额超过阈值 ' + thresholdLimit + '，已关联现有合同，可直接发起付款') : ('金额超过阈值 ' + thresholdLimit + '，请先关联已审批合同或走新建合同流程')) : ('金额未超过阈值 ' + thresholdLimit + '，可直接走付款申请'))}}
         </view>
       </view>
+
+      <view class="contract-entry">
+        <t-button
+          class="btn"
+          variant="outline"
+          bindtap="toggleContractEntry"
+          disabled="{{busy || submitting}}"
+        >{{contractEntryOpen ? '收起合同选择' : '💼 通过已有合同发起付款'}}</t-button>
+        <view wx:if="{{contractEntryOpen}}" class="contract-entry-body">
+          <view class="contract-entry-hint">不记得合同号？默认只显示你经办、且仍有可用额度的合同，选中后自动带入付款信息。</view>
+          <view class="row contract-entry-toolbar">
+            <t-button class="mini-btn" size="small" variant="outline" bindtap="toggleShowAllContracts">
+              {{showAllContracts ? '只看我的合同' : '加载全部合同'}}
+            </t-button>
+          </view>
+          <picker mode="selector" range="{{contractLabels}}" value="{{directContractIndex}}" bindchange="onContractEntryPick">
+            <view class="picker-value">{{contractLabels[directContractIndex]}}</view>
+          </picker>
+          <view wx:if="{{directContractRemainingText}}" class="helper-text">当前合同可用额度：{{directContractRemainingText}}</view>
+          <view wx:if="{{visibleContracts.length === 0}}" class="helper-text">暂无{{showAllContracts ? '' : '你经办的'}}可用合同，可点击“加载全部合同”查看他人合同。</view>
+        </view>
+      </view>
     </view>
 
     <view hidden="{{currentStep !== 1}}">
@@ -86,6 +108,11 @@
       >
         <view class="picker-value">{{contractLabels[directContractIndex]}}</view>
       </picker>
+      <view class="row contract-entry-toolbar">
+        <t-button class="mini-btn" size="small" variant="outline" bindtap="toggleShowAllContracts">
+          {{showAllContracts ? '只看我的合同' : '加载全部合同'}}
+        </t-button>
+      </view>
       <view wx:if="{{directContractRemainingText}}" class="helper-text">当前合同可用额度：{{directContractRemainingText}}</view>
 
       <hy-project-picker
@@ -162,6 +189,11 @@
       >
         <view class="picker-value">{{contractLabels[directContractIndex]}}</view>
       </picker>
+      <view class="row contract-entry-toolbar">
+        <t-button class="mini-btn" size="small" variant="outline" bindtap="toggleShowAllContracts">
+          {{showAllContracts ? '只看我的合同' : '加载全部合同'}}
+        </t-button>
+      </view>
       <view wx:if="{{directContractRemainingText}}" class="helper-text">当前合同可用额度：{{directContractRemainingText}}</view>
 
       <hy-project-picker

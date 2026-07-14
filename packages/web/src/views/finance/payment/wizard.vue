@@ -23,6 +23,7 @@ import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "SmartPaymentWizard" });
 
@@ -330,6 +331,62 @@ const selectedDirectContractRemaining = computed(() => {
   if (!target) return null;
   return Number((target.total_amount - target.paid_amount).toFixed(2));
 });
+
+const userStore = useUserStoreHook();
+const showAllContracts = ref(false);
+const contractEntryOpen = ref(false);
+
+const handlerNameMap = computed(() => {
+  const map: Record<string, string> = {};
+  wecomUsers.value.forEach(item => {
+    if (item.userid) map[item.userid] = item.name || item.userid;
+  });
+  return map;
+});
+
+const contractRemaining = (contract: Contract): number =>
+  Number((contract.total_amount - contract.paid_amount).toFixed(2));
+
+// 合同摘要：对方单位｜合同类型｜剩余额度｜提交人（经办人近似）
+const contractSummary = (contract: Contract): string => {
+  const counterparty = (contract.counterparty || "").trim() || "未填对方单位";
+  const contractType = (contract.contract_type || "").trim() || "其他";
+  const remaining = contractRemaining(contract).toLocaleString("zh-CN", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
+  });
+  const handler =
+    handlerNameMap.value[contract.handler_userid] ||
+    contract.handler_userid ||
+    "未知提交人";
+  return `${counterparty}｜${contractType}｜剩余 ${remaining}｜${handler}`;
+};
+
+// 默认仅显示"自己经办 + 剩余额度>0"的合同；加载全部时显示所有剩余>0 的合同
+const visibleContracts = computed(() => {
+  const mine = (userStore.username || "").trim();
+  return sortedContracts.value.filter(item => {
+    if (contractRemaining(item) <= 0) return false;
+    if (showAllContracts.value) return true;
+    return (item.handler_userid || "").trim() === mine;
+  });
+});
+
+// 合同优先入口：选定合同后带入直付流程（项目预填、尽量匹配收款方）
+const pickContractForPayment = (contractId: number | null) => {
+  directForm.value.contract_id = contractId ?? null;
+  if (!contractId) return;
+  const contract = contracts.value.find(item => item.id === contractId);
+  if (!contract) return;
+  directForm.value.project_id = contract.project_id;
+  const counterparty = (contract.counterparty || "").trim();
+  const matchedPayee = counterparty
+    ? payees.value.find(item => (item.name || "").trim() === counterparty)
+    : undefined;
+  if (matchedPayee) {
+    directForm.value.payee_id = matchedPayee.id;
+  }
+};
 
 const serializeAttachments = (items: AttachmentDraft[]): string => {
   return JSON.stringify(
@@ -745,6 +802,56 @@ onMounted(async () => {
             {{ amountDisplay }}
           </span>
         </el-form-item>
+        <el-form-item label="按合同付款">
+          <el-button plain @click="contractEntryOpen = !contractEntryOpen">
+            {{ contractEntryOpen ? "收起合同选择" : "💼 通过已有合同发起付款" }}
+          </el-button>
+          <el-text type="info" style="margin-left: 12px">
+            不记得合同号？默认只显示你经办、且仍有可用额度的合同
+          </el-text>
+        </el-form-item>
+        <el-form-item v-if="contractEntryOpen" label="选择合同">
+          <div class="contract-entry-body">
+            <el-button
+              size="small"
+              plain
+              @click="showAllContracts = !showAllContracts"
+            >
+              {{ showAllContracts ? "只看我的合同" : "加载全部合同" }}
+            </el-button>
+            <el-select
+              v-model="directForm.contract_id"
+              filterable
+              clearable
+              placeholder="默认只显示你经办且有可用额度的合同"
+              style="width: 420px; margin-left: 12px"
+              @change="pickContractForPayment"
+            >
+              <el-option
+                v-for="item in visibleContracts"
+                :key="item.id"
+                :label="contractSummary(item)"
+                :value="item.id"
+              />
+            </el-select>
+            <el-text
+              v-if="selectedDirectContractRemaining !== null"
+              type="warning"
+              style="margin-left: 12px"
+            >
+              当前合同可用额度：{{ selectedDirectContractRemaining }}
+            </el-text>
+            <el-text
+              v-if="visibleContracts.length === 0"
+              type="info"
+              style="margin-left: 12px"
+            >
+              暂无{{
+                showAllContracts ? "" : "你经办的"
+              }}可用合同，可点击“加载全部合同”
+            </el-text>
+          </div>
+        </el-form-item>
       </el-form>
 
       <el-steps
@@ -789,12 +896,20 @@ onMounted(async () => {
             >
               <el-option label="无合同 / 无需合同" :value="null" />
               <el-option
-                v-for="item in sortedContracts"
+                v-for="item in visibleContracts"
                 :key="item.id"
-                :label="`${item.contract_no} - ${item.counterparty}`"
+                :label="contractSummary(item)"
                 :value="item.id"
               />
             </el-select>
+            <el-button
+              size="small"
+              plain
+              style="margin-left: 12px"
+              @click="showAllContracts = !showAllContracts"
+            >
+              {{ showAllContracts ? "只看我的合同" : "加载全部合同" }}
+            </el-button>
             <el-text
               v-if="selectedDirectContractRemaining !== null"
               type="warning"
@@ -974,12 +1089,20 @@ onMounted(async () => {
               style="width: 360px"
             >
               <el-option
-                v-for="item in sortedContracts"
+                v-for="item in visibleContracts"
                 :key="item.id"
-                :label="`${item.contract_no} - ${item.counterparty}`"
+                :label="contractSummary(item)"
                 :value="item.id"
               />
             </el-select>
+            <el-button
+              size="small"
+              plain
+              style="margin-left: 12px"
+              @click="showAllContracts = !showAllContracts"
+            >
+              {{ showAllContracts ? "只看我的合同" : "加载全部合同" }}
+            </el-button>
             <el-text
               v-if="selectedDirectContractRemaining !== null"
               type="warning"
