@@ -820,6 +820,7 @@
 - 我的（Tab4）：`packages/miniapp/pages/profile/index`
 - 账号与配置：`packages/miniapp/pages/profile-settings/index`
 - 登录恢复页：`packages/miniapp/pages/login/index`
+- 强制更新（2026-07-14）：冷启动检测到新发布版本时弹出不可取消的「立即重启」弹框并完全重启到新版（`wx.getUpdateManager`），逻辑在 `packages/miniapp/utils/update.js`，`app.js` onLaunch 接入。
 - 日志中心：`packages/miniapp/pages/log/index`
 - 操作员日志：`packages/miniapp/pages/operator-log/index`
 - 管理员日志：`packages/miniapp/pages/manager-log/index`
