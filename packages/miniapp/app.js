@@ -5,6 +5,7 @@ const {
   isLocalOnlyBaseUrl,
   DEFAULT_REMOTE_BASE_URL
 } = require("./utils/config");
+const { setupForceUpdate } = require("./utils/update");
 
 App({
   globalData: {
@@ -20,6 +21,7 @@ App({
   },
 
   onLaunch: function () {
+    setupForceUpdate();
     this.ensureSession();
   },
 
