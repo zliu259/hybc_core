@@ -54,6 +54,7 @@ npm run dev
 ```
 
 - 本地 Worker 运行时需使用支持 `compatibility_date = 2026-02-11` 的 Wrangler 版本；当前仓库已对齐到 `wrangler@^4.78.0`。
+- **`.dev.vars` 是必需的**（2026-07-16 起）：`wrangler.toml` 顶层 `[vars]` 的 `APP_ENV` 已固定为 `"production"`（CF Workers Builds 自动部署实际采用顶层 vars），本地开发必须靠 `.dev.vars` 覆盖 `APP_ENV=local`，否则本地无法使用免 WeCom-code 登录（`/login/web` 会返回 400）。
 
 关键接口：
 

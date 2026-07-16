@@ -1,5 +1,5 @@
-# Node
-node_modules/
+# Node（不带斜杠:同时匹配目录与 worktree 里的 symlink）
+node_modules
 dist/
 .npm/
 package-lock.json
@@ -21,6 +21,9 @@ __pycache__/
 # Env files
 .env
 .env.local
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
 
 # Local service runtime data
 n8n/data/

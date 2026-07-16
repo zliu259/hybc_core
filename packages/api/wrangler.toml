@@ -33,8 +33,11 @@ queue = "hybcdg-prod-events"
 max_batch_size = 10
 max_retries = 3
 
+# 注意:CF Workers Builds 自动部署 hybc-api-prod 实际采用本顶层 [vars]
+# (2026-07-16 实测),所以这里必须是 "production"。
+# 本地 wrangler dev 请用 .dev.vars 覆盖 APP_ENV=local(cp .dev.vars.example .dev.vars)。
 [vars]
-APP_ENV = "local"
+APP_ENV = "production"
 JWT_SECRET = "61dbd206859451fa6cbced9cf25d652f"
 UPLOAD_SIGNING_SECRET = "0c7213e73de53c76424506e589c2b285"
 TASK_API_KEY = "40aea6c95e44af22a4fd04f6f0c2cf26"
