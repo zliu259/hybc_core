@@ -4,6 +4,7 @@ import { corsMiddleware } from "./middleware/cors";
 import { handleError } from "./middleware/error";
 import { requestLoggerMiddleware } from "./middleware/logger";
 import { adminRoutes } from "./routes/admin";
+import { agentRoutes } from "./routes/agent";
 import { approvalRoutes } from "./routes/approval";
 import { assetRoutes } from "./routes/asset";
 import { authRoutes } from "./routes/auth";
@@ -88,6 +89,7 @@ app.route("/api/v1/vertex", vertexRoutes);
 app.route("/internal/vertex-handoff", internalVertexHandoffRoutes);
 app.route("/api/v1/voice", voiceRoutes);
 app.route("/api/v1/wecom", wecomToolRoutes);
+app.route("/api/v1/agent", agentRoutes);
 app.route("/api/v1/admin", adminRoutes);
 app.route("/api/v1/dashboard", dashboardRoutes);
 
