@@ -1596,3 +1596,19 @@ Run: `git push -u origin feat/mcp-agent-access`
 - **令牌仅存 hash、前缀展示、限流（spec §11）** → Task 3/5/8 ✅
 
 **已知延后**：`install.sh` 实体逻辑、R2 bundle、MCP 包 → P1b；Web 三页 → P1c；高危延迟执行 → P2。
+
+---
+
+## 实现期安全修订（erratum，评审驱动）
+
+> 以下问题在本计划的原始 Task 代码里存在，实现时经代码评审发现并已修复。**P1b/P1c/P2 在此基础上开发时必须保持这些约束，不得回退。**
+
+1. **`authMiddleware` 同时接受人类 JWT 与 agent 令牌**（Task 6）。因此任何"必须本人网页登录"的端点，仅挂 `authMiddleware` **不够**，必须再加 `requireHumanSession`（`auth.auth_method === "mcp_agent"` → 403）。P1a 已对 `/setup/provision`、`/device/approve` 加此闸门；**P2 高危延迟执行确认端点同理必须人本人**。反向：P2 靠 `auth.via === "mcp"` 识别"智能体发起"来触发微信确认。见记忆 `mcp-agent-token-shares-authmiddleware`。
+
+2. **`/install.sh`、`/install.ps1` 的 `?boot=` 必须校验为 UUID（`safeBoot`）后才能拼进脚本**——否则是 shell 注入→RCE（脚本走 `curl|sh`/`iex`）。P1b 完善安装器实体逻辑时，任何把请求参数拼进"将被执行的文本"的地方都要同等校验。
+
+3. **`/me`、`/routes`（`routes/user.ts`）改为读 `c.get("auth")`**（Task 6），不再自行 `verifyToken` 重解析——否则 agent 令牌（非 JWT 形态）会被误判 401。新增受保护端点应统一读 `c.get("auth")`。
+
+4. **令牌解析/审计失败要留痕**（`console.error`），不可静默吞。
+
+**其它评审记录**：Task 5 补了跨用户隔离/hash-only/幂等吊销测试；Task 7 补了 `webBaseUrl` 边界校验 + `JSON.parse` 容错 + 双重批准守卫测试；Task 8 补了 owner/403/注入路由级测试。两个跨切面后续项已开独立任务：共享 `sha256Hex` 工具、`api_audit_log` 保留/归档策略。
