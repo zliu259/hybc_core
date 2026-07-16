@@ -12,6 +12,7 @@
   "main": "./dist/server.js",
   "scripts": {
     "build": "tsc",
+    "build:bundle": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/hybc-mcp.mjs",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src --ext .ts",
@@ -23,6 +24,7 @@
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
     "typescript": "^5.7.3",
     "vitest": "^3.2.4"
   }
