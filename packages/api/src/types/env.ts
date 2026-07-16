@@ -33,4 +33,6 @@ export interface Env {
   PASSKEY_RP_ID: string;
   PASSKEY_RP_NAME: string;
   REIMBURSEMENT_REQUIRE_PAYEE?: string;
+  AGENT_WEB_BASE_URL?: string;
+  AGENT_API_BASE_URL?: string;
 }

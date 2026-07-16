@@ -1,0 +1,51 @@
+import type { UserRole } from "./auth";
+
+export interface AgentGrantRow {
+  id: string;
+  wecom_userid: string;
+  device_name: string | null;
+  client_info: string | null;
+  agent_type: string | null;
+  token_hash: string;
+  token_prefix: string | null;
+  role_snapshot: UserRole;
+  status: "active" | "revoked" | "expired";
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+  revoked_at: string | null;
+  revoked_by: string | null;
+}
+
+export interface AgentIdentity {
+  wecomUserid: string;
+  grantId: string;
+  roles: UserRole[];
+  permissions: string[];
+}
+
+export type DeviceStatus = "pending" | "approved" | "denied";
+
+export interface DeviceCodeRecord {
+  userCode: string;
+  status: DeviceStatus;
+  agentType?: string;
+  deviceName?: string;
+  clientInfo?: string;
+  wecomUserid?: string;
+  role?: UserRole;
+  agentToken?: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
+export interface PublicGrantView {
+  id: string;
+  device_name: string | null;
+  agent_type: string | null;
+  token_prefix: string | null;
+  status: AgentGrantRow["status"];
+  created_at: string;
+  expires_at: string;
+  last_used_at: string | null;
+}

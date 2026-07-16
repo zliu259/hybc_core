@@ -18,8 +18,10 @@ export interface AuthTokenPayload {
   permissions: string[];
   tokenId: string;
   type: "access" | "refresh";
-  auth_method: "wecom_oauth" | "passkey";
+  auth_method: "wecom_oauth" | "passkey" | "mcp_agent";
   wecom_verified_at: string;
+  via?: "mcp";
+  grant_id?: string;
   exp: number;
   iat: number;
 }
