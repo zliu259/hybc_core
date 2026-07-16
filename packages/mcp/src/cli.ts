@@ -84,11 +84,34 @@ const openBrowser = (url: string): void => {
   }
 };
 
+export interface ClosableTransport {
+  onclose?: () => void;
+}
+
+/**
+ * 连接后等待 transport 关闭才 resolve。
+ * MCP SDK 的 server.connect() 在连接建立后就 resolve；若直接返回，
+ * cli 主入口的 process.exit 会在服务任何请求之前杀掉进程（serve 秒退 bug）。
+ * 这里接管 onclose 并链式调用 SDK 已注册的关闭清理逻辑。
+ */
+export const serveUntilClosed = async <T extends ClosableTransport>(
+  server: { connect: (transport: T) => Promise<void> },
+  transport: T
+): Promise<void> => {
+  await server.connect(transport);
+  await new Promise<void>((resolve) => {
+    const protocolOnClose = transport.onclose;
+    transport.onclose = () => {
+      protocolOnClose?.();
+      resolve();
+    };
+  });
+};
+
 const realServe = async (baseUrl: string, token: string): Promise<void> => {
   const client = new HybcApiClient(baseUrl, token);
   const server = buildServer(client);
-  const transport = new StdioServerTransport();
-  await server.connect(transport);
+  await serveUntilClosed(server, new StdioServerTransport());
 };
 
 const realDeps: CliDeps = {

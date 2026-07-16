@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { runCli, type CliDeps } from "./cli";
+import { runCli, serveUntilClosed, type CliDeps } from "./cli";
 
 const baseDeps = (over: Partial<CliDeps> = {}): CliDeps => ({
   readCredentials: vi.fn(async () => null),
@@ -78,5 +78,33 @@ describe("runCli", () => {
     const code = await runCli(["serve"], deps);
     expect(code).toBe(0);
     expect(deps.serve).toHaveBeenCalledWith("https://api.hybcdg.com", "hybc_agent_x");
+  });
+});
+
+describe("serveUntilClosed", () => {
+  it("stays pending until the transport closes, then chains the protocol onclose", async () => {
+    const events: string[] = [];
+    const transport: { onclose?: () => void } = {};
+    const server = {
+      // 模拟 MCP SDK Protocol.connect：接管 transport.onclose 后立即 resolve
+      connect: async (t: { onclose?: () => void }) => {
+        t.onclose = () => events.push("protocol-onclose");
+      }
+    };
+
+    let resolved = false;
+    const done = serveUntilClosed(server, transport).then(() => {
+      resolved = true;
+    });
+
+    await new Promise((r) => setTimeout(r, 0));
+    // P0 回归：connect resolve 后进程不能立刻退出
+    expect(resolved).toBe(false);
+
+    transport.onclose?.(); // 客户端断开 → transport 关闭
+    await done;
+    expect(resolved).toBe(true);
+    // SDK 自身的关闭清理逻辑仍需被执行
+    expect(events).toEqual(["protocol-onclose"]);
   });
 });
