@@ -99,7 +99,7 @@ max_batch_size = 10
 max_retries = 3
 
 [env.prod.vars]
-APP_ENV = "local"
+APP_ENV = "production"
 JWT_SECRET = "61dbd206859451fa6cbced9cf25d652f"
 UPLOAD_SIGNING_SECRET = "0c7213e73de53c76424506e589c2b285"
 TASK_API_KEY = "40aea6c95e44af22a4fd04f6f0c2cf26"
