@@ -1,6 +1,9 @@
 {
   "name": "@hybc/mcp",
   "version": "0.1.0",
+  "engines": {
+    "node": ">=18"
+  },
   "private": true,
   "type": "module",
   "bin": {

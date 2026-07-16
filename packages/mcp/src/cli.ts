@@ -1,5 +1,7 @@
+#!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 
@@ -105,9 +107,15 @@ const realDeps: CliDeps = {
   log: (m) => process.stderr.write(`${m}\n`)
 };
 
-const isMain =
-  process.argv[1] !== undefined &&
-  import.meta.url === `file://${process.argv[1]}`;
+const isMain = (() => {
+  const argv1 = process.argv[1];
+  if (!argv1) return false;
+  try {
+    return realpathSync(fileURLToPath(import.meta.url)) === realpathSync(argv1);
+  } catch {
+    return false;
+  }
+})();
 if (isMain) {
   runCli(process.argv.slice(2), realDeps)
     .then((code) => process.exit(code))
