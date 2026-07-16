@@ -8,6 +8,8 @@
 
 **Tech Stack:** TypeScript 5（ESM）、`@modelcontextprotocol/sdk` v1.x（`McpServer`/`registerTool`/`StdioServerTransport`）、`zod` v3（工具入参 schema）、vitest（复用仓库测试约定，mock 全局 `fetch`）、Node ≥18（内置 `fetch`）。
 
+> **⚠️ 包内导入约定（NodeNext，实现期发现，必须遵守）**：本包 `tsconfig` 用 `module/moduleResolution: NodeNext`。因此**所有非测试源文件（`.ts`，非 `.test.ts`）里的相对导入必须带显式 `.js` 后缀**——例如 `from "./config.js"`、`from "../api-client.js"`、`from "./types.js"`、`from "./tools/index.js"`。下文各 Task 的代码块为可读性写成了无后缀相对导入（如 `from "./config"`），**实现时一律补上 `.js`**，否则 `tsc` 报 TS2835。**测试文件（`*.test.ts`）保持无后缀**即可（被 `tsc` exclude，vitest/esbuild 运行时能解析）。`@modelcontextprotocol/sdk/server/mcp.js` 这类已经带 `.js` 的第三方子路径导入保持原样。
+
 > **范围**：仅 `@hybc/mcp` 包（客户端 + 只读工具）。分发（R2 bundle、真实 install.sh/ps1、构建发布脚本）见 **P1b-2**。写工具 + 高危微信闸门见 **P2**。
 > **只读约束（对齐运营性冻结）**：本包**只暴露 GET/只读工具**。写操作（付款/审批/建单）留到 P2 且需微信闸门。这与 P1a erratum、spec §13 一致。
 
