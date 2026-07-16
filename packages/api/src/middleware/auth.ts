@@ -43,12 +43,21 @@ export const authMiddleware: MiddlewareHandler<{
   }
 
   if (isAgentToken(token)) {
-    const identity = await resolveAgentByToken(c.env.DB, token);
+    let identity;
+    try {
+      identity = await resolveAgentByToken(c.env.DB, token);
+    } catch (err) {
+      console.error("agent token resolution failed", err);
+      return unauthorized("Unauthorized");
+    }
     if (!identity) {
       return unauthorized("Invalid or expired agent token");
     }
 
     const now = Math.floor(Date.now() / 1000);
+    // 注：agent token 的有效性由 grant 查询（resolveAgentByToken）保证，不走 JWT exp 校验。
+    // 下面的 exp/iat/wecom_verified_at 仅为满足 AuthTokenPayload 形状，对 agent 不具权威性；
+    // 未来若加基于 exp/验证时效的高危闸门，需改为读取 grant 的真实 expires_at。
     c.set("auth", {
       sub: identity.wecomUserid,
       username: identity.wecomUserid,
@@ -76,7 +85,9 @@ export const authMiddleware: MiddlewareHandler<{
         targetId: new URL(c.req.url).pathname,
         detail: { via: "mcp", grant_id: identity.grantId }
       })
-    ]).catch(() => undefined);
+    ]).catch((err) => {
+      console.error("agent audit write failed", err);
+    });
     // 生产 Workers 有 executionCtx；vitest 直接 app.request 时可能没有 —— 两种都容错。
     try {
       c.executionCtx.waitUntil(auditPromise);

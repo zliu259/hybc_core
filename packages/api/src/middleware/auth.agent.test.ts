@@ -49,4 +49,27 @@ describe("authMiddleware agent-token branch", () => {
     }, env);
     expect(res.status).toBe(401);
   });
+
+  it("returns 401 (not 500) when the grant lookup throws", async () => {
+    const throwingDb = {
+      prepare() {
+        return {
+          bind() {
+            return this;
+          },
+          first(): Promise<never> {
+            return Promise.reject(new Error("D1 infra failure"));
+          }
+        };
+      }
+    } as unknown as D1Database;
+    const { kv } = createFakeKV();
+    const { app, env } = buildApp(fakeEnv(throwingDb, kv));
+
+    const res = await app.request("/protected", {
+      headers: { authorization: "Bearer hybc_agent_anything" }
+    }, env);
+
+    expect(res.status).toBe(401);
+  });
 });

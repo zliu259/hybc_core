@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
-import { verifyToken } from "../services/auth";
 import type { Env } from "../types/env";
 
 const baseRoutesByRole = {
@@ -128,69 +127,27 @@ const getRoutesByRoles = (roles: string[]) => {
 
 export const userRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
-const getAuthPayload = async (c: {
-  req: { header: (key: string) => string | undefined };
-  env: Env;
-}) => {
-  const authorization = c.req.header("authorization") ?? "";
-  const token = authorization.replace(/^Bearer\s+/i, "").trim();
-  if (!token) {
-    throw new Error("Unauthorized");
-  }
-  return verifyToken(c.env, token);
-};
-
 userRoutes.use("*", authMiddleware);
 
 userRoutes.get("/me", (c) => {
-  return getAuthPayload(c)
-    .then((auth) => {
-      return c.json({
-        success: true,
-        data: {
-          avatar: auth.avatar,
-          username: auth.username,
-          nickname: auth.nickname,
-          roles: auth.roles,
-          permissions: auth.permissions,
-          auth_method: auth.auth_method,
-          wecom_verified_at: auth.wecom_verified_at
-        }
-      });
-    })
-    .catch(() => {
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: "Unauthorized"
-          }
-        },
-        401
-      );
-    });
+  const auth = c.get("auth");
+  return c.json({
+    success: true,
+    data: {
+      avatar: auth.avatar,
+      username: auth.username,
+      nickname: auth.nickname,
+      roles: auth.roles,
+      permissions: auth.permissions,
+      auth_method: auth.auth_method,
+      wecom_verified_at: auth.wecom_verified_at
+    }
+  });
 });
 
 userRoutes.get("/routes", (c) => {
-  return getAuthPayload(c)
-    .then((auth) => {
-      const routeData = getRoutesByRoles(auth.roles);
-      return c.json({
-        success: true,
-        data: routeData
-      });
-    })
-    .catch(() => {
-      return c.json(
-        {
-          success: false,
-          error: {
-            message: "Unauthorized"
-          }
-        },
-        401
-      );
-  });
+  const auth = c.get("auth");
+  return c.json({ success: true, data: getRoutesByRoles(auth.roles) });
 });
 
 userRoutes.get("/me/bank-accounts", async (c) => {
