@@ -31,6 +31,7 @@ import {
   upsertRunnerRuntimeConfig,
   refreshRunnerRuntimeKvFromDb
 } from "../services/runner-runtime";
+import { listAllGrants, revokeGrant, getGrantById } from "../services/agent-grant";
 
 const nowIso = () => new Date().toISOString();
 
@@ -506,7 +507,28 @@ type WeComPushMonitorTotals = {
 
 const runnerConfigKeyPattern = /^[A-Z0-9_]{2,64}$/;
 
+export const adminRevokeAgentGrant = async (
+  db: D1Database,
+  grantId: string,
+  revokedBy: string
+): Promise<void> => {
+  await revokeGrant(db, grantId, revokedBy);
+};
+
 adminRoutes.use("*", authMiddleware);
+
+adminRoutes.get("/agent/grants", requireRoles(["super_admin"]), async (c) => {
+  const grants = await listAllGrants(c.env.DB);
+  return c.json({ success: true, data: grants });
+});
+
+adminRoutes.post("/agent/grants/:id/revoke", requireRoles(["super_admin"]), async (c) => {
+  const id = c.req.param("id");
+  const grant = await getGrantById(c.env.DB, id);
+  if (!grant) return c.json({ success: false, error: { message: "Grant not found" } }, 404);
+  await adminRevokeAgentGrant(c.env.DB, id, c.get("auth").sub);
+  return c.json({ success: true, data: { revoked: true } });
+});
 
 adminRoutes.get("/wecom-push/monitor", requireRoles(["super_admin"]), async (c) => {
   const hoursRaw = Number(c.req.query("hours") ?? "24");
