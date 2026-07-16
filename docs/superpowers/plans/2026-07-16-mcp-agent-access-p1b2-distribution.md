@@ -211,6 +211,8 @@ git commit -m "feat(mcp): add install.sh/install.ps1 templates"
 
 ## Task 3: api 安装脚本渲染服务（TDD）
 
+> **设计（已修订）**：不再把脚本内嵌进 TS（避免 JS 模板字符串对 bash `\n`/PowerShell 反引号的转义地狱）。`renderInstallScript` 只做**纯校验替换**：入参是从 R2 取来的模板文本 + `{apiBase, boot, agent}`。模板本体（Task 2 的 `install.sh`/`install.ps1`）随 bundle 一起发布到 R2（Task 5），install 路由从 R2 取模板再渲染（Task 4）。
+
 **Files:**
 - Create: `packages/api/src/services/agent-install-template.ts`
 - Test: `packages/api/src/services/agent-install-template.test.ts`
@@ -221,16 +223,19 @@ git commit -m "feat(mcp): add install.sh/install.ps1 templates"
 // agent-install-template.test.ts
 import { describe, expect, it } from "vitest";
 
-import {
-  INSTALL_SH_TEMPLATE,
-  INSTALL_PS1_TEMPLATE,
-  renderInstallScript
-} from "./agent-install-template";
+import { renderInstallScript } from "./agent-install-template";
+
+const SAMPLE = [
+  'HYBC_API="__HYBC_API__"',
+  'HYBC_BOOT="__HYBC_BOOT__"',
+  'HYBC_AGENT="__HYBC_AGENT__"',
+  'curl "__HYBC_API__/api/v1/agent/setup/redeem"'
+].join("\n");
 
 describe("renderInstallScript", () => {
-  it("substitutes api/boot/agent into the sh template", () => {
-    const out = renderInstallScript(INSTALL_SH_TEMPLATE, {
-      apiBase: "https://api.hybcdg.com",
+  it("substitutes api/boot/agent and strips trailing slash on api", () => {
+    const out = renderInstallScript(SAMPLE, {
+      apiBase: "https://api.hybcdg.com/",
       boot: "123e4567-e89b-12d3-a456-426614174000",
       agent: "claude_code"
     });
@@ -238,13 +243,10 @@ describe("renderInstallScript", () => {
     expect(out).toContain('HYBC_BOOT="123e4567-e89b-12d3-a456-426614174000"');
     expect(out).toContain('HYBC_AGENT="claude_code"');
     expect(out).not.toContain("__HYBC_");
-    // downloads bundle + redeems boot
-    expect(out).toContain("/api/v1/agent/dist/hybc-mcp.mjs");
-    expect(out).toContain("/api/v1/agent/setup/redeem");
   });
 
-  it("rejects a non-UUID boot (returns empty boot, never injects)", () => {
-    const out = renderInstallScript(INSTALL_SH_TEMPLATE, {
+  it("rejects a non-UUID boot (empty boot, never injects)", () => {
+    const out = renderInstallScript(SAMPLE, {
       apiBase: "https://api.hybcdg.com",
       boot: 'x"; rm -rf ~ ; "',
       agent: "claude_code"
@@ -254,7 +256,7 @@ describe("renderInstallScript", () => {
   });
 
   it("whitelists agent (unknown -> 'other')", () => {
-    const out = renderInstallScript(INSTALL_SH_TEMPLATE, {
+    const out = renderInstallScript(SAMPLE, {
       apiBase: "https://api.hybcdg.com",
       boot: "123e4567-e89b-12d3-a456-426614174000",
       agent: 'evil"; curl x'
@@ -263,14 +265,15 @@ describe("renderInstallScript", () => {
     expect(out).not.toContain("curl x");
   });
 
-  it("ps1 template substitutes too", () => {
-    const out = renderInstallScript(INSTALL_PS1_TEMPLATE, {
-      apiBase: "https://api.hybcdg.com",
-      boot: "123e4567-e89b-12d3-a456-426614174000",
-      agent: "codex"
-    });
-    expect(out).toContain('$HYBC_AGENT = "codex"');
-    expect(out).not.toContain("__HYBC_");
+  it("accepts the whitelisted agents", () => {
+    for (const a of ["claude_code", "codex", "claude_desktop"]) {
+      const out = renderInstallScript(SAMPLE, {
+        apiBase: "https://api.hybcdg.com",
+        boot: "123e4567-e89b-12d3-a456-426614174000",
+        agent: a
+      });
+      expect(out).toContain(`HYBC_AGENT="${a}"`);
+    }
   });
 });
 ```
@@ -280,15 +283,15 @@ describe("renderInstallScript", () => {
 Run: `cd packages/api && npm test -- src/services/agent-install-template.test.ts`
 Expected: FAIL（module not found）。
 
-- [ ] **Step 3: 实现**（模板字符串 = Task 2 的脚本内容内嵌；`renderInstallScript` 做校验替换）
+- [ ] **Step 3: 实现**（纯函数，无内嵌脚本）
 
 ```typescript
 // agent-install-template.ts
 const BOOT_CODE_RE = /^[0-9a-f-]{36}$/i;
 const AGENTS = new Set(["claude_code", "codex", "claude_desktop"]);
 
-const safeBoot = (raw: string): string => (BOOT_CODE_RE.test(raw) ? raw : "");
-const safeAgent = (raw: string): string => (AGENTS.has(raw) ? raw : "other");
+export const safeBoot = (raw: string): string => (BOOT_CODE_RE.test(raw) ? raw : "");
+export const safeAgent = (raw: string): string => (AGENTS.has(raw) ? raw : "other");
 
 export interface RenderInput {
   apiBase: string;
@@ -296,63 +299,23 @@ export interface RenderInput {
   agent: string;
 }
 
-export const renderInstallScript = (
-  template: string,
-  input: RenderInput
-): string =>
+/**
+ * 把从 R2 取来的安装脚本模板里的 __HYBC_*__ 占位替换为校验过的值。
+ * boot 必须是 UUID 形态（否则空串，杜绝 shell 注入）；agent 必须白名单。
+ */
+export const renderInstallScript = (template: string, input: RenderInput): string =>
   template
     .replaceAll("__HYBC_API__", input.apiBase.replace(/\/+$/, ""))
     .replaceAll("__HYBC_BOOT__", safeBoot(input.boot))
     .replaceAll("__HYBC_AGENT__", safeAgent(input.agent));
-
-// 与 packages/mcp/install/install.sh 内容保持一致（同源副本）。
-export const INSTALL_SH_TEMPLATE = `#!/bin/sh
-set -eu
-HYBC_API="__HYBC_API__"
-HYBC_BOOT="__HYBC_BOOT__"
-HYBC_AGENT="__HYBC_AGENT__"
-export HYBC_API HYBC_BOOT HYBC_AGENT
-# ...（完整内容见 packages/mcp/install/install.sh，实现时逐行复制进此模板字符串）...
-`;
-
-export const INSTALL_PS1_TEMPLATE = `$ErrorActionPreference = "Stop"
-$HYBC_API = "__HYBC_API__"
-$HYBC_BOOT = "__HYBC_BOOT__"
-$HYBC_AGENT = "__HYBC_AGENT__"
-# ...（完整内容见 packages/mcp/install/install.ps1，实现时逐行复制进此模板字符串）...
-`;
 ```
 
-> **实现说明（给执行者）**：把 Task 2 中 `packages/mcp/install/install.sh` 与 `install.ps1` 的**完整内容**分别粘进 `INSTALL_SH_TEMPLATE`、`INSTALL_PS1_TEMPLATE` 模板字符串（保持 `__HYBC_*__` 占位）。注意在 JS 模板字符串里，脚本中出现的反引号 `` ` ``、`${` 需转义（sh 脚本里没有反引号但有 `$(...)` 和 `${...}` —— 反引号无，`${...}` 需写成 `\${...}` 以免被 JS 插值；PowerShell 的反引号需写成 `` \` ``）。逐行核对：渲染后与 Task 2 文件字节一致（除占位被替换外）。
-
-- [ ] **Step 4: 加一致性测试**（模板与 install/ 文件一致，防漂移）
-
-在同测试文件追加：
-
-```typescript
-import { readFileSync } from "node:fs";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
-
-it("INSTALL_SH_TEMPLATE stays in sync with packages/mcp/install/install.sh", () => {
-  const here = dirname(fileURLToPath(import.meta.url));
-  const file = readFileSync(
-    join(here, "../../../mcp/install/install.sh"),
-    "utf8"
-  );
-  // 规范化行尾后比较（两者都应含相同占位与命令）
-  expect(INSTALL_SH_TEMPLATE.trim()).toBe(file.trim());
-});
-```
-
-（若路径解析在 vitest 下不稳，改用相对仓库根的绝对拼接；目标是"模板 = 文件"。）
-
-- [ ] **Step 5: 运行，确认通过**
+- [ ] **Step 4: 运行，确认通过**
 
 Run: `cd packages/api && npm test -- src/services/agent-install-template.test.ts`
-Expected: PASS（5 passed，含一致性）。
+Expected: PASS（4 passed）。
 
-- [ ] **Step 6: typecheck + Commit**
+- [ ] **Step 5: typecheck + Commit**
 
 Run: `cd packages/api && npm run typecheck`
 ```bash
@@ -384,7 +347,10 @@ const fakeR2 = (files: Record<string, string>) =>
       return {
         body: files[key],
         httpEtag: '"etag"',
-        writeHttpMetadata: (_h: Headers) => undefined
+        writeHttpMetadata: (_h: Headers) => undefined,
+        async text() {
+          return files[key];
+        }
       };
     }
   }) as unknown as Env["FILES"];
@@ -416,11 +382,17 @@ describe("agent dist + install routes", () => {
     expect([400, 404]).toContain(res.status);
   });
 
-  it("GET /install.sh renders the real script with validated boot", async () => {
+  it("GET /install.sh renders the R2 template with validated boot", async () => {
+    const env = fakeEnv({
+      FILES: fakeR2({
+        "agent-dist/install.sh":
+          'HYBC_API="__HYBC_API__"\nHYBC_BOOT="__HYBC_BOOT__"\nHYBC_AGENT="__HYBC_AGENT__"\ncurl "__HYBC_API__/api/v1/agent/setup/redeem"\n'
+      })
+    });
     const res = await agentRoutes.request(
       "/install.sh?boot=123e4567-e89b-12d3-a456-426614174000&agent=claude_code",
       {},
-      fakeEnv()
+      env
     );
     expect(res.status).toBe(200);
     const body = await res.text();
@@ -430,10 +402,15 @@ describe("agent dist + install routes", () => {
   });
 
   it("GET /install.sh with a malicious boot yields empty boot (no injection)", async () => {
+    const env = fakeEnv({
+      FILES: fakeR2({
+        "agent-dist/install.sh": 'HYBC_BOOT="__HYBC_BOOT__"\n'
+      })
+    });
     const res = await agentRoutes.request(
       "/install.sh?boot=x%22%3B%20rm%20-rf%20~%20%3B%20%22",
       {},
-      fakeEnv()
+      env
     );
     const body = await res.text();
     expect(body).toContain('HYBC_BOOT=""');
@@ -451,11 +428,7 @@ Expected: FAIL（新路由未实现 → dist 404 或 install 仍是占位）。
 
 顶部 import 加：
 ```typescript
-import {
-  INSTALL_PS1_TEMPLATE,
-  INSTALL_SH_TEMPLATE,
-  renderInstallScript
-} from "../services/agent-install-template";
+import { renderInstallScript } from "../services/agent-install-template";
 ```
 
 新增 dist 路由（放在免鉴权 GET 区，`install.sh` 附近）；`ALLOWED_DIST` 白名单防遍历：
@@ -479,30 +452,41 @@ agentRoutes.get("/dist/:file", async (c) => {
 });
 ```
 
-替换现有 `install.sh` 占位路由为真实渲染：
+替换现有 `install.sh`/`install.ps1` 占位路由为**从 R2 取模板 + 渲染**：
 ```typescript
-agentRoutes.get("/install.sh", (c) => {
+const renderInstallFromR2 = async (
+  c: { env: Env; req: { query: (k: string) => string | undefined } },
+  key: string,
+  contentType: string
+): Promise<Response> => {
+  const object = await c.env.FILES.get(`agent-dist/${key}`);
+  if (!object) {
+    return new Response("install template not published", { status: 404 });
+  }
+  const template = await object.text();
   const apiBase = (c.env.AGENT_API_BASE_URL ?? "https://api.hybcdg.com").replace(/\/$/, "");
-  const script = renderInstallScript(INSTALL_SH_TEMPLATE, {
+  const script = renderInstallScript(template, {
     apiBase,
     boot: c.req.query("boot") ?? "",
     agent: c.req.query("agent") ?? "other"
   });
-  return c.text(script, 200, { "content-type": "text/x-shellscript; charset=utf-8" });
-});
+  return new Response(script, {
+    status: 200,
+    headers: { "content-type": contentType }
+  });
+};
 
-agentRoutes.get("/install.ps1", (c) => {
-  const apiBase = (c.env.AGENT_API_BASE_URL ?? "https://api.hybcdg.com").replace(/\/$/, "");
-  const script = renderInstallScript(INSTALL_PS1_TEMPLATE, {
-    apiBase,
-    boot: c.req.query("boot") ?? "",
-    agent: c.req.query("agent") ?? "other"
-  });
-  return c.text(script, 200, { "content-type": "text/plain; charset=utf-8" });
-});
+agentRoutes.get("/install.sh", (c) =>
+  renderInstallFromR2(c, "install.sh", "text/x-shellscript; charset=utf-8")
+);
+agentRoutes.get("/install.ps1", (c) =>
+  renderInstallFromR2(c, "install.ps1", "text/plain; charset=utf-8")
+);
 ```
 
-（删除旧的内嵌占位 `safeBoot`/脚本数组——`safeBoot` 逻辑已移入 `agent-install-template.ts`；若 `safeBoot` 在 agent.ts 别处仍被引用则保留，否则删除。）
+（删除旧的 P1a 内嵌占位 `install.sh`/`install.ps1` 路由与其内嵌 `safeBoot`/脚本数组——`safeBoot` 逻辑已移入 `agent-install-template.ts`；确认删除后 agent.ts 无其它地方引用旧 `safeBoot`。R2 fake 的 `get()` 需返回带 `.text()` 的对象——见测试 `fakeR2` 补 `text()`。）
+
+> **测试补充**：Task 4 测试里的 `fakeR2` 的返回对象要加 `async text(){ return files[key]; }`（install 路由用 `object.text()`）。dist 路由用 `object.body`+`writeHttpMetadata`，install 路由用 `object.text()`——两者 fake 都要支持。
 
 - [ ] **Step 4: `setup/provision` 命令串加 `&agent=`**
 
@@ -547,6 +531,8 @@ const run = (cmd) => execSync(cmd, { stdio: "inherit" });
 const mcpDir = resolve(process.argv[2] ?? ".");
 const bundle = resolve(mcpDir, "dist/hybc-mcp.mjs");
 const skill = resolve(mcpDir, "SKILL.md");
+const installSh = resolve(mcpDir, "install/install.sh");
+const installPs1 = resolve(mcpDir, "install/install.ps1");
 const bucket = "hybcdg-prod-files";
 const dryRun = process.argv.includes("--dry-run");
 
@@ -557,6 +543,10 @@ if (!existsSync(bundle)) {
 }
 
 const put = (localPath, key) => {
+  if (!existsSync(localPath)) {
+    console.error("缺少文件:", localPath);
+    process.exit(1);
+  }
   const cmd = `npx wrangler r2 object put "${bucket}/${key}" --file "${localPath}" --remote`;
   if (dryRun) {
     console.log("[dry-run]", cmd);
@@ -567,6 +557,8 @@ const put = (localPath, key) => {
 
 put(bundle, "agent-dist/hybc-mcp.mjs");
 put(skill, "agent-dist/SKILL.md");
+put(installSh, "agent-dist/install.sh");
+put(installPs1, "agent-dist/install.ps1");
 console.log(dryRun ? "dry-run 完成" : "已发布到 R2 agent-dist/");
 ```
 
