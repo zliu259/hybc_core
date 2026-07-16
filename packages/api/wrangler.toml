@@ -56,6 +56,8 @@ WECOM_DEFAULT_PROJECT_PUSH_WEBHOOK_SECRET_REF = "project-144-test"
 PASSKEY_RP_ID = "web.hybcdg.com"
 PASSKEY_RP_NAME = "HYBC"
 REIMBURSEMENT_REQUIRE_PAYEE = "false"
+AGENT_WEB_BASE_URL = "https://web.hybcdg.com"
+AGENT_API_BASE_URL = "https://api.hybcdg.com"
 
 [triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
@@ -119,6 +121,8 @@ WECOM_DEFAULT_PROJECT_PUSH_WEBHOOK_SECRET_REF = "project-144-test"
 PASSKEY_RP_ID = "web.hybcdg.com"
 PASSKEY_RP_NAME = "HYBC"
 REIMBURSEMENT_REQUIRE_PAYEE = "false"
+AGENT_WEB_BASE_URL = "https://web.hybcdg.com"
+AGENT_API_BASE_URL = "https://api.hybcdg.com"
 
 [env.prod.triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
