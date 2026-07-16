@@ -15,7 +15,7 @@ export const approvalTools = (client: HybcApiClient): ToolDef[] => [
       initiator: z.string().optional().describe('传 "me" 只看我发起的'),
       keyword: z.string().optional(),
       page: z.number().int().min(1).optional(),
-      pageSize: z.number().int().min(1).optional()
+      pageSize: z.number().int().min(1).max(100).optional()
     },
     handler: async (args) => {
       const env = await client.get("/approval", args as QueryParams);
@@ -28,9 +28,10 @@ export const approvalTools = (client: HybcApiClient): ToolDef[] => [
     description: "分页查询当前待我处理(pending)的审批任务。",
     inputSchema: {
       biz_type: z.string().optional(),
+      status: z.string().optional(),
       keyword: z.string().optional(),
       page: z.number().int().min(1).optional(),
-      pageSize: z.number().int().min(1).optional()
+      pageSize: z.number().int().min(1).max(100).optional()
     },
     handler: async (args) => {
       const env = await client.get("/approval/pending", args as QueryParams);

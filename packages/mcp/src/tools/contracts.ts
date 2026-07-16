@@ -12,13 +12,14 @@ export const contractTools = (client: HybcApiClient): ToolDef[] => [
     inputSchema: {
       direction: z.enum(["outbound", "inbound"]).optional(),
       project_id: z.number().int().optional(),
+      project_name: z.string().optional().describe("按项目名过滤"),
       entity_id: z.number().int().optional(),
       status: z.string().optional(),
       keyword: z.string().optional(),
       date_from: z.string().optional().describe("合同日期起(YYYY-MM-DD)"),
       date_to: z.string().optional(),
       page: z.number().int().min(1).optional(),
-      pageSize: z.number().int().min(1).optional()
+      pageSize: z.number().int().min(1).max(100).optional()
     },
     handler: async (args) => {
       const env = await client.get("/contract", args as QueryParams);

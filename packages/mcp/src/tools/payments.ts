@@ -13,12 +13,13 @@ export const paymentTools = (client: HybcApiClient): ToolDef[] => [
       status: z.string().optional().describe("draft/pending_approval/approved/paid/rejected"),
       project_id: z.number().int().optional(),
       contract_id: z.number().int().optional(),
+      project_name: z.string().optional().describe("按项目名过滤"),
       keyword: z.string().optional(),
       mine: z.boolean().optional().describe("仅本人发起的"),
       date_from: z.string().optional().describe("预计付款日起(YYYY-MM-DD)"),
       date_to: z.string().optional(),
       page: z.number().int().min(1).optional(),
-      pageSize: z.number().int().min(1).optional()
+      pageSize: z.number().int().min(1).max(100).optional()
     },
     handler: async (args) => {
       const env = await client.get("/payment", args as QueryParams);
