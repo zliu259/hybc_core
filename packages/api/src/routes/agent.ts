@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import type { MiddlewareHandler } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { createRateLimitMiddleware } from "../middleware/rate-limit";
@@ -15,6 +16,21 @@ import type { Env } from "../types/env";
 
 const ok = <T>(data: T) => ({ success: true as const, data });
 const fail = (message: string) => ({ success: false as const, error: { message } });
+
+const BOOT_CODE_RE = /^[0-9a-f-]{36}$/i;
+const safeBoot = (raw: string | undefined): string => (raw && BOOT_CODE_RE.test(raw) ? raw : "");
+
+// /setup/provision 与 /device/approve 属于「人在环」高危动作：
+// 必须由本人网页 JWT 会话发起，禁止 mcp_agent 令牌自助开通/自助批准。
+const requireHumanSession: MiddlewareHandler<{
+  Bindings: Env;
+  Variables: AuthVariables;
+}> = async (c, next) => {
+  if (c.get("auth").auth_method === "mcp_agent") {
+    return c.json(fail("此操作需本人网页登录，不能由智能体令牌发起"), 403);
+  }
+  await next();
+};
 
 export const agentRoutes = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
 
@@ -57,10 +73,10 @@ agentRoutes.post("/setup/redeem", deviceRateLimit, async (c) => {
   return c.json(ok(redeemed));
 });
 
-// --- install.sh（免鉴权，数据类）---
+// --- install.sh / install.ps1（免鉴权，数据类）---
 agentRoutes.get("/install.sh", (c) => {
   const apiBase = (c.env.AGENT_API_BASE_URL ?? "https://api.hybcdg.com").replace(/\/$/, "");
-  const boot = c.req.query("boot") ?? "";
+  const boot = safeBoot(c.req.query("boot"));
   const script = [
     "#!/bin/sh",
     "set -e",
@@ -72,6 +88,18 @@ agentRoutes.get("/install.sh", (c) => {
   return c.text(`${script}\n`, 200, { "content-type": "text/x-shellscript; charset=utf-8" });
 });
 
+agentRoutes.get("/install.ps1", (c) => {
+  const apiBase = (c.env.AGENT_API_BASE_URL ?? "https://api.hybcdg.com").replace(/\/$/, "");
+  const boot = safeBoot(c.req.query("boot"));
+  const script = [
+    "# 恒越百川 MCP 安装器占位（P1b 完善）：将在此拉取 bundle、写配置、兑换令牌。",
+    `$HYBC_API = "${apiBase}"`,
+    `$HYBC_BOOT = "${boot}"`,
+    'Write-Host "API=$HYBC_API BOOT=$HYBC_BOOT"'
+  ].join("\r\n");
+  return c.text(`${script}\r\n`, 200, { "content-type": "text/plain; charset=utf-8" });
+});
+
 // --- 以下需 JWT（登录员工本人）---
 agentRoutes.use("/setup/provision", authMiddleware);
 agentRoutes.use("/device/approve", authMiddleware);
@@ -81,7 +109,7 @@ agentRoutes.use("/grants/*", authMiddleware);
 const primaryRole = (c: { get: (k: "auth") => AuthVariables["auth"] }): UserRole =>
   (c.get("auth").roles[0] ?? "operator") as UserRole;
 
-agentRoutes.post("/setup/provision", async (c) => {
+agentRoutes.post("/setup/provision", requireHumanSession, async (c) => {
   const auth = c.get("auth");
   const body = (await c.req.json().catch(() => ({}))) as {
     device_name?: string;
@@ -105,7 +133,7 @@ agentRoutes.post("/setup/provision", async (c) => {
   );
 });
 
-agentRoutes.post("/device/approve", deviceRateLimit, async (c) => {
+agentRoutes.post("/device/approve", deviceRateLimit, requireHumanSession, async (c) => {
   const auth = c.get("auth");
   const body = (await c.req.json().catch(() => ({}))) as { user_code?: string };
   if (!body.user_code) return c.json(fail("user_code required"), 400);
