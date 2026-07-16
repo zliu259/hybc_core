@@ -13,6 +13,7 @@
   "scripts": {
     "build": "tsc",
     "build:bundle": "esbuild src/cli.ts --bundle --platform=node --format=esm --target=node18 --outfile=dist/hybc-mcp.mjs",
+    "publish:dist": "node scripts/publish-dist.mjs .",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "lint": "eslint src --ext .ts",
