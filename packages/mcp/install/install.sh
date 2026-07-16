@@ -34,12 +34,15 @@ let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{
 
 case "$HYBC_AGENT" in
   claude_code)
-    if command -v claude >/dev/null 2>&1; then
-      claude mcp add --scope user hybc -- node "$MCP_DIR/hybc-mcp.mjs" serve >/dev/null 2>&1 || true
-    fi
     SKILL_DIR="$HOME/.claude/skills/hybc"; mkdir -p "$SKILL_DIR"
     cp "$MCP_DIR/SKILL.md" "$SKILL_DIR/SKILL.md" 2>/dev/null || true
-    echo "已配置 Claude Code。" >&2 ;;
+    if command -v claude >/dev/null 2>&1; then
+      claude mcp add --scope user hybc -- node "$MCP_DIR/hybc-mcp.mjs" serve >/dev/null 2>&1 || true
+      echo "已配置 Claude Code。" >&2
+    else
+      echo "未找到 claude 命令，MCP 未自动注册。请在终端手动执行：" >&2
+      echo "  claude mcp add --scope user hybc -- node \"$MCP_DIR/hybc-mcp.mjs\" serve" >&2
+    fi ;;
   codex)
     mkdir -p "$HOME/.codex"; CFG="$HOME/.codex/config.toml"
     if ! grep -q "\[mcp_servers.hybc\]" "$CFG" 2>/dev/null; then

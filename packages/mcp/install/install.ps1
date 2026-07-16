@@ -26,10 +26,15 @@ Write-Host "已保存凭证：$($d.wecom_userid)（$($d.role)）"
 $mjs = Join-Path $McpDir "hybc-mcp.mjs"
 switch ($HYBC_AGENT) {
   "claude_code" {
-    if (Get-Command claude -ErrorAction SilentlyContinue) { claude mcp add --scope user hybc -- node "$mjs" serve 2>$null }
     $skillDir = Join-Path $HOME ".claude/skills/hybc"; New-Item -ItemType Directory -Force -Path $skillDir | Out-Null
     Copy-Item (Join-Path $McpDir "SKILL.md") (Join-Path $skillDir "SKILL.md") -ErrorAction SilentlyContinue
-    Write-Host "已配置 Claude Code。"
+    if (Get-Command claude -ErrorAction SilentlyContinue) {
+      claude mcp add --scope user hybc -- node "$mjs" serve 2>$null
+      Write-Host "已配置 Claude Code。"
+    } else {
+      Write-Host "未找到 claude 命令，MCP 未自动注册。请在终端手动执行："
+      Write-Host "  claude mcp add --scope user hybc -- node `"$mjs`" serve"
+    }
   }
   "codex" {
     $codex = Join-Path $HOME ".codex"; New-Item -ItemType Directory -Force -Path $codex | Out-Null
