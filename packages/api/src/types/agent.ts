@@ -49,3 +49,8 @@ export interface PublicGrantView {
   expires_at: string;
   last_used_at: string | null;
 }
+
+export interface AdminGrantView extends PublicGrantView {
+  wecom_userid: string;
+  role_snapshot: UserRole;
+}

@@ -1,7 +1,12 @@
 import { defaultPermissionsByRole } from "./auth";
 import { generateAgentToken, hashAgentToken, tokenPrefixForDisplay } from "./agent-token";
 import type { UserRole } from "../types/auth";
-import type { AgentGrantRow, AgentIdentity, PublicGrantView } from "../types/agent";
+import type {
+  AgentGrantRow,
+  AgentIdentity,
+  PublicGrantView,
+  AdminGrantView
+} from "../types/agent";
 
 export const GRANT_TTL_DAYS = 180;
 const LAST_USED_THROTTLE_MS = 5 * 60 * 1000;
@@ -121,6 +126,12 @@ const toPublicView = (row: AgentGrantRow): PublicGrantView => ({
   last_used_at: row.last_used_at
 });
 
+const toAdminView = (row: AgentGrantRow): AdminGrantView => ({
+  ...toPublicView(row),
+  wecom_userid: row.wecom_userid,
+  role_snapshot: row.role_snapshot
+});
+
 export const listGrantsForUser = async (
   db: D1Database,
   wecomUserid: string
@@ -134,11 +145,11 @@ export const listGrantsForUser = async (
   return (res.results ?? []).map(toPublicView);
 };
 
-export const listAllGrants = async (db: D1Database): Promise<PublicGrantView[]> => {
+export const listAllGrants = async (db: D1Database): Promise<AdminGrantView[]> => {
   const res = await db
     .prepare(`SELECT * FROM agent_grant ORDER BY created_at DESC`)
     .all<AgentGrantRow>();
-  return (res.results ?? []).map(toPublicView);
+  return (res.results ?? []).map(toAdminView);
 };
 
 export const getGrantById = async (
