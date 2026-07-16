@@ -11,14 +11,12 @@ import {
   startDeviceAuthorization
 } from "../services/agent-device";
 import { getGrantById, listGrantsForUser, revokeGrant } from "../services/agent-grant";
+import { renderInstallScript } from "../services/agent-install-template";
 import type { UserRole } from "../types/auth";
 import type { Env } from "../types/env";
 
 const ok = <T>(data: T) => ({ success: true as const, data });
 const fail = (message: string) => ({ success: false as const, error: { message } });
-
-const BOOT_CODE_RE = /^[0-9a-f-]{36}$/i;
-const safeBoot = (raw: string | undefined): string => (raw && BOOT_CODE_RE.test(raw) ? raw : "");
 
 // /setup/provision 与 /device/approve 属于「人在环」高危动作：
 // 必须由本人网页 JWT 会话发起，禁止 mcp_agent 令牌自助开通/自助批准。
@@ -73,32 +71,55 @@ agentRoutes.post("/setup/redeem", deviceRateLimit, async (c) => {
   return c.json(ok(redeemed));
 });
 
-// --- install.sh / install.ps1（免鉴权，数据类）---
-agentRoutes.get("/install.sh", (c) => {
-  const apiBase = (c.env.AGENT_API_BASE_URL ?? "https://api.hybcdg.com").replace(/\/$/, "");
-  const boot = safeBoot(c.req.query("boot"));
-  const script = [
-    "#!/bin/sh",
-    "set -e",
-    `HYBC_API="${apiBase}"`,
-    `HYBC_BOOT="${boot}"`,
-    'echo "恒越百川 MCP 安装器占位（P1b 完善）：将在此拉取 bundle、写配置、兑换令牌。"',
-    'echo "API=$HYBC_API BOOT=$HYBC_BOOT"'
-  ].join("\n");
-  return c.text(`${script}\n`, 200, { "content-type": "text/x-shellscript; charset=utf-8" });
+// --- dist 分发（免鉴权，R2 取件；白名单防路径遍历）---
+const ALLOWED_DIST = new Set(["hybc-mcp.mjs", "SKILL.md"]);
+
+agentRoutes.get("/dist/:file", async (c) => {
+  const file = c.req.param("file");
+  if (!ALLOWED_DIST.has(file)) {
+    return c.json(fail("not found"), 404);
+  }
+  const object = await c.env.FILES.get(`agent-dist/${file}`);
+  if (!object || !object.body) {
+    return c.json(fail("not found"), 404);
+  }
+  const headers = new Headers();
+  object.writeHttpMetadata(headers);
+  headers.set("etag", object.httpEtag);
+  if (file.endsWith(".mjs")) headers.set("content-type", "text/javascript; charset=utf-8");
+  return new Response(object.body, { headers });
 });
 
-agentRoutes.get("/install.ps1", (c) => {
+// --- install.sh / install.ps1（免鉴权：R2 取模板 + 校验替换）---
+const renderInstallFromR2 = async (
+  c: { env: Env; req: { query: (k: string) => string | undefined } },
+  key: string,
+  contentType: string
+): Promise<Response> => {
+  const object = await c.env.FILES.get(`agent-dist/${key}`);
+  if (!object) {
+    return new Response("install template not published", { status: 404 });
+  }
+  const template = await object.text();
   const apiBase = (c.env.AGENT_API_BASE_URL ?? "https://api.hybcdg.com").replace(/\/$/, "");
-  const boot = safeBoot(c.req.query("boot"));
-  const script = [
-    "# 恒越百川 MCP 安装器占位（P1b 完善）：将在此拉取 bundle、写配置、兑换令牌。",
-    `$HYBC_API = "${apiBase}"`,
-    `$HYBC_BOOT = "${boot}"`,
-    'Write-Host "API=$HYBC_API BOOT=$HYBC_BOOT"'
-  ].join("\r\n");
-  return c.text(`${script}\r\n`, 200, { "content-type": "text/plain; charset=utf-8" });
-});
+  const script = renderInstallScript(template, {
+    apiBase,
+    boot: c.req.query("boot") ?? "",
+    agent: c.req.query("agent") ?? "other"
+  });
+  return new Response(script, {
+    status: 200,
+    headers: { "content-type": contentType }
+  });
+};
+
+agentRoutes.get("/install.sh", (c) =>
+  renderInstallFromR2(c, "install.sh", "text/x-shellscript; charset=utf-8")
+);
+
+agentRoutes.get("/install.ps1", (c) =>
+  renderInstallFromR2(c, "install.ps1", "text/plain; charset=utf-8")
+);
 
 // --- 以下需 JWT（登录员工本人）---
 agentRoutes.use("/setup/provision", authMiddleware);
@@ -127,8 +148,8 @@ agentRoutes.post("/setup/provision", requireHumanSession, async (c) => {
   return c.json(
     ok({
       ...prov,
-      install_sh: `curl -fsSL "${apiBase}/api/v1/agent/install.sh?boot=${prov.boot_code}" | sh`,
-      install_ps1: `irm "${apiBase}/api/v1/agent/install.ps1?boot=${prov.boot_code}" | iex`
+      install_sh: `curl -fsSL "${apiBase}/api/v1/agent/install.sh?boot=${prov.boot_code}&agent=${encodeURIComponent(body.agent_type ?? "other")}" | sh`,
+      install_ps1: `irm "${apiBase}/api/v1/agent/install.ps1?boot=${prov.boot_code}&agent=${encodeURIComponent(body.agent_type ?? "other")}" | iex`
     })
   );
 });

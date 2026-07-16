@@ -5,13 +5,31 @@ import { createAgentGrant, getGrantById } from "../services/agent-grant";
 import { createFakeD1, createFakeKV } from "../test-support/agent-fakes";
 import type { Env } from "../types/env";
 
+const fakeFiles = (files: Record<string, string>) =>
+  ({
+    async get(key: string) {
+      if (!(key in files)) return null;
+      return {
+        body: files[key],
+        httpEtag: '"etag"',
+        writeHttpMetadata: (_h: Headers) => undefined,
+        async text() {
+          return files[key];
+        }
+      };
+    }
+  }) as unknown as Env["FILES"];
+
 const fakeEnv = (db: D1Database, kv: KVNamespace): Env =>
   ({
     DB: db,
     KV: kv,
     JWT_SECRET: "test-secret",
     AGENT_WEB_BASE_URL: "https://web.hybcdg.com",
-    AGENT_API_BASE_URL: "https://api.hybcdg.com"
+    AGENT_API_BASE_URL: "https://api.hybcdg.com",
+    FILES: fakeFiles({
+      "agent-dist/install.sh": 'HYBC_API="__HYBC_API__"\nHYBC_BOOT="__HYBC_BOOT__"\n'
+    })
   }) as unknown as Env;
 
 describe("agent routes device flow", () => {
