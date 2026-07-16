@@ -10,7 +10,7 @@ const fakeR2 = (files: Record<string, string>) =>
       return {
         body: files[key],
         httpEtag: '"etag"',
-        writeHttpMetadata: (_h: Headers) => undefined,
+        writeHttpMetadata: () => undefined,
         async text() {
           return files[key];
         }
