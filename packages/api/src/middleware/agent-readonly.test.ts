@@ -81,6 +81,21 @@ describe("isAllowedAgentRead — allowlist = exactly the @hybc/mcp read surface"
     expect(isAllowedAgentRead("Get", "/project")).toBe(true);
     expect(isAllowedAgentRead("post", "/api/v1/payment")).toBe(false);
   });
+
+  // 锁定回归：list 工具总是带 query（?keyword/?page/?pageSize），query 不得破坏白名单匹配。
+  it("still matches a list-tool path when a query string is present", () => {
+    expect(isAllowedAgentRead("GET", "/api/v1/project")).toBe(true);
+    expect(isAllowedAgentRead("GET", "/api/v1/project?pageSize=20&keyword=abc")).toBe(true);
+    expect(isAllowedAgentRead("GET", "/project?page=1")).toBe(true);
+    // query 不能把非白名单路径「洗白」：去 query 后仍需在白名单内。
+    expect(isAllowedAgentRead("GET", "/api/v1/reimbursement/1/ocr-status?x=1")).toBe(false);
+  });
+
+  // 锁定回归：代表性的 mutating-GET（以 GET 触发写）必须始终被拒。
+  it("keeps representative mutating-GET endpoints denied", () => {
+    expect(isAllowedAgentRead("GET", "/api/v1/reimbursement/42/ocr-status")).toBe(false);
+    expect(isAllowedAgentRead("GET", "/api/v1/bidding/dedup-rewrite/7")).toBe(false);
+  });
 });
 
 describe("agentReadonlyForbidden", () => {
@@ -275,5 +290,50 @@ describe("authMiddleware deny-by-default gate for mcp_agent tokens", () => {
     expect(blocked?.status).toBe("blocked");
     expect(blocked?.actor_userid).toBe("MaxLiu");
     expect(String(blocked?.target_id)).toContain("/payment");
+  });
+});
+
+// 锁定回归：用生产同款的嵌套挂载（app.route("/api/v1/xxx", sub)）确认 authMiddleware
+// 看到的是完整 /api/v1 路径，从而白名单闸门在真实挂载形态下依然放行/拦截正确。
+describe("nested-mount (app.route) parity with production", () => {
+  const buildNestedApp = () => {
+    const projectSub = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+    projectSub.use("*", authMiddleware);
+    projectSub.get("/", (c) => c.json({ ok: true, kind: "allowed-read" }));
+
+    const reimbSub = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+    reimbSub.use("*", authMiddleware);
+    reimbSub.get("/:id/ocr-status", (c) => c.json({ ok: true, kind: "mutating-get" }));
+
+    const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+    app.route("/api/v1/project", projectSub);
+    app.route("/api/v1/reimbursement", reimbSub);
+    return app;
+  };
+
+  it("agent token passes the gate on a nested-mounted allowlisted read (GET /api/v1/project)", async () => {
+    const { env, raw } = buildAuditCapturingEnv();
+    const token = await mintAgentToken(raw);
+    const res = await buildNestedApp().request(
+      "/api/v1/project",
+      { headers: { authorization: `Bearer ${token}` } },
+      env
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { kind: string };
+    expect(body.kind).toBe("allowed-read");
+  });
+
+  it("agent token is still denied on a nested-mounted mutating-GET (403)", async () => {
+    const { env, raw } = buildAuditCapturingEnv();
+    const token = await mintAgentToken(raw);
+    const res = await buildNestedApp().request(
+      "/api/v1/reimbursement/42/ocr-status",
+      { headers: { authorization: `Bearer ${token}` } },
+      env
+    );
+    expect(res.status).toBe(403);
+    const body = (await res.json()) as ForbiddenBody;
+    expect(body.error.message).toBe(AGENT_READONLY_MESSAGE);
   });
 });

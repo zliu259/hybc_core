@@ -68,13 +68,21 @@ const ALLOWED_AGENT_READS: readonly AgentReadRule[] = [
 const stripApiPrefix = (path: string): string => path.replace(/^\/api\/v1(?=\/|$)/, "");
 
 /**
+ * 去掉查询串与 fragment，只保留 pathname。
+ * 生产环境 c.req.path 本就不含 query（已实测），但此函数不应依赖调用方恰好传入去 query 的路径：
+ * 显式剥离，锚定正则才不会因 "?pageSize=20" 之类把合法 list 工具调用误判为不匹配（→ 误 403）。
+ * 安全性不受影响——含 query 的非白名单路径去 query 后仍不在白名单，照样 deny。
+ */
+const pathnameOnly = (path: string): string => path.replace(/[?#].*$/, "");
+
+/**
  * mcp_agent 请求是否命中只读白名单。deny-by-default：未命中即视为禁止。
  * @param method HTTP 方法（大小写不敏感）
- * @param path   请求路径（完整 /api/v1/... 或相对形态均可）
+ * @param path   请求路径（完整 /api/v1/...、相对形态、带/不带 query 均可）
  */
 export const isAllowedAgentRead = (method: string, path: string): boolean => {
   const upper = method.toUpperCase();
-  const normalized = stripApiPrefix(path);
+  const normalized = stripApiPrefix(pathnameOnly(path));
   return ALLOWED_AGENT_READS.some(
     (rule) => rule.method === upper && rule.pattern.test(normalized)
   );
