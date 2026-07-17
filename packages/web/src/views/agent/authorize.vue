@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
 import {
@@ -71,13 +71,16 @@ const onDeny = async () => {
   }
 };
 
-onMounted(() => {
-  const q = route.query.user_code;
-  if (typeof q === "string" && q) {
-    userCode.value = q;
-    void loadInfo();
-  }
-});
+watch(
+  () => route.query.user_code,
+  q => {
+    if (typeof q === "string" && q) {
+      userCode.value = q;
+      void loadInfo();
+    }
+  },
+  { immediate: true }
+);
 </script>
 
 <template>
