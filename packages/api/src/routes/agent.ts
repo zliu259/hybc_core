@@ -20,8 +20,8 @@ import type { Env } from "../types/env";
 const ok = <T>(data: T) => ({ success: true as const, data });
 const fail = (message: string) => ({ success: false as const, error: { message } });
 
-// /setup/provision 与 /device/approve 属于「人在环」高危动作：
-// 必须由本人网页 JWT 会话发起，禁止 mcp_agent 令牌自助开通/自助批准。
+// /setup/provision 与 /device/approve、/device/info、/device/deny 属于「人在环」动作：
+// 必须由本人网页 JWT 会话发起，禁止 mcp_agent 令牌自助开通/查看/批准/拒绝。
 const requireHumanSession: MiddlewareHandler<{
   Bindings: Env;
   Variables: AuthVariables;

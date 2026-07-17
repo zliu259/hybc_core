@@ -189,7 +189,14 @@ export const denyDeviceByUserCode = async (kv: KVNamespace, userCode: string): P
   if (!deviceCode) throw new Error("Unknown or expired user_code");
   const raw = await kv.get(deviceKey(deviceCode));
   if (!raw) throw new Error("Unknown or expired user_code");
-  const record = JSON.parse(raw) as DeviceCodeRecord;
+  let record: DeviceCodeRecord;
+  try {
+    record = JSON.parse(raw) as DeviceCodeRecord;
+  } catch (err) {
+    // 记录损坏时不外泄解析错误详情，对客户端与「记录不存在」同口径
+    console.error("agent device record parse failed", err);
+    throw new Error("Unknown or expired user_code");
+  }
   if (record.status !== "pending") throw new Error("Device request already resolved");
   const updated: DeviceCodeRecord = { ...record, status: "denied" };
   await kv.put(deviceKey(deviceCode), JSON.stringify(updated), {
