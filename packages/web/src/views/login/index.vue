@@ -11,6 +11,7 @@ import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
 import { getTopMenu, initRouter } from "@/router/utils";
 import { getWeComScanUrl } from "@/api/wecom";
 import { setToken } from "@/utils/auth";
+import { popRedirect, stashRedirect } from "@/utils/loginRedirect";
 import {
   beginPasskeyAuthentication,
   finishPasskeyAuthentication
@@ -55,8 +56,8 @@ const loginByCode = async (code: string) => {
     }
 
     await initRouter();
-    const top = getTopMenu(true);
-    await router.replace(top.path);
+    const target = popRedirect();
+    await router.replace(target ?? getTopMenu(true).path);
     message("登录成功", { type: "success" });
   } catch (error: any) {
     const backendMsg =
@@ -164,8 +165,8 @@ const loginByPasskey = async () => {
     useUserStoreHook().loginDay = 7;
     setToken(finish.data);
     await initRouter();
-    const top = getTopMenu(true);
-    await router.replace(top.path);
+    const target = popRedirect();
+    await router.replace(target ?? getTopMenu(true).path);
     message("Passkey 登录成功", { type: "success" });
   } catch (error: any) {
     const backendMsg =
@@ -233,6 +234,7 @@ const initDesktopLoginPanel = async () => {
 };
 
 onMounted(() => {
+  stashRedirect(router.currentRoute.value.query.redirect);
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
   if (code) {
