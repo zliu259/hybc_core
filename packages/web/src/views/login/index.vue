@@ -11,7 +11,10 @@ import { useDataThemeChange } from "@/layout/hooks/useDataThemeChange";
 import { getTopMenu, initRouter } from "@/router/utils";
 import { getWeComScanUrl } from "@/api/wecom";
 import { setToken } from "@/utils/auth";
-import { popRedirect, stashRedirect } from "@/utils/loginRedirect";
+import {
+  popRedirect,
+  stashRedirectFromLoginMount
+} from "@/utils/loginRedirect";
 import {
   beginPasskeyAuthentication,
   finishPasskeyAuthentication
@@ -236,11 +239,8 @@ const initDesktopLoginPanel = async () => {
 onMounted(() => {
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
-  if (!code) {
-    // OAuth 回跳（带 code）时守卫会注入 redirect=/workspace/home，
-    // 无条件暂存会覆盖扫码前存下的深链，故仅在非 OAuth 回跳时暂存
-    stashRedirect(router.currentRoute.value.query.redirect);
-  }
+  // OAuth 回跳趟不暂存，避免守卫注入的默认 redirect 覆盖深链（详见工具函数注释）
+  stashRedirectFromLoginMount(code, router.currentRoute.value.query.redirect);
   if (code) {
     const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, document.title, cleanUrl);

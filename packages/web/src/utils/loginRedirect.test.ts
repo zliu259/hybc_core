@@ -1,6 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { popRedirect, sanitizeRedirect, stashRedirect } from "./loginRedirect";
+import {
+  popRedirect,
+  sanitizeRedirect,
+  stashRedirect,
+  stashRedirectFromLoginMount
+} from "./loginRedirect";
 
 describe("sanitizeRedirect", () => {
   it("accepts in-app paths with query", () => {
@@ -49,5 +54,20 @@ describe("stash/pop roundtrip (sessionStorage)", () => {
     stashRedirect("/agent/grants");
     stashRedirect(undefined);
     expect(popRedirect()).toBe("/agent/grants");
+  });
+});
+
+describe("stashRedirectFromLoginMount", () => {
+  beforeEach(() => window.sessionStorage.clear());
+
+  it("stashes the redirect when no OAuth code is present", () => {
+    stashRedirectFromLoginMount(null, "/agent/authorize?user_code=AB12-CD34");
+    expect(popRedirect()).toBe("/agent/authorize?user_code=AB12-CD34");
+  });
+
+  it("does NOT stash (and does not clobber) when an OAuth code is present", () => {
+    stashRedirectFromLoginMount(null, "/agent/authorize?user_code=AB12-CD34");
+    stashRedirectFromLoginMount("wx-oauth-code", "/workspace/home");
+    expect(popRedirect()).toBe("/agent/authorize?user_code=AB12-CD34");
   });
 });

@@ -29,6 +29,18 @@ export const stashRedirect = (raw: unknown): void => {
   }
 };
 
+/**
+ * 登录页挂载时的暂存决策：OAuth 返回趟（带 code）不暂存——
+ * 守卫在该趟会注入默认 redirect（如 /workspace/home），无条件暂存会覆盖真正的深链。
+ */
+export const stashRedirectFromLoginMount = (
+  oauthCode: string | null,
+  redirect: unknown
+): void => {
+  if (oauthCode) return;
+  stashRedirect(redirect);
+};
+
 /** 登录成功后取出并清除暂存的回跳地址 */
 export const popRedirect = (): string | null => {
   try {
