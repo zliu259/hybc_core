@@ -147,6 +147,35 @@ describe("POST /device/deny", () => {
     expect(second.status).toBe(400);
   });
 
+  it("400s when denying an already-approved request (approval is irreversible via deny)", async () => {
+    const { db } = createFakeD1();
+    const { kv } = createFakeKV();
+    const env = fakeEnv(db, kv);
+    const { user_code } = await startDevice(env);
+    const jwt = await humanJwt(env);
+    const approve = await agentRoutes.request(
+      "/device/approve",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+        body: JSON.stringify({ user_code })
+      },
+      env
+    );
+    expect(approve.status).toBe(200);
+    // 已批准后不可用 deny 撤销；撤销授权须走 /grants/:id/revoke
+    const deny = await agentRoutes.request(
+      "/device/deny",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+        body: JSON.stringify({ user_code })
+      },
+      env
+    );
+    expect(deny.status).toBe(400);
+  });
+
   it("403s for agent tokens", async () => {
     const { db } = createFakeD1();
     const { kv } = createFakeKV();

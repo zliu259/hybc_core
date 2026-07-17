@@ -65,7 +65,10 @@ export const startDeviceAuthorization = async (
   });
 
   const base = input.webBaseUrl.replace(/\/$/, "");
-  const verificationUri = `${base}/agent/authorize`;
+  // 前端为 hash 路由（VITE_ROUTER_HISTORY="hash"），Cloudflare Pages _redirects
+  // 没有 SPA catch-all，path 形式的 /agent/authorize 会命中 404。授权页实际位于
+  // #/agent/authorize，query 需挂在 hash 内，vue-router 才能读到 user_code。
+  const verificationUri = `${base}/#/agent/authorize`;
   return {
     device_code: deviceCode,
     user_code: userCode,

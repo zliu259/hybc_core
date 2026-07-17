@@ -21,6 +21,14 @@ describe("agent-device", () => {
     });
     expect(start.user_code).toMatch(/^[A-Z2-9]{4}-[A-Z2-9]{4}$/);
     expect(start.verification_uri_complete).toContain(start.user_code);
+    // 前端为 hash 路由（VITE_ROUTER_HISTORY="hash"），且 Pages _redirects 无 SPA 通配，
+    // 因此授权页地址必须走 hash 形式，query 挂在 hash 内，否则解析到 404。
+    expect(start.verification_uri).toBe("https://web.hybcdg.com/#/agent/authorize");
+    expect(
+      start.verification_uri_complete.startsWith(
+        "https://web.hybcdg.com/#/agent/authorize?user_code="
+      )
+    ).toBe(true);
 
     expect(await pollDeviceToken(kv, db, start.device_code)).toEqual({
       status: "authorization_pending"
