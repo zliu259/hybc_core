@@ -16,6 +16,9 @@ describe("sanitizeRedirect", () => {
     expect(sanitizeRedirect("https://evil.com/x")).toBeNull();
     expect(sanitizeRedirect("//evil.com/x")).toBeNull();
     expect(sanitizeRedirect("javascript:alert(1)")).toBeNull();
+    expect(sanitizeRedirect("/\t/evil.com")).toBeNull();
+    expect(sanitizeRedirect("/\\evil.com")).toBeNull();
+    expect(sanitizeRedirect("/agent#x")).toBeNull();
   });
 
   it("rejects non-strings, empty, and the login page itself", () => {
@@ -24,6 +27,7 @@ describe("sanitizeRedirect", () => {
     expect(sanitizeRedirect("")).toBeNull();
     expect(sanitizeRedirect("/login")).toBeNull();
     expect(sanitizeRedirect("/login?redirect=/x")).toBeNull();
+    expect(sanitizeRedirect("/login/foo")).toBeNull();
   });
 });
 

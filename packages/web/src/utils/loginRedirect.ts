@@ -6,6 +6,7 @@ const STORAGE_KEY = "hybc-login-redirect";
  */
 export const sanitizeRedirect = (raw: unknown): string | null => {
   if (typeof raw !== "string" || raw.length === 0) return null;
+  if (/[\s\\#]/.test(raw)) return null; // 浏览器解析 URL 会剥离 \t\n\r、把 \ 当 /；hash 应用的站内路径也不该含 #。拒绝以防未来落入 location.href 汇点
   if (!raw.startsWith("/") || raw.startsWith("//")) return null;
   if (
     raw === "/login" ||
