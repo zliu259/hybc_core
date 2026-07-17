@@ -512,6 +512,8 @@ import { popRedirect, stashRedirect } from "@/utils/loginRedirect";
 
 （`router` 该文件已在用——`router.replace(...)`。OAuth 返回后 query 里只有 code、无 redirect，`stashRedirect(undefined)` 是 no-op、不会覆盖之前的暂存——Task 2 已有测试保证。）
 
+> **勘误（执行中修正）**：Step 2 原文「stash 放 onMounted 第一行」有误——OAuth 返回趟守卫会注入默认 `redirect=/workspace/home`，无条件暂存会覆盖真正的深链。实际实现：先读 `code`，仅当无 code 时暂存（`stashRedirectFromLoginMount`，已加回归单测）。见 commit 4e0de04 / dbdacba。
+
 - [ ] **Step 3: loginByCode 成功改为 pop 跳转**
 
 找到：

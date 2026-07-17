@@ -1617,3 +1617,30 @@
 - 报销详情「通道」栏新增办公室「切换通道」按钮（仅 `super_admin`/`finance`，状态 `draft/unregistered/submitted` 可见）：点击弹出确认框并可填写切换原因（选填，后端 trim 后截断 500 字符）；成功提示区分“实际切换 / 已是目标通道无需切换 / 补触发 AI 核验（自愈）”三种语义：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/web/src/api/reimbursement.ts`
 - 编辑态通道下拉始终禁用（仅创建态可选），修复此前“看似可改、保存必被后端 400”的陷阱；不可切换时显示「通道创建后不可修改」灰色提示：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 新增后端切换通道接口 `POST /api/v1/reimbursement/:id/switch-channel`（乐观锁 UPDATE 防并发漂移；切换成功且有活跃附件时自动补触发 AI 核验；同通道重复请求幂等返回 `changed: false` 并带自愈补偿）：`packages/api/src/routes/reimbursement.ts`、`packages/api/src/routes/reimbursement-channel-switch-policy.ts`
+
+## 9. 智能体接入（2026-07）
+
+### 9.1 页面与路由映射
+
+- 接入配置：`/agent/setup` → `packages/web/src/views/agent/setup.vue`（菜单：智能体接入 → 接入配置，全角色可见）
+  - 选择 Agent 类型（Claude Code 推荐 / Codex / Claude Desktop / 其它）并填写设备名称，生成一键安装命令：macOS/Linux `curl | sh` 与 Windows PowerShell 两条，均带复制按钮。
+  - 命令内含一次性 boot 授权码，有效期由接口返回的 `expires_in` 动态显示（当前 10 分钟、一次性）；访问令牌不落屏。授权有效期 180 天。
+- 设备授权确认：`/agent/authorize?user_code=` → `packages/web/src/views/agent/authorize.vue`（不进菜单，由 CLI 设备流链接进入）
+  - 未登录先经 WeCom OAuth，登录后自动回到本页（redirect 经 sessionStorage 贯通）。
+  - 自动按 `user_code` 查询并展示设备名 / Agent / 客户端信息与只读权限说明；「同意授权」后设备端轮询自动发令牌，「拒绝」后设备端收到 denied。
+  - 同意/拒绝动作绑定已加载记录（修改输入框即隐藏卡片，需重新查询）；`user_code` 变化时页面响应式刷新。
+- 设备授权：`/agent/grants` → `packages/web/src/views/agent/grants.vue`（菜单可见，全角色）
+  - 本人授权设备表：设备 / Agent / 令牌前缀 / 状态标签 / 创建 / 到期 / 最近使用（本地时区显示）；active 行可「吊销」（确认框，即时生效）。
+  - super_admin 有「查看全部员工」开关（切换 admin 接口并增加员工列）。
+
+### 9.2 API 指向
+
+- 接入配置生成命令：`POST /api/v1/agent/setup/provision`
+- 设备流同意页：`GET /api/v1/agent/device/info`、`POST /api/v1/agent/device/approve`、`POST /api/v1/agent/device/deny`
+- 本人授权管理：`GET /api/v1/agent/grants`、`POST /api/v1/agent/grants/:id/revoke`
+- 管理员全量视图：`GET /api/v1/admin/agent/grants`、`POST /api/v1/admin/agent/grants/:id/revoke`
+- Web API 封装：`packages/web/src/api/agent.ts`；路由模块：`packages/web/src/router/modules/agent.ts`
+
+### 9.3 备注
+
+- P2 前存在运营性令牌发放冻结；如需临时隐藏入口，把 `packages/web/src/router/modules/agent.ts` 模块 meta 加 `showLink: false` 即可（一行）。
