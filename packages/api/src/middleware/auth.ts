@@ -3,7 +3,7 @@ import type { MiddlewareHandler } from "hono";
 import { verifyToken } from "../services/auth";
 import { isAgentToken } from "../services/agent-token";
 import { resolveAgentByToken, touchGrantLastUsed } from "../services/agent-grant";
-import { agentReadonlyForbidden, isReadOnlyMethod } from "./agent-readonly";
+import { agentReadonlyForbidden, isAllowedAgentRead } from "./agent-readonly";
 import { writeAuditLog } from "../services/audit-log";
 import type { AuthTokenPayload } from "../types/auth";
 import type { Env } from "../types/env";
@@ -55,10 +55,30 @@ export const authMiddleware: MiddlewareHandler<{
       return unauthorized("Invalid or expired agent token");
     }
 
-    // 只读闸门：mcp_agent 令牌禁止一切写操作，兑现 P1c「只读」同意承诺（见 middleware/agent-readonly.ts）。
-    // 放在身份解析之后、设置 auth 上下文与审计之前 —— 被拦截的写请求不会计入 last_used，也不落审计。
-    // agent 令牌是所有请求的唯一收敛点，此处即全局不可绕过的写拦截点；人类 JWT 会话不受影响。
-    if (!isReadOnlyMethod(c.req.method)) {
+    // 只读闸门（deny-by-default 白名单）：mcp_agent 令牌只能命中 @hybc/mcp 的只读端点白名单，
+    // 其余一律 403 —— 拦下写方法、未列出的读、以及「以 GET 触发写」的 mutating-GET
+    // （如 GET /reimbursement/:id/ocr-status 会 UPDATE 行）。兑现 P1c「只读」同意承诺。
+    // 是所有 agent 令牌请求的唯一收敛点，全局不可绕过；人类 JWT 会话不经此闸门。
+    // 放在身份解析之后、设置 auth 与成功审计之前 —— 被拦请求不计入 last_used。
+    if (!isAllowedAgentRead(c.req.method, c.req.path)) {
+      // MEDIUM 修复：审计被拦截的写/越权尝试，令泄漏令牌的探测可被发现。
+      const blockedAudit = writeAuditLog(c.env.DB, {
+        actorUserId: identity.wecomUserid,
+        actorRoles: identity.roles,
+        action: "agent.blocked_write",
+        targetType: "agent_request",
+        targetId: c.req.path,
+        status: "blocked",
+        detail: { via: "mcp", grant_id: identity.grantId, method: c.req.method }
+      }).catch((err) => {
+        console.error("agent blocked-write audit failed", err);
+      });
+      // 生产 Workers 有 executionCtx；vitest 直接 app.request 时可能没有 —— 两种都容错。
+      try {
+        c.executionCtx.waitUntil(blockedAudit);
+      } catch {
+        void blockedAudit;
+      }
       return agentReadonlyForbidden();
     }
 

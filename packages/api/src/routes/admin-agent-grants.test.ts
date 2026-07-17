@@ -5,16 +5,20 @@ import { AGENT_READONLY_MESSAGE } from "../middleware/agent-readonly";
 import { createAgentGrant, getGrantById } from "../services/agent-grant";
 import { createSessionPayload, issueTokens } from "../services/auth";
 import { adminRevokeAgentGrant, adminRoutes } from "./admin";
+import type { UserRole } from "../types/auth";
 import type { Env } from "../types/env";
 
 const fakeEnv = (db: D1Database, kv: KVNamespace): Env =>
   ({ DB: db, KV: kv, JWT_SECRET: "test-secret" } as unknown as Env);
 
-const superAdminJwt = async (env: Env, userId = "Boss"): Promise<string> => {
-  const session = createSessionPayload({ userId, username: userId, role: "super_admin" });
+const humanJwt = async (env: Env, userId: string, role: UserRole): Promise<string> => {
+  const session = createSessionPayload({ userId, username: userId, role });
   const issued = await issueTokens(env, session);
   return issued.accessToken;
 };
+
+const superAdminJwt = (env: Env, userId = "Boss"): Promise<string> =>
+  humanJwt(env, userId, "super_admin");
 
 describe("admin revoke agent grant (service-level)", () => {
   it("super_admin can revoke any grant", async () => {
@@ -31,33 +35,33 @@ describe("admin revoke agent grant (service-level)", () => {
 });
 
 describe("admin agent-grant routes (authz + owner visibility)", () => {
-  it("403 for a non-super_admin caller on GET /agent/grants", async () => {
+  // 保留 RBAC 归属校验：非 super_admin 的【本人网页 JWT】访问被 403。
+  // （agent 令牌无论角色都会先被只读闸门 403，另有专门用例覆盖。）
+  it("403 for a non-super_admin human caller on GET /agent/grants", async () => {
     const { db } = createFakeD1();
     const { kv } = createFakeKV();
-    const { token } = await createAgentGrant(db, {
-      wecomUserid: "MaxLiu",
-      role: "operator"
-    });
+    const env = fakeEnv(db, kv);
+    const jwt = await humanJwt(env, "MaxLiu", "operator");
     const res = await adminRoutes.request(
       "/agent/grants",
-      { headers: { authorization: `Bearer ${token}` } },
-      fakeEnv(db, kv)
+      { headers: { authorization: `Bearer ${jwt}` } },
+      env
     );
     expect(res.status).toBe(403);
   });
 
-  it("200 for super_admin, rows tagged with owner and no token_hash", async () => {
+  // super_admin 只能通过【本人网页 JWT】访问（agent 令牌即便 super_admin 也被只读闸门拦截）。
+  it("200 for super_admin (human session), rows tagged with owner and no token_hash", async () => {
     const { db } = createFakeD1();
     const { kv } = createFakeKV();
-    const { token } = await createAgentGrant(db, {
-      wecomUserid: "Boss",
-      role: "super_admin"
-    });
+    const env = fakeEnv(db, kv);
+    const jwt = await superAdminJwt(env);
     await createAgentGrant(db, { wecomUserid: "SomeStaff", role: "operator" });
+    await createAgentGrant(db, { wecomUserid: "OtherStaff", role: "operator" });
     const res = await adminRoutes.request(
       "/agent/grants",
-      { headers: { authorization: `Bearer ${token}` } },
-      fakeEnv(db, kv)
+      { headers: { authorization: `Bearer ${jwt}` } },
+      env
     );
     expect(res.status).toBe(200);
     const body = (await res.json()) as {

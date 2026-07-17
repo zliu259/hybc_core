@@ -6,10 +6,12 @@ import { createFakeD1, createFakeKV } from "../test-support/agent-fakes";
 import { createAgentGrant } from "../services/agent-grant";
 import type { Env } from "../types/env";
 
+// 挂在一个白名单内的只读端点上（GET /api/v1/project），这样有效 agent 令牌能通过只读闸门，
+// 从而可验证解析出的 auth 上下文（via=mcp、roles）。非白名单路径会被 deny-by-default 拦成 403。
 const buildApp = (env: Env) => {
   const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
-  app.use("/protected", authMiddleware);
-  app.get("/protected", (c) => {
+  app.use("/api/v1/project", authMiddleware);
+  app.get("/api/v1/project", (c) => {
     const auth = c.get("auth");
     return c.json({ sub: auth.sub, via: auth.via, roles: auth.roles });
   });
@@ -29,7 +31,7 @@ describe("authMiddleware agent-token branch", () => {
     });
     const { app, env } = buildApp(fakeEnv(db, kv));
 
-    const res = await app.request("/protected", {
+    const res = await app.request("/api/v1/project", {
       headers: { authorization: `Bearer ${token}` }
     }, env);
 
@@ -44,7 +46,7 @@ describe("authMiddleware agent-token branch", () => {
     const { db } = createFakeD1();
     const { kv } = createFakeKV();
     const { app, env } = buildApp(fakeEnv(db, kv));
-    const res = await app.request("/protected", {
+    const res = await app.request("/api/v1/project", {
       headers: { authorization: "Bearer hybc_agent_bogus" }
     }, env);
     expect(res.status).toBe(401);
@@ -66,7 +68,7 @@ describe("authMiddleware agent-token branch", () => {
     const { kv } = createFakeKV();
     const { app, env } = buildApp(fakeEnv(throwingDb, kv));
 
-    const res = await app.request("/protected", {
+    const res = await app.request("/api/v1/project", {
       headers: { authorization: "Bearer hybc_agent_anything" }
     }, env);
 

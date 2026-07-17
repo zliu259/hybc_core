@@ -83,16 +83,19 @@ describe("agent routes device flow", () => {
 });
 
 describe("agent routes auth, ownership, and injection", () => {
-  it("GET /grants returns only the caller's own grants", async () => {
+  // /grants 是人类网页面向的端点（@hybc/mcp 不调用它，已被 deny-by-default 白名单拦截）；
+  // 故本用例改由「本人网页 JWT」发起，仍覆盖：只返回本人的授权，不返回他人的。
+  it("GET /grants returns only the caller's own grants (human session)", async () => {
     const { db } = createFakeD1();
     const { kv } = createFakeKV();
     const env = fakeEnv(db, kv);
     await createAgentGrant(db, { wecomUserid: "MaxLiu", role: "manager" });
-    const { token } = await createAgentGrant(db, { wecomUserid: "MaxLiu", role: "manager" });
+    await createAgentGrant(db, { wecomUserid: "MaxLiu", role: "manager" });
     await createAgentGrant(db, { wecomUserid: "OtherStaff", role: "operator" });
+    const jwt = await humanJwt(env, "MaxLiu");
     const res = await agentRoutes.request(
       "/grants",
-      { headers: { authorization: `Bearer ${token}` } },
+      { headers: { authorization: `Bearer ${jwt}` } },
       env
     );
     expect(res.status).toBe(200);
