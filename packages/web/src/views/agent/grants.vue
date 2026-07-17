@@ -120,6 +120,11 @@ onMounted(loadData);
       </template>
 
       <el-table v-loading="loading" :data="list" size="default">
+        <template #empty>
+          <el-empty
+            description="暂无授权设备。到「接入配置」页生成安装命令即可接入。"
+          />
+        </template>
         <el-table-column v-if="viewAll" label="员工" width="120">
           <template #default="scope">{{ ownerOf(scope.row) }}</template>
         </el-table-column>
@@ -174,11 +179,6 @@ onMounted(loadData);
           </template>
         </el-table-column>
       </el-table>
-
-      <el-empty
-        v-if="!loading && list.length === 0"
-        description="暂无授权设备。到「接入配置」页生成安装命令即可接入。"
-      />
     </el-card>
   </div>
 </template>

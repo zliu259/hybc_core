@@ -52,9 +52,10 @@ const loadInfo = async () => {
 };
 
 const onApprove = async () => {
+  if (!info.value) return;
   acting.value = true;
   try {
-    await approveDevice(normalizeCode(userCode.value));
+    await approveDevice(info.value.user_code);
     decided.value = "approved";
     message("已授权。请回到设备上继续，令牌将自动发放。", { type: "success" });
   } catch {
@@ -65,9 +66,10 @@ const onApprove = async () => {
 };
 
 const onDeny = async () => {
+  if (!info.value) return;
   acting.value = true;
   try {
-    await denyDevice(normalizeCode(userCode.value));
+    await denyDevice(info.value.user_code);
     decided.value = "denied";
     message("已拒绝该设备的接入请求", { type: "success" });
   } catch {
@@ -99,6 +101,7 @@ onMounted(() => {
             v-model="userCode"
             placeholder="ABCD-EFGH"
             style="width: 220px"
+            @input="info = null"
             @keyup.enter="loadInfo"
           />
           <el-button
