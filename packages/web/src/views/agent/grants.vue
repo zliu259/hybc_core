@@ -113,7 +113,12 @@ onMounted(loadData);
         </div>
       </template>
 
-      <el-table v-loading="loading" :data="list" size="default">
+      <el-table
+        :key="viewAll ? 'all' : 'mine'"
+        v-loading="loading"
+        :data="list"
+        size="default"
+      >
         <template #empty>
           <el-empty
             description="暂无授权设备。到「接入配置」页生成安装命令即可接入。"
