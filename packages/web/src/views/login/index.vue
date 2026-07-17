@@ -234,9 +234,13 @@ const initDesktopLoginPanel = async () => {
 };
 
 onMounted(() => {
-  stashRedirect(router.currentRoute.value.query.redirect);
   const params = new URLSearchParams(window.location.search);
   const code = params.get("code");
+  if (!code) {
+    // OAuth 回跳（带 code）时守卫会注入 redirect=/workspace/home，
+    // 无条件暂存会覆盖扫码前存下的深链，故仅在非 OAuth 回跳时暂存
+    stashRedirect(router.currentRoute.value.query.redirect);
+  }
   if (code) {
     const cleanUrl = `${window.location.origin}${window.location.pathname}${window.location.hash || ""}`;
     window.history.replaceState({}, document.title, cleanUrl);
