@@ -5,6 +5,8 @@ import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { createRateLimitMiddleware } from "../middleware/rate-limit";
 import {
   approveDeviceByUserCode,
+  denyDeviceByUserCode,
+  getDeviceInfoByUserCode,
   pollDeviceToken,
   provisionBootstrapGrant,
   redeemBootstrap,
@@ -124,6 +126,8 @@ agentRoutes.get("/install.ps1", (c) =>
 // --- 以下需 JWT（登录员工本人）---
 agentRoutes.use("/setup/provision", authMiddleware);
 agentRoutes.use("/device/approve", authMiddleware);
+agentRoutes.use("/device/info", authMiddleware);
+agentRoutes.use("/device/deny", authMiddleware);
 agentRoutes.use("/grants", authMiddleware);
 agentRoutes.use("/grants/*", authMiddleware);
 
@@ -167,6 +171,26 @@ agentRoutes.post("/device/approve", deviceRateLimit, requireHumanSession, async 
     return c.json(fail(error instanceof Error ? error.message : "approve failed"), 400);
   }
   return c.json(ok({ approved: true }));
+});
+
+// 授权页（人在环）：展示待批设备的元数据，供用户确认后再批准/拒绝
+agentRoutes.get("/device/info", requireHumanSession, async (c) => {
+  const userCode = c.req.query("user_code") ?? "";
+  if (!userCode) return c.json(fail("user_code required"), 400);
+  const info = await getDeviceInfoByUserCode(c.env.KV, userCode);
+  if (!info) return c.json(fail("user_code invalid or expired"), 404);
+  return c.json(ok(info));
+});
+
+agentRoutes.post("/device/deny", deviceRateLimit, requireHumanSession, async (c) => {
+  const body = (await c.req.json().catch(() => ({}))) as { user_code?: string };
+  if (!body.user_code) return c.json(fail("user_code required"), 400);
+  try {
+    await denyDeviceByUserCode(c.env.KV, body.user_code);
+  } catch (error) {
+    return c.json(fail(error instanceof Error ? error.message : "deny failed"), 400);
+  }
+  return c.json(ok({ denied: true }));
 });
 
 agentRoutes.get("/grants", async (c) => {

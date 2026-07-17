@@ -1,6 +1,6 @@
 import { createAgentGrant } from "./agent-grant";
 import type { UserRole } from "../types/auth";
-import type { DeviceCodeRecord } from "../types/agent";
+import type { DeviceCodeRecord, DeviceStatus } from "../types/agent";
 
 const DEVICE_TTL_SECONDS = 600;
 const USER_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 去除易混字符
@@ -148,6 +148,53 @@ export const pollDeviceToken = async (
     };
   }
   return { status: "expired" };
+};
+
+export interface DeviceInfoView {
+  user_code: string;
+  device_name: string | null;
+  agent_type: string | null;
+  client_info: string | null;
+  status: DeviceStatus;
+}
+
+// 授权页展示用：按 user_code 查设备元数据（不含 token 等敏感字段）
+export const getDeviceInfoByUserCode = async (
+  kv: KVNamespace,
+  userCode: string
+): Promise<DeviceInfoView | null> => {
+  const deviceCode = await kv.get(userCodeKey(userCode));
+  if (!deviceCode) return null;
+  const raw = await kv.get(deviceKey(deviceCode));
+  if (!raw) return null;
+  let record: DeviceCodeRecord;
+  try {
+    record = JSON.parse(raw) as DeviceCodeRecord;
+  } catch (err) {
+    console.error("agent device record parse failed", err);
+    return null;
+  }
+  return {
+    user_code: userCode,
+    device_name: record.deviceName ?? null,
+    agent_type: record.agentType ?? null,
+    client_info: record.clientInfo ?? null,
+    status: record.status
+  };
+};
+
+// 授权页「拒绝」：仅 pending 可拒绝，已批准/已拒绝的请求不可重复处置
+export const denyDeviceByUserCode = async (kv: KVNamespace, userCode: string): Promise<void> => {
+  const deviceCode = await kv.get(userCodeKey(userCode));
+  if (!deviceCode) throw new Error("Unknown or expired user_code");
+  const raw = await kv.get(deviceKey(deviceCode));
+  if (!raw) throw new Error("Unknown or expired user_code");
+  const record = JSON.parse(raw) as DeviceCodeRecord;
+  if (record.status !== "pending") throw new Error("Device request already resolved");
+  const updated: DeviceCodeRecord = { ...record, status: "denied" };
+  await kv.put(deviceKey(deviceCode), JSON.stringify(updated), {
+    expirationTtl: DEVICE_TTL_SECONDS
+  });
 };
 
 export interface ProvisionInput {
