@@ -31,6 +31,16 @@ export type AgentDeviceInfo = {
   status: "pending" | "approved" | "denied";
 };
 
+export const AGENT_TYPE_LABELS: Record<string, string> = {
+  claude_code: "Claude Code",
+  codex: "Codex",
+  claude_desktop: "Claude Desktop",
+  other: "其它 Agent"
+};
+
+export const agentTypeLabel = (value: string | null, fallback = "未知 Agent") =>
+  (value && AGENT_TYPE_LABELS[value]) || value || fallback;
+
 export const provisionAgent = (data: {
   device_name: string;
   agent_type: string;

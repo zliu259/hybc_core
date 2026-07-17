@@ -3,6 +3,7 @@ import { onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
 import {
+  agentTypeLabel,
   approveDevice,
   denyDevice,
   getDeviceInfo,
@@ -17,15 +18,6 @@ const info = ref<AgentDeviceInfo | null>(null);
 const loading = ref(false);
 const acting = ref(false);
 const decided = ref<"approved" | "denied" | null>(null);
-
-const AGENT_LABELS: Record<string, string> = {
-  claude_code: "Claude Code",
-  codex: "Codex",
-  claude_desktop: "Claude Desktop"
-};
-
-const agentLabel = (value: string | null) =>
-  (value && AGENT_LABELS[value]) || value || "未知 Agent";
 
 const normalizeCode = (raw: string) => raw.trim().toUpperCase();
 
@@ -120,7 +112,7 @@ onMounted(() => {
             {{ info.device_name || "未命名设备" }}
           </el-descriptions-item>
           <el-descriptions-item label="Agent">
-            {{ agentLabel(info.agent_type) }}
+            {{ agentTypeLabel(info.agent_type) }}
           </el-descriptions-item>
           <el-descriptions-item v-if="info.client_info" label="客户端">
             {{ info.client_info }}

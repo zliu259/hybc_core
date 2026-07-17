@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import dayjs from "dayjs";
 import { ElMessageBox } from "element-plus";
 import { message } from "@/utils/message";
 import { useUserStoreHook } from "@/store/modules/user";
 import {
   adminListAgentGrants,
   adminRevokeAgentGrant,
+  agentTypeLabel,
   listMyAgentGrants,
   revokeMyAgentGrant,
   type AdminAgentGrant,
@@ -38,13 +40,8 @@ const STATUS_TYPES: Record<
   expired: "info"
 };
 
-const formatTime = (value: string | null) => {
-  if (!value) return "—";
-  return value
-    .replace("T", " ")
-    .replace(/\.\d{3}Z$/, "")
-    .slice(0, 16);
-};
+const formatTime = (value: string | null) =>
+  value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "—";
 
 const ownerOf = (row: AgentGrant | AdminAgentGrant) =>
   "wecom_userid" in row ? row.wecom_userid : "";
@@ -61,10 +58,6 @@ const loadData = async () => {
   } finally {
     loading.value = false;
   }
-};
-
-const onToggleViewAll = async () => {
-  await loadData();
 };
 
 const onRevoke = async (row: AgentGrant | AdminAgentGrant) => {
@@ -112,9 +105,10 @@ onMounted(loadData);
           <el-switch
             v-if="isSuperAdmin"
             v-model="viewAll"
+            :disabled="loading"
             active-text="查看全部员工"
             inactive-text="仅本人"
-            @change="onToggleViewAll"
+            @change="loadData"
           />
         </div>
       </template>
@@ -135,7 +129,7 @@ onMounted(loadData);
         </el-table-column>
         <el-table-column prop="agent_type" label="Agent" width="130">
           <template #default="scope">{{
-            scope.row.agent_type || "—"
+            agentTypeLabel(scope.row.agent_type, "—")
           }}</template>
         </el-table-column>
         <el-table-column prop="token_prefix" label="令牌前缀" width="170">

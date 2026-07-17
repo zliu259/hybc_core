@@ -1,21 +1,29 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref } from "vue";
 import { message } from "@/utils/message";
-import { provisionAgent, type AgentProvisionResult } from "@/api/agent";
+import {
+  AGENT_TYPE_LABELS,
+  provisionAgent,
+  type AgentProvisionResult
+} from "@/api/agent";
 
 defineOptions({ name: "AgentSetup" });
 
-const AGENT_OPTIONS = [
-  { value: "claude_code", label: "Claude Code（推荐）" },
-  { value: "codex", label: "Codex" },
-  { value: "claude_desktop", label: "Claude Desktop" },
-  { value: "other", label: "其它 Agent" }
-];
+const AGENT_OPTIONS = Object.entries(AGENT_TYPE_LABELS).map(
+  ([value, label]) => ({
+    value,
+    label: value === "claude_code" ? `${label}（推荐）` : label
+  })
+);
 
 const agentType = ref("claude_code");
 const deviceName = ref("");
 const generating = ref(false);
 const result = ref<AgentProvisionResult | null>(null);
+
+const validMinutes = computed(() =>
+  result.value ? Math.round(result.value.expires_in / 60) : 0
+);
 
 const onGenerate = async () => {
   if (!deviceName.value.trim()) {
@@ -29,7 +37,9 @@ const onGenerate = async () => {
       agent_type: agentType.value
     });
     result.value = res.data;
-    message("安装命令已生成，10 分钟内有效", { type: "success" });
+    message(`安装命令已生成，${validMinutes.value} 分钟内有效`, {
+      type: "success"
+    });
   } catch {
     message("生成失败，请稍后再试", { type: "error" });
   } finally {
@@ -91,7 +101,9 @@ const copyText = async (value: string | undefined) => {
 
     <el-card v-if="result" shadow="never" style="margin-top: 16px">
       <template #header>
-        <span style="font-weight: 600">安装命令（一次性，10 分钟内有效）</span>
+        <span style="font-weight: 600">
+          安装命令（一次性，{{ validMinutes }} 分钟内有效）
+        </span>
       </template>
       <el-alert
         type="info"
