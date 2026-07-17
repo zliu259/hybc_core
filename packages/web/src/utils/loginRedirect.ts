@@ -29,16 +29,32 @@ export const stashRedirect = (raw: unknown): void => {
   }
 };
 
+/** 清除暂存的回跳地址（用户放弃深链、手动进登录页时避免旧目标残留） */
+export const clearRedirect = (): void => {
+  try {
+    window.sessionStorage.removeItem(STORAGE_KEY);
+  } catch {
+    // sessionStorage 不可用时无需清理
+  }
+};
+
 /**
- * 登录页挂载时的暂存决策：OAuth 返回趟（带 code）不暂存——
- * 守卫在该趟会注入默认 redirect（如 /workspace/home），无条件暂存会覆盖真正的深链。
+ * 登录页挂载时的暂存决策：
+ * - OAuth 返回趟（带 code）直接返回、绝不动暂存——守卫在该趟会注入默认 redirect
+ *   （如 /workspace/home），无条件暂存会覆盖往返前保存的真正深链。
+ * - 普通挂载（无 code）：redirect 合法则暂存；否则清除旧暂存，避免用户放弃深链后
+ *   手动进 /login 时残留的过期目标把登录后跳转劫持到非预期页面。
  */
 export const stashRedirectFromLoginMount = (
   oauthCode: string | null,
   redirect: unknown
 ): void => {
   if (oauthCode) return;
-  stashRedirect(redirect);
+  if (sanitizeRedirect(redirect)) {
+    stashRedirect(redirect);
+  } else {
+    clearRedirect();
+  }
 };
 
 /** 登录成功后取出并清除暂存的回跳地址 */

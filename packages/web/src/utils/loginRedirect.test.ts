@@ -70,4 +70,16 @@ describe("stashRedirectFromLoginMount", () => {
     stashRedirectFromLoginMount("wx-oauth-code", "/workspace/home");
     expect(popRedirect()).toBe("/agent/authorize?user_code=AB12-CD34");
   });
+
+  it("clears a stale stash on a plain login mount (no code, no redirect)", () => {
+    stashRedirect("/agent/grants");
+    stashRedirectFromLoginMount(null, undefined);
+    expect(popRedirect()).toBeNull();
+  });
+
+  it("clears the stash when redirect is invalid and no code", () => {
+    stashRedirect("/agent/grants");
+    stashRedirectFromLoginMount(null, "https://evil.com");
+    expect(popRedirect()).toBeNull();
+  });
 });

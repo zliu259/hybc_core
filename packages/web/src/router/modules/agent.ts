@@ -8,7 +8,9 @@ export default {
   meta: {
     icon: "ep:cpu",
     title: "智能体接入",
-    rank: 19
+    rank: 19,
+    // P2 微信闸门上线前运营冻结：整组暂不进侧边菜单，页面仍可直达；P2 就绪后删除本行
+    showLink: false
   },
   children: [
     {
