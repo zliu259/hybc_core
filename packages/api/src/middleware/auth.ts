@@ -3,6 +3,7 @@ import type { MiddlewareHandler } from "hono";
 import { verifyToken } from "../services/auth";
 import { isAgentToken } from "../services/agent-token";
 import { resolveAgentByToken, touchGrantLastUsed } from "../services/agent-grant";
+import { agentReadonlyForbidden, isReadOnlyMethod } from "./agent-readonly";
 import { writeAuditLog } from "../services/audit-log";
 import type { AuthTokenPayload } from "../types/auth";
 import type { Env } from "../types/env";
@@ -52,6 +53,13 @@ export const authMiddleware: MiddlewareHandler<{
     }
     if (!identity) {
       return unauthorized("Invalid or expired agent token");
+    }
+
+    // 只读闸门：mcp_agent 令牌禁止一切写操作，兑现 P1c「只读」同意承诺（见 middleware/agent-readonly.ts）。
+    // 放在身份解析之后、设置 auth 上下文与审计之前 —— 被拦截的写请求不会计入 last_used，也不落审计。
+    // agent 令牌是所有请求的唯一收敛点，此处即全局不可绕过的写拦截点；人类 JWT 会话不受影响。
+    if (!isReadOnlyMethod(c.req.method)) {
+      return agentReadonlyForbidden();
     }
 
     const now = Math.floor(Date.now() / 1000);
