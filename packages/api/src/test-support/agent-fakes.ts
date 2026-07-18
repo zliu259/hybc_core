@@ -133,6 +133,28 @@ export const createFakeD1 = (): FakeD1 => {
       }
       return 0;
     }
+    // 清扫卡死的 executing 行：唯一一条会命中多行的 UPDATE，故按 WHERE 逐行判定并累加行数。
+    if (sql.includes("SET status = 'failed'")) {
+      const [resultSnapshot, executedAt, cutoff] = args as string[];
+      let changes = 0;
+      for (const [id, p] of pendings) {
+        if (
+          p.status === "executing" &&
+          p.executed_at === null &&
+          (p.created_at as string) < cutoff
+        ) {
+          pendings.set(id, {
+            ...p,
+            status: "failed",
+            request_snapshot: "",
+            result_snapshot: resultSnapshot,
+            executed_at: executedAt
+          });
+          changes += 1;
+        }
+      }
+      return changes;
+    }
     if (sql.includes("SET status = ?")) {
       const [status, resultSnapshot, executedAt, id] = args as string[];
       const p = pendings.get(id);

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   PENDING_TTL_SECONDS,
+  STALE_EXECUTING_GRACE_SECONDS,
   claimForExecution,
   confirmPending,
   finishPending,
@@ -9,9 +10,10 @@ import {
   getPendingById,
   parkPendingAction,
   rejectPending,
+  sweepStalePendingActions,
   toPublicView
 } from "./agent-pending";
-import { createFakeD1 } from "../test-support/agent-fakes";
+import { createFakeD1, type FakeD1 } from "../test-support/agent-fakes";
 
 const park = async (db: D1Database) =>
   parkPendingAction(db, {
@@ -137,22 +139,143 @@ describe("toPublicView", () => {
     expect(serialized).not.toContain("Bearer");
     expect(serialized).not.toContain("authorization");
     expect(serialized).not.toContain(row!.confirm_token_hash);
+    expect(serialized).not.toContain(row!.grant_id);
+    expect(serialized).not.toContain(row!.wecom_userid);
     expect(view).toMatchObject({ id: parked.id, status: "pending", summary: "批准审批单 #42" });
   });
 
-  it("reports expired for a past-due row that never settled", async () => {
+  it("reports expired for a past-due row still awaiting confirmation", async () => {
     const { db } = createFakeD1();
     const parked = await park(db);
     const row = await getPendingById(db, parked.id);
     expect(toPublicView({ ...row!, expires_at: "2000-01-01T00:00:00.000Z" }).status).toBe("expired");
   });
 
-  it("does NOT relabel a settled row as expired even when past due", async () => {
+  // expires_at 只界定「确认窗口」。已确认的动作仍可被 claim 执行（claimForExecution 刻意不看过期），
+  // 若因超时把它显示成 expired，就是先告诉用户「没发生」、随后它却执行了。
+  it("does NOT relabel a past-due confirmed row as expired (it can still execute)", async () => {
     const { db } = createFakeD1();
     const parked = await park(db);
+    await confirmPending(db, parked.id);
     const row = await getPendingById(db, parked.id);
-    const settled = { ...row!, expires_at: "2000-01-01T00:00:00.000Z", status: "done" as const };
-    expect(toPublicView(settled).status).toBe("done");
+    expect(toPublicView({ ...row!, expires_at: "2000-01-01T00:00:00.000Z" }).status).toBe(
+      "confirmed"
+    );
+  });
+
+  // 最危险的一档：executing 意味着写可能已经落库。谎报 expired = 谎报「什么都没发生」。
+  it("does NOT relabel a past-due executing row as expired (the write may already have landed)", async () => {
+    const { db } = createFakeD1();
+    const parked = await park(db);
+    await confirmPending(db, parked.id);
+    await claimForExecution(db, parked.id);
+    const row = await getPendingById(db, parked.id);
+    expect(toPublicView({ ...row!, expires_at: "2000-01-01T00:00:00.000Z" }).status).toBe(
+      "executing"
+    );
+  });
+
+  it.each(["done", "failed", "rejected"] as const)(
+    "does NOT relabel a settled %s row as expired even when past due",
+    async (status) => {
+      const { db } = createFakeD1();
+      const parked = await park(db);
+      const row = await getPendingById(db, parked.id);
+      const settled = { ...row!, expires_at: "2000-01-01T00:00:00.000Z", status };
+      expect(toPublicView(settled).status).toBe(status);
+    }
+  );
+});
+
+describe("sweepStalePendingActions", () => {
+  /**
+   * 把行的 created_at 往前拨。不用 graceSeconds=0 来制造「已过期」：
+   * park→confirm→claim→sweep 可能落在同一毫秒内，`created_at < cutoff` 会因相等而不成立，
+   * 使测试偶发失败。直接伪造一个确实很旧的行既确定，又更贴近真实场景。
+   */
+  const backdate = (pendings: FakeD1["pendings"], id: string, secondsAgo: number) => {
+    const row = pendings.get(id);
+    if (!row) throw new Error(`no such pending row: ${id}`);
+    pendings.set(id, {
+      ...row,
+      created_at: new Date(Date.now() - secondsAgo * 1000).toISOString()
+    });
+  };
+
+  const claimed = async (db: D1Database) => {
+    const parked = await park(db);
+    await confirmPending(db, parked.id);
+    await claimForExecution(db, parked.id);
+    return parked;
+  };
+
+  it("sweeps a stale executing row and clears the bearer-token snapshot", async () => {
+    const { db, pendings } = createFakeD1();
+    const parked = await claimed(db);
+    backdate(pendings, parked.id, 7200);
+
+    expect(await sweepStalePendingActions(db)).toBe(1);
+    const row = await getPendingById(db, parked.id);
+    expect(row?.status).toBe("failed");
+    expect(row?.request_snapshot).toBe("");
+    expect(JSON.parse(row?.result_snapshot as string)).toMatchObject({ swept: true });
+  });
+
+  it("leaves a fresh executing row alone", async () => {
+    const { db } = createFakeD1();
+    const parked = await claimed(db);
+    expect(await sweepStalePendingActions(db)).toBe(0);
+    expect((await getPendingById(db, parked.id))?.status).toBe("executing");
+  });
+
+  it("honours the grace period argument", async () => {
+    const { db, pendings } = createFakeD1();
+    const parked = await claimed(db);
+    backdate(pendings, parked.id, 100);
+
+    expect(await sweepStalePendingActions(db, 3600)).toBe(0);
+    expect(await sweepStalePendingActions(db, 50)).toBe(1);
+  });
+
+  it("is idempotent — a swept row is not swept again", async () => {
+    const { db, pendings } = createFakeD1();
+    const parked = await claimed(db);
+    backdate(pendings, parked.id, 7200);
+
+    expect(await sweepStalePendingActions(db)).toBe(1);
+    expect(await sweepStalePendingActions(db)).toBe(0);
+  });
+
+  it("never touches pending, confirmed, or already-finished rows however old", async () => {
+    const { db, pendings } = createFakeD1();
+    const stalePending = await park(db);
+    const confirmed = await park(db);
+    await confirmPending(db, confirmed.id);
+    const finished = await claimed(db);
+    await finishPending(db, finished.id, "done", { status: 200, body: {} });
+    for (const id of [stalePending.id, confirmed.id, finished.id]) {
+      backdate(pendings, id, 7200);
+    }
+
+    expect(await sweepStalePendingActions(db)).toBe(0);
+    expect((await getPendingById(db, stalePending.id))?.status).toBe("pending");
+    expect((await getPendingById(db, confirmed.id))?.status).toBe("confirmed");
+    expect((await getPendingById(db, finished.id))?.status).toBe("done");
+  });
+
+  it("counts every stale row it sweeps, and only those", async () => {
+    const { db, pendings } = createFakeD1();
+    const first = await claimed(db);
+    const second = await claimed(db);
+    await claimed(db); // fresh — must not be swept
+    backdate(pendings, first.id, 7200);
+    backdate(pendings, second.id, 7200);
+
+    expect(await sweepStalePendingActions(db)).toBe(2);
+  });
+
+  it("has a one-hour default grace period", () => {
+    expect(STALE_EXECUTING_GRACE_SECONDS).toBe(3600);
   });
 });
 

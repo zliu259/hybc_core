@@ -30,13 +30,13 @@
  */
 
 import { sha256Hex } from "./agent-replay";
-import type { AgentPendingRow, PendingPublicView, PendingStatus, RequestSnapshot } from "../types/agent";
+import type { AgentPendingRow, PendingPublicView, RequestSnapshot } from "../types/agent";
 
 /** 待确认动作的有效期：10 分钟。够员工收到企微卡片并确认，又不至于让令牌快照长期驻留。 */
 export const PENDING_TTL_SECONDS = 600;
 
-/** 已结算（不可再流转）的状态：过期判定必须跳过它们，否则会把已完成的动作误报为 expired。 */
-const SETTLED_STATUSES: readonly PendingStatus[] = ["done", "failed", "rejected", "expired"];
+/** 卡死 executing 行的清扫宽限期：1 小时，远超一次正常重放的耗时，不会误伤在途请求。 */
+export const STALE_EXECUTING_GRACE_SECONDS = 3600;
 
 export interface ParkInput {
   grantId: string;
@@ -194,14 +194,56 @@ export const finishPending = async (
   return updated.meta.changes === 1;
 };
 
-const parseResult = (raw: string | null): unknown | null => {
+/**
+ * 清扫卡在 executing 的行。
+ *
+ * worker 在 claim 与 finish 之间被回收（CPU 超时、实例驱逐、重放中抛出未捕获异常）时，行会永久停在
+ * executing：confirm/claim/finish 的守卫都不再匹配，没有任何路径能推动它。后果不只是状态难看——
+ * request_snapshot 里那枚 agent bearer 令牌会**无限期驻留 D1**，直接违背本模块头部承诺的令牌卫生。
+ *
+ * 超过宽限期即抹掉快照并标 failed。仍是单条条件 UPDATE（唯一一条会命中多行的），行数即清扫数。
+ *
+ * 注意宽限期是从 created_at 起算，而非从 claim 起算——表里没有 claimed_at 列，created_at 是唯一可用的钟。
+ * 故实际留给重放的时间是 grace 减去确认窗口（最多 10 分钟），1 小时的默认值下仍有 ≥50 分钟，绰绰有余。
+ *
+ * 标成 failed 而非 expired：这行确实进过 executing，写**可能已经落库**，failed 只断言「我们没能记录到
+ * 成功结果」，不谎称什么都没发生。result_snapshot 里写明 swept，便于事后与业务表核对。
+ *
+ * @returns 本次清扫掉的行数
+ */
+export const sweepStalePendingActions = async (
+  db: D1Database,
+  graceSeconds = STALE_EXECUTING_GRACE_SECONDS
+): Promise<number> => {
+  const now = Date.now();
+  const nowIso = new Date(now).toISOString();
+  const cutoff = new Date(now - graceSeconds * 1000).toISOString();
+  const resultSnapshot = JSON.stringify({
+    swept: true,
+    reason: "execution did not report back within the grace period",
+    grace_seconds: graceSeconds,
+    swept_at: nowIso
+  });
+
+  const updated = await db
+    .prepare(
+      `UPDATE agent_pending_action SET status = 'failed', request_snapshot = '', result_snapshot = ?, executed_at = ? WHERE status = 'executing' AND executed_at IS NULL AND created_at < ?`
+    )
+    .bind(resultSnapshot, nowIso, cutoff)
+    .run();
+  return updated.meta.changes ?? 0;
+};
+
+const parseResult = (id: string, raw: string | null): unknown | null => {
   if (!raw) {
     return null;
   }
   try {
     return JSON.parse(raw);
-  } catch {
+  } catch (error) {
     // 结果快照损坏不应让整个查询失败：调用方拿到 null 即可，真实内容仍在库里可人工排查。
+    // 但也绝不能静默——快照是我们唯一的执行留痕，它解析不出来本身就是需要有人去看的异常。
+    console.error("agent pending result_snapshot parse failed", { pendingId: id, error });
     return null;
   }
 };
@@ -213,13 +255,19 @@ const parseResult = (raw: string | null): unknown | null => {
  * 被排除的：request_snapshot（内含 Bearer 令牌）、confirm_token_hash（可用于离线爆破确认链接）、
  * grant_id / wecom_userid（横向关联信息，调用方已知自己是谁，无需回传）。
  *
- * 过期是惰性呈现的：库里不跑定时任务把 pending 改写成 expired（Worker 无常驻进程，且过期本身
- * 已由 confirmPending 的 WHERE 守住），故读时按 expires_at 现算。但只对未结算状态生效——
- * 一个 10 分钟前执行成功的动作，现在早已「过期」，若因此显示成 expired 就是彻头彻尾的谎报。
+ * ## expires_at 只界定「确认窗口」，不界定动作的整个生命周期
+ *
+ * 惰性呈现：库里不跑定时任务把 pending 改写成 expired（Worker 无常驻进程，且过期本身已由
+ * confirmPending 的 WHERE 守住），故读时按 expires_at 现算。但**只有 pending 会被改标为 expired**。
+ * 读者把 expired 理解成「这件事永远不会发生了」，所以这个标签只在它确实为真时才能出现：
+ * - pending 且过期：confirmPending 的 WHERE 已让它再也无法被确认 → 确实永远不会发生，expired 属实。
+ * - confirmed 且过期：claimForExecution **刻意不看 expires_at**（加了过期守卫会把合法确认过的动作
+ *   永久卡死），它随时仍可能被执行。标成 expired 就是先告诉用户「没发生」、随后它却执行了。
+ * - executing 且过期：写可能**已经落库**。这是最危险的一档——谎称 expired 等于谎称什么都没发生。
+ * - done / failed / rejected：早已结算，与时间无关。
  */
 export const toPublicView = (row: AgentPendingRow): PendingPublicView => {
-  const isSettled = SETTLED_STATUSES.includes(row.status);
-  const isExpired = !isSettled && row.expires_at <= new Date().toISOString();
+  const isExpired = row.status === "pending" && row.expires_at <= new Date().toISOString();
   return {
     id: row.id,
     action_kind: row.action_kind,
@@ -229,6 +277,6 @@ export const toPublicView = (row: AgentPendingRow): PendingPublicView => {
     expires_at: row.expires_at,
     confirmed_at: row.confirmed_at,
     executed_at: row.executed_at,
-    result: parseResult(row.result_snapshot)
+    result: parseResult(row.id, row.result_snapshot)
   };
 };
