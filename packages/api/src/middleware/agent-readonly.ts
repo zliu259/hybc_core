@@ -56,10 +56,16 @@ const ALLOWED_AGENT_READS: readonly AgentReadRule[] = [
   { method: "GET", pattern: /^\/warehouse\/inventory\/alert$/, tool: "warehouse_low_stock" },
   { method: "GET", pattern: /^\/warehouse\/stock-order$/, tool: "list_stock_orders" },
   // P2a：MCP 客户端轮询「待本人确认动作」的状态（pending / confirmed / rejected / expired）。
-  // 这里只管形状：必须是 36 字符 UUID 形态，不接受任意串（挡掉 /agent/pending/../../secret
-  // 之类的越权取数尝试）。归属校验（该 pending 动作确属本次授权 grant）在路由 handler 内做，
-  // 白名单不负责、也无从判断身份。
-  { method: "GET", pattern: /^\/agent\/pending\/[0-9a-f-]{36}$/i, tool: "check_pending" }
+  // 这里只管形状：必须是真正的 UUID 分段结构（8-4-4-4-12），不是「36 个十六进制或连字符」——
+  // 后者会放过 36 个连字符、36 个 a 之类明显非 id 的串。收紧到分段形态是免费的纵深防御，
+  // 同时挡掉 /agent/pending/../../secret 之类的越权取数尝试。
+  // 归属校验（该 pending 动作确属本次授权 grant）始终在路由 handler 内做，白名单不负责、
+  // 也无从判断身份——收紧形状不减轻 handler 的责任。
+  {
+    method: "GET",
+    pattern: /^\/agent\/pending\/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+    tool: "check_pending"
+  }
 ];
 
 /**
