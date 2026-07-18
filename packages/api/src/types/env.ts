@@ -6,6 +6,8 @@ export interface Env {
   EVENT_QUEUE: Queue;
   APP_ENV: string;
   JWT_SECRET: string;
+  /** 高危重放标记专用 HMAC 密钥；不复用 JWT_SECRET，缩小泄露爆炸半径。 */
+  AGENT_REPLAY_SECRET: string;
   UPLOAD_SIGNING_SECRET: string;
   TASK_API_KEY: string;
   BRIDGE_HMAC_SECRET?: string;

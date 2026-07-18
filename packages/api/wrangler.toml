@@ -61,6 +61,7 @@ PASSKEY_RP_NAME = "HYBC"
 REIMBURSEMENT_REQUIRE_PAYEE = "false"
 AGENT_WEB_BASE_URL = "https://web.hybcdg.com"
 AGENT_API_BASE_URL = "https://api.hybcdg.com"
+AGENT_REPLAY_SECRET = "REPLACE_WITH_PROD_SECRET"
 
 [triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
@@ -126,6 +127,7 @@ PASSKEY_RP_NAME = "HYBC"
 REIMBURSEMENT_REQUIRE_PAYEE = "false"
 AGENT_WEB_BASE_URL = "https://web.hybcdg.com"
 AGENT_API_BASE_URL = "https://api.hybcdg.com"
+AGENT_REPLAY_SECRET = "REPLACE_WITH_PROD_SECRET"
 
 [env.prod.triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
