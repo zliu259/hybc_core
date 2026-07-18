@@ -208,3 +208,29 @@ mcp_agent 请求 →
 1. 有界轮询窗口（90s）与 `poll_after`（3s）是否合适？（可实现时微调）
 2. `GET /agent/pending/:id` 对 agent 令牌返回的字段粒度：是否需要脱敏 request_snapshot（含原 Authorization）——**必须**：该端点返回给 agent/页面时绝不回显 `headers.authorization` 与 confirm_token（仅回 status/summary/result_snapshot 等）。已在设计内约束，实现须落测试。
 3. 首批只审批：approve/reject 的 `comment` 是否要在卡片/确认页展示给确认人？建议展示（透明）。
+
+## 13. 实现修订（P2a 落地后追记，2026-07-17）
+
+本节只记录**实现与上文不一致、照上文读会被误导**之处；未列出的部分按上文理解即可。
+
+**范围拆分**：P2a 只做了后端引擎（§4/§5/§8 的 api 部分）。**§6 确认页与 §7 MCP 写工具属 P2b，尚未实现**——卡片链接指向的 `/#/agent/confirm` 路由在 web 端目前不存在。故生产 flag 必须保持关闭。
+
+**§4 KV / §5.1 feature flag**：键名与取值形态均已变更，且缺省语义相反。
+- 实际键名 `agent:highrisk:config`（非 `agent:highrisk:enabled`），值为 JSON `{"enabled": boolean}`（非 `"1"`/`"0"`）。
+- 缺省**并非一律关**：无键时 `APP_ENV === "local"` 视为开、其余视为关（与 passkey flag 同款口径），便于本地开发免配置。JSON 解析失败一律视为关。
+
+**§4 env `AGENT_REPLAY_SECRET`**：**不写入 `wrangler.toml`**（上文要求「顶层 [vars] + production 两处一致」，已不采纳）。改为仅经 `wrangler secret put` 下发，本地走 `.dev.vars`。理由：仓库内已有 JWT_SECRET 等明文提交的历史包袱，新密钥不重蹈覆辙。
+
+**§5.2 重放标记绑定要素**：由 `HMAC(pending_id:sha256(body))` 收紧为绑定 **method + path + pendingId + bodyHash** 四要素。评审发现原两要素形态下，同一笔 pending 的标记可被挪用到**另一方法/路径**上（咨询式护栏，可伪造）。
+
+**§5.2「标记校验须同时要求 pending 处于 `executing` 态」——未在闸门内实现**。`decideAgentRequest` 被刻意保持为**纯函数**（不读库/不写库/无副作用），故不查状态。至多一次改由**重放前的乐观锁抢占** `claimForExecution`（`WHERE status='confirmed'`）单独保证，见 §5.3。功能等价，但读 §5.2 时不要期待闸门里有 DB 查询。
+
+**§5.1 裁决顺序**：上文伪代码把 flag 判断画在标记判断之前。实现**刻意相反**——先验标记、后查开关：开关只管 park，不管 replay。否则运维在动作在途时关掉开关，员工已点「同意」的写会被静默丢弃且无处报错。
+
+**新增护栏（上文未涉及）**：
+- **每 grant 未决上限 5 条**，超出 429 + `agent.high_risk_park_refused` 审计（防卡片轰炸）。
+- **每小时 cron 清扫** `sweepStalePendingActions`：滞留行标 `failed` 并**清除快照内的 bearer 令牌**（快照为重放必须存原 Authorization，是本设计最敏感的驻留数据）。
+
+**§3 步骤 3 的 202 响应体**：实际返回 `{ status, pending_action_id, expires_at, action_kind, summary, message }`，**无 `poll_after`**（§12 开放问题 1 的轮询节奏留 P2b 客户端自行决定）。
+
+**§12 开放问题 2（脱敏）已落实**：`GET /agent/pending/:id` 经 `toPublicView` 投影，本地冒烟实测响应中无 `authorization` / `Bearer` / 令牌哈希 / confirm_token。
