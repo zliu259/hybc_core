@@ -37,6 +37,7 @@ import { warehouseManualRoutes } from "./routes/warehouse-manual";
 import { warehouseAssetWorkOrderRoutes } from "./routes/warehouse-work-order";
 import { queue } from "./queue-handler";
 import { scheduled } from "./scheduled";
+import { setAppFetcher } from "./services/app-ref";
 import type { Env } from "./types/env";
 
 const app = new Hono<{ Bindings: Env }>();
@@ -92,6 +93,10 @@ app.route("/api/v1/wecom", wecomToolRoutes);
 app.route("/api/v1/agent", agentRoutes);
 app.route("/api/v1/admin", adminRoutes);
 app.route("/api/v1/dashboard", dashboardRoutes);
+
+// 供高危动作确认后的服务端重放复用整包中间件栈（见 routes/agent 的 pending confirm）
+// app.fetch 可能同步返回 Response，这里统一收敛为 Promise
+setAppFetcher(async (request, env, ctx) => app.fetch(request, env, ctx));
 
 export default {
   fetch: app.fetch,
