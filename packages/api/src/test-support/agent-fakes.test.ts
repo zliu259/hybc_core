@@ -134,10 +134,127 @@ describe("fake D1 · agent_pending_action", () => {
     expect(res.meta.changes).toBe(0);
   });
 
-  it("still supports the existing agent_grant behaviour", async () => {
+  it("reject fires from pending and clears the request snapshot", async () => {
+    const { db } = createFakeD1();
+    await insertPending(db, "p1");
+    const res = await db
+      .prepare(
+        `UPDATE agent_pending_action SET status = 'rejected', request_snapshot = '' WHERE id = ? AND status = 'pending'`
+      )
+      .bind("p1")
+      .run();
+    expect(res.meta.changes).toBe(1);
+    const row = await db
+      .prepare("SELECT * FROM agent_pending_action WHERE id = ?")
+      .bind("p1")
+      .first<{ status: string; request_snapshot: string }>();
+    expect(row?.status).toBe("rejected");
+    expect(row?.request_snapshot).toBe("");
+  });
+
+  it("throws on an unrecognised agent_pending_action UPDATE instead of reporting 0 rows", async () => {
+    const { db } = createFakeD1();
+    await insertPending(db, "p1");
+    await expect(
+      db
+        .prepare(`UPDATE agent_pending_action SET status='confirmed' WHERE id = ?`)
+        .bind("p1")
+        .run()
+    ).rejects.toThrow(/unhandled agent_pending_action UPDATE/);
+  });
+
+  it("rejects a duplicate primary key on insert", async () => {
+    const { db } = createFakeD1();
+    await insertPending(db, "p1");
+    await expect(insertPending(db, "p1")).rejects.toThrow(/UNIQUE constraint failed/);
+  });
+});
+
+describe("fake D1 · agent_pending_action read fidelity", () => {
+  it("applies WHERE conjuncts after the id/hash predicate", async () => {
+    const { db } = createFakeD1();
+    await insertPending(db, "p1", "rejected");
+    const byToken = await db
+      .prepare(
+        "SELECT * FROM agent_pending_action WHERE confirm_token_hash = ? AND status = 'pending'"
+      )
+      .bind("hash-p1")
+      .first<{ id: string }>();
+    expect(byToken).toBeNull();
+
+    const byId = await db
+      .prepare("SELECT * FROM agent_pending_action WHERE id = ? AND status = 'pending'")
+      .bind("p1")
+      .first<{ id: string }>();
+    expect(byId).toBeNull();
+  });
+
+  it("applies the expires_at conjunct on reads", async () => {
+    const { db } = createFakeD1();
+    await insertPending(db, "p1");
+    const live = await db
+      .prepare(
+        "SELECT * FROM agent_pending_action WHERE confirm_token_hash = ? AND expires_at > ?"
+      )
+      .bind("hash-p1", "2026-07-17T00:01:00.000Z")
+      .first<{ id: string }>();
+    expect(live?.id).toBe("p1");
+
+    const expired = await db
+      .prepare(
+        "SELECT * FROM agent_pending_action WHERE confirm_token_hash = ? AND expires_at > ?"
+      )
+      .bind("hash-p1", "2026-07-18T00:00:00.000Z")
+      .first<{ id: string }>();
+    expect(expired).toBeNull();
+  });
+
+  it("all() reads pending rows, not grant rows, and honours its filters", async () => {
+    const { createAgentGrant } = await import("../services/agent-grant");
+    const { db } = createFakeD1();
+    await createAgentGrant(db, { wecomUserid: "MaxLiu", role: "manager" });
+    await insertPending(db, "p1");
+    await insertPending(db, "p2", "rejected");
+
+    const all = await db
+      .prepare("SELECT * FROM agent_pending_action WHERE wecom_userid = ?")
+      .bind("MaxLiu")
+      .all<{ id: string }>();
+    expect(all.results.map((r) => r.id).sort()).toEqual(["p1", "p2"]);
+
+    const onlyPending = await db
+      .prepare(
+        "SELECT * FROM agent_pending_action WHERE wecom_userid = ? AND status = 'pending'"
+      )
+      .bind("MaxLiu")
+      .all<{ id: string }>();
+    expect(onlyPending.results.map((r) => r.id)).toEqual(["p1"]);
+
+    const otherUser = await db
+      .prepare("SELECT * FROM agent_pending_action WHERE wecom_userid = ?")
+      .bind("SomeoneElse")
+      .all<{ id: string }>();
+    expect(otherUser.results).toEqual([]);
+  });
+
+  it("still supports the existing agent_grant behaviour, including rows-affected on revoke", async () => {
     const { createAgentGrant, getGrantById } = await import("../services/agent-grant");
     const { db } = createFakeD1();
     const { grant } = await createAgentGrant(db, { wecomUserid: "MaxLiu", role: "manager" });
     expect((await getGrantById(db, grant.id))?.status).toBe("active");
+
+    const revokeSql = `UPDATE agent_grant SET status = 'revoked', revoked_at = ?, revoked_by = ?
+        WHERE id = ? AND status = 'active'`;
+    const first = await db
+      .prepare(revokeSql)
+      .bind("2026-07-17T00:00:00.000Z", "admin", grant.id)
+      .run();
+    const second = await db
+      .prepare(revokeSql)
+      .bind("2026-07-17T00:00:00.000Z", "admin", grant.id)
+      .run();
+    expect(first.meta.changes).toBe(1);
+    expect(second.meta.changes).toBe(0);
+    expect((await getGrantById(db, grant.id))?.status).toBe("revoked");
   });
 });

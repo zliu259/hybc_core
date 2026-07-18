@@ -65,6 +65,9 @@ export const createFakeD1 = (): FakeD1 => {
       created_at,
       expires_at
     ] = args as (string | null)[];
+    if (pendings.has(id as string)) {
+      throw new Error("D1_ERROR: UNIQUE constraint failed: agent_pending_action.id");
+    }
     pendings.set(id as string, {
       id,
       grant_id,
@@ -81,6 +84,24 @@ export const createFakeD1 = (): FakeD1 => {
       confirmed_at: null,
       executed_at: null
     });
+  };
+
+  /**
+   * 逐条应用 SELECT 里主键/哈希之外的 WHERE 合取项（`status = '<字面量>'`、`expires_at > ?`）。
+   * 真实 D1 会因这些条件返回空行，假实现若忽略它们就会把已拒绝/已执行的行读成"仍然有效"。
+   * 约定：`expires_at > ?` 的绑定值排在第一个（id / confirm_token_hash / wecom_userid）之后。
+   */
+  const pendingMatchesConjuncts = (
+    p: Record<string, unknown>,
+    sql: string,
+    args: unknown[]
+  ): boolean => {
+    const statusLiteral = /status = '([a-z_]+)'/.exec(sql);
+    if (statusLiteral && p.status !== statusLiteral[1]) return false;
+    if (sql.includes("expires_at > ?") && !((p.expires_at as string) > (args[1] as string))) {
+      return false;
+    }
+    return true;
   };
 
   /** 手工模拟各条件 UPDATE 的 WHERE 语义，返回受影响行数（0 或 1）。 */
@@ -127,7 +148,9 @@ export const createFakeD1 = (): FakeD1 => {
       }
       return 0;
     }
-    return 0;
+    // 分派是逐字匹配的：写法漂移（如 `SET status='confirmed'`）或新增的状态流转
+    // 若静默返回 0，会与"乐观锁竞争失败"完全无法区分。宁可炸在这里。
+    throw new Error(`fake D1: unhandled agent_pending_action UPDATE: ${sql}`);
   };
 
   const db = {
@@ -179,16 +202,16 @@ export const createFakeD1 = (): FakeD1 => {
         },
         async first<T>() {
           if (sql.includes("FROM agent_pending_action")) {
+            let row: Record<string, unknown> | undefined;
             if (sql.includes("WHERE confirm_token_hash = ?")) {
               const [hash] = bound as string[];
-              return ([...pendings.values()].find((p) => p.confirm_token_hash === hash) ??
-                null) as T | null;
-            }
-            if (sql.includes("WHERE id = ?")) {
+              row = [...pendings.values()].find((p) => p.confirm_token_hash === hash);
+            } else if (sql.includes("WHERE id = ?")) {
               const [id] = bound as string[];
-              return (pendings.get(id) ?? null) as T | null;
+              row = pendings.get(id);
             }
-            return null;
+            if (!row || !pendingMatchesConjuncts(row, sql, bound)) return null;
+            return row as T;
           }
           if (sql.includes("WHERE token_hash = ?")) {
             const [hash] = bound as string[];
@@ -201,6 +224,13 @@ export const createFakeD1 = (): FakeD1 => {
           return null;
         },
         async all<T>() {
+          if (sql.includes("FROM agent_pending_action")) {
+            const rows = [...pendings.values()]
+              .filter((p) => !sql.includes("wecom_userid = ?") || p.wecom_userid === bound[0])
+              .filter((p) => pendingMatchesConjuncts(p, sql, bound))
+              .sort((a, b) => ((a.created_at as string) < (b.created_at as string) ? 1 : -1));
+            return { results: rows as T[], success: true, meta: {} };
+          }
           if (sql.includes("WHERE wecom_userid = ?")) {
             const [userid] = bound as string[];
             const rows = [...grants.values()]
