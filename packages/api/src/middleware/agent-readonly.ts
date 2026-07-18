@@ -54,7 +54,12 @@ const ALLOWED_AGENT_READS: readonly AgentReadRule[] = [
   { method: "GET", pattern: /^\/approval\/\d+$/, tool: "get_approval" },
   { method: "GET", pattern: /^\/warehouse\/inventory$/, tool: "warehouse_inventory" },
   { method: "GET", pattern: /^\/warehouse\/inventory\/alert$/, tool: "warehouse_low_stock" },
-  { method: "GET", pattern: /^\/warehouse\/stock-order$/, tool: "list_stock_orders" }
+  { method: "GET", pattern: /^\/warehouse\/stock-order$/, tool: "list_stock_orders" },
+  // P2a：MCP 客户端轮询「待本人确认动作」的状态（pending / confirmed / rejected / expired）。
+  // 这里只管形状：必须是 36 字符 UUID 形态，不接受任意串（挡掉 /agent/pending/../../secret
+  // 之类的越权取数尝试）。归属校验（该 pending 动作确属本次授权 grant）在路由 handler 内做，
+  // 白名单不负责、也无从判断身份。
+  { method: "GET", pattern: /^\/agent\/pending\/[0-9a-f-]{36}$/i, tool: "check_pending" }
 ];
 
 /**
