@@ -195,21 +195,36 @@ export const finishPending = async (
 };
 
 /**
- * 清扫卡在 executing 的行。
+ * 清扫所有会让 request_snapshot（内含 agent bearer 令牌）无限期驻留 D1 的静止状态。
  *
- * worker 在 claim 与 finish 之间被回收（CPU 超时、实例驱逐、重放中抛出未捕获异常）时，行会永久停在
- * executing：confirm/claim/finish 的守卫都不再匹配，没有任何路径能推动它。后果不只是状态难看——
- * request_snapshot 里那枚 agent bearer 令牌会**无限期驻留 D1**，直接违背本模块头部承诺的令牌卫生。
+ * 本模块头部承诺「令牌只在确认→重放这段窗口内存在」。兑现这个承诺不能只靠 reject/finish 这些
+ * **happy path**——它们只覆盖了动作被推进到终态的情形。真正需要兜底的是那些**没有任何后续请求
+ * 会再碰它们**的静止状态：所有状态流转函数的 WHERE 都不再匹配，行就此永远躺在库里带着一枚
+ * 180 天有效的凭据。共有三类，全部在此收敛：
  *
- * 超过宽限期即抹掉快照并标 failed。仍是单条条件 UPDATE（唯一一条会命中多行的），行数即清扫数。
+ * 1.【executing 超过宽限期】worker 在 claim 与 finish 之间被回收（CPU 超时、实例驱逐）。
+ *    标 failed：这行确实进过 executing，写**可能已经落库**，failed 只断言「我们没能记录到成功
+ *    结果」，不谎称什么都没发生。
  *
- * 注意宽限期是从 created_at 起算，而非从 claim 起算——表里没有 claimed_at 列，created_at 是唯一可用的钟。
- * 故实际留给重放的时间是 grace 减去确认窗口（最多 10 分钟），1 小时的默认值下仍有 ≥50 分钟，绰绰有余。
+ * 2.【confirmed 超过宽限期】确认路由在 confirmPending 与 claimForExecution 之间 await 了一次
+ *    审计写，worker 若在此被回收，行就停在 confirmed —— confirm 要 pending、claim 已经过、
+ *    finish 要 executing，三道守卫全不匹配。同样标 failed：员工确实确认过，但这次确认再也无法
+ *    被兑现，必须如实呈现，不能让确认页永远显示「已确认，执行中」。
  *
- * 标成 failed 而非 expired：这行确实进过 executing，写**可能已经落库**，failed 只断言「我们没能记录到
- * 成功结果」，不谎称什么都没发生。result_snapshot 里写明 swept，便于事后与业务表核对。
+ * 3.【pending 且已过期】员工无视卡片——**最常见的结局**，也是量最大的一类：智能体可以随意 park，
+ *    这条泄漏面的体量由调用方决定。此类只抹快照、**不改状态**：expired 由 toPublicView 按
+ *    expires_at 惰性呈现（见其文档），落库改写成别的状态会与那套语义打架。
+ *    WHERE 带 `request_snapshot != ''` 保证幂等——否则每轮 cron 都会重复命中同一批行，
+ *    让返回的行数永远大于 0，把「本次真的清掉了东西」这个信号变成噪声。
  *
- * @returns 本次清扫掉的行数
+ * 三条 UPDATE 的 WHERE 互斥（按 status 分区），故行数可直接相加而不会重复计数。
+ * 每条仍是单条条件 UPDATE，行数即真实影响行数——不做「先 SELECT 再逐行更新」。
+ *
+ * 注意宽限期从 created_at 起算，而非从 claim/confirm 起算——表里没有 claimed_at 列，
+ * created_at 是唯一可用的钟。故实际留给重放的时间是 grace 减去确认窗口（最多 10 分钟），
+ * 1 小时的默认值下仍有 ≥50 分钟，绰绰有余。
+ *
+ * @returns 本次清扫掉的总行数（三类之和）
  */
 export const sweepStalePendingActions = async (
   db: D1Database,
@@ -218,20 +233,48 @@ export const sweepStalePendingActions = async (
   const now = Date.now();
   const nowIso = new Date(now).toISOString();
   const cutoff = new Date(now - graceSeconds * 1000).toISOString();
-  const resultSnapshot = JSON.stringify({
-    swept: true,
-    reason: "execution did not report back within the grace period",
-    grace_seconds: graceSeconds,
-    swept_at: nowIso
-  });
+  const sweptResult = (reason: string) =>
+    JSON.stringify({
+      swept: true,
+      reason,
+      grace_seconds: graceSeconds,
+      swept_at: nowIso
+    });
 
-  const updated = await db
+  const staleExecuting = await db
     .prepare(
       `UPDATE agent_pending_action SET status = 'failed', request_snapshot = '', result_snapshot = ?, executed_at = ? WHERE status = 'executing' AND executed_at IS NULL AND created_at < ?`
     )
-    .bind(resultSnapshot, nowIso, cutoff)
+    .bind(
+      sweptResult("execution did not report back within the grace period"),
+      nowIso,
+      cutoff
+    )
     .run();
-  return updated.meta.changes ?? 0;
+
+  const staleConfirmed = await db
+    .prepare(
+      `UPDATE agent_pending_action SET status = 'failed', request_snapshot = '', result_snapshot = ?, executed_at = ? WHERE status = 'confirmed' AND created_at < ?`
+    )
+    .bind(
+      sweptResult("confirmation was never claimed for execution within the grace period"),
+      nowIso,
+      cutoff
+    )
+    .run();
+
+  const expiredPending = await db
+    .prepare(
+      `UPDATE agent_pending_action SET request_snapshot = '' WHERE status = 'pending' AND expires_at <= ? AND request_snapshot != ''`
+    )
+    .bind(nowIso)
+    .run();
+
+  return (
+    (staleExecuting.meta.changes ?? 0) +
+    (staleConfirmed.meta.changes ?? 0) +
+    (expiredPending.meta.changes ?? 0)
+  );
 };
 
 const parseResult = (id: string, raw: string | null): unknown | null => {

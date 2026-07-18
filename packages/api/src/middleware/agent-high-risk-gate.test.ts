@@ -14,10 +14,19 @@ const envWith = async (opts: { enabled: boolean }): Promise<Env> => {
   return { KV: kv, APP_ENV: "production", AGENT_REPLAY_SECRET: SECRET } as unknown as Env;
 };
 
-/** 用真实签名函数造标记（不复制实现，避免测试与实现同错） */
-const realMarker = async (env: Env, pendingId: string, body: string) => {
+/**
+ * 用真实签名函数造标记（不复制实现，避免测试与实现同错）。
+ * 标记现在绑定方法与路径，故造标记必须给出与待裁决请求一致的 method/path。
+ */
+const realMarker = async (
+  env: Env,
+  pendingId: string,
+  body: string,
+  method = "POST",
+  path = "/api/v1/approval/42/approve"
+) => {
   const { signReplayMarker } = await import("../services/agent-replay");
-  return signReplayMarker(env, pendingId, await sha256Hex(body));
+  return signReplayMarker(env, { method, path, pendingId, bodyHash: await sha256Hex(body) });
 };
 
 describe("decideAgentRequest · reads", () => {
@@ -114,6 +123,27 @@ describe("decideAgentRequest · replay", () => {
     const marker = await realMarker(env, "pending-1", body);
     const d = await decideAgentRequest(env, "POST", "/api/v1/approval/42/approve", body, {
       pendingId: "pending-2", marker
+    });
+    expect(d.kind).toBe("park");
+  });
+
+  it("degrades to park when the marker was signed for a different path", async () => {
+    // 「拒绝 #7」的标记不得放行「批准 #42」——标记钉死的是一个具体动作，不是一张通行证。
+    const env = await envWith({ enabled: true });
+    const body = "{}";
+    const marker = await realMarker(env, "pending-1", body, "POST", "/api/v1/approval/7/reject");
+    const d = await decideAgentRequest(env, "POST", "/api/v1/approval/42/approve", body, {
+      pendingId: "pending-1", marker
+    });
+    expect(d.kind).toBe("park");
+  });
+
+  it("degrades to park when the marker was signed for a different method", async () => {
+    const env = await envWith({ enabled: true });
+    const body = "{}";
+    const marker = await realMarker(env, "pending-1", body, "DELETE");
+    const d = await decideAgentRequest(env, "POST", "/api/v1/approval/42/approve", body, {
+      pendingId: "pending-1", marker
     });
     expect(d.kind).toBe("park");
   });

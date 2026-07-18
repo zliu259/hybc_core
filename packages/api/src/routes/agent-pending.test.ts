@@ -20,7 +20,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 
 import { agentRoutes } from "./agent";
 import { REPLAY_PENDING_HEADER } from "../middleware/agent-high-risk-gate";
-import type { AuthVariables } from "../middleware/auth";
+import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { createAgentGrant } from "../services/agent-grant";
 import { parkPendingAction } from "../services/agent-pending";
 import { REPLAY_HEADER } from "../services/agent-replay";
@@ -140,6 +140,14 @@ const humanJwt = async (env: Env, userId: string): Promise<string> => {
 };
 
 const rowOf = (h: Harness, id: string) => h.fake.pendings.get(id) as Record<string, unknown>;
+
+/** 把确认窗口拨到过去，模拟员工几小时后才点开卡片。 */
+const expirePending = (h: Harness, id: string): void => {
+  h.fake.pendings.set(id, {
+    ...rowOf(h, id),
+    expires_at: new Date(Date.now() - 1000).toISOString()
+  });
+};
 
 const call = async (
   h: Harness,
@@ -267,6 +275,84 @@ describe("agent pending 确认 / 拒绝 / 查询", () => {
     expect(rowOf(h, parked.id).status).toBe("rejected");
   });
 
+  /**
+   * 员工点「拒绝」时，动作可能刚刚被执行掉（他的确认与另一路的执行赛跑，或他误点了旧卡片）。
+   * 此时 rejectPending 的 WHERE 不匹配、什么都没发生，但端点原先照样回 200 + ok 信封，
+   * 员工会以为自己成功拦下了一笔付款——实际它已经批了。必须如实告知「没拦住」。
+   */
+  it("reports rejected:false when the action was already executed", async () => {
+    const parked = await park(h);
+    const owner = await humanJwt(h.env, "MaxLiu");
+    await call(h, `/pending/${parked.id}/confirm`, owner);
+    expect(rowOf(h, parked.id).status).toBe("done");
+
+    const res = await call(h, `/pending/${parked.id}/reject`, owner);
+
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: { rejected: boolean; status: string } };
+    expect(body.data.rejected).toBe(false);
+    // 真实现状必须一并回传，好让确认页显示「这单已经批了」而不是一句干巴巴的失败。
+    expect(body.data.status).toBe("done");
+  });
+
+  it("reports rejected:true when it actually won the transition", async () => {
+    const parked = await park(h);
+    const owner = await humanJwt(h.env, "MaxLiu");
+
+    const res = await call(h, `/pending/${parked.id}/reject`, owner);
+
+    const body = (await res.json()) as { data: { rejected: boolean; status: string } };
+    expect(body.data.rejected).toBe(true);
+    expect(body.data.status).toBe("rejected");
+  });
+
+  it("reports rejected:false on a second reject (only the first wins)", async () => {
+    const parked = await park(h);
+    const owner = await humanJwt(h.env, "MaxLiu");
+
+    await call(h, `/pending/${parked.id}/reject`, owner);
+    const second = await call(h, `/pending/${parked.id}/reject`, owner);
+
+    const body = (await second.json()) as { data: { rejected: boolean; status: string } };
+    expect(body.data.rejected).toBe(false);
+    expect(body.data.status).toBe("rejected");
+  });
+
+  /**
+   * 确认与拒绝赛跑：拒绝先落地后，确认【绝不能】还把动作执行掉。
+   * 守这条的是 confirmPending 的 `AND status = 'pending'`——它同时排掉了 rejected。
+   */
+  it("does not replay when a reject won the race first", async () => {
+    const parked = await park(h);
+    const owner = await humanJwt(h.env, "MaxLiu");
+
+    await call(h, `/pending/${parked.id}/reject`, owner);
+    const res = await call(h, `/pending/${parked.id}/confirm`, owner);
+
+    expect(res.status).toBe(200);
+    expect(h.calls).toHaveLength(0);
+    expect(rowOf(h, parked.id).status).toBe("rejected");
+  });
+
+  /**
+   * 过期后确认必须无效——守这条的是 confirmPending 的 `AND expires_at > ?`。
+   * 缺了它，一张躺在聊天记录里几个月的旧卡片仍能批准付款，10 分钟的确认窗口形同虚设。
+   */
+  it("does not replay when the confirmation window has expired", async () => {
+    const parked = await park(h);
+    const owner = await humanJwt(h.env, "MaxLiu");
+    expirePending(h, parked.id);
+
+    const res = await call(h, `/pending/${parked.id}/confirm`, owner);
+
+    expect(res.status).toBe(200);
+    expect(h.calls).toHaveLength(0);
+    const row = rowOf(h, parked.id);
+    expect(row.status).toBe("pending");
+    const body = (await res.json()) as { data: { status: string } };
+    expect(body.data.status).toBe("expired");
+  });
+
   it("refuses a reject from a different human (403)", async () => {
     const parked = await park(h);
     const stranger = await humanJwt(h.env, "SomeoneElse");
@@ -338,5 +424,136 @@ describe("agent pending 确认 / 拒绝 / 查询", () => {
     const res = await call(h, `/pending/${crypto.randomUUID()}`, owner, "GET");
 
     expect(res.status).toBe(404);
+  });
+});
+
+/**
+ * 全链路真跑：闸门 park → 本人确认 → 服务端重放 → 【同一个闸门】验签放行 → 业务 handler 执行。
+ *
+ * 上面那组用例把 app fetcher 换成了间谍，测的是确认端点自身的行为；这一组【不打桩】，
+ * 重放真的回到整包 app 里走一遍 authMiddleware。它要证明的是签名方与验签方的路径归一化
+ * 确实一致——这件事无法靠任何单侧单测证明：
+ *   签名方取 request_snapshot.path（park 时存的 c.req.path）
+ *   验签方取重放请求的 c.req.path
+ * 两者只要有一个字符不同，标记就验不过，动作会被静默降级成【再 park 一次】——
+ * 员工点了同意，系统却只是又弹了一张卡片。故意用百分号编码的路径发起，正是因为它是两侧
+ * 唯一会分叉的地方（Hono 解码，new URL().pathname 不解码）。
+ */
+describe("agent pending 确认 → 全栈重放（不打桩）", () => {
+  interface E2E {
+    readonly app: Hono<{ Bindings: Env; Variables: AuthVariables }>;
+    readonly env: Env;
+    readonly fake: FakeD1;
+    readonly executed: { id: string; body: string }[];
+  }
+
+  const buildE2E = async (): Promise<E2E> => {
+    const fake = createFakeD1();
+    const { kv } = createFakeKV();
+    await kv.put("agent:highrisk:config", JSON.stringify({ enabled: true }));
+
+    const env = {
+      DB: fake.db,
+      KV: kv,
+      JWT_SECRET: "test-secret",
+      APP_ENV: "production",
+      AGENT_REPLAY_SECRET: SECRET,
+      AGENT_API_BASE_URL: "https://api.hybcdg.com",
+      AGENT_WEB_BASE_URL: "https://web.hybcdg.com"
+    } as unknown as Env;
+
+    const executed: { id: string; body: string }[] = [];
+    const app = new Hono<{ Bindings: Env; Variables: AuthVariables }>();
+    app.use("/api/v1/*", authMiddleware);
+    app.post("/api/v1/approval/:id/approve", async (c) => {
+      executed.push({ id: c.req.param("id"), body: await c.req.raw.clone().text() });
+      return c.json({ success: true, data: { approved: c.req.param("id") } });
+    });
+    app.route("/api/v1/agent", agentRoutes);
+
+    // 重放回到【同一个 app】：与人类点「同意」完全同一条代码路径。
+    setAppFetcher(async (request, e, ctx) => app.fetch(request, e, ctx));
+    return { app, env, fake, executed };
+  };
+
+  beforeEach(() => {
+    resetAppFetcher();
+  });
+
+  it("parks a percent-encoded high-risk write and replays it end to end on confirm", async () => {
+    const e2e = await buildE2E();
+    const { token } = await createAgentGrant(e2e.fake.db, {
+      wecomUserid: "MaxLiu",
+      role: "manager",
+      deviceName: "Max MBP"
+    });
+    const body = '{ "comment":  "同意 ✅" }';
+
+    // 1. 智能体用【百分号编码】的路径发起高危写 → 被闸门 park。
+    const parked = await e2e.app.request(
+      "/api/v1/appro%76al/7/approve",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body
+      },
+      e2e.env
+    );
+    expect(parked.status).toBe(202);
+    const parkBody = (await parked.json()) as { data: { pending_action_id: string } };
+    const pendingId = parkBody.data.pending_action_id;
+    expect(e2e.executed).toHaveLength(0);
+
+    // 卡片摘要必须是干净的 #7，而不是被编码扭曲的路径。
+    expect(e2e.fake.pendings.get(pendingId)?.summary).toBe("批准审批单 #7");
+
+    // 2. 本人确认 → 服务端签名重放 → 闸门验签放行 → handler 真的执行。
+    const owner = await humanJwt(e2e.env, "MaxLiu");
+    const confirmed = await e2e.app.request(
+      `/api/v1/agent/pending/${pendingId}/confirm`,
+      { method: "POST", headers: { authorization: `Bearer ${owner}` } },
+      e2e.env
+    );
+    expect(confirmed.status).toBe(200);
+
+    // 这一条就是「两侧路径归一化一致」的证据：验签若失败，动作会再 park 一次，
+    // executed 保持为空且库里会多出一行 pending。
+    expect(e2e.executed).toEqual([{ id: "7", body }]);
+    expect([...e2e.fake.pendings.values()]).toHaveLength(1);
+    expect(e2e.fake.pendings.get(pendingId)?.status).toBe("done");
+    // 终态抹掉快照，agent bearer 不再驻留。
+    expect(e2e.fake.pendings.get(pendingId)?.request_snapshot).toBe("");
+  });
+
+  it("executes exactly once even though the replay re-enters the same gate", async () => {
+    const e2e = await buildE2E();
+    const { token } = await createAgentGrant(e2e.fake.db, {
+      wecomUserid: "MaxLiu",
+      role: "manager",
+      deviceName: "Max MBP"
+    });
+    const parked = await e2e.app.request(
+      "/api/v1/approval/9/approve",
+      {
+        method: "POST",
+        headers: { authorization: `Bearer ${token}`, "content-type": "application/json" },
+        body: "{}"
+      },
+      e2e.env
+    );
+    const pendingId = ((await parked.json()) as { data: { pending_action_id: string } }).data
+      .pending_action_id;
+
+    const owner = await humanJwt(e2e.env, "MaxLiu");
+    const confirm = () =>
+      e2e.app.request(
+        `/api/v1/agent/pending/${pendingId}/confirm`,
+        { method: "POST", headers: { authorization: `Bearer ${owner}` } },
+        e2e.env
+      );
+    await confirm();
+    await confirm();
+
+    expect(e2e.executed).toHaveLength(1);
   });
 });

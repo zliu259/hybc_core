@@ -133,8 +133,10 @@ export const createFakeD1 = (): FakeD1 => {
       }
       return 0;
     }
-    // 清扫卡死的 executing 行：唯一一条会命中多行的 UPDATE，故按 WHERE 逐行判定并累加行数。
-    if (sql.includes("SET status = 'failed'")) {
+    // 清扫类 UPDATE：会命中多行，故按 WHERE 逐行判定并累加行数。
+    // 两条清扫都 SET status='failed'，仅 WHERE 的 status 不同 —— 必须按 WHERE 分派，
+    // 否则 executing 那条会把 confirmed 的行一并扫掉（反之亦然），测不出真实语义。
+    if (sql.includes("SET status = 'failed'") && sql.includes("WHERE status = 'executing'")) {
       const [resultSnapshot, executedAt, cutoff] = args as string[];
       let changes = 0;
       for (const [id, p] of pendings) {
@@ -150,6 +152,41 @@ export const createFakeD1 = (): FakeD1 => {
             result_snapshot: resultSnapshot,
             executed_at: executedAt
           });
+          changes += 1;
+        }
+      }
+      return changes;
+    }
+    // 清扫「已确认却从未被 claim」的行（worker 在两道锁之间被回收）。
+    if (sql.includes("SET status = 'failed'") && sql.includes("WHERE status = 'confirmed'")) {
+      const [resultSnapshot, executedAt, cutoff] = args as string[];
+      let changes = 0;
+      for (const [id, p] of pendings) {
+        if (p.status === "confirmed" && (p.created_at as string) < cutoff) {
+          pendings.set(id, {
+            ...p,
+            status: "failed",
+            request_snapshot: "",
+            result_snapshot: resultSnapshot,
+            executed_at: executedAt
+          });
+          changes += 1;
+        }
+      }
+      return changes;
+    }
+    // 清扫已过期 pending 的令牌快照：只抹快照、不改状态（expired 由 toPublicView 惰性呈现）。
+    // `request_snapshot != ''` 是幂等守卫，真实 D1 会因它在第二轮返回 0 行。
+    if (sql.includes("SET request_snapshot = ''") && sql.includes("WHERE status = 'pending'")) {
+      const [nowIso] = args as string[];
+      let changes = 0;
+      for (const [id, p] of pendings) {
+        if (
+          p.status === "pending" &&
+          (p.expires_at as string) <= nowIso &&
+          p.request_snapshot !== ""
+        ) {
+          pendings.set(id, { ...p, request_snapshot: "" });
           changes += 1;
         }
       }

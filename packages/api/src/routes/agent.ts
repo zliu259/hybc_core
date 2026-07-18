@@ -273,9 +273,17 @@ const replayPendingAction = async (
     throw new Error("request snapshot is empty — nothing to replay");
   }
   const snapshot = JSON.parse(row.request_snapshot) as RequestSnapshot;
+  const method = snapshot.method.toUpperCase();
 
   // 密钥不可用时 signReplayMarker 会抛 —— 由调用方的 try/catch 收成 failed，绝不静默继续。
-  const marker = await signReplayMarker(c.env, row.id, await sha256Hex(snapshot.body));
+  // 签名绑定方法与路径：snapshot.path 就是 park 时闸门看到的 c.req.path，
+  // 而验签方读的是重放请求的 c.req.path。该解码是幂等的（已实测），故两侧逐字相同。
+  const marker = await signReplayMarker(c.env, {
+    method,
+    path: snapshot.path,
+    pendingId: row.id,
+    bodyHash: await sha256Hex(snapshot.body)
+  });
 
   const headers = new Headers();
   for (const [key, value] of Object.entries(snapshot.headers)) {
@@ -286,8 +294,7 @@ const replayPendingAction = async (
   headers.set(REPLAY_PENDING_HEADER, row.id);
 
   const apiBase = (c.env.AGENT_API_BASE_URL ?? "https://api.hybcdg.com").replace(/\/$/, "");
-  const method = snapshot.method.toUpperCase();
-  const request = new Request(`${apiBase}${snapshot.path}`, {
+  const request = new Request(`${apiBase}${snapshot.path}${snapshot.search ?? ""}`, {
     method,
     headers,
     body: method === "GET" || method === "HEAD" ? undefined : snapshot.body
@@ -462,7 +469,16 @@ agentRoutes.post("/pending/:id/confirm", requireHumanSession, async (c) => {
   return currentView();
 });
 
-/** 本人拒绝：状态置 rejected 并抹掉含 Bearer 的请求快照，绝不重放。 */
+/**
+ * 本人拒绝：状态置 rejected 并抹掉含 Bearer 的请求快照，绝不重放。
+ *
+ * 【必须如实报告是否真的拦下了】rejectPending 的 WHERE 只匹配 pending，动作若已被确认/执行，
+ * 它什么都不会做。此时仍回一个笼统的成功信封，等于告诉员工「已拒绝」——而那笔款可能刚刚批出去。
+ * 故返回 rejected 布尔 + 当前真实状态，让确认页能显示「这单已经批了，拒绝未生效」。
+ *
+ * 用 200 + rejected:false 而非 409：客户端拿到的仍是一份完整的当前视图，
+ * 不必为了知道「现在到底什么状态」再发一次查询。
+ */
 agentRoutes.post("/pending/:id/reject", requireHumanSession, async (c) => {
   const auth = c.get("auth");
   const id = c.req.param("id");
@@ -472,7 +488,9 @@ agentRoutes.post("/pending/:id/reject", requireHumanSession, async (c) => {
   }
   const { row } = access;
 
-  if (await rejectPending(c.env.DB, id)) {
+  const rejected = await rejectPending(c.env.DB, id);
+  // 审计只在真正赢下流转时写：没发生的事不该在审计里留下「已拒绝」的痕迹。
+  if (rejected) {
     await writeAuditLog(c.env.DB, {
       actorUserId: auth.sub,
       actorRoles: auth.roles,
@@ -489,5 +507,5 @@ agentRoutes.post("/pending/:id/reject", requireHumanSession, async (c) => {
   }
 
   const latest = await getPendingById(c.env.DB, id);
-  return c.json(ok(toPublicView(latest ?? row)));
+  return c.json(ok({ ...toPublicView(latest ?? row), rejected }));
 });

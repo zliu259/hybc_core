@@ -125,6 +125,9 @@ export const authMiddleware: MiddlewareHandler<{
         {
           method: c.req.method,
           url: c.req.url,
+          // 与 decideAgentRequest 用的是同一个 c.req.path —— 摘要、快照路径、签名路径
+          // 必须与闸门匹配时看到的字符串完全一致（Hono 已解码百分号转义）。
+          path: c.req.path,
           headers: c.req.raw.headers,
           body: rawBody,
           identity,

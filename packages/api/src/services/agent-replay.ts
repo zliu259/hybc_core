@@ -10,10 +10,13 @@
  * 本模块就是解法：服务端在重放时附一个 HMAC 标记，闸门见到【有效】标记才放行。
  *
  * 三条不可动摇的安全性质：
- * 1. 【仅服务端可派生】标记 = HMAC-SHA256(AGENT_REPLAY_SECRET, `${pendingId}:${bodyHash}`)。
+ * 1. 【仅服务端可派生】标记 = HMAC-SHA256(AGENT_REPLAY_SECRET, `${METHOD}:${path}:${pendingId}:${bodyHash}`)。
  *    密钥只在 Worker 环境变量里，客户端（含被入侵的 MCP 客户端）无法伪造。
- * 2. 【双向绑定】标记同时绑定 pending 动作 id 与请求体哈希：既不能拿 A 动作的标记去放行 B 动作，
+ * 2. 【四向绑定】标记绑定方法、路径、pending 动作 id 与请求体哈希：既不能拿 A 动作的标记去放行
+ *    B 动作，不能把「拒绝 #7」的标记挪去放行「批准 #7」（换路径）或换个动词，
  *    也不能在确认后把 body 改成别的内容（例如把 comment 换成 reject 理由、或改动金额字段）再重放。
+ *    绑方法与路径是【纵深防御】：闸门是纯函数、不读库，它无从知道某个 pendingId 是否真有对应行，
+ *    故「恰好是这一个动作」不能只靠调用点的正确性，必须写死在载荷里。
  * 3. 【绝不信任客户端自称】闸门只认「HMAC 校验通过」这一件事。任何形如
  *    `x-hybc-agent-replay: true` / `?replay=1` / body 里的 is_replay 字段都必须视为普通攻击载荷，
  *    不得因其存在就跳过闸门。校验失败 = 当作没有标记处理（照常拦截/落库），不得 fail-open。
@@ -75,22 +78,68 @@ export const sha256Hex = async (text: string): Promise<string> => {
 /** sha256Hex 的输出形态：64 位小写十六进制。载荷不变量据此断言。 */
 const BODY_HASH_PATTERN = /^[0-9a-f]{64}$/;
 
+/** HTTP 方法：纯字母，故必然无冒号——载荷「首段」的唯一性靠它。 */
+const METHOD_PATTERN = /^[A-Z]+$/;
+
+/** 标记所绑定的动作。四要素齐全才谈得上「就是这一个动作」。 */
+export interface ReplayMarkerParams {
+  /** HTTP 方法，大小写不敏感（内部统一大写）。 */
+  readonly method: string;
+  /** 请求路径，须以 "/" 开头。query 会被剥离（见 normalizePath）。 */
+  readonly path: string;
+  readonly pendingId: string;
+  /** sha256Hex(原始请求体) 的输出。 */
+  readonly bodyHash: string;
+}
+
+/**
+ * 路径归一化：剥掉 query 与 fragment。
+ *
+ * 这是【签名方与验签方必然一致】的关键。两侧的路径来源不同：
+ *   签名方 = routes/agent.ts 从 request_snapshot.path 取（park 时存的 c.req.path）
+ *   验签方 = middleware/auth.ts 传入的 c.req.path
+ * c.req.path 永远不含 query，而快照理论上可能被写进带 query 的值（旧行、或将来的改动）。
+ * 在载荷构造器里统一剥离，就把「两侧碰巧都不带 query」这个偶然，变成由构造器保证的必然。
+ *
+ * 注意百分号转义【不在此处】处理：Hono 的 c.req.path 已完成解码，且该解码是幂等的
+ * （已实测：把 c.req.path 当作 URL 路径重新发起请求，得到的 c.req.path 与原值逐字相同）。
+ * park 存的与闸门验的都是这个解码后的值，故两侧同形。反之若快照存 new URL(url).pathname
+ * （不解码），两侧就会对 /appro%76al/... 分叉——见 types/agent.ts 中 RequestSnapshot.path 的说明。
+ */
+const normalizePath = (path: string): string => path.replace(/[?#].*$/, "");
+
 /**
  * 构造签名载荷并断言其不变量。
  *
- * `${pendingId}:${bodyHash}` 只有在 bodyHash 定长（64 hex）时才无歧义 —— 否则
- * sign("x", "y:z") 与 sign("x:y", "z") 会撞上同一条载荷，攻击者可借此把一个动作的标记
- * 挪用到另一个动作上。这里把「定长」从口头约定变成运行时断言。
+ * 载荷 = `${METHOD}:${path}:${pendingId}:${bodyHash}`。
+ *
+ * 【为什么要绑方法与路径】只绑 (pendingId, bodyHash) 时，同一枚标记在另一张审批单、
+ * 另一个动词上都验得过——decideAgentRequest 是纯函数、不读库，连「这个 pendingId 有没有对应行」
+ * 都不知道。于是「恰好这一个动作、至多一次」全靠确认路由那一处调用点的正确性兜着，
+ * 没有任何纵深。把动作身份写进载荷，则是【构造上】的保证，不依赖调用图。
+ *
+ * 【无歧义性】path 允许含冒号，其余三段不含，且 bodyHash 定长：
+ * 首个冒号之前唯一确定 method；末 64 字符唯一确定 bodyHash；其前一段（无冒号）唯一确定 pendingId；
+ * 中间剩余部分即 path。解析确定且可逆 ⇒ 不存在两组不同入参映射到同一条载荷。
+ * 若哪天放松任一段的约束（例如允许 pendingId 带冒号），这个性质立刻失效，
+ * 攻击者便可把一个动作的标记挪用到另一个动作上——故下面每条断言都是安全断言，不是参数校验礼仪。
  * 同时挡掉调用方误传 undefined 造成的 "undefined:undefined" 全局碰撞。
  */
-const replayPayload = (pendingId: string, bodyHash: string): string => {
+const replayPayload = ({ method, path, pendingId, bodyHash }: ReplayMarkerParams): string => {
+  const upperMethod = typeof method === "string" ? method.toUpperCase() : "";
+  if (!METHOD_PATTERN.test(upperMethod)) {
+    throw new Error("replay marker method must be a non-empty alphabetic HTTP method");
+  }
+  if (typeof path !== "string" || !path.startsWith("/")) {
+    throw new Error("replay marker path must be an absolute path starting with '/'");
+  }
   if (typeof pendingId !== "string" || pendingId.length === 0 || pendingId.includes(":")) {
     throw new Error("replay marker pendingId must be a non-empty string without ':'");
   }
   if (typeof bodyHash !== "string" || !BODY_HASH_PATTERN.test(bodyHash)) {
     throw new Error("replay marker bodyHash must be 64 lowercase hex chars (sha256Hex output)");
   }
-  return `${pendingId}:${bodyHash}`;
+  return `${upperMethod}:${normalizePath(path)}:${pendingId}:${bodyHash}`;
 };
 
 const importHmacKey = async (secret: string): Promise<CryptoKey> =>
@@ -104,10 +153,9 @@ const importHmacKey = async (secret: string): Promise<CryptoKey> =>
 
 const computeMarker = async (
   secret: string,
-  pendingId: string,
-  bodyHash: string
+  params: ReplayMarkerParams
 ): Promise<string> => {
-  const payload = replayPayload(pendingId, bodyHash);
+  const payload = replayPayload(params);
   const key = await importHmacKey(secret);
   const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
   return toBase64(signature);
@@ -165,11 +213,10 @@ export const assertUsableReplaySecret = (env: Env): string => {
  */
 export const signReplayMarker = async (
   env: Env,
-  pendingId: string,
-  bodyHash: string
+  params: ReplayMarkerParams
 ): Promise<string> => {
   const secret = assertUsableReplaySecret(env);
-  return computeMarker(secret, pendingId, bodyHash);
+  return computeMarker(secret, params);
 };
 
 /**
@@ -196,8 +243,7 @@ const timingSafeEqual = (a: string, b: string): boolean => {
  */
 export const verifyReplayMarker = async (
   env: Env,
-  pendingId: string,
-  bodyHash: string,
+  params: ReplayMarkerParams,
   marker: string
 ): Promise<boolean> => {
   if (!marker) {
@@ -205,7 +251,7 @@ export const verifyReplayMarker = async (
   }
   try {
     const secret = assertUsableReplaySecret(env);
-    const expected = await computeMarker(secret, pendingId, bodyHash);
+    const expected = await computeMarker(secret, params);
     return timingSafeEqual(expected, marker);
   } catch {
     return false;

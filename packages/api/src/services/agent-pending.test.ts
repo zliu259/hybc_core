@@ -202,6 +202,16 @@ describe("sweepStalePendingActions", () => {
     });
   };
 
+  /**
+   * 把行的 expires_at 拨到过去。与 backdate 分开：确认窗口（expires_at）与清扫宽限期
+   * （created_at + grace）是两把不同的钟，pending 的清扫看前者，confirmed/executing 看后者。
+   */
+  const expire = (pendings: FakeD1["pendings"], id: string) => {
+    const row = pendings.get(id);
+    if (!row) throw new Error(`no such pending row: ${id}`);
+    pendings.set(id, { ...row, expires_at: new Date(Date.now() - 1000).toISOString() });
+  };
+
   const claimed = async (db: D1Database) => {
     const parked = await park(db);
     await confirmPending(db, parked.id);
@@ -246,21 +256,75 @@ describe("sweepStalePendingActions", () => {
     expect(await sweepStalePendingActions(db)).toBe(0);
   });
 
-  it("never touches pending, confirmed, or already-finished rows however old", async () => {
+  it("leaves an unexpired pending row and a finished row alone however old", async () => {
     const { db, pendings } = createFakeD1();
-    const stalePending = await park(db);
-    const confirmed = await park(db);
-    await confirmPending(db, confirmed.id);
+    // created_at 很旧但【尚未过期】的 pending：确认窗口仍开着，快照还有用途，不得清。
+    const freshPending = await park(db);
     const finished = await claimed(db);
     await finishPending(db, finished.id, "done", { status: 200, body: {} });
-    for (const id of [stalePending.id, confirmed.id, finished.id]) {
+    for (const id of [freshPending.id, finished.id]) {
       backdate(pendings, id, 7200);
     }
 
     expect(await sweepStalePendingActions(db)).toBe(0);
-    expect((await getPendingById(db, stalePending.id))?.status).toBe("pending");
-    expect((await getPendingById(db, confirmed.id))?.status).toBe("confirmed");
+    expect((await getPendingById(db, freshPending.id))?.status).toBe("pending");
     expect((await getPendingById(db, finished.id))?.status).toBe("done");
+  });
+
+  /**
+   * 员工【无视】卡片是最常见的结局，于是「pending 且已过期」是最常见的静止状态。
+   * confirmPending 的 WHERE 守着 expires_at，这行再也无法被确认；此后没有任何守卫会命中它，
+   * 快照里那枚 180 天有效的 agent bearer 会永久驻留 D1。而智能体可以随意 park，
+   * 也就是说这条泄漏面的体量由攻击者决定。
+   */
+  it("clears the bearer snapshot of an expired pending row, keeping it pending", async () => {
+    const { db, pendings } = createFakeD1();
+    const parked = await park(db);
+    expire(pendings, parked.id);
+
+    expect(await sweepStalePendingActions(db)).toBe(1);
+    const row = await getPendingById(db, parked.id);
+    // 状态刻意不改写：expired 由 toPublicView 惰性呈现，落库改状态会与那套语义打架。
+    expect(row?.status).toBe("pending");
+    expect(row?.request_snapshot).toBe("");
+    expect(toPublicView(row!).status).toBe("expired");
+  });
+
+  it("does not re-sweep an already-cleared expired pending row", async () => {
+    const { db, pendings } = createFakeD1();
+    const parked = await park(db);
+    expire(pendings, parked.id);
+
+    expect(await sweepStalePendingActions(db)).toBe(1);
+    expect(await sweepStalePendingActions(db)).toBe(0);
+  });
+
+  /**
+   * confirmed 但从未被 claim：确认路由在 confirmPending 与 claimForExecution 之间 await 了
+   * 一次审计写，worker 若在此被回收，行就停在 confirmed —— 所有守卫都不再匹配（confirm 要 pending、
+   * claim 已经过、finish 要 executing），令牌同样永久驻留，且员工的确认被静默丢弃。
+   */
+  it("fails a confirmed row that was never claimed, clearing its snapshot", async () => {
+    const { db, pendings } = createFakeD1();
+    const parked = await park(db);
+    await confirmPending(db, parked.id);
+    backdate(pendings, parked.id, 7200);
+
+    expect(await sweepStalePendingActions(db)).toBe(1);
+    const row = await getPendingById(db, parked.id);
+    // failed 而非 expired：员工确实确认过，只是这次确认再也无法被兑现，必须如实呈现。
+    expect(row?.status).toBe("failed");
+    expect(row?.request_snapshot).toBe("");
+    expect(JSON.parse(row?.result_snapshot as string)).toMatchObject({ swept: true });
+  });
+
+  it("leaves a freshly confirmed row alone", async () => {
+    const { db } = createFakeD1();
+    const parked = await park(db);
+    await confirmPending(db, parked.id);
+
+    expect(await sweepStalePendingActions(db)).toBe(0);
+    expect((await getPendingById(db, parked.id))?.status).toBe("confirmed");
   });
 
   it("counts every stale row it sweeps, and only those", async () => {

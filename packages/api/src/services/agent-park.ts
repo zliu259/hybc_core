@@ -43,8 +43,16 @@ export interface AgentIdentity {
 
 export interface ParkRequestInput {
   readonly method: string;
-  /** 请求 URL（完整绝对形态，来自 c.req.url）。 */
+  /** 请求 URL（完整绝对形态，来自 c.req.url）。此处【只】用来取 query 串。 */
   readonly url: string;
+  /**
+   * 闸门归一化后的路径（c.req.path，已解码、不含 query）。
+   *
+   * 必须由调用方从闸门那里原样传入，【不得】在本模块用 new URL(url).pathname 现算：
+   * 那个值不解码百分号转义，与闸门匹配用的字符串是两回事。摘要与签名路径都取自此字段，
+   * 保证「员工看到的动作」「闸门放行的动作」「被签名的动作」三者是同一个。
+   */
+  readonly path: string;
   readonly headers: Headers;
   /** 原始请求体字节。必须是闸门 clone 读出的原文，不得再序列化。 */
   readonly body: string;
@@ -117,14 +125,15 @@ export const parkAgentRequest = async (
   input: ParkRequestInput,
   waitUntil: (promise: Promise<unknown>) => void
 ): Promise<Response> => {
-  const url = new URL(input.url);
-  // pathname + search：重放需要连 query 一起还原，缺了 query 就是另一个请求了。
-  const path = `${url.pathname}${url.search}`;
-  const summary = buildSummary(input.rule.actionKind, url.pathname);
+  // 路径一律用闸门归一化过的 input.path；url 只贡献 query（重放需要连 query 一起还原，
+  // 缺了 query 就是另一个请求了）。两者分开存，是因为签名只能绑定闸门看得到的那部分（无 query）。
+  const search = new URL(input.url).search;
+  const summary = buildSummary(input.rule.actionKind, input.path);
 
   const snapshot: RequestSnapshot = {
     method: input.method.toUpperCase(),
-    path,
+    path: input.path,
+    search,
     headers: snapshotHeaders(input.headers),
     body: input.body
   };
@@ -162,7 +171,8 @@ export const parkAgentRequest = async (
         grant_id: input.identity.grantId,
         action_kind: input.rule.actionKind,
         method: snapshot.method,
-        path: url.pathname
+        // 审计同样记归一化后的路径：审计与卡片、签名必须描述同一个动作。
+        path: input.path
       }
     });
   })().catch((err) => {

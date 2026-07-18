@@ -91,7 +91,14 @@ export const decideAgentRequest = async (
   // 3. 先验标记（性质 4：早于开关）。校验失败不中断，继续往下走到 park（性质 3）。
   if (replay && replay.marker) {
     const bodyHash = await sha256Hex(body);
-    const valid = await verifyReplayMarker(env, replay.pendingId, bodyHash, replay.marker);
+    // 标记绑定「方法 + 路径 + 动作 id + body 哈希」四要素：此处传入的 path 必须与签名方所用的
+    // 完全同形。签名方取自 request_snapshot.path，而那正是 park 时存下的 c.req.path；
+    // 本函数的 path 也来自 c.req.path（见 middleware/auth.ts）。两侧同源，故必然一致。
+    const valid = await verifyReplayMarker(
+      env,
+      { method, path, pendingId: replay.pendingId, bodyHash },
+      replay.marker
+    );
     if (valid) {
       return { kind: "replay", pendingId: replay.pendingId };
     }

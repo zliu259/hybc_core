@@ -181,6 +181,41 @@ describe("authMiddleware · 高危写 park 通路", () => {
     expect(row.summary).toContain("7");
   });
 
+  /**
+   * 卡片摘要是员工做决定的【唯一依据】，绝不能由调用方塑形。
+   *
+   * 闸门按 c.req.path 匹配（Hono 已解码转义），而摘要与快照路径原先取自
+   * new URL(url).pathname（不解码）—— 两者对 `/api/v1/appro%76al/7/approve` 会给出不同的字符串：
+   * 动作照常按 approval #7 park 并执行，卡片却退化成中性描述，员工看不出自己在批准哪一单。
+   * 智能体只要给路径加一个百分号转义，就能让人在环那一环变成瞎签。
+   */
+  it("derives the summary from the decoded path, not the caller's encoding", async () => {
+    const res = await post(h, "/api/v1/appro%76al/7/approve", "{}", {
+      authorization: `Bearer ${token}`
+    });
+
+    expect(res.status).toBe(202);
+    const row = pendingRows(h)[0];
+    expect(row.action_kind).toBe("approval.approve");
+    // 退化形态是 `批准审批单（/api/v1/appro%76al/7/approve）`——必须是干净的 #7。
+    expect(row.summary).toBe("批准审批单 #7");
+
+    const snapshot = JSON.parse(row.request_snapshot as string) as RequestSnapshot;
+    expect(snapshot.path).toBe("/api/v1/approval/7/approve");
+  });
+
+  it("preserves the query string separately so the replay can rebuild the URL", async () => {
+    const res = await post(h, "/api/v1/approval/7/approve?dry=0&note=%E4%B8%AD", "{}", {
+      authorization: `Bearer ${token}`
+    });
+
+    expect(res.status).toBe(202);
+    const snapshot = JSON.parse(pendingRows(h)[0].request_snapshot as string) as RequestSnapshot;
+    // path 只放路径（它要与闸门的 c.req.path 逐字相同，用于签名）；query 单独留存。
+    expect(snapshot.path).toBe("/api/v1/approval/7/approve");
+    expect(snapshot.search).toBe("?dry=0&note=%E4%B8%AD");
+  });
+
   it("forbids (403) when the high-risk flag is off, without parking", async () => {
     const off = await buildHarness({ highRiskEnabled: false });
     const offToken = await agentToken(off.fake);
@@ -204,7 +239,12 @@ describe("authMiddleware · 高危写 park 通路", () => {
   it("executes on a valid replay marker and hands the handler the exact body", async () => {
     const body = '{ "comment":  "同意 ✅" }';
     const pendingId = crypto.randomUUID();
-    const marker = await signReplayMarker(h.env, pendingId, await sha256Hex(body));
+    const marker = await signReplayMarker(h.env, {
+      method: "POST",
+      path: "/api/v1/approval/42/approve",
+      pendingId,
+      bodyHash: await sha256Hex(body)
+    });
 
     const res = await post(h, "/api/v1/approval/42/approve", body, {
       authorization: `Bearer ${token}`,
@@ -245,7 +285,12 @@ describe("authMiddleware · 高危写 park 通路", () => {
     // 标记绑定 bodyHash：确认后把 body 改掉，标记即失效 —— 降级为 park，不得放行。
     const signedBody = JSON.stringify({ comment: "ok" });
     const pendingId = crypto.randomUUID();
-    const marker = await signReplayMarker(h.env, pendingId, await sha256Hex(signedBody));
+    const marker = await signReplayMarker(h.env, {
+      method: "POST",
+      path: "/api/v1/approval/42/approve",
+      pendingId,
+      bodyHash: await sha256Hex(signedBody)
+    });
 
     const res = await post(h, "/api/v1/approval/42/approve", JSON.stringify({ comment: "tampered" }), {
       authorization: `Bearer ${token}`,
