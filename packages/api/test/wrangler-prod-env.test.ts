@@ -49,3 +49,31 @@ describe("wrangler.toml APP_ENV", () => {
     expect(example).toMatch(/^APP_ENV=local$/m);
   });
 });
+
+/**
+ * AGENT_REPLAY_SECRET 是高危写重放标记的 HMAC 密钥,【只能】走 secret store。
+ *
+ * Workers 里同名的明文 var 与 secret 会相撞,且部署时的 var 获胜。由于 push 到 main 即自动
+ * 部署,wrangler.toml 里只要留着这一行(哪怕是占位值),每次发布都会把已用
+ * `wrangler secret put` 正确配置的密钥覆盖回占位串——assertUsableReplaySecret 随即 fail-closed,
+ * 整条「企业微信确认后重放」链路静默失效。它同时制造了把真实密钥粘进受版本控制文件的压力。
+ *
+ * 与上面 APP_ENV 的教训是同一个:顶层 [vars] 与 [env.prod.vars] 两处都必须干净。
+ */
+describe("wrangler.toml AGENT_REPLAY_SECRET", () => {
+  it.each(["[vars]", "[env.prod.vars]"])(
+    "%s 不得声明 AGENT_REPLAY_SECRET(明文 var 会在部署时压过 secret)",
+    (header) => {
+      expect(sectionOf(header)).not.toMatch(/^\s*AGENT_REPLAY_SECRET\s*=/m);
+    }
+  );
+
+  it("整个 wrangler.toml 都不出现该键(任何 env 段落粘回来都算回归)", () => {
+    expect(wranglerToml).not.toMatch(/^\s*AGENT_REPLAY_SECRET\s*=/m);
+  });
+
+  it(".dev.vars.example 必须写明生产只走 `wrangler secret put`", () => {
+    const example = readFileSync(resolve(apiRoot, ".dev.vars.example"), "utf8");
+    expect(example).toMatch(/wrangler secret put AGENT_REPLAY_SECRET/);
+  });
+});

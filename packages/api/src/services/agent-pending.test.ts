@@ -1,23 +1,26 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  MAX_OUTSTANDING_PENDING_PER_GRANT,
   PENDING_TTL_SECONDS,
   STALE_EXECUTING_GRACE_SECONDS,
   claimForExecution,
   confirmPending,
+  countOutstandingPending,
   finishPending,
   getPendingByConfirmToken,
   getPendingById,
   parkPendingAction,
   rejectPending,
   sweepStalePendingActions,
-  toPublicView
+  toPublicView,
+  type ParkOutcome
 } from "./agent-pending";
 import { createFakeD1, type FakeD1 } from "../test-support/agent-fakes";
 
-const park = async (db: D1Database) =>
+const attemptPark = async (db: D1Database, grantId = "g1"): Promise<ParkOutcome> =>
   parkPendingAction(db, {
-    grantId: "g1",
+    grantId,
     wecomUserid: "MaxLiu",
     actionKind: "approval.approve",
     riskReason: "智能体请求批准审批单",
@@ -29,6 +32,15 @@ const park = async (db: D1Database) =>
       body: '{"comment":"ok"}'
     }
   });
+
+/** 断言这次 park 确实落库了，并把结果收窄成 parked 分支（绝大多数用例的前置条件）。 */
+const park = async (db: D1Database, grantId = "g1") => {
+  const outcome = await attemptPark(db, grantId);
+  if (outcome.kind !== "parked") {
+    throw new Error(`expected park to succeed, got ${outcome.kind}`);
+  }
+  return outcome;
+};
 
 describe("parkPendingAction", () => {
   it("stores a pending row and returns a one-time confirm token", async () => {
@@ -63,9 +75,114 @@ describe("parkPendingAction", () => {
     expect(a.confirmToken).not.toBe(b.confirmToken);
     expect(a.id).not.toBe(b.id);
   });
+
+  /**
+   * 确认令牌是【企微卡片链接里的持有型凭据】：拿到它就能确认那一件高危写。
+   * 「truthy 且两次不相同」这种断言对熵一无所知——把 32 字节缩到 4 字节，它照样全绿，
+   * 而令牌就此进入可离线爆破的量级。故必须钉死形状：32 字节 = 64 位十六进制。
+   */
+  it("mints a full 32-byte (64 hex char) confirm token", async () => {
+    const { db } = createFakeD1();
+    const parked = await park(db);
+    expect(parked.confirmToken).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+/**
+ * 每个 grant 的在途 park 上限。
+ *
+ * 没有它，一枚泄漏的令牌可以循环高危写把员工埋进确认卡片里——通知疲劳正是收割
+ * 一次不经心确认的标准手法，而这恰好是「人在环」这道控制本身的攻击面。
+ * 顺带每 park 一次就多存一份含 Bearer 的请求快照。
+ */
+describe("outstanding park cap", () => {
+  const fill = async (db: D1Database, n: number, grantId = "g1") => {
+    for (let i = 0; i < n; i += 1) {
+      await park(db, grantId);
+    }
+  };
+
+  it("caps a single grant at MAX_OUTSTANDING_PENDING_PER_GRANT outstanding rows", async () => {
+    const { db, pendings } = createFakeD1();
+    await fill(db, MAX_OUTSTANDING_PENDING_PER_GRANT);
+
+    const refused = await attemptPark(db);
+
+    expect(refused.kind).toBe("refused");
+    if (refused.kind !== "refused") throw new Error("unreachable");
+    expect(refused.reason).toBe("too_many_outstanding");
+    expect(refused.outstanding).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
+    expect(refused.max).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
+    // 关键：被拒绝的 park【绝不落行】——否则限额只是换了个返回值，泄漏面照样在涨。
+    expect(pendings.size).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
+  });
+
+  it("counts per grant, so one noisy grant cannot starve another", async () => {
+    const { db } = createFakeD1();
+    await fill(db, MAX_OUTSTANDING_PENDING_PER_GRANT, "g1");
+
+    expect((await attemptPark(db, "g1")).kind).toBe("refused");
+    expect((await attemptPark(db, "g2")).kind).toBe("parked");
+  });
+
+  it("frees a slot once an action is settled (only outstanding rows count)", async () => {
+    const { db } = createFakeD1();
+    const first = await park(db);
+    await fill(db, MAX_OUTSTANDING_PENDING_PER_GRANT - 1);
+    expect((await attemptPark(db)).kind).toBe("refused");
+
+    // 员工处理掉一件 —— 正常节奏必须能继续，限额不该把合法使用锁死。
+    await rejectPending(db, first.id);
+    expect((await attemptPark(db)).kind).toBe("parked");
+  });
+
+  it("does not let expired rows hold slots hostage", async () => {
+    const { db, pendings } = createFakeD1();
+    await fill(db, MAX_OUTSTANDING_PENDING_PER_GRANT);
+    for (const [id, row] of pendings) {
+      pendings.set(id, { ...row, expires_at: new Date(Date.now() - 1000).toISOString() });
+    }
+
+    // 确认窗口已关的行再也无法被确认，不构成任何噪声，故不占额度。
+    expect(await countOutstandingPending(db, "g1")).toBe(0);
+    expect((await attemptPark(db)).kind).toBe("parked");
+  });
+
+  it("has a cap of five", () => {
+    expect(MAX_OUTSTANDING_PENDING_PER_GRANT).toBe(5);
+  });
 });
 
 describe("state machine (optimistic locking)", () => {
+  /**
+   * 【确认窗口就是人在环那道保证本身】——守它的是 confirmPending 的 `AND expires_at > ?`。
+   *
+   * 缺了这个合取项，一张躺在聊天记录、通知栏截图或转发消息里几个月的旧卡片仍然能批准付款，
+   * 10 分钟的 TTL 形同虚设：动作的有效期变成了「链接活多久」。而这条性质此前【无人看守】——
+   * 把该合取项从生产 SQL 里删掉，整套测试仍然全绿（假实现硬编码了这道守卫，
+   * 于是它断言的是自己的模型而非生产语句；已随本用例一并修正）。
+   *
+   * 过期行必须【原地不动】：状态仍是 pending，由 toPublicView 惰性呈现为 expired。
+   */
+  it("refuses to confirm a row whose confirmation window has closed", async () => {
+    const { db, pendings } = createFakeD1();
+    const parked = await park(db);
+    const row = pendings.get(parked.id);
+    pendings.set(parked.id, {
+      ...row,
+      expires_at: new Date(Date.now() - 1000).toISOString()
+    });
+
+    expect(await confirmPending(db, parked.id)).toBe(false);
+
+    const after = await getPendingById(db, parked.id);
+    expect(after?.status).toBe("pending");
+    expect(after?.confirmed_at).toBeNull();
+    // 过期后连 claim 都够不到 —— 确认窗口关上意味着这件事永远不会执行。
+    expect(await claimForExecution(db, parked.id)).toBe(false);
+    expect(toPublicView(after!).status).toBe("expired");
+  });
+
   it("confirms once; a second confirm is a no-op", async () => {
     const { db } = createFakeD1();
     const parked = await park(db);

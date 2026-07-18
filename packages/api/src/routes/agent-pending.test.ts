@@ -128,6 +128,9 @@ const park = async (h: Harness, wecomUserid = "MaxLiu"): Promise<Parked> => {
     summary: "拒绝审批单 #7",
     snapshot
   });
+  if (parked.kind !== "parked") {
+    throw new Error(`expected park to succeed, got ${parked.kind}`);
+  }
   return { id: parked.id, grantId: grant.id, agentToken: token };
 };
 
@@ -226,6 +229,54 @@ describe("agent pending 确认 / 拒绝 / 查询", () => {
     expect(first.status).toBe(200);
     expect(second.status).toBe(200);
     // 性质 2：至多一次。
+    expect(h.calls).toHaveLength(1);
+    expect(rowOf(h, parked.id).status).toBe("done");
+  });
+
+  /**
+   * 【确认了却没执行】不能是一个黑洞。
+   *
+   * 确认路由在 confirmPending 与 claimForExecution 之间隔着一次 await（审计写）。worker 若
+   * 正好在这里被回收（CPU 超时、实例驱逐），行就停在 confirmed。原先的写法是「confirm 没赢
+   * 就直接返回当前视图」，于是员工的重试永远走不到 claim：他点了同意、页面显示「已确认」，
+   * 而那笔审批永远不会被执行，且没有任何地方报错——这正是最糟糕的失败模式，静默。
+   *
+   * 修复后 confirm 输了也继续尝试 claim。claim 的 WHERE 只匹配 confirmed，故这次重试
+   * 既能救回卡住的行，又不可能让别的状态被重复执行（见下面两个用例）。
+   */
+  it("recovers a row stranded at confirmed: a retried confirm still executes it", async () => {
+    const parked = await park(h);
+    const owner = await humanJwt(h.env, "MaxLiu");
+    // 模拟 worker 在两道锁之间被回收：行已 confirmed，但从未被 claim。
+    h.fake.pendings.set(parked.id, {
+      ...rowOf(h, parked.id),
+      status: "confirmed",
+      confirmed_at: new Date().toISOString()
+    });
+
+    const res = await call(h, `/pending/${parked.id}/confirm`, owner);
+
+    expect(res.status).toBe(200);
+    // 重试必须真的把它执行掉，而不是回一句「已确认」然后什么都不做。
+    expect(h.calls).toHaveLength(1);
+    const row = rowOf(h, parked.id);
+    expect(row.status).toBe("done");
+    expect(row.request_snapshot).toBe("");
+  });
+
+  /**
+   * 「confirm 输了继续尝试 claim」绝不能变成「已执行的动作可以被再执行一次」。
+   * 守这条的是 claimForExecution 的 `AND status = 'confirmed'`——done 行抢不到。
+   */
+  it("does not re-execute a row that already reached done", async () => {
+    const parked = await park(h);
+    const owner = await humanJwt(h.env, "MaxLiu");
+    await call(h, `/pending/${parked.id}/confirm`, owner);
+    expect(rowOf(h, parked.id).status).toBe("done");
+
+    await call(h, `/pending/${parked.id}/confirm`, owner);
+    await call(h, `/pending/${parked.id}/confirm`, owner);
+
     expect(h.calls).toHaveLength(1);
     expect(rowOf(h, parked.id).status).toBe("done");
   });

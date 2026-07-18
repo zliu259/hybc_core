@@ -109,7 +109,13 @@ export const createFakeD1 = (): FakeD1 => {
     if (sql.includes("SET status = 'confirmed'")) {
       const [confirmedAt, id, now] = args as string[];
       const p = pendings.get(id);
-      if (p && p.status === "pending" && (p.expires_at as string) > now) {
+      // 过期守卫【只在生产 SQL 真的带了 `expires_at > ?` 时】才施加 —— 与 SELECT 路径
+      // （pendingMatchesConjuncts）同一套合取项解析。硬编码这个守卫等于让假实现断言自己的模型
+      // 而非生产语句：把该合取项从 confirmPending 的 UPDATE 里删掉，全套测试仍会绿，
+      // 而确认窗口——整条「人在环」的时限保证——就此无人看守。
+      const guardsExpiry = sql.includes("expires_at > ?");
+      const withinWindow = !guardsExpiry || (p !== undefined && (p.expires_at as string) > now);
+      if (p && p.status === "pending" && withinWindow) {
         pendings.set(id, { ...p, status: "confirmed", confirmed_at: confirmedAt });
         return 1;
       }
@@ -261,6 +267,18 @@ export const createFakeD1 = (): FakeD1 => {
         },
         async first<T>() {
           if (sql.includes("FROM agent_pending_action")) {
+            // 每个 grant 的「在途 pending」计数（park 限额）。刻意复用 pendingMatchesConjuncts：
+            // 计数 SQL 的绑定顺序（grant_id, now）正好符合它「expires_at > ? 的绑定值排第二」的约定，
+            // 于是 status / expires_at 两道合取项同样是【按生产 SQL 解析】而非在此硬编码。
+            if (sql.includes("COUNT(*)")) {
+              const [grantId] = bound as string[];
+              const n = [...pendings.values()].filter(
+                (p) =>
+                  (!sql.includes("grant_id = ?") || p.grant_id === grantId) &&
+                  pendingMatchesConjuncts(p, sql, bound)
+              ).length;
+              return { n } as T;
+            }
             let row: Record<string, unknown> | undefined;
             if (sql.includes("WHERE confirm_token_hash = ?")) {
               const [hash] = bound as string[];

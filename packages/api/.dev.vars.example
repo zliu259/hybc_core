@@ -2,9 +2,14 @@ APP_ENV=local
 JWT_SECRET=your_local_jwt_secret
 UPLOAD_SIGNING_SECRET=your_local_upload_signing_secret
 TASK_API_KEY=local-dev-task-api-key
-# 高危写重放标记的签名密钥。生产必须用 `wrangler secret put AGENT_REPLAY_SECRET` 设置
+# 高危写重放标记的签名密钥。生产【只能】用 `wrangler secret put AGENT_REPLAY_SECRET` 设置
 # 一个 >=32 字符的强随机值：含 REPLACE_WITH/PLACEHOLDER/CHANGEME 或过弱的值会被 fail-closed 拒绝，
 # 届时整条「企业微信确认后重放」链路不可用（见 src/services/agent-replay.ts）。
+#
+# 【绝不要把它写回 wrangler.toml】Workers 里同名的明文 var 与 secret 会相撞，且部署时的 var 获胜。
+# 由于 push 到 main 即自动部署，wrangler.toml 里留一行占位 var 会在每次发布时把已正确配置的
+# secret 覆盖回占位值——链路静默失效。故 wrangler.toml 的 [vars] 与 [env.prod.vars] 都【不含】此键，
+# 生产的唯一来源是 secret store，本地开发的唯一来源是 .dev.vars（本文件的副本，已 gitignore）。
 AGENT_REPLAY_SECRET=local-dev-replay-secret-not-for-prod
 
 # Enterprise WeCom registration values (fill when provided)

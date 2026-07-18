@@ -18,6 +18,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { authMiddleware, type AuthVariables } from "./auth";
 import { REPLAY_PENDING_HEADER } from "./agent-high-risk-gate";
 import { createAgentGrant } from "../services/agent-grant";
+import { MAX_OUTSTANDING_PENDING_PER_GRANT, rejectPending } from "../services/agent-pending";
 import { REPLAY_HEADER, sha256Hex, signReplayMarker } from "../services/agent-replay";
 import { createSessionPayload, issueTokens } from "../services/auth";
 import { createFakeD1, createFakeKV, type FakeD1 } from "../test-support/agent-fakes";
@@ -32,20 +33,51 @@ interface HandlerCall {
   readonly parsed: unknown;
 }
 
+interface StatementCall {
+  readonly sql: string;
+  readonly args: readonly unknown[];
+}
+
 interface Harness {
   readonly app: Hono<{ Bindings: Env; Variables: AuthVariables }>;
   readonly env: Env;
   readonly fake: FakeD1;
   readonly calls: HandlerCall[];
+  /** 每一条经过 env.DB 的语句。假 D1 不建 api_audit_log 表，审计只能这样观测。 */
+  readonly statements: StatementCall[];
 }
+
+/**
+ * 透明记录所有语句的 D1 包装：只旁听，不改变任何语义（一切转交假实现）。
+ * 审计写是「某枚令牌正在刷卡片」唯一的可发现信号，不能只靠「响应对了」间接推断。
+ */
+const recordingDb = (inner: D1Database, statements: StatementCall[]): D1Database =>
+  ({
+    prepare(sql: string) {
+      const stmt = inner.prepare(sql);
+      const api = {
+        bind(...args: unknown[]) {
+          statements.push({ sql, args });
+          stmt.bind(...args);
+          return api;
+        },
+        run: () => stmt.run(),
+        first: <T>() => stmt.first<T>(),
+        all: <T>() => stmt.all<T>()
+      };
+      return api;
+    }
+  }) as unknown as D1Database;
 
 const buildHarness = async (opts: { highRiskEnabled: boolean }): Promise<Harness> => {
   const fake = createFakeD1();
   const { kv } = createFakeKV();
   await kv.put("agent:highrisk:config", JSON.stringify({ enabled: opts.highRiskEnabled }));
 
+  const statements: StatementCall[] = [];
+
   const env = {
-    DB: fake.db,
+    DB: recordingDb(fake.db, statements),
     KV: kv,
     JWT_SECRET: "test-secret",
     APP_ENV: "production",
@@ -78,8 +110,14 @@ const buildHarness = async (opts: { highRiskEnabled: boolean }): Promise<Harness
   });
   app.get("/api/v1/project", (c) => c.json({ success: true, data: [] }));
 
-  return { app, env, fake, calls };
+  return { app, env, fake, calls, statements };
 };
+
+/** 该动作名下是否落了一条审计。 */
+const audited = (h: Harness, action: string): StatementCall | undefined =>
+  h.statements.find(
+    (s) => s.sql.includes("INSERT INTO api_audit_log") && s.args.includes(action)
+  );
 
 const agentToken = async (fake: FakeD1): Promise<string> => {
   const { token } = await createAgentGrant(fake.db, {
@@ -300,6 +338,80 @@ describe("authMiddleware · 高危写 park 通路", () => {
 
     expect(res.status).toBe(202);
     expect(h.calls).toHaveLength(0);
+  });
+
+  /**
+   * 【泛洪 park 是对人在环控制本身的攻击】
+   *
+   * park 原先是无条件 INSERT。一枚泄漏的令牌只要循环 `POST /approval/{1..N}/approve`，
+   * 就能把员工的企业微信埋进确认卡片里——通知疲劳正是收割一次不经心确认的标准手法：
+   * 几百张卡片里只要有一张被随手点了同意，攻击就成功了。顺带每 park 一次就多存一份
+   * 含 Bearer 令牌的请求快照，泄漏面的体量完全由攻击者决定。
+   */
+  describe("outstanding park cap", () => {
+    const flood = async (n: number) => {
+      const results: Response[] = [];
+      for (let i = 0; i < n; i += 1) {
+        results.push(
+          await post(h, `/api/v1/approval/${i + 1}/approve`, "{}", {
+            authorization: `Bearer ${token}`
+          })
+        );
+      }
+      return results;
+    };
+
+    it("refuses to park beyond the cap: 429 with a data-level reason, no new row", async () => {
+      const accepted = await flood(MAX_OUTSTANDING_PENDING_PER_GRANT);
+      expect(accepted.every((r) => r.status === 202)).toBe(true);
+      expect(pendingRows(h)).toHaveLength(MAX_OUTSTANDING_PENDING_PER_GRANT);
+
+      const refused = await post(h, "/api/v1/approval/99/approve", "{}", {
+        authorization: `Bearer ${token}`
+      });
+
+      expect(refused.status).toBe(429);
+      const payload = (await refused.json()) as {
+        success: boolean;
+        data: { status: string; reason: string; max_outstanding: number };
+        error: { message: string };
+      };
+      // MCP 客户端的信封丢弃 HTTP 状态码，故理由必须同时落在 data 与 error 里
+      // （!res.ok 时它只读 error.message，直读信封的调用方则看 data）。
+      expect(payload.success).toBe(false);
+      expect(payload.data.status).toBe("park_refused");
+      expect(payload.data.reason).toBe("too_many_outstanding");
+      expect(payload.data.max_outstanding).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
+      expect(payload.error.message).toBeTruthy();
+
+      // 触顶的请求【既不执行也不落行】——否则限额只是换了个响应码。
+      expect(h.calls).toHaveLength(0);
+      expect(pendingRows(h)).toHaveLength(MAX_OUTSTANDING_PENDING_PER_GRANT);
+    });
+
+    it("audits the refusal so a token flooding cards is discoverable", async () => {
+      await flood(MAX_OUTSTANDING_PENDING_PER_GRANT);
+      await post(h, "/api/v1/approval/99/approve", "{}", { authorization: `Bearer ${token}` });
+
+      const entry = audited(h, "agent.high_risk_park_refused");
+      expect(entry).toBeDefined();
+      expect(entry?.args).toContain("blocked");
+      expect(JSON.stringify(entry?.args)).toContain("too_many_outstanding");
+    });
+
+    it("lets the agent park again once the employee settles one card", async () => {
+      await flood(MAX_OUTSTANDING_PENDING_PER_GRANT);
+      const first = pendingRows(h)[0];
+      await rejectPending(h.env.DB, first.id as string);
+
+      const res = await post(h, "/api/v1/approval/99/approve", "{}", {
+        authorization: `Bearer ${token}`
+      });
+
+      // 限额只按【在途】计：正常节奏绝不能被这道闸锁死。
+      expect(res.status).toBe(202);
+      expect(((await res.json()) as ParkBody).data.status).toBe("awaiting_confirmation");
+    });
   });
 
   it("leaves allowlisted reads alone", async () => {

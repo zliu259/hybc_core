@@ -382,10 +382,14 @@ const pendingDenial = (kind: "not_found" | "forbidden"): [ReturnType<typeof fail
 /**
  * 本人确认 → 服务端重放原请求。整条链路上唯一真正执行高危写的地方。
  *
- * 【至多执行一次】由两道串联的乐观锁承载，任何一道没抢到就原地返回当前视图、绝不重放：
- *   confirmPending: pending → confirmed（重复点击确认时，第二次拿到 false）
- *   claimForExecution: confirmed → executing（并发确认时，只有一路能进入执行）
+ * 【至多执行一次】由两道串联的乐观锁承载：
+ *   confirmPending: pending → confirmed（过期 / 已拒绝 / 已处理的动作在此拿不到 true）
+ *   claimForExecution: confirmed → executing（真正的执行闸门，只有抢到的一路会重放）
  * 两道都是单条条件 UPDATE 的 changes 判定，不做「读—判断—写」（见 agent-pending.ts 头部）。
+ *
+ * 【判据是 claim，不是 confirm】重复确认之所以只重放一次，靠的是第二道锁而非第一道。
+ * 故 confirm 输了【不能】提前返回：行可能正卡在 confirmed（worker 在两道锁之间被回收），
+ * 提前返回会让员工的重试永远够不到执行闸门。详见 claim 处的注释。
  *
  * 【绝不卡死在 executing】重放整段包在 try/catch 里，异常路径同样 finishPending(failed)。
  * executing 是死状态：confirm/claim/finish 的守卫都不再匹配，没有任何请求路径能推动它，
@@ -406,27 +410,37 @@ agentRoutes.post("/pending/:id/confirm", requireHumanSession, async (c) => {
     return c.json(ok(toPublicView(latest ?? row)));
   };
 
-  // 第一道锁：过期或已被处理过的动作在此止步（重复确认走这里，不会重放）。
-  if (!(await confirmPending(c.env.DB, id))) {
-    return currentView();
+  // 第一道锁：过期 / 已拒绝 / 已执行的动作在此拿不到 true。
+  const wonConfirm = await confirmPending(c.env.DB, id);
+
+  // 审计只在【真正赢下这次确认】时写：重试不该在审计里留下第二条「员工确认了」。
+  if (wonConfirm) {
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "agent.high_risk_confirmed",
+      targetType: "agent_pending_action",
+      targetId: id,
+      detail: {
+        grant_id: row.grant_id,
+        action_kind: row.action_kind,
+        auth_method: auth.auth_method
+      }
+    }).catch((err) => {
+      console.error("agent high-risk confirm audit failed", err);
+    });
   }
 
-  await writeAuditLog(c.env.DB, {
-    actorUserId: auth.sub,
-    actorRoles: auth.roles,
-    action: "agent.high_risk_confirmed",
-    targetType: "agent_pending_action",
-    targetId: id,
-    detail: {
-      grant_id: row.grant_id,
-      action_kind: row.action_kind,
-      auth_method: auth.auth_method
-    }
-  }).catch((err) => {
-    console.error("agent high-risk confirm audit failed", err);
-  });
-
-  // 第二道锁：并发确认时只有一路能进入执行。
+  // 【输掉 confirm 也必须继续尝试 claim】——绝不在此提前返回。
+  //
+  // confirm 与 claim 之间隔着一次 await（上面那次审计写）。worker 若正好在这里被回收，
+  // 行就停在 confirmed。此时若「confirm 没赢就直接返回当前视图」，员工的重试将永远走不到
+  // claim：他点了同意，卡片显示「已确认」，而那笔审批永远不会被执行，且没有任何地方报错。
+  // （sweepStalePendingActions 一小时后会把它标 failed，但那是兜底，不是恢复。）
+  //
+  // 重新尝试 claim 是安全且幂等的：它的 WHERE 只匹配 status='confirmed'，
+  // executing / done / failed / rejected 一律抢不到，原样返回当前视图。
+  // 第二道锁同时仍是并发确认时的「至多执行一次」闸门。
   if (!(await claimForExecution(c.env.DB, id))) {
     return currentView();
   }

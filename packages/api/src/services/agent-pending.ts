@@ -38,6 +38,20 @@ export const PENDING_TTL_SECONDS = 600;
 /** 卡死 executing 行的清扫宽限期：1 小时，远超一次正常重放的耗时，不会误伤在途请求。 */
 export const STALE_EXECUTING_GRACE_SECONDS = 3600;
 
+/**
+ * 单个 grant 同时在途（pending 且未过期）的待确认动作上限。
+ *
+ * 没有这道闸，一枚泄漏的令牌可以循环 `POST /approval/{1..N}/approve`，把员工的企业微信
+ * 埋进确认卡片里。这【直接攻击人在环控制本身】——通知疲劳是收割一次不经心确认的标准手法：
+ * 淹没式推送里只要有一张被随手点了同意，攻击就成功了。而且每 park 一次就多存一份含
+ * Bearer 令牌的请求快照，泄漏面的体量本来完全由调用方决定。
+ *
+ * 取 5：正常使用下一个人手里同时压着五件待确认高危写已属罕见，而攻击者一旦触顶就再也无法
+ * 增加噪声——他能制造的卡片数量被钉死在一个员工扫一眼就能分辨的量级。
+ * 上限只按【在途】计：已确认/已拒绝/已过期的行不占额度，故正常节奏永远不会被误伤。
+ */
+export const MAX_OUTSTANDING_PENDING_PER_GRANT = 5;
+
 export interface ParkInput {
   grantId: string;
   wecomUserid: string;
@@ -47,12 +61,25 @@ export interface ParkInput {
   riskReason?: string;
 }
 
-export interface ParkResult {
-  id: string;
-  /** 明文确认令牌，只在此刻返回一次；库里只存其 SHA-256。 */
-  confirmToken: string;
-  expiresAt: string;
-}
+/**
+ * park 的结局。判别式联合而非「成功即返回 ParkResult、失败抛异常」：
+ * 触顶是一个【预期内的正常裁决】，不是故障；用类型逼调用方显式处理这条分支，
+ * 免得哪天有人在 catch 里把它和真实故障一起吞掉，限额就此形同虚设。
+ */
+export type ParkOutcome =
+  | {
+      readonly kind: "parked";
+      readonly id: string;
+      /** 明文确认令牌，只在此刻返回一次；库里只存其 SHA-256。 */
+      readonly confirmToken: string;
+      readonly expiresAt: string;
+    }
+  | {
+      readonly kind: "refused";
+      readonly reason: "too_many_outstanding";
+      readonly outstanding: number;
+      readonly max: number;
+    };
 
 export interface PendingResult {
   status: number;
@@ -68,15 +95,46 @@ const generateConfirmToken = (): string => {
     .join("");
 };
 
+/** 该 grant 当前在途（pending 且确认窗口未关）的待确认动作数。 */
+export const countOutstandingPending = async (
+  db: D1Database,
+  grantId: string,
+  nowIso: string = new Date().toISOString()
+): Promise<number> => {
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM agent_pending_action WHERE grant_id = ? AND status = 'pending' AND expires_at > ?`
+    )
+    .bind(grantId, nowIso)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+};
+
 /**
- * 落库一条待确认动作。
+ * 落库一条待确认动作，或在该 grant 触顶时拒绝落库。
+ *
  * id 用 crypto.randomUUID()（不含 ":"）——重放标记的签名载荷是 `${id}:${bodyHash}`，
  * id 内若出现 ":" 会造成分隔符歧义，进而让不同 (id, bodyHash) 对撞上同一载荷。
+ *
+ * 限额检查放在【存储层】而不是调用方：park 是这枚令牌在库里留下快照的唯一入口，
+ * 闸门那侧将来若多出一条 park 路径，限额必须跟着走，不能靠每个调用方各记一次。
+ * 计数与插入之间没有事务（生产 D1 无回滚），故并发峰值可能略微越线——这不影响本闸的
+ * 目的：它要挡的是「一枚令牌刷出几百张卡片」，不是精确到个位的配额。
  */
 export const parkPendingAction = async (
   db: D1Database,
   input: ParkInput
-): Promise<ParkResult> => {
+): Promise<ParkOutcome> => {
+  const outstanding = await countOutstandingPending(db, input.grantId);
+  if (outstanding >= MAX_OUTSTANDING_PENDING_PER_GRANT) {
+    return {
+      kind: "refused",
+      reason: "too_many_outstanding",
+      outstanding,
+      max: MAX_OUTSTANDING_PENDING_PER_GRANT
+    };
+  }
+
   const id = crypto.randomUUID();
   const confirmToken = generateConfirmToken();
   const confirmTokenHash = await sha256Hex(confirmToken);
@@ -103,7 +161,7 @@ export const parkPendingAction = async (
     )
     .run();
 
-  return { id, confirmToken, expiresAt };
+  return { kind: "parked", id, confirmToken, expiresAt };
 };
 
 export const getPendingById = async (

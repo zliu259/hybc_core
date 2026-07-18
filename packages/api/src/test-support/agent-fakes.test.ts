@@ -83,6 +83,55 @@ describe("fake D1 · agent_pending_action", () => {
     expect(res.meta.changes).toBe(0);
   });
 
+  /**
+   * 假实现的【保真度】本身要被钉住:过期守卫必须按传入的 SQL 施加,不能硬编码。
+   *
+   * 硬编码时,假实现断言的是自己的模型而非生产语句 —— 把 `AND expires_at > ?` 从
+   * confirmPending 里删掉,过期确认在测试里【依然】会被挡住,于是整套测试全绿,
+   * 而生产中一张躺了几个月的旧卡片已经能批准付款了。这正是本轮变异测试抓到的漏洞。
+   *
+   * 故:SQL 带该合取项 → 过期行 0 行受影响(上一个用例);不带 → 必须真的 1 行受影响。
+   */
+  it("applies the expires_at guard on confirm ONLY when the SQL carries the conjunct", async () => {
+    const { db } = createFakeD1();
+    await insertPending(db, "p1");
+    const res = await db
+      .prepare(
+        // 刻意缺失 `AND expires_at > ?` —— 模拟生产 SQL 丢掉守卫的那次变异。
+        `UPDATE agent_pending_action SET status = 'confirmed', confirmed_at = ?
+         WHERE id = ? AND status = 'pending'`
+      )
+      .bind("2026-07-18T00:00:00.000Z", "p1", "2026-07-18T00:00:00.000Z")
+      .run();
+    // 无守卫的语句就该毫无阻拦地改掉早已过期的行 —— 假实现必须如实反映这件事,
+    // 才能让上层测试把「守卫消失」看成失败。
+    expect(res.meta.changes).toBe(1);
+  });
+
+  it("counts outstanding pending rows per grant, honouring both conjuncts", async () => {
+    const { db, pendings } = createFakeD1();
+    await insertPending(db, "p1");
+    await insertPending(db, "p2");
+    await insertPending(db, "p3", "confirmed"); // 已确认:不在途
+    await insertPending(db, "p4");
+    pendings.set("p4", { ...pendings.get("p4"), grant_id: "g2" }); // 另一个 grant
+    pendings.set("p2", { ...pendings.get("p2"), expires_at: "2026-07-17T00:00:01.000Z" }); // 已过期
+
+    const count = async (grantId: string, now: string) =>
+      (
+        await db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM agent_pending_action WHERE grant_id = ? AND status = 'pending' AND expires_at > ?`
+          )
+          .bind(grantId, now)
+          .first<{ n: number }>()
+      )?.n;
+
+    expect(await count("g1", "2026-07-17T00:05:00.000Z")).toBe(1); // 只有 p1
+    expect(await count("g2", "2026-07-17T00:05:00.000Z")).toBe(1); // 只有 p4
+    expect(await count("g1", "2026-07-17T23:00:00.000Z")).toBe(0); // 全部过期
+  });
+
   it("claim-for-execution transitions confirmed → executing exactly once", async () => {
     const { db } = createFakeD1();
     await insertPending(db, "p1", "confirmed");

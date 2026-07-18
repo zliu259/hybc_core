@@ -22,6 +22,12 @@
  *
  * pending 行此刻已提交，员工从确认页仍能看到并处理它。卡片只是通知手段，不是存储。
  * 故推送与审计一律走 waitUntil 的 fire-and-forget，且 pushConfirmCard 本身承诺不抛异常。
+ *
+ * ## 触顶时的拒绝也是一条安全通路
+ *
+ * parkPendingAction 会在该 grant 的在途动作触顶时拒绝落库（见其文档：泛洪推送是收割
+ * 一次不经心确认的标准手法）。此时【不落行、不推卡片】，只留一条审计并回 429。
+ * 与 202 同理，理由必须写进 data —— MCP 客户端的信封丢弃 HTTP 状态码。
  */
 
 import { getGrantById } from "./agent-grant";
@@ -138,7 +144,7 @@ export const parkAgentRequest = async (
     body: input.body
   };
 
-  const parked = await parkPendingAction(env.DB, {
+  const outcome = await parkPendingAction(env.DB, {
     grantId: input.identity.grantId,
     wecomUserid: input.identity.wecomUserid,
     actionKind: input.rule.actionKind,
@@ -146,6 +152,53 @@ export const parkAgentRequest = async (
     summary,
     snapshot
   });
+
+  if (outcome.kind === "refused") {
+    // 审计【必须落地】才有意义：这条记录是「某枚令牌正在刷卡片」唯一的可发现信号，
+    // 且此路径没有别的后台工作要做，故直接 await（失败只记日志，绝不改变响应）。
+    await writeAuditLog(env.DB, {
+      actorUserId: input.identity.wecomUserid,
+      actorRoles: input.identity.roles,
+      action: "agent.high_risk_park_refused",
+      targetType: "agent_request",
+      targetId: input.path,
+      status: "blocked",
+      detail: {
+        via: "mcp",
+        grant_id: input.identity.grantId,
+        action_kind: input.rule.actionKind,
+        method: snapshot.method,
+        reason: outcome.reason,
+        outstanding: outcome.outstanding,
+        max_outstanding: outcome.max
+      }
+    }).catch((err) => {
+      console.error("agent park: refusal audit failed", err);
+    });
+
+    const message = `待确认的高危动作已达上限（${outcome.max} 条），请先在企业微信里处理已推送的确认卡片，再重试本次操作。`;
+    return new Response(
+      JSON.stringify({
+        // success:false 让 MCP 客户端把 error.message 抛成 ApiError（它对 !res.ok 只读 error）；
+        // data 里的机器可读理由则服务于任何直接读信封的调用方 —— HTTP 429 本身在那一层被丢弃。
+        success: false,
+        data: {
+          status: "park_refused",
+          reason: outcome.reason,
+          outstanding: outcome.outstanding,
+          max_outstanding: outcome.max,
+          message
+        },
+        error: { message }
+      }),
+      {
+        status: 429,
+        headers: { "content-type": "application/json" }
+      }
+    );
+  }
+
+  const parked = outcome;
 
   // 卡片与审计都不影响 park 的成败：行已提交，员工从确认页照样能处理。
   const background = (async () => {
