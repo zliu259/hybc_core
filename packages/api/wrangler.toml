@@ -38,17 +38,20 @@ max_retries = 3
 # 本地 wrangler dev 请用 .dev.vars 覆盖 APP_ENV=local(cp .dev.vars.example .dev.vars)。
 [vars]
 APP_ENV = "production"
-JWT_SECRET = "61dbd206859451fa6cbced9cf25d652f"
-UPLOAD_SIGNING_SECRET = "0c7213e73de53c76424506e589c2b285"
-TASK_API_KEY = "40aea6c95e44af22a4fd04f6f0c2cf26"
+# 【密钥不写在这里】JWT_SECRET / UPLOAD_SIGNING_SECRET / TASK_API_KEY /
+# WECHAT_SECRET / WECHAT_BRIDGE_TOKEN(以及 AGENT_REPLAY_SECRET)一律只经
+# `wrangler secret put <NAME> --env prod` 下发,绝不可再作为明文 var 写回:
+#  - Workers 里同名的明文 var 与 secret 不能共存(API 10053),部署要么直接失败,
+#    要么把已配置好的 secret 覆盖回明文值;
+#  - 本文件受版本控制,写进来的值在 git 历史里永久暴露,删除也追不回。
+# 本地开发的唯一来源是 .dev.vars(已 gitignore,见 .dev.vars.example)。
+# 回归守卫见 test/wrangler-prod-env.test.ts。
 BRIDGE_HEALTH_URL = "https://bridge.hybcdg.com/health"
 RUNNER_HEALTH_URL = "https://runner.hybcdg.com/health"
 WECHAT_CORPID = "ww3ddef5ccb9428432"
 WECHAT_AGENT_ID = "1000014"
-WECHAT_SECRET = "uvYndaTHtRDQvmD4bx3FknXzRBgPRBTXYWakLoNE5oE"
 WECHAT_BRIDGE_BASE_URL = "https://bridge.hybcdg.com"
 WECHAT_BRIDGE_PROXY_URL = "https://bridge.hybcdg.com/wecom/proxy"
-WECHAT_BRIDGE_TOKEN = "40aea6c95e44af22a4fd04f6f0c2cf26"
 WECHAT_REDIRECT_URI = "https://web.hybcdg.com/login"
 WECOM_MINIAPP_APPID = "wx25b3b1ad9febbec7"
 WECOM_APPROVAL_MINI_PAGE_PATH = "pages/approval-detail/index?id={id}"
@@ -103,17 +106,16 @@ max_retries = 3
 
 [env.prod.vars]
 APP_ENV = "production"
-JWT_SECRET = "61dbd206859451fa6cbced9cf25d652f"
-UPLOAD_SIGNING_SECRET = "0c7213e73de53c76424506e589c2b285"
-TASK_API_KEY = "40aea6c95e44af22a4fd04f6f0c2cf26"
+# 【密钥不写在这里】同上:JWT_SECRET / UPLOAD_SIGNING_SECRET / TASK_API_KEY /
+# WECHAT_SECRET / WECHAT_BRIDGE_TOKEN(以及 AGENT_REPLAY_SECRET)只经
+# `wrangler secret put <NAME> --env prod` 下发。明文 var 与同名 secret 相撞(10053),
+# 且一旦提交就在 git 历史里永久暴露 —— 两个 vars 段落都必须保持干净。
 BRIDGE_HEALTH_URL = "https://bridge.hybcdg.com/health"
 RUNNER_HEALTH_URL = "https://runner.hybcdg.com/health"
 WECHAT_CORPID = "ww3ddef5ccb9428432"
 WECHAT_AGENT_ID = "1000014"
-WECHAT_SECRET = "uvYndaTHtRDQvmD4bx3FknXzRBgPRBTXYWakLoNE5oE"
 WECHAT_BRIDGE_BASE_URL = "https://bridge.hybcdg.com"
 WECHAT_BRIDGE_PROXY_URL = "https://bridge.hybcdg.com/wecom/proxy"
-WECHAT_BRIDGE_TOKEN = "40aea6c95e44af22a4fd04f6f0c2cf26"
 WECHAT_REDIRECT_URI = "https://web.hybcdg.com/login"
 WECOM_MINIAPP_APPID = "wx25b3b1ad9febbec7"
 WECOM_APPROVAL_MINI_PAGE_PATH = "pages/approval-detail/index?id={id}"

@@ -1,3 +1,14 @@
+# 复制为 .dev.vars(已 gitignore)后本地使用。本文件里的值全部是**占位假值**,
+# 任何真实密钥都不得写进本文件或 wrangler*.toml。
+#
+# 密钥的两个来源,互不重叠:
+#  - 本地开发:.dev.vars(本文件的副本,gitignore);
+#  - 生产:Cloudflare Worker Secrets,只经 `wrangler secret put <NAME> --env prod` 下发。
+# 下列键在 wrangler.toml / wrangler.deploy.toml 的任何 vars 段落中都【不得】出现:
+#   JWT_SECRET, UPLOAD_SIGNING_SECRET, TASK_API_KEY,
+#   WECHAT_SECRET, WECHAT_BRIDGE_TOKEN, AGENT_REPLAY_SECRET
+# 同名的明文 var 与 secret 在 Workers 里不能共存(API 10053),且提交过的值在 git
+# 历史里永久暴露。回归守卫见 test/wrangler-prod-env.test.ts。
 APP_ENV=local
 JWT_SECRET=your_local_jwt_secret
 UPLOAD_SIGNING_SECRET=your_local_upload_signing_secret
@@ -16,6 +27,8 @@ AGENT_REPLAY_SECRET=local-dev-replay-secret-not-for-prod
 WECHAT_CORPID=your_wechat_corpid
 WECHAT_AGENT_ID=your_wechat_agent_id
 WECHAT_SECRET=your_wechat_secret
+# 企微 bridge 的调用令牌;生产同样只走 `wrangler secret put WECHAT_BRIDGE_TOKEN --env prod`。
+WECHAT_BRIDGE_TOKEN=local-dev-bridge-token-not-for-prod
 WECHAT_REDIRECT_URI=http://localhost:8848/login
 PASSKEY_RP_ID=localhost
 PASSKEY_RP_NAME=HYBC Local
