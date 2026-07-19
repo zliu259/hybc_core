@@ -3,6 +3,7 @@ import { mount, flushPromises } from "@vue/test-utils";
 
 const mocks = vi.hoisted(() => ({
   getPendingByToken: vi.fn(),
+  getPendingAction: vi.fn(),
   confirmPendingAction: vi.fn(),
   rejectPendingAction: vi.fn(),
   message: vi.fn(),
@@ -14,6 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("@/api/agent", () => ({
   getPendingByToken: mocks.getPendingByToken,
+  getPendingAction: mocks.getPendingAction,
   confirmPendingAction: mocks.confirmPendingAction,
   rejectPendingAction: mocks.rejectPendingAction
 }));
@@ -158,8 +160,13 @@ describe("confirm.vue 操作", () => {
     mocks.confirmPendingAction.mockRejectedValue(err);
     await w.find("button.confirm-btn").trigger("click");
     await flushPromises();
-    expect(mocks.message).toHaveBeenCalled();
+    const said = mocks.message.mock.calls.map(c => String(c[0]));
+    expect(said.some(t => t.includes("系统尚未完成配置"))).toBe(true);
+    // 503 是服务端【明确承诺没有认领这个动作】，所以无需、也不该去重新核对状态；
+    // 这条断言正是 503 特判存在与否的分水岭（去掉特判就会走通用「结果未知」路径）。
+    expect(mocks.getPendingAction).not.toHaveBeenCalled();
     // 仍停留在可确认状态，供稍后重试
+    expect(w.text()).toContain("待确认");
     expect(w.find("button.confirm-btn").exists()).toBe(true);
   });
 
@@ -188,6 +195,216 @@ describe("confirm.vue 操作", () => {
   it("已过期时不显示操作按钮", async () => {
     const w = await mountPage(view({ status: "expired" }));
     expect(w.find("button.confirm-btn").exists()).toBe(false);
+  });
+});
+
+// [HIGH 1] 未知错误（典型：http 客户端 10s 超时，而 confirm 端点要同步跑完
+// 审计写 → claim → 完整重放审批写 → finish → 再审计写）之后，服务端很可能【已经
+// 以员工名义把审批落库了】。此时继续显示「待确认 + 确认执行」是在臆测一个确定
+// 结果，且是最危险的那个方向——员工会再点一次。
+describe("confirm.vue 结果未知时的处理", () => {
+  const timeoutError = () =>
+    Object.assign(new Error("timeout of 10000ms exceeded"), {
+      code: "ECONNABORTED"
+    });
+
+  it("确认超时后不再显示待确认与可点按钮，并重新拉取真实状态", async () => {
+    const w = await mountPage(view());
+    mocks.confirmPendingAction.mockRejectedValue(timeoutError());
+    mocks.getPendingAction.mockResolvedValue({
+      success: true,
+      data: view({ status: "done" })
+    });
+    await w.find("button.confirm-btn").trigger("click");
+    await flushPromises();
+
+    expect(mocks.getPendingAction).toHaveBeenCalledWith("p1");
+    // 服务端其实已经执行完了——页面必须如实改口，而不是停在「待确认」
+    expect(w.text()).toContain("已执行");
+    expect(w.text()).not.toContain("待确认");
+    expect(w.find("button.confirm-btn").exists()).toBe(false);
+    // 不把 axios 的英文原文摔到员工脸上
+    expect(w.text()).not.toContain("timeout of 10000ms exceeded");
+  });
+
+  it("重新拉取也失败时明确告知结果未知、禁止重复操作，且不给按钮", async () => {
+    const w = await mountPage(view());
+    mocks.confirmPendingAction.mockRejectedValue(timeoutError());
+    mocks.getPendingAction.mockRejectedValue(new Error("network down"));
+    await w.find("button.confirm-btn").trigger("click");
+    await flushPromises();
+
+    expect(w.text()).toContain("结果未知");
+    expect(w.text()).toContain("请勿重复操作");
+    expect(w.text()).not.toContain("待确认");
+    expect(w.find("button.confirm-btn").exists()).toBe(false);
+    expect(w.find("button.reject-btn").exists()).toBe(false);
+  });
+
+  it("核对结果返回前也不得渲染成任何确定状态", async () => {
+    const w = await mountPage(view());
+    mocks.confirmPendingAction.mockRejectedValue(timeoutError());
+    // 让重新拉取悬着不 settle，观察中间态
+    mocks.getPendingAction.mockReturnValue(new Promise(() => {}));
+    await w.find("button.confirm-btn").trigger("click");
+    await flushPromises();
+
+    expect(w.text()).toContain("正在核对");
+    expect(w.text()).not.toContain("待确认");
+    expect(w.text()).not.toContain("已执行");
+    expect(w.find("button.confirm-btn").exists()).toBe(false);
+  });
+});
+
+// [HIGH 2] 503 之后服务端把行留在 confirmed（刻意不 claim、不 finish），
+// 恢复方式就是【再 POST 一次 confirm】。把 confirmed 当终态渲染，等于这条链路
+// 唯一的人类界面拒绝提供服务端专门为它保留的恢复动作，行会被 sweep 成 failed。
+describe("confirm.vue confirmed 可恢复", () => {
+  it("confirmed 不渲染成已结束，而是给出重试执行与刷新状态", async () => {
+    const w = await mountPage(view({ status: "confirmed" }));
+    expect(w.find("button.retry-btn").exists()).toBe(true);
+    expect(w.find("button.refresh-btn").exists()).toBe(true);
+    expect(w.text()).not.toContain("已结束");
+  });
+
+  it("executing 同样可重试", async () => {
+    const w = await mountPage(view({ status: "executing" }));
+    expect(w.find("button.retry-btn").exists()).toBe(true);
+  });
+
+  it("重试执行会再次 POST confirm，并以返回的视图为准", async () => {
+    const w = await mountPage(view({ status: "confirmed" }));
+    mocks.confirmPendingAction.mockResolvedValue({
+      success: true,
+      data: view({ status: "done" })
+    });
+    await w.find("button.retry-btn").trigger("click");
+    await flushPromises();
+    expect(mocks.confirmPendingAction).toHaveBeenCalledWith("p1");
+    expect(w.text()).toContain("已执行");
+  });
+
+  it("刷新状态走 getPendingAction", async () => {
+    const w = await mountPage(view({ status: "confirmed" }));
+    mocks.getPendingAction.mockResolvedValue({
+      success: true,
+      data: view({ status: "done" })
+    });
+    await w.find("button.refresh-btn").trigger("click");
+    await flushPromises();
+    expect(mocks.getPendingAction).toHaveBeenCalledWith("p1");
+    expect(w.text()).toContain("已执行");
+  });
+});
+
+describe("confirm.vue 服务端错误呈现", () => {
+  // [MEDIUM 3] 拦截器原样 rethrow AxiosError，error.message 是 axios 生成的英文；
+  // 服务端真正的中文说明在 response.data.error.message。员工正是靠这句话判断
+  // 「我刚才那一下到底生效没有」。
+  it("优先展示服务端中文说明，不暴露 axios 英文原文", async () => {
+    const w = await mountPage(view());
+    const err = Object.assign(
+      new Error("Request failed with status code 500"),
+      {
+        response: {
+          status: 500,
+          data: {
+            error: {
+              message: "服务端未配置重放密钥，本次确认已保留、稍后可重试"
+            }
+          }
+        }
+      }
+    );
+    mocks.confirmPendingAction.mockRejectedValue(err);
+    mocks.getPendingAction.mockResolvedValue({ success: true, data: view() });
+    await w.find("button.confirm-btn").trigger("click");
+    await flushPromises();
+
+    const said = mocks.message.mock.calls.map(c => String(c[0]));
+    expect(said.some(t => t.includes("服务端未配置重放密钥"))).toBe(true);
+    expect(said.some(t => t.includes("Request failed"))).toBe(false);
+  });
+
+  it("服务端没给说明时用中文兜底，仍不暴露英文原文", async () => {
+    const w = await mountPage(view());
+    mocks.confirmPendingAction.mockRejectedValue(
+      Object.assign(new Error("Network Error"), { response: { status: 500 } })
+    );
+    mocks.getPendingAction.mockResolvedValue({ success: true, data: view() });
+    await w.find("button.confirm-btn").trigger("click");
+    await flushPromises();
+
+    const said = mocks.message.mock.calls.map(c => String(c[0]));
+    expect(said.some(t => t.includes("Network Error"))).toBe(false);
+    expect(said.some(t => /[一-龥]/.test(t))).toBe(true);
+  });
+
+  // [MEDIUM 6] sweep 把超时 executing 标 failed 时注释写明「写可能已经落库」，
+  // 服务端把这句歧义警告放进 result_snapshot —— 不能被页面吞掉。
+  it("failed 时展示服务端 result 里的说明", async () => {
+    const w = await mountPage(
+      view({
+        status: "failed",
+        result: {
+          success: false,
+          error: { message: "重放执行失败，请到网页端确认该动作是否已生效" }
+        }
+      })
+    );
+    expect(w.text()).toContain("重放执行失败，请到网页端确认该动作是否已生效");
+  });
+});
+
+// [MEDIUM 4] 动作行本身可能是「拒绝审批单 #42」，而按钮上的「拒绝」指的是
+// 拒绝这个【智能体动作】——两者指向完全相反的业务结果。
+describe("confirm.vue 拒绝按钮语义", () => {
+  it("按钮措辞指向 pending 动作而非业务结果", async () => {
+    const w = await mountPage(
+      view({
+        summary: "拒绝审批单 #42",
+        detail: {
+          ...(view().detail as object),
+          action_kind: "approval.reject",
+          verb: "拒绝"
+        }
+      })
+    );
+    const label = w.find("button.reject-btn").text();
+    expect(label).toContain("不执行");
+    // 光一个「拒绝」会被读成「驳回这张审批单」
+    expect(label.trim()).not.toBe("拒绝");
+  });
+
+  it("拒绝也要二次确认，并复述完整动作", async () => {
+    const w = await mountPage(view());
+    mocks.rejectPendingAction.mockResolvedValue({
+      success: true,
+      data: { ...view({ status: "rejected" }), rejected: true }
+    });
+    await w.find("button.reject-btn").trigger("click");
+    await flushPromises();
+    expect(mocks.confirmBox).toHaveBeenCalled();
+    expect(String(mocks.confirmBox.mock.calls[0][0])).toContain("审批单 #42");
+  });
+
+  it("拒绝的二次确认被取消时不发起请求", async () => {
+    const w = await mountPage(view());
+    mocks.confirmBox.mockRejectedValue("cancel");
+    await w.find("button.reject-btn").trigger("click");
+    await flushPromises();
+    expect(mocks.rejectPendingAction).not.toHaveBeenCalled();
+  });
+});
+
+// [MEDIUM 5] approval 为 null 同时覆盖「这单不存在」和「查询失败」。detail 存在时
+// 动作行只有 `${verb}${target}`，员工手上就只剩一个等同随机数字的 #42。
+describe("confirm.vue 业务上下文缺失", () => {
+  it("approval 为 null 时显式提示不可用，而不是整块静默消失", async () => {
+    const w = await mountPage(
+      view({ detail: { ...(view().detail as object), approval: null } })
+    );
+    expect(w.text()).toContain("业务上下文暂不可用");
   });
 });
 
