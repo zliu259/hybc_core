@@ -6,7 +6,10 @@ const mocks = vi.hoisted(() => ({
   confirmPendingAction: vi.fn(),
   rejectPendingAction: vi.fn(),
   message: vi.fn(),
-  confirmBox: vi.fn()
+  confirmBox: vi.fn(),
+  // useRoute() 要返回同一个【响应式】对象，测试才能改 query.token 模拟
+  // 「页面已开着，用户又点了第二张卡片的链接」——组件会被复用，不会重新挂载。
+  routeHolder: { current: null as { query: { token?: string } } | null }
 }));
 
 vi.mock("@/api/agent", () => ({
@@ -16,7 +19,7 @@ vi.mock("@/api/agent", () => ({
 }));
 vi.mock("@/utils/message", () => ({ message: mocks.message }));
 vi.mock("vue-router", () => ({
-  useRoute: () => ({ query: { token: "tok-1" } })
+  useRoute: () => mocks.routeHolder.current
 }));
 // 真实的 ElMessageBox.confirm 会挂一个等待用户点击的对话框，返回的 Promise 在组件
 // 测试里永远不会 settle（没人去点那个按钮），确认流程就卡死了。沿用仓库里
@@ -30,7 +33,12 @@ vi.mock("element-plus", async () => {
   };
 });
 
+import { reactive } from "vue";
 import Confirm from "./confirm.vue";
+
+// useRoute() 在组件 setup 时才被调用，所以这里赋值来得及。
+const route = reactive({ query: { token: "tok-1" } as { token?: string } });
+mocks.routeHolder.current = route;
 
 const view = (over: Record<string, unknown> = {}) => ({
   id: "p1",
@@ -74,6 +82,7 @@ const mountPage = async (data: unknown) => {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  route.query.token = "tok-1";
   // 默认「用户点了确认」，需要测取消的用例自行覆盖
   mocks.confirmBox.mockResolvedValue("confirm");
 });
@@ -179,5 +188,73 @@ describe("confirm.vue 操作", () => {
   it("已过期时不显示操作按钮", async () => {
     const w = await mountPage(view({ status: "expired" }));
     expect(w.find("button.confirm-btn").exists()).toBe(false);
+  });
+});
+
+// 本地端到端冒烟里踩到的真实缺陷：页面已经开着时再打开第二张卡片的链接，
+// 路由 query 变了但组件被复用，onMounted 不会重跑，页面仍显示【上一个动作】，
+// 而那两个不可逆按钮就摆在旁边。等于让人对着 A 的信息点 B 的确认。
+describe("confirm.vue 响应 token 变化", () => {
+  it("token 变化时重新拉取并渲染新动作，而不是继续显示上一个", async () => {
+    const w = await mountPage(view());
+    expect(w.text()).toContain("审批单 #42");
+
+    mocks.getPendingByToken.mockResolvedValue({
+      success: true,
+      data: view({
+        id: "p2",
+        summary: "驳回审批单 #99",
+        detail: {
+          action_kind: "approval.reject",
+          verb: "驳回",
+          target: "审批单 #99",
+          approval: {
+            instance_no: "SP-20260719-002",
+            biz_type: "payment",
+            biz_summary: "PT-002 | 另一家公司 | ￥8,000",
+            initiator_userid: "LiSi"
+          },
+          agent_comment: "发票缺失，建议驳回"
+        }
+      })
+    });
+    route.query.token = "tok-2";
+    await flushPromises();
+
+    expect(mocks.getPendingByToken).toHaveBeenLastCalledWith("tok-2");
+    expect(w.text()).toContain("审批单 #99");
+    expect(w.text()).toContain("SP-20260719-002");
+    expect(w.text()).not.toContain("审批单 #42");
+    expect(w.text()).not.toContain("SP-20260719-001");
+  });
+
+  it("从已结束的动作切到新的待确认动作时，终态不残留、按钮恢复", async () => {
+    const w = await mountPage(view({ status: "done" }));
+    expect(w.find("button.confirm-btn").exists()).toBe(false);
+    expect(w.text()).toContain("已执行");
+
+    mocks.getPendingByToken.mockResolvedValue({
+      success: true,
+      data: view({ id: "p2", status: "pending" })
+    });
+    route.query.token = "tok-2";
+    await flushPromises();
+
+    expect(w.find("button.confirm-btn").exists()).toBe(true);
+    expect(w.find("button.reject-btn").exists()).toBe(true);
+    expect(w.text()).not.toContain("已执行");
+  });
+
+  it("新 token 加载失败时清掉上一个动作，不留下可点的按钮", async () => {
+    const w = await mountPage(view());
+    expect(w.find("button.confirm-btn").exists()).toBe(true);
+
+    mocks.getPendingByToken.mockRejectedValue(new Error("404"));
+    route.query.token = "tok-bad";
+    await flushPromises();
+
+    expect(w.text()).toContain("无法打开");
+    expect(w.find("button.confirm-btn").exists()).toBe(false);
+    expect(w.text()).not.toContain("审批单 #42");
   });
 });

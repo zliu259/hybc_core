@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import dayjs from "dayjs";
 import { ElMessageBox } from "element-plus";
@@ -103,26 +103,64 @@ const handleActionError = (error: unknown) => {
   message(errorMessageOf(error), { type: "error" });
 };
 
-const load = async () => {
-  const token = route.query.token;
-  if (typeof token !== "string" || !token) {
-    loadFailed.value = true;
-    loading.value = false;
-    return;
-  }
+/**
+ * 每次加载递增。用于丢弃过期请求的结果——token 变化后，上一个 token 的响应
+ * 若姗姗来迟，绝不能覆盖新动作的画面。
+ */
+let loadSeq = 0;
+
+/** 换 token 就是换动作：把上一个动作的一切状态清干净再拉新的。 */
+const resetForNewLoad = () => {
+  pending.value = null;
+  loadFailed.value = false;
+  acting.value = false;
+  return ++loadSeq;
+};
+
+const loadByToken = async (token: string) => {
+  const seq = resetForNewLoad();
+  loading.value = true;
   try {
     const res = await getPendingByToken(token);
+    if (seq !== loadSeq) return;
     pending.value = res.data;
   } catch {
+    if (seq !== loadSeq) return;
     loadFailed.value = true;
   } finally {
-    loading.value = false;
+    if (seq === loadSeq) loading.value = false;
   }
 };
+
+const markLinkUnusable = () => {
+  resetForNewLoad();
+  loadFailed.value = true;
+  loading.value = false;
+};
+
+/**
+ * 用 watch + immediate 而不是 onMounted：同一条路由下换 token 时组件会被复用，
+ * onMounted 不会重跑，页面就会停留在【上一个动作】上，而两个不可逆按钮还在旁边。
+ * （authorize.vue 的 ?user_code= 也是同样的处理方式。）
+ */
+watch(
+  () => route.query.token,
+  token => {
+    if (typeof token === "string" && token) {
+      void loadByToken(token);
+    } else {
+      markLinkUnusable();
+    }
+  },
+  { immediate: true }
+);
 
 const onConfirm = async () => {
   const current = pending.value;
   if (!current || acting.value) return;
+  // 二次确认弹窗复述的是【当下这个】动作。若期间页面切到了别的 token，
+  // 那句复述就对不上了，宁可作废本次操作，也不能拿旧确认去执行。
+  const seq = loadSeq;
   try {
     await ElMessageBox.confirm(
       `即将以你的名义执行：${actionText.value}。该操作不可撤销，确认继续？`,
@@ -137,24 +175,27 @@ const onConfirm = async () => {
     // 用户取消二次确认，什么都不做
     return;
   }
+  if (seq !== loadSeq) return;
   acting.value = true;
   try {
     const res = await confirmPendingAction(current.id);
     // 以服务端返回的视图为准，不本地猜测结果
-    pending.value = res.data;
+    if (seq === loadSeq) pending.value = res.data;
   } catch (error: unknown) {
-    handleActionError(error);
+    if (seq === loadSeq) handleActionError(error);
   } finally {
-    acting.value = false;
+    if (seq === loadSeq) acting.value = false;
   }
 };
 
 const onReject = async () => {
   const current = pending.value;
   if (!current || acting.value) return;
+  const seq = loadSeq;
   acting.value = true;
   try {
     const res = await rejectPendingAction(current.id);
+    if (seq !== loadSeq) return;
     // rejected:false 表示这个动作已被他路结算（比如已执行）——
     // 依然以服务端返回的真实状态覆盖，绝不谎报「已拒绝」。
     pending.value = res.data;
@@ -164,13 +205,11 @@ const onReject = async () => {
       });
     }
   } catch (error: unknown) {
-    handleActionError(error);
+    if (seq === loadSeq) handleActionError(error);
   } finally {
-    acting.value = false;
+    if (seq === loadSeq) acting.value = false;
   }
 };
-
-onMounted(load);
 </script>
 
 <template>
