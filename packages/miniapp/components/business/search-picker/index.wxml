@@ -1,0 +1,70 @@
+<view
+  class="sp-field {{hasSelection ? 'sp-field--selected' : ''}} {{disabled ? 'sp-field--disabled' : ''}}"
+  hover-class="{{disabled ? '' : 'sp-field--hover'}}"
+  bindtap="open"
+>
+  <view wx:if="{{hasSelection}}" class="sp-field__value">
+    <text class="sp-field__primary">{{selectedPrimary}}</text>
+    <text wx:if="{{selectedSecondary}}" class="sp-field__secondary"> · {{selectedSecondary}}</text>
+  </view>
+  <view wx:else class="sp-field__value sp-field__value--placeholder">{{placeholder}}</view>
+  <t-icon name="search" size="36rpx" class="sp-field__icon" />
+</view>
+
+<t-popup
+  visible="{{visible}}"
+  placement="bottom"
+  bind:visible-change="onVisibleChange"
+>
+  <view class="sp-sheet">
+    <view class="sp-sheet__header">
+      <view class="sp-sheet__title">{{title}}</view>
+      <view class="sp-sheet__close" catchtap="close" aria-role="button">
+        <t-icon name="close" size="40rpx" />
+      </view>
+    </view>
+
+    <view class="sp-search">
+      <t-icon name="search" size="34rpx" class="sp-search__icon" />
+      <input
+        class="sp-search__input"
+        value="{{query}}"
+        focus="{{autoFocus && visible}}"
+        confirm-type="search"
+        placeholder="{{searchPlaceholder}}"
+        placeholder-class="sp-search__ph"
+        bindinput="onQueryInput"
+      />
+      <view wx:if="{{query}}" class="sp-search__clear" catchtap="clearQuery">
+        <t-icon name="close-circle-filled" size="34rpx" />
+      </view>
+    </view>
+
+    <view class="sp-count" wx:if="{{query}}">{{filtered.length}} 条匹配</view>
+
+    <scroll-view class="sp-list" scroll-y enhanced show-scrollbar="{{false}}">
+      <view
+        wx:for="{{filtered}}"
+        wx:key="index"
+        class="sp-row {{item.checked ? 'sp-row--checked' : ''}}"
+        hover-class="sp-row--hover"
+        data-index="{{item.index}}"
+        bindtap="onPick"
+      >
+        <view class="sp-row__text">
+          <view class="sp-row__primary">{{item.primary}}</view>
+          <view wx:if="{{item.secondary}}" class="sp-row__secondary">{{item.secondary}}</view>
+        </view>
+        <t-icon wx:if="{{item.checked}}" name="check" size="40rpx" class="sp-row__check" />
+        <t-icon wx:else name="chevron-right" size="36rpx" class="sp-row__chevron" />
+      </view>
+
+      <view wx:if="{{filtered.length === 0}}" class="sp-empty">
+        <t-icon name="search" size="64rpx" class="sp-empty__icon" />
+        <view class="sp-empty__text">{{query ? '没有匹配的结果' : emptyText}}</view>
+      </view>
+
+      <view class="sp-safe-bottom" />
+    </scroll-view>
+  </view>
+</t-popup>

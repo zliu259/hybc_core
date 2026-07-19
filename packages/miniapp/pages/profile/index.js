@@ -201,7 +201,7 @@ Page({
   },
 
   goToReimbursement() {
-    wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+    wx.navigateTo({ url: "/packageFinance/reimbursement-list/index" });
   },
 
   goToPaymentApply() {
@@ -210,11 +210,11 @@ Page({
       wx.showToast({ title: "当前角色无对外付款权限", icon: "none" });
       return;
     }
-    wx.navigateTo({ url: "/pages/payment-apply/index" });
+    wx.navigateTo({ url: "/packageFinance/payment-apply/index" });
   },
 
   goToFuelApply() {
-    wx.navigateTo({ url: "/pages/fuel-apply/index" });
+    wx.navigateTo({ url: "/packageFinance/fuel-apply/index" });
   },
 
   openSettings() {
@@ -328,7 +328,7 @@ Page({
           return;
         }
         if (res.tapIndex === 1) {
-          wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+          wx.navigateTo({ url: "/packageFinance/reimbursement-list/index" });
           return;
         }
         if (res.tapIndex === 2) {
@@ -336,7 +336,7 @@ Page({
           return;
         }
         if (res.tapIndex === 3) {
-          wx.navigateTo({ url: "/pages/fuel-apply/index" });
+          wx.navigateTo({ url: "/packageFinance/fuel-apply/index" });
           return;
         }
         wx.navigateTo({ url: "/pages/approval/index" });

@@ -1112,7 +1112,7 @@ Page({
   },
 
   goMyList() {
-    wx.redirectTo({ url: "/pages/reimbursement-list/index" });
+    wx.redirectTo({ url: "/packageFinance/reimbursement-list/index" });
   },
 
   previewAttachment(e) {

@@ -137,12 +137,12 @@ Page({
   },
 
   goCreate() {
-    wx.navigateTo({ url: "/pages/reimbursement/index?mode=create" });
+    wx.navigateTo({ url: "/packageFinance/reimbursement/index?mode=create" });
   },
 
   goDetail(e) {
     const id = Number(e.currentTarget.dataset.id || 0);
     if (!id) return;
-    wx.navigateTo({ url: `/pages/reimbursement/index?id=${id}` });
+    wx.navigateTo({ url: `/packageFinance/reimbursement/index?id=${id}` });
   }
 });

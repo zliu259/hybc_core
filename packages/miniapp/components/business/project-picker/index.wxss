@@ -2,25 +2,6 @@
   margin-top: 8rpx;
 }
 
-.input {
-  min-height: 84rpx;
-  border-radius: 18rpx;
-  border: 2rpx solid #d9ceb9;
-  background: #fffaf2;
-  padding: 20rpx 22rpx;
-  color: #6e6458;
-  font-size: 28rpx;
-  font-weight: 500;
-  box-sizing: border-box;
-}
-
-.input-selected {
-  border-color: #2f6c5f;
-  background: #f4fbf8;
-  color: #2a241d;
-  box-shadow: 0 0 0 4rpx rgba(47, 108, 95, 0.14);
-}
-
 .selected-meta {
   margin-top: 12rpx;
   display: flex;
@@ -31,14 +12,14 @@
 .meta-chip {
   padding: 8rpx 14rpx;
   border-radius: 999rpx;
-  border: 1rpx solid #d9ceb9;
-  background: #fffaf2;
-  color: #5d5245;
+  border: 1rpx solid #e4ebf4;
+  background: #f3f5f8;
+  color: #5c667a;
   font-size: 22rpx;
 }
 
 .meta-status {
-  border-color: #9dc5bb;
-  background: #edf8f4;
-  color: #2f6c5f;
+  border-color: #cfe1fb;
+  background: #eaf3ff;
+  color: #1677ff;
 }

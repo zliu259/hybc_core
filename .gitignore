@@ -34,6 +34,13 @@ n8n/data/
 # Git worktrees (isolated workspaces)
 .worktrees/
 
+# Claude Code local config & agent worktrees
+# .claude/worktrees/ 是独立 git 检出（含历史代码副本，可能带明文密钥），绝不入父仓库；
+# settings.local.json / launch.json 是机器本地配置；.mcp.json 是本机 MCP 接入配置。
+# 如需与团队共享 skills/agents，可对具体子目录用 !.claude/skills 白名单放行。
+.claude/
+.mcp.json
+
 # Local DB backups (do NOT commit production data dumps)
 backups/
 

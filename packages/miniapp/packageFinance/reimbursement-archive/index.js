@@ -149,7 +149,7 @@ Page({
       vibrateSuccess();
       wx.hideLoading();
       sayToast({ title: fromScan ? "已打开电子档案" : "已定位电子档案", icon: "success" });
-      wx.navigateTo({ url: `/pages/reimbursement/index?id=${envelopeId}` });
+      wx.navigateTo({ url: `/packageFinance/reimbursement/index?id=${envelopeId}` });
     } catch (error) {
       vibrateWarning();
       wx.hideLoading();

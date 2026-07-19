@@ -24,12 +24,6 @@
     "pages/approval-initiated/index",
     "pages/approval-detail/index",
     "pages/returned-approval-edit/index",
-    "pages/payment-apply/index",
-    "pages/fuel-apply/index",
-    "pages/vehicle-maintenance/index",
-    "pages/reimbursement-list/index",
-    "pages/reimbursement/index",
-    "pages/reimbursement-archive/index",
     "pages/asset/index",
     "pages/survey/index",
     "pages/progress/index",
@@ -41,6 +35,19 @@
     "pages/query-contract-detail/index",
     "pages/query-payment-detail/index",
     "pages/query-receipt-detail/index"
+  ],
+  "subPackages": [
+    {
+      "root": "packageFinance",
+      "pages": [
+        "payment-apply/index",
+        "fuel-apply/index",
+        "vehicle-maintenance/index",
+        "reimbursement-list/index",
+        "reimbursement/index",
+        "reimbursement-archive/index"
+      ]
+    }
   ],
   "window": {
     "navigationBarTitleText": "恒越百川",
@@ -59,7 +66,8 @@
     "t-notice-bar": "tdesign-miniprogram/notice-bar/notice-bar",
     "hy-panel-card": "components/business/panel-card/index",
     "hy-status-chip": "components/business/status-chip/index",
-    "hy-project-picker": "components/business/project-picker/index"
+    "hy-project-picker": "components/business/project-picker/index",
+    "hy-search-picker": "components/business/search-picker/index"
   },
   "tabBar": {
     "color": "#5c667a",

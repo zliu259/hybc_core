@@ -37,35 +37,35 @@ Page({
       {
         title: "💸 智能发单台",
         desc: canPaymentApply ? "金额阈值识别 + 直付/合同双流程" : "当前角色无权限",
-        path: "/pages/payment-apply/index",
+        path: "/packageFinance/payment-apply/index",
         tone: "blue",
         disabled: !canPaymentApply
       },
       {
         title: "🧾 我的报销提交",
         desc: "发起报销、上传票据、跟踪状态",
-        path: "/pages/reimbursement-list/index",
+        path: "/packageFinance/reimbursement-list/index",
         tone: "green",
         disabled: false
       },
       {
         title: "📂 信封扫码核查",
         desc: "办公室扫码信封UUID，快速打开电子档案",
-        path: "/pages/reimbursement-archive/index",
+        path: "/packageFinance/reimbursement-archive/index",
         tone: "orange",
         disabled: false
       },
       {
         title: "⛽ 油卡额度申请",
         desc: "填写油卡额度、车辆里程并上传现场照片",
-        path: "/pages/fuel-apply/index",
+        path: "/packageFinance/fuel-apply/index",
         tone: "yellow",
         disabled: false
       },
       {
         title: "🔧 车辆保养记录",
         desc: "填写保养里程、内容、费用并上传附件",
-        path: "/pages/vehicle-maintenance/index",
+        path: "/packageFinance/vehicle-maintenance/index",
         tone: "blue",
         disabled: false
       },
@@ -183,7 +183,7 @@ Page({
             wx.showToast({ title: "当前角色无对外付款权限", icon: "none" });
             return;
           }
-          wx.navigateTo({ url: "/pages/payment-apply/index" });
+          wx.navigateTo({ url: "/packageFinance/payment-apply/index" });
           return;
         }
         if (res.tapIndex === 1) {
@@ -191,14 +191,14 @@ Page({
           return;
         }
         if (res.tapIndex === 2) {
-          wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+          wx.navigateTo({ url: "/packageFinance/reimbursement-list/index" });
           return;
         }
         if (res.tapIndex === 3) {
-          wx.navigateTo({ url: "/pages/reimbursement-archive/index" });
+          wx.navigateTo({ url: "/packageFinance/reimbursement-archive/index" });
           return;
         }
-        wx.navigateTo({ url: "/pages/fuel-apply/index" });
+        wx.navigateTo({ url: "/packageFinance/fuel-apply/index" });
       }
     });
   }

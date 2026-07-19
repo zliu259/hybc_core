@@ -57,14 +57,14 @@ const DEFAULT_APPS = [
   {
     title: "💸 智能发单台",
     desc: "阈值识别后发起对外付款",
-    path: "/pages/payment-apply/index"
+    path: "/packageFinance/payment-apply/index"
   },
   {
     title: "⛽ 油卡额度申请",
     desc: "发起油卡额度申请并跟踪进度",
-    path: "/pages/fuel-apply/index"
+    path: "/packageFinance/fuel-apply/index"
   },
-  { title: "💰 我的报销提交", desc: "发起报销并跟踪进度", path: "/pages/reimbursement-list/index" },
+  { title: "💰 我的报销提交", desc: "发起报销并跟踪进度", path: "/packageFinance/reimbursement-list/index" },
   { title: "🔎 查询", desc: "合同/付款/收款统一查询", path: "/pages/query/index" },
   { title: "📈 进度看板", desc: "查看进度预警", path: "/pages/progress/index" },
   { title: "🔔 消息通知", desc: "查看催办提醒", path: "/pages/notice/index" }
@@ -136,7 +136,7 @@ Page({
         roles.includes("site_manager");
       const appEntries = DEFAULT_APPS.filter(
         item =>
-          (paymentAllowed || item.path !== "/pages/payment-apply/index") &&
+          (paymentAllowed || item.path !== "/packageFinance/payment-apply/index") &&
           (queryAllowed || item.path !== "/pages/query/index")
       );
       const finalEntries = showCreateProject
@@ -240,7 +240,7 @@ Page({
           wx.navigateTo({ url: "/pages/operator-log/index" });
           return;
         }
-        wx.navigateTo({ url: "/pages/reimbursement-list/index" });
+        wx.navigateTo({ url: "/packageFinance/reimbursement-list/index" });
       }
     });
   }
