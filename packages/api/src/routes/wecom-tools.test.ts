@@ -246,4 +246,74 @@ describe("wecom tool routes", () => {
 
     expect(res.status).toBe(403);
   });
+
+  it("fail-closed: rejects tool calls when no tool token is configured", async () => {
+    const env = createEnv({ envToken: "", kvToken: null });
+    const res = await createApp().request(
+      "/wecom/tools/call",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          tool: "get_project_overview",
+          input: { project_id: 7 },
+          context: { group_chat_id: "wr-group-1" }
+        })
+      },
+      env
+    );
+
+    expect(res.status).toBe(401);
+    // The tool must never run when the gate is unconfigured.
+    expect(env.DB.audits).toEqual([]);
+  });
+
+  it("fail-closed: an unconfigured gate rejects even a caller-supplied token", async () => {
+    const env = createEnv({ envToken: "", kvToken: null });
+    const res = await createApp().request(
+      "/wecom/tools/call",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-wecom-tool-token": "anything-goes"
+        },
+        body: JSON.stringify({
+          tool: "get_project_overview",
+          input: { project_id: 7 },
+          context: { group_chat_id: "wr-group-1" }
+        })
+      },
+      env
+    );
+
+    expect(res.status).toBe(401);
+    expect(env.DB.audits).toEqual([]);
+  });
+
+  it("scopes the tool to the bound project, ignoring a caller-supplied project_id (IDOR)", async () => {
+    // Binding for group "wr-group-1" is project_id 7; caller tries to read project 999.
+    const env = createEnv();
+    const res = await createApp().request(
+      "/wecom/tools/call",
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "x-wecom-tool-token": "secret-token"
+        },
+        body: JSON.stringify({
+          tool: "get_project_overview",
+          input: { project_id: 999 },
+          context: { group_chat_id: "wr-group-1" }
+        })
+      },
+      env
+    );
+    const json = (await res.json()) as { data: { project_id: number } };
+
+    expect(res.status).toBe(200);
+    // The bound project (7) is authoritative — never the caller's 999.
+    expect(json.data.project_id).toBe(7);
+  });
 });

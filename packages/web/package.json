@@ -19,6 +19,10 @@
     "lint:prettier": "prettier --write  \"src/**/*.{js,ts,json,tsx,css,scss,vue,html,md}\"",
     "lint:stylelint": "stylelint --cache --fix \"**/*.{html,vue,css,scss}\" --cache-location node_modules/.cache/stylelint/",
     "lint": "pnpm lint:eslint && pnpm lint:prettier && pnpm lint:stylelint",
+    "lint:eslint:check": "eslint --max-warnings 0 \"{src,mock,build}/**/*.{vue,js,ts,tsx}\"",
+    "lint:prettier:check": "prettier --check \"src/**/*.{js,ts,json,tsx,css,scss,vue,html,md}\"",
+    "lint:stylelint:check": "stylelint \"**/*.{html,vue,css,scss}\"",
+    "lint:check": "pnpm lint:eslint:check && pnpm lint:prettier:check && pnpm lint:stylelint:check",
     "prepare": "husky",
     "preinstall": "npx only-allow pnpm"
   },

@@ -1,0 +1,97 @@
+# CI gates for the hybc_core monorepo (api / web / mcp).
+#
+# WHY: pushing to `main` auto-deploys production (Cloudflare Workers Builds +
+# Pages). Until now nothing ran typecheck / test / lint before that deploy — not
+# even the vitest regression that guards the production auth-bypass. This
+# workflow runs those gates on every push and PR to `main`.
+#
+# IMPORTANT: a green workflow does NOT block a merge on its own. To actually gate
+# merges you MUST enable branch protection for `main` in GitHub repo
+# Settings > Branches (require the "verify" check to pass). That is a repo-admin
+# UI action and cannot be configured from this file.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# Cancel superseded runs on the same ref to save minutes.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # pnpm must be set up before setup-node so its cache can be keyed on pnpm.
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.22.0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      # --- api (blocking) ---
+      - name: api typecheck
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @hybc/api run typecheck
+
+      - name: api test
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @hybc/api run test
+
+      - name: api lint
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @hybc/api run lint
+
+      # Fails only on NEW duplicate migration numbers; 0036/0037/0041 are known
+      # pre-existing dups tolerated by a snapshot baseline. (Same check also runs
+      # inside `api test`; kept as an explicit step for visibility.)
+      - name: migration number uniqueness
+        if: ${{ !cancelled() }}
+        run: node packages/api/scripts/check-migration-numbers.mjs
+
+      # --- web (typecheck + test blocking; lint:check advisory) ---
+      - name: web typecheck
+        if: ${{ !cancelled() }}
+        run: pnpm --filter pure-admin-thin run typecheck
+
+      - name: web test
+        if: ${{ !cancelled() }}
+        run: pnpm --filter pure-admin-thin run test
+
+      # NON-BLOCKING: web currently has large pre-existing formatting/stylelint
+      # debt (~216 prettier + ~361 stylelint issues across ~50 committed files).
+      # The check variants are correct and wired; reformatting that debt is out
+      # of scope for this change. Run `pnpm --filter pure-admin-thin run lint`
+      # once to auto-fix, then flip continue-on-error to false to make it gate.
+      - name: web lint (advisory)
+        if: ${{ !cancelled() }}
+        continue-on-error: true
+        run: pnpm --filter pure-admin-thin run lint:check
+
+      # --- mcp (blocking) ---
+      - name: mcp typecheck
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @hybc/mcp run typecheck
+
+      - name: mcp test
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @hybc/mcp run test
+
+      - name: mcp lint
+        if: ${{ !cancelled() }}
+        run: pnpm --filter @hybc/mcp run lint

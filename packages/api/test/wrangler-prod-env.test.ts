@@ -65,13 +65,14 @@ describe("wrangler.toml APP_ENV", () => {
  * 配置,只要 APP_ENV="local",就等于给生产开一扇免认证的门
  * (routes/auth.ts 的 /login/web 在 APP_ENV==="local" 时接受裸 {"username"} 直接签发会话)。
  *
- * wrangler.deploy.toml 就是这么埋进来的:绑 hybcdg-prod-* 全套,却写着 APP_ENV="local"。
- * 它当时不在默认部署路径上(package.json 的 deploy 是裸 `wrangler deploy`,走 wrangler.toml),
- * 所以只是颗地雷 —— 但 `wrangler deploy -c wrangler.deploy.toml` 一跑就是生产事故,
- * 且这已经是同一个失效模式的**第二次**出现。
+ * wrangler.deploy.toml 曾是这么一颗地雷:name="hybc-api"、绑 hybcdg-prod-* 全套、
+ * 还带 api.hybcdg.com/* 路由与每 2 分钟 cron。自动部署走的是裸 `wrangler deploy`
+ * (顶层 wrangler.toml),从不引用它;但 `wrangler deploy -c wrangler.deploy.toml` 一跑
+ * 就把生产域名劫持到一个没有密钥的 worker —— 纯地雷。已于 2026-07-19 删除(见下方
+ * 「不得重现」守卫)。
  *
- * 因此这里 glob 整个 packages/api 目录,而不是硬编码文件名:目的正是守住**还不存在的**
- * 配置文件 —— 下次谁新增一个 wrangler.xxx.toml,自动纳入。
+ * glob 仍整个 packages/api 目录扫,而不是硬编码文件名:目的是守住**还不存在的**配置
+ * 文件 —— 下次谁新增一个 wrangler.xxx.toml,自动纳入。
  * 不变式:文件引用了任何 hybcdg-prod-* 资源 ⇒ 该文件任何 vars 段落都不得 APP_ENV="local"。
  */
 const wranglerConfigs = readdirSync(apiRoot)
@@ -112,10 +113,15 @@ const appEnvsInVarsSections = (
   });
 
 describe("任意 wrangler*.toml:绑生产资源就不得 APP_ENV=local", () => {
-  it("至少扫到 wrangler.toml 与 wrangler.deploy.toml(否则说明 glob 失效了)", () => {
-    expect(wranglerConfigs).toEqual(
-      expect.arrayContaining(["wrangler.toml", "wrangler.deploy.toml"])
-    );
+  it("glob 至少扫到 wrangler.toml(否则说明 glob 失效了)", () => {
+    expect(wranglerConfigs).toContain("wrangler.toml");
+  });
+
+  it("wrangler.deploy.toml 不得重现(已作为生产劫持地雷删除)", () => {
+    // 见上方注释:它绑全套生产资源 + api.hybcdg.com/* 路由 + 每 2 分钟 cron,
+    // name="hybc-api"。`wrangler deploy -c wrangler.deploy.toml` 一跑即生产事故。
+    // 自动部署走裸 `wrangler deploy`(顶层 wrangler.toml),从不需要它。谁加回即回归。
+    expect(wranglerConfigs).not.toContain("wrangler.deploy.toml");
   });
 
   it.each(wranglerConfigs)(
@@ -210,5 +216,37 @@ describe("任意 wrangler*.toml:密钥不得写成明文 var", () => {
     );
 
     expect(missing).toEqual([]);
+  });
+});
+
+/**
+ * 顶层 [vars] 与 [env.prod.vars] 必须逐键逐值一致。
+ *
+ * 为什么两段要重复:wrangler 的具名 env 不继承顶层 vars。自动部署走裸 `wrangler deploy`
+ * (读顶层段),手动兜底走 `wrangler deploy --env prod`(读 [env.prod] 段),两条路径各读
+ * 一段,所以两段必须携带**相同的完整配置**。
+ *
+ * APP_ENV 与密钥键上面已单独守;这里补齐**其余所有业务 var**:日后只给一段加/改一个
+ * var 而漏改另一段,手动 --env prod 兜底就会部署出配置残缺的 worker。
+ * (对抗审 2026-07-19 confirmed low:当时两段完全一致,此守卫把「一致」钉成不变式。)
+ */
+const parseVarsMap = (section: string): Record<string, string> => {
+  const map: Record<string, string> = {};
+  section.split("\n").forEach((line) => {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith("#")) return;
+    const match = trimmed.match(/^([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.+?)\s*$/);
+    if (match) {
+      map[match[1]] = match[2];
+    }
+  });
+  return map;
+};
+
+describe("wrangler.toml 顶层 [vars] 与 [env.prod.vars] 一致性", () => {
+  it("两段业务 var 必须逐键逐值相同(自动部署读顶层、手动 --env prod 读 env.prod)", () => {
+    const top = parseVarsMap(sectionOf("[vars]"));
+    const prod = parseVarsMap(sectionOf("[env.prod.vars]"));
+    expect(prod).toEqual(top);
   });
 });

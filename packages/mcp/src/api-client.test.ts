@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { ApiError, buildUrl, HybcApiClient } from "./api-client";
+import { buildUrl, HybcApiClient } from "./api-client";
 
 afterEach(() => {
   vi.unstubAllGlobals();

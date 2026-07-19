@@ -47,7 +47,12 @@ const tokenFromRequest = (request: Request): string | null => {
 
 const requireToolToken = async (env: Env, request: Request): Promise<string | null> => {
   const configured = (await getConfiguredWeComToolToken(env)).token;
-  if (!configured) return null;
+  // Fail-closed: with no token provisioned the bot Q&A feature is OFF. Never fall
+  // through to "allow" — an unconfigured gate must reject, so the only way to open
+  // this public, JWT-less endpoint is to deliberately set WECOM_BOT_TOOL_TOKEN.
+  // (Message stays generic so an anonymous probe can't distinguish "unconfigured"
+  // from "wrong token".)
+  if (!configured) return "Invalid or missing WeCom tool token";
   const provided = tokenFromRequest(request);
   return provided === configured ? null : "Invalid or missing WeCom tool token";
 };
@@ -394,7 +399,11 @@ wecomToolRoutes.post("/tools/call", async (c) => {
       tool: body.tool,
       context
     });
-    const result = await callWeComProjectTool(c.env, body.tool, input);
+    // Defense in depth against IDOR: the binding (resolved from the group chat)
+    // is the authority on which project this caller may read. Force the bound
+    // project_id so a caller-supplied one can never reach another project's data.
+    const scopedInput = { ...input, project_id: binding.project_id };
+    const result = await callWeComProjectTool(c.env, body.tool, scopedInput);
     await writeWeComToolAudit(c.env, {
       binding,
       tool_name: body.tool,
