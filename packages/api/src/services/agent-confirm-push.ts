@@ -17,14 +17,31 @@
  * 因此 pushConfirmCard 吞掉所有发送异常，只记录日志。
  */
 
+import { sanitizeDisplayText, truncate } from "./agent-action-detail";
 import type { Env } from "../types/env";
 import { sendWeComTemplateCard } from "./wecom-approval-push";
 
 /** 确认令牌有效期（分钟），与 park 记录的过期时间保持一致，仅用于卡片文案。 */
 const CONFIRM_TTL_MINUTES = 10;
 
+/**
+ * 企微 text_notice 的 sub_title_text 上限。超限企微【直接拒收整条消息】——
+ * 结局是员工收不到任何通知，而动作已经 park 在库里等着被确认。
+ * 意见是调用方可控的文本，故长度必须由我们守，不能指望它自觉。
+ */
+const SUB_TITLE_MAX_CHARS = 112;
+
+/** 卡片上留给「智能体填写的意见」的字数预算（落库时另有更宽的上限）。 */
+const CARD_COMMENT_MAX_CHARS = 30;
+
+/** 卡片上留给设备名的字数预算。 */
+const CARD_DEVICE_MAX_CHARS = 16;
+
+/** 意见前的固定标签。必须出现，员工才知道这段话【不是】系统说的。 */
+const AGENT_COMMENT_LABEL = "智能体填写的意见";
+
 export interface ConfirmCardInput {
-  /** 高危动作的人类可读摘要，例如「批准审批单 #42（张三 申请：付款 ￥120,000）」。 */
+  /** 高危动作的人类可读摘要，例如「批准审批单 #42（张三 提交：付款 ￥120,000）」。 */
   readonly summary: string;
   /** 判定为高危的原因，用于让员工理解这条确认从何而来。 */
   readonly riskReason: string;
@@ -32,6 +49,13 @@ export interface ConfirmCardInput {
   readonly confirmToken: string;
   /** 发起设备名（授权时登记）；未知时省略整句，不要输出「未知设备」误导员工。 */
   readonly deviceName: string | null;
+  /**
+   * 【智能体填写的意见】—— 它会被 routes/approval.ts 原样写进正式审批记录并署上员工本人的名字。
+   * 卡片不展示它，员工就是在为一段自己从未读过的话背书。没写时为 null（整句省略，不输出「无」）。
+   *
+   * 必填而非可选：漏传的后果正是本字段要消灭的那个缺陷，类型系统应当逼调用方正视它。
+   */
+  readonly agentComment: string | null;
 }
 
 export interface PushConfirmInput extends ConfirmCardInput {
@@ -75,10 +99,29 @@ const resolveConfirmUrl = (env: Env, confirmToken: string): string => {
   return `${base}/#/agent/confirm?token=${encodeURIComponent(confirmToken)}`;
 };
 
+/**
+ * 拼 sub_title_text：意见 → 设备 → 固定提示。
+ *
+ * 意见排在最前，因为它是这张卡片上员工最需要读、也最可能被忽略的一句 ——
+ * 排在「本次确认 10 分钟内有效…」这类样板话之后，它就会被当成样板话跳过。
+ *
+ * 消毒在此【再做一次】（park 落库时已做过）：本函数也可能被其它调用方直接使用，
+ * 而 sanitizeDisplayText 是幂等的，重复调用零代价。最后整串再收口一次长度，
+ * 防止各段预算之和因将来的文案改动而悄悄越线。
+ */
+const buildSubTitle = (input: ConfirmCardInput): string => {
+  const comment = input.agentComment?.trim();
+  const commentPart = comment
+    ? `${AGENT_COMMENT_LABEL}：「${sanitizeDisplayText(comment, CARD_COMMENT_MAX_CHARS)}」。`
+    : "";
+  const device = input.deviceName?.trim();
+  const devicePart = device ? `发起设备：${sanitizeDisplayText(device, CARD_DEVICE_MAX_CHARS)}。` : "";
+  const notice = `本次确认 ${CONFIRM_TTL_MINUTES} 分钟内有效，请核对内容无误后再确认；如非本人操作请忽略。`;
+  return truncate(`${commentPart}${devicePart}${notice}`, SUB_TITLE_MAX_CHARS);
+};
+
 export const buildConfirmCard = (env: Env, input: ConfirmCardInput): ConfirmTemplateCard => {
   const url = resolveConfirmUrl(env, input.confirmToken);
-  const device = input.deviceName?.trim();
-  const devicePart = device ? `发起设备：${device}。` : "";
 
   return {
     card_type: "text_notice",
@@ -94,7 +137,7 @@ export const buildConfirmCard = (env: Env, input: ConfirmCardInput): ConfirmTemp
       title: input.summary,
       desc: "待你确认"
     },
-    sub_title_text: `${devicePart}本次确认 ${CONFIRM_TTL_MINUTES} 分钟内有效，请核对内容无误后再确认；如非本人操作请忽略。`,
+    sub_title_text: buildSubTitle(input),
     jump_list: [
       {
         type: 1,

@@ -29,6 +29,7 @@
  * 故 reject 与 finish 的 UPDATE 都带 request_snapshot = ''，把令牌的驻留时间压到最短。
  */
 
+import { parseActionDetail, type PendingActionDetail } from "./agent-action-detail";
 import { sha256Hex } from "./agent-replay";
 import type { AgentPendingRow, PendingPublicView, RequestSnapshot } from "../types/agent";
 
@@ -39,18 +40,37 @@ export const PENDING_TTL_SECONDS = 600;
 export const STALE_EXECUTING_GRACE_SECONDS = 3600;
 
 /**
- * 单个 grant 同时在途（pending 且未过期）的待确认动作上限。
+ * 单个 grant 同时在途（pending 且未过期）的待确认动作上限 —— 这道闸管【并发】。
  *
- * 没有这道闸，一枚泄漏的令牌可以循环 `POST /approval/{1..N}/approve`，把员工的企业微信
+ * 没有它，一枚泄漏的令牌可以循环 `POST /approval/{1..N}/approve`，把员工的企业微信
  * 埋进确认卡片里。这【直接攻击人在环控制本身】——通知疲劳是收割一次不经心确认的标准手法：
  * 淹没式推送里只要有一张被随手点了同意，攻击就成功了。而且每 park 一次就多存一份含
  * Bearer 令牌的请求快照，泄漏面的体量本来完全由调用方决定。
  *
- * 取 5：正常使用下一个人手里同时压着五件待确认高危写已属罕见，而攻击者一旦触顶就再也无法
- * 增加噪声——他能制造的卡片数量被钉死在一个员工扫一眼就能分辨的量级。
- * 上限只按【在途】计：已确认/已拒绝/已过期的行不占额度，故正常节奏永远不会被误伤。
+ * 取 5：正常使用下一个人手里同时压着五件待确认高危写已属罕见，故几乎不会误伤。
+ *
+ * 【它保证的仅仅是「同时最多 5 张未处理的卡片」，不是「一共最多 5 张」。】
+ * 计数只看 pending 且未过期：卡片一被拒绝、或确认窗口一过，额度立刻回收。于是
+ *   park 满 5 → 员工逐条拒绝 → 计数归零 → 再 park 5 条
+ * 可以无限循环，攻击者的产能反而【与员工的尽责程度成正比】。总量必须另有一道闸，
+ * 见 MAX_PARKS_PER_ROLLING_DAY —— 两道正交，缺一不可。
  */
 export const MAX_OUTSTANDING_PENDING_PER_GRANT = 5;
+
+/**
+ * 单个 grant 在滚动 24 小时内允许 park 的【总】次数 —— 这道闸管总量。
+ *
+ * 按 created_at 计数，且【不分状态】：已拒绝、已过期、已执行的行照样占额度。
+ * 这正是它与在途上限的区别所在 —— 处理掉一张卡片不会退还预算，故「员工越认真、
+ * 攻击者恢复得越快」这个倒置的激励在此被切断。
+ *
+ * 取 20：远高于任何正常人一天的高危写量（P2a 首批只放开审批 approve/reject），
+ * 又低到让泛洪在员工能察觉的量级上就撞墙。触顶不是故障，是一条正常的审计化拒绝通路。
+ */
+export const MAX_PARKS_PER_ROLLING_DAY = 20;
+
+/** 滚动预算的窗口长度（秒）。 */
+export const PARK_BUDGET_WINDOW_SECONDS = 24 * 3600;
 
 export interface ParkInput {
   grantId: string;
@@ -59,6 +79,8 @@ export interface ParkInput {
   summary: string;
   snapshot: RequestSnapshot;
   riskReason?: string;
+  /** 员工据以判断的动作详情（动词 / 目标 / 业务上下文 / 智能体填写的意见）。 */
+  detail?: PendingActionDetail | null;
 }
 
 /**
@@ -66,6 +88,23 @@ export interface ParkInput {
  * 触顶是一个【预期内的正常裁决】，不是故障；用类型逼调用方显式处理这条分支，
  * 免得哪天有人在 catch 里把它和真实故障一起吞掉，限额就此形同虚设。
  */
+export type ParkRefusal =
+  | {
+      readonly kind: "refused";
+      /** 同时在途的卡片太多 —— 员工处理掉几张就能继续。 */
+      readonly reason: "too_many_outstanding";
+      readonly count: number;
+      readonly max: number;
+    }
+  | {
+      readonly kind: "refused";
+      /** 24 小时总量刷爆 —— 处理卡片【不会】退还额度，必须等窗口滑过。 */
+      readonly reason: "rolling_budget_exhausted";
+      readonly count: number;
+      readonly max: number;
+      readonly windowSeconds: number;
+    };
+
 export type ParkOutcome =
   | {
       readonly kind: "parked";
@@ -74,12 +113,7 @@ export type ParkOutcome =
       readonly confirmToken: string;
       readonly expiresAt: string;
     }
-  | {
-      readonly kind: "refused";
-      readonly reason: "too_many_outstanding";
-      readonly outstanding: number;
-      readonly max: number;
-    };
+  | ParkRefusal;
 
 export interface PendingResult {
   status: number;
@@ -111,6 +145,29 @@ export const countOutstandingPending = async (
 };
 
 /**
+ * 该 grant 在滚动窗口内 park 过的动作【总数】—— 不分状态。
+ *
+ * 与 countOutstandingPending 的唯一实质区别就是「不分状态」：这里刻意不加 status 条件，
+ * 也刻意不看 expires_at。已拒绝 / 已过期 / 已执行的行都必须继续占额度，否则这道闸
+ * 会退化成第二个在途上限，而在途上限恰恰是它要补的洞。
+ */
+export const countParksInWindow = async (
+  db: D1Database,
+  grantId: string,
+  windowSeconds: number = PARK_BUDGET_WINDOW_SECONDS,
+  now: number = Date.now()
+): Promise<number> => {
+  const since = new Date(now - windowSeconds * 1000).toISOString();
+  const row = await db
+    .prepare(
+      `SELECT COUNT(*) AS n FROM agent_pending_action WHERE grant_id = ? AND created_at > ?`
+    )
+    .bind(grantId, since)
+    .first<{ n: number }>();
+  return row?.n ?? 0;
+};
+
+/**
  * 落库一条待确认动作，或在该 grant 触顶时拒绝落库。
  *
  * id 用 crypto.randomUUID()（不含 ":"）——重放标记的签名载荷是 `${id}:${bodyHash}`，
@@ -130,8 +187,20 @@ export const parkPendingAction = async (
     return {
       kind: "refused",
       reason: "too_many_outstanding",
-      outstanding,
+      count: outstanding,
       max: MAX_OUTSTANDING_PENDING_PER_GRANT
+    };
+  }
+
+  // 总量闸排在并发闸之后：两者互不替代，且这一条即便在途为 0 也可能触发（正是它的存在意义）。
+  const parkedInWindow = await countParksInWindow(db, input.grantId);
+  if (parkedInWindow >= MAX_PARKS_PER_ROLLING_DAY) {
+    return {
+      kind: "refused",
+      reason: "rolling_budget_exhausted",
+      count: parkedInWindow,
+      max: MAX_PARKS_PER_ROLLING_DAY,
+      windowSeconds: PARK_BUDGET_WINDOW_SECONDS
     };
   }
 
@@ -144,7 +213,7 @@ export const parkPendingAction = async (
 
   await db
     .prepare(
-      `INSERT INTO agent_pending_action (id, grant_id, wecom_userid, action_kind, request_snapshot, risk_reason, summary, status, confirm_token_hash, created_at, expires_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO agent_pending_action (id, grant_id, wecom_userid, action_kind, request_snapshot, risk_reason, summary, status, confirm_token_hash, created_at, expires_at, action_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -157,7 +226,8 @@ export const parkPendingAction = async (
       "pending",
       confirmTokenHash,
       createdAt,
-      expiresAt
+      expiresAt,
+      input.detail ? JSON.stringify(input.detail) : null
     )
     .run();
 
@@ -374,6 +444,8 @@ export const toPublicView = (row: AgentPendingRow): PendingPublicView => {
     action_kind: row.action_kind,
     summary: row.summary,
     status: isExpired ? "expired" : row.status,
+    // 详情在 park 时就已消毒定型（见 agent-action-detail.ts），此处只做解析与降级。
+    detail: parseActionDetail(row.action_detail),
     created_at: row.created_at,
     expires_at: row.expires_at,
     confirmed_at: row.confirmed_at,

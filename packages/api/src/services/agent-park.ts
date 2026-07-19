@@ -25,11 +25,20 @@
  *
  * ## 触顶时的拒绝也是一条安全通路
  *
- * parkPendingAction 会在该 grant 的在途动作触顶时拒绝落库（见其文档：泛洪推送是收割
- * 一次不经心确认的标准手法）。此时【不落行、不推卡片】，只留一条审计并回 429。
+ * parkPendingAction 会在该 grant 触顶时拒绝落库（泛洪推送是收割一次不经心确认的标准手法）。
+ * 触顶有【两种】，对调用方意味着完全不同的下一步，故文案与 reason 都必须分开：
+ *   too_many_outstanding     —— 同时未处理的卡片太多，处理掉几张即可继续；
+ *   rolling_budget_exhausted —— 24 小时总量刷爆，处理卡片【不会】退还额度，只能等窗口滑过。
+ * 两种情形都【不落行、不推卡片】，只留一条审计并回 429。
  * 与 202 同理，理由必须写进 data —— MCP 客户端的信封丢弃 HTTP 状态码。
  */
 
+import {
+  buildActionDetail,
+  buildSummary,
+  loadApprovalContext,
+  parseApprovalInstanceId
+} from "./agent-action-detail";
 import { getGrantById } from "./agent-grant";
 import { pushConfirmCard } from "./agent-confirm-push";
 import { parkPendingAction } from "./agent-pending";
@@ -96,31 +105,6 @@ const snapshotHeaders = (headers: Headers): Record<string, string> => {
 };
 
 /**
- * 动作类型 → 员工看得懂的动词。
- *
- * 刻意【不设兜底动词】：把未登记的 actionKind 默认成「批准」，会让卡片对员工谎报动作性质
- * ——他以为自己在同意一件 A，实际放行的是 B。新增高危规则时必须同步在此登记，
- * 漏登记的结局是文案退化成「动作类型 + 路径」的中性描述（见 buildSummary），
- * 难看，但绝不会骗人。
- */
-const ACTION_VERBS: Readonly<Record<string, string>> = {
-  "approval.approve": "批准",
-  "approval.reject": "拒绝"
-};
-
-const APPROVAL_ID_PATTERN = /\/approval\/(\d+)\//;
-
-/** 生成企微卡片与 pending 列表里展示的一句话摘要。 */
-export const buildSummary = (actionKind: string, path: string): string => {
-  const verb = ACTION_VERBS[actionKind];
-  if (!verb) {
-    return `${actionKind}（${path}）`;
-  }
-  const matched = APPROVAL_ID_PATTERN.exec(path);
-  return matched ? `${verb}审批单 #${matched[1]}` : `${verb}审批单（${path}）`;
-};
-
-/**
  * 落库 + 通知 + 审计，返回给智能体的 202。
  *
  * @param waitUntil 由中间件传入的后台任务登记器。vitest 下没有 executionCtx，
@@ -134,7 +118,19 @@ export const parkAgentRequest = async (
   // 路径一律用闸门归一化过的 input.path；url 只贡献 query（重放需要连 query 一起还原，
   // 缺了 query 就是另一个请求了）。两者分开存，是因为签名只能绑定闸门看得到的那部分（无 query）。
   const search = new URL(input.url).search;
-  const summary = buildSummary(input.rule.actionKind, input.path);
+
+  // 员工据以判断的一切都在这里成形：一次 approval_instance 查询取业务上下文，
+  // 外加从 body 里解析出【智能体填写的意见】——那段话将以员工本人的名义进入正式审批记录。
+  // 查询失败一律降级为 null（loadApprovalContext 承诺不抛），park 绝不因文案而失败。
+  const instanceId = parseApprovalInstanceId(input.path);
+  const approval = instanceId === null ? null : await loadApprovalContext(env.DB, instanceId);
+  const detail = buildActionDetail({
+    actionKind: input.rule.actionKind,
+    path: input.path,
+    body: input.body,
+    approval
+  });
+  const summary = buildSummary(detail);
 
   const snapshot: RequestSnapshot = {
     method: input.method.toUpperCase(),
@@ -150,7 +146,8 @@ export const parkAgentRequest = async (
     actionKind: input.rule.actionKind,
     riskReason: input.rule.riskReason,
     summary,
-    snapshot
+    snapshot,
+    detail
   });
 
   if (outcome.kind === "refused") {
@@ -169,14 +166,20 @@ export const parkAgentRequest = async (
         action_kind: input.rule.actionKind,
         method: snapshot.method,
         reason: outcome.reason,
-        outstanding: outcome.outstanding,
-        max_outstanding: outcome.max
+        count: outcome.count,
+        max: outcome.max
       }
     }).catch((err) => {
       console.error("agent park: refusal audit failed", err);
     });
 
-    const message = `待确认的高危动作已达上限（${outcome.max} 条），请先在企业微信里处理已推送的确认卡片，再重试本次操作。`;
+    // 两种拒绝对员工/运维意味着完全不同的下一步：一个是「先处理掉几张卡片」，
+    // 另一个是「这枚令牌今天已经刷爆了，处理卡片也没用」。文案必须分开。
+    const message =
+      outcome.reason === "too_many_outstanding"
+        ? `待确认的高危动作已达在途上限（${outcome.max} 条），请先在企业微信里处理已推送的确认卡片，再重试本次操作。`
+        : `该授权在过去 ${Math.round(outcome.windowSeconds / 3600)} 小时内发起的高危动作已达上限（${outcome.max} 次），请稍后再试；若非本人操作请立即在网页端吊销该授权。`;
+
     return new Response(
       JSON.stringify({
         // success:false 让 MCP 客户端把 error.message 抛成 ApiError（它对 !res.ok 只读 error）；
@@ -185,8 +188,12 @@ export const parkAgentRequest = async (
         data: {
           status: "park_refused",
           reason: outcome.reason,
-          outstanding: outcome.outstanding,
-          max_outstanding: outcome.max,
+          count: outcome.count,
+          max: outcome.max,
+          // 兼容既有调用方：在途触顶时保留原有的两个键名。
+          ...(outcome.reason === "too_many_outstanding"
+            ? { outstanding: outcome.count, max_outstanding: outcome.max }
+            : { window_seconds: outcome.windowSeconds }),
           message
         },
         error: { message }
@@ -211,7 +218,9 @@ export const parkAgentRequest = async (
       summary,
       riskReason: input.rule.riskReason,
       confirmToken: parked.confirmToken,
-      deviceName: grant?.device_name ?? null
+      deviceName: grant?.device_name ?? null,
+      // 员工将要署名的那段话必须出现在卡片上，否则他的同意仍是瞎的。
+      agentComment: detail.agent_comment
     });
     await writeAuditLog(env.DB, {
       actorUserId: input.identity.wecomUserid,

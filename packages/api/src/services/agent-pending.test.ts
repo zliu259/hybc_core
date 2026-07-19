@@ -2,11 +2,14 @@ import { describe, expect, it } from "vitest";
 
 import {
   MAX_OUTSTANDING_PENDING_PER_GRANT,
+  MAX_PARKS_PER_ROLLING_DAY,
+  PARK_BUDGET_WINDOW_SECONDS,
   PENDING_TTL_SECONDS,
   STALE_EXECUTING_GRACE_SECONDS,
   claimForExecution,
   confirmPending,
   countOutstandingPending,
+  countParksInWindow,
   finishPending,
   getPendingByConfirmToken,
   getPendingById,
@@ -111,10 +114,78 @@ describe("outstanding park cap", () => {
     expect(refused.kind).toBe("refused");
     if (refused.kind !== "refused") throw new Error("unreachable");
     expect(refused.reason).toBe("too_many_outstanding");
-    expect(refused.outstanding).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
+    expect(refused.count).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
     expect(refused.max).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
     // 关键：被拒绝的 park【绝不落行】——否则限额只是换了个返回值，泄漏面照样在涨。
     expect(pendings.size).toBe(MAX_OUTSTANDING_PENDING_PER_GRANT);
+  });
+
+  /**
+   * 在途上限【只】管并发，它对总量毫无约束 —— 这一组把这件事钉死，并证明滚动预算补上了它。
+   *
+   * 攻击者只要让卡片进入任一终态（被拒绝、或干脆等它过期），额度就立刻回收。
+   * 于是「员工越认真处理，攻击者恢复得越快」，激励彻底倒置。
+   */
+  describe("rolling 24h budget", () => {
+    /** park 一条并立刻拒绝：在途计数恒为 0，只有滚动预算在动。 */
+    const parkAndReject = async (db: D1Database, grantId = "g1") => {
+      const outcome = await attemptPark(db, grantId);
+      if (outcome.kind === "parked") {
+        await rejectPending(db, outcome.id);
+      }
+      return outcome;
+    };
+
+    it("counts every row in the window regardless of terminal state", async () => {
+      const { db } = createFakeD1();
+      await parkAndReject(db);
+      await parkAndReject(db);
+
+      // 在途为 0（都已拒绝），但预算已经用掉 2 —— 这正是两道闸的分野。
+      expect(await countOutstandingPending(db, "g1")).toBe(0);
+      expect(await countParksInWindow(db, "g1")).toBe(2);
+    });
+
+    it("refuses with its own reason once the budget is exhausted", async () => {
+      const { db } = createFakeD1();
+      for (let i = 0; i < MAX_PARKS_PER_ROLLING_DAY; i += 1) {
+        expect((await parkAndReject(db)).kind, `park #${i + 1}`).toBe("parked");
+      }
+
+      const refused = await attemptPark(db);
+
+      expect(refused.kind).toBe("refused");
+      if (refused.kind !== "refused") throw new Error("unreachable");
+      // 与并发触顶必须可区分：两者对调用方意味着完全不同的下一步。
+      expect(refused.reason).toBe("rolling_budget_exhausted");
+      expect(refused.count).toBe(MAX_PARKS_PER_ROLLING_DAY);
+      expect(refused.max).toBe(MAX_PARKS_PER_ROLLING_DAY);
+    });
+
+    it("is per grant, so one compromised token cannot starve another device", async () => {
+      const { db } = createFakeD1();
+      for (let i = 0; i < MAX_PARKS_PER_ROLLING_DAY; i += 1) {
+        await parkAndReject(db, "g1");
+      }
+      expect((await attemptPark(db, "g1")).kind).toBe("refused");
+      expect((await attemptPark(db, "g2")).kind).toBe("parked");
+    });
+
+    it("rolls: rows older than the window stop consuming budget", async () => {
+      const { db, pendings } = createFakeD1();
+      for (let i = 0; i < MAX_PARKS_PER_ROLLING_DAY; i += 1) {
+        await parkAndReject(db);
+      }
+      expect((await attemptPark(db)).kind).toBe("refused");
+
+      const longAgo = new Date(Date.now() - (PARK_BUDGET_WINDOW_SECONDS + 60) * 1000).toISOString();
+      for (const [id, row] of pendings) {
+        pendings.set(id, { ...row, created_at: longAgo });
+      }
+
+      expect(await countParksInWindow(db, "g1")).toBe(0);
+      expect((await attemptPark(db)).kind).toBe("parked");
+    });
   });
 
   it("counts per grant, so one noisy grant cannot starve another", async () => {

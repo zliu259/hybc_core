@@ -4,7 +4,13 @@ import { verifyToken } from "../services/auth";
 import { isAgentToken } from "../services/agent-token";
 import { resolveAgentByToken, touchGrantLastUsed } from "../services/agent-grant";
 import { agentReadonlyForbidden } from "./agent-readonly";
-import { decideAgentRequest, REPLAY_PENDING_HEADER } from "./agent-high-risk-gate";
+import {
+  canForbidWithoutBody,
+  classifyAgentPath,
+  decideHighRiskRequest,
+  REPLAY_PENDING_HEADER,
+  type AgentDecision
+} from "./agent-high-risk-gate";
 import { parkAgentRequest } from "../services/agent-park";
 import { REPLAY_HEADER } from "../services/agent-replay";
 import { writeAuditLog } from "../services/audit-log";
@@ -71,34 +77,77 @@ export const authMiddleware: MiddlewareHandler<{
     // 人类 JWT 会话不经此闸门。放在身份解析之后、设置 auth 与成功审计之前
     // —— 被拦/被 park 的请求不计入 last_used。
     //
-    // 读 body 必须用 clone：下游 handler（如 routes/approval.ts 的 approve）会
-    // await c.req.json()，且是在 try 之外 —— 原始流一旦被这里读掉，handler 会直接抛。
-    // 且【绝不再序列化】：重放标记签的是原始字节的 SHA-256，JSON.parse→stringify
-    // 会改变空白与键序，让 T9 重放时算出的哈希与签名时对不上。
-    const upperMethod = c.req.method.toUpperCase();
-    let rawBody = "";
-    if (upperMethod !== "GET" && upperMethod !== "HEAD") {
-      try {
-        rawBody = await c.req.raw.clone().text();
-      } catch (err) {
-        // 读不出 body 就无法可靠裁决（既算不出哈希，也存不出可重放的快照）。
-        // 唯一安全的结局是拒绝 —— 绝不能拿空串当作「body 就是空的」继续往下走。
-        console.error("agent request body read failed", err);
-        return agentReadonlyForbidden();
-      }
-    }
+    // 【裁决分两阶段，body 只在第二阶段才读】
+    //
+    // 第一阶段 classifyAgentPath 只做字符串匹配，allow / forbid 在此就能定案。
+    // body 在整条链上只有一个用途（给重放校验算 sha256），而那一步只有高危写才走得到。
+    // 若无条件先读 body，一枚泄漏的令牌就能往任意非高危写路径 POST 一个巨大的 body，
+    // 让它在通往一个必然的 403 的路上被完整解码进 JS 堆，撞穿 isolate 的内存上限、
+    // 连带打死同一 isolate 上的其它请求。故 forbid 必须在读 body【之前】开火。
+    let decision: AgentDecision;
+    const classified = classifyAgentPath(c.req.method, c.req.path);
 
-    const replayMarker = c.req.header(REPLAY_HEADER);
-    const replayPendingId = c.req.header(REPLAY_PENDING_HEADER);
-    const decision = await decideAgentRequest(
-      c.env,
-      c.req.method,
-      c.req.path,
-      rawBody,
-      replayMarker && replayPendingId
-        ? { pendingId: replayPendingId, marker: replayMarker }
-        : null
-    );
+    if (classified.kind === "high_risk") {
+      const replayMarker = c.req.header(REPLAY_HEADER);
+      const replayPendingId = c.req.header(REPLAY_PENDING_HEADER);
+      const replay =
+        replayMarker && replayPendingId
+          ? { pendingId: replayPendingId, marker: replayMarker }
+          : null;
+
+      // 高危写里也还有一格不必读 body：没带标记、且开关关闭 —— 见 canForbidWithoutBody。
+      if (await canForbidWithoutBody(c.env, replay)) {
+        decision = { kind: "forbid" };
+      } else {
+        // 读 body 必须用 clone：下游 handler（如 routes/approval.ts 的 approve）会
+        // await c.req.json()，且是在 try 之外 —— 原始流一旦被这里读掉，handler 会直接抛。
+        // 且【绝不再序列化】：重放标记签的是原始字节的 SHA-256，JSON.parse→stringify
+        // 会改变空白与键序，让重放时算出的哈希与签名时对不上。
+        const upperMethod = c.req.method.toUpperCase();
+        let rawBody = "";
+        if (upperMethod !== "GET" && upperMethod !== "HEAD") {
+          try {
+            rawBody = await c.req.raw.clone().text();
+          } catch (err) {
+            // 读不出 body 就无法可靠裁决（既算不出哈希，也存不出可重放的快照）。
+            // 唯一安全的结局是拒绝 —— 绝不能拿空串当作「body 就是空的」继续往下走。
+            console.error("agent request body read failed", err);
+            return agentReadonlyForbidden();
+          }
+        }
+
+        decision = await decideHighRiskRequest(
+          c.env,
+          c.req.method,
+          c.req.path,
+          rawBody,
+          classified.rule,
+          replay
+        );
+
+        // park：动作被冻结成待本人微信确认，【就此返回】—— 绝不 next()，
+        // 否则同一次请求既执行了写又弹了确认卡片（双重副作用）。
+        if (decision.kind === "park") {
+          return parkAgentRequest(
+            c.env,
+            {
+              method: c.req.method,
+              url: c.req.url,
+              // 与 classifyAgentPath 用的是同一个 c.req.path —— 摘要、快照路径、签名路径
+              // 必须与闸门匹配时看到的字符串完全一致（Hono 已解码百分号转义）。
+              path: c.req.path,
+              headers: c.req.raw.headers,
+              body: rawBody,
+              identity,
+              rule: decision.rule
+            },
+            runInBackground
+          );
+        }
+      }
+    } else {
+      decision = classified;
+    }
 
     if (decision.kind === "forbid") {
       // MEDIUM 修复：审计被拦截的写/越权尝试，令泄漏令牌的探测可被发现。
@@ -115,26 +164,6 @@ export const authMiddleware: MiddlewareHandler<{
       });
       runInBackground(blockedAudit);
       return agentReadonlyForbidden();
-    }
-
-    // park：动作被冻结成待本人微信确认，【就此返回】—— 绝不 next()，
-    // 否则同一次请求既执行了写又弹了确认卡片（双重副作用）。
-    if (decision.kind === "park") {
-      return parkAgentRequest(
-        c.env,
-        {
-          method: c.req.method,
-          url: c.req.url,
-          // 与 decideAgentRequest 用的是同一个 c.req.path —— 摘要、快照路径、签名路径
-          // 必须与闸门匹配时看到的字符串完全一致（Hono 已解码百分号转义）。
-          path: c.req.path,
-          headers: c.req.raw.headers,
-          body: rawBody,
-          identity,
-          rule: decision.rule
-        },
-        runInBackground
-      );
     }
 
     // allow / replay 均落到下方常规通路：设置 auth、计 last_used、写审计、执行 handler。

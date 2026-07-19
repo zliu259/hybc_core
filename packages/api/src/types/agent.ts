@@ -1,3 +1,4 @@
+import type { PendingActionDetail } from "../services/agent-action-detail";
 import type { UserRole } from "./auth";
 
 export interface AgentGrantRow {
@@ -76,6 +77,8 @@ export interface AgentPendingRow {
   status: PendingStatus;
   /** JSON: { status: number, body: unknown } */
   result_snapshot: string | null;
+  /** JSON: PendingActionDetail —— 员工据以判断的动作详情（历史行可能为 NULL）。 */
+  action_detail: string | null;
   confirm_token_hash: string;
   created_at: string;
   expires_at: string;
@@ -89,6 +92,12 @@ export interface PendingPublicView {
   action_kind: string;
   summary: string;
   status: PendingStatus;
+  /**
+   * 【将要执行什么】的消毒投影：动词、目标、业务上下文、智能体填写的意见。
+   * 确认页据此渲染 —— 它绝不该、也无需去碰 request_snapshot（内含 Bearer 令牌）。
+   * 历史行或损坏 JSON 为 null。
+   */
+  detail: PendingActionDetail | null;
   created_at: string;
   expires_at: string;
   confirmed_at: string | null;

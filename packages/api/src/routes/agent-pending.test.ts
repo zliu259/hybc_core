@@ -48,16 +48,43 @@ interface Harness {
   readonly env: Env;
   readonly fake: FakeD1;
   readonly calls: ReplayCall[];
+  /**
+   * 每一条审计写的绑定参数。假 D1 不建 api_audit_log 表，
+   * 而「失败到底属于哪一类」这个信息【只】存在于审计里 —— 必须直接观测，不能间接推断。
+   */
+  readonly audits: unknown[][];
   /** 让单个用例决定重放的结局（默认业务成功）。 */
   setReplayResponse: (fn: () => Promise<Response>) => void;
 }
 
+/** 透明记录审计写的 D1 包装：只旁听，一切语义转交假实现。 */
+const recordingDb = (inner: D1Database, audits: unknown[][]): D1Database =>
+  ({
+    prepare(sql: string) {
+      const stmt = inner.prepare(sql);
+      const api = {
+        bind(...args: unknown[]) {
+          if (sql.includes("INSERT INTO api_audit_log")) {
+            audits.push(args);
+          }
+          stmt.bind(...args);
+          return api;
+        },
+        run: () => stmt.run(),
+        first: <T>() => stmt.first<T>(),
+        all: <T>() => stmt.all<T>()
+      };
+      return api;
+    }
+  }) as unknown as D1Database;
+
 const buildHarness = (): Harness => {
   const fake = createFakeD1();
   const { kv } = createFakeKV();
+  const audits: unknown[][] = [];
 
   const env = {
-    DB: fake.db,
+    DB: recordingDb(fake.db, audits),
     KV: kv,
     JWT_SECRET: "test-secret",
     APP_ENV: "production",
@@ -93,6 +120,7 @@ const buildHarness = (): Harness => {
     env,
     fake,
     calls,
+    audits,
     setReplayResponse: (fn) => {
       replayResponse = fn;
     }
@@ -103,6 +131,8 @@ interface Parked {
   readonly id: string;
   readonly grantId: string;
   readonly agentToken: string;
+  /** 明文确认令牌 —— 只在 park 时返回一次，是卡片链接里的那个 token。 */
+  readonly confirmToken: string;
 }
 
 /** 直接落一条 pending 行（不走闸门：本文件只测确认侧）。 */
@@ -125,13 +155,30 @@ const park = async (h: Harness, wecomUserid = "MaxLiu"): Promise<Parked> => {
     grantId: grant.id,
     wecomUserid,
     actionKind: "approval.reject",
-    summary: "拒绝审批单 #7",
-    snapshot
+    summary: "拒绝审批单 #7（ZhangSan 提交：PAY-20260718-003 | 中建三局 | 120000.00）",
+    snapshot,
+    detail: {
+      action_kind: "approval.reject",
+      verb: "拒绝",
+      target: "审批单 #7",
+      approval: {
+        instance_no: "AP-20260718-001",
+        biz_type: "payment",
+        biz_summary: "PAY-20260718-003 | 中建三局 | 120000.00",
+        initiator_userid: "ZhangSan"
+      },
+      agent_comment: "同意 ✅"
+    }
   });
   if (parked.kind !== "parked") {
     throw new Error(`expected park to succeed, got ${parked.kind}`);
   }
-  return { id: parked.id, grantId: grant.id, agentToken: token };
+  return {
+    id: parked.id,
+    grantId: grant.id,
+    agentToken: token,
+    confirmToken: parked.confirmToken
+  };
 };
 
 const humanJwt = async (env: Env, userId: string): Promise<string> => {
@@ -475,6 +522,228 @@ describe("agent pending 确认 / 拒绝 / 查询", () => {
     const res = await call(h, `/pending/${crypto.randomUUID()}`, owner, "GET");
 
     expect(res.status).toBe(404);
+  });
+
+  /**
+   * 【确认页要渲染什么，就必须由公共投影供给什么】
+   *
+   * P2b 的确认页要让员工看到「将要执行的是什么」：动作、目标、以及智能体填写的意见。
+   * 这些必须来自服务端的白名单投影，而不是让前端去猜或去拿快照 —— 快照里有 Bearer 令牌。
+   */
+  describe("public view exposes the executable action, never the snapshot", () => {
+    it("projects the action detail (verb / target / agent comment) for the confirm page", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+
+      const res = await call(h, `/pending/${parked.id}`, owner, "GET");
+      const body = (await res.json()) as {
+        data: {
+          detail: {
+            verb: string;
+            target: string;
+            approval: { initiator_userid: string } | null;
+            agent_comment: string | null;
+          } | null;
+        };
+      };
+
+      expect(body.data.detail?.verb).toBe("拒绝");
+      expect(body.data.detail?.target).toBe("审批单 #7");
+      expect(body.data.detail?.approval?.initiator_userid).toBe("ZhangSan");
+      expect(body.data.detail?.agent_comment).toBe("同意 ✅");
+    });
+
+    /**
+     * 投影是白名单式的：新增一列绝不能顺带泄漏。这条钉死三样东西 ——
+     * 请求快照全文、里面的 authorization 头、以及确认令牌哈希（可离线爆破确认链接）。
+     */
+    it("still never exposes the snapshot, the authorization header or the token hash", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+
+      const res = await call(h, `/pending/${parked.id}`, owner, "GET");
+      const text = await res.text();
+
+      expect(text).not.toContain("request_snapshot");
+      expect(text).not.toContain("authorization");
+      expect(text).not.toContain("Bearer");
+      expect(text).not.toContain(parked.agentToken);
+      expect(text).not.toContain("confirm_token");
+      expect(text).not.toContain(rowOf(h, parked.id).confirm_token_hash as string);
+      expect(text).not.toContain(parked.confirmToken);
+      // 快照里那个刻意带不规则空白的 body 也绝不能整段出现。
+      expect(text).not.toContain(SNAPSHOT_BODY);
+    });
+  });
+
+  /**
+   * 【卡片链接里的令牌必须有一个端点能解析它】
+   *
+   * 卡片跳到 /#/agent/confirm?token=X，确认页加载时得先把 X 换成「这是哪一件动作」才能渲染。
+   * 在此之前 getPendingByConfirmToken 根本没有调用方 —— 确认页无从工作。
+   *
+   * 身份仍然【只能】来自网页会话：令牌只回答「确认哪一件」。链接会被转发、被截图、
+   * 出现在通知栏预览里，持有链接永远不等于有权查看。
+   */
+  describe("GET /pending/by-token/:token", () => {
+    const byToken = (h2: Harness, token: string, auth: string) =>
+      h2.app.request(
+        `/api/v1/agent/pending/by-token/${token}`,
+        { headers: { authorization: `Bearer ${auth}` } },
+        h2.env
+      );
+
+    it("resolves the confirm token to the owning human's pending action", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+
+      const res = await byToken(h, parked.confirmToken, owner);
+
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as {
+        data: { id: string; status: string; detail: { verb: string } | null };
+      };
+      expect(body.data.id).toBe(parked.id);
+      expect(body.data.status).toBe("pending");
+      expect(body.data.detail?.verb).toBe("拒绝");
+    });
+
+    it("returns the same safe projection (no snapshot, no token hash)", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+
+      const text = await (await byToken(h, parked.confirmToken, owner)).text();
+
+      expect(text).not.toContain("request_snapshot");
+      expect(text).not.toContain("Bearer");
+      expect(text).not.toContain(rowOf(h, parked.id).confirm_token_hash as string);
+    });
+
+    it("404s a human who does not own the action, even holding a valid token", async () => {
+      const parked = await park(h);
+      const stranger = await humanJwt(h.env, "SomeoneElse");
+
+      // 404 而非 403：403 等于向转发链上的任何人确认「这个令牌是真的」。
+      expect((await byToken(h, parked.confirmToken, stranger)).status).toBe(404);
+    });
+
+    it("404s an unknown token", async () => {
+      await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+
+      expect((await byToken(h, "definitely-not-a-real-token", owner)).status).toBe(404);
+    });
+
+    /**
+     * 【这个端点对智能体永久关闭】它按令牌反查动作，若 agent 令牌能调用，
+     * 一枚泄漏的令牌就能枚举/确认自己 park 出来的动作，人在环归零。
+     * 守门的是只读白名单（形状只认 /agent/pending/<uuid>），requireHumanSession 是第二道。
+     */
+    it("is closed to agent tokens", async () => {
+      const parked = await park(h);
+
+      const res = await byToken(h, parked.confirmToken, parked.agentToken);
+
+      expect(res.status).toBe(403);
+    });
+  });
+
+  /**
+   * 【配错密钥不得把一次已确认的动作永久烧毁】
+   *
+   * 若开关先于 `wrangler secret put AGENT_REPLAY_SECRET` 打开，每次确认都会：
+   * signReplayMarker 抛 → catch 吞成 console.error → finishPending(failed) 顺手清空
+   * request_snapshot。于是密钥后来配好了，这个动作也【再也无法重放】，员工必须重走
+   * park→卡片→确认。而持久记录里只剩一个 replay_status:500 和一句笼统的失败文案，
+   * 真正的原因只存在于 Workers 日志里 —— 而 wrangler.toml 没有 [observability] 块，日志是关的。
+   *
+   * 故密钥检查必须【前置到 claimForExecution 之前】：不可用就 503 且不 claim，
+   * 行留在 confirmed，快照留着，密钥补上后原样可重放。
+   */
+  describe("replay secret preflight", () => {
+    const breakSecret = (h2: Harness) => {
+      (h2.env as { AGENT_REPLAY_SECRET: string }).AGENT_REPLAY_SECRET = "REPLACE_WITH_PROD_SECRET";
+    };
+
+    it("returns 503 and leaves the action confirmed + replayable", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+      breakSecret(h);
+
+      const res = await call(h, `/pending/${parked.id}/confirm`, owner);
+
+      expect(res.status).toBe(503);
+      expect(h.calls).toHaveLength(0);
+      const row = rowOf(h, parked.id);
+      // 关键：没有被 claim 成 executing，更没有被 finish 成 failed。
+      expect(row.status).toBe("confirmed");
+      // 快照没被清空 —— 这正是「密钥补上后还能救回来」的物质基础。
+      expect(row.request_snapshot).not.toBe("");
+      const message = ((await res.json()) as { error: { message: string } }).error.message;
+      // 运维要能直接从响应里看出该去配什么，而不是去翻一个没开的日志。
+      expect(message).toContain("AGENT_REPLAY_SECRET");
+    });
+
+    it("replays successfully once the secret is provisioned", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+      breakSecret(h);
+      expect((await call(h, `/pending/${parked.id}/confirm`, owner)).status).toBe(503);
+
+      (h.env as { AGENT_REPLAY_SECRET: string }).AGENT_REPLAY_SECRET = SECRET;
+      const res = await call(h, `/pending/${parked.id}/confirm`, owner);
+
+      expect(res.status).toBe(200);
+      expect(h.calls).toHaveLength(1);
+      expect(rowOf(h, parked.id).status).toBe("done");
+    });
+
+    it("audits the blocked execution with a distinguishable failure kind", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+      breakSecret(h);
+
+      await call(h, `/pending/${parked.id}/confirm`, owner);
+
+      expect(h.audits.some((a) => JSON.stringify(a).includes("replay_secret_unavailable"))).toBe(
+        true
+      );
+    });
+
+    it("classifies a genuine business failure differently, and still finishes it as failed", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+      h.setReplayResponse(async () =>
+        new Response(JSON.stringify({ success: false, error: { message: "审批单状态已变更" } }), {
+          status: 400,
+          headers: { "content-type": "application/json" }
+        })
+      );
+
+      const res = await call(h, `/pending/${parked.id}/confirm`, owner);
+
+      // 业务失败【不是】配置故障：它照旧走完 executing → failed，绝不 503、绝不保留快照。
+      expect(res.status).toBe(200);
+      const row = rowOf(h, parked.id);
+      expect(row.status).toBe("failed");
+      expect(row.request_snapshot).toBe("");
+      const audit = JSON.stringify(h.audits);
+      expect(audit).toContain("business_error");
+      expect(audit).not.toContain("replay_secret_unavailable");
+    });
+
+    it("classifies a thrown replay as replay_threw", async () => {
+      const parked = await park(h);
+      const owner = await humanJwt(h.env, "MaxLiu");
+      h.setReplayResponse(async () => {
+        throw new Error("worker exploded");
+      });
+
+      await call(h, `/pending/${parked.id}/confirm`, owner);
+
+      expect(JSON.stringify(h.audits)).toContain("replay_threw");
+      expect(rowOf(h, parked.id).status).toBe("failed");
+    });
   });
 });
 

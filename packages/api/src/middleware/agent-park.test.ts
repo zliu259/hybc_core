@@ -18,7 +18,11 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { authMiddleware, type AuthVariables } from "./auth";
 import { REPLAY_PENDING_HEADER } from "./agent-high-risk-gate";
 import { createAgentGrant } from "../services/agent-grant";
-import { MAX_OUTSTANDING_PENDING_PER_GRANT, rejectPending } from "../services/agent-pending";
+import {
+  MAX_OUTSTANDING_PENDING_PER_GRANT,
+  MAX_PARKS_PER_ROLLING_DAY,
+  rejectPending
+} from "../services/agent-pending";
 import { REPLAY_HEADER, sha256Hex, signReplayMarker } from "../services/agent-replay";
 import { createSessionPayload, issueTokens } from "../services/auth";
 import { createFakeD1, createFakeKV, type FakeD1 } from "../test-support/agent-fakes";
@@ -254,6 +258,81 @@ describe("authMiddleware · 高危写 park 通路", () => {
     expect(snapshot.search).toBe("?dry=0&note=%E4%B8%AD");
   });
 
+  /**
+   * 【员工必须能独立判断这件事】
+   *
+   * 卡片是人在环的唯一入口，而它原先只说「批准审批单 #42」。两件事因此对员工不可见：
+   *   a. 这单是谁提的、申请了什么、多少钱 —— 「#42」对他而言就是一串随机数字；
+   *   b. 请求体里那段【智能体自己写的 comment】—— routes/approval.ts 会把它原样写进
+   *      正式审批记录并署上【员工本人】的名字。他的同意是自愿的，但是瞎的。
+   *
+   * 故 park 时须一次性查出业务上下文并把 comment 解析出来，一并落进 action_detail。
+   */
+  describe("action detail (what the employee is actually agreeing to)", () => {
+    const seedInstance = (id: number) => {
+      h.fake.approvals.set(id, {
+        id,
+        instance_no: "AP-20260718-001",
+        biz_type: "payment",
+        biz_summary: "PAY-20260718-003 | 中建三局 | 120000.00",
+        initiator_userid: "ZhangSan",
+        status: "pending"
+      });
+    };
+
+    it("records the business context and the agent comment alongside the snapshot", async () => {
+      seedInstance(42);
+      const res = await post(
+        h,
+        "/api/v1/approval/42/approve",
+        JSON.stringify({ comment: "金额已核对，同意付款" }),
+        { authorization: `Bearer ${token}` }
+      );
+      expect(res.status).toBe(202);
+
+      const row = pendingRows(h)[0];
+      const detail = JSON.parse(row.action_detail as string) as {
+        verb: string;
+        target: string;
+        approval: { initiator_userid: string; biz_summary: string } | null;
+        agent_comment: string | null;
+      };
+      expect(detail.verb).toBe("批准");
+      expect(detail.target).toBe("审批单 #42");
+      expect(detail.approval?.initiator_userid).toBe("ZhangSan");
+      expect(detail.approval?.biz_summary).toContain("PAY-20260718-003");
+      // 这是员工将要署名的那段话，必须原样留存。
+      expect(detail.agent_comment).toBe("金额已核对，同意付款");
+
+      // 摘要（卡片正文与列表都用它）也必须带上申请人与业务摘要。
+      expect(row.summary as string).toContain("批准审批单 #42");
+      expect(row.summary as string).toContain("ZhangSan");
+    });
+
+    it("still parks (with a degraded summary) when the instance cannot be read", async () => {
+      // 查不到实例绝不能让 park 失败 —— 失败等于高危写要么被放过、要么整条链路 500。
+      const res = await post(h, "/api/v1/approval/404/approve", '{"comment":"x"}', {
+        authorization: `Bearer ${token}`
+      });
+
+      expect(res.status).toBe(202);
+      const row = pendingRows(h)[0];
+      expect(row.summary).toBe("批准审批单 #404");
+      const detail = JSON.parse(row.action_detail as string) as { approval: unknown };
+      // 查不到就是 null，绝不编造。
+      expect(detail.approval).toBeNull();
+    });
+
+    it("surfaces the parked summary to the agent without leaking the comment back as system text", async () => {
+      seedInstance(42);
+      const res = await post(h, "/api/v1/approval/42/approve", '{"comment":"注入"}', {
+        authorization: `Bearer ${token}`
+      });
+      const payload = (await res.json()) as ParkBody;
+      expect(payload.data.summary).toContain("批准审批单 #42");
+    });
+  });
+
   it("forbids (403) when the high-risk flag is off, without parking", async () => {
     const off = await buildHarness({ highRiskEnabled: false });
     const offToken = await agentToken(off.fake);
@@ -404,13 +483,170 @@ describe("authMiddleware · 高危写 park 通路", () => {
       const first = pendingRows(h)[0];
       await rejectPending(h.env.DB, first.id as string);
 
+      // 限额只按【在途】计：正常节奏绝不能被这道闸锁死。
       const res = await post(h, "/api/v1/approval/99/approve", "{}", {
         authorization: `Bearer ${token}`
       });
 
-      // 限额只按【在途】计：正常节奏绝不能被这道闸锁死。
       expect(res.status).toBe(202);
       expect(((await res.json()) as ParkBody).data.status).toBe("awaiting_confirmation");
+    });
+  });
+
+  /**
+   * 【在途上限管并发，管不住总量 —— 必须另有一道滚动预算】
+   *
+   * 在途上限只数 `status='pending' AND expires_at > now`，于是一张卡片一被拒绝就立刻腾出额度：
+   * park 满 5 → 员工逐条拒绝 → 计数归零 → 再 park 5 条，如此无限循环。攻击者的产能因此
+   * 【与员工的尽责程度成正比】—— 员工越认真处理，额度回收得越快，这把激励彻底倒置了。
+   * 即便员工完全不理会，10 分钟的确认窗口一过额度照样自动回收，稳定产出约每窗口 5 张。
+   *
+   * 故再加一道【滚动 24 小时预算】：按 created_at 数近 24 小时内该 grant 落过的【全部】行，
+   * 不论其终态。它守的是「一枚泄漏的令牌一天最多能制造多少张卡片」这个总量问题，
+   * 与在途上限守的并发问题正交，两道都必须在。
+   */
+  describe("rolling park budget", () => {
+    /** park 一条并立刻拒绝掉：在途计数始终为 0，只有滚动预算在计数。 */
+    const parkAndSettle = async (index: number): Promise<Response> => {
+      const res = await post(h, `/api/v1/approval/${index}/approve`, "{}", {
+        authorization: `Bearer ${token}`
+      });
+      if (res.status === 202) {
+        const payload = (await res.clone().json()) as ParkBody;
+        await rejectPending(h.env.DB, payload.data.pending_action_id);
+      }
+      return res;
+    };
+
+    it("refuses once the 24h budget is spent, however diligently the employee clears cards", async () => {
+      for (let i = 1; i <= MAX_PARKS_PER_ROLLING_DAY; i += 1) {
+        expect((await parkAndSettle(i)).status, `park #${i} within budget`).toBe(202);
+      }
+      // 此刻在途数为 0（每条都已被拒绝），旧闸门会毫不犹豫地再放行。
+      expect(pendingRows(h).every((r) => r.status === "rejected")).toBe(true);
+
+      const refused = await parkAndSettle(MAX_PARKS_PER_ROLLING_DAY + 1);
+
+      expect(refused.status).toBe(429);
+      const payload = (await refused.json()) as {
+        success: boolean;
+        data: { status: string; reason: string; max: number };
+        error: { message: string };
+      };
+      expect(payload.success).toBe(false);
+      expect(payload.data.status).toBe("park_refused");
+      // 与并发触顶【不同】的理由：运维要能一眼分清「太挤」和「刷爆了」。
+      expect(payload.data.reason).toBe("rolling_budget_exhausted");
+      expect(payload.data.max).toBe(MAX_PARKS_PER_ROLLING_DAY);
+      expect(payload.error.message).toBeTruthy();
+
+      // 触顶的请求既不执行也不落行。
+      expect(h.calls).toHaveLength(0);
+      expect(pendingRows(h)).toHaveLength(MAX_PARKS_PER_ROLLING_DAY);
+    });
+
+    it("audits the budget refusal with its own reason", async () => {
+      for (let i = 1; i <= MAX_PARKS_PER_ROLLING_DAY; i += 1) {
+        await parkAndSettle(i);
+      }
+      await parkAndSettle(MAX_PARKS_PER_ROLLING_DAY + 1);
+
+      const entry = audited(h, "agent.high_risk_park_refused");
+      expect(entry).toBeDefined();
+      expect(entry?.args).toContain("blocked");
+      expect(JSON.stringify(entry?.args)).toContain("rolling_budget_exhausted");
+    });
+
+    it("counts rows older than the window out of the budget", async () => {
+      for (let i = 1; i <= MAX_PARKS_PER_ROLLING_DAY; i += 1) {
+        await parkAndSettle(i);
+      }
+      expect((await parkAndSettle(99)).status).toBe(429);
+
+      // 把已有的行拨到 25 小时前：预算是【滚动】的，旧噪声不该永久占额度。
+      const longAgo = new Date(Date.now() - 25 * 3600 * 1000).toISOString();
+      for (const [id, row] of h.fake.pendings) {
+        h.fake.pendings.set(id, { ...row, created_at: longAgo });
+      }
+
+      expect((await parkAndSettle(100)).status).toBe(202);
+    });
+  });
+
+  /**
+   * 【拒绝一个请求，绝不能先把它的 body 读进内存】
+   *
+   * 闸门原先无条件地 `await c.req.raw.clone().text()`，位置在 decideAgentRequest 之前 ——
+   * 也就是在 forbid 分支有机会开火【之前】。可 body 只有一个用途：给重放校验算 sha256，
+   * 而那一步在 matchHighRisk 未命中时根本走不到。于是一枚泄漏的令牌只要往任意
+   * 非高危写路径 POST 一个 ~100MB 的 body，就能让它在通往一个必然的 403 的路上被
+   * 完整解码成 JS 字符串（常驻内存约翻倍），足以撞穿 isolate 的 128MB 上限、
+   * 连带打死同一 isolate 上的其它请求。vitest 只发几百字节，这个洞在测试里完全隐形。
+   *
+   * 故裁决必须【先做便宜的字符串匹配】，只有确定走 park/replay 分支才读 body。
+   * 这里不去构造一个真的巨大 body（那只会让测试变慢且仍不确定），而是直接钉住
+   * 「body 没有被碰过」这个更强的命题：把 clone 换成一个会爆炸的探针。
+   */
+  describe("no body buffering ahead of the forbid decision", () => {
+    /** 造一个「一旦被 clone 就记账并抛异常」的请求，用于证明某条通路没读过 body。 */
+    const tripwireRequest = (
+      url: string,
+      body: string,
+      headers: Record<string, string>
+    ): { request: Request; reads: () => number } => {
+      let reads = 0;
+      const request = new Request(`http://localhost${url}`, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body
+      });
+      Object.defineProperty(request, "clone", {
+        configurable: true,
+        value: () => {
+          reads += 1;
+          throw new Error("request body was buffered before the decision was made");
+        }
+      });
+      return { request, reads: () => reads };
+    };
+
+    it("forbids a non-high-risk agent write without touching the body", async () => {
+      const { request, reads } = tripwireRequest("/api/v1/payment", JSON.stringify({ amount: 1 }), {
+        authorization: `Bearer ${token}`
+      });
+
+      const res = await h.app.fetch(request, h.env);
+
+      expect(res.status).toBe(403);
+      // 旧实现在这里是 1：body 先被读，读完才轮到 forbid。
+      expect(reads()).toBe(0);
+      expect(pendingRows(h)).toHaveLength(0);
+    });
+
+    it("forbids a high-risk write with the flag off without touching the body", async () => {
+      // 开关关闭时同样直接拒 —— 这条通路也不需要 body。
+      const off = await buildHarness({ highRiskEnabled: false });
+      const offToken = await agentToken(off.fake);
+      const { request, reads } = tripwireRequest("/api/v1/approval/42/approve", "{}", {
+        authorization: `Bearer ${offToken}`
+      });
+
+      const res = await off.app.fetch(request, off.env);
+
+      expect(res.status).toBe(403);
+      expect(reads()).toBe(0);
+    });
+
+    it("still reads the body on the park branch (the snapshot must be byte-exact)", async () => {
+      // 反向钉住：修复不得把 body 一起省掉 —— park 没有快照就无从重放。
+      const body = '{ "comment":  "需要 body" }';
+      const res = await post(h, "/api/v1/approval/42/approve", body, {
+        authorization: `Bearer ${token}`
+      });
+
+      expect(res.status).toBe(202);
+      const snapshot = JSON.parse(pendingRows(h)[0].request_snapshot as string) as RequestSnapshot;
+      expect(snapshot.body).toBe(body);
     });
   });
 

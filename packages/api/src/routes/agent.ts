@@ -19,11 +19,17 @@ import {
   claimForExecution,
   confirmPending,
   finishPending,
+  getPendingByConfirmToken,
   getPendingById,
   rejectPending,
   toPublicView
 } from "../services/agent-pending";
-import { REPLAY_HEADER, sha256Hex, signReplayMarker } from "../services/agent-replay";
+import {
+  isUsableReplaySecret,
+  REPLAY_HEADER,
+  sha256Hex,
+  signReplayMarker
+} from "../services/agent-replay";
 import { getAppFetcher } from "../services/app-ref";
 import { writeAuditLog } from "../services/audit-log";
 import type { AgentPendingRow, RequestSnapshot } from "../types/agent";
@@ -342,6 +348,31 @@ agentRoutes.get("/pending/:id", async (c) => {
 });
 
 /**
+ * 按【卡片链接里的确认令牌】反查待确认动作 —— P2b 确认页加载时调用的第一个接口。
+ *
+ * 卡片跳到 `/#/agent/confirm?token=X`，页面拿到的只有 X；在此之前没有任何端点能把 X
+ * 换成「这是哪一件动作、要执行什么」，确认页因此无从渲染。
+ *
+ * 【身份仍然只能来自网页会话】令牌只回答「确认哪一件」，绝不回答「你是谁」。
+ * 链接会被转发、被截图、出现在通知栏预览里 —— 持有链接永远不等于有权查看，
+ * 更不等于有权确认。故这里既要 requireHumanSession（挡掉 agent 令牌自助），
+ * 又要校验 auth.sub === row.wecom_userid。
+ *
+ * 【一律 404，绝不 403】403 等于向转发链上的任何人确认「这个令牌是真的、确有其事」，
+ * 把令牌变成一个可离线验证的预言机。令牌无效与不属于你，对外必须无法区分。
+ *
+ * 【绝不进 agent 只读白名单】白名单的形状只认 /agent/pending/<uuid>，本路径天然不匹配；
+ * 若哪天有人「顺手」把它加进去，一枚泄漏的令牌就能反查并确认自己 park 出来的动作。
+ */
+agentRoutes.get("/pending/by-token/:token", requireHumanSession, async (c) => {
+  const row = await getPendingByConfirmToken(c.env.DB, c.req.param("token"));
+  if (!row || row.wecom_userid !== c.get("auth").sub) {
+    return c.json(fail("not found"), 404);
+  }
+  return c.json(ok(toPublicView(row)));
+});
+
+/**
  * 归属校验：确认/拒绝必须由【动作归属人本人】发起。
  *
  * requireHumanSession 已挡掉 mcp_agent 令牌（智能体不得自助确认自己的动作，否则人在环退化为装饰）；
@@ -431,6 +462,42 @@ agentRoutes.post("/pending/:id/confirm", requireHumanSession, async (c) => {
     });
   }
 
+  // 【密钥前置检查：必须早于 claimForExecution】
+  //
+  // 若开关先于 `wrangler secret put AGENT_REPLAY_SECRET` 打开，每次确认都会走这条路：
+  // signReplayMarker 抛 → 下面的 catch 吞成 console.error → finishPending(failed) 顺手把
+  // request_snapshot 清空。于是密钥事后配好了，这个动作也【永久无法重放】——员工必须
+  // 重走 park→卡片→确认，而持久记录里只剩一个 replay_status:500 和一句笼统的失败文案。
+  // 真正的原因只存在于 Workers 日志，而 wrangler.toml 没有 [observability] 块，日志是关的。
+  //
+  // 故这里不 claim、不 finish，直接 503：行留在 confirmed，快照留着，密钥补上后原样可重放。
+  // 用 503 而非 500，是因为这【确实】是「服务暂时不可用」而非请求有错——语义上也该重试。
+  if (!isUsableReplaySecret(c.env.AGENT_REPLAY_SECRET, c.env.APP_ENV)) {
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "agent.high_risk_execute_blocked",
+      targetType: "agent_pending_action",
+      targetId: id,
+      status: "error",
+      detail: {
+        grant_id: row.grant_id,
+        action_kind: row.action_kind,
+        // 分类是这条审计的全部价值：运维要能把「配置没做」与「业务真的失败了」分开，
+        // 而不是在一堆 replay_status:500 里靠猜。
+        failure_kind: "replay_secret_unavailable"
+      }
+    }).catch((err) => {
+      console.error("agent high-risk execute-blocked audit failed", err);
+    });
+    return c.json(
+      fail(
+        "服务端未配置重放密钥 AGENT_REPLAY_SECRET（或仍是占位值），本次确认已保留、稍后可重试；请运维执行 `wrangler secret put AGENT_REPLAY_SECRET` 后再确认。"
+      ),
+      503
+    );
+  }
+
   // 【输掉 confirm 也必须继续尝试 claim】——绝不在此提前返回。
   //
   // confirm 与 claim 之间隔着一次 await（上面那次审计写）。worker 若正好在这里被回收，
@@ -446,12 +513,19 @@ agentRoutes.post("/pending/:id/confirm", requireHumanSession, async (c) => {
   }
 
   let outcome: ReplayOutcome;
+  /** 失败归类。null 表示成功 —— 审计里据此区分「配置故障」「业务拒绝」「链路异常」。 */
+  let failureKind: "business_error" | "replay_threw" | null = null;
   try {
     outcome = await replayPendingAction(c, row);
+    if (!outcome.success) {
+      // 业务侧明确拒绝了（审批单状态已变更之类）。这不是故障，重试也不会变。
+      failureKind = "business_error";
+    }
   } catch (error) {
-    // 具体异常（含「重放密钥未配置」这类配置错误）只进 Worker 日志：
-    // result_snapshot 会经 toPublicView 回给调用方，不该携带内部配置细节。
+    // 具体异常只进 Worker 日志：result_snapshot 会经 toPublicView 回给调用方，
+    // 不该携带内部实现细节。（密钥未配置已在上面前置拦掉，走不到这里。）
     console.error("agent high-risk replay failed", { pendingId: id, error });
+    failureKind = "replay_threw";
     outcome = {
       status: 500,
       body: { success: false, error: { message: "重放执行失败，请到网页端确认该动作是否已生效" } },
@@ -474,7 +548,8 @@ agentRoutes.post("/pending/:id/confirm", requireHumanSession, async (c) => {
     detail: {
       grant_id: row.grant_id,
       action_kind: row.action_kind,
-      replay_status: outcome.status
+      replay_status: outcome.status,
+      failure_kind: failureKind
     }
   }).catch((err) => {
     console.error("agent high-risk execute audit failed", err);

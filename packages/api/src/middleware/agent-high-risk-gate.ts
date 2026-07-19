@@ -59,36 +59,72 @@ export type AgentDecision =
   | { readonly kind: "forbid" };
 
 /**
- * 裁决一个 mcp_agent 令牌发起的请求。
+ * 【第一阶段】只看方法与路径的廉价分类 —— 不读 body、不读 KV、不做密码学。
  *
- * @param env     Cloudflare 绑定（KV 读开关、AGENT_REPLAY_SECRET 验标记）。
- * @param method  HTTP 方法（大小写不敏感）。
- * @param path    请求路径（完整 /api/v1/... 或相对形态、带不带 query 均可）。
- * @param body    原始请求体文本。参与标记校验，必须与签名时的字节完全一致。
- * @param replay  从请求头解析出的重放信息；没带头时传 null。
- *                传了也【不代表】任何权限——见性质 2、3。
+ * 存在的理由是资源安全，不是代码整洁：body 在整条裁决链上【只有一个用途】，
+ * 即给重放校验算 sha256，而那一步只有在本函数返回 high_risk 时才可能走到。
+ * 若调用方无条件先把 body 读成字符串再来裁决，一枚泄漏的令牌就能往任意
+ * 非高危写路径 POST 一个 ~100MB 的 body，让它在通往一个【必然的 403】的路上
+ * 被完整解码进 JS 堆（常驻内存约翻倍），足以撞穿 isolate 的 128MB 上限并
+ * 连带打死同一 isolate 上的其它请求。
+ *
+ * 故本函数与 decideHighRiskRequest 必须成对使用：先分类，只在 high_risk 分支读 body。
+ * decideAgentRequest 保留为两者的组合，供不关心 body 成本的调用方与不变量扫描使用。
  */
-export const decideAgentRequest = async (
-  env: Env,
-  method: string,
-  path: string,
-  body: string,
-  replay: { pendingId: string; marker: string } | null
-): Promise<AgentDecision> => {
+export type AgentPathClass =
+  | { readonly kind: "allow" }
+  | { readonly kind: "forbid" }
+  | { readonly kind: "high_risk"; readonly rule: HighRiskRule };
+
+export const classifyAgentPath = (method: string, path: string): AgentPathClass => {
   // 1. 只读白名单：agent 令牌的常规通道。
   if (isAllowedAgentRead(method, path)) {
     return { kind: "allow" };
   }
-
   // 2. 不在高危表里的写（POST /payment、approval/:id/transfer 等）：直接拒。
   //    绝不因为「带了重放标记」就对未登记的路径网开一面——标记只是重放【已 park 动作】的凭据，
   //    不是通用的写权限令牌；否则一次泄漏的标记就成了万能钥匙。
   const rule = matchHighRisk(method, path);
-  if (!rule) {
-    return { kind: "forbid" };
-  }
+  return rule ? { kind: "high_risk", rule } : { kind: "forbid" };
+};
 
-  // 3. 先验标记（性质 4：早于开关）。校验失败不中断，继续往下走到 park（性质 3）。
+/**
+ * 【第一阶段的补充】高危写里【仍然不需要 body】就能定案的那一格。
+ *
+ * body 在整条链上的唯一用途是给 verifyReplayMarker 算 sha256。若请求根本没带出
+ * 成对的重放头，replay 分支就不可能被走到 —— 此时开关关闭即意味着「连 park 都不做」，
+ * 可以直接 forbid，一个字节的 body 都不必读。
+ *
+ * 这【不违反】性质 4（开关只管 park、不管 replay）：性质 4 要防的是「运维在动作在途时
+ * 关掉开关，导致一次已确认的重放被静默丢弃」。而没有标记的请求压根不是重放，
+ * 它的裁决与标记校验顺序无关。带了标记的请求照旧先验签、后查开关，一步不少。
+ *
+ * @returns true 表示可以就地 forbid（不必读 body）。
+ */
+export const canForbidWithoutBody = async (
+  env: Env,
+  replay: { pendingId: string; marker: string } | null
+): Promise<boolean> => {
+  if (replay && replay.marker) {
+    return false;
+  }
+  return !(await isHighRiskEnabled(env));
+};
+
+/**
+ * 【第二阶段】高危写的三路细分（replay / park / forbid）。只在 classifyAgentPath
+ * 返回 high_risk 后调用 —— 唯有此时 body 才真的被需要。
+ *
+ * 裁决顺序：先验标记、后查开关（性质 4）。校验失败不中断，继续往下走到 park（性质 3）。
+ */
+export const decideHighRiskRequest = async (
+  env: Env,
+  method: string,
+  path: string,
+  body: string,
+  rule: HighRiskRule,
+  replay: { pendingId: string; marker: string } | null
+): Promise<AgentDecision> => {
   if (replay && replay.marker) {
     const bodyHash = await sha256Hex(body);
     // 标记绑定「方法 + 路径 + 动作 id + body 哈希」四要素：此处传入的 path 必须与签名方所用的
@@ -104,11 +140,40 @@ export const decideAgentRequest = async (
     }
   }
 
-  // 4. 开关关闭时高危写连 park 都不做，直接拒（部署了也能先不放量）。
+  // 开关关闭时高危写连 park 都不做，直接拒（部署了也能先不放量）。
   if (!(await isHighRiskEnabled(env))) {
     return { kind: "forbid" };
   }
 
-  // 5. 高危写 + 开关打开 + 无有效标记 → 落为待本人确认。
+  // 高危写 + 开关打开 + 无有效标记 → 落为待本人确认。
   return { kind: "park", rule };
+};
+
+/**
+ * 裁决一个 mcp_agent 令牌发起的请求（两阶段的组合形态）。
+ *
+ * 【注意】本函数要求调用方【已经】读出了 body。生产通路（middleware/auth.ts）不用它，
+ * 而是显式分两阶段调用，好在确定要 park/replay 之前完全不碰 body ——
+ * 见 classifyAgentPath 的文档。本函数保留给不变量扫描与不关心 body 成本的调用方，
+ * 它与两阶段调用【必须等价】：任何一侧改了裁决语义，扫描会立刻发现分叉。
+ *
+ * @param env     Cloudflare 绑定（KV 读开关、AGENT_REPLAY_SECRET 验标记）。
+ * @param method  HTTP 方法（大小写不敏感）。
+ * @param path    请求路径（完整 /api/v1/... 或相对形态、带不带 query 均可）。
+ * @param body    原始请求体文本。参与标记校验，必须与签名时的字节完全一致。
+ * @param replay  从请求头解析出的重放信息；没带头时传 null。
+ *                传了也【不代表】任何权限——见性质 2、3。
+ */
+export const decideAgentRequest = async (
+  env: Env,
+  method: string,
+  path: string,
+  body: string,
+  replay: { pendingId: string; marker: string } | null
+): Promise<AgentDecision> => {
+  const classified = classifyAgentPath(method, path);
+  if (classified.kind !== "high_risk") {
+    return classified;
+  }
+  return decideHighRiskRequest(env, method, path, body, classified.rule, replay);
 };

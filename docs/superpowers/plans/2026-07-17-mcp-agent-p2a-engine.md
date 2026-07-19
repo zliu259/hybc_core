@@ -56,7 +56,7 @@
 **修改 `packages/api/`**
 - `src/types/agent.ts` — 加 `AgentPendingRow`、`PendingStatus`、`PendingPublicView`
 - `src/types/env.ts` — 加 `AGENT_REPLAY_SECRET`
-- `wrangler.toml` — 顶层 `[vars]` 与 production section **两处一致**加 `AGENT_REPLAY_SECRET`；`.dev.vars` 本地覆盖
+- `.dev.vars` — 本地开发值；**`wrangler.toml` 里【不得】出现 `AGENT_REPLAY_SECRET`**（见下）
 - `src/test-support/agent-fakes.ts` — 支持 `agent_pending_action` + `meta.changes`
 - `src/middleware/agent-readonly.ts` — 白名单加 `GET /agent/pending/<uuid>`
 - `src/middleware/auth.ts` — mcp_agent 分支插入高危三路裁决
@@ -191,22 +191,36 @@ export interface RequestSnapshot {
   AGENT_REPLAY_SECRET: string;
 ```
 
-`packages/api/wrangler.toml`：**顶层 `[vars]` 与 production 两处都要加**（对齐既有 APP_ENV 双 section 教训，两边不一致会导致生产取到错值）：
-```toml
-AGENT_REPLAY_SECRET = "REPLACE_WITH_PROD_SECRET"
+`AGENT_REPLAY_SECRET` **只能经 `wrangler secret put` 下发，绝不写进 `wrangler.toml`**：
+
+```bash
+# 生产：由 owner 执行一次，值为高强度随机串
+npx wrangler secret put AGENT_REPLAY_SECRET
 ```
-`packages/api/.dev.vars` 加本地值：
+
+`packages/api/.dev.vars` 加本地值（该文件已被 gitignore）：
 ```
 AGENT_REPLAY_SECRET=local-dev-replay-secret-not-for-prod
 ```
-> 生产真实值由 owner 用 `npx wrangler secret put AGENT_REPLAY_SECRET` 设置更佳；若用 `[vars]` 明文则务必换成高强度随机串。**实现者只写占位，不得编造真实密钥。**
+
+> **为什么禁止 `[vars]`**：`wrangler.toml` 的 `[vars]` 是**明文**且**入库**的，任何读过本仓库的人
+> 都能拿到那把钥匙，进而伪造重放标记让 agent 令牌自审自批、彻底跳过人在环。更要命的是
+> 部署语义：`[vars]` 里的同名条目会在 deploy 时**覆盖**已经 `secret put` 好的真值 ——
+> 于是「先配了 secret」这件事会被下一次 push 静默抹掉，且没有任何地方报错。
+>
+> 代码侧已强制这条约束：`services/agent-replay.ts` 的 `isUsableReplaySecret` 会拒绝空值与
+> 含 `REPLACE_WITH` / `PLACEHOLDER` / `CHANGEME` 的占位串（非 local 环境还要求 ≥32 字符、
+> ≥8 种不同字符），签名方直接抛错、校验方一律返回 false。故往 `wrangler.toml` 里放占位符
+> 不会「先跑起来再说」，只会让全部高危确认在 `POST /agent/pending/:id/confirm` 上返回 503。
+>
+> **实现者不得编造真实密钥**；本地用 `.dev.vars`，生产等 owner 执行 `secret put`。
 
 - [ ] **Step 5: typecheck + Commit**
 
 Run: `cd packages/api && npm run typecheck`
 Expected: 通过。
 ```bash
-git add packages/api/migrations/0059_agent_pending_action.sql packages/api/src/types/agent.ts packages/api/src/types/env.ts packages/api/wrangler.toml packages/api/.dev.vars
+git add packages/api/migrations/0059_agent_pending_action.sql packages/api/src/types/agent.ts packages/api/src/types/env.ts
 git commit -m "feat(api): agent_pending_action 迁移 + 类型 + 重放密钥 env"
 ```
 
@@ -2204,6 +2218,14 @@ git commit -m "docs: 记录 P2a 高危写延迟执行引擎"
 
 ## 开放问题 / 待评审确认
 
-1. `AGENT_REPLAY_SECRET` 生产值建议用 `wrangler secret put` 而非 `[vars]` 明文——合并部署时由 owner 决定并设置。
-2. 摘要目前只含"批准/拒绝审批单 #id"。是否要在 park 时查一次审批单标题/金额，让卡片更具信息量？（会多一次 D1 查询；建议 P2b 做，届时确认页也能展示完整详情）
+1. ~~`AGENT_REPLAY_SECRET` 生产值建议用 `wrangler secret put` 而非 `[vars]` 明文~~
+   **已定案（终审）：只能 `wrangler secret put`，`wrangler.toml` 里禁止出现该键。**
+   理由见上文「为什么禁止 `[vars]`」——明文入库 + deploy 时覆盖真值。代码侧已由
+   `isUsableReplaySecret` 强制，占位串一律不可用。待 owner 在生产执行一次 `secret put`。
+2. ~~摘要目前只含"批准/拒绝审批单 #id"~~
+   **已实现（终审 HIGH-1）**：park 时查一次 `approval_instance`，把 `instance_no` /
+   `biz_type` / `biz_summary` / `initiator_userid` 与【智能体填写的 comment】一并落进
+   `action_detail` 列（迁移 0060），并经 `toPublicView` 投影给确认页。见
+   `services/agent-action-detail.ts`。金额未单列——它不在 `approval_instance` 上，
+   按本仓库惯例已包含在 `biz_summary` 里，不为它多查一张表。
 3. 过期回收：当前惰性判定，不物理清理过期行。量小可接受；后续可加定时归档。
