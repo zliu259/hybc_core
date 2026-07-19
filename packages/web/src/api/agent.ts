@@ -103,3 +103,71 @@ export const adminRevokeAgentGrant = (id: string) => {
     `/api/v1/admin/agent/grants/${id}/revoke`
   );
 };
+
+export type PendingApprovalContext = {
+  instance_no: string;
+  biz_type: string;
+  biz_summary: string;
+  initiator_userid: string;
+};
+
+export type PendingActionDetail = {
+  action_kind: string;
+  /** 未登记的动作类型为 null —— 页面必须显式处理，绝不兜底成「批准」 */
+  verb: string | null;
+  target: string;
+  approval: PendingApprovalContext | null;
+  /** 智能体填写、将以员工名义入库的意见 */
+  agent_comment: string | null;
+};
+
+export type PendingStatus =
+  | "pending"
+  | "confirmed"
+  | "executing"
+  | "done"
+  | "failed"
+  | "rejected"
+  | "expired";
+
+export type PendingPublicView = {
+  id: string;
+  action_kind: string;
+  summary: string;
+  status: PendingStatus;
+  detail: PendingActionDetail | null;
+  created_at: string;
+  expires_at: string;
+  confirmed_at: string | null;
+  executed_at: string | null;
+  result: unknown | null;
+};
+
+/** 确认页首屏：用卡片链接里的一次性 token 定位待确认动作（仅本人可见，否则 404）。 */
+export const getPendingByToken = (token: string) => {
+  return http.request<{ success: boolean; data: PendingPublicView }>(
+    "get",
+    `/api/v1/agent/pending/by-token/${encodeURIComponent(token)}`
+  );
+};
+
+export const getPendingAction = (id: string) => {
+  return http.request<{ success: boolean; data: PendingPublicView }>(
+    "get",
+    `/api/v1/agent/pending/${id}`
+  );
+};
+
+export const confirmPendingAction = (id: string) => {
+  return http.request<{ success: boolean; data: PendingPublicView }>(
+    "post",
+    `/api/v1/agent/pending/${id}/confirm`
+  );
+};
+
+export const rejectPendingAction = (id: string) => {
+  return http.request<{
+    success: boolean;
+    data: PendingPublicView & { rejected: boolean };
+  }>("post", `/api/v1/agent/pending/${id}/reject`);
+};
