@@ -40,6 +40,16 @@ export default {
         showLink: false,
         roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
       }
+    },
+    {
+      path: "/agent/confirm",
+      name: "AgentConfirm",
+      component: () => import("@/views/agent/confirm.vue"),
+      meta: {
+        title: "高危操作确认",
+        showLink: false,
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
+      }
     }
   ]
 } satisfies RouteConfigsTable;
