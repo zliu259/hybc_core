@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
@@ -60,6 +60,73 @@ describe("wrangler.toml APP_ENV", () => {
  *
  * 与上面 APP_ENV 的教训是同一个:顶层 [vars] 与 [env.prod.vars] 两处都必须干净。
  */
+/**
+ * 上面两组只盯 wrangler.toml。但 APP_ENV 的教训与**文件名无关**:任何绑生产资源的
+ * 配置,只要 APP_ENV="local",就等于给生产开一扇免认证的门
+ * (routes/auth.ts 的 /login/web 在 APP_ENV==="local" 时接受裸 {"username"} 直接签发会话)。
+ *
+ * wrangler.deploy.toml 就是这么埋进来的:绑 hybcdg-prod-* 全套,却写着 APP_ENV="local"。
+ * 它当时不在默认部署路径上(package.json 的 deploy 是裸 `wrangler deploy`,走 wrangler.toml),
+ * 所以只是颗地雷 —— 但 `wrangler deploy -c wrangler.deploy.toml` 一跑就是生产事故,
+ * 且这已经是同一个失效模式的**第二次**出现。
+ *
+ * 因此这里 glob 整个 packages/api 目录,而不是硬编码文件名:目的正是守住**还不存在的**
+ * 配置文件 —— 下次谁新增一个 wrangler.xxx.toml,自动纳入。
+ * 不变式:文件引用了任何 hybcdg-prod-* 资源 ⇒ 该文件任何 vars 段落都不得 APP_ENV="local"。
+ */
+const wranglerConfigs = readdirSync(apiRoot)
+  .filter((name) => /^wrangler.*\.toml$/.test(name))
+  .sort();
+
+/** 取出文件中所有 vars 段落(顶层 [vars] 与 [env.*.vars])的 APP_ENV 值。 */
+const appEnvsInVarsSections = (
+  content: string
+): Array<{ header: string; value: string }> => {
+  const lines = content.split("\n");
+  const found: Array<{ header: string; value: string }> = [];
+
+  lines.forEach((line, index) => {
+    const header = line.trim();
+    // 只认 vars 段落头,例如 [vars] / [env.prod.vars] —— 不含 [[...]] 数组表。
+    if (!/^\[[^[\]]*vars\]$/.test(header)) {
+      return;
+    }
+    const rest = lines.slice(index + 1);
+    const end = rest.findIndex((next) => next.trim().startsWith("["));
+    const body = (end === -1 ? rest : rest.slice(0, end)).join("\n");
+    const match = body.match(/^\s*APP_ENV\s*=\s*"([^"]*)"/m);
+    if (match) {
+      found.push({ header, value: match[1] });
+    }
+  });
+
+  return found;
+};
+
+describe("任意 wrangler*.toml:绑生产资源就不得 APP_ENV=local", () => {
+  it("至少扫到 wrangler.toml 与 wrangler.deploy.toml(否则说明 glob 失效了)", () => {
+    expect(wranglerConfigs).toEqual(
+      expect.arrayContaining(["wrangler.toml", "wrangler.deploy.toml"])
+    );
+  });
+
+  it.each(wranglerConfigs)(
+    "%s 引用 hybcdg-prod-* 时,任何 vars 段落都不得 APP_ENV=\"local\"",
+    (fileName) => {
+      const content = readFileSync(resolve(apiRoot, fileName), "utf8");
+      if (!content.includes("hybcdg-prod-")) {
+        return; // 未绑生产资源,不受此不变式约束。
+      }
+
+      const offenders = appEnvsInVarsSections(content)
+        .filter((entry) => entry.value === "local")
+        .map((entry) => `${entry.header} APP_ENV="local"`);
+
+      expect(offenders).toEqual([]);
+    }
+  );
+});
+
 describe("wrangler.toml AGENT_REPLAY_SECRET", () => {
   it.each(["[vars]", "[env.prod.vars]"])(
     "%s 不得声明 AGENT_REPLAY_SECRET(明文 var 会在部署时压过 secret)",

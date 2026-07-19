@@ -29,7 +29,17 @@ binding = "EVENT_QUEUE"
 queue = "hybcdg-prod-events"
 
 [vars]
-APP_ENV = "local"
+# 不变式:本文件绑定的是**生产**资源(hybcdg-prod-db / -legacy-db / -files / -events
+# 与生产 KV),因此 APP_ENV 绝不能是 "local"。
+# APP_ENV 不只是展示字段,它是安全闸门:
+#  - routes/auth.ts 的 POST /api/v1/auth/login/web 在 APP_ENV === "local" 时,
+#    接受不带 WeCom code 的裸 {"username":"..."} 并直接签发真实会话 —— 即零凭证登录;
+#  - services/passkey.ts 在 KV 无配置时以 APP_ENV === "local" 决定 passkey 默认开关。
+# 「生产绑定 + APP_ENV=local」= 生产免认证登录。本项目已因 APP_ENV 误配发生过一次
+# 生产鉴权旁路事故,这是同一失效模式的重复,不是假想风险。
+# 本地开发请用 `wrangler dev` 走 wrangler.toml + .dev.vars(其中 APP_ENV=local),
+# 不要把本文件改成 local。回归守卫见 test/wrangler-prod-env.test.ts。
+APP_ENV = "production"
 JWT_SECRET = "61dbd206859451fa6cbced9cf25d652f"
 UPLOAD_SIGNING_SECRET = "0c7213e73de53c76424506e589c2b285"
 TASK_API_KEY = "40aea6c95e44af22a4fd04f6f0c2cf26"
