@@ -92,6 +92,49 @@ describe("parkPendingAction", () => {
 });
 
 /**
+ * rank5：park 时钉住解析出的审批任务身份，存进新的三列。
+ *
+ * 这是重放期「只认这一条、且必须仍 pending」的存储支撑：parkPendingAction 必须把
+ * target_task_id / target_node_instance_id / target_round 原样落库，getPendingById 读回。
+ * 未传时三列一律为 NULL（非审批 kind、历史行）——绝不臆造 0。
+ */
+describe("parkPendingAction · pinned approval task columns", () => {
+  it("persists target_task_id / node_instance_id / round when provided", async () => {
+    const { db } = createFakeD1();
+    const outcome = await parkPendingAction(db, {
+      grantId: "g1",
+      wecomUserid: "MaxLiu",
+      actionKind: "approval.approve",
+      summary: "批准审批单 #42",
+      snapshot: {
+        method: "POST",
+        path: "/api/v1/approval/42/approve",
+        headers: { authorization: "Bearer x" },
+        body: "{}"
+      },
+      target_task_id: 501,
+      target_node_instance_id: 77,
+      target_round: 2
+    });
+    if (outcome.kind !== "parked") throw new Error(`expected parked, got ${outcome.kind}`);
+
+    const row = await getPendingById(db, outcome.id);
+    expect(row?.target_task_id).toBe(501);
+    expect(row?.target_node_instance_id).toBe(77);
+    expect(row?.target_round).toBe(2);
+  });
+
+  it("leaves the pin columns NULL when not provided (non-approval / historical)", async () => {
+    const { db } = createFakeD1();
+    const parked = await park(db);
+    const row = await getPendingById(db, parked.id);
+    expect(row?.target_task_id ?? null).toBeNull();
+    expect(row?.target_node_instance_id ?? null).toBeNull();
+    expect(row?.target_round ?? null).toBeNull();
+  });
+});
+
+/**
  * 每个 grant 的在途 park 上限。
  *
  * 没有它，一枚泄漏的令牌可以循环高危写把员工埋进确认卡片里——通知疲劳正是收割

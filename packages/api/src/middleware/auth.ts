@@ -12,13 +12,29 @@ import {
   type AgentDecision
 } from "./agent-high-risk-gate";
 import { parkAgentRequest } from "../services/agent-park";
+import { getPendingById } from "../services/agent-pending";
 import { REPLAY_HEADER } from "../services/agent-replay";
 import { writeAuditLog } from "../services/audit-log";
 import type { AuthTokenPayload } from "../types/auth";
 import type { Env } from "../types/env";
 
+/**
+ * rank5：重放（本人已确认后由服务端发起）时，从 park 当刻钉住的 pending 行里取出的审批任务身份。
+ *
+ * 唯一确立点是 authMiddleware 的 replay 分支：pendingId 已由高危闸门 HMAC 校验，其库内字段可信；
+ * 这里【绝不】采信任何入站请求头。handler（routes/approval.ts）据此只批钉住的那一条任务，且它必须
+ * 仍 pending，任一不符即整次重放 409、不改任何状态。非重放请求（人类、只读）不设此变量。
+ */
+export interface AgentReplayContext {
+  readonly pendingId: string;
+  readonly targetTaskId: number | null;
+  readonly targetNodeInstanceId: number | null;
+  readonly targetRound: number | null;
+}
+
 export type AuthVariables = {
   auth: AuthTokenPayload;
+  agentReplay?: AgentReplayContext;
 };
 
 const unauthorized = (message: string) => {
@@ -168,6 +184,19 @@ export const authMiddleware: MiddlewareHandler<{
 
     // allow / replay 均落到下方常规通路：设置 auth、计 last_used、写审计、执行 handler。
     // 重放【照样审计】—— 它仍是一次 agent 发起的请求，只是已获本人确认。
+
+    // rank5：重放时把 park 当刻钉住的任务身份放进受信上下文（handler 据此只批这一条、且须仍 pending）。
+    // 这是钉子的【唯一确立点】：pendingId 已被闸门 HMAC 校验，故其库内字段可信；绝不采信入站请求头。
+    // getPendingById 承诺不抛以外的语义都不依赖：查不到（理论上不应）就落成三个 null，handler 会据此 409。
+    if (decision.kind === "replay") {
+      const pendingRow = await getPendingById(c.env.DB, decision.pendingId);
+      c.set("agentReplay", {
+        pendingId: decision.pendingId,
+        targetTaskId: pendingRow?.target_task_id ?? null,
+        targetNodeInstanceId: pendingRow?.target_node_instance_id ?? null,
+        targetRound: pendingRow?.target_round ?? null
+      });
+    }
 
     const now = Math.floor(Date.now() / 1000);
     // 注：agent token 的有效性由 grant 查询（resolveAgentByToken）保证，不走 JWT exp 校验。

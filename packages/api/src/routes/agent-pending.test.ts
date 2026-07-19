@@ -807,6 +807,15 @@ describe("agent pending 确认 → 全栈重放（不打桩）", () => {
       role: "manager",
       deviceName: "Max MBP"
     });
+    // rank5：park 现在要求本人在该实例上有一条待办任务才能钉住并冻结。
+    e2e.fake.tasks.set(7, {
+      id: 7,
+      node_instance_id: 70,
+      instance_id: 7,
+      assignee_userid: "MaxLiu",
+      round: 1,
+      status: "pending"
+    });
     const body = '{ "comment":  "同意 ✅" }';
 
     // 1. 智能体用【百分号编码】的路径发起高危写 → 被闸门 park。
@@ -851,6 +860,15 @@ describe("agent pending 确认 → 全栈重放（不打桩）", () => {
       wecomUserid: "MaxLiu",
       role: "manager",
       deviceName: "Max MBP"
+    });
+    // rank5：park 现在要求本人在该实例上有一条待办任务才能钉住并冻结。
+    e2e.fake.tasks.set(9, {
+      id: 9,
+      node_instance_id: 90,
+      instance_id: 9,
+      assignee_userid: "MaxLiu",
+      round: 1,
+      status: "pending"
     });
     const parked = await e2e.app.request(
       "/api/v1/approval/9/approve",

@@ -81,6 +81,13 @@ export interface ParkInput {
   riskReason?: string;
   /** 员工据以判断的动作详情（动词 / 目标 / 业务上下文 / 智能体填写的意见）。 */
   detail?: PendingActionDetail | null;
+  /**
+   * rank5：park 当刻解析出的审批任务身份，钉进行里，重放时只认这一条。
+   * 仅 agent 的 approval approve/reject 会传；其它 kind 不传（落 NULL）。
+   */
+  target_task_id?: number | null;
+  target_node_instance_id?: number | null;
+  target_round?: number | null;
 }
 
 /**
@@ -213,7 +220,7 @@ export const parkPendingAction = async (
 
   await db
     .prepare(
-      `INSERT INTO agent_pending_action (id, grant_id, wecom_userid, action_kind, request_snapshot, risk_reason, summary, status, confirm_token_hash, created_at, expires_at, action_detail) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+      `INSERT INTO agent_pending_action (id, grant_id, wecom_userid, action_kind, request_snapshot, risk_reason, summary, status, confirm_token_hash, created_at, expires_at, action_detail, target_task_id, target_node_instance_id, target_round) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       id,
@@ -227,7 +234,11 @@ export const parkPendingAction = async (
       confirmTokenHash,
       createdAt,
       expiresAt,
-      input.detail ? JSON.stringify(input.detail) : null
+      input.detail ? JSON.stringify(input.detail) : null,
+      // rank5：钉住的审批任务身份（仅 approval approve/reject 传值，其余 NULL）。
+      input.target_task_id ?? null,
+      input.target_node_instance_id ?? null,
+      input.target_round ?? null
     )
     .run();
 

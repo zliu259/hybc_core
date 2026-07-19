@@ -84,6 +84,14 @@ export interface AgentPendingRow {
   expires_at: string;
   confirmed_at: string | null;
   executed_at: string | null;
+  /**
+   * rank5：park 当刻解析并钉住的审批任务身份。只有 agent 的 approval approve/reject 会写；
+   * 其它 kind 与历史行为 NULL。重放时 handler 只批 target_task_id 这一条、且它必须仍 pending，
+   * node_instance_id / round 供卡片展示与纵深校验（非承重）。
+   */
+  target_task_id: number | null;
+  target_node_instance_id: number | null;
+  target_round: number | null;
 }
 
 /** 回给 MCP / 确认页的安全投影：绝不含 request_snapshot（内含 Authorization）与 confirm_token。 */

@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 
-import { authMiddleware, type AuthVariables } from "../middleware/auth";
+import {
+  authMiddleware,
+  type AuthVariables,
+  type AgentReplayContext
+} from "../middleware/auth";
 import type { Env } from "../types/env";
 import type {
   SubmitApprovalRequest,
@@ -769,13 +773,20 @@ approvalRoutes.post("/submit", async (c) => {
 approvalRoutes.post("/:id/approve", async (c) => {
   const instanceId = Number(c.req.param("id"));
   const auth = c.get("auth");
+  // rank5：agent 重放（本人已确认）→ 只批 park 当刻钉住的那一条任务；人类 / 常规请求无此变量，行为不变。
+  const replay = c.get("agentReplay");
   const body = (await c.req.json()) as { comment?: string };
 
   try {
-    const task = await findPendingTask(c.env, instanceId, auth.sub);
+    const task = replay
+      ? await loadPinnedApprovalTask(c.env, instanceId, auth.sub, replay)
+      : await findPendingTask(c.env, instanceId, auth.sub);
     await approveOp(c.env, task.id, auth.sub, body.comment);
     return c.json({ success: true });
   } catch (err) {
+    if (err instanceof ApprovalReplayStaleError) {
+      return c.json({ success: false, error: { message: err.message } }, 409);
+    }
     const message = err instanceof Error ? err.message : "Approve failed";
     return c.json({ success: false, error: { message } }, 400);
   }
@@ -786,13 +797,20 @@ approvalRoutes.post("/:id/approve", async (c) => {
 approvalRoutes.post("/:id/reject", async (c) => {
   const instanceId = Number(c.req.param("id"));
   const auth = c.get("auth");
+  // rank5：与 approve 对称 —— agent 重放只拒钉住的那一条任务。
+  const replay = c.get("agentReplay");
   const body = (await c.req.json()) as { comment?: string };
 
   try {
-    const task = await findPendingTask(c.env, instanceId, auth.sub);
+    const task = replay
+      ? await loadPinnedApprovalTask(c.env, instanceId, auth.sub, replay)
+      : await findPendingTask(c.env, instanceId, auth.sub);
     await rejectOp(c.env, task.id, auth.sub, body.comment);
     return c.json({ success: true });
   } catch (err) {
+    if (err instanceof ApprovalReplayStaleError) {
+      return c.json({ success: false, error: { message: err.message } }, 409);
+    }
     const message = err instanceof Error ? err.message : "Reject failed";
     return c.json({ success: false, error: { message } }, 400);
   }
@@ -1279,6 +1297,57 @@ const findPendingTask = async (
 
   if (!task) {
     throw new Error("No pending task found for this user on this instance");
+  }
+
+  return task;
+};
+
+/**
+ * rank5：重放期「审批状态已在你确认前发生了变化」的信号。
+ *
+ * 用独立异常类型而非通用 Error，让 handler 能把它映射成 409（且与真实业务错误的 400 区分开）。
+ */
+class ApprovalReplayStaleError extends Error {
+  constructor() {
+    super(
+      "审批状态已在你确认前发生了变化（该任务已被处理或已流转），未执行任何操作，请重新发起。"
+    );
+    this.name = "ApprovalReplayStaleError";
+  }
+}
+
+/**
+ * 重放期【只认 park 当刻钉住的那一条任务】的解析：按 target_task_id 精确取任务，并校验它
+ * instance / assignee / status='pending' / node_instance_id / round 全部与钉住值吻合。
+ *
+ * 为什么这就够了：退回+重提会生成一条【新】task 行（id 不同）并把旧任务移出 pending，于是钉住的
+ * id 必然过不了 status='pending' 校验 → 拒绝；或签推进同理。node_instance_id / round 是纵深校验。
+ * 任一不符即抛 ApprovalReplayStaleError（handler 转 409）：绝不回退 findPendingTask、绝不批到
+ * 「当前恰好 pending 的另一条」——那正是本 bug 的核心。target_task_id 为 null（异常/历史行）同样拒绝。
+ */
+const loadPinnedApprovalTask = async (
+  env: Env,
+  instanceId: number,
+  userId: string,
+  replay: AgentReplayContext
+): Promise<ApprovalTask> => {
+  if (replay.targetTaskId === null) {
+    throw new ApprovalReplayStaleError();
+  }
+
+  const task = await env.DB.prepare(`SELECT * FROM approval_task WHERE id = ? LIMIT 1`)
+    .bind(replay.targetTaskId)
+    .first<ApprovalTask>();
+
+  if (
+    !task ||
+    task.instance_id !== instanceId ||
+    task.assignee_userid !== userId ||
+    task.status !== "pending" ||
+    task.node_instance_id !== replay.targetNodeInstanceId ||
+    task.round !== replay.targetRound
+  ) {
+    throw new ApprovalReplayStaleError();
   }
 
   return task;

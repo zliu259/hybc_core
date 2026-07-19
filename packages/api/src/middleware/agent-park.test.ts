@@ -25,7 +25,12 @@ import {
 } from "../services/agent-pending";
 import { REPLAY_HEADER, sha256Hex, signReplayMarker } from "../services/agent-replay";
 import { createSessionPayload, issueTokens } from "../services/auth";
-import { createFakeD1, createFakeKV, type FakeD1 } from "../test-support/agent-fakes";
+import {
+  createFakeD1,
+  createFakeKV,
+  type FakeApprovalTask,
+  type FakeD1
+} from "../test-support/agent-fakes";
 import type { RequestSnapshot } from "../types/agent";
 import type { Env } from "../types/env";
 
@@ -157,6 +162,35 @@ interface ParkBody {
 
 const pendingRows = (h: Harness) => [...h.fake.pendings.values()];
 
+/**
+ * 预置一条属于本人的在办审批任务。
+ *
+ * rank5 后 park 会先解析「这是哪一条待办任务」并钉住它；解析不到就 409 不 park。故凡是期望
+ * park 成功（202）的用例，都必须先让本人在该实例上有一条 pending 任务。默认 taskId=instanceId，
+ * node_instance_id=instanceId*10，round=1，值可覆盖以做精确断言。
+ */
+const seedPendingTask = (
+  fake: FakeD1,
+  opts: {
+    instanceId: number;
+    assigneeUserid?: string;
+    taskId?: number;
+    nodeInstanceId?: number;
+    round?: number;
+  }
+): FakeApprovalTask => {
+  const task: FakeApprovalTask = {
+    id: opts.taskId ?? opts.instanceId,
+    node_instance_id: opts.nodeInstanceId ?? opts.instanceId * 10,
+    instance_id: opts.instanceId,
+    assignee_userid: opts.assigneeUserid ?? "MaxLiu",
+    round: opts.round ?? 1,
+    status: "pending"
+  };
+  fake.tasks.set(task.id, task);
+  return task;
+};
+
 describe("authMiddleware · 高危写 park 通路", () => {
   let h: Harness;
   let token: string;
@@ -164,6 +198,12 @@ describe("authMiddleware · 高危写 park 通路", () => {
   beforeEach(async () => {
     h = await buildHarness({ highRiskEnabled: true });
     token = await agentToken(h.fake);
+    // park 现在要求本人在该实例上有一条待办任务才能钉住并冻结（否则 409 no_pending_task）。
+    // 这些既有用例 park 的实例 id 散落在 1..100 与 404；统一预置一条 MaxLiu 的在办任务。
+    for (let i = 1; i <= 200; i += 1) {
+      seedPendingTask(h.fake, { instanceId: i });
+    }
+    seedPendingTask(h.fake, { instanceId: 404 });
   });
 
   it("parks an approval approve: 202 + awaiting_confirmation, handler untouched", async () => {
@@ -188,6 +228,66 @@ describe("authMiddleware · 高危写 park 通路", () => {
     expect(rows[0].wecom_userid).toBe("MaxLiu");
     expect(rows[0].action_kind).toBe("approval.approve");
     expect(rows[0].id).toBe(payload.data.pending_action_id);
+  });
+
+  /**
+   * 【rank5：park 当刻就把「这是哪一条待办任务」钉死】
+   *
+   * agent 高危写在 handler 运行之前就被闸门 park，真正解析待办任务原本发生在【重放】时——
+   * 那已是员工看到确认卡片之后的几分钟。这段窗口内待办可能流转（退回+重提生成新 task 行、
+   * 或签推进），确认便被静默落到另一条任务上并永久署名。故必须在 park 当刻解析并钉住 task 身份。
+   */
+  describe("rank5 · pins the resolved approval task at park", () => {
+    it("stores target_task_id / node_instance_id / round from the current pending task", async () => {
+      seedPendingTask(h.fake, { instanceId: 5000, taskId: 9001, nodeInstanceId: 55, round: 3 });
+
+      const res = await post(h, "/api/v1/approval/5000/approve", '{"comment":"ok"}', {
+        authorization: `Bearer ${token}`
+      });
+
+      expect(res.status).toBe(202);
+      const row = pendingRows(h)[0];
+      expect(row.target_task_id).toBe(9001);
+      expect(row.target_node_instance_id).toBe(55);
+      expect(row.target_round).toBe(3);
+    });
+
+    /**
+     * 【解析不到本人的待办 → 不 park、不落行、不推卡片，立即 409 让智能体知道】
+     *
+     * 若此时照旧 park，员工会收到一张「批准 #N」的卡片，可库里根本没有他能批的任务；
+     * 重放必然失败，卡片纯是噪声，还白占了滚动预算。故 park 前必须先确认待办存在。
+     */
+    it("refuses (409 no_pending_task) when the user has no pending task on the instance", async () => {
+      // instance 7777 没有为 MaxLiu 预置任何待办任务。
+      const res = await post(h, "/api/v1/approval/7777/approve", '{"comment":"ok"}', {
+        authorization: `Bearer ${token}`
+      });
+
+      expect(res.status).toBe(409);
+      const payload = (await res.json()) as {
+        success: boolean;
+        data: { status: string };
+        error: { message: string };
+      };
+      // MCP 客户端信封丢弃状态码：信号必须同时落在 data.status 与 error.message。
+      expect(payload.success).toBe(false);
+      expect(payload.data.status).toBe("no_pending_task");
+      expect(payload.error.message).toBeTruthy();
+
+      // 绝不落 pending 行、绝不执行 handler、绝不走 park 流程（故无 parked 审计）。
+      expect(pendingRows(h)).toHaveLength(0);
+      expect(h.calls).toHaveLength(0);
+      expect(audited(h, "agent.high_risk_parked")).toBeUndefined();
+    });
+
+    it("audits the no-task refusal so a probing token is discoverable", async () => {
+      await post(h, "/api/v1/approval/7777/approve", "{}", { authorization: `Bearer ${token}` });
+
+      const entry = audited(h, "agent.high_risk_park_no_task");
+      expect(entry).toBeDefined();
+      expect(entry?.args).toContain("blocked");
+    });
   });
 
   it("never leaks the confirm token back to the agent", async () => {

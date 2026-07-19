@@ -104,6 +104,81 @@ const snapshotHeaders = (headers: Headers): Record<string, string> => {
   return out;
 };
 
+/** park 当刻解析出的、将被钉住的审批任务身份。 */
+interface PinnedApprovalTask {
+  readonly id: number;
+  readonly node_instance_id: number;
+  readonly round: number;
+}
+
+/**
+ * 解析【此刻】属于本人、在该审批实例上的待办任务 —— 与 findPendingTask 用【完全相同】的查询。
+ *
+ * 这是 rank5 的钉子：park 发生在 handler 之前，而原本「这是哪一条待办任务」是在几分钟后的
+ * 重放时才解析的。两处必须看同一条语义，否则钉住的与重放要批的会对不上。查询失败降级为 null
+ * （与「本就没有待办」同样处理：都不 park），绝不让一次基础设施抖动把高危写静默放过或 500。
+ *
+ * 【仅审批动作调用】—— 只有 instanceId !== null 时才走到这里，非审批高危写不受影响。
+ */
+const resolvePinnedApprovalTask = async (
+  db: D1Database,
+  instanceId: number,
+  userId: string
+): Promise<PinnedApprovalTask | null> => {
+  try {
+    const row = await db
+      .prepare(
+        `SELECT id, node_instance_id, round FROM approval_task WHERE instance_id = ? AND assignee_userid = ? AND status = 'pending' LIMIT 1`
+      )
+      .bind(instanceId, userId)
+      .first<PinnedApprovalTask>();
+    return row ?? null;
+  } catch (error) {
+    console.error("agent park: pending task resolution failed", { instanceId, error });
+    return null;
+  }
+};
+
+/**
+ * 解析不到本人待办时的拒绝通路：不落行、不推卡片、不写 park 审计，只留一条 blocked 审计并回 409。
+ *
+ * 与限额触顶（429）同理，理由必须落在 data.status —— MCP 客户端的信封丢弃 HTTP 状态码。
+ * 用独立的 action（agent.high_risk_park_no_task）与 blocked 状态，令这类探测可被发现、并与
+ * 「真的 park 了」区分开。审计【await 落地】：此路径没有别的后台工作，失败只记日志、不改变响应。
+ */
+const noPendingTaskRefusal = async (env: Env, input: ParkRequestInput): Promise<Response> => {
+  await writeAuditLog(env.DB, {
+    actorUserId: input.identity.wecomUserid,
+    actorRoles: input.identity.roles,
+    action: "agent.high_risk_park_no_task",
+    targetType: "agent_request",
+    targetId: input.path,
+    status: "blocked",
+    detail: {
+      via: "mcp",
+      grant_id: input.identity.grantId,
+      action_kind: input.rule.actionKind,
+      method: input.method.toUpperCase()
+    }
+  }).catch((err) => {
+    console.error("agent park: no-task audit failed", err);
+  });
+
+  const message =
+    "当前该审批单没有属于你的待办任务（可能已被处理或已流转），无法发起确认。";
+  return new Response(
+    JSON.stringify({
+      success: false,
+      data: { status: "no_pending_task", message },
+      error: { message }
+    }),
+    {
+      status: 409,
+      headers: { "content-type": "application/json" }
+    }
+  );
+};
+
 /**
  * 落库 + 通知 + 审计，返回给智能体的 202。
  *
@@ -123,6 +198,19 @@ export const parkAgentRequest = async (
   // 外加从 body 里解析出【智能体填写的意见】——那段话将以员工本人的名义进入正式审批记录。
   // 查询失败一律降级为 null（loadApprovalContext 承诺不抛），park 绝不因文案而失败。
   const instanceId = parseApprovalInstanceId(input.path);
+
+  // rank5：审批动作在 park 当刻就把「这是哪一条待办任务」钉死（node_instance_id / round 一并留存）。
+  // 解析不到本人的在办任务（已被处理 / 已流转 / 从来就没有）→ 不 park、不落行、不推卡片，
+  // 立即 409 让智能体知道，避免推一张对方根本无法确认、还白占滚动预算的噪声卡片。
+  // 【仅审批动作】：instanceId === null（未来的非审批高危写）不走这条解析，行为不受影响。
+  let pinnedTask: PinnedApprovalTask | null = null;
+  if (instanceId !== null) {
+    pinnedTask = await resolvePinnedApprovalTask(env.DB, instanceId, input.identity.wecomUserid);
+    if (pinnedTask === null) {
+      return noPendingTaskRefusal(env, input);
+    }
+  }
+
   const approval = instanceId === null ? null : await loadApprovalContext(env.DB, instanceId);
   const detail = buildActionDetail({
     actionKind: input.rule.actionKind,
@@ -147,7 +235,11 @@ export const parkAgentRequest = async (
     riskReason: input.rule.riskReason,
     summary,
     snapshot,
-    detail
+    detail,
+    // rank5：把 park 当刻钉住的任务身份一并落库（非审批动作 pinnedTask 为 null → 三列 NULL）。
+    target_task_id: pinnedTask?.id ?? null,
+    target_node_instance_id: pinnedTask?.node_instance_id ?? null,
+    target_round: pinnedTask?.round ?? null
   });
 
   if (outcome.kind === "refused") {

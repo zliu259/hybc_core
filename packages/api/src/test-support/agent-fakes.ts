@@ -13,11 +13,26 @@ export interface FakeApprovalInstance {
   status: string;
 }
 
+/**
+ * park 钉任务 / findPendingTask 解析的那一行审批任务。
+ * 只建模 resolvePinnedApprovalTask 与 loadPinnedApprovalTask 真正读的列 ——
+ * 假实现不该假装自己是 approval_task 的全量副本。
+ */
+export interface FakeApprovalTask {
+  id: number;
+  node_instance_id: number;
+  instance_id: number;
+  assignee_userid: string;
+  round: number;
+  status: string;
+}
+
 export interface FakeD1 {
   db: D1Database;
   grants: Map<string, AgentGrantRow>;
   pendings: Map<string, Record<string, unknown>>;
   approvals: Map<number, FakeApprovalInstance>;
+  tasks: Map<number, FakeApprovalTask>;
 }
 
 /**
@@ -31,6 +46,7 @@ export const createFakeD1 = (): FakeD1 => {
   const grants = new Map<string, AgentGrantRow>();
   const pendings = new Map<string, Record<string, unknown>>();
   const approvals = new Map<number, FakeApprovalInstance>();
+  const tasks = new Map<number, FakeApprovalTask>();
 
   const runInsert = (args: unknown[]) => {
     const [
@@ -79,8 +95,12 @@ export const createFakeD1 = (): FakeD1 => {
       confirm_token_hash,
       created_at,
       expires_at,
-      action_detail
-    ] = args as (string | null)[];
+      action_detail,
+      // rank5: park 钉住的审批任务身份（仅 approval approve/reject 会写；其余为 NULL）。
+      target_task_id,
+      target_node_instance_id,
+      target_round
+    ] = args as (string | number | null)[];
     if (pendings.has(id as string)) {
       throw new Error("D1_ERROR: UNIQUE constraint failed: agent_pending_action.id");
     }
@@ -99,7 +119,10 @@ export const createFakeD1 = (): FakeD1 => {
       expires_at,
       confirmed_at: null,
       executed_at: null,
-      action_detail: action_detail ?? null
+      action_detail: action_detail ?? null,
+      target_task_id: target_task_id ?? null,
+      target_node_instance_id: target_node_instance_id ?? null,
+      target_round: target_round ?? null
     });
   };
 
@@ -296,6 +319,25 @@ export const createFakeD1 = (): FakeD1 => {
             const [id] = bound as (string | number)[];
             return (approvals.get(Number(id)) ?? null) as T | null;
           }
+          // 审批任务解析。必须排在下面那条泛化的 `WHERE id = ?`（agent_grant 回退）之前，
+          // 否则按任务 id 查会被当成查 grant，静默返回 null。两条生产 SQL 都命中这里：
+          // - `WHERE id = ?`（loadPinnedApprovalTask，按钉住的 task_id 精确取）
+          // - `WHERE instance_id = ? AND assignee_userid = ? AND status = 'pending'`
+          //   （findPendingTask 与 resolvePinnedApprovalTask，取该用户在该实例的在办任务）
+          if (sql.includes("FROM approval_task")) {
+            if (sql.includes("WHERE id = ?")) {
+              const [taskId] = bound as (string | number)[];
+              return (tasks.get(Number(taskId)) ?? null) as T | null;
+            }
+            const [instanceId, assignee] = bound as (string | number)[];
+            const found = [...tasks.values()].find(
+              (t) =>
+                t.instance_id === Number(instanceId) &&
+                t.assignee_userid === assignee &&
+                t.status === "pending"
+            );
+            return (found ?? null) as T | null;
+          }
           if (sql.includes("FROM agent_pending_action")) {
             // 每个 grant 的「在途 pending」计数（park 限额）。刻意复用 pendingMatchesConjuncts：
             // 计数 SQL 的绑定顺序（grant_id, now）正好符合它「expires_at > ? 的绑定值排第二」的约定，
@@ -355,7 +397,7 @@ export const createFakeD1 = (): FakeD1 => {
     }
   } as unknown as D1Database;
 
-  return { db, grants, pendings, approvals };
+  return { db, grants, pendings, approvals, tasks };
 };
 
 export interface FakeKV {
