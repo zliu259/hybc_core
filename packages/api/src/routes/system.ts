@@ -314,6 +314,10 @@ systemRoutes.get("/integrity/reimbursement", async (c) => {
   });
 });
 
+// 存储自检会写 D1/R2/KV/Queue,并非只读探针,必须与 /ops/* 同口径鉴权,
+// 防止匿名请求滥用造成资源耗尽。公开的只读探针请用 /health。
+systemRoutes.use("/storage-check", authMiddleware, requireRoles(["super_admin", "manager"]));
+
 systemRoutes.get("/storage-check", async (c) => {
   const marker = `ping-${Date.now()}`;
   const key = `health/${marker}.txt`;

@@ -59,7 +59,7 @@ npm run dev
 关键接口：
 
 - `GET /api/v1/system/health`
-- `GET /api/v1/system/storage-check`
+- `GET /api/v1/system/storage-check`（2026-07-17 起需鉴权：super_admin/manager 的 Bearer JWT，本地可先 `/login/web` 免 code 登录拿 token；它会写 D1/R2/KV/Queue，不是匿名探针）
 
 ### API 模拟数据（全面联调）
 
