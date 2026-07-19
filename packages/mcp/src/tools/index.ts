@@ -1,6 +1,7 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 import type { HybcApiClient } from "../api-client.js";
+import { approvalWriteTools } from "./approvals-write.js";
 import { approvalTools } from "./approvals.js";
 import { contractTools } from "./contracts.js";
 import { paymentTools } from "./payments.js";
@@ -13,7 +14,8 @@ export const allToolDefs = (client: HybcApiClient): ToolDef[] => [
   ...paymentTools(client),
   ...contractTools(client),
   ...approvalTools(client),
-  ...warehouseTools(client)
+  ...warehouseTools(client),
+  ...approvalWriteTools(client)
 ];
 
 export const registerAllTools = (server: McpServer, client: HybcApiClient): void => {
