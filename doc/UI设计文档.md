@@ -1639,8 +1639,48 @@
 - 设备流同意页：`GET /api/v1/agent/device/info`、`POST /api/v1/agent/device/approve`、`POST /api/v1/agent/device/deny`
 - 本人授权管理：`GET /api/v1/agent/grants`、`POST /api/v1/agent/grants/:id/revoke`
 - 管理员全量视图：`GET /api/v1/admin/agent/grants`、`POST /api/v1/admin/agent/grants/:id/revoke`
+- 高危操作确认页：`GET /api/v1/agent/pending/by-token/:token`（凭确认令牌取件）、`POST /api/v1/agent/pending/:id/confirm`、`POST /api/v1/agent/pending/:id/reject`
 - Web API 封装：`packages/web/src/api/agent.ts`；路由模块：`packages/web/src/router/modules/agent.ts`
 
 ### 9.3 备注
 
 - P2 前存在运营性令牌发放冻结；如需临时隐藏入口，把 `packages/web/src/router/modules/agent.ts` 模块 meta 加 `showLink: false` 即可（一行）。
+
+### 9.4 高危操作确认页（P2b，2026-07-19）
+
+智能体令牌发起的高危写（当前为审批 `approve`/`reject`）不会直接落库：服务端把请求快照 park 住并向本人推送企业微信确认卡片，**只有员工本人在本页点确认，服务端才会重放原请求真正执行**。本页是「人在环」的唯一人类界面。
+
+- 页面：`/agent/confirm?token=<confirm_token>` → `packages/web/src/views/agent/confirm.vue`（**不进菜单**，唯一入口是企业微信确认卡片上的「去确认」链接）
+- 链接形态固定为 hash 路由 `${AGENT_WEB_BASE_URL}/#/agent/confirm?token=...`：web SPA 全环境 `VITE_ROUTER_HISTORY="hash"`，且 Cloudflare Pages 没有 SPA catch-all，path 形式会直接 404。
+- 确认令牌只出现在链接 query 中，卡片正文与本页正文都不回显它；令牌也**绝不**回传给发起动作的智能体（否则智能体可自行确认，人在环归零）。
+
+#### 展示内容（都是为了让员工能独立判断）
+
+- 顶部固定警示：「下面这个操作由智能体发起，尚未生效。经你确认后，系统会以你的名义执行并记入审批记录。」
+- **动作**：`{verb}{target}`，如「批准审批单 #9」。`verb` 为空说明该 `action_kind` 未在服务端登记 —— 此时如实显示「动作类型未登记（xxx）」，**绝不兜底成「批准」**。
+- **状态**、**有效期至**（park 后 10 分钟）。
+- **业务上下文**（后端按 `approval_instance` 查得，查不到则整块不渲染）：单号 / 业务类型 / 业务摘要 / 发起人。
+- **智能体意见**：单独成块并显式标注「以下意见由智能体填写，确认后将以你的名义记入审批意见。请先核对再决定。」—— 这段话会被原样写进正式审批记录并**署上员工本人的名字**，不标注就等于让员工为一段自己没读过的话背书。智能体没填时显示「智能体未填写意见」。
+
+#### 两个按钮与终态
+
+仅当 `status === "pending"` 时才渲染按钮，否则渲染 `el-result` 终态卡片。
+
+- 「确认执行」：先弹二次确认框（`ElMessageBox`，文案「即将以你的名义执行：{动作}。该操作不可撤销，确认继续？」，按钮「确认执行」/「再想想」），确认后才调 `confirm`。
+- 「拒绝」：直接调 `reject`（拒绝本身无害，不需要二次确认）。若后端返回 `rejected: false`，说明该动作已被他路结算，页面以服务端返回的真实状态覆盖并提示「该动作已被处理」，**绝不谎报「已拒绝」**。
+
+终态一律以服务端返回的视图为准，不在前端本地臆测：
+
+| status | 页面文案 | 含义 |
+| --- | --- | --- |
+| `pending` | 待确认 | 仍可操作，渲染两个按钮 |
+| `confirmed` / `executing` | 处理中 | 已认领，重放进行中 |
+| `done` | 已执行 | 重放成功 |
+| `failed` | 执行失败 | 重放跑完但目标接口返回业务错误（如「本人在该实例上没有待办」）——**动作确实执行过**，只是被业务规则拒绝 |
+| `rejected` | 已拒绝 | 本人拒绝，目标接口从未被调用 |
+| `expired` | 已过期 | 超过 10 分钟未处理 |
+
+#### 两条特殊分支
+
+- **503 可重试**：服务端重放密钥（`AGENT_REPLAY_SECRET`）暂不可用时返回 503。此时服务端**并未认领**该动作，行仍是可重试的，故页面只提示「系统尚未完成配置，请稍后重试或联系管理员」并**保持当前状态不变**，绝不让员工误以为动作已永久失败。
+- **非本人打开**：后端对「令牌有效但不属于当前登录账号」和「令牌根本不存在」一律返回 **404**（而非 403 —— 403 等于向转发链上的任何人确认「这个令牌是真的」）。页面统一显示「无法打开此确认链接 / 链接可能已失效、已被处理，或不属于当前登录账号」，且**不渲染任何操作按钮**。该端点对智能体令牌永久关闭（只读白名单 + `requireHumanSession` 双道守门）。
