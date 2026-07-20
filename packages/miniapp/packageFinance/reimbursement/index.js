@@ -154,6 +154,8 @@ const normalizeScannedUuid = (raw) => {
   return uuidMatch && isValidUuid(uuidMatch[0]) ? uuidMatch[0] : "";
 };
 
+const FORCE_SUBMIT_REASON = "申请人在小程序确认非重复并坚持提交";
+
 const UPLOAD_DEBUG_STORAGE_KEY = "reimbursement-upload-debug-trace";
 
 const extractErrorMessage = (error, fallback = "上传失败") => {
@@ -337,6 +339,55 @@ Page({
     const key = `rm-submit-${this.data.latestEnvelopeId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
     this.setData({ submitRequestKey: key });
     return key;
+  },
+
+  rotateSubmitRequestKey() {
+    const key = `rm-submit-${this.data.latestEnvelopeId}-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+    this.setData({ submitRequestKey: key });
+    return key;
+  },
+
+  isForceSubmitRequired(error) {
+    // 只认 409 + 结构化标志的组合;单独 409 无法区分 duplicate 与 in-progress,一律 fail-closed
+    const body = error && error.__responseBody;
+    return (
+      Number(error && error.__statusCode) === 409 &&
+      !!(body && body.data && body.data.require_force_submit === true)
+    );
+  },
+
+  confirmForceSubmit(payloadData) {
+    const data = payloadData || {};
+    const checks = Array.isArray(data.duplicate_checks) ? data.duplicate_checks : [];
+    const total = Number(data.duplicate_total ?? data.duplicate_count ?? checks.length);
+    const high = checks.filter((item) => item && item.risk_level === "high").length;
+    const lines = [];
+    if (total > 0) {
+      lines.push(
+        high > 0
+          ? `发现 ${total} 条疑似重复（含高风险 ${high} 条）`
+          : `发现 ${total} 条疑似重复记录`
+      );
+    } else {
+      lines.push("系统提示该报销疑似重复");
+    }
+    if (checks[0] && checks[0].summary) {
+      lines.push(`如：${checks[0].summary}`);
+    }
+    lines.push(
+      "确认不是重复报销才可坚持提交；该确认将留痕并由办公室复核，属实重复将被驳回。"
+    );
+    return new Promise((resolve) => {
+      wx.showModal({
+        title: "疑似重复报销",
+        content: lines.join("\n"),
+        confirmText: "坚持提交",
+        cancelText: "返回检查",
+        confirmColor: "#e34d59",
+        success: (res) => resolve(!!res.confirm),
+        fail: () => resolve(false)
+      });
+    });
   },
 
   runBusy(fn) {
@@ -982,22 +1033,61 @@ Page({
 
     return this.runBusy(async () => {
       wx.showLoading({ title: "提交中...", mask: true });
+      const envelopeId = this.data.latestEnvelopeId;
       const idempotencyKey = this.ensureSubmitRequestKey();
-      await request({
-        method: "POST",
-        path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}/submit`,
-        header: {
-          "Idempotency-Key": idempotencyKey
+      let forced = false;
+      try {
+        await request({
+          method: "POST",
+          path: `/api/v1/reimbursement/${envelopeId}/submit`,
+          header: {
+            "Idempotency-Key": idempotencyKey
+          }
+        });
+      } catch (error) {
+        if (!this.isForceSubmitRequired(error)) throw error;
+        wx.hideLoading();
+        await this.loadEnvelopeDetail(envelopeId).catch(() => {});
+        const confirmed = await this.confirmForceSubmit(error.__responseBody.data);
+        if (!confirmed || this.data.latestEnvelopeId !== envelopeId) {
+          vibrateWarning();
+          sayToast({ title: "已取消，可核对查重提示后再提交", icon: "none" });
+          return;
         }
-      });
-      await this.loadEnvelopeDetail(this.data.latestEnvelopeId);
+        wx.showLoading({ title: "提交中...", mask: true });
+        // 409 时服务端已 abandon 幂等记录,重发必须换新 key,避免撞残留 pending 卡死
+        const forceKey = this.rotateSubmitRequestKey();
+        await request({
+          method: "POST",
+          path: `/api/v1/reimbursement/${envelopeId}/submit`,
+          data: {
+            force_submit: true,
+            force_submit_reason: FORCE_SUBMIT_REASON
+          },
+          header: {
+            "Idempotency-Key": forceKey
+          }
+        });
+        forced = true;
+      }
+
+      await this.loadEnvelopeDetail(envelopeId);
       vibrateSuccess();
       wx.hideLoading();
+
+      if (forced) {
+        sayToast({ title: "已坚持提交，办公室将重点复核", icon: "none" });
+        return;
+      }
       sayToast({ title: "报销已提交", icon: "success" });
     }).catch((error) => {
       vibrateWarning();
       wx.hideLoading();
-      sayToast({ title: error.message || "提交失败", icon: "none", danger: true });
+      const title =
+        Number(error && error.__statusCode) === 409
+          ? "提交被拦截或正在处理中，请稍后刷新重试"
+          : error.message || "提交失败";
+      sayToast({ title, icon: "none", danger: true });
     });
   },
 

@@ -115,6 +115,12 @@ type ApiErrorShape = {
       error?: string | { message?: string };
       data?: {
         require_force_submit?: boolean;
+        duplicate_count?: number;
+        duplicate_total?: number;
+        duplicate_checks?: Array<{
+          risk_level?: string;
+          summary?: string;
+        } | null>;
       };
     };
   };
@@ -982,13 +988,46 @@ const submitEnvelope = async () => {
       });
       return;
     }
+    const duplicateData = err.response?.data?.data;
+    const rawChecks = duplicateData?.duplicate_checks;
+    const duplicateChecks = Array.isArray(rawChecks) ? rawChecks : [];
+    const duplicateTotal = Number(
+      duplicateData?.duplicate_total ?? duplicateData?.duplicate_count ?? 0
+    );
+    const highRiskCount = duplicateChecks.filter(
+      check => check?.risk_level === "high"
+    ).length;
+    const confirmLines = [
+      duplicateTotal > 0
+        ? highRiskCount > 0
+          ? `发现 ${duplicateTotal} 条疑似重复（含高风险 ${highRiskCount} 条）`
+          : `发现 ${duplicateTotal} 条疑似重复记录`
+        : "系统提示该报销疑似重复"
+    ];
+    const firstDuplicateSummary = duplicateChecks[0]?.summary;
+    if (firstDuplicateSummary) {
+      confirmLines.push(`如：${firstDuplicateSummary}`);
+    }
+    confirmLines.push(
+      "确认不是重复报销才可坚持提交；该确认将留痕并由办公室复核，属实重复将被驳回。"
+    );
+    try {
+      await ElMessageBox.confirm(confirmLines.join("\n"), "疑似重复报销", {
+        confirmButtonText: "坚持提交",
+        cancelButtonText: "返回检查",
+        type: "warning"
+      });
+    } catch {
+      message("已取消，可在下方查重明细核对后再提交", { type: "info" });
+      return;
+    }
     try {
       await submitReimbursementEnvelope(
         detail.value.id,
         {
           force_submit: true,
           force_submit_reason:
-            verifyNote.value || "申请人确认继续提交，办公室复核"
+            verifyNote.value || "申请人在网页确认非重复并坚持提交"
         },
         { idempotencyKey: createIdempotencyKey("reimbursement-submit") }
       );

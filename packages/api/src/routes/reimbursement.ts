@@ -34,6 +34,13 @@ import {
 } from "./reimbursement-channel-switch-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import { evaluateDuplicatePrecheckGate } from "./reimbursement-duplicate-gate";
+import {
+  BLOCKING_RISK_LEVELS,
+  classifyFuzzyDuplicate,
+  isBlockingRiskLevel,
+  listDuplicateCheckSummaries,
+  type DuplicateScanResult
+} from "./reimbursement-duplicate-scan";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import type { Env } from "../types/env";
@@ -649,13 +656,13 @@ const applyDuplicateChecks = async (
     invoice_no?: string | null;
     expense_date?: string | null;
   }
-): Promise<number> => {
+): Promise<DuplicateScanResult> => {
   const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
     .bind(envelopeId)
     .first<ReimbursementEnvelope>();
 
   if (!envelope || envelope.status === "deleted") {
-    return 0;
+    return { total: 0, blocking: 0 };
   }
 
   await env.DB.prepare("DELETE FROM reimbursement_duplicate_check WHERE envelope_id = ?")
@@ -663,7 +670,8 @@ const applyDuplicateChecks = async (
     .run();
 
   const now = nowIso();
-  let count = 0;
+  let total = 0;
+  let blocking = 0;
 
   const invoiceUniqueNo = hints?.invoice_unique_no?.trim() || envelope.invoice_unique_no?.trim();
   const invoiceNo = hints?.invoice_no?.trim() || envelope.invoice_no?.trim();
@@ -705,14 +713,16 @@ const applyDuplicateChecks = async (
           now
         )
         .run();
-      count += 1;
+      total += 1;
+      blocking += 1;
     }
   }
 
-  if (envelope.amount > 0) {
+  if (envelope.amount > 0 && envelope.applicant_userid !== UNASSIGNED_APPLICANT) {
     const fuzzyRows = await env.DB.prepare(
       `SELECT id, project_id, invoice_no, amount, expense_date FROM reimbursement_envelope
-       WHERE id != ? AND status != 'deleted'
+       WHERE id != ? AND status NOT IN ('deleted', 'cancelled')
+         AND applicant_userid = ?
          AND ABS(amount - ?) <= 1
          AND (
            expense_date IS NULL OR ? IS NULL OR ABS(julianday(expense_date) - julianday(?)) <= 7
@@ -720,7 +730,7 @@ const applyDuplicateChecks = async (
        ORDER BY updated_at DESC
        LIMIT 10`
     )
-       .bind(envelopeId, envelope.amount, expenseDate, expenseDate)
+      .bind(envelopeId, envelope.applicant_userid, envelope.amount, expenseDate, expenseDate)
       .all<{
         id: number;
         project_id: number;
@@ -730,17 +740,19 @@ const applyDuplicateChecks = async (
       }>();
 
     for (const row of fuzzyRows.results ?? []) {
+      const classification = classifyFuzzyDuplicate(expenseDate ?? null, row.expense_date);
       await env.DB.prepare(
         `INSERT INTO reimbursement_duplicate_check
           (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
-         VALUES (?, ?, ?, 'fuzzy', ?, 'medium', ?, ?, ?)`
+         VALUES (?, ?, ?, 'fuzzy', ?, ?, ?, ?, ?)`
       )
         .bind(
           envelopeId,
           row.id,
           row.invoice_no,
-          0.6,
-          "金额接近且时间相近，疑似重复报销",
+          classification.match_score,
+          classification.risk_level,
+          classification.summary,
           JSON.stringify({
             matched_envelope_id: row.id,
             amount: row.amount,
@@ -749,7 +761,10 @@ const applyDuplicateChecks = async (
           now
         )
         .run();
-      count += 1;
+      total += 1;
+      if (isBlockingRiskLevel(classification.risk_level)) {
+        blocking += 1;
+      }
     }
   }
 
@@ -796,7 +811,8 @@ const applyDuplicateChecks = async (
           now
         )
         .run();
-      count += 1;
+      total += 1;
+      blocking += 1;
     }
   }
 
@@ -806,7 +822,7 @@ const applyDuplicateChecks = async (
     .bind(nowIso(), envelopeId)
     .run();
 
-  return count;
+  return { total, blocking };
 };
 
 const enqueueEnvelopeAiAudit = async (
@@ -820,7 +836,7 @@ const enqueueEnvelopeAiAudit = async (
 
   if (!envelope || envelope.status === "deleted") return;
 
-  const duplicateCount = await applyDuplicateChecks(env, envelopeId);
+  const duplicateScan = await applyDuplicateChecks(env, envelopeId);
   const now = nowIso();
 
   const attachments = await env.DB.prepare(
@@ -873,7 +889,7 @@ const enqueueEnvelopeAiAudit = async (
       review_reason: options?.reason ?? null,
       rerun: options?.forceRerun === true,
       amount: envelope.amount,
-      duplicate_count: duplicateCount,
+      duplicate_count: duplicateScan.total,
       project_id: envelope.project_id,
       applicant_userid: envelope.applicant_userid,
       category: envelope.category,
@@ -3660,7 +3676,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
       )
       .run();
 
-    duplicateCount = await applyDuplicateChecks(c.env, id, hints);
+    duplicateCount = (await applyDuplicateChecks(c.env, id, hints)).total;
   }
 
   if ((task?.status === "failed" || task?.status === "timeout") && envelope.ocr_status !== "failed") {
@@ -3918,12 +3934,16 @@ reimbursementRoutes.post(
           409
         );
       }
+      const blockingPlaceholders = BLOCKING_RISK_LEVELS.map(() => "?").join(", ");
       const duplicateRow = await c.env.DB.prepare(
-        "SELECT COUNT(*) as cnt FROM reimbursement_duplicate_check WHERE envelope_id = ?"
+        `SELECT SUM(CASE WHEN risk_level IN (${blockingPlaceholders}) THEN 1 ELSE 0 END) AS blocking_cnt,
+                COUNT(*) AS total_cnt
+           FROM reimbursement_duplicate_check WHERE envelope_id = ?`
       )
-        .bind(id)
-        .first<{ cnt: number }>();
-      const duplicateCount = duplicateRow?.cnt ?? 0;
+        .bind(...BLOCKING_RISK_LEVELS, id)
+        .first<{ blocking_cnt: number | null; total_cnt: number }>();
+      const duplicateCount = duplicateRow?.blocking_cnt ?? 0;
+      const duplicateTotal = duplicateRow?.total_cnt ?? 0;
       const duplicateGate = evaluateDuplicatePrecheckGate({
         duplicateCount,
         overrideRequested: envelope.duplicate_override_requested === 1,
@@ -3942,7 +3962,9 @@ reimbursementRoutes.post(
             data: {
               duplicate_risk_unconfirmed: true,
               duplicate_count: duplicateCount,
-              can_override_duplicate: duplicateGate.canOverride
+              duplicate_total: duplicateTotal,
+              can_override_duplicate: duplicateGate.canOverride,
+              duplicate_checks: await listDuplicateCheckSummaries(c.env.DB, id, 5)
             }
           },
           400
@@ -3957,7 +3979,8 @@ reimbursementRoutes.post(
           targetId: id,
           detail: {
             reason: duplicateGate.reason,
-            duplicate_count: duplicateCount
+            duplicate_count: duplicateCount,
+            duplicate_total: duplicateTotal
           }
         });
       }
@@ -5034,17 +5057,21 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "At least one attachment is required before submit" } }, 400);
     }
 
-    const duplicateCount = await applyDuplicateChecks(c.env, id);
-    if (duplicateCount > 0 && body.force_submit !== true) {
+    const duplicateScan = await applyDuplicateChecks(c.env, id);
+    if (duplicateScan.blocking > 0 && body.force_submit !== true) {
       await abandonIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey);
       return c.json(
         {
           success: false,
           error: {
-            message:
-              "Duplicate audit found risks. Applicant must explicitly insist submit before office can continue precheck"
+            message: "存在疑似重复报销记录，请确认后决定是否坚持提交"
           },
-          data: { duplicate_count: duplicateCount, require_force_submit: true }
+          data: {
+            duplicate_count: duplicateScan.blocking,
+            duplicate_total: duplicateScan.total,
+            require_force_submit: true,
+            duplicate_checks: await listDuplicateCheckSummaries(c.env.DB, id, 5)
+          }
         },
         409
       );

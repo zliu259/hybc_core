@@ -55,7 +55,10 @@ class PrecheckStatement {
       return this.db.envelopeRow as T;
     }
     if (this.sql.includes("FROM reimbursement_duplicate_check")) {
-      return { cnt: this.db.duplicateCount } as T;
+      return {
+        blocking_cnt: this.db.blockingCount,
+        total_cnt: this.db.totalCount
+      } as T;
     }
     return null;
   }
@@ -73,7 +76,8 @@ class PrecheckStatement {
 class PrecheckDb {
   executed: CapturedStatement[] = [];
   envelopeRow: Record<string, unknown> | null = null;
-  duplicateCount = 0;
+  blockingCount = 0;
+  totalCount = 0;
 
   prepare(sql: string) {
     return new PrecheckStatement(this, sql);
@@ -133,7 +137,8 @@ describe("POST /reimbursement/:id/precheck duplicate-risk gate", () => {
   it("blocks finance without a reason and flags the override option", async () => {
     const db = new PrecheckDb();
     db.envelopeRow = buildEnvelope();
-    db.duplicateCount = 2;
+    db.blockingCount = 2;
+    db.totalCount = 3;
 
     const response = await requestPrecheck(db, { action: "approved" });
     expect(response.status).toBe(400);
@@ -142,13 +147,17 @@ describe("POST /reimbursement/:id/precheck duplicate-risk gate", () => {
       data: {
         duplicate_risk_unconfirmed: boolean;
         duplicate_count: number;
+        duplicate_total: number;
         can_override_duplicate: boolean;
+        duplicate_checks: unknown[];
       };
     };
     expect(payload.success).toBe(false);
     expect(payload.data.duplicate_risk_unconfirmed).toBe(true);
     expect(payload.data.duplicate_count).toBe(2);
+    expect(payload.data.duplicate_total).toBe(3);
     expect(payload.data.can_override_duplicate).toBe(true);
+    expect(Array.isArray(payload.data.duplicate_checks)).toBe(true);
     expect(precheckUpdates(db)).toHaveLength(0);
     expect(writeAuditLogMock).not.toHaveBeenCalled();
   });
@@ -157,7 +166,8 @@ describe("POST /reimbursement/:id/precheck duplicate-risk gate", () => {
     mockAuthState.payload = { ...mockAuthState.payload, roles: ["manager"] };
     const db = new PrecheckDb();
     db.envelopeRow = buildEnvelope();
-    db.duplicateCount = 1;
+    db.blockingCount = 1;
+    db.totalCount = 1;
 
     const response = await requestPrecheck(db, {
       action: "approved",
@@ -174,7 +184,8 @@ describe("POST /reimbursement/:id/precheck duplicate-risk gate", () => {
   it("lets finance approve with a reason and writes the audit log", async () => {
     const db = new PrecheckDb();
     db.envelopeRow = buildEnvelope();
-    db.duplicateCount = 2;
+    db.blockingCount = 2;
+    db.totalCount = 3;
 
     const response = await requestPrecheck(db, {
       action: "approved",
@@ -195,7 +206,8 @@ describe("POST /reimbursement/:id/precheck duplicate-risk gate", () => {
       targetId: 188,
       detail: {
         reason: "已人工核对票据，非重复报销",
-        duplicate_count: 2
+        duplicate_count: 2,
+        duplicate_total: 3
       }
     });
   });
@@ -204,7 +216,8 @@ describe("POST /reimbursement/:id/precheck duplicate-risk gate", () => {
     mockAuthState.payload = { ...mockAuthState.payload, roles: ["super_admin"] };
     const db = new PrecheckDb();
     db.envelopeRow = buildEnvelope();
-    db.duplicateCount = 1;
+    db.blockingCount = 1;
+    db.totalCount = 1;
 
     const response = await requestPrecheck(db, {
       action: "approved",
@@ -218,7 +231,8 @@ describe("POST /reimbursement/:id/precheck duplicate-risk gate", () => {
   it("passes without a reason when the applicant already insist-submitted", async () => {
     const db = new PrecheckDb();
     db.envelopeRow = buildEnvelope({ duplicate_override_requested: 1 });
-    db.duplicateCount = 3;
+    db.blockingCount = 3;
+    db.totalCount = 3;
 
     const response = await requestPrecheck(db, { action: "approved" });
     expect(response.status).toBe(200);

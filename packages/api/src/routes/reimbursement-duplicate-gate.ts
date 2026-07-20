@@ -1,6 +1,8 @@
 // 复核通过时的重复风险门控：
 // 常规路径要求申请人在提交时"坚持提交"（duplicate_override_requested=1）；
 // 办公室财务/超级管理员可凭必填理由直接放行（写审计日志），其余角色一律拦截。
+// duplicateCount 传拦截口径行数（risk_level ∈ BLOCKING_RISK_LEVELS，即 high/medium），
+// low 行仅提示、不计入本闸门。
 
 export interface DuplicateGateInput {
   duplicateCount: number;
