@@ -661,9 +661,39 @@ Page({
     });
   },
 
+  // Electronic envelopes hold exactly one invoice. Uploading onto a draft
+  // that already has one is ambiguous — the user may want to correct the
+  // current invoice (replace) or reimburse a second one (new envelope) —
+  // so we must ask instead of silently replacing.
+  askElectronicReuploadDecision() {
+    return new Promise((resolve) => {
+      wx.showActionSheet({
+        alertText: "当前报销单已有一张发票（一单一票）",
+        itemList: ["替换当前发票（原发票将被移除）", "另建一单报销这张发票"],
+        success: (res) => resolve(res.tapIndex === 0 ? "replace" : "create"),
+        fail: () => resolve("cancel")
+      });
+    });
+  },
+
   async uploadElectronicInvoice(filePath, fileName) {
     if (!filePath) return;
     const uploadName = fileName || `invoice-${Date.now()}`;
+    const currentDraftId = Number(this.data.latestEnvelopeId || 0);
+    const hasActiveInvoice = currentDraftId > 0 && Number(this.data.attachmentCount || 0) > 0;
+    let replaceConfirmed = false;
+    if (hasActiveInvoice) {
+      const decision = await this.askElectronicReuploadDecision();
+      this.appendUploadDebugTrace("electronic.reupload.decision", {
+        decision,
+        envelopeId: currentDraftId
+      });
+      if (decision === "cancel") {
+        sayToast({ title: "已取消上传", icon: "none" });
+        return;
+      }
+      replaceConfirmed = decision === "replace";
+    }
     this.appendUploadDebugTrace("electronic.upload.start", {
       projectId: this.data.draft.project_id,
       filePath,
@@ -681,8 +711,16 @@ Page({
     // Reuse the draft we are currently editing instead of creating a new
     // envelope on every upload. The server only honours this when it is the
     // caller's own unsubmitted electronic draft, so submitted records are
-    // never touched and stale ids simply create a fresh envelope.
-    const activeDraftId = Number(this.data.latestEnvelopeId || 0) || undefined;
+    // never touched and stale ids simply create a fresh envelope. When the
+    // draft already has an invoice, the user's choice above decides between
+    // in-place replacement (replace: true) and a fresh envelope (no id) —
+    // the server rejects an unconfirmed replacement with 409.
+    const creatingSeparateEnvelope = hasActiveInvoice && !replaceConfirmed;
+    const activeDraftId = creatingSeparateEnvelope ? undefined : currentDraftId || undefined;
+    // “另建一单”时表单里仍是上一张发票回填的数据（发票号/金额/日期），
+    // 带过去会把旧发票号写进新信封、污染查重——新信封只带项目和文件，
+    // 票面信息留给提交后的自动识别。
+    const carryDraftFields = !creatingSeparateEnvelope;
     let res;
     try {
       res = await request({
@@ -691,12 +729,15 @@ Page({
         data: {
           project_id: Number(this.data.draft.project_id || 0),
           envelope_id: activeDraftId,
+          replace: replaceConfirmed || undefined,
           file_key: file.key,
           file_name: uploadName,
-          invoice_no: this.data.draft.invoice_no || undefined,
-          amount: Number(this.data.draft.amount || 0) || undefined,
-          issue_date: this.data.draft.expense_date || undefined,
-          description: this.data.draft.description || undefined
+          invoice_no: carryDraftFields ? this.data.draft.invoice_no || undefined : undefined,
+          amount: carryDraftFields
+            ? Number(this.data.draft.amount || 0) || undefined
+            : undefined,
+          issue_date: carryDraftFields ? this.data.draft.expense_date || undefined : undefined,
+          description: carryDraftFields ? this.data.draft.description || undefined : undefined
         }
       });
     } catch (error) {

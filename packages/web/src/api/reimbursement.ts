@@ -314,35 +314,9 @@ export const getEnvelopePdfStatus = (id: number) => {
   }>("get", `/api/v1/reimbursement/${id}/pdf-status`);
 };
 
-export const uploadElectronicInvoice = (
-  data: {
-    project_id: number;
-    applicant_userid?: string;
-    file_key: string;
-    file_name?: string;
-    file_size?: number;
-    invoice_no?: string;
-    amount?: number;
-    issue_date?: string;
-    description?: string;
-  },
-  options?: { idempotencyKey?: string }
-) => {
-  return http.request<{
-    success: boolean;
-    data: {
-      id: number;
-      envelope_no: string;
-      envelope_uuid: string;
-      ocr_task_id: number;
-    };
-  }>("post", "/api/v1/reimbursement/electronic-upload", {
-    data,
-    headers: options?.idempotencyKey
-      ? { "Idempotency-Key": options.idempotencyKey }
-      : undefined
-  });
-};
+// 注意：web 端此前存在的 uploadElectronicInvoice 封装从未被引用，且缺少
+// envelope_id/replace 语义（电子渠道一单一票 + 显式替换确认），已删除。
+// 如需在 web 端接入电子上传，请按 packages/api ElectronicUploadRequest 重新封装。
 
 export const getEnvelopeOcrStatus = (id: number) => {
   return http.request<{

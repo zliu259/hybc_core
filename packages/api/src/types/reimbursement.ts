@@ -230,6 +230,10 @@ export interface ElectronicUploadRequest {
   // replaces that draft's invoice in place instead of creating a new envelope.
   // Prevents duplicate drafts when a user re-uploads on an active draft.
   envelope_id?: number;
+  // Required (true) to replace a draft that already has an active attachment.
+  // Without it such uploads are rejected with 409 ENVELOPE_HAS_ACTIVE_INVOICE
+  // so clients must surface the replace-vs-new-envelope choice to the user.
+  replace?: boolean;
 }
 
 export interface PrecheckEnvelopeRequest {
