@@ -3445,6 +3445,31 @@ reimbursementRoutes.post(
       // falls through to create-new below.
       const reusableDraft = await resolveReusableElectronicDraft(c.env.DB, body.envelope_id, auth);
       if (reusableDraft) {
+        // Electronic envelopes hold exactly one invoice, so reusing a draft
+        // that already carries an active attachment means discarding that
+        // invoice. That is only allowed when the client explicitly confirms
+        // via replace: true; otherwise reject so the user can choose between
+        // replacing the current invoice and creating a new envelope.
+        const activeAttachmentRow = await c.env.DB.prepare(
+          "SELECT COUNT(*) AS cnt FROM envelope_attachment WHERE envelope_id = ? AND status = 'active'"
+        )
+          .bind(reusableDraft.id)
+          .first<{ cnt: number }>();
+        if (Number(activeAttachmentRow?.cnt ?? 0) > 0 && body.replace !== true) {
+          await abandonIdempotentRequest(c.env.DB, idempotencyScope, auth.sub, idempotencyKey);
+          return c.json(
+            {
+              success: false,
+              error: {
+                code: "ENVELOPE_HAS_ACTIVE_INVOICE",
+                message:
+                  "该报销草稿已有一张发票，重新上传会替换原发票。请在最新版小程序中选择“替换当前发票”或“另建一单报销”后重试。"
+              }
+            },
+            409
+          );
+        }
+
         await c.env.DB.prepare(
           "UPDATE envelope_attachment SET status = 'deleted' WHERE envelope_id = ? AND status = 'active'"
         )

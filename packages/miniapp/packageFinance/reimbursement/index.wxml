@@ -59,6 +59,7 @@
       <t-button class="btn" variant="outline" bindtap="onUploadTap" loading="{{busy}}" disabled="{{busy}}">📎 上传本地文件（统一入口）</t-button>
     </view>
     <view class="upload-tip">支持 PDF、图片（JPG/PNG/WEBP/TIFF/HEIC）及 OFD/XML 等常见发票与扫描格式</view>
+    <view wx:if="{{draft.channel === 'electronic'}}" class="upload-tip">电子报销一单对应一张发票；已有发票时再上传，可选择替换原发票或另建一单报销</view>
 
     <view class="row">
       <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId || (latestEnvelopeStatus !== 'draft' && latestEnvelopeStatus !== 'unregistered')}}">📨 提交报销</t-button>
