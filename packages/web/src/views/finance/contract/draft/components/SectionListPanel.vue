@@ -23,7 +23,6 @@ const emit = defineEmits<{
     payload: { section_key?: string; title?: string; variant_key?: string }
   ): void;
   (e: "remove", id: number): void;
-  (e: "move", payload: { id: number; delta: -1 | 1 }): void;
   (e: "reorder", orderedIds: number[]): void;
 }>();
 
@@ -96,7 +95,7 @@ const submitAdd = () => {
 </script>
 
 <template>
-  <el-card>
+  <el-card class="toc-card">
     <template #header>
       <div class="panel-header">
         <span>合同条款（{{ sections.length }} 节）</span>
@@ -130,21 +129,8 @@ const submitAdd = () => {
           <el-button
             link
             size="small"
-            :disabled="idx === 0"
-            @click.stop="emit('move', { id: s.id, delta: -1 })"
-            >↑</el-button
-          >
-          <el-button
-            link
-            size="small"
-            :disabled="idx === sections.length - 1"
-            @click.stop="emit('move', { id: s.id, delta: 1 })"
-            >↓</el-button
-          >
-          <el-button
-            link
-            size="small"
             type="danger"
+            class="del"
             @click.stop="emit('remove', s.id)"
             >删</el-button
           >
@@ -190,6 +176,19 @@ const submitAdd = () => {
 </template>
 
 <style scoped>
+/* 目录卡片在 sticky 容器内纵向 flex：header/添加按钮固定，条目区内滚 */
+.toc-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.toc-card :deep(.el-card__body) {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+}
+
 .panel-header {
   display: flex;
   align-items: center;
@@ -204,11 +203,12 @@ const submitAdd = () => {
 
 .section-list li {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   align-items: center;
   justify-content: space-between;
-  padding: 4px 8px 4px 5px;
-  line-height: 22px;
+  padding: 10px 12px 10px 9px;
+  font-size: 14px;
+  line-height: 1.6;
   cursor: grab;
   border-left: 3px solid transparent;
   border-radius: 3px;
@@ -229,7 +229,7 @@ const submitAdd = () => {
 }
 
 .section-list .index {
-  min-width: 18px;
+  min-width: 22px;
   font-variant-numeric: tabular-nums;
   color: var(--el-text-color-secondary);
   text-align: right;
@@ -248,7 +248,17 @@ const submitAdd = () => {
 
 .section-list .ops {
   display: flex;
-  gap: 2px;
+  gap: 4px;
   align-items: center;
+  justify-content: flex-end;
+}
+
+/* 删除按钮 hover 才显示，减少视觉噪音 */
+.section-list .del {
+  visibility: hidden;
+}
+
+.section-list li:hover .del {
+  visibility: visible;
 }
 </style>

@@ -185,16 +185,21 @@
 - AI区：审查状态、风险等级、分数、总结、建议。
 - API 指向：`/api/v1/contract/:id`, `/api/v1/contract/:id/ai-review`
 
-#### E-1. AI 合同起草工作台 `views/finance/contract/draft/index.vue`（2026-07-22 新增，M1）
+#### E-1. 合同生成工作台 `views/finance/contract/draft/index.vue`（2026-07-22 新增 M1；2026-07-23 布局重构 UI2）
 
-- 入口：合同列表页「AI 起草」按钮；roles：`super_admin` / `manager` / `finance`；路由 `/finance/contract/draft`（showLink:false）。
+- 入口：侧边栏「实用工具 → 合同生成」（与查重对比同组）；roles：`super_admin` / `manager` / `finance`；路由 `/finance/contract/draft`。
+- 双态页面：无 `?id` 时为列表态 = 新建卡（合同类型四族 + 立场）+ 历史草稿列表（`DraftListCard`：标题/类型/立场/状态/更新时间到分钟，行操作「继续编辑」「删除」——仅 drafting/finalized 可删，converted 留档禁删并 tooltip 说明）；有 `?id` 时为工作台态。「继续编辑」写回 query 走既有加载逻辑；「返回列表」清 query 并刷新列表。
 - 立场：新建时选合同立场——`inbound`（对甲方，我方为乙方）/`outbound`（对分包商，我方为甲方）；两种立场加载不同的默认条款集合。
-- 布局：左列 = 草稿基本信息与关键字表单（项目/我方主体/对方结构化字段 + 工程关键字）+ 条款节列表（增删/上下移/状态徽标）；右列 = 逐节卡片（默认生成 / 按个性化指令生成 / AI 交叉审查 / 手工编辑）。
-- 双色高亮：关键字占位符（primary 浅底，联动关键字表单值填充）与风险片段（红/黄底 + hover 显示理由与法条）双色体系；风险数据来自 AI 输出 `risk_spans` 与规则层 `checkClauseText` 合并。
+- 顶部状态 Banner（`DraftBanner`，替代原左列基本信息卡）：左区 = 草稿标题（点击即改，blur/回车确认并保存）+ 族/立场/状态标签 + converted 态「查看正式合同」链接；右区 = 我方主体（选中即加载其开户账户并在第二行小字显示税号/法人）、开户账户、关联项目、对方单位、「对方详情」弹层（信用代码/法人/地址/联系人/电话/开户行/账号七字段，保存即落库）、「保存」「返回列表」。
+- 左列纯目录（span 6）：条款节列表 sticky 吸顶（header 与「添加节」固定、条目区内滚），条目加大（padding 10px 12px / 14px 字号），序号+标题一行、AI 状态 tag 右对齐，删除按钮 hover 才显示；保留 HTML5 拖拽排序（上下移按钮已移除）。
+- 滚动跟随（scrollspy）：IntersectionObserver 观察每个节卡片，视口内最靠上的节高亮目录；点击目录平滑跳转（500ms 抑制防跳变；smooth 静默失效环境有瞬时兜底）。注意：PureAdmin 布局给 `el-scrollbar__view` 内联 `overflow:hidden` 会劫持 sticky 滚动容器，本页以 `:has(.draft-page)` 定向放开（不影响其他页面）。
+- 右列逐节卡片（span 18）：默认生成 / 按个性化指令生成 / AI 交叉审查 / 手工编辑 / 模版变体切换。
+- 关键字编辑唯一入口 = 正文点选（关键字 popover 改值即静默落库）；原左列关键字表单块已移除。正文未出现占位符的关键字在纯文本预览抽屉底部一行提示（不阻塞导出）。
+- 双色高亮：关键字占位符（primary 浅底）与风险片段（红/黄底 + hover 显示理由与法条）双色体系；风险数据来自 AI 输出 `risk_spans` 与规则层 `checkClauseText` 合并。
 - 交叉审查：起草与审查用不同厂商模型（terra 起草 / claude-sonnet-5 审查），结果以折叠面板展示逐条问题与建议。
 - 完整性检查：弹窗列缺失节（core 红 / recommended 黄），逐条「添加该节 / 忽略（留痕）」，只提示不阻塞。
-- 页面常驻提示：AI 内容为草稿，须经负责人审核。定稿导出（docx/PDF）、转正式合同、送审在 M2 提供。
-- API 指向：`/api/v1/contract-draft`（CRUD）、`/:id/sections/:sid/generate`、`/:id/sections/:sid/review`、`/:id/completeness-check`、`/:id/completeness-ignore`、`/templates`。
+- 页面常驻提示：AI 内容为草稿，须经负责人审核；定稿转正式合同入口在右列工具条。
+- API 指向：`/api/v1/contract-draft`（CRUD+列表）、`/:id/sections/:sid/generate`、`/:id/sections/:sid/review`、`/:id/completeness-check`、`/:id/completeness-ignore`、`/templates`。
 
 #### F. 对外付款处理台（原「申请列表」）`views/finance/payment/index.vue`（2026-07-08 重构为阶段式付款处理台）
 

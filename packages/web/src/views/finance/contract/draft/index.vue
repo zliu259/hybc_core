@@ -1,5 +1,12 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onBeforeUnmount,
+  onMounted,
+  ref,
+  watch
+} from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import {
@@ -7,7 +14,6 @@ import {
   applyVariant,
   createDraft,
   getDraft,
-  getSection,
   ignoreCompletenessHint,
   listClauseTemplates,
   removeSection,
@@ -21,11 +27,6 @@ import {
   type DraftDirection
 } from "@/api/contract-draft";
 import {
-  draftStatusLabelMap,
-  draftStatusTagType,
-  familyLabelMap
-} from "./draft-labels";
-import {
   listEntities,
   listEntityBankAccounts,
   type Entity,
@@ -34,6 +35,8 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
 import DraftInitCard from "./components/DraftInitCard.vue";
+import DraftListCard from "./components/DraftListCard.vue";
+import DraftBanner from "./components/DraftBanner.vue";
 import SectionListPanel from "./components/SectionListPanel.vue";
 import SectionCard from "./components/SectionCard.vue";
 import CompletenessDialog, {
@@ -65,10 +68,14 @@ const selectedBankAccountId = ref<number | null>(null);
 const onConverted = (payload: { contract_id: number }) => {
   router.push(`/finance/contract/detail/${payload.contract_id}`);
 };
+const onViewContract = (contractId: number) => {
+  router.push(`/finance/contract/detail/${contractId}`);
+};
 
 const ai = useContractDraftAI();
 
-// 关键字字段清单（与条款库占位符对齐；甲乙方主体信息按立场自动映射）
+// 关键字字段清单（与条款库占位符对齐；甲乙方主体信息按立场自动映射）。
+// 编辑入口统一为正文点选 popover；此清单保留用于口径与「正文未出现」提示。
 const KEYWORD_FIELDS: Array<{ key: string; label: string }> = [
   { key: "project_name", label: "工程名称" },
   { key: "location", label: "工程地点" },
@@ -83,6 +90,13 @@ const KEYWORD_FIELDS: Array<{ key: string; label: string }> = [
   { key: "dispute_venue", label: "争议管辖地" }
 ];
 const keywords = ref<Record<string, string>>({});
+
+// 正文中没有出现占位符的关键字（用户没有点选入口），在纯文本预览底部提示
+const absentKeywordLabels = computed<string[]>(() =>
+  KEYWORD_FIELDS.filter(
+    f => !sections.value.some(s => s.content.includes(`{{${f.key}}}`))
+  ).map(f => f.label)
+);
 
 const ourEntity = computed(() =>
   entities.value.find(e => e.id === draft.value?.entity_id)
@@ -234,6 +248,12 @@ const loadTemplates = async (
   templates.value = await listClauseTemplates(direction, family);
 };
 
+const loadDraft = async (id: number) => {
+  const detail = await getDraft(id);
+  applyDetail(detail);
+  await loadTemplates(detail.draft.direction, detail.draft.family);
+};
+
 const onCreate = async (payload: {
   direction: DraftDirection;
   family: ContractFamily;
@@ -244,6 +264,29 @@ const onCreate = async (payload: {
   applyDetail(detail);
   await loadTemplates(detail.draft.direction, detail.draft.family);
   await router.replace({ query: { id: String(detail.draft.id) } });
+};
+
+// 历史草稿列表「继续编辑」：写回 query 后走现有加载逻辑
+const onOpenDraft = async (id: number) => {
+  await router.replace({ query: { id: String(id) } });
+  await loadDraft(id);
+};
+
+// 返回列表态：清 query 与工作台状态；DraftListCard 随 v-if 重挂载自动刷新
+const onBackToList = async () => {
+  await router.replace({ query: {} });
+  draft.value = null;
+  sections.value = [];
+  templates.value = [];
+  keywords.value = {};
+  activeSectionId.value = null;
+  missingHints.value = [];
+};
+
+// Banner 内表单变更以不可变 patch 方式合入草稿
+const onPatchDraft = (patch: Partial<ContractDraft>) => {
+  if (!draft.value) return;
+  draft.value = { ...draft.value, ...patch };
 };
 
 /** 保存草稿信息；silent=true 成功不弹 toast（关键字校验告警仍弹）。所选开户账户按方向并入 keywords。 */
@@ -406,24 +449,6 @@ const onReorder = async (orderedIds: number[]) => {
   }
 };
 
-const onMoveSection = async (payload: { id: number; delta: -1 | 1 }) => {
-  if (!draft.value) return;
-  const idx = sections.value.findIndex(s => s.id === payload.id);
-  const swapIdx = idx + payload.delta;
-  if (idx < 0 || swapIdx < 0 || swapIdx >= sections.value.length) return;
-  const a = sections.value[idx];
-  const b = sections.value[swapIdx];
-  const [updatedA, updatedB] = await Promise.all([
-    updateSection(draft.value.id, a.id, { sort_order: b.sort_order }),
-    updateSection(draft.value.id, b.id, { sort_order: a.sort_order })
-  ]);
-  sections.value = sections.value
-    .map(s =>
-      s.id === updatedA.id ? updatedA : s.id === updatedB.id ? updatedB : s
-    )
-    .sort((x, y) => x.sort_order - y.sort_order || x.id - y.id);
-};
-
 const runCompleteness = async () => {
   if (!draft.value) return;
   checking.value = true;
@@ -473,11 +498,75 @@ const onHintIgnore = async (sectionKey: string) => {
   applyDetail(detail);
 };
 
+// —— 目录滚动跟随（scrollspy）：视口内最靠上的节高亮；点击跳转短暂抑制防跳变 ——
+let sectionObserver: IntersectionObserver | null = null;
+const visibleSectionIds = new Set<number>();
+let scrollspySuppressedUntil = 0;
+
+const updateActiveFromViewport = () => {
+  let topId: number | null = null;
+  let topY = Number.POSITIVE_INFINITY;
+  for (const id of visibleSectionIds) {
+    const el = document.getElementById(`section-${id}`);
+    if (!el) continue;
+    const y = el.getBoundingClientRect().top;
+    if (y < topY) {
+      topY = y;
+      topId = id;
+    }
+  }
+  if (topId != null) activeSectionId.value = topId;
+};
+
+const setupScrollspy = () => {
+  sectionObserver?.disconnect();
+  visibleSectionIds.clear();
+  if (typeof IntersectionObserver === "undefined" || !sections.value.length)
+    return;
+  sectionObserver = new IntersectionObserver(entries => {
+    for (const entry of entries) {
+      const id = Number(entry.target.id.replace("section-", ""));
+      if (!Number.isInteger(id)) continue;
+      if (entry.isIntersecting) visibleSectionIds.add(id);
+      else visibleSectionIds.delete(id);
+    }
+    if (Date.now() < scrollspySuppressedUntil) return;
+    updateActiveFromViewport();
+  });
+  for (const s of sections.value) {
+    const el = document.getElementById(`section-${s.id}`);
+    if (el) sectionObserver.observe(el);
+  }
+};
+
+// 节集合变化（加载/增删/返回列表）后重建观察
+watch(
+  () => sections.value.map(s => s.id).join(","),
+  async () => {
+    await nextTick();
+    setupScrollspy();
+  }
+);
+
+onBeforeUnmount(() => {
+  sectionObserver?.disconnect();
+  sectionObserver = null;
+});
+
 const onSelectSection = (id: number) => {
   activeSectionId.value = id;
-  document
-    .getElementById(`section-${id}`)
-    ?.scrollIntoView({ behavior: "smooth", block: "start" });
+  scrollspySuppressedUntil = Date.now() + 500;
+  const el = document.getElementById(`section-${id}`);
+  if (!el) return;
+  el.scrollIntoView({ behavior: "smooth", block: "start" });
+  // 部分环境（reduced-motion / 无合成器动画）smooth 会静默不滚动：
+  // 短延时检测未发生位移则瞬时跳转兜底（已在目标位时兜底无副作用）
+  const initialTop = el.getBoundingClientRect().top;
+  window.setTimeout(() => {
+    if (Math.abs(el.getBoundingClientRect().top - initialTop) < 2) {
+      el.scrollIntoView({ block: "start" });
+    }
+  }, 150);
 };
 
 onMounted(async () => {
@@ -487,168 +576,45 @@ onMounted(async () => {
   ]);
   const id = Number(route.query.id);
   if (Number.isInteger(id) && id > 0) {
-    const detail = await getDraft(id);
-    applyDetail(detail);
-    await loadTemplates(detail.draft.direction, detail.draft.family);
+    await loadDraft(id);
   }
 });
 </script>
 
 <template>
   <div class="draft-page">
-    <DraftInitCard v-if="!draft" @create="onCreate" />
+    <template v-if="!draft">
+      <DraftInitCard @create="onCreate" />
+      <DraftListCard @open="onOpenDraft" />
+    </template>
     <template v-else>
+      <DraftBanner
+        v-model:bank-account-id="selectedBankAccountId"
+        :draft="draft"
+        :entities="entities"
+        :projects="projects"
+        :bank-accounts="entityBankAccounts"
+        :saving="saving"
+        @patch="onPatchDraft"
+        @save="saveDraftMeta"
+        @back="onBackToList"
+        @view-contract="onViewContract"
+      />
       <el-row :gutter="12">
-        <el-col :span="8">
-          <el-card class="meta-card">
-            <template #header>
-              <div class="meta-header">
-                <span class="meta-title">
-                  {{
-                    draft.direction === "inbound"
-                      ? "对甲方合同"
-                      : "对分包商合同"
-                  }}
-                  <el-tag size="small">{{
-                    familyLabelMap[draft.family] ?? draft.family
-                  }}</el-tag>
-                  <el-tag
-                    size="small"
-                    :type="draftStatusTagType[draft.status] ?? 'info'"
-                  >
-                    {{ draftStatusLabelMap[draft.status] ?? draft.status }}
-                  </el-tag>
-                  <el-button
-                    v-if="
-                      draft.status === 'converted' &&
-                      draft.converted_contract_id
-                    "
-                    link
-                    type="primary"
-                    @click="
-                      router.push(
-                        `/finance/contract/detail/${draft.converted_contract_id}`
-                      )
-                    "
-                  >
-                    查看正式合同
-                  </el-button>
-                </span>
-                <el-button
-                  size="small"
-                  type="primary"
-                  :loading="saving"
-                  @click="saveDraftMeta"
-                  >保存信息</el-button
-                >
-              </div>
-            </template>
-            <el-form label-width="96px" size="small">
-              <el-form-item label="草稿标题">
-                <el-input v-model="draft.title" maxlength="120" />
-              </el-form-item>
-              <el-form-item label="关联项目">
-                <el-select
-                  v-model="draft.project_id"
-                  clearable
-                  filterable
-                  style="width: 100%"
-                >
-                  <el-option
-                    v-for="p in projects"
-                    :key="p.id"
-                    :value="p.id"
-                    :label="p.project_name"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="我方主体">
-                <el-select
-                  v-model="draft.entity_id"
-                  clearable
-                  filterable
-                  style="width: 100%"
-                >
-                  <el-option
-                    v-for="e in entities"
-                    :key="e.id"
-                    :value="e.id"
-                    :label="e.entity_name"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-descriptions
-                v-if="ourEntity"
-                class="entity-descriptions"
-                size="small"
-                :column="1"
-              >
-                <el-descriptions-item label="统一社会信用代码">
-                  {{ ourEntity.tax_id || "—" }}
-                </el-descriptions-item>
-                <el-descriptions-item label="法定代表人">
-                  {{ ourEntity.legal_person || "—" }}
-                </el-descriptions-item>
-              </el-descriptions>
-              <el-form-item v-if="ourEntity" label="开户账户">
-                <el-select
-                  v-model="selectedBankAccountId"
-                  clearable
-                  filterable
-                  placeholder="不选则用主账户"
-                  style="width: 100%"
-                >
-                  <el-option
-                    v-for="a in entityBankAccounts"
-                    :key="a.id"
-                    :value="a.id"
-                    :label="`${a.bank_name} ${a.account_no}`"
-                  />
-                </el-select>
-              </el-form-item>
-              <el-form-item label="对方单位">
-                <el-input v-model="draft.counterparty_name" maxlength="120" />
-              </el-form-item>
-              <el-form-item label="信用代码">
-                <el-input
-                  v-model="draft.counterparty_credit_code"
-                  maxlength="32"
-                />
-              </el-form-item>
-              <el-form-item label="法定代表人">
-                <el-input
-                  v-model="draft.counterparty_legal_person"
-                  maxlength="60"
-                />
-              </el-form-item>
-              <el-form-item label="对方地址">
-                <el-input
-                  v-model="draft.counterparty_address"
-                  maxlength="200"
-                />
-              </el-form-item>
-              <el-divider>合同关键字</el-divider>
-              <el-form-item
-                v-for="f in KEYWORD_FIELDS"
-                :key="f.key"
-                :label="f.label"
-              >
-                <el-input v-model="keywords[f.key]" />
-              </el-form-item>
-            </el-form>
-          </el-card>
-          <SectionListPanel
-            :sections="sections"
-            :templates="templates"
-            :active-id="activeSectionId"
-            @select="onSelectSection"
-            @add="onAddSection"
-            @remove="onRemoveSection"
-            @move="onMoveSection"
-            @reorder="onReorder"
-          />
+        <el-col :span="6">
+          <div class="toc-sticky">
+            <SectionListPanel
+              :sections="sections"
+              :templates="templates"
+              :active-id="activeSectionId"
+              @select="onSelectSection"
+              @add="onAddSection"
+              @remove="onRemoveSection"
+              @reorder="onReorder"
+            />
+          </div>
         </el-col>
-        <el-col :span="16">
+        <el-col :span="18">
           <div class="toolbar">
             <el-alert
               type="info"
@@ -711,35 +677,33 @@ onMounted(async () => {
         :title="draft.title"
         :sections="sections"
         :keyword-values="keywordValues"
+        :absent-keyword-labels="absentKeywordLabels"
       />
     </template>
   </div>
 </template>
+
+<style>
+/* PureAdmin 布局给 el-scrollbar__view 内联了 overflow:hidden，会把 sticky 的
+   滚动容器劫持为不滚动的 view，导致目录无法吸顶；仅当本页挂载（:has 命中
+   .draft-page）时放开该 view 的 overflow，不影响其他页面。 */
+.app-main .el-scrollbar__view:has(.draft-page) {
+  overflow: visible !important;
+}
+</style>
 
 <style scoped>
 .draft-page {
   padding: 12px;
 }
 
-.meta-card {
-  margin-bottom: 12px;
-}
-
-.entity-descriptions {
-  padding-left: 12px;
-  margin-bottom: 12px;
-}
-
-.meta-header {
+/* 目录列 sticky：下滚时目录固定可见，条目区在卡片内自行滚动 */
+.toc-sticky {
+  position: sticky;
+  top: 8px;
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.meta-title {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
 }
 
 .toolbar {

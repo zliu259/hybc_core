@@ -9,6 +9,8 @@ const props = defineProps<{
   title: string;
   sections: ContractDraftSection[];
   keywordValues: Record<string, string>;
+  /** 正文中未出现的关键字标签（用户没有点选入口），仅提示不阻塞 */
+  absentKeywordLabels?: string[];
 }>();
 const emit = defineEmits<{
   (e: "update:visible", value: boolean): void;
@@ -46,6 +48,16 @@ const copyAll = async () => {
       >
     </div>
     <pre class="plain-preview">{{ plainText }}</pre>
+    <el-text
+      v-if="props.absentKeywordLabels?.length"
+      class="absent-hint"
+      size="small"
+      type="info"
+    >
+      以下关键字未出现在当前正文中（无点选入口，不影响导出）：{{
+        props.absentKeywordLabels.join("、")
+      }}
+    </el-text>
   </el-drawer>
 </template>
 
@@ -62,5 +74,12 @@ const copyAll = async () => {
   line-height: 1.9;
   word-break: break-all;
   white-space: pre-wrap;
+}
+
+.absent-hint {
+  display: block;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px dashed var(--el-border-color);
 }
 </style>
