@@ -2,6 +2,7 @@
 
 - 日期：2026-07-22
 - 状态：已获 owner 批准的设计（范本已提供并拆解；outbound 待管理层会议校准）
+- **M2 范围修订（2026-07-22 owner）**：不做 PDF 导出（合同送对方审阅需可编辑 docx）；新增生产样本挖掘驱动的条款库 v2 与设备租赁族，见 `2026-07-22-contract-sample-findings.md` 与 M2 计划。
 - 范围：packages/api + packages/web + packages/miniapp；新增 CF `[ai]` binding
 
 ## 1. 背景与目标
