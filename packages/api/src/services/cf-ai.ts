@@ -182,14 +182,18 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
 
 /** cron 兜底：重试/超时后回到 pending 的 cf_ai 任务没有新事件，靠扫描补执行。 */
 export const sweepPendingCfAiTasks = async (env: Env, limit = 5): Promise<void> => {
-  const placeholders = CF_AI_TASK_TYPES.map(() => "?").join(", ");
-  const rows = await env.DB.prepare(
-    `SELECT id FROM task_queue WHERE status = 'pending' AND task_type IN (${placeholders})
-      ORDER BY id ASC LIMIT ?`
-  )
-    .bind(...CF_AI_TASK_TYPES, limit)
-    .all<{ id: number }>();
-  for (const row of rows.results ?? []) {
-    await executeCfAiTask(env, row.id);
+  try {
+    const placeholders = CF_AI_TASK_TYPES.map(() => "?").join(", ");
+    const rows = await env.DB.prepare(
+      `SELECT id FROM task_queue WHERE status = 'pending' AND task_type IN (${placeholders})
+        ORDER BY id ASC LIMIT ?`
+    )
+      .bind(...CF_AI_TASK_TYPES, limit)
+      .all<{ id: number }>();
+    for (const row of rows.results ?? []) {
+      await executeCfAiTask(env, row.id);
+    }
+  } catch (err) {
+    console.error("sweepPendingCfAiTasks failed", err);
   }
 };
