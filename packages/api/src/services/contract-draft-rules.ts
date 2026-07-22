@@ -51,10 +51,71 @@ const RULE_PATTERNS: RulePattern[] = [
     level: "yellow",
     reason: "逾期违约金费率畸高（年化超36%），存在被法院调减风险",
     legal_basis: "《民法典》第585条"
+  },
+  {
+    re: /背靠背/,
+    level: "red",
+    reason: "背靠背付款条款：以第三方付款为付款前提，对中小企业无效",
+    legal_basis: "最高人民法院2024年批复（法释〔2024〕11号）"
+  },
+  {
+    re: /按(照)?[^。；]{0,8}回款进度[^。；]{0,8}(同比例)?[^。；]{0,12}支付/,
+    level: "red",
+    reason: "背靠背付款变体：付款与上游回款进度挂钩且无兜底期限",
+    legal_basis: "最高人民法院2024年批复（法释〔2024〕11号）"
+  },
+  {
+    re: /以[^。；]{0,14}(拨付|支付)的?[^。；]{0,8}(款项|工程款|进度款|计量款)[^。；]{0,6}(为依据|为前提|为条件)/,
+    level: "red",
+    reason: "背靠背付款变体：以上游拨付款项为付款依据",
+    legal_basis: "最高人民法院2024年批复（法释〔2024〕11号）"
+  },
+  {
+    re: /不(再)?(向[^。；]{0,6})?(支付|主张|承担)任何(形式的?)?(违约金|违约责任|利息|赔偿)/,
+    level: "red",
+    reason: "预先放弃/免除违约责任的条款：单方免责或迫使对方弃权",
+    legal_basis: "《民法典》第497条（格式条款不合理免责无效）"
+  },
+  {
+    re: /不得[^。；]{0,14}(拒绝|停止|中止)(履行|交付|供货|施工|作业)/,
+    level: "yellow",
+    reason: "预先放弃同时履行抗辩权：对方违约时我方仍被迫继续履行",
+    legal_basis: "《民法典》第525-527条（履行抗辩权）"
+  },
+  {
+    re: /一切(安全)?事故[^。；]{0,10}(均)?与[^。；]{0,6}无关/,
+    level: "red",
+    reason: "绝对免责条款：不区分过错方的事故免责",
+    legal_basis: "《民法典》第506条"
+  },
+  {
+    re: /(事故|安全)[^。；]{0,10}责任主体(为|是)(承包人|乙方|分包人|劳务企业)/,
+    level: "red",
+    reason: "以合同预先固定事故责任主体，法定安全责任不可约定转移",
+    legal_basis: "《安全生产法》《民法典》第1165条"
+  },
+  {
+    re: /每(拖延|逾期|延误)?一?(日|天)[^。；]{0,16}[0-9]+(?:\.[0-9]+)?\s*%/,
+    level: "yellow",
+    reason: "按日百分比违约金费率畸高（如5%/日月内即超本金），存在被调减风险",
+    legal_basis: "《民法典》第585条"
+  },
+  {
+    re: /年底前(支付|付清|结清|付款)/,
+    level: "yellow",
+    reason: "模糊账期：『年底前』无固定日期，存在被拖延的解释空间",
+    legal_basis: ""
+  },
+  {
+    re: /自?发现[^。；]{0,8}之日起[^。；]{0,10}(日|天)内[^。；]{0,10}(异议|索赔)/,
+    level: "yellow",
+    reason: "质量异议期以『发现之日』起算，责任敞口无实质时间边界",
+    legal_basis: ""
   }
 ];
 
 const WARRANTY_RE = /(质量保证金|质保金)[^。；]{0,20}?([0-9]+(?:\.[0-9]+)?)\s*%/g;
+const WARRANTY_REVERSED_RE = /([0-9]+(?:\.[0-9]+)?)\s*%的?(质量保证金|质保金)/g;
 
 const firstMatchText = (text: string, re: RegExp): string => {
   const m = text.match(re);
@@ -77,6 +138,18 @@ export const checkClauseText = (text: string): RiskAnnotation[] => {
   }
   for (const m of text.matchAll(WARRANTY_RE)) {
     const ratio = Number(m[2]);
+    if (Number.isFinite(ratio) && ratio > 3) {
+      findings.push({
+        text: m[0],
+        level: "red",
+        reason: "质量保证金超过结算总额3%上限，超出部分不受支持",
+        legal_basis: "《建设工程质量保证金管理办法》",
+        source: "rule"
+      });
+    }
+  }
+  for (const m of text.matchAll(WARRANTY_REVERSED_RE)) {
+    const ratio = Number(m[1]);
     if (Number.isFinite(ratio) && ratio > 3) {
       findings.push({
         text: m[0],
