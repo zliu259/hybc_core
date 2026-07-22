@@ -136,8 +136,7 @@ export default {
           component: () => import("@/views/finance/contract/draft/index.vue"),
           meta: {
             title: "AI 合同起草",
-            roles: ["super_admin", "manager", "finance"],
-            showLink: false
+            roles: ["super_admin", "manager", "finance"]
           }
         },
         {
