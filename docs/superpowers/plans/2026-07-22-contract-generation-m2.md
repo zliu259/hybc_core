@@ -432,14 +432,14 @@ npx wrangler d1 execute hybcdg-prod-db --local --command "SELECT family, COUNT(*
 npx wrangler d1 execute hybcdg-prod-db --local --command "SELECT COUNT(*) AS n FROM contract_clause_template WHERE family='pipe_jacking' AND section_key IN ('service_notice','deduction_procedure','change_management')"
 npx wrangler d1 execute hybcdg-prod-db --local --command "SELECT version FROM contract_clause_template WHERE family='pipe_jacking' AND section_key='payment' AND direction='inbound'"
 ```
-Expected: `pipe_jacking=40`（36+4 新行）、`equipment_lease=19`；三节 COUNT=4（service_notice both / deduction inbound+outbound / change both）；payment inbound version=2。M1 既有草稿数据不受影响（contract_draft 新列默认 pipe_jacking）。
+Expected: `pipe_jacking=40`（36+4 新行）、`equipment_lease=20`；三节 COUNT=4（service_notice both / deduction inbound+outbound / change both）；payment inbound version=2。M1 既有草稿数据不受影响（contract_draft 新列默认 pipe_jacking）。
 
 - [ ] **Step 3: 幂等复跑验证**
 
 ```bash
 npx wrangler d1 execute hybcdg-prod-db --local --file migrations/0065_contract_family_and_clause_v2.sql
 ```
-Expected: **报错**（表重建段的 `ALTER TABLE contract_draft ADD COLUMN` 重复执行会失败）——这是预期的：D1 迁移机制保证单次执行，本迁移**不要求可重跑**（与 0062 同类）。此步只为确认失败模式是"列已存在"而非数据损坏；执行后再查 `SELECT COUNT(*) FROM contract_clause_template` 应仍为 59。
+Expected: **报错**（表重建段的 `ALTER TABLE contract_draft ADD COLUMN` 重复执行会失败）——这是预期的：D1 迁移机制保证单次执行，本迁移**不要求可重跑**（与 0062 同类）。此步只为确认失败模式是"列已存在"而非数据损坏；执行后再查 `SELECT COUNT(*) FROM contract_clause_template` 应仍为 60。
 
 - [ ] **Step 4: Commit**
 
