@@ -1,4 +1,5 @@
 import { Hono } from "hono";
+import { verify } from "hono/jwt";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import {
@@ -44,6 +45,30 @@ uploadRoutes.post("/sign", authMiddleware, async (c) => {
       contentType: body.contentType ?? "application/octet-stream",
       uploadUrl: buildSignedObjectUrl(key, expiresAt, signature, uploadBaseUrl),
       fileUrl: buildObjectUrl(key, uploadBaseUrl)
+    }
+  });
+});
+
+uploadRoutes.post("/sign-download", authMiddleware, async (c) => {
+  const body = (await c.req.json().catch(() => null)) as { key?: unknown } | null;
+  const key = typeof body?.key === "string" ? body.key : "";
+  if (!key) {
+    return c.json(
+      {
+        success: false,
+        error: { message: "缺少 key" }
+      },
+      400
+    );
+  }
+
+  const expiresAt = Date.now() + 15 * 60 * 1000;
+  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
+
+  return c.json({
+    success: true,
+    data: {
+      url: buildSignedObjectUrl(key, expiresAt, signature, getUploadBaseUrl(c.env, c.req.url))
     }
   });
 });
@@ -134,6 +159,46 @@ uploadRoutes.get("/object/:key{.+}", async (c) => {
       400
     );
   }
+
+  // M2：仅对 AI 生成合同文书（contract-draft/ 前缀）强制鉴权；
+  // 其余前缀行为不变（全量收紧记入 M3 待办）。
+  // 三模式任一放行：HMAC 签名 query / x-api-key（runner）/ Bearer JWT。
+  if (key.startsWith("contract-draft/")) {
+    const expires = Number(c.req.query("expires") ?? 0);
+    const signature = c.req.query("signature") ?? "";
+    let allowed = false;
+    // expires 为毫秒时间戳，与 POST /sign、PUT /object 既有口径一致
+    if (expires > Date.now() && signature) {
+      const expected = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expires);
+      allowed = expected === signature;
+    }
+    if (!allowed) {
+      const apiKey = c.req.header("x-api-key");
+      if (apiKey && apiKey === c.env.TASK_API_KEY) allowed = true;
+    }
+    if (!allowed) {
+      const authz = c.req.header("authorization") ?? "";
+      const token = authz.startsWith("Bearer ") ? authz.slice(7) : "";
+      if (token) {
+        try {
+          await verify(token, c.env.JWT_SECRET, "HS256");
+          allowed = true;
+        } catch {
+          allowed = false;
+        }
+      }
+    }
+    if (!allowed) {
+      return c.json(
+        {
+          success: false,
+          error: { message: "该文件需要授权访问" }
+        },
+        401
+      );
+    }
+  }
+
   const object = await c.env.FILES.get(key);
   if (!object || !object.body) {
     return c.json(

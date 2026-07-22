@@ -16,7 +16,11 @@ import {
   type ContractAmountChange,
   type ContractDetail
 } from "@/api/contract";
-import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import {
+  createUploadSignature,
+  resolveUploadUrl,
+  signDownloadUrl
+} from "@/api/upload";
 import {
   listEntities,
   listEntityBankAccounts,
@@ -332,6 +336,15 @@ const serializeAttachments = (): string => {
 
 const fileUrl = (fileKey: string) =>
   resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
+
+const openAttachment = async (fileKey: string) => {
+  try {
+    const res = await signDownloadUrl(fileKey);
+    window.open(resolveUploadUrl(res.data.url), "_blank");
+  } catch {
+    window.open(fileUrl(fileKey), "_blank");
+  }
+};
 
 const approvalDialogVisible = ref(false);
 const approvalSummary = ref("");
@@ -841,17 +854,15 @@ onMounted(async () => {
             <el-table-column label="操作" width="220" fixed="right">
               <template #default="scope">
                 <el-link
-                  :href="fileUrl(scope.row.file_key)"
-                  target="_blank"
                   type="primary"
+                  @click="openAttachment(scope.row.file_key)"
                 >
                   预览
                 </el-link>
                 <el-link
-                  :href="fileUrl(scope.row.file_key)"
-                  target="_blank"
                   type="success"
                   style="margin-left: 12px"
+                  @click="openAttachment(scope.row.file_key)"
                 >
                   下载
                 </el-link>

@@ -31,3 +31,11 @@ export const createUploadSignature = (data: {
 };
 
 export const resolveUploadUrl = (url: string) => toAbsoluteApiUrl(url);
+
+export const signDownloadUrl = (key: string) => {
+  return http.request<{ success: boolean; data: { url: string } }>(
+    "post",
+    "/api/v1/upload/sign-download",
+    { data: { key } }
+  );
+};
