@@ -25,7 +25,9 @@ export const sectionSourceLabelMap: Record<string, string> = {
 
 export const familyLabelMap: Record<string, string> = {
   pipe_jacking: "顶管施工",
-  equipment_lease: "设备租赁/机械施工"
+  equipment_lease: "设备租赁/机械施工",
+  labor_service: "劳务分包",
+  materials_sale: "材料购销"
 };
 
 export const requiredLevelLabelMap: Record<string, string> = {

@@ -1,7 +1,11 @@
 import { http } from "@/utils/http";
 
 export type DraftDirection = "inbound" | "outbound";
-export type ContractFamily = "pipe_jacking" | "equipment_lease";
+export type ContractFamily =
+  | "pipe_jacking"
+  | "equipment_lease"
+  | "labor_service"
+  | "materials_sale";
 export type SectionAiStatus = "generating" | "done" | "error" | null;
 
 export type RiskAnnotation = {
@@ -43,6 +47,7 @@ export type ContractDraftSection = {
   draft_id: number;
   section_key: string;
   title: string;
+  variant_key: string;
   source: "default_template" | "ai_generated" | "manual";
   instruction: string | null;
   content: string;
@@ -63,6 +68,8 @@ export type ClauseTemplate = {
   family: ContractFamily;
   section_key: string;
   direction: DraftDirection | "both";
+  variant_key: string;
+  variant_label: string;
   required_level: "core" | "recommended" | "optional";
   title: string;
   body_template: string;
@@ -139,7 +146,7 @@ export async function deleteDraft(id: number): Promise<void> {
 
 export async function addSection(
   draftId: number,
-  payload: { section_key?: string; title?: string }
+  payload: { section_key?: string; title?: string; variant_key?: string }
 ): Promise<ContractDraftSection> {
   const res = await http.request<{
     success: boolean;
@@ -170,6 +177,22 @@ export async function updateSection(
   }>("put", `/api/v1/contract-draft/${draftId}/sections/${sectionId}`, {
     data
   });
+  return res.data;
+}
+
+export async function applyVariant(
+  draftId: number,
+  sectionId: number,
+  variantKey: string
+): Promise<ContractDraftSection> {
+  const res = await http.request<{
+    success: boolean;
+    data: ContractDraftSection;
+  }>(
+    "put",
+    `/api/v1/contract-draft/${draftId}/sections/${sectionId}/apply-variant`,
+    { data: { variant_key: variantKey } }
+  );
   return res.data;
 }
 
@@ -239,9 +262,7 @@ export type FixedSection = {
   content: string;
 };
 
-export async function finalizeDraft(
-  id: number
-): Promise<{
+export async function finalizeDraft(id: number): Promise<{
   draft_id: number;
   fixed_sections: FixedSection[];
   unresolved_keys: string[];

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { reactive } from "vue";
+import { computed, reactive } from "vue";
 import type { ContractFamily, DraftDirection } from "@/api/contract-draft";
+import { familyLabelMap } from "../draft-labels";
 
 const emit = defineEmits<{
   (
@@ -20,6 +21,22 @@ const form = reactive({
   title: "",
   counterparty_name: ""
 });
+
+const familyOptions: ContractFamily[] = [
+  "pipe_jacking",
+  "equipment_lease",
+  "labor_service",
+  "materials_sale"
+];
+
+const familyHintMap: Record<ContractFamily, string> = {
+  pipe_jacking: "对甲方=我方承接顶管施工收款；对分包商=我方发包给分包商",
+  equipment_lease:
+    "对甲方=我方出租设备/带机施工收款；对分包商=我方对外承租付款",
+  labor_service: "对甲方=我方承接劳务收款；对分包商=我方发包给劳务队",
+  materials_sale: "对甲方=我方销售材料收款；对分包商=我方对外采购付款"
+};
+const familyHint = computed(() => familyHintMap[form.family]);
 </script>
 
 <template>
@@ -27,17 +44,17 @@ const form = reactive({
     <template #header>新建 AI 合同草稿</template>
     <el-form label-width="96px">
       <el-form-item label="合同类型" required>
-        <el-radio-group v-model="form.family">
-          <el-radio-button value="pipe_jacking">顶管施工协议</el-radio-button>
-          <el-radio-button value="equipment_lease"
-            >设备租赁/机械施工</el-radio-button
-          >
-        </el-radio-group>
+        <el-select v-model="form.family" style="width: 100%">
+          <el-option
+            v-for="f in familyOptions"
+            :key="f"
+            :value="f"
+            :label="familyLabelMap[f] ?? f"
+          />
+        </el-select>
       </el-form-item>
       <el-form-item>
-        <el-text size="small" type="info"
-          >设备租赁族：对甲方=我方出租/带机施工收款；对分包商=我方对外承租付款</el-text
-        >
+        <el-text size="small" type="info">{{ familyHint }}</el-text>
       </el-form-item>
       <el-form-item label="合同立场" required>
         <el-radio-group v-model="form.direction">

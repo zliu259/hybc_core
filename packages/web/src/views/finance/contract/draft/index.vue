@@ -4,6 +4,7 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import {
   addSection as apiAddSection,
+  applyVariant,
   createDraft,
   getDraft,
   getSection,
@@ -234,12 +235,36 @@ const onSave = async (payload: { sectionId: number; content: string }) => {
 const onAddSection = async (payload: {
   section_key?: string;
   title?: string;
+  variant_key?: string;
 }) => {
   if (!draft.value) return;
   const section = await apiAddSection(draft.value.id, payload);
   sections.value = [...sections.value, section].sort(
     (a, b) => a.sort_order - b.sort_order || a.id - b.id
   );
+};
+
+// 同 section_key 的可用模版变体（direction 特定行优先于 both，按 variant_key 去重）
+const variantsOf = (sectionKey: string): ClauseTemplate[] => {
+  const byKey = new Map<string, ClauseTemplate>();
+  for (const t of templates.value) {
+    if (t.section_key !== sectionKey) continue;
+    const existing = byKey.get(t.variant_key);
+    if (!existing || (existing.direction === "both" && t.direction !== "both"))
+      byKey.set(t.variant_key, t);
+  }
+  return [...byKey.values()];
+};
+
+const onApplyVariant = async (payload: {
+  sectionId: number;
+  variantKey: string;
+}) => {
+  if (!draft.value) return;
+  refreshSection(
+    await applyVariant(draft.value.id, payload.sectionId, payload.variantKey)
+  );
+  ElMessage.success("已切换模版");
 };
 
 const onRemoveSection = async (sectionId: number) => {
@@ -494,9 +519,11 @@ onMounted(async () => {
             :keyword-values="keywordValues"
             :ai-state="ai.stateOf(s.id)"
             :readonly="draft.status !== 'drafting'"
+            :variants="variantsOf(s.section_key)"
             @generate="onGenerate"
             @review="onReview"
             @save="onSave"
+            @apply-variant="onApplyVariant"
           />
         </el-col>
       </el-row>

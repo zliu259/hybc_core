@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import type { ContractDraftSection } from "@/api/contract-draft";
+import { ElMessageBox } from "element-plus";
+import type {
+  ClauseTemplate,
+  ContractDraftSection
+} from "@/api/contract-draft";
 import { buildRenderSegments, parseRiskAnnotations } from "../lib/segments";
 import type { SectionAiState } from "../composables/useContractDraftAI";
 import { sectionSourceLabelMap, toDraftLabel } from "../draft-labels";
@@ -10,11 +14,16 @@ const props = defineProps<{
   keywordValues: Record<string, string>;
   aiState: SectionAiState;
   readonly?: boolean;
+  variants?: ClauseTemplate[];
 }>();
 const emit = defineEmits<{
   (e: "generate", payload: { sectionId: number; instruction: string }): void;
   (e: "review", sectionId: number): void;
   (e: "save", payload: { sectionId: number; content: string }): void;
+  (
+    e: "apply-variant",
+    payload: { sectionId: number; variantKey: string }
+  ): void;
 }>();
 
 const instruction = ref(props.section.instruction ?? "");
@@ -25,6 +34,26 @@ const busy = computed(
   () =>
     props.aiState.phase === "generating" || props.aiState.phase === "reviewing"
 );
+const hasVariants = computed(() => (props.variants?.length ?? 0) > 1);
+const currentVariantLabel = computed(
+  () =>
+    props.variants?.find(v => v.variant_key === props.section.variant_key)
+      ?.variant_label ?? "默认"
+);
+const onVariantCommand = async (variantKey: string) => {
+  if (variantKey === props.section.variant_key) return;
+  const target = props.variants?.find(v => v.variant_key === variantKey);
+  try {
+    await ElMessageBox.confirm(
+      `切换为「${target?.variant_label ?? variantKey}」模版将覆盖本节当前正文（原文已自动快照，可追溯），是否继续？`,
+      "切换模版",
+      { type: "warning", confirmButtonText: "切换", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  emit("apply-variant", { sectionId: props.section.id, variantKey });
+};
 const segments = computed(() =>
   buildRenderSegments(
     props.section.content,
@@ -68,6 +97,28 @@ const saveEdit = () => {
           <el-tag size="small" type="info">{{
             toDraftLabel(sectionSourceLabelMap, section.source)
           }}</el-tag>
+          <el-dropdown
+            v-if="hasVariants"
+            size="small"
+            :disabled="readonly || busy"
+            @command="(k: string) => onVariantCommand(k)"
+          >
+            <el-button link size="small" type="primary">
+              模版：{{ currentVariantLabel }} ▾
+            </el-button>
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item
+                  v-for="v in variants"
+                  :key="v.variant_key"
+                  :command="v.variant_key"
+                  :disabled="v.variant_key === section.variant_key"
+                >
+                  {{ v.variant_label }}
+                </el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
         </span>
         <span class="actions">
           <el-button

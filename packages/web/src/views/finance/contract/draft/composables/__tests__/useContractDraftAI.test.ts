@@ -9,6 +9,7 @@ const sectionWith = (
   draft_id: 9,
   section_key: "payment",
   title: "付款",
+  variant_key: "default",
   source: "default_template",
   instruction: null,
   content: "",

@@ -5,7 +5,6 @@ import type {
   ContractDraftSection
 } from "@/api/contract-draft";
 import {
-  requiredLevelLabelMap,
   sectionAiStatusLabelMap,
   sectionAiStatusTagType,
   toDraftLabel
@@ -18,7 +17,10 @@ const props = defineProps<{
 }>();
 const emit = defineEmits<{
   (e: "select", id: number): void;
-  (e: "add", payload: { section_key?: string; title?: string }): void;
+  (
+    e: "add",
+    payload: { section_key?: string; title?: string; variant_key?: string }
+  ): void;
   (e: "remove", id: number): void;
   (e: "move", payload: { id: number; delta: -1 | 1 }): void;
 }>();
@@ -27,16 +29,33 @@ const addVisible = ref(false);
 const addKey = ref("");
 const customTitle = ref("");
 
+// 已存在节的 section_key（无论哪个变体）整组隐藏；同 section_key 多变体逐变体成 option
 const addable = computed(() =>
   props.templates.filter(
     t => !props.sections.some(s => s.section_key === t.section_key)
   )
 );
+const addableOptions = computed(() => {
+  // 变体行在条款库中的 title 通常已自带区分后缀；仅当同组 title 撞名时才追加（变体名）消歧
+  const titleCount = new Map<string, number>();
+  for (const t of addable.value)
+    titleCount.set(t.title, (titleCount.get(t.title) ?? 0) + 1);
+  return addable.value.map(t => ({
+    value: `${t.section_key}::${t.variant_key}`,
+    label:
+      t.variant_label !== "默认" && (titleCount.get(t.title) ?? 0) > 1
+        ? `${t.title}（${t.variant_label}）`
+        : t.title
+  }));
+});
 
 const submitAdd = () => {
-  if (addKey.value) emit("add", { section_key: addKey.value });
-  else if (customTitle.value.trim())
+  if (addKey.value) {
+    const [sectionKey, variantKey] = addKey.value.split("::");
+    emit("add", { section_key: sectionKey, variant_key: variantKey });
+  } else if (customTitle.value.trim()) {
     emit("add", { title: customTitle.value.trim() });
+  }
   addVisible.value = false;
   addKey.value = "";
   customTitle.value = "";
@@ -108,10 +127,10 @@ const submitAdd = () => {
             style="width: 100%"
           >
             <el-option
-              v-for="t in addable"
-              :key="t.id"
-              :value="t.section_key"
-              :label="`${t.title}（${toDraftLabel(requiredLevelLabelMap, t.required_level)}）`"
+              v-for="opt in addableOptions"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
             />
           </el-select>
         </el-form-item>
