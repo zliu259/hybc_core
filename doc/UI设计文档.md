@@ -185,6 +185,17 @@
 - AI区：审查状态、风险等级、分数、总结、建议。
 - API 指向：`/api/v1/contract/:id`, `/api/v1/contract/:id/ai-review`
 
+#### E-1. AI 合同起草工作台 `views/finance/contract/draft/index.vue`（2026-07-22 新增，M1）
+
+- 入口：合同列表页「AI 起草」按钮；roles：`super_admin` / `manager` / `finance`；路由 `/finance/contract/draft`（showLink:false）。
+- 立场：新建时选合同立场——`inbound`（对甲方，我方为乙方）/`outbound`（对分包商，我方为甲方）；两种立场加载不同的默认条款集合。
+- 布局：左列 = 草稿基本信息与关键字表单（项目/我方主体/对方结构化字段 + 工程关键字）+ 条款节列表（增删/上下移/状态徽标）；右列 = 逐节卡片（默认生成 / 按个性化指令生成 / AI 交叉审查 / 手工编辑）。
+- 双色高亮：关键字占位符（primary 浅底，联动关键字表单值填充）与风险片段（红/黄底 + hover 显示理由与法条）双色体系；风险数据来自 AI 输出 `risk_spans` 与规则层 `checkClauseText` 合并。
+- 交叉审查：起草与审查用不同厂商模型（terra 起草 / claude-sonnet-5 审查），结果以折叠面板展示逐条问题与建议。
+- 完整性检查：弹窗列缺失节（core 红 / recommended 黄），逐条「添加该节 / 忽略（留痕）」，只提示不阻塞。
+- 页面常驻提示：AI 内容为草稿，须经负责人审核。定稿导出（docx/PDF）、转正式合同、送审在 M2 提供。
+- API 指向：`/api/v1/contract-draft`（CRUD）、`/:id/sections/:sid/generate`、`/:id/sections/:sid/review`、`/:id/completeness-check`、`/:id/completeness-ignore`、`/templates`。
+
 #### F. 对外付款处理台（原「申请列表」）`views/finance/payment/index.vue`（2026-07-08 重构为阶段式付款处理台）
 
 - 顶部汇总条：4 块可点击汇总，点击即切换到对应阶段页签——待付总额（`approved` 状态未付金额之和）、本月已付（`paid_at` 落在当月的 `paid` 金额之和）、超期未付（`approved` 且 `expected_payment_date` 早于今天的笔数，标红）、退回待改（`draft` 且关联审批实例状态为 `returned`/`pending`/`withdrawn` 的笔数，标红）。
