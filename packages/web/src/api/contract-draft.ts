@@ -32,6 +32,7 @@ export type ContractDraft = {
   completeness_status: string | null;
   completeness_result_json: string | null;
   ignored_hints_json: string;
+  converted_contract_id: number | null;
   created_by_userid: string;
   created_at: string;
   updated_at: string;
@@ -230,4 +231,46 @@ export async function ignoreCompletenessHint(
     `/api/v1/contract-draft/${draftId}/completeness-ignore`,
     { data: { section_key: sectionKey } }
   );
+}
+export type FixedSection = {
+  id: number;
+  section_key: string;
+  title: string;
+  content: string;
+};
+
+export async function finalizeDraft(
+  id: number
+): Promise<{
+  draft_id: number;
+  fixed_sections: FixedSection[];
+  unresolved_keys: string[];
+}> {
+  const res = await http.request<{
+    success: boolean;
+    data: {
+      draft_id: number;
+      fixed_sections: FixedSection[];
+      unresolved_keys: string[];
+    };
+  }>("post", `/api/v1/contract-draft/${id}/finalize`, { data: {} });
+  return res.data;
+}
+
+export async function convertDraft(
+  id: number,
+  payload: {
+    contract_type: string;
+    file_key: string;
+    file_name: string;
+    file_size: number;
+    total_amount?: number;
+    contract_date?: string;
+  }
+): Promise<{ contract_id: number; contract_no: string }> {
+  const res = await http.request<{
+    success: boolean;
+    data: { contract_id: number; contract_no: string };
+  }>("post", `/api/v1/contract-draft/${id}/convert`, { data: payload });
+  return res.data;
 }

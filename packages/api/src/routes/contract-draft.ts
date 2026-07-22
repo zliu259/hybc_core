@@ -6,8 +6,15 @@ import { authMiddleware, type AuthVariables } from "../middleware/auth";
 import { requireRoles } from "../middleware/rbac";
 import type { Env } from "../types/env";
 import { createTask } from "../services/ai-slot";
+import { writeAuditLog } from "../services/audit-log";
 import { executeCfAiTask, pickCriticModel, pickDraftModel } from "../services/cf-ai";
+import {
+  buildKeywordValues,
+  collectUnresolvedKeys,
+  fillPlaceholders
+} from "../services/contract-draft-finalize";
 import { checkClauseText, checkDraftDates } from "../services/contract-draft-rules";
+import { generateSerial } from "../services/serial";
 import type {
   ContractClauseTemplate,
   ContractDraft,
@@ -434,6 +441,17 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
     return c.json({ success: false, error: { message: "该节已在生成中" } }, 409);
   }
 
+  // 重生成前留档：已有非模板正文时快照全稿，防"regenerate 静默覆盖"
+  if (section.content.trim().length > 0 && section.source !== "default_template") {
+    const allSections = await listSections(c.env, draft.id);
+    await c.env.DB.prepare(
+      `INSERT INTO contract_draft_revision (draft_id, snapshot_json, trigger_action, created_by_userid, created_at)
+       VALUES (?, ?, 'regenerate', ?, ?)`
+    )
+      .bind(draft.id, JSON.stringify({ draft, sections: allSections }), auth.sub, nowIso())
+      .run();
+  }
+
   const tpl = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
       WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both') AND status = 'active'
@@ -597,4 +615,201 @@ contractDraftRoutes.post("/:id/completeness-ignore", async (c) => {
     .bind(JSON.stringify(ignored), nowIso(), draft.id)
     .run();
   return c.json({ success: true, data: { ignored } });
+});
+
+// ── 定稿与转正式合同 ──
+contractDraftRoutes.post("/:id/finalize", async (c) => {
+  const auth = c.get("auth");
+  const draft = await loadDraft(c.env, Number(c.req.param("id")));
+  if (!draft || !canAccess(draft, auth)) {
+    return c.json({ success: false, error: { message: "草稿不存在" } }, 404);
+  }
+  if (!draft.entity_id || !draft.project_id || !draft.counterparty_name.trim()) {
+    return c.json(
+      { success: false, error: { message: "定稿前需补全：我方主体、关联项目、对方单位" } },
+      400
+    );
+  }
+  const sections = await listSections(c.env, draft.id);
+  if (!sections.length || sections.every((s) => !s.content.trim())) {
+    return c.json({ success: false, error: { message: "草稿尚无条款正文" } }, 400);
+  }
+  const generating = sections.some(
+    (s) => s.ai_status === "generating" || s.review_status === "generating"
+  );
+  if (generating) {
+    return c.json({ success: false, error: { message: "仍有节在生成/审查中，请稍候" } }, 400);
+  }
+
+  const entity = draft.entity_id
+    ? await c.env.DB.prepare(
+        "SELECT entity_name, tax_id, legal_person, primary_bank_name, primary_bank_account_no FROM entity WHERE id = ?"
+      )
+        .bind(draft.entity_id)
+        .first<{
+          entity_name: string;
+          tax_id: string | null;
+          legal_person: string | null;
+          primary_bank_name: string | null;
+          primary_bank_account_no: string | null;
+        }>()
+    : null;
+  const values = buildKeywordValues(draft, entity);
+  const fixedSections = sections.map((s) => ({
+    id: s.id,
+    section_key: s.section_key,
+    title: s.title,
+    content: fillPlaceholders(s.content, values)
+  }));
+  const unresolved = collectUnresolvedKeys(
+    sections.map((s) => s.content),
+    values
+  );
+
+  const now = nowIso();
+  const claim = await c.env.DB.prepare(
+    "UPDATE contract_draft SET status = 'finalized', updated_at = ? WHERE id = ? AND status = 'drafting'"
+  )
+    .bind(now, draft.id)
+    .run();
+  if (!claim.meta.changes) {
+    return c.json({ success: false, error: { message: "当前状态不可定稿" } }, 409);
+  }
+  await c.env.DB.prepare(
+    `INSERT INTO contract_draft_revision (draft_id, snapshot_json, trigger_action, created_by_userid, created_at)
+     VALUES (?, ?, 'finalize', ?, ?)`
+  )
+    .bind(draft.id, JSON.stringify({ draft, sections: fixedSections, values }), auth.sub, now)
+    .run();
+  return c.json({
+    success: true,
+    data: { draft_id: draft.id, fixed_sections: fixedSections, unresolved_keys: unresolved }
+  });
+});
+
+contractDraftRoutes.post("/:id/convert", async (c) => {
+  const auth = c.get("auth");
+  const draft = await loadDraft(c.env, Number(c.req.param("id")));
+  if (!draft || !canAccess(draft, auth)) {
+    return c.json({ success: false, error: { message: "草稿不存在" } }, 404);
+  }
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  if (!body) return c.json({ success: false, error: { message: "请求体不是合法 JSON" } }, 400);
+  const contractType =
+    typeof body.contract_type === "string" ? body.contract_type.trim().slice(0, 20) : "";
+  const fileKey = typeof body.file_key === "string" ? body.file_key : "";
+  const fileName = typeof body.file_name === "string" ? body.file_name : "合同草稿.docx";
+  const fileSize = typeof body.file_size === "number" ? body.file_size : 0;
+  if (!contractType) return c.json({ success: false, error: { message: "缺少合同类型" } }, 400);
+  if (!fileKey.startsWith("contract-draft/")) {
+    return c.json({ success: false, error: { message: "缺少定稿文档（需先上传 docx）" } }, 400);
+  }
+  let keywords: Record<string, unknown> = {};
+  try {
+    keywords = JSON.parse(draft.keywords_json) as Record<string, unknown>;
+  } catch {
+    keywords = {};
+  }
+  const totalAmount =
+    typeof body.total_amount === "number" ? body.total_amount : Number(keywords.amount);
+  if (!Number.isFinite(totalAmount) || totalAmount < 0) {
+    return c.json(
+      { success: false, error: { message: "合同金额无效：请在关键字 amount 填写数字金额" } },
+      400
+    );
+  }
+  const contractDate =
+    typeof body.contract_date === "string" && body.contract_date.trim()
+      ? body.contract_date.trim()
+      : typeof keywords.sign_date === "string" && keywords.sign_date
+        ? keywords.sign_date
+        : nowIso().slice(0, 10);
+
+  const now = nowIso();
+  const claim = await c.env.DB.prepare(
+    "UPDATE contract_draft SET status = 'converted', updated_at = ? WHERE id = ? AND status = 'finalized'"
+  )
+    .bind(now, draft.id)
+    .run();
+  if (!claim.meta.changes) {
+    return c.json({ success: false, error: { message: "仅定稿状态的草稿可转正式合同" } }, 409);
+  }
+
+  try {
+    const contractNo = await generateSerial(c.env.DB, "CT", "contract", "contract_no");
+    const attachments = [{ file_key: fileKey, file_name: fileName, file_size: fileSize }];
+    const insert = await c.env.DB.prepare(
+      `INSERT INTO contract
+         (contract_no, direction, project_id, entity_id, counterparty, contract_type,
+          handler_userid, contract_date, total_amount, status, ai_review_status,
+          attachments_json, remark, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, ?)`
+    )
+      .bind(
+        contractNo,
+        draft.direction,
+        draft.project_id,
+        draft.entity_id,
+        draft.counterparty_name,
+        contractType,
+        auth.sub,
+        contractDate,
+        totalAmount,
+        JSON.stringify(attachments),
+        `AI起草草稿#${draft.id}转化`,
+        now,
+        now
+      )
+      .run();
+    const contractId = insert.meta.last_row_id;
+
+    await createTask(c.env, {
+      task_type: "contract_review",
+      biz_type: "contract",
+      biz_id: contractId,
+      priority: 3,
+      timeout_seconds: 600,
+      payload: {
+        contract_id: contractId,
+        contract_no: contractNo,
+        counterparty: draft.counterparty_name,
+        contract_type: contractType,
+        total_amount: totalAmount,
+        attachments
+      }
+    });
+    await c.env.DB.prepare(
+      "UPDATE contract_draft SET converted_contract_id = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(contractId, nowIso(), draft.id)
+      .run();
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "contract_draft.convert",
+      targetType: "contract_draft",
+      targetId: draft.id,
+      detail: {
+        contract_id: contractId,
+        contract_no: contractNo,
+        contract_type: contractType,
+        total_amount: totalAmount
+      }
+    });
+    return c.json({ success: true, data: { contract_id: contractId, contract_no: contractNo } });
+  } catch (err) {
+    // 补偿：合同创建失败则回退草稿状态（D1 无事务）
+    await c.env.DB.prepare(
+      "UPDATE contract_draft SET status = 'finalized', updated_at = ? WHERE id = ? AND status = 'converted' AND converted_contract_id IS NULL"
+    )
+      .bind(nowIso(), draft.id)
+      .run();
+    return c.json(
+      {
+        success: false,
+        error: { message: err instanceof Error ? err.message : "转化失败，请重试" }
+      },
+      500
+    );
+  }
 });

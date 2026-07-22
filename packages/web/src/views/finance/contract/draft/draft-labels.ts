@@ -34,6 +34,20 @@ export const requiredLevelLabelMap: Record<string, string> = {
   optional: "可选"
 };
 
+export const draftStatusTagType: Record<string, DraftTagType> = {
+  drafting: "info",
+  finalized: "warning",
+  converted: "success",
+  deleted: "info"
+};
+
+export const draftStatusLabelMap: Record<string, string> = {
+  drafting: "起草中",
+  finalized: "已定稿",
+  converted: "已转正式合同",
+  deleted: "已删除"
+};
+
 export const toDraftLabel = (
   map: Record<string, string>,
   value: string | null | undefined

@@ -19,7 +19,11 @@ import {
   type ContractFamily,
   type DraftDirection
 } from "@/api/contract-draft";
-import { familyLabelMap } from "./draft-labels";
+import {
+  draftStatusLabelMap,
+  draftStatusTagType,
+  familyLabelMap
+} from "./draft-labels";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
@@ -29,6 +33,7 @@ import SectionCard from "./components/SectionCard.vue";
 import CompletenessDialog, {
   type MissingHint
 } from "./components/CompletenessDialog.vue";
+import ConvertDialog from "./components/ConvertDialog.vue";
 
 defineOptions({ name: "ContractDraftWorkbench" });
 
@@ -45,6 +50,11 @@ const completenessVisible = ref(false);
 const missingHints = ref<MissingHint[]>([]);
 const saving = ref(false);
 const checking = ref(false);
+const convertVisible = ref(false);
+
+const onConverted = (payload: { contract_id: number }) => {
+  router.push(`/finance/contract/detail/${payload.contract_id}`);
+};
 
 const ai = useContractDraftAI();
 
@@ -344,6 +354,27 @@ onMounted(async () => {
                   <el-tag size="small">{{
                     familyLabelMap[draft.family] ?? draft.family
                   }}</el-tag>
+                  <el-tag
+                    size="small"
+                    :type="draftStatusTagType[draft.status] ?? 'info'"
+                  >
+                    {{ draftStatusLabelMap[draft.status] ?? draft.status }}
+                  </el-tag>
+                  <el-button
+                    v-if="
+                      draft.status === 'converted' &&
+                      draft.converted_contract_id
+                    "
+                    link
+                    type="primary"
+                    @click="
+                      router.push(
+                        `/finance/contract/detail/${draft.converted_contract_id}`
+                      )
+                    "
+                  >
+                    查看正式合同
+                  </el-button>
                 </span>
                 <el-button
                   size="small"
@@ -444,6 +475,13 @@ onMounted(async () => {
             >
               完整性检查
             </el-button>
+            <el-button
+              type="primary"
+              :disabled="draft.status !== 'drafting'"
+              @click="convertVisible = true"
+            >
+              定稿转正式合同
+            </el-button>
           </div>
           <SectionCard
             v-for="s in sections"
@@ -451,6 +489,7 @@ onMounted(async () => {
             :section="s"
             :keyword-values="keywordValues"
             :ai-state="ai.stateOf(s.id)"
+            :readonly="draft.status !== 'drafting'"
             @generate="onGenerate"
             @review="onReview"
             @save="onSave"
@@ -463,6 +502,11 @@ onMounted(async () => {
         :ignored="ignoredHints"
         @add="onHintAdd"
         @ignore="onHintIgnore"
+      />
+      <ConvertDialog
+        v-model:visible="convertVisible"
+        :draft="draft"
+        @converted="onConverted"
       />
     </template>
   </div>

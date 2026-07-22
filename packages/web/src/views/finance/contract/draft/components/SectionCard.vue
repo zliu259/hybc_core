@@ -9,6 +9,7 @@ const props = defineProps<{
   section: ContractDraftSection;
   keywordValues: Record<string, string>;
   aiState: SectionAiState;
+  readonly?: boolean;
 }>();
 const emit = defineEmits<{
   (e: "generate", payload: { sectionId: number; instruction: string }): void;
@@ -72,6 +73,7 @@ const saveEdit = () => {
           <el-button
             size="small"
             :loading="busy"
+            :disabled="readonly"
             @click="
               emit('generate', { sectionId: section.id, instruction: '' })
             "
@@ -81,7 +83,7 @@ const saveEdit = () => {
           <el-button
             size="small"
             :loading="busy"
-            :disabled="!instruction.trim()"
+            :disabled="!instruction.trim() || readonly"
             @click="emit('generate', { sectionId: section.id, instruction })"
           >
             按指令生成
@@ -89,12 +91,15 @@ const saveEdit = () => {
           <el-button
             size="small"
             :loading="busy"
-            :disabled="!section.content"
+            :disabled="!section.content || readonly"
             @click="emit('review', section.id)"
           >
             AI 交叉审查
           </el-button>
-          <el-button v-if="!editing" size="small" @click="startEdit"
+          <el-button
+            v-if="!editing && !readonly"
+            size="small"
+            @click="startEdit"
             >编辑</el-button
           >
         </span>
