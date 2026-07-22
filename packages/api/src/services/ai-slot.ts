@@ -622,6 +622,41 @@ export const completeTask = async (
 };
 
 /**
+ * 合同起草任务【终态】失败/超时的统一收尾：回写节或草稿的 error 状态，并清空 task_queue
+ * 敏感 payload。仅在终态调用（failTask 的 newStatus==='failed'、checkTimeouts 中重试耗尽的
+ * timeout）——中间可重试态不得调用，否则会把仍会自动重试的节误标为 error 并卡住重试。
+ */
+const markContractDraftTaskError = async (
+  env: Env,
+  task: { id: number; task_type: string },
+  now: string
+): Promise<void> => {
+  if (task.task_type === "contract_draft_section") {
+    await env.DB.prepare(
+      "UPDATE contract_draft_section SET ai_status = 'error', updated_at = ? WHERE ai_task_id = ?"
+    )
+      .bind(now, task.id)
+      .run();
+  } else if (task.task_type === "contract_compliance_review") {
+    await env.DB.prepare(
+      "UPDATE contract_draft_section SET review_status = 'error', updated_at = ? WHERE review_task_id = ?"
+    )
+      .bind(now, task.id)
+      .run();
+  } else if (task.task_type === "contract_completeness_check") {
+    await env.DB.prepare(
+      "UPDATE contract_draft SET completeness_status = 'error', updated_at = ? WHERE completeness_task_id = ?"
+    )
+      .bind(now, task.id)
+      .run();
+  }
+  // 终态清洗：失败任务的 payload（含节正文/模板）不再需要，与 completeTask 成功路径口径一致。
+  await env.DB.prepare("UPDATE task_queue SET payload_json = '{}' WHERE id = ?")
+    .bind(task.id)
+    .run();
+};
+
+/**
  * Mark a task as failed. Auto-retry if under max_retries.
  */
 export const failTask = async (
@@ -687,27 +722,7 @@ export const failTask = async (
   }
 
   if (task.biz_type === "contract_draft" && newStatus === "failed") {
-    if (task.task_type === "contract_draft_section") {
-      await env.DB.prepare(
-        "UPDATE contract_draft_section SET ai_status = 'error', updated_at = ? WHERE ai_task_id = ?"
-      )
-        .bind(now, taskId)
-        .run();
-    }
-    if (task.task_type === "contract_compliance_review") {
-      await env.DB.prepare(
-        "UPDATE contract_draft_section SET review_status = 'error', updated_at = ? WHERE review_task_id = ?"
-      )
-        .bind(now, taskId)
-        .run();
-    }
-    if (task.task_type === "contract_completeness_check") {
-      await env.DB.prepare(
-        "UPDATE contract_draft SET completeness_status = 'error', updated_at = ? WHERE completeness_task_id = ?"
-      )
-        .bind(now, taskId)
-        .run();
-    }
+    await markContractDraftTaskError(env, task, now);
   }
 
   // Write error audit log
@@ -881,6 +896,13 @@ export const checkTimeouts = async (env: Env): Promise<number> => {
     )
       .bind(task.id, task.biz_type, task.biz_id, task.assigned_node_id ?? null, now)
       .run();
+
+    // 合同起草任务终态超时（重试已耗尽，requeueTimedOutTasks 只 requeue
+    // retry_count < max_retries 的任务，故此处 >= 即为终态）：回写节 error 并清 payload，
+    // 否则节会永久卡在 generating（generate 抢占 409、编辑被 generating 守卫挡住）无法恢复。
+    if (task.biz_type === "contract_draft" && task.retry_count >= task.max_retries) {
+      await markContractDraftTaskError(env, task, now);
+    }
   }
 
   return tasks.length;
