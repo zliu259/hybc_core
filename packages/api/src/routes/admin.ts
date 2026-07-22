@@ -1030,6 +1030,23 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
     },
     bidding_dedup_rewrite: {
       paragraphs: [{ id: "test#0", text: "测试段落内容。" }]
+    },
+    contract_draft_section: {
+      draft_id: bizId,
+      section_key: "test_section",
+      title: "测试条款",
+      instruction: "生成一段测试条款内容",
+      direction: "outbound"
+    },
+    contract_compliance_review: {
+      draft_id: bizId,
+      section_key: "test_section",
+      content: "测试条款内容，用于合规审查。"
+    },
+    contract_completeness_check: {
+      draft_id: bizId,
+      direction: "outbound",
+      section_keys: ["test_section"]
     }
   };
 

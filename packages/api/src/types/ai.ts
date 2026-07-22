@@ -22,7 +22,10 @@ export const taskTypes = [
   "tbm_composition_recommendation",
   "warehouse_manual_draft",
   "warehouse_task_summary",
-  "bidding_dedup_rewrite"
+  "bidding_dedup_rewrite",
+  "contract_draft_section",
+  "contract_compliance_review",
+  "contract_completeness_check"
 ] as const;
 export type TaskType = (typeof taskTypes)[number];
 
@@ -39,7 +42,7 @@ export type TaskQueueStatus = (typeof taskQueueStatuses)[number];
 export const computeNodeStatuses = ["online", "offline", "draining"] as const;
 export type ComputeNodeStatus = (typeof computeNodeStatuses)[number];
 
-export const providerKeys = ["claude", "openai", "local"] as const;
+export const providerKeys = ["claude", "openai", "local", "cf_ai"] as const;
 export type ProviderKey = (typeof providerKeys)[number];
 
 // ─── DB Row Types (match 0006_ai_slot.sql column-for-column) ──────────
