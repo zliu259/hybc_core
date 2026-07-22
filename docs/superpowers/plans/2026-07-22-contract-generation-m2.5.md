@@ -290,7 +290,7 @@ npx wrangler d1 execute hybcdg-prod-db --local --command "SELECT family, COUNT(*
 npx wrangler d1 execute hybcdg-prod-db --local --command "SELECT COUNT(*) AS variants FROM contract_clause_template WHERE variant_key != 'default'"
 npx wrangler d1 execute hybcdg-prod-db --local --command "SELECT version FROM ai_prompt_template WHERE template_key='prompt-contract-draft-section-v1'"
 ```
-Expected: `equipment_lease=21`（20+dry_lease）、`labor_service=17`、`materials_sale=15`、`pipe_jacking=41`（40+monthly_simple）；variants=2；prompt version=2。（行数以 SQL 实际元组数为准——执行者先数 SQL 中每族 VALUES 元组数并与查询结果核对，不一致即报告，参考 M2 计划曾有期望值笔误的教训。）
+Expected: `equipment_lease=21`（20+dry_lease）、`labor_service=17`、`materials_sale=16`、`pipe_jacking=41`（40+monthly_simple）；variants=2；prompt version=2。（行数以 SQL 实际元组数为准——执行者先数 SQL 中每族 VALUES 元组数并与查询结果核对，不一致即报告，参考 M2 计划曾有期望值笔误的教训。）
 
 - [ ] **Step 3: Commit**
 ```bash
