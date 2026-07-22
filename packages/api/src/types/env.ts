@@ -4,6 +4,14 @@ export interface Env {
   KV: KVNamespace;
   FILES: R2Bucket;
   EVENT_QUEUE: Queue;
+  /** Cloudflare AI binding（Unified Billing 第三方模型 + Workers AI）。 */
+  AI: {
+    run(
+      model: string,
+      inputs: Record<string, unknown>,
+      options?: Record<string, unknown>
+    ): Promise<unknown>;
+  };
   APP_ENV: string;
   JWT_SECRET: string;
   /** 高危重放标记专用 HMAC 密钥；不复用 JWT_SECRET，缩小泄露爆炸半径。 */

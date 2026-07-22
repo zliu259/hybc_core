@@ -65,6 +65,11 @@ REIMBURSEMENT_REQUIRE_PAYEE = "false"
 AGENT_WEB_BASE_URL = "https://web.hybcdg.com"
 AGENT_API_BASE_URL = "https://api.hybcdg.com"
 
+# Workers AI / AI Gateway 统一模型入口（第三方模型经 Unified Billing 计费，
+# 需 owner 在 CF dashboard 预充 credits）。顶层与 env.prod 两段必须同步。
+[ai]
+binding = "AI"
+
 [triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
 
@@ -128,6 +133,9 @@ PASSKEY_RP_NAME = "HYBC"
 REIMBURSEMENT_REQUIRE_PAYEE = "false"
 AGENT_WEB_BASE_URL = "https://web.hybcdg.com"
 AGENT_API_BASE_URL = "https://api.hybcdg.com"
+
+[env.prod.ai]
+binding = "AI"
 
 [env.prod.triggers]
 crons = ["*/2 * * * *", "0 * * * *", "0 18 * * *"]
