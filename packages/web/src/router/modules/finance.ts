@@ -131,6 +131,16 @@ export default {
           }
         },
         {
+          path: "/finance/contract/draft",
+          name: "ContractDraftWorkbench",
+          component: () => import("@/views/finance/contract/draft/index.vue"),
+          meta: {
+            title: "AI 合同起草",
+            roles: ["super_admin", "manager", "finance"],
+            showLink: false
+          }
+        },
+        {
           path: "/finance/payment",
           name: "PaymentList",
           component: () => import("@/views/finance/payment/index.vue"),
