@@ -30,6 +30,18 @@ export const pickDraftModel = (sectionSort: number): string =>
 export const pickCriticModel = (draftModel: string): string =>
   CF_AI_MODELS.find((m) => m !== draftModel) ?? CF_AI_MODELS[0];
 
+/** 成本分级（owner 07-22）：修改类走 Workers AI 免费层；首次起草保持高档交替。 */
+export const CF_AI_CHEAP_MODEL = "@cf/zai-org/glm-4.7-flash";
+
+export interface SectionModelContext {
+  hasContent: boolean;
+  hasInstruction: boolean;
+  sectionSort: number;
+}
+
+export const pickSectionModel = (ctx: SectionModelContext): string =>
+  ctx.hasContent && ctx.hasInstruction ? CF_AI_CHEAP_MODEL : pickDraftModel(ctx.sectionSort);
+
 interface CfAiPrompt {
   system: string;
   user: string;
@@ -91,6 +103,17 @@ export const callCfAi = async (
   const startedAt = Date.now();
   if (env.APP_ENV === "local") {
     return { output: mockOutput(taskType), latency_ms: 0 };
+  }
+  if (model.startsWith("@cf/")) {
+    const resp = (await env.AI.run(model, {
+      messages: [
+        { role: "system", content: prompt.system },
+        { role: "user", content: prompt.user }
+      ],
+      max_tokens: MAX_OUTPUT_TOKENS
+    })) as { response?: string; result?: { response?: string } };
+    const output = resp.response ?? resp.result?.response ?? "";
+    return { output, latency_ms: Date.now() - startedAt };
   }
   if (model.startsWith("anthropic/")) {
     const resp = (await env.AI.run(model, {

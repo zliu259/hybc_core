@@ -7,7 +7,13 @@ import { requireRoles } from "../middleware/rbac";
 import type { Env } from "../types/env";
 import { createTask } from "../services/ai-slot";
 import { writeAuditLog } from "../services/audit-log";
-import { executeCfAiTask, pickCriticModel, pickDraftModel } from "../services/cf-ai";
+import {
+  CF_AI_CHEAP_MODEL,
+  executeCfAiTask,
+  pickCriticModel,
+  pickDraftModel,
+  pickSectionModel
+} from "../services/cf-ai";
 import {
   buildKeywordValues,
   collectUnresolvedKeys,
@@ -52,6 +58,20 @@ const isDirection = (value: unknown): value is DraftDirection =>
 
 const isFamily = (value: unknown): value is ContractFamily =>
   typeof value === "string" && (contractFamilies as readonly string[]).includes(value);
+
+/** 各族默认草稿标题（direction 语义与条款库 seed 注释一致）。 */
+const DEFAULT_TITLES: Record<ContractFamily, Record<DraftDirection, string>> = {
+  pipe_jacking: { inbound: "顶管施工协议（对甲方）", outbound: "顶管施工协议（对分包商）" },
+  equipment_lease: {
+    inbound: "设备租赁合同（对甲方出租）",
+    outbound: "设备租赁合同（对分包商/供应商承租）"
+  },
+  labor_service: {
+    inbound: "劳务分包合同（我方承接劳务）",
+    outbound: "劳务分包合同（发包给劳务队）"
+  },
+  materials_sale: { inbound: "材料购销合同（我方销售）", outbound: "材料购销合同（对外采购）" }
+};
 
 const canAccess = (draft: ContractDraft, auth: { sub: string; roles: string[] }): boolean =>
   draft.created_by_userid === auth.sub || auth.roles.includes("super_admin");
@@ -105,14 +125,14 @@ contractDraftRoutes.get("/templates", async (c) => {
   const family = c.req.query("family") ?? "pipe_jacking";
   if (!isFamily(family)) {
     return c.json(
-      { success: false, error: { message: "family 必须为 pipe_jacking 或 equipment_lease" } },
+      { success: false, error: { message: `family 必须为 ${contractFamilies.join("/")} 之一` } },
       400
     );
   }
   const rows = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
       WHERE family = ? AND (direction = ? OR direction = 'both') AND status = 'active'
-      ORDER BY sort_order ASC, id ASC`
+      ORDER BY sort_order ASC, variant_key ASC, id ASC`
   )
     .bind(family, direction)
     .all<ContractClauseTemplate>();
@@ -133,18 +153,11 @@ contractDraftRoutes.post("/", async (c) => {
   const family = body.family ?? "pipe_jacking";
   if (!isFamily(family)) {
     return c.json(
-      { success: false, error: { message: "family 必须为 pipe_jacking 或 equipment_lease" } },
+      { success: false, error: { message: `family 必须为 ${contractFamilies.join("/")} 之一` } },
       400
     );
   }
-  const defaultTitle =
-    family === "equipment_lease"
-      ? body.direction === "inbound"
-        ? "设备租赁合同（对甲方出租）"
-        : "设备租赁合同（对分包商/供应商承租）"
-      : body.direction === "inbound"
-        ? "顶管施工协议（对甲方）"
-        : "顶管施工协议（对分包商）";
+  const defaultTitle = DEFAULT_TITLES[family][body.direction];
   const title =
     typeof body.title === "string" && body.title.trim().length > 0
       ? body.title.trim().slice(0, MAX_TITLE)
@@ -171,10 +184,11 @@ contractDraftRoutes.post("/", async (c) => {
   const draftId = insert.meta.last_row_id;
 
   // 预载默认节集合（core + recommended；optional 由用户从目录追加）
+  // 仅取 default 变体：0066 起同一 section_key 存在 core 级非默认变体，不过滤会预载重复节。
   const templates = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
       WHERE family = ? AND (direction = ? OR direction = 'both') AND status = 'active'
-        AND required_level IN ('core', 'recommended')
+        AND required_level IN ('core', 'recommended') AND variant_key = 'default'
       ORDER BY sort_order ASC, id ASC`
   )
     .bind(family, body.direction)
@@ -301,12 +315,17 @@ contractDraftRoutes.post("/:id/sections", async (c) => {
   const nextSort = (maxSort?.max_sort ?? 0) + 10;
 
   if (typeof body.section_key === "string" && body.section_key.length > 0) {
+    const variantKey =
+      typeof body.variant_key === "string" && body.variant_key.trim().length > 0
+        ? body.variant_key.trim()
+        : "default";
     const tpl = await c.env.DB.prepare(
       `SELECT * FROM contract_clause_template
-        WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both') AND status = 'active'
+        WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both')
+          AND variant_key = ? AND status = 'active'
         ORDER BY CASE direction WHEN 'both' THEN 1 ELSE 0 END ASC LIMIT 1`
     )
-      .bind(draft.family, body.section_key, draft.direction)
+      .bind(draft.family, body.section_key, draft.direction, variantKey)
       .first<ContractClauseTemplate>();
     if (!tpl) return c.json({ success: false, error: { message: "条款库中无该节" } }, 404);
     const dup = await c.env.DB.prepare(
@@ -317,10 +336,19 @@ contractDraftRoutes.post("/:id/sections", async (c) => {
     if (dup) return c.json({ success: false, error: { message: "该节已存在" } }, 400);
     const ins = await c.env.DB.prepare(
       `INSERT INTO contract_draft_section
-         (draft_id, section_key, title, source, content, sort_order, status, created_at, updated_at)
-       VALUES (?, ?, ?, 'default_template', ?, ?, 'active', ?, ?)`
+         (draft_id, section_key, title, variant_key, source, content, sort_order, status, created_at, updated_at)
+       VALUES (?, ?, ?, ?, 'default_template', ?, ?, 'active', ?, ?)`
     )
-      .bind(draft.id, tpl.section_key, tpl.title, tpl.body_template, nextSort, now, now)
+      .bind(
+        draft.id,
+        tpl.section_key,
+        tpl.title,
+        tpl.variant_key,
+        tpl.body_template,
+        nextSort,
+        now,
+        now
+      )
       .run();
     const section = await loadSection(c.env, draft.id, ins.meta.last_row_id);
     return c.json({ success: true, data: section });
@@ -395,6 +423,57 @@ contractDraftRoutes.put("/:id/sections/:sectionId", async (c) => {
   return c.json({ success: true, data: await loadSection(c.env, draft.id, section.id) });
 });
 
+// 换模版变体：以所选变体骨架整体覆盖该节（覆盖前快照留档，可追溯）
+contractDraftRoutes.put("/:id/sections/:sectionId/apply-variant", async (c) => {
+  const auth = c.get("auth");
+  const draft = await loadDraft(c.env, Number(c.req.param("id")));
+  if (!draft || !canAccess(draft, auth)) {
+    return c.json({ success: false, error: { message: "草稿不存在" } }, 404);
+  }
+  const section = await loadSection(c.env, draft.id, Number(c.req.param("sectionId")));
+  if (!section) return c.json({ success: false, error: { message: "节不存在" } }, 404);
+  if (section.ai_status === "generating") {
+    return c.json({ success: false, error: { message: "该节正在生成中，稍后再换模版" } }, 400);
+  }
+  const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const variantKey =
+    body && typeof body.variant_key === "string" && body.variant_key.trim().length > 0
+      ? body.variant_key.trim()
+      : "";
+  if (!variantKey) return c.json({ success: false, error: { message: "缺少 variant_key" } }, 400);
+
+  const tpl = await c.env.DB.prepare(
+    `SELECT * FROM contract_clause_template
+      WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both')
+        AND variant_key = ? AND status = 'active'
+      ORDER BY CASE direction WHEN 'both' THEN 1 ELSE 0 END ASC LIMIT 1`
+  )
+    .bind(draft.family, section.section_key, draft.direction, variantKey)
+    .first<ContractClauseTemplate>();
+  if (!tpl) return c.json({ success: false, error: { message: "条款库中无该变体" } }, 404);
+
+  // 覆盖前留档：已有非模板正文时快照全稿（与 regenerate 快照同款）
+  if (section.content.trim().length > 0 && section.source !== "default_template") {
+    const allSections = await listSections(c.env, draft.id);
+    await c.env.DB.prepare(
+      `INSERT INTO contract_draft_revision (draft_id, snapshot_json, trigger_action, created_by_userid, created_at)
+       VALUES (?, ?, 'regenerate', ?, ?)`
+    )
+      .bind(draft.id, JSON.stringify({ draft, sections: allSections }), auth.sub, nowIso())
+      .run();
+  }
+
+  await c.env.DB.prepare(
+    `UPDATE contract_draft_section SET
+       content = ?, title = ?, source = 'default_template', variant_key = ?,
+       risk_annotations_json = NULL, updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(tpl.body_template, tpl.title, tpl.variant_key, nowIso(), section.id)
+    .run();
+  return c.json({ success: true, data: await loadSection(c.env, draft.id, section.id) });
+});
+
 contractDraftRoutes.delete("/:id/sections/:sectionId", async (c) => {
   const auth = c.get("auth");
   const draft = await loadDraft(c.env, Number(c.req.param("id")));
@@ -452,12 +531,14 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
       .run();
   }
 
+  // 按当前变体取骨架：保证 regenerate 沿用该节已选模版
   const tpl = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
-      WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both') AND status = 'active'
+      WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both')
+        AND variant_key = ? AND status = 'active'
       ORDER BY CASE direction WHEN 'both' THEN 1 ELSE 0 END ASC LIMIT 1`
   )
-    .bind(draft.family, section.section_key, draft.direction)
+    .bind(draft.family, section.section_key, draft.direction, section.variant_key)
     .first<ContractClauseTemplate>();
 
   const sectionIndex = Math.trunc(section.sort_order / 10);
@@ -472,11 +553,17 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
       section_key: section.section_key,
       section_title: section.title,
       body_template: tpl?.body_template ?? section.content,
+      current_content: section.content,
       style_ref: tpl?.style_ref ?? "",
       keywords_json: draft.keywords_json,
       instruction,
       section_sort: sectionIndex,
-      model: pickDraftModel(sectionIndex)
+      // 成本分级：已有非模板正文且带指令的修改类走 Workers AI 免费层
+      model: pickSectionModel({
+        hasContent: section.content.trim().length > 0 && section.source !== "default_template",
+        hasInstruction: instruction.length > 0,
+        sectionSort: sectionIndex
+      })
     },
     priority: 6,
     timeout_seconds: 300
@@ -558,9 +645,11 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
     return c.json({ success: false, error: { message: "完整性检查进行中" } }, 409);
   }
   const sections = await listSections(c.env, draft.id);
+  // 候选集按 section_key 去变体（default 变体每 key 恒存在），避免同一节多变体重复提示
   const catalog = await c.env.DB.prepare(
     `SELECT section_key, title, required_level FROM contract_clause_template
       WHERE family = ? AND (direction = ? OR direction = 'both') AND status = 'active'
+        AND variant_key = 'default'
       ORDER BY sort_order ASC`
   )
     .bind(draft.family, draft.direction)
@@ -576,7 +665,9 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
       present_sections_json: JSON.stringify(
         sections.map((s) => ({ section_key: s.section_key, title: s.title }))
       ),
-      keywords_json: draft.keywords_json
+      keywords_json: draft.keywords_json,
+      // 完整性提示属轻量辅助判断，固定走 Workers AI 免费层
+      model: CF_AI_CHEAP_MODEL
     },
     priority: 6,
     timeout_seconds: 180

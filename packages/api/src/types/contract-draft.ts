@@ -4,7 +4,12 @@ export type ContractDraftStatus = (typeof contractDraftStatuses)[number];
 export const draftDirections = ["inbound", "outbound"] as const;
 export type DraftDirection = (typeof draftDirections)[number];
 
-export const contractFamilies = ["pipe_jacking", "equipment_lease"] as const;
+export const contractFamilies = [
+  "pipe_jacking",
+  "equipment_lease",
+  "labor_service",
+  "materials_sale"
+] as const;
 export type ContractFamily = (typeof contractFamilies)[number];
 
 export const sectionAiStatuses = ["generating", "done", "error"] as const;
@@ -50,6 +55,7 @@ export interface ContractDraftSection {
   draft_id: number;
   section_key: string;
   title: string;
+  variant_key: string;
   source: "default_template" | "ai_generated" | "manual";
   instruction: string | null;
   content: string;
@@ -70,6 +76,8 @@ export interface ContractClauseTemplate {
   family: ContractFamily;
   section_key: string;
   direction: DraftDirection | "both";
+  variant_key: string;
+  variant_label: string;
   required_level: "core" | "recommended" | "optional";
   title: string;
   body_template: string;
