@@ -10,6 +10,7 @@ import type {
 } from "../types/ai";
 import type { AiGateHandler } from "../types/approval";
 import { applyExternalLogAuditResult } from "./external-log-audit";
+import { checkClauseText, parseContractSectionOutput } from "./contract-draft-rules";
 import { publishEvent } from "./event-bus";
 import { generateSerial } from "./serial";
 import { normalizeWarehouseManualDraftResultContent } from "./warehouse-manual-ai";
@@ -541,6 +542,39 @@ export const completeTask = async (
     await applyExternalLogAuditResult(env, task.biz_id, taskId, result);
   }
 
+  if (task.task_type === "contract_draft_section" && task.biz_type === "contract_draft") {
+    const parsed = parseContractSectionOutput(result.output);
+    const merged = [...parsed.risk_spans, ...checkClauseText(parsed.content)];
+    await env.DB.prepare(
+      `UPDATE contract_draft_section SET
+         content = ?, risk_annotations_json = ?, ai_status = 'done',
+         source = 'ai_generated', updated_at = ?
+       WHERE ai_task_id = ? AND status != 'deleted'`
+    )
+      .bind(parsed.content, JSON.stringify(merged), now, taskId)
+      .run();
+  }
+
+  if (task.task_type === "contract_compliance_review" && task.biz_type === "contract_draft") {
+    await env.DB.prepare(
+      `UPDATE contract_draft_section SET
+         review_result_json = ?, review_status = 'done', updated_at = ?
+       WHERE review_task_id = ? AND status != 'deleted'`
+    )
+      .bind(result.output, now, taskId)
+      .run();
+  }
+
+  if (task.task_type === "contract_completeness_check" && task.biz_type === "contract_draft") {
+    await env.DB.prepare(
+      `UPDATE contract_draft SET
+         completeness_result_json = ?, completeness_status = 'done', updated_at = ?
+       WHERE completeness_task_id = ?`
+    )
+      .bind(result.output, now, taskId)
+      .run();
+  }
+
   // Write audit log
   const provider = task.provider_id
     ? await env.DB.prepare("SELECT * FROM ai_provider_config WHERE id = ?")
@@ -570,6 +604,14 @@ export const completeTask = async (
       now
     )
     .run();
+
+  if (task.biz_type === "contract_draft") {
+    await env.DB.prepare(
+      "UPDATE task_queue SET payload_json = '{}', result_json = '{}' WHERE id = ?"
+    )
+      .bind(taskId)
+      .run();
+  }
 
   await publishEvent(env, "TASK_COMPLETED", "ai-slot", {
     task_id: taskId,
@@ -642,6 +684,30 @@ export const failTask = async (
     )
       .bind(`AI审计任务失败：${error}`, now, task.biz_id)
       .run();
+  }
+
+  if (task.biz_type === "contract_draft" && newStatus === "failed") {
+    if (task.task_type === "contract_draft_section") {
+      await env.DB.prepare(
+        "UPDATE contract_draft_section SET ai_status = 'error', updated_at = ? WHERE ai_task_id = ?"
+      )
+        .bind(now, taskId)
+        .run();
+    }
+    if (task.task_type === "contract_compliance_review") {
+      await env.DB.prepare(
+        "UPDATE contract_draft_section SET review_status = 'error', updated_at = ? WHERE review_task_id = ?"
+      )
+        .bind(now, taskId)
+        .run();
+    }
+    if (task.task_type === "contract_completeness_check") {
+      await env.DB.prepare(
+        "UPDATE contract_draft SET completeness_status = 'error', updated_at = ? WHERE completeness_task_id = ?"
+      )
+        .bind(now, taskId)
+        .run();
+    }
   }
 
   // Write error audit log
