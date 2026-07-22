@@ -66,9 +66,14 @@ export type ClauseTemplate = {
   sort_order: number;
 };
 
-export type DraftDetail = { draft: ContractDraft; sections: ContractDraftSection[] };
+export type DraftDetail = {
+  draft: ContractDraft;
+  sections: ContractDraftSection[];
+};
 
-export async function listClauseTemplates(direction: DraftDirection): Promise<ClauseTemplate[]> {
+export async function listClauseTemplates(
+  direction: DraftDirection
+): Promise<ClauseTemplate[]> {
   const res = await http.request<{ success: boolean; data: ClauseTemplate[] }>(
     "get",
     "/api/v1/contract-draft/templates",
@@ -120,18 +125,20 @@ export async function updateDraft(
 }
 
 export async function deleteDraft(id: number): Promise<void> {
-  await http.request<{ success: boolean }>("delete", `/api/v1/contract-draft/${id}`);
+  await http.request<{ success: boolean }>(
+    "delete",
+    `/api/v1/contract-draft/${id}`
+  );
 }
 
 export async function addSection(
   draftId: number,
   payload: { section_key?: string; title?: string }
 ): Promise<ContractDraftSection> {
-  const res = await http.request<{ success: boolean; data: ContractDraftSection }>(
-    "post",
-    `/api/v1/contract-draft/${draftId}/sections`,
-    { data: payload }
-  );
+  const res = await http.request<{
+    success: boolean;
+    data: ContractDraftSection;
+  }>("post", `/api/v1/contract-draft/${draftId}/sections`, { data: payload });
   return res.data;
 }
 
@@ -139,10 +146,10 @@ export async function getSection(
   draftId: number,
   sectionId: number
 ): Promise<ContractDraftSection> {
-  const res = await http.request<{ success: boolean; data: ContractDraftSection }>(
-    "get",
-    `/api/v1/contract-draft/${draftId}/sections/${sectionId}`
-  );
+  const res = await http.request<{
+    success: boolean;
+    data: ContractDraftSection;
+  }>("get", `/api/v1/contract-draft/${draftId}/sections/${sectionId}`);
   return res.data;
 }
 
@@ -151,15 +158,19 @@ export async function updateSection(
   sectionId: number,
   data: Record<string, unknown>
 ): Promise<ContractDraftSection> {
-  const res = await http.request<{ success: boolean; data: ContractDraftSection }>(
-    "put",
-    `/api/v1/contract-draft/${draftId}/sections/${sectionId}`,
-    { data }
-  );
+  const res = await http.request<{
+    success: boolean;
+    data: ContractDraftSection;
+  }>("put", `/api/v1/contract-draft/${draftId}/sections/${sectionId}`, {
+    data
+  });
   return res.data;
 }
 
-export async function removeSection(draftId: number, sectionId: number): Promise<void> {
+export async function removeSection(
+  draftId: number,
+  sectionId: number
+): Promise<void> {
   await http.request<{ success: boolean }>(
     "delete",
     `/api/v1/contract-draft/${draftId}/sections/${sectionId}`
@@ -171,7 +182,10 @@ export async function generateSection(
   sectionId: number,
   instruction?: string
 ): Promise<number> {
-  const res = await http.request<{ success: boolean; data: { task_id: number } }>(
+  const res = await http.request<{
+    success: boolean;
+    data: { task_id: number };
+  }>(
     "post",
     `/api/v1/contract-draft/${draftId}/sections/${sectionId}/generate`,
     { data: { instruction: instruction ?? "" } }
@@ -179,21 +193,26 @@ export async function generateSection(
   return res.data.task_id;
 }
 
-export async function reviewSection(draftId: number, sectionId: number): Promise<number> {
-  const res = await http.request<{ success: boolean; data: { task_id: number } }>(
-    "post",
-    `/api/v1/contract-draft/${draftId}/sections/${sectionId}/review`,
-    { data: {} }
-  );
+export async function reviewSection(
+  draftId: number,
+  sectionId: number
+): Promise<number> {
+  const res = await http.request<{
+    success: boolean;
+    data: { task_id: number };
+  }>("post", `/api/v1/contract-draft/${draftId}/sections/${sectionId}/review`, {
+    data: {}
+  });
   return res.data.task_id;
 }
 
 export async function requestCompleteness(draftId: number): Promise<number> {
-  const res = await http.request<{ success: boolean; data: { task_id: number } }>(
-    "post",
-    `/api/v1/contract-draft/${draftId}/completeness-check`,
-    { data: {} }
-  );
+  const res = await http.request<{
+    success: boolean;
+    data: { task_id: number };
+  }>("post", `/api/v1/contract-draft/${draftId}/completeness-check`, {
+    data: {}
+  });
   return res.data.task_id;
 }
 

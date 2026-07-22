@@ -11,25 +11,37 @@ export interface RenderSegment {
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
 
-export function fillPlaceholders(text: string, values: Record<string, string>): string {
+export function fillPlaceholders(
+  text: string,
+  values: Record<string, string>
+): string {
   return text.replace(PLACEHOLDER_RE, (raw, key: string) => {
     const v = values[key];
     return v && v.length > 0 ? v : raw;
   });
 }
 
-function splitByPlaceholders(text: string, values: Record<string, string>): RenderSegment[] {
+function splitByPlaceholders(
+  text: string,
+  values: Record<string, string>
+): RenderSegment[] {
   const segments: RenderSegment[] = [];
   let last = 0;
   for (const m of text.matchAll(PLACEHOLDER_RE)) {
     const idx = m.index ?? 0;
-    if (idx > last) segments.push({ text: text.slice(last, idx), kind: "plain" });
+    if (idx > last)
+      segments.push({ text: text.slice(last, idx), kind: "plain" });
     const key = m[1];
     const value = values[key];
-    segments.push({ text: value && value.length > 0 ? value : m[0], kind: "keyword", key });
+    segments.push({
+      text: value && value.length > 0 ? value : m[0],
+      kind: "keyword",
+      key
+    });
     last = idx + m[0].length;
   }
-  if (last < text.length) segments.push({ text: text.slice(last), kind: "plain" });
+  if (last < text.length)
+    segments.push({ text: text.slice(last), kind: "plain" });
   return segments;
 }
 
@@ -53,7 +65,10 @@ export function buildRenderSegments(
   const segments: RenderSegment[] = [];
   let cursor = 0;
   for (const h of hits) {
-    if (h.start > cursor) segments.push(...splitByPlaceholders(content.slice(cursor, h.start), values));
+    if (h.start > cursor)
+      segments.push(
+        ...splitByPlaceholders(content.slice(cursor, h.start), values)
+      );
     segments.push({
       text: h.risk.text,
       kind: h.risk.level === "red" ? "risk-red" : "risk-yellow",
@@ -62,7 +77,8 @@ export function buildRenderSegments(
     });
     cursor = h.end;
   }
-  if (cursor < content.length) segments.push(...splitByPlaceholders(content.slice(cursor), values));
+  if (cursor < content.length)
+    segments.push(...splitByPlaceholders(content.slice(cursor), values));
   return segments;
 }
 
@@ -73,7 +89,9 @@ export function parseRiskAnnotations(json: string | null): RiskAnnotation[] {
     return Array.isArray(parsed)
       ? parsed.filter(
           (r): r is RiskAnnotation =>
-            !!r && typeof r === "object" && typeof (r as RiskAnnotation).text === "string"
+            !!r &&
+            typeof r === "object" &&
+            typeof (r as RiskAnnotation).text === "string"
         )
       : [];
   } catch {

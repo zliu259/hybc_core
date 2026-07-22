@@ -80,13 +80,10 @@ describe("scheduled · agent 高危写清扫的接线", () => {
     expect(vi.mocked(sweepStalePendingActions).mock.calls[0][0]).toBe(env.DB);
   });
 
-  it.each(["*/2 * * * *", "0 18 * * *"])(
-    "does not run the sweep on the %s batch",
-    async (cron) => {
-      await runCron(cron);
-      expect(sweepStalePendingActions).not.toHaveBeenCalled();
-    }
-  );
+  it.each(["*/2 * * * *", "0 18 * * *"])("does not run the sweep on the %s batch", async (cron) => {
+    await runCron(cron);
+    expect(sweepStalePendingActions).not.toHaveBeenCalled();
+  });
 
   /**
    * 与本文件其它 cron 任务一致：清扫失败绝不能把整批次带崩，否则同批的审批超时检查、

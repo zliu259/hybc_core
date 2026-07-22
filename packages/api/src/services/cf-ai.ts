@@ -28,7 +28,7 @@ export const pickDraftModel = (sectionSort: number): string =>
   CF_AI_MODELS[Math.abs(Math.trunc(sectionSort)) % CF_AI_MODELS.length];
 
 export const pickCriticModel = (draftModel: string): string =>
-  CF_AI_MODELS.find(m => m !== draftModel) ?? CF_AI_MODELS[0];
+  CF_AI_MODELS.find((m) => m !== draftModel) ?? CF_AI_MODELS[0];
 
 interface CfAiPrompt {
   system: string;
@@ -98,7 +98,7 @@ export const callCfAi = async (
       messages: [{ role: "user", content: prompt.user }],
       max_tokens: MAX_OUTPUT_TOKENS
     })) as { content?: Array<{ text?: string }> };
-    const output = (resp.content ?? []).map(block => block.text ?? "").join("");
+    const output = (resp.content ?? []).map((block) => block.text ?? "").join("");
     return { output, latency_ms: Date.now() - startedAt };
   }
   const resp = (await env.AI.run(model, {
@@ -112,8 +112,8 @@ export const callCfAi = async (
   const output =
     resp.output_text ??
     (resp.output ?? [])
-      .flatMap(item => item.content ?? [])
-      .map(block => block.text ?? "")
+      .flatMap((item) => item.content ?? [])
+      .map((block) => block.text ?? "")
       .join("");
   return { output, latency_ms: Date.now() - startedAt };
 };

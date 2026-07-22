@@ -1,6 +1,11 @@
 // packages/api/test/cf-ai-models.test.ts
 import { describe, it, expect } from "vitest";
-import { CF_AI_MODELS, pickDraftModel, pickCriticModel, isCfAiTaskType } from "../src/services/cf-ai";
+import {
+  CF_AI_MODELS,
+  pickDraftModel,
+  pickCriticModel,
+  isCfAiTaskType
+} from "../src/services/cf-ai";
 
 describe("cf_ai 模型选择", () => {
   it("起草模型按节序交替均衡", () => {

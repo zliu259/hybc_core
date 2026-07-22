@@ -2,7 +2,9 @@ import { describe, it, expect } from "vitest";
 import { useContractDraftAI } from "../useContractDraftAI";
 import type { ContractDraftSection } from "@/api/contract-draft";
 
-const sectionWith = (over: Partial<ContractDraftSection>): ContractDraftSection => ({
+const sectionWith = (
+  over: Partial<ContractDraftSection>
+): ContractDraftSection => ({
   id: 1,
   draft_id: 9,
   section_key: "payment",

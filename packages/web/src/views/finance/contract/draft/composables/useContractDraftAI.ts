@@ -7,9 +7,16 @@ export interface SectionAiState {
 }
 
 interface Deps {
-  generate?: (draftId: number, sectionId: number, instruction?: string) => Promise<number>;
+  generate?: (
+    draftId: number,
+    sectionId: number,
+    instruction?: string
+  ) => Promise<number>;
   review?: (draftId: number, sectionId: number) => Promise<number>;
-  getSection?: (draftId: number, sectionId: number) => Promise<ContractDraftSection>;
+  getSection?: (
+    draftId: number,
+    sectionId: number
+  ) => Promise<ContractDraftSection>;
   sleep?: (ms: number) => Promise<void>;
   intervalMs?: number;
   maxPolls?: number;
@@ -18,7 +25,11 @@ interface Deps {
 const realSleep = (ms: number) => new Promise<void>(r => setTimeout(r, ms));
 const IDLE: SectionAiState = { phase: "idle", error: "" };
 
-async function defaultGenerate(draftId: number, sectionId: number, instruction?: string) {
+async function defaultGenerate(
+  draftId: number,
+  sectionId: number,
+  instruction?: string
+) {
   const { generateSection } = await import("@/api/contract-draft");
   return generateSection(draftId, sectionId, instruction);
 }
@@ -44,7 +55,8 @@ export function useContractDraftAI(deps: Deps = {}) {
   const setState = (sectionId: number, state: SectionAiState) => {
     states.value = new Map(states.value).set(sectionId, state);
   };
-  const stateOf = (sectionId: number): SectionAiState => states.value.get(sectionId) ?? IDLE;
+  const stateOf = (sectionId: number): SectionAiState =>
+    states.value.get(sectionId) ?? IDLE;
 
   async function pollUntil(
     draftId: number,

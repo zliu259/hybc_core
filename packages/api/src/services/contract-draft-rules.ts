@@ -22,7 +22,12 @@ const RULE_PATTERNS: RulePattern[] = [
     reason: "背靠背付款条款：以第三方付款作为付款前提，对中小企业无效",
     legal_basis: "最高人民法院2024年批复（法释〔2024〕11号）"
   },
-  { re: /\d{17}[0-9Xx]/, level: "red", reason: "正文含身份证号明文，个人信息不得写入合同模板正文", legal_basis: "《个人信息保护法》" },
+  {
+    re: /\d{17}[0-9Xx]/,
+    level: "red",
+    reason: "正文含身份证号明文，个人信息不得写入合同模板正文",
+    legal_basis: "《个人信息保护法》"
+  },
   {
     re: /免除[^。；]{0,16}人身(损害|伤害)[^。；]{0,8}责任|不承担[^。；]{0,12}人身(损害|伤害)/,
     level: "red",
@@ -131,7 +136,7 @@ export const parseContractSectionOutput = (rawOutput: string): ContractSectionOu
           typeof (s as { text?: unknown }).text === "string" &&
           typeof (s as { reason?: unknown }).reason === "string"
       )
-      .map(s => ({
+      .map((s) => ({
         text: s.text,
         level: s.level === "red" ? "red" : "yellow",
         reason: s.reason,

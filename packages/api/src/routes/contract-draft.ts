@@ -86,7 +86,10 @@ const parseKeywords = (draft: ContractDraft): Record<string, unknown> => {
 contractDraftRoutes.get("/templates", async (c) => {
   const direction = c.req.query("direction");
   if (!isDirection(direction)) {
-    return c.json({ success: false, error: { message: "direction 必须为 inbound 或 outbound" } }, 400);
+    return c.json(
+      { success: false, error: { message: "direction 必须为 inbound 或 outbound" } },
+      400
+    );
   }
   const rows = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
@@ -104,7 +107,10 @@ contractDraftRoutes.post("/", async (c) => {
   const body = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
   if (!body) return c.json({ success: false, error: { message: "请求体不是合法 JSON" } }, 400);
   if (!isDirection(body.direction)) {
-    return c.json({ success: false, error: { message: "direction 必须为 inbound 或 outbound" } }, 400);
+    return c.json(
+      { success: false, error: { message: "direction 必须为 inbound 或 outbound" } },
+      400
+    );
   }
   const title =
     typeof body.title === "string" && body.title.trim().length > 0
@@ -141,7 +147,7 @@ contractDraftRoutes.post("/", async (c) => {
   )
     .bind(body.direction)
     .all<ContractClauseTemplate>();
-  const stmts = (templates.results ?? []).map(t =>
+  const stmts = (templates.results ?? []).map((t) =>
     c.env.DB.prepare(
       `INSERT INTO contract_draft_section
          (draft_id, section_key, title, source, content, sort_order, status, created_at, updated_at)
@@ -237,7 +243,9 @@ contractDraftRoutes.delete("/:id", async (c) => {
   if (!draft || !canAccess(draft, auth)) {
     return c.json({ success: false, error: { message: "草稿不存在" } }, 404);
   }
-  await c.env.DB.prepare("UPDATE contract_draft SET status = 'deleted', updated_at = ? WHERE id = ?")
+  await c.env.DB.prepare(
+    "UPDATE contract_draft SET status = 'deleted', updated_at = ? WHERE id = ?"
+  )
     .bind(nowIso(), draft.id)
     .run();
   return c.json({ success: true, data: { id: draft.id } });
@@ -338,9 +346,13 @@ contractDraftRoutes.put("/:id/sections/:sectionId", async (c) => {
      WHERE id = ?`
   )
     .bind(
-      typeof body.title === "string" && body.title.trim() ? body.title.trim().slice(0, MAX_TITLE) : section.title,
+      typeof body.title === "string" && body.title.trim()
+        ? body.title.trim().slice(0, MAX_TITLE)
+        : section.title,
       nextContent,
-      typeof body.instruction === "string" ? body.instruction.slice(0, MAX_INSTRUCTION) : section.instruction,
+      typeof body.instruction === "string"
+        ? body.instruction.slice(0, MAX_INSTRUCTION)
+        : section.instruction,
       typeof body.sort_order === "number" ? body.sort_order : section.sort_order,
       contentChanged ? "manual" : section.source,
       annotations ? JSON.stringify(annotations) : null,
@@ -380,7 +392,10 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as Record<string, unknown>;
   const instruction = typeof body.instruction === "string" ? body.instruction.trim() : "";
   if (instruction.length > MAX_INSTRUCTION) {
-    return c.json({ success: false, error: { message: `个性化指令不得超过 ${MAX_INSTRUCTION} 字` } }, 400);
+    return c.json(
+      { success: false, error: { message: `个性化指令不得超过 ${MAX_INSTRUCTION} 字` } },
+      400
+    );
   }
 
   // 闸门前置：抢占节状态，防重复生成（D1 无事务）
@@ -428,7 +443,9 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
     .run();
   // 即时执行（本地无 Queue 也能跑通）；Queue 事件与 cron 为后备，原子抢占保证幂等。
   c.executionCtx.waitUntil(
-    executeCfAiTask(c.env, task.id).catch(err => console.error("cf_ai execute failed", task.id, err))
+    executeCfAiTask(c.env, task.id).catch((err) =>
+      console.error("cf_ai execute failed", task.id, err)
+    )
   );
   return c.json({ success: true, data: { task_id: task.id, section_id: section.id } });
 });
@@ -474,7 +491,9 @@ contractDraftRoutes.post("/:id/sections/:sectionId/review", async (c) => {
     .bind(task.id, section.id)
     .run();
   c.executionCtx.waitUntil(
-    executeCfAiTask(c.env, task.id).catch(err => console.error("cf_ai review failed", task.id, err))
+    executeCfAiTask(c.env, task.id).catch((err) =>
+      console.error("cf_ai review failed", task.id, err)
+    )
   );
   return c.json({ success: true, data: { task_id: task.id, section_id: section.id } });
 });
@@ -510,7 +529,9 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
       draft_id: draft.id,
       direction: draft.direction,
       catalog_json: JSON.stringify(catalog.results ?? []),
-      present_sections_json: JSON.stringify(sections.map(s => ({ section_key: s.section_key, title: s.title }))),
+      present_sections_json: JSON.stringify(
+        sections.map((s) => ({ section_key: s.section_key, title: s.title }))
+      ),
       keywords_json: draft.keywords_json
     },
     priority: 6,
@@ -520,7 +541,9 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
     .bind(task.id, draft.id)
     .run();
   c.executionCtx.waitUntil(
-    executeCfAiTask(c.env, task.id).catch(err => console.error("cf_ai completeness failed", task.id, err))
+    executeCfAiTask(c.env, task.id).catch((err) =>
+      console.error("cf_ai completeness failed", task.id, err)
+    )
   );
   return c.json({ success: true, data: { task_id: task.id } });
 });

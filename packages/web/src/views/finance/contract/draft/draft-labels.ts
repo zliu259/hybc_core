@@ -1,4 +1,9 @@
-export type DraftTagType = "primary" | "success" | "warning" | "danger" | "info";
+export type DraftTagType =
+  | "primary"
+  | "success"
+  | "warning"
+  | "danger"
+  | "info";
 
 export const sectionAiStatusTagType: Record<string, DraftTagType> = {
   generating: "warning",
@@ -24,5 +29,7 @@ export const requiredLevelLabelMap: Record<string, string> = {
   optional: "可选"
 };
 
-export const toDraftLabel = (map: Record<string, string>, value: string | null | undefined): string =>
-  value ? (map[value] ?? value) : "-";
+export const toDraftLabel = (
+  map: Record<string, string>,
+  value: string | null | undefined
+): string => (value ? (map[value] ?? value) : "-");
