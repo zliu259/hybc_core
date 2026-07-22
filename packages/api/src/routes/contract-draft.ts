@@ -667,20 +667,25 @@ contractDraftRoutes.post("/:id/finalize", async (c) => {
   );
 
   const now = nowIso();
-  const claim = await c.env.DB.prepare(
-    "UPDATE contract_draft SET status = 'finalized', updated_at = ? WHERE id = ? AND status = 'drafting'"
-  )
-    .bind(now, draft.id)
-    .run();
-  if (!claim.meta.changes) {
+  if (draft.status === "drafting") {
+    const claim = await c.env.DB.prepare(
+      "UPDATE contract_draft SET status = 'finalized', updated_at = ? WHERE id = ? AND status = 'drafting'"
+    )
+      .bind(now, draft.id)
+      .run();
+    if (!claim.meta.changes) {
+      return c.json({ success: false, error: { message: "当前状态不可定稿" } }, 409);
+    }
+    await c.env.DB.prepare(
+      `INSERT INTO contract_draft_revision (draft_id, snapshot_json, trigger_action, created_by_userid, created_at)
+       VALUES (?, ?, 'finalize', ?, ?)`
+    )
+      .bind(draft.id, JSON.stringify({ draft, sections: fixedSections, values }), auth.sub, now)
+      .run();
+  } else if (draft.status !== "finalized") {
     return c.json({ success: false, error: { message: "当前状态不可定稿" } }, 409);
   }
-  await c.env.DB.prepare(
-    `INSERT INTO contract_draft_revision (draft_id, snapshot_json, trigger_action, created_by_userid, created_at)
-     VALUES (?, ?, 'finalize', ?, ?)`
-  )
-    .bind(draft.id, JSON.stringify({ draft, sections: fixedSections, values }), auth.sub, now)
-    .run();
+  // 已 finalized：幂等重算返回（convert 失败/刷新后的重试出口），不重复写快照
   return c.json({
     success: true,
     data: { draft_id: draft.id, fixed_sections: fixedSections, unresolved_keys: unresolved }

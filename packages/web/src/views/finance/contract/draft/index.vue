@@ -477,10 +477,14 @@ onMounted(async () => {
             </el-button>
             <el-button
               type="primary"
-              :disabled="draft.status !== 'drafting'"
+              :disabled="!['drafting', 'finalized'].includes(draft.status)"
               @click="convertVisible = true"
             >
-              定稿转正式合同
+              {{
+                draft.status === "finalized"
+                  ? "重试转正式合同"
+                  : "定稿转正式合同"
+              }}
             </el-button>
           </div>
           <SectionCard
