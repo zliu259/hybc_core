@@ -93,6 +93,35 @@ const mockOutput = (taskType: CfAiTaskType): string => {
   });
 };
 
+/**
+ * Workers AI 各模型返回形状不一（reasoning 模型含 <think> 推理块 / OpenAI 兼容 choices 结构），
+ * 统一宽容提取正文；推理块（含被 max_tokens 截断的未闭合块）一律剥除。
+ */
+export const parseCfAiTextOutput = (resp: unknown): string => {
+  const r = resp && typeof resp === "object" ? (resp as Record<string, unknown>) : {};
+  const nested =
+    r.result && typeof r.result === "object" ? (r.result as Record<string, unknown>) : {};
+  const choices = Array.isArray(r.choices) ? (r.choices as Array<Record<string, unknown>>) : [];
+  const firstMessage = choices[0]?.message;
+  const choiceContent =
+    firstMessage && typeof firstMessage === "object"
+      ? (firstMessage as Record<string, unknown>).content
+      : undefined;
+  const candidates = [
+    r.response,
+    nested.response,
+    choiceContent,
+    r.output_text,
+    nested.output_text
+  ];
+  const raw =
+    candidates.find((v): v is string => typeof v === "string" && v.trim().length > 0) ?? "";
+  return raw
+    .replace(/<think>[\s\S]*?<\/think>/g, "")
+    .replace(/<think>[\s\S]*$/, "")
+    .trim();
+};
+
 /** 调用 env.AI；GPT-5.6 系走 Responses 格式，Claude 走 Messages 格式。本地环境返回确定性 mock。 */
 export const callCfAi = async (
   env: Env,
@@ -105,15 +134,14 @@ export const callCfAi = async (
     return { output: mockOutput(taskType), latency_ms: 0 };
   }
   if (model.startsWith("@cf/")) {
-    const resp = (await env.AI.run(model, {
+    const resp = await env.AI.run(model, {
       messages: [
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user }
       ],
       max_tokens: MAX_OUTPUT_TOKENS
-    })) as { response?: string; result?: { response?: string } };
-    const output = resp.response ?? resp.result?.response ?? "";
-    return { output, latency_ms: Date.now() - startedAt };
+    });
+    return { output: parseCfAiTextOutput(resp), latency_ms: Date.now() - startedAt };
   }
   if (model.startsWith("anthropic/")) {
     const resp = (await env.AI.run(model, {
@@ -186,17 +214,38 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
     const prompt = await resolvePrompt(env, rule.prompt_template_id, payload);
     if (!prompt) throw new Error(`提示词模板 ${rule.prompt_template_id} 不存在或未启用`);
 
-    const model =
+    const preferredModel =
       typeof payload.model === "string" && payload.model.length > 0
         ? payload.model
         : pickDraftModel(Number(payload.section_sort ?? 0));
 
-    const { output, latency_ms } = await callCfAi(env, model, task.task_type, prompt);
-    if (!output.trim()) throw new Error(`模型 ${model} 返回空输出`);
+    // 廉价模型（Workers AI 免费层）失败或空输出时就地回退高档模型，
+    // 避免任务进入"重试3次×cron兜底"的漫长失败循环。
+    let usedModel = preferredModel;
+    let result: CfAiCallResult | null = await callCfAi(
+      env,
+      preferredModel,
+      task.task_type,
+      prompt
+    ).catch((err: unknown) => {
+      if (preferredModel !== CF_AI_CHEAP_MODEL) throw err;
+      console.warn(`cf_ai 廉价模型调用失败，回退高档模型 task=${taskId}`, err);
+      return null;
+    });
+    if ((result === null || !result.output.trim()) && preferredModel === CF_AI_CHEAP_MODEL) {
+      usedModel = pickDraftModel(Number(payload.section_sort ?? 0));
+      result = await callCfAi(env, usedModel, task.task_type, prompt);
+    }
+    if (!result || !result.output.trim()) {
+      throw new Error(`模型 ${usedModel} 返回空输出`);
+    }
     await completeTask(env, taskId, CF_AI_NODE_ID, {
-      output,
-      latency_ms,
-      metadata: { model }
+      output: result.output,
+      latency_ms: result.latency_ms,
+      metadata:
+        usedModel === preferredModel
+          ? { model: usedModel }
+          : { model: usedModel, fallback_from: preferredModel }
     });
   } catch (err) {
     await failTask(env, taskId, CF_AI_NODE_ID, err instanceof Error ? err.message : String(err));
