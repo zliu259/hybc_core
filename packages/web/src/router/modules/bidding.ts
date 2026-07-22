@@ -7,7 +7,7 @@ export default {
   redirect: "/bidding/dedup",
   meta: {
     icon: "ri:tools-line",
-    title: "小工具",
+    title: "实用工具",
     rank: 20
   },
   children: [
@@ -18,6 +18,15 @@ export default {
       meta: {
         title: "查重对比",
         roles: ["super_admin", "manager", "site_manager", "operator"]
+      }
+    },
+    {
+      path: "/finance/contract/draft",
+      name: "ContractDraftWorkbench",
+      component: () => import("@/views/finance/contract/draft/index.vue"),
+      meta: {
+        title: "合同生成",
+        roles: ["super_admin", "manager", "finance"]
       }
     }
   ]

@@ -164,7 +164,7 @@ onMounted(async () => {
       </el-form-item>
       <el-button type="primary" @click="loadData">查询</el-button>
       <el-button @click="goCreate">新建合同</el-button>
-      <el-button type="success" plain @click="goDraft">AI 起草</el-button>
+      <el-button type="success" plain @click="goDraft">合同生成</el-button>
     </el-form>
 
     <el-table
