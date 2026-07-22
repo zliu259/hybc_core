@@ -3,6 +3,7 @@ import type { ScheduledController } from "@cloudflare/workers-types";
 import { checkTimeouts } from "./services/ai-slot";
 import { sweepStalePendingActions } from "./services/agent-pending";
 import { checkApprovalTimeouts } from "./services/approval/engine";
+import { sweepPendingCfAiTasks } from "./services/cf-ai";
 import {
   checkNodeHeartbeat,
   detectMissingLogs,
@@ -54,6 +55,8 @@ export const scheduled = async (
           deliverPendingFleetNotifications(env)
         ]);
         await requeueTimedOutTasks(env);
+        // cf_ai 任务重试/超时后回 pending 无新事件，cron 兜底补执行。
+        await sweepPendingCfAiTasks(env, 5);
         return;
       }
 

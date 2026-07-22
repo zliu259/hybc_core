@@ -2,6 +2,7 @@ import type { Env } from "./types/env";
 import { logEvent, type DomainEvent } from "./services/event-bus";
 import { advanceWorkflow } from "./services/approval/engine";
 import { createAiGateHandler } from "./services/ai-slot";
+import { executeCfAiTask, isCfAiTaskType } from "./services/cf-ai";
 import {
   resolveApplicantDisplayName,
   resolveApprovalPushMeta,
@@ -706,6 +707,14 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
                 error: error instanceof Error ? error.message : "unknown error"
               });
             }
+          }
+          break;
+        }
+        case "TASK_CREATED": {
+          const createdTaskId = Number(event.payload?.task_id ?? 0);
+          const createdTaskType = String(event.payload?.task_type ?? "");
+          if (createdTaskId > 0 && isCfAiTaskType(createdTaskType)) {
+            await executeCfAiTask(env, createdTaskId);
           }
           break;
         }

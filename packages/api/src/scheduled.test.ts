@@ -31,6 +31,10 @@ vi.mock("./services/approval/engine", () => ({
   checkApprovalTimeouts: vi.fn(async () => {})
 }));
 
+vi.mock("./services/cf-ai", () => ({
+  sweepPendingCfAiTasks: vi.fn(async () => {})
+}));
+
 vi.mock("./services/cron-jobs", () => ({
   checkNodeHeartbeat: vi.fn(async () => {}),
   detectMissingLogs: vi.fn(async () => {}),
