@@ -55,6 +55,7 @@ class OpenAIProvider(AiProvider):
             "external_log_audit",
             "ocr_extract",
             "approval_ai_gate",
+            "bidding_dedup_rewrite",
         ]
 
     def execute(

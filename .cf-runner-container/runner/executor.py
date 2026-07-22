@@ -14,6 +14,7 @@ import httpx
 from .providers.base import AiProvider
 from .providers.claude import ClaudeProvider
 from .providers.openai_provider import OpenAIProvider
+from .rewrite_prompt import build_rewrite_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -65,6 +66,8 @@ class TaskExecutor:
 
         if prompt is None:
             prompt = self._default_prompt_for_task(task_type)
+            if prompt is None and task_type == "bidding_dedup_rewrite":
+                prompt = build_rewrite_prompt(payload)
 
         if not isinstance(preferred_provider_key, str):
             preferred_provider_key = ""
@@ -364,9 +367,14 @@ class TaskExecutor:
                         urljoin(base_url, f"/api/v1/upload/object/{quote(normalized_key, safe='')}")
                     )
 
+        # 与 poller 同源的 API key（runner/config.py Settings.api_key ← API_KEY 环境变量）：
+        # contract-draft/ 前缀附件需鉴权；其余前缀带上该头也无副作用。
+        headers = {"X-API-Key": os.getenv("API_KEY", "local-dev-task-api-key")}
         for url in candidate_urls:
             try:
-                response = httpx.get(url, timeout=25.0, follow_redirects=True)
+                response = httpx.get(
+                    url, timeout=25.0, follow_redirects=True, headers=headers
+                )
                 response.raise_for_status()
                 return response.content
             except Exception as exc:

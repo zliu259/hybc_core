@@ -35,6 +35,7 @@ class LocalRulesProvider(AiProvider):
             "external_log_audit",
             "file_generate",
             "approval_ai_gate",
+            "bidding_dedup_rewrite",
         ]
 
     def execute(
@@ -77,6 +78,8 @@ class LocalRulesProvider(AiProvider):
             output = self._file_generate(payload)
         elif task_type == "approval_ai_gate":
             output = self._approval_ai_gate(payload)
+        elif task_type == "bidding_dedup_rewrite":
+            output = self._bidding_dedup_rewrite(payload)
         else:
             output = json.dumps({"error": f"Unsupported task type: {task_type}"})
 
@@ -675,3 +678,19 @@ class LocalRulesProvider(AiProvider):
             },
             ensure_ascii=False,
         )
+
+    def _bidding_dedup_rewrite(self, payload: dict[str, object]) -> str:
+        paragraphs_raw = payload.get("paragraphs", [])
+        paragraphs = paragraphs_raw if isinstance(paragraphs_raw, list) else []
+        rewrites: list[dict[str, str]] = []
+        for item in paragraphs:
+            if not isinstance(item, dict):
+                continue
+            pid = str(item.get("id", ""))
+            if not pid:
+                continue
+            text = str(item.get("text", ""))
+            # 本地 mock：确定性改写（非真实 AI），保证与原文不同。
+            rewritten = f"【已降重】{text}" if text else text
+            rewrites.append({"id": pid, "text": rewritten})
+        return json.dumps({"rewrites": rewrites}, ensure_ascii=False)
