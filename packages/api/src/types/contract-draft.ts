@@ -4,6 +4,9 @@ export type ContractDraftStatus = (typeof contractDraftStatuses)[number];
 export const draftDirections = ["inbound", "outbound"] as const;
 export type DraftDirection = (typeof draftDirections)[number];
 
+export const contractFamilies = ["pipe_jacking", "equipment_lease"] as const;
+export type ContractFamily = (typeof contractFamilies)[number];
+
 export const sectionAiStatuses = ["generating", "done", "error"] as const;
 export type SectionAiStatus = (typeof sectionAiStatuses)[number];
 
@@ -19,6 +22,7 @@ export interface ContractDraft {
   id: number;
   title: string;
   direction: DraftDirection;
+  family: ContractFamily;
   project_id: number | null;
   entity_id: number | null;
   counterparty_name: string;
@@ -63,6 +67,7 @@ export interface ContractDraftSection {
 
 export interface ContractClauseTemplate {
   id: number;
+  family: ContractFamily;
   section_key: string;
   direction: DraftDirection | "both";
   required_level: "core" | "recommended" | "optional";

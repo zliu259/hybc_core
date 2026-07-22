@@ -16,8 +16,10 @@ import {
   type ClauseTemplate,
   type ContractDraft,
   type ContractDraftSection,
+  type ContractFamily,
   type DraftDirection
 } from "@/api/contract-draft";
+import { familyLabelMap } from "./draft-labels";
 import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
@@ -137,18 +139,22 @@ const applyDetail = (detail: {
   }
 };
 
-const loadTemplates = async (direction: DraftDirection) => {
-  templates.value = await listClauseTemplates(direction);
+const loadTemplates = async (
+  direction: DraftDirection,
+  family: ContractFamily
+) => {
+  templates.value = await listClauseTemplates(direction, family);
 };
 
 const onCreate = async (payload: {
   direction: DraftDirection;
+  family: ContractFamily;
   title: string;
   counterparty_name: string;
 }) => {
   const detail = await createDraft(payload);
   applyDetail(detail);
-  await loadTemplates(detail.draft.direction);
+  await loadTemplates(detail.draft.direction, detail.draft.family);
   await router.replace({ query: { id: String(detail.draft.id) } });
 };
 
@@ -315,7 +321,7 @@ onMounted(async () => {
   if (Number.isInteger(id) && id > 0) {
     const detail = await getDraft(id);
     applyDetail(detail);
-    await loadTemplates(detail.draft.direction);
+    await loadTemplates(detail.draft.direction, detail.draft.family);
   }
 });
 </script>
@@ -329,9 +335,16 @@ onMounted(async () => {
           <el-card class="meta-card">
             <template #header>
               <div class="meta-header">
-                <span>{{
-                  draft.direction === "inbound" ? "对甲方合同" : "对分包商合同"
-                }}</span>
+                <span class="meta-title">
+                  {{
+                    draft.direction === "inbound"
+                      ? "对甲方合同"
+                      : "对分包商合同"
+                  }}
+                  <el-tag size="small">{{
+                    familyLabelMap[draft.family] ?? draft.family
+                  }}</el-tag>
+                </span>
                 <el-button
                   size="small"
                   type="primary"
@@ -466,6 +479,11 @@ onMounted(async () => {
   display: flex;
   align-items: center;
   justify-content: space-between;
+}
+.meta-title {
+  display: inline-flex;
+  gap: 6px;
+  align-items: center;
 }
 .toolbar {
   display: flex;

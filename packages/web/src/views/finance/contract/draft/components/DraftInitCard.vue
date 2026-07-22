@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { reactive } from "vue";
-import type { DraftDirection } from "@/api/contract-draft";
+import type { ContractFamily, DraftDirection } from "@/api/contract-draft";
 
 const emit = defineEmits<{
   (
     e: "create",
     payload: {
       direction: DraftDirection;
+      family: ContractFamily;
       title: string;
       counterparty_name: string;
     }
@@ -15,6 +16,7 @@ const emit = defineEmits<{
 
 const form = reactive({
   direction: "inbound" as DraftDirection,
+  family: "pipe_jacking" as ContractFamily,
   title: "",
   counterparty_name: ""
 });
@@ -24,6 +26,19 @@ const form = reactive({
   <el-card class="init-card">
     <template #header>新建 AI 合同草稿</template>
     <el-form label-width="96px">
+      <el-form-item label="合同类型" required>
+        <el-radio-group v-model="form.family">
+          <el-radio-button value="pipe_jacking">顶管施工协议</el-radio-button>
+          <el-radio-button value="equipment_lease"
+            >设备租赁/机械施工</el-radio-button
+          >
+        </el-radio-group>
+      </el-form-item>
+      <el-form-item>
+        <el-text size="small" type="info"
+          >设备租赁族：对甲方=我方出租/带机施工收款；对分包商=我方对外承租付款</el-text
+        >
+      </el-form-item>
       <el-form-item label="合同立场" required>
         <el-radio-group v-model="form.direction">
           <el-radio-button value="inbound"

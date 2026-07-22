@@ -23,6 +23,11 @@ export const sectionSourceLabelMap: Record<string, string> = {
   manual: "手工编辑"
 };
 
+export const familyLabelMap: Record<string, string> = {
+  pipe_jacking: "顶管施工",
+  equipment_lease: "设备租赁/机械施工"
+};
+
 export const requiredLevelLabelMap: Record<string, string> = {
   core: "核心",
   recommended: "建议",

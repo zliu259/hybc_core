@@ -12,9 +12,10 @@ import type {
   ContractClauseTemplate,
   ContractDraft,
   ContractDraftSection,
+  ContractFamily,
   DraftDirection
 } from "../types/contract-draft";
-import { draftDirections } from "../types/contract-draft";
+import { contractFamilies, draftDirections } from "../types/contract-draft";
 
 const ROLES = ["super_admin", "manager", "finance"] as const;
 const MAX_INSTRUCTION = 500;
@@ -41,6 +42,9 @@ contractDraftRoutes.use("*", async (c, next) => {
 
 const isDirection = (value: unknown): value is DraftDirection =>
   typeof value === "string" && (draftDirections as readonly string[]).includes(value);
+
+const isFamily = (value: unknown): value is ContractFamily =>
+  typeof value === "string" && (contractFamilies as readonly string[]).includes(value);
 
 const canAccess = (draft: ContractDraft, auth: { sub: string; roles: string[] }): boolean =>
   draft.created_by_userid === auth.sub || auth.roles.includes("super_admin");
@@ -91,12 +95,19 @@ contractDraftRoutes.get("/templates", async (c) => {
       400
     );
   }
+  const family = c.req.query("family") ?? "pipe_jacking";
+  if (!isFamily(family)) {
+    return c.json(
+      { success: false, error: { message: "family 必须为 pipe_jacking 或 equipment_lease" } },
+      400
+    );
+  }
   const rows = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
-      WHERE (direction = ? OR direction = 'both') AND status = 'active'
+      WHERE family = ? AND (direction = ? OR direction = 'both') AND status = 'active'
       ORDER BY sort_order ASC, id ASC`
   )
-    .bind(direction)
+    .bind(family, direction)
     .all<ContractClauseTemplate>();
   return c.json({ success: true, data: rows.results ?? [] });
 });
@@ -112,22 +123,36 @@ contractDraftRoutes.post("/", async (c) => {
       400
     );
   }
-  const title =
-    typeof body.title === "string" && body.title.trim().length > 0
-      ? body.title.trim().slice(0, MAX_TITLE)
+  const family = body.family ?? "pipe_jacking";
+  if (!isFamily(family)) {
+    return c.json(
+      { success: false, error: { message: "family 必须为 pipe_jacking 或 equipment_lease" } },
+      400
+    );
+  }
+  const defaultTitle =
+    family === "equipment_lease"
+      ? body.direction === "inbound"
+        ? "设备租赁合同（对甲方出租）"
+        : "设备租赁合同（对分包商/供应商承租）"
       : body.direction === "inbound"
         ? "顶管施工协议（对甲方）"
         : "顶管施工协议（对分包商）";
+  const title =
+    typeof body.title === "string" && body.title.trim().length > 0
+      ? body.title.trim().slice(0, MAX_TITLE)
+      : defaultTitle;
   const now = nowIso();
   const insert = await c.env.DB.prepare(
     `INSERT INTO contract_draft
-       (title, direction, project_id, entity_id, counterparty_name, keywords_json,
+       (title, direction, family, project_id, entity_id, counterparty_name, keywords_json,
         status, created_by_userid, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, '{}', 'drafting', ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?, '{}', 'drafting', ?, ?, ?)`
   )
     .bind(
       title,
       body.direction,
+      family,
       typeof body.project_id === "number" ? body.project_id : null,
       typeof body.entity_id === "number" ? body.entity_id : null,
       typeof body.counterparty_name === "string" ? body.counterparty_name.trim() : "",
@@ -141,11 +166,11 @@ contractDraftRoutes.post("/", async (c) => {
   // 预载默认节集合（core + recommended；optional 由用户从目录追加）
   const templates = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
-      WHERE (direction = ? OR direction = 'both') AND status = 'active'
+      WHERE family = ? AND (direction = ? OR direction = 'both') AND status = 'active'
         AND required_level IN ('core', 'recommended')
       ORDER BY sort_order ASC, id ASC`
   )
-    .bind(body.direction)
+    .bind(family, body.direction)
     .all<ContractClauseTemplate>();
   const stmts = (templates.results ?? []).map((t) =>
     c.env.DB.prepare(
@@ -271,10 +296,10 @@ contractDraftRoutes.post("/:id/sections", async (c) => {
   if (typeof body.section_key === "string" && body.section_key.length > 0) {
     const tpl = await c.env.DB.prepare(
       `SELECT * FROM contract_clause_template
-        WHERE section_key = ? AND (direction = ? OR direction = 'both') AND status = 'active'
+        WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both') AND status = 'active'
         ORDER BY CASE direction WHEN 'both' THEN 1 ELSE 0 END ASC LIMIT 1`
     )
-      .bind(body.section_key, draft.direction)
+      .bind(draft.family, body.section_key, draft.direction)
       .first<ContractClauseTemplate>();
     if (!tpl) return c.json({ success: false, error: { message: "条款库中无该节" } }, 404);
     const dup = await c.env.DB.prepare(
@@ -411,10 +436,10 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
 
   const tpl = await c.env.DB.prepare(
     `SELECT * FROM contract_clause_template
-      WHERE section_key = ? AND (direction = ? OR direction = 'both') AND status = 'active'
+      WHERE family = ? AND section_key = ? AND (direction = ? OR direction = 'both') AND status = 'active'
       ORDER BY CASE direction WHEN 'both' THEN 1 ELSE 0 END ASC LIMIT 1`
   )
-    .bind(section.section_key, draft.direction)
+    .bind(draft.family, section.section_key, draft.direction)
     .first<ContractClauseTemplate>();
 
   const sectionIndex = Math.trunc(section.sort_order / 10);
@@ -517,9 +542,10 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
   const sections = await listSections(c.env, draft.id);
   const catalog = await c.env.DB.prepare(
     `SELECT section_key, title, required_level FROM contract_clause_template
-      WHERE (direction = ? OR direction = 'both') AND status = 'active' ORDER BY sort_order ASC`
+      WHERE family = ? AND (direction = ? OR direction = 'both') AND status = 'active'
+      ORDER BY sort_order ASC`
   )
-    .bind(draft.direction)
+    .bind(draft.family, draft.direction)
     .all<{ section_key: string; title: string; required_level: string }>();
   const task = await createTask(c.env, {
     task_type: "contract_completeness_check",

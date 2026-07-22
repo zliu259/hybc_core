@@ -1,6 +1,7 @@
 import { http } from "@/utils/http";
 
 export type DraftDirection = "inbound" | "outbound";
+export type ContractFamily = "pipe_jacking" | "equipment_lease";
 export type SectionAiStatus = "generating" | "done" | "error" | null;
 
 export type RiskAnnotation = {
@@ -15,6 +16,7 @@ export type ContractDraft = {
   id: number;
   title: string;
   direction: DraftDirection;
+  family: ContractFamily;
   project_id: number | null;
   entity_id: number | null;
   counterparty_name: string;
@@ -57,6 +59,7 @@ export type ContractDraftSection = {
 
 export type ClauseTemplate = {
   id: number;
+  family: ContractFamily;
   section_key: string;
   direction: DraftDirection | "both";
   required_level: "core" | "recommended" | "optional";
@@ -72,18 +75,20 @@ export type DraftDetail = {
 };
 
 export async function listClauseTemplates(
-  direction: DraftDirection
+  direction: DraftDirection,
+  family: ContractFamily
 ): Promise<ClauseTemplate[]> {
   const res = await http.request<{ success: boolean; data: ClauseTemplate[] }>(
     "get",
     "/api/v1/contract-draft/templates",
-    { params: { direction } }
+    { params: { direction, family } }
   );
   return res.data;
 }
 
 export async function createDraft(data: {
   direction: DraftDirection;
+  family?: ContractFamily;
   title?: string;
   counterparty_name?: string;
   project_id?: number;
