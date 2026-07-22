@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import {
@@ -25,7 +25,12 @@ import {
   draftStatusTagType,
   familyLabelMap
 } from "./draft-labels";
-import { listEntities, type Entity } from "@/api/entity";
+import {
+  listEntities,
+  listEntityBankAccounts,
+  type Entity,
+  type EntityBankAccount
+} from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
 import DraftInitCard from "./components/DraftInitCard.vue";
@@ -35,6 +40,7 @@ import CompletenessDialog, {
   type MissingHint
 } from "./components/CompletenessDialog.vue";
 import ConvertDialog from "./components/ConvertDialog.vue";
+import PlainPreviewDrawer from "./components/PlainPreviewDrawer.vue";
 
 defineOptions({ name: "ContractDraftWorkbench" });
 
@@ -52,6 +58,9 @@ const missingHints = ref<MissingHint[]>([]);
 const saving = ref(false);
 const checking = ref(false);
 const convertVisible = ref(false);
+const plainPreviewVisible = ref(false);
+const entityBankAccounts = ref<EntityBankAccount[]>([]);
+const selectedBankAccountId = ref<number | null>(null);
 
 const onConverted = (payload: { contract_id: number }) => {
   router.push(`/finance/contract/detail/${payload.contract_id}`);
@@ -78,43 +87,111 @@ const keywords = ref<Record<string, string>>({});
 const ourEntity = computed(() =>
   entities.value.find(e => e.id === draft.value?.entity_id)
 );
-const keywordValues = computed<Record<string, string>>(() => {
-  const our = ourEntity.value;
-  const cp = draft.value;
-  const base: Record<string, string> = { ...keywords.value };
-  if (cp?.direction === "inbound") {
-    // 我方为乙方
-    if (cp.counterparty_name) base.party_a = cp.counterparty_name;
-    if (cp.counterparty_credit_code)
-      base.party_a_credit_code = cp.counterparty_credit_code;
-    if (cp.counterparty_legal_person)
-      base.party_a_legal_person = cp.counterparty_legal_person;
-    if (cp.counterparty_address) base.party_a_address = cp.counterparty_address;
-    if (our) {
-      base.party_b = our.entity_name;
-      if (our.tax_id) base.party_b_credit_code = our.tax_id;
-      if (our.legal_person) base.party_b_legal_person = our.legal_person;
-      if (our.primary_bank_name) base.party_b_bank_name = our.primary_bank_name;
-      if (our.primary_bank_account_no)
-        base.party_b_bank_account = our.primary_bank_account_no;
-    }
-  } else if (cp) {
-    // 我方为甲方
-    if (our) {
-      base.party_a = our.entity_name;
-      if (our.tax_id) base.party_a_credit_code = our.tax_id;
-      if (our.legal_person) base.party_a_legal_person = our.legal_person;
-      if (our.primary_bank_name) base.party_a_bank_name = our.primary_bank_name;
-      if (our.primary_bank_account_no)
-        base.party_a_bank_account = our.primary_bank_account_no;
-    }
-    if (cp.counterparty_name) base.party_b = cp.counterparty_name;
-    if (cp.counterparty_credit_code)
-      base.party_b_credit_code = cp.counterparty_credit_code;
-    if (cp.counterparty_legal_person)
-      base.party_b_legal_person = cp.counterparty_legal_person;
-    if (cp.counterparty_address) base.party_b_address = cp.counterparty_address;
+const selectedBankAccount = computed<EntityBankAccount | null>(
+  () =>
+    entityBankAccounts.value.find(a => a.id === selectedBankAccountId.value) ??
+    null
+);
+// 我方侧银行关键字键名（inbound=我方乙方，outbound=我方甲方）
+const ourSideBankKeys = computed<{ name: string; account: string } | null>(
+  () => {
+    if (!draft.value) return null;
+    const prefix = draft.value.direction === "inbound" ? "party_b" : "party_a";
+    return { name: `${prefix}_bank_name`, account: `${prefix}_bank_account` };
   }
+);
+
+// 切换我方主体时加载其开户账户；预选与已存关键字账号匹配的账户，否则第一条
+let bankAccountsReqSeq = 0;
+watch(
+  () => draft.value?.entity_id ?? null,
+  async entityId => {
+    const seq = ++bankAccountsReqSeq;
+    if (!entityId) {
+      entityBankAccounts.value = [];
+      selectedBankAccountId.value = null;
+      return;
+    }
+    try {
+      const res = await listEntityBankAccounts(entityId);
+      if (seq !== bankAccountsReqSeq) return; // 主体已再次切换，丢弃过期响应
+      const accounts = res.data.filter(a => a.status !== "deleted");
+      entityBankAccounts.value = accounts;
+      const savedNo = ourSideBankKeys.value
+        ? keywords.value[ourSideBankKeys.value.account]
+        : undefined;
+      const matched = savedNo
+        ? accounts.find(a => a.account_no === savedNo)
+        : undefined;
+      selectedBankAccountId.value = matched?.id ?? accounts[0]?.id ?? null;
+    } catch {
+      if (seq !== bankAccountsReqSeq) return;
+      entityBankAccounts.value = [];
+      selectedBankAccountId.value = null;
+      ElMessage.warning("开户账户加载失败，将使用主体主账户");
+    }
+  }
+);
+
+// 与服务端 buildKeywordValues 同口径：显式关键字优先，空缺才由主体/对方信息回填；
+// 所选开户账户视为显式选择，覆盖我方侧银行字段。
+const keywordValues = computed<Record<string, string>>(() => {
+  const cp = draft.value;
+  const base: Record<string, string> = {};
+  for (const [k, v] of Object.entries(keywords.value)) {
+    if (v && v.trim().length > 0) base[k] = v.trim();
+  }
+  if (!cp) return base;
+  const acct = selectedBankAccount.value;
+  const bankKeys = ourSideBankKeys.value;
+  if (acct && bankKeys) {
+    base[bankKeys.name] = acct.bank_name;
+    base[bankKeys.account] = acct.account_no;
+  }
+  const fill = (key: string, value: string | null | undefined) => {
+    if (
+      typeof value === "string" &&
+      value.trim().length > 0 &&
+      !(key in base)
+    ) {
+      base[key] = value.trim();
+    }
+  };
+  const our = ourEntity.value;
+  const ourInfo = {
+    name: our?.entity_name ?? null,
+    credit: our?.tax_id ?? null,
+    legal: our?.legal_person ?? null,
+    address: null as string | null,
+    phone: null as string | null,
+    bank: our?.primary_bank_name ?? null,
+    account: our?.primary_bank_account_no ?? null
+  };
+  const cpInfo = {
+    name: cp.counterparty_name,
+    credit: cp.counterparty_credit_code,
+    legal: cp.counterparty_legal_person,
+    address: cp.counterparty_address,
+    phone: cp.counterparty_phone,
+    bank: cp.counterparty_bank_name,
+    account: cp.counterparty_bank_account
+  };
+  const partyA = cp.direction === "inbound" ? cpInfo : ourInfo;
+  const partyB = cp.direction === "inbound" ? ourInfo : cpInfo;
+  fill("party_a", partyA.name);
+  fill("party_a_credit_code", partyA.credit);
+  fill("party_a_legal_person", partyA.legal);
+  fill("party_a_address", partyA.address);
+  fill("party_a_phone", partyA.phone);
+  fill("party_a_bank_name", partyA.bank);
+  fill("party_a_bank_account", partyA.account);
+  fill("party_b", partyB.name);
+  fill("party_b_credit_code", partyB.credit);
+  fill("party_b_legal_person", partyB.legal);
+  fill("party_b_address", partyB.address);
+  fill("party_b_phone", partyB.phone);
+  fill("party_b_bank_name", partyB.bank);
+  fill("party_b_bank_account", partyB.account);
   return base;
 });
 
@@ -169,10 +246,18 @@ const onCreate = async (payload: {
   await router.replace({ query: { id: String(detail.draft.id) } });
 };
 
-const saveDraftMeta = async () => {
+/** 保存草稿信息；silent=true 成功不弹 toast（关键字校验告警仍弹）。所选开户账户按方向并入 keywords。 */
+const persistDraftMeta = async (silent = false) => {
   if (!draft.value) return;
   saving.value = true;
   try {
+    const keywordsPayload: Record<string, string> = { ...keywords.value };
+    const acct = selectedBankAccount.value;
+    const bankKeys = ourSideBankKeys.value;
+    if (acct && bankKeys) {
+      keywordsPayload[bankKeys.name] = acct.bank_name;
+      keywordsPayload[bankKeys.account] = acct.account_no;
+    }
     const res = await updateDraft(draft.value.id, {
       title: draft.value.title,
       project_id: draft.value.project_id ?? undefined,
@@ -185,17 +270,33 @@ const saveDraftMeta = async () => {
       counterparty_phone: draft.value.counterparty_phone,
       counterparty_bank_name: draft.value.counterparty_bank_name,
       counterparty_bank_account: draft.value.counterparty_bank_account,
-      keywords: keywords.value
+      keywords: keywordsPayload
     });
     draft.value = res.draft;
+    keywords.value = keywordsPayload;
     if (res.keyword_findings.length) {
       ElMessage.warning(res.keyword_findings.map(f => f.reason).join("；"));
-    } else {
+    } else if (!silent) {
       ElMessage.success("已保存");
     }
   } finally {
     saving.value = false;
   }
+};
+const saveDraftMeta = () => persistDraftMeta(false);
+
+// 右侧正文点选关键字修改：更新本地关键字并静默落库
+const onUpdateKeyword = async (payload: { key: string; value: string }) => {
+  const bankKeys = ourSideBankKeys.value;
+  if (
+    bankKeys &&
+    (payload.key === bankKeys.name || payload.key === bankKeys.account)
+  ) {
+    // 用户手改我方银行字段时清除账户选择，避免保存时被所选账户覆盖
+    selectedBankAccountId.value = null;
+  }
+  keywords.value = { ...keywords.value, [payload.key]: payload.value };
+  await persistDraftMeta(true);
 };
 
 const refreshSection = (section: ContractDraftSection | null) => {
@@ -271,6 +372,38 @@ const onRemoveSection = async (sectionId: number) => {
   if (!draft.value) return;
   await removeSection(draft.value.id, sectionId);
   sections.value = sections.value.filter(s => s.id !== sectionId);
+};
+
+// 拖拽排序：先本地重排（右侧卡片即时跟随），仅对 sort_order 变化的节并行持久化；失败回读服务端真序
+const onReorder = async (orderedIds: number[]) => {
+  if (!draft.value) return;
+  const draftId = draft.value.id;
+  const byId = new Map(sections.value.map(s => [s.id, s]));
+  const ordered = orderedIds
+    .map(id => byId.get(id))
+    .filter((s): s is ContractDraftSection => !!s);
+  if (ordered.length !== sections.value.length) return;
+  sections.value = ordered;
+  const changes = ordered
+    .map((s, idx) => ({ id: s.id, sort_order: (idx + 1) * 10 }))
+    .filter(c => byId.get(c.id)?.sort_order !== c.sort_order);
+  if (!changes.length) return;
+  try {
+    const updated = await Promise.all(
+      changes.map(c =>
+        updateSection(draftId, c.id, { sort_order: c.sort_order })
+      )
+    );
+    const updatedMap = new Map(updated.map(u => [u.id, u]));
+    sections.value = sections.value.map(s => updatedMap.get(s.id) ?? s);
+  } catch {
+    ElMessage.error("排序保存失败，已恢复服务端顺序");
+    try {
+      applyDetail(await getDraft(draftId));
+    } catch {
+      // 回读也失败（网络异常）：保持当前本地顺序，刷新页面可恢复
+    }
+  }
 };
 
 const onMoveSection = async (payload: { id: number; delta: -1 | 1 }) => {
@@ -444,6 +577,35 @@ onMounted(async () => {
                   />
                 </el-select>
               </el-form-item>
+              <el-descriptions
+                v-if="ourEntity"
+                class="entity-descriptions"
+                size="small"
+                :column="1"
+              >
+                <el-descriptions-item label="统一社会信用代码">
+                  {{ ourEntity.tax_id || "—" }}
+                </el-descriptions-item>
+                <el-descriptions-item label="法定代表人">
+                  {{ ourEntity.legal_person || "—" }}
+                </el-descriptions-item>
+              </el-descriptions>
+              <el-form-item v-if="ourEntity" label="开户账户">
+                <el-select
+                  v-model="selectedBankAccountId"
+                  clearable
+                  filterable
+                  placeholder="不选则用主账户"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="a in entityBankAccounts"
+                    :key="a.id"
+                    :value="a.id"
+                    :label="`${a.bank_name} ${a.account_no}`"
+                  />
+                </el-select>
+              </el-form-item>
               <el-form-item label="对方单位">
                 <el-input v-model="draft.counterparty_name" maxlength="120" />
               </el-form-item>
@@ -483,6 +645,7 @@ onMounted(async () => {
             @add="onAddSection"
             @remove="onRemoveSection"
             @move="onMoveSection"
+            @reorder="onReorder"
           />
         </el-col>
         <el-col :span="16">
@@ -499,6 +662,9 @@ onMounted(async () => {
               @click="runCompleteness"
             >
               完整性检查
+            </el-button>
+            <el-button plain @click="plainPreviewVisible = true">
+              纯文本预览
             </el-button>
             <el-button
               type="primary"
@@ -524,6 +690,7 @@ onMounted(async () => {
             @review="onReview"
             @save="onSave"
             @apply-variant="onApplyVariant"
+            @update-keyword="onUpdateKeyword"
           />
         </el-col>
       </el-row>
@@ -539,6 +706,12 @@ onMounted(async () => {
         :draft="draft"
         @converted="onConverted"
       />
+      <PlainPreviewDrawer
+        v-model:visible="plainPreviewVisible"
+        :title="draft.title"
+        :sections="sections"
+        :keyword-values="keywordValues"
+      />
     </template>
   </div>
 </template>
@@ -547,28 +720,39 @@ onMounted(async () => {
 .draft-page {
   padding: 12px;
 }
+
 .meta-card {
   margin-bottom: 12px;
 }
+
+.entity-descriptions {
+  padding-left: 12px;
+  margin-bottom: 12px;
+}
+
 .meta-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
+
 .meta-title {
   display: inline-flex;
   gap: 6px;
   align-items: center;
 }
+
 .toolbar {
   display: flex;
-  align-items: center;
   gap: 12px;
+  align-items: center;
   margin-bottom: 12px;
 }
+
 .toolbar :deep(.el-alert) {
   flex: 1;
 }
+
 .section-card {
   margin-bottom: 12px;
 }

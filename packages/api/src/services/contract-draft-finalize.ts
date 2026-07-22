@@ -14,12 +14,13 @@ export interface OurEntityInfo {
 
 const PLACEHOLDER_RE = /\{\{(\w+)\}\}/g;
 
+// 仅当该键尚无值时写入：用户显式关键字（含所选开户账户）优先于 entity/counterparty 默认回填
 const setIf = (
   target: Record<string, string>,
   key: string,
   value: string | null | undefined
 ): void => {
-  if (typeof value === "string" && value.trim().length > 0) {
+  if (typeof value === "string" && value.trim().length > 0 && !(key in target)) {
     target[key] = value.trim();
   }
 };

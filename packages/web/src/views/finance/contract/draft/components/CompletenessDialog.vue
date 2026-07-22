@@ -68,21 +68,25 @@ const pending = computed(() =>
 
 <style scoped>
 .hint-list {
-  margin: 0;
   padding: 0;
+  margin: 0;
   list-style: none;
 }
+
 .hint-list li {
   padding: 10px 0;
   border-bottom: 1px solid var(--el-border-color-lighter);
 }
+
 .hint-title {
   margin-left: 6px;
 }
+
 .hint-reason {
   margin: 4px 0;
   color: var(--el-text-color-secondary);
 }
+
 .hint-actions {
   text-align: right;
 }

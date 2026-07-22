@@ -67,6 +67,24 @@ describe("buildKeywordValues", () => {
     const values = buildKeywordValues(draftWith({ keywords_json: '{"amount":"面议"}' }), null);
     expect(values.amount_cn).toBeUndefined();
   });
+  it("keywords 显式 party_b_bank_name 优先于 entity 主账户（用户指定值不被覆盖）", () => {
+    const values = buildKeywordValues(
+      draftWith({
+        keywords_json: JSON.stringify({ party_b_bank_name: "用户指定银行" })
+      }),
+      {
+        entity_name: "我方公司",
+        tax_id: "91110000OUR",
+        legal_person: "李四",
+        primary_bank_name: "主账户银行",
+        primary_bank_account_no: "999"
+      }
+    );
+    expect(values.party_b_bank_name).toBe("用户指定银行");
+    // 未显式给出的键仍由 entity 回填
+    expect(values.party_b_bank_account).toBe("999");
+    expect(values.party_b).toBe("我方公司");
+  });
 });
 
 describe("fillPlaceholders / collectUnresolvedKeys", () => {

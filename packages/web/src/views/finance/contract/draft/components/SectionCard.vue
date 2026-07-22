@@ -1,11 +1,16 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { ElMessageBox } from "element-plus";
 import type {
   ClauseTemplate,
   ContractDraftSection
 } from "@/api/contract-draft";
-import { buildRenderSegments, parseRiskAnnotations } from "../lib/segments";
+import {
+  buildRenderSegments,
+  parseRiskAnnotations,
+  type RenderSegment
+} from "../lib/segments";
+import { instructionPlaceholder } from "../lib/instruction-placeholders";
 import type { SectionAiState } from "../composables/useContractDraftAI";
 import { sectionSourceLabelMap, toDraftLabel } from "../draft-labels";
 
@@ -24,11 +29,44 @@ const emit = defineEmits<{
     e: "apply-variant",
     payload: { sectionId: number; variantKey: string }
   ): void;
+  (e: "update-keyword", payload: { key: string; value: string }): void;
 }>();
 
 const instruction = ref(props.section.instruction ?? "");
 const editing = ref(false);
 const editContent = ref("");
+
+// 生成完成后清空指令输入框（指令已随任务入库到 section.instruction，不丢历史）
+// 注意：props.aiState 不可解构，watch 必须用 getter 保持响应
+watch(
+  () => props.aiState.phase,
+  (phase, prev) => {
+    if (prev === "generating" && phase === "done") instruction.value = "";
+  }
+);
+
+// 关键字点选编辑：同一时刻仅一个 popover 打开（受控 visible）
+const kwEditIndex = ref<number | null>(null);
+const kwEditKey = ref("");
+const kwEditValue = ref("");
+const openKwEdit = (i: number, seg: RenderSegment) => {
+  if (props.readonly || !seg.key) return;
+  if (kwEditIndex.value === i && kwEditKey.value === seg.key) {
+    kwEditIndex.value = null;
+    return;
+  }
+  kwEditKey.value = seg.key;
+  kwEditValue.value = seg.text === `{{${seg.key}}}` ? "" : seg.text;
+  kwEditIndex.value = i;
+};
+const confirmKwEdit = () => {
+  if (!kwEditKey.value) return;
+  emit("update-keyword", {
+    key: kwEditKey.value,
+    value: kwEditValue.value.trim()
+  });
+  kwEditIndex.value = null;
+};
 
 const busy = computed(
   () =>
@@ -161,7 +199,7 @@ const saveEdit = () => {
       v-model="instruction"
       maxlength="500"
       show-word-limit
-      placeholder="个性化指令（可选）：例如 付款节点改为按月固定日期、违约金上限调整为万分之五每日"
+      :placeholder="instructionPlaceholder(section.section_key)"
       class="instruction-input"
     />
 
@@ -175,12 +213,44 @@ const saveEdit = () => {
     <div v-if="!editing" class="content-view">
       <template v-for="(seg, i) in segments" :key="i">
         <span v-if="seg.kind === 'plain'">{{ seg.text }}</span>
-        <span
+        <el-popover
           v-else-if="seg.kind === 'keyword'"
-          class="seg-keyword"
-          :title="`关键字：${seg.key}`"
-          >{{ seg.text }}</span
+          :visible="kwEditIndex === i && kwEditKey === seg.key"
+          :disabled="readonly"
+          placement="top"
+          :width="280"
         >
+          <template #reference>
+            <span
+              class="seg-keyword"
+              :class="{ editable: !readonly }"
+              :title="
+                readonly
+                  ? `关键字：${seg.key}`
+                  : `关键字：${seg.key}（点击修改）`
+              "
+              @click="openKwEdit(i, seg)"
+              >{{ seg.text }}</span
+            >
+          </template>
+          <div class="kw-edit">
+            <div class="kw-edit-key">关键字：{{ seg.key }}</div>
+            <el-input
+              v-model="kwEditValue"
+              size="small"
+              maxlength="200"
+              @keyup.enter="confirmKwEdit"
+            />
+            <div class="kw-edit-actions">
+              <el-button size="small" @click="kwEditIndex = null"
+                >取消</el-button
+              >
+              <el-button size="small" type="primary" @click="confirmKwEdit"
+                >确认</el-button
+              >
+            </div>
+          </div>
+        </el-popover>
         <el-tooltip
           v-else
           :content="`${seg.reason}${seg.legalBasis ? '（' + seg.legalBasis + '）' : ''}`"
@@ -240,48 +310,77 @@ const saveEdit = () => {
 <style scoped>
 .card-header {
   display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  flex-wrap: wrap;
 }
+
 .instruction-input {
   margin-bottom: 8px;
 }
+
 .content-view {
-  white-space: pre-wrap;
   line-height: 1.9;
+  white-space: pre-wrap;
 }
+
 .seg-keyword {
+  padding: 0 3px;
   background: var(--el-color-primary-light-8);
   border-radius: 3px;
-  padding: 0 3px;
 }
+
+.seg-keyword.editable {
+  cursor: pointer;
+}
+
+.seg-keyword.editable:hover {
+  background: var(--el-color-primary-light-6);
+}
+
+.kw-edit-key {
+  margin-bottom: 6px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
+}
+
+.kw-edit-actions {
+  margin-top: 8px;
+  text-align: right;
+}
+
 .seg-risk-red {
+  cursor: help;
   background: var(--el-color-danger-light-7);
   border-bottom: 2px solid var(--el-color-danger);
-  cursor: help;
 }
+
 .seg-risk-yellow {
+  cursor: help;
   background: var(--el-color-warning-light-7);
   border-bottom: 2px solid var(--el-color-warning);
-  cursor: help;
 }
+
 .edit-actions {
   margin-top: 8px;
   text-align: right;
 }
+
 .review-list {
-  margin: 0;
   padding-left: 8px;
+  margin: 0;
   list-style: none;
 }
+
 .review-list li {
   margin-bottom: 6px;
 }
+
 .issue-text {
   margin-left: 6px;
 }
+
 .issue-suggestion {
   margin-left: 6px;
   color: var(--el-text-color-secondary);

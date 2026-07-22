@@ -5,6 +5,7 @@ import type {
   ContractDraftSection
 } from "@/api/contract-draft";
 import {
+  requiredLevelLabelMap,
   sectionAiStatusLabelMap,
   sectionAiStatusTagType,
   toDraftLabel
@@ -23,6 +24,7 @@ const emit = defineEmits<{
   ): void;
   (e: "remove", id: number): void;
   (e: "move", payload: { id: number; delta: -1 | 1 }): void;
+  (e: "reorder", orderedIds: number[]): void;
 }>();
 
 const addVisible = ref(false);
@@ -36,18 +38,49 @@ const addable = computed(() =>
   )
 );
 const addableOptions = computed(() => {
-  // 变体行在条款库中的 title 通常已自带区分后缀；仅当同组 title 撞名时才追加（变体名）消歧
+  // label 常带必要级（核心/建议/可选）；同组 title 撞名（多变体）时再追加变体名消歧
   const titleCount = new Map<string, number>();
   for (const t of addable.value)
     titleCount.set(t.title, (titleCount.get(t.title) ?? 0) + 1);
-  return addable.value.map(t => ({
-    value: `${t.section_key}::${t.variant_key}`,
-    label:
-      t.variant_label !== "默认" && (titleCount.get(t.title) ?? 0) > 1
-        ? `${t.title}（${t.variant_label}）`
-        : t.title
-  }));
+  return addable.value.map(t => {
+    const necessity =
+      requiredLevelLabelMap[t.required_level] ?? t.required_level;
+    const clash =
+      t.variant_label !== "默认" && (titleCount.get(t.title) ?? 0) > 1;
+    return {
+      value: `${t.section_key}::${t.variant_key}`,
+      label: clash
+        ? `${t.title}（${t.variant_label}，${necessity}）`
+        : `${t.title}（${necessity}）`
+    };
+  });
 });
+
+// HTML5 拖拽排序：drop 时本地计算新顺序，交由父组件持久化
+const draggingId = ref<number | null>(null);
+const onDragStart = (event: DragEvent, id: number) => {
+  draggingId.value = id;
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = "move";
+    // Firefox 需要 setData 才会启动拖拽
+    event.dataTransfer.setData("text/plain", String(id));
+  }
+};
+const onDrop = (targetId: number) => {
+  const sourceId = draggingId.value;
+  draggingId.value = null;
+  if (sourceId == null || sourceId === targetId) return;
+  const from = props.sections.findIndex(s => s.id === sourceId);
+  const to = props.sections.findIndex(s => s.id === targetId);
+  if (from < 0 || to < 0) return;
+  const ordered = [...props.sections];
+  const [moved] = ordered.splice(from, 1);
+  ordered.splice(to, 0, moved);
+  emit(
+    "reorder",
+    ordered.map(s => s.id)
+  );
+};
 
 const submitAdd = () => {
   if (addKey.value) {
@@ -76,9 +109,15 @@ const submitAdd = () => {
       <li
         v-for="(s, idx) in sections"
         :key="s.id"
-        :class="{ active: s.id === activeId }"
+        draggable="true"
+        :class="{ active: s.id === activeId, dragging: s.id === draggingId }"
         @click="emit('select', s.id)"
+        @dragstart="onDragStart($event, s.id)"
+        @dragover.prevent
+        @drop.prevent="onDrop(s.id)"
+        @dragend="draggingId = null"
       >
+        <span class="index">{{ idx + 1 }}.</span>
         <span class="title">{{ s.title }}</span>
         <span class="ops">
           <el-tag
@@ -156,31 +195,60 @@ const submitAdd = () => {
   align-items: center;
   justify-content: space-between;
 }
+
 .section-list {
-  margin: 0;
   padding: 0;
+  margin: 0;
   list-style: none;
 }
+
 .section-list li {
   display: flex;
+  gap: 4px;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 8px;
-  cursor: pointer;
-  border-radius: 4px;
+  padding: 4px 8px 4px 5px;
+  line-height: 22px;
+  cursor: grab;
+  border-left: 3px solid transparent;
+  border-radius: 3px;
 }
+
+.section-list li:hover {
+  background: var(--el-fill-color-light);
+}
+
 .section-list li.active {
+  color: var(--el-color-primary);
   background: var(--el-color-primary-light-9);
+  border-left-color: var(--el-color-primary);
 }
+
+.section-list li.dragging {
+  opacity: 0.5;
+}
+
+.section-list .index {
+  min-width: 18px;
+  font-variant-numeric: tabular-nums;
+  color: var(--el-text-color-secondary);
+  text-align: right;
+}
+
+.section-list li.active .index {
+  color: var(--el-color-primary);
+}
+
 .section-list .title {
   flex: 1;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
 .section-list .ops {
   display: flex;
-  align-items: center;
   gap: 2px;
+  align-items: center;
 }
 </style>
