@@ -41,6 +41,9 @@ import { useContractDraftAI } from "./composables/useContractDraftAI";
 import { parseCompletenessReport } from "./lib/completeness-report";
 import { parseReviewResult } from "./lib/review-result";
 import { amountToChinese } from "./lib/amount-cn";
+import { buildContractDocxBlocks } from "./lib/contract-docx-blocks";
+import { collectUnfilledKeys, fillPlaceholdersForDoc } from "./lib/segments";
+import { downloadDocxFromBlocks } from "@/views/bidding/dedup/lib/docx-export";
 import AiWorkingIndicator from "./components/AiWorkingIndicator.vue";
 import DraftInitCard from "./components/DraftInitCard.vue";
 import DraftListCard from "./components/DraftListCard.vue";
@@ -48,7 +51,6 @@ import DraftBanner from "./components/DraftBanner.vue";
 import SectionListPanel from "./components/SectionListPanel.vue";
 import SectionCard from "./components/SectionCard.vue";
 import CompletenessDialog from "./components/CompletenessDialog.vue";
-import ConvertDialog from "./components/ConvertDialog.vue";
 import PlainPreviewDrawer from "./components/PlainPreviewDrawer.vue";
 
 defineOptions({ name: "ContractDraftWorkbench" });
@@ -76,7 +78,7 @@ const saving = ref(false);
 const checking = ref(false);
 // 完整检查指示器起算时刻（毫秒）：新发起=当前时刻；进入页面恢复=草稿 updated_at
 const completenessStartedAt = ref<number | undefined>(undefined);
-const convertVisible = ref(false);
+const downloadingDocx = ref(false);
 const plainPreviewVisible = ref(false);
 const entityBankAccounts = ref<EntityBankAccount[]>([]);
 const selectedBankAccountId = ref<number | null>(null);
@@ -423,6 +425,38 @@ const invalidateCompletenessLocal = () => {
 const hasAnyContent = computed(() =>
   sections.value.some(s => s.content.trim().length > 0)
 );
+
+// 一键下载合同 Word：页面内直接生成并下载，无需弹窗流程。
+// 占位符已填换真实值、未填留下划线空白（保留 {{__table__}} 哨兵给表格）。
+const onDownloadDocx = async () => {
+  if (!draft.value || downloadingDocx.value) return;
+  downloadingDocx.value = true;
+  try {
+    const fixed = sections.value.map(s => ({
+      id: s.id,
+      section_key: s.section_key,
+      title: s.title,
+      content: fillPlaceholdersForDoc(s.content, keywordValues.value),
+      table_json: s.table_json
+    }));
+    const title = draft.value.title || "合同";
+    const blocks = buildContractDocxBlocks(title, fixed);
+    await downloadDocxFromBlocks(blocks, `${title}.docx`);
+    const unfilled = collectUnfilledKeys(
+      sections.value.map(s => s.content),
+      keywordValues.value
+    );
+    ElMessage.success(
+      unfilled.length
+        ? `已下载（${unfilled.length} 个字段未填，已留空待补填）`
+        : "已下载合同 Word"
+    );
+  } catch (e: unknown) {
+    ElMessage.error(e instanceof Error ? e.message : "生成失败，请重试");
+  } finally {
+    downloadingDocx.value = false;
+  }
+};
 
 const onGenerate = async (payload: {
   sectionId: number;
@@ -945,9 +979,10 @@ onMounted(async () => {
             <el-button
               type="primary"
               :disabled="!hasAnyContent"
-              @click="convertVisible = true"
+              :loading="downloadingDocx"
+              @click="onDownloadDocx"
             >
-              生成合同 Word
+              下载合同 Word
             </el-button>
           </div>
           <AiWorkingIndicator
@@ -988,12 +1023,6 @@ onMounted(async () => {
         @ignore="onHintIgnore"
         @locate="onLocateSection"
         @fix-section="onFixCompletenessSection"
-      />
-      <ConvertDialog
-        v-model:visible="convertVisible"
-        :draft="draft"
-        :sections="sections"
-        :keyword-values="keywordValues"
       />
       <PlainPreviewDrawer
         v-model:visible="plainPreviewVisible"
