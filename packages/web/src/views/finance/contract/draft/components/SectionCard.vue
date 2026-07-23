@@ -11,6 +11,7 @@ import {
   type RenderSegment
 } from "../lib/segments";
 import { instructionPlaceholder } from "../lib/instruction-placeholders";
+import { isDateKey } from "../lib/keyword-fields";
 import { parseReviewResult } from "../lib/review-result";
 import type { SectionAiState } from "../composables/useContractDraftAI";
 import {
@@ -291,7 +292,19 @@ const saveEdit = () => {
           </template>
           <div class="kw-edit">
             <div class="kw-edit-key">关键字：{{ seg.key }}</div>
+            <el-date-picker
+              v-if="isDateKey(seg.key ?? '')"
+              v-model="kwEditValue"
+              type="date"
+              size="small"
+              value-format="YYYY-MM-DD"
+              placeholder="选择日期"
+              teleported
+              class="kw-edit-date"
+              @change="confirmKwEdit"
+            />
             <el-input
+              v-else
               v-model="kwEditValue"
               size="small"
               maxlength="200"
@@ -459,6 +472,11 @@ const saveEdit = () => {
   margin-bottom: 6px;
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+/* 日期类关键字：选择器占满 popover 宽度，与文本输入观感一致 */
+.kw-edit-date {
+  width: 100%;
 }
 
 .kw-edit-actions {

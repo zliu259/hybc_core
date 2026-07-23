@@ -27,6 +27,11 @@ const props = defineProps<{
   fixedKeys: string[];
   /** 需从缺失列表隐藏的 key（已忽略 + 已添加处理） */
   ignored: string[];
+  /**
+   * 检查结果是否已失效：内容在本次检查后被修改（draft.completeness_status !== 'done'）。
+   * 为 true 时本弹窗为历史只读结果，禁用「AI 修正此节」「添加该节」，避免基于旧检查重复修复。
+   */
+  stale: boolean;
 }>();
 const emit = defineEmits<{
   (e: "update:visible", v: boolean): void;
@@ -122,6 +127,15 @@ const isFixed = (sectionKey: string): boolean =>
     width="660px"
     @update:model-value="v => emit('update:visible', v)"
   >
+    <el-alert
+      v-if="stale"
+      type="info"
+      :closable="false"
+      show-icon
+      title="合同内容在本次检查后已修改，此为历史检查结果，如需继续修正请重新完整检查"
+      class="stale-alert"
+    />
+
     <div v-if="versions.length" class="version-switch">
       <span class="version-switch-label">检查版本</span>
       <el-select
@@ -206,6 +220,7 @@ const isFixed = (sectionKey: string): boolean =>
             size="small"
             type="primary"
             plain
+            :disabled="stale"
             @click="emit('add', { section_key: m.section_key, title: m.title })"
             >添加该节</el-button
           >
@@ -276,7 +291,7 @@ const isFixed = (sectionKey: string): boolean =>
               size="small"
               type="warning"
               :loading="isFixing(g.section_key)"
-              :disabled="isFixing(g.section_key)"
+              :disabled="isFixing(g.section_key) || stale"
               @click="emit('fix-section', g.section_key)"
             >
               {{ isFixing(g.section_key) ? "生成中…" : "AI 修正此节" }}
@@ -297,6 +312,10 @@ const isFixed = (sectionKey: string): boolean =>
 </template>
 
 <style scoped>
+.stale-alert {
+  margin-bottom: 8px;
+}
+
 .version-switch {
   display: flex;
   gap: 8px;

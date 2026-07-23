@@ -422,11 +422,13 @@ const invalidateCompletenessLocal = () => {
   };
 };
 
-// 定稿门禁：drafting 态必须先通过完整检查；finalized 态保持可重试转化
+// 定稿门禁：drafting 态需先通过完整检查（status==='done'），或已累计 ≥2 次检查历史
+// 亦解锁（与后端 finalize 放宽口径一致）；finalized 态保持可重试转化。
 const completenessGateBlocked = computed(
   () =>
     draft.value?.status === "drafting" &&
-    draft.value.completeness_status !== "done"
+    draft.value.completeness_status !== "done" &&
+    completenessVersions.value.length < 2
 );
 
 const onGenerate = async (payload: {
@@ -933,7 +935,7 @@ onMounted(async () => {
               纯文本预览
             </el-button>
             <el-tooltip
-              content="完成完整检查后方可定稿（内容变更后需重新检查）"
+              content="完成完整检查后可定稿；已累计 2 次以上检查也可直接定稿"
               :disabled="!completenessGateBlocked"
               placement="top"
             >
@@ -986,6 +988,7 @@ onMounted(async () => {
         :fixing-keys="completenessFixingKeys"
         :fixed-keys="completenessFixedKeys"
         :ignored="dialogHiddenMissing"
+        :stale="draft?.completeness_status !== 'done'"
         @switch-version="onSwitchVersion"
         @add="onHintAdd"
         @ignore="onHintIgnore"
