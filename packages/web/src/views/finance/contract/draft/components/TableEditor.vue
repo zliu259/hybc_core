@@ -12,6 +12,7 @@ import {
   serializeTable,
   validateTable,
   type ContractTable,
+  type TableColumn,
   type TablePreset,
   type TableRow
 } from "../lib/table-presets";
@@ -69,8 +70,16 @@ const amountMatch = computed<"none" | "match" | "mismatch">(() => {
   return Math.abs(total.value - amt) < 0.01 ? "match" : "mismatch";
 });
 
-const colMinWidth = (width: number): number =>
-  Math.max(64, Math.round(width / 9));
+// 编辑器列宽按类型收窄（文本类靠多行 textarea 换行，无需拉宽）；docx 预设 width 不受影响。
+const TYPE_MIN_WIDTH: Record<TableColumn["type"], number> = {
+  seq: 48,
+  number: 76,
+  money: 96,
+  amount: 104,
+  enum: 116,
+  text: 120
+};
+const colMinWidth = (type: TableColumn["type"]): number => TYPE_MIN_WIDTH[type];
 const cellHasError = (rowIndex: number, colKey: string): boolean =>
   errors.value.some(e => e.rowIndex === rowIndex && e.colKey === colKey);
 
@@ -143,7 +152,7 @@ const onSave = async () => {
         v-for="col in columns"
         :key="col.key"
         :label="col.label"
-        :min-width="colMinWidth(col.width)"
+        :min-width="colMinWidth(col.type)"
       >
         <template #default="{ row, $index }">
           <span v-if="col.type === 'seq'" class="te-seq">{{ $index + 1 }}</span>
@@ -185,6 +194,9 @@ const onSave = async () => {
           <el-input
             v-else
             :model-value="strOf(row[col.key])"
+            type="textarea"
+            :autosize="{ minRows: 1, maxRows: 4 }"
+            resize="none"
             size="small"
             :placeholder="col.placeholder"
             :class="{ 'te-cell-error': cellHasError($index, col.key) }"

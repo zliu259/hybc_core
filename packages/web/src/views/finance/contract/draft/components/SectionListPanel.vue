@@ -28,7 +28,38 @@ const emit = defineEmits<{
 
 const addVisible = ref(false);
 const addKey = ref("");
+const addTableKey = ref("");
 const customTitle = ref("");
+
+// 清单表格节可独立添加（不限合同族）：跨族添加时后端降级为空白手动节并沿用变体，
+// 前端渲染 TableEditor。仅在该 section_key 既不在条款库、也未存在时提供，避免与库内选项重复。
+const TABLE_SECTION_DEFS = [
+  {
+    section_key: "equipment_schedule",
+    variant_key: "default",
+    title: "设备清单",
+    label: "设备清单（湿租·含操作人员）"
+  },
+  {
+    section_key: "equipment_schedule",
+    variant_key: "dry_lease",
+    title: "设备清单",
+    label: "设备清单（干租）"
+  },
+  {
+    section_key: "goods_spec",
+    variant_key: "default",
+    title: "材料/货物清单",
+    label: "材料/货物清单"
+  }
+];
+const standaloneTableOptions = computed(() => {
+  const presentKeys = new Set(props.sections.map(s => s.section_key));
+  const templateKeys = new Set(props.templates.map(t => t.section_key));
+  return TABLE_SECTION_DEFS.filter(
+    d => !presentKeys.has(d.section_key) && !templateKeys.has(d.section_key)
+  ).map(d => ({ ...d, value: `${d.section_key}::${d.variant_key}` }));
+});
 
 // 已存在节的 section_key（无论哪个变体）整组隐藏；同 section_key 多变体逐变体成 option
 const addable = computed(() =>
@@ -85,11 +116,22 @@ const submitAdd = () => {
   if (addKey.value) {
     const [sectionKey, variantKey] = addKey.value.split("::");
     emit("add", { section_key: sectionKey, variant_key: variantKey });
+  } else if (addTableKey.value) {
+    const def = standaloneTableOptions.value.find(
+      d => d.value === addTableKey.value
+    );
+    if (def)
+      emit("add", {
+        section_key: def.section_key,
+        variant_key: def.variant_key,
+        title: def.title
+      });
   } else if (customTitle.value.trim()) {
     emit("add", { title: customTitle.value.trim() });
   }
   addVisible.value = false;
   addKey.value = "";
+  addTableKey.value = "";
   customTitle.value = "";
 };
 </script>
@@ -154,6 +196,21 @@ const submitAdd = () => {
           >
             <el-option
               v-for="opt in addableOptions"
+              :key="opt.value"
+              :value="opt.value"
+              :label="opt.label"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item v-if="standaloneTableOptions.length" label="或清单表格">
+          <el-select
+            v-model="addTableKey"
+            clearable
+            placeholder="独立添加设备/材料清单"
+            style="width: 100%"
+          >
+            <el-option
+              v-for="opt in standaloneTableOptions"
               :key="opt.value"
               :value="opt.value"
               :label="opt.label"

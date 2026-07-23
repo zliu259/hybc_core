@@ -373,7 +373,9 @@ contractDraftRoutes.post("/:id/sections", async (c) => {
         draft.id,
         body.section_key,
         insTitle,
-        tpl?.variant_key ?? "default",
+        // 有模板用模板变体；无模板（如跨族独立添加设备清单）沿用请求的变体，
+        // 使干租(dry_lease)独立节也能命中干租预设，而非被强制回落 default(湿租)。
+        tpl?.variant_key ?? variantKey,
         tpl ? "default_template" : "manual",
         tpl?.body_template ?? "",
         nextSort,

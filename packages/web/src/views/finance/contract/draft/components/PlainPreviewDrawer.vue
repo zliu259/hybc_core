@@ -2,7 +2,7 @@
 import { computed } from "vue";
 import { ElMessage } from "element-plus";
 import type { ContractDraftSection } from "@/api/contract-draft";
-import { fillPlaceholders } from "../lib/segments";
+import { buildDraftPlainText } from "../lib/contract-plain-text";
 
 const props = defineProps<{
   visible: boolean;
@@ -16,13 +16,9 @@ const emit = defineEmits<{
   (e: "update:visible", value: boolean): void;
 }>();
 
-const plainText = computed(() => {
-  const parts = props.sections.map(
-    (s, idx) =>
-      `第${idx + 1}节 ${s.title}\n${fillPlaceholders(s.content, props.keywordValues)}`
-  );
-  return [props.title, ...parts].join("\n\n");
-});
+const plainText = computed(() =>
+  buildDraftPlainText(props.title, props.sections, props.keywordValues)
+);
 
 const copyAll = async () => {
   try {
