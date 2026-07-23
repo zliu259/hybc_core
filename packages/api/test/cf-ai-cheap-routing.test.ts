@@ -5,7 +5,8 @@ import {
   CF_AI_DRAFT_MODEL,
   CF_AI_REVIEW_MODEL,
   parseCfAiTextOutput,
-  raceWithTimeout
+  raceWithTimeout,
+  salvageTruncatedJson
 } from "../src/services/cf-ai";
 
 describe("模型分工（owner 07-23）", () => {
@@ -56,5 +57,28 @@ describe("raceWithTimeout", () => {
       setTimeout(() => resolve("late"), 200);
     });
     await expect(raceWithTimeout(slow, 20)).rejects.toThrow("调用超时");
+  });
+});
+
+describe("salvageTruncatedJson（完整检查输出截断抢救）", () => {
+  it("完整 JSON 直接解析", () => {
+    expect(salvageTruncatedJson('{"a":1,"b":[2,3]}')).toEqual({ a: 1, b: [2, 3] });
+  });
+  it("数组中途截断，保留已完成元素", () => {
+    const truncated = '{"section_issues":[{"section_key":"a","ok":true},{"section_key":"b","ok":fa';
+    const r = salvageTruncatedJson(truncated) as { section_issues: unknown[] };
+    expect(r.section_issues).toHaveLength(1);
+    expect((r.section_issues[0] as { section_key: string }).section_key).toBe("a");
+  });
+  it("字符串中途截断（含转义引号）不误判", () => {
+    const truncated = '{"list":[{"text":"含\\"引号\\"的内容"},{"text":"未闭合的字符串被截';
+    const r = salvageTruncatedJson(truncated) as { list: unknown[] };
+    expect(r.list).toHaveLength(1);
+  });
+  it("非对象/数组开头返回 null", () => {
+    expect(salvageTruncatedJson("这不是JSON")).toBeNull();
+  });
+  it("无任何完整边界返回 null", () => {
+    expect(salvageTruncatedJson('{"a":"未闭合')).toBeNull();
   });
 });

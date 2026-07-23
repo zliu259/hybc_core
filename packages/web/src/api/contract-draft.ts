@@ -119,6 +119,8 @@ export type CompletenessResult = {
   ready_to_finalize?: boolean;
   /** 模型输出无法解析为 JSON 时后端包为 {raw} */
   raw?: string;
+  /** 输出超长被截断、后端抢救出的部分结果 */
+  _truncated?: boolean;
 };
 
 /**

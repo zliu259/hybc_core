@@ -31,8 +31,68 @@ export const CF_AI_COMPLETENESS_MODELS = [
 const MAX_OUTPUT_TOKENS = 8192;
 /** @cf/ 开源模型档收紧输出预算：防 reasoning 模型长时间占用执行上下文。 */
 const CHEAP_MAX_OUTPUT_TOKENS = 2048;
+/** 完整检查全量审整份合同+逐节修正稿，输出量大，需要更高预算防截断。 */
+const COMPLETENESS_MAX_OUTPUT_TOKENS = 32000;
 
 const nowIso = () => new Date().toISOString();
+
+/**
+ * 抢救被截断的 JSON：模型输出超 max_tokens 时 JSON 会在中途断掉。
+ * 扫描到最后一个"值边界"（不在字符串内、栈平衡可闭合处），截取并补齐闭合括号。
+ * 返回可解析的最大前缀对象，无法抢救则返回 null。
+ */
+export const salvageTruncatedJson = (raw: string): unknown => {
+  const s = raw.trim();
+  if (!s.startsWith("{") && !s.startsWith("[")) return null;
+  const stack: string[] = [];
+  let inString = false;
+  let escaped = false;
+  let lastSafe = -1; // 可安全截断并补齐的位置（下一字符前）
+  for (let i = 0; i < s.length; i++) {
+    const c = s[i];
+    if (inString) {
+      if (escaped) escaped = false;
+      else if (c === "\\") escaped = true;
+      else if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+    } else if (c === "{" || c === "[") {
+      stack.push(c);
+    } else if (c === "}" || c === "]") {
+      stack.pop();
+      // 一个容器/值刚闭合：此处截断后补齐剩余栈即为合法 JSON
+      lastSafe = i + 1;
+    }
+  }
+  if (lastSafe <= 0) return null;
+  let candidate = s.slice(0, lastSafe);
+  // 重新计算截断点处仍未闭合的栈，逆序补齐
+  const closeStack: string[] = [];
+  let str = false;
+  let esc = false;
+  for (let i = 0; i < candidate.length; i++) {
+    const c = candidate[i];
+    if (str) {
+      if (esc) esc = false;
+      else if (c === "\\") esc = true;
+      else if (c === '"') str = false;
+      continue;
+    }
+    if (c === '"') str = true;
+    else if (c === "{" || c === "[") closeStack.push(c);
+    else if (c === "}" || c === "]") closeStack.pop();
+  }
+  while (closeStack.length > 0) {
+    candidate += closeStack.pop() === "{" ? "}" : "]";
+  }
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return null;
+  }
+};
 
 /** Promise 超时竞速（AI binding 不支持 abort，超时后放弃等待原调用）。 */
 export const raceWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
@@ -46,12 +106,16 @@ export const raceWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> 
 export const isCfAiTaskType = (taskType: string): taskType is CfAiTaskType =>
   (CF_AI_TASK_TYPES as readonly string[]).includes(taskType);
 
-/** 宽容 JSON 解析：剥 markdown 围栏，失败则包为 {raw}。 */
+/** 宽容 JSON 解析：剥 markdown 围栏；失败尝试抢救截断输出；仍失败则包为 {raw}。 */
 const tolerantJsonParse = (raw: string): unknown => {
   const stripped = raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   try {
     return JSON.parse(stripped);
   } catch {
+    const salvaged = salvageTruncatedJson(stripped);
+    if (salvaged && typeof salvaged === "object") {
+      return { ...(salvaged as Record<string, unknown>), _truncated: true };
+    }
     return { raw };
   }
 };
@@ -200,6 +264,9 @@ export const callCfAi = async (
   if (env.APP_ENV === "local") {
     return { output: mockOutput(taskType, variant), latency_ms: 0 };
   }
+  // 完整检查全量审+逐节修正稿输出量大，需要高输出预算（8192 会截断整份合同的诊断）。
+  const budget =
+    taskType === "contract_completeness_check" ? COMPLETENESS_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS;
   if (model.startsWith("@cf/")) {
     // Workers AI 开源模型（OpenAI 兼容 schema）：关闭思考模式并收紧输出预算，
     // 否则 reasoning 模型（如 GLM-4.7-flash）会把预算烧在推理块上、耗时数分钟。
@@ -218,7 +285,7 @@ export const callCfAi = async (
     const resp = (await env.AI.run(model, {
       system: prompt.system,
       messages: [{ role: "user", content: prompt.user }],
-      max_tokens: MAX_OUTPUT_TOKENS
+      max_tokens: budget
     })) as { content?: Array<{ text?: string }> };
     const output = (resp.content ?? []).map((block) => block.text ?? "").join("");
     return { output, latency_ms: Date.now() - startedAt };
@@ -226,7 +293,7 @@ export const callCfAi = async (
   const resp = (await env.AI.run(model, {
     input: prompt.user,
     instructions: prompt.system,
-    max_output_tokens: MAX_OUTPUT_TOKENS
+    max_output_tokens: budget
   })) as {
     output_text?: string;
     output?: Array<{ content?: Array<{ text?: string }> }>;
@@ -315,7 +382,8 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
         }),
         latency_ms: Date.now() - startedAtMs,
         metadata: { models: [...CF_AI_COMPLETENESS_MODELS], pipeline: "draft_then_audit" }
-      });      return;
+      });
+      return;
     }
 
     const model =

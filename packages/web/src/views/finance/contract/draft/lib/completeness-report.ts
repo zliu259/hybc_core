@@ -98,7 +98,8 @@ const normalizeResult = (v: unknown): CompletenessResult => {
       typeof o.ready_to_finalize === "boolean"
         ? o.ready_to_finalize
         : undefined,
-    raw: asOptionalString(o.raw)
+    raw: asOptionalString(o.raw),
+    _truncated: o._truncated === true
   };
 };
 

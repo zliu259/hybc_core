@@ -54,6 +54,11 @@ const initialReady = computed(
 const auditReady = computed(
   () => auditResult.value?.ready_to_finalize === true
 );
+const isTruncated = computed(
+  () =>
+    initialResult.value?._truncated === true ||
+    auditResult.value?._truncated === true
+);
 
 // 缺失节以复核（audit）结论为准；隐藏已忽略/已添加处理的 key，被驳回的仍展示（灰显）
 const missingItems = computed(() =>
@@ -150,6 +155,15 @@ const onApplyRevision = async (g: CompletenessSectionIssue) => {
         />
       </el-select>
     </div>
+
+    <el-alert
+      v-if="isTruncated"
+      type="warning"
+      :closable="false"
+      show-icon
+      title="本次检查结果因输出过长被截断，仅展示已完成部分；建议补齐关键信息后重新检查。"
+      class="truncated-alert"
+    />
 
     <div v-if="report" class="summary">
       <div class="summary-row">
