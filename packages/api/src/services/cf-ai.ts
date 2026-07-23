@@ -89,21 +89,38 @@ const mockOutput = (taskType: CfAiTaskType): string => {
           text: "每逾期一日按每日千分之三支付违约金",
           severity: "yellow",
           reason: "违约金费率畸高（mock审查）",
-          legal_basis: "《民法典》第585条",
           suggestion: "建议调整为每日万分之五以内"
         }
-      ]
+      ],
+      revised_content:
+        "【本地MOCK修正稿】甲方{{party_a}}应于验收合格后30日内向乙方{{party_b}}支付工程款。逾期付款的，每逾期一日按未付金额的万分之五支付违约金。"
     });
   }
   return JSON.stringify({
     missing: [
       {
-        section_key: "geology_risk",
-        title: "地质条件与地下障碍物风险",
+        section_key: "service_notice",
+        title: "送达条款",
         level: "recommended",
-        reason: "顶管施工核心风险，建议补充（mock提示）"
+        reason: "缺失送达条款会导致争议阶段送达僵局（mock提示）"
       }
-    ]
+    ],
+    section_issues: [
+      {
+        section_key: "payment",
+        title: "价款结算与支付",
+        issues: [
+          {
+            text: "{{late_fee_rate}}",
+            severity: "yellow",
+            reason: "逾期违约金费率占位符未填写（mock全量审）",
+            suggestion: "建议填写为日万分之五"
+          }
+        ]
+      }
+    ],
+    overall_summary: "【本地MOCK总评】合同结构完整，个别关键占位符未填写，建议补齐后定稿。",
+    ready_to_finalize: false
   });
 };
 
