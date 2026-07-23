@@ -119,22 +119,19 @@ const EQUIPMENT_DRY_COLUMNS: TableColumn[] = [
   { key: "remark", label: "备注", type: "text", width: 1600 }
 ];
 
+// 材料/货物清单：列结构与干租设备清单一致（序号/名称/规格型号/单位/数量/含税单价/含税金额/税率/备注），
+// 不含交货期。仅名称与单位按材料语境本地化（货物名称、单位自由填如 吨/m³，非台班·月枚举），
+// 交货期等交付约定写进条款正文。
 const GOODS_COLUMNS: TableColumn[] = [
   { key: "seq", label: "序号", type: "seq", width: 640 },
   { key: "name", label: "货物名称", type: "text", required: true, width: 1900 },
-  {
-    key: "spec",
-    label: "规格型号/材质",
-    type: "text",
-    required: true,
-    width: 1900
-  },
+  { key: "spec", label: "规格型号", type: "text", required: true, width: 1900 },
   {
     key: "unit",
     label: "单位",
     type: "text",
     required: true,
-    width: 900,
+    width: 1100,
     placeholder: "如 吨/m³/卷"
   },
   { key: "qty", label: "数量", type: "number", required: true, width: 1000 },
@@ -152,16 +149,9 @@ const GOODS_COLUMNS: TableColumn[] = [
     type: "enum",
     options: TAX_RATE_OPTIONS,
     defaultValue: "13%",
-    width: 900
+    width: 1000
   },
-  {
-    key: "delivery_date",
-    label: "交货期",
-    type: "text",
-    width: 1400,
-    placeholder: "如 签订后30日内"
-  },
-  { key: "remark", label: "备注", type: "text", width: 1400 }
+  { key: "remark", label: "备注", type: "text", width: 1600 }
 ];
 
 const PRESET_COLUMNS: Record<TablePreset, TableColumn[]> = {

@@ -40,6 +40,13 @@ describe("presetForSection", () => {
     expect(sectionHasTable("equipment_schedule", "dry_lease")).toBe(true);
     expect(sectionHasTable("dispute", "default")).toBe(false);
   });
+
+  it("goods column structure matches dry lease (和干租一致，无交货期)", () => {
+    const goodsKeys = getPresetColumns("goods").map(c => c.key);
+    const dryKeys = getPresetColumns("equipment_dry").map(c => c.key);
+    expect(goodsKeys).toEqual(dryKeys);
+    expect(goodsKeys).not.toContain("delivery_date");
+  });
 });
 
 describe("amount computation", () => {
