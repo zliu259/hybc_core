@@ -90,6 +90,59 @@ export const fillPlaceholders = (text: string, values: Record<string, string>): 
     return v && v.length > 0 ? v : raw;
   });
 
+/** 占位符 → 中文可读标签，用于发给 AI 时把未填占位符换成人话（防 AI 误判为条款缺陷）。 */
+const PLACEHOLDER_LABELS: Record<string, string> = {
+  party_a: "甲方名称",
+  party_b: "乙方名称",
+  party_a_credit_code: "甲方统一社会信用代码",
+  party_b_credit_code: "乙方统一社会信用代码",
+  party_a_legal_person: "甲方法定代表人",
+  party_b_legal_person: "乙方法定代表人",
+  party_a_address: "甲方地址",
+  party_b_address: "乙方地址",
+  party_a_bank_name: "甲方开户银行",
+  party_b_bank_name: "乙方开户银行",
+  party_a_bank_account: "甲方账号",
+  party_b_bank_account: "乙方账号",
+  party_a_phone: "甲方电话",
+  party_b_phone: "乙方电话",
+  project_name: "工程/项目名称",
+  location: "工程地点",
+  pipe_spec: "管材规格",
+  length: "顶进长度",
+  unit_price: "综合单价",
+  amount: "合同总价",
+  amount_cn: "合同总价大写",
+  tax_rate: "税率",
+  invoice_type: "发票类型",
+  start_date: "开工日期",
+  end_date: "竣工日期",
+  sign_date: "签约日期",
+  with_operator: "是否含操作人员",
+  work_scope: "作业范围",
+  goods_name: "货物名称",
+  quality_standard: "质量标准",
+  delivery_date: "交货日期",
+  delivery_place: "交货地点",
+  warranty_months: "质保月数",
+  worker_count: "劳务人数"
+};
+
+/**
+ * 发给 AI 前填充占位符：已填的换真实值，未填的换成「（<中文标签>，尚未填写）」而非保留 {{key}}。
+ * 这样 AI 看到的是接近成稿的纯文本，不会把占位符当成条款缺陷误报，输出也基于真实值。
+ */
+export const fillPlaceholdersForAi = (
+  text: string,
+  values: Record<string, string>
+): string =>
+  text.replace(PLACEHOLDER_RE, (_raw, key: string) => {
+    const v = values[key];
+    if (v && v.length > 0) return v;
+    const label = PLACEHOLDER_LABELS[key] ?? key;
+    return `（${label}，尚未填写）`;
+  });
+
 export const collectUnresolvedKeys = (
   texts: string[],
   values: Record<string, string>

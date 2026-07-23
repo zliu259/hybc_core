@@ -11,7 +11,9 @@ import { CF_AI_DRAFT_MODEL, CF_AI_REVIEW_MODEL, executeCfAiTask } from "../servi
 import {
   buildKeywordValues,
   collectUnresolvedKeys,
-  fillPlaceholders
+  fillPlaceholders,
+  fillPlaceholdersForAi,
+  type OurEntityInfo
 } from "../services/contract-draft-finalize";
 import { checkClauseText, checkDraftDates } from "../services/contract-draft-rules";
 import { generateSerial } from "../services/serial";
@@ -115,6 +117,22 @@ const parseKeywords = (draft: ContractDraft): Record<string, unknown> => {
   } catch {
     return {};
   }
+};
+
+/**
+ * 发给 AI 的正文占位符填充：已填→真实值，未填→「（中文标签，尚未填写）」。
+ * 根治 AI 把 {{占位符}} 误判为条款缺陷，且让 AI 输出基于真实值的纯文本。
+ */
+const fillContentForAi = async (env: Env, draft: ContractDraft, text: string): Promise<string> => {
+  const entity = draft.entity_id
+    ? await env.DB.prepare(
+        "SELECT entity_name, tax_id, legal_person, primary_bank_name, primary_bank_account_no FROM entity WHERE id = ?"
+      )
+        .bind(draft.entity_id)
+        .first<OurEntityInfo>()
+    : null;
+  const values = buildKeywordValues(draft, entity);
+  return fillPlaceholdersForAi(text, values);
 };
 
 // ── 条款库目录（供"添加节"选择器与完整性检查候选集） ──
@@ -562,6 +580,13 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
     .first<ContractClauseTemplate>();
 
   const sectionIndex = Math.trunc(section.sort_order / 10);
+  // 发给 AI 的骨架与现有正文都先填真实值（未填→中文提示），AI 基于真实文本起草、输出无 {{}}
+  const aiBodyTemplate = await fillContentForAi(
+    c.env,
+    draft,
+    tpl?.body_template ?? section.content
+  );
+  const aiCurrentContent = await fillContentForAi(c.env, draft, section.content);
   const task = await createTask(c.env, {
     task_type: "contract_draft_section",
     biz_type: "contract_draft",
@@ -572,8 +597,8 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
       direction: draft.direction,
       section_key: section.section_key,
       section_title: section.title,
-      body_template: tpl?.body_template ?? section.content,
-      current_content: section.content,
+      body_template: aiBodyTemplate,
+      current_content: aiCurrentContent,
       style_ref: tpl?.style_ref ?? "",
       keywords_json: draft.keywords_json,
       instruction,
@@ -619,6 +644,7 @@ contractDraftRoutes.post("/:id/sections/:sectionId/review", async (c) => {
   if (!claim.meta.changes) {
     return c.json({ success: false, error: { message: "该节已在审查中" } }, 409);
   }
+  const aiContent = await fillContentForAi(c.env, draft, section.content);
   const task = await createTask(c.env, {
     task_type: "contract_compliance_review",
     biz_type: "contract_draft",
@@ -628,7 +654,7 @@ contractDraftRoutes.post("/:id/sections/:sectionId/review", async (c) => {
       section_id: section.id,
       direction: draft.direction,
       section_title: section.title,
-      content: section.content,
+      content: aiContent,
       model: CF_AI_REVIEW_MODEL
     },
     priority: 6,
@@ -675,6 +701,15 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
   )
     .bind(draft.family, draft.direction)
     .all<{ section_key: string; title: string; required_level: string }>();
+  // 全部正文先填真实值发给 AI（未填→中文提示），AI 不再把占位符误报为条款缺陷
+  const entityInfo = draft.entity_id
+    ? await c.env.DB.prepare(
+        "SELECT entity_name, tax_id, legal_person, primary_bank_name, primary_bank_account_no FROM entity WHERE id = ?"
+      )
+        .bind(draft.entity_id)
+        .first<OurEntityInfo>()
+    : null;
+  const draftValues = buildKeywordValues(draft, entityInfo);
   const task = await createTask(c.env, {
     task_type: "contract_completeness_check",
     biz_type: "contract_draft",
@@ -687,7 +722,11 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
         sections.map((s) => ({ section_key: s.section_key, title: s.title }))
       ),
       sections_full_json: JSON.stringify(
-        sections.map((s) => ({ section_key: s.section_key, title: s.title, content: s.content }))
+        sections.map((s) => ({
+          section_key: s.section_key,
+          title: s.title,
+          content: fillPlaceholdersForAi(s.content, draftValues)
+        }))
       ),
       keywords_json: draft.keywords_json,
       // 递进链第一阶段=terra 初版诊断；完成后 completeTask 自动派生 sonnet 复核任务
@@ -863,13 +902,24 @@ contractDraftRoutes.post("/:id/finalize", async (c) => {
     return c.json({ success: false, error: { message: "仍有节在生成/审查中，请稍候" } }, 400);
   }
   if (draft.status === "drafting" && draft.completeness_status !== "done") {
-    return c.json(
-      {
-        success: false,
-        error: { message: "定稿前需先通过完整检查（内容变更后需重新检查）" }
-      },
-      400
-    );
+    // 门禁放宽（owner 07-23）：已累计 ≥2 次完整检查即视为充分审慎，允许定稿，
+    // 不再强制"最后一次检查须为通过态"。
+    const checkCount = await c.env.DB.prepare(
+      "SELECT COUNT(*) AS n FROM contract_draft_check WHERE draft_id = ?"
+    )
+      .bind(draft.id)
+      .first<{ n: number }>();
+    if ((checkCount?.n ?? 0) < 2) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: "定稿前需先通过完整检查（或累计完成 2 次以上检查后可直接定稿）"
+          }
+        },
+        400
+      );
+    }
   }
 
   const entity = draft.entity_id
