@@ -11,17 +11,21 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage } from "element-plus";
 import {
   addSection as apiAddSection,
+  applyCompletenessRevision,
   applyVariant,
   createDraft,
+  getCheck,
   getDraft,
   ignoreCompletenessHint,
+  listChecks,
   listClauseTemplates,
   removeSection,
   requestCompleteness,
   updateDraft,
   updateSection,
+  type CheckVersion,
   type ClauseTemplate,
-  type CompletenessRun,
+  type CompletenessReport,
   type ContractDraft,
   type ContractDraftSection,
   type ContractFamily,
@@ -35,7 +39,7 @@ import {
 } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
-import { mergeMissingHints, type MissingHint } from "./lib/completeness-merge";
+import { parseCompletenessReport } from "./lib/completeness-report";
 import AiWorkingIndicator from "./components/AiWorkingIndicator.vue";
 import DraftInitCard from "./components/DraftInitCard.vue";
 import DraftListCard from "./components/DraftListCard.vue";
@@ -58,8 +62,13 @@ const templates = ref<ClauseTemplate[]>([]);
 const entities = ref<Entity[]>([]);
 const activeSectionId = ref<number | null>(null);
 const completenessVisible = ref(false);
-const missingHints = ref<MissingHint[]>([]);
-const completenessRuns = ref<CompletenessRun[]>([]);
+// 完整检查 v2：当前查看的递进结果 + 历史版本 + 当前版本 id
+const currentReport = ref<CompletenessReport | null>(null);
+const completenessVersions = ref<CheckVersion[]>([]);
+const currentCheckId = ref<number | null>(null);
+// 本次弹窗内已一键采纳修正稿 / 已「添加」处理的缺失节 key（用于按钮态与列表隐藏）
+const appliedSectionKeys = ref<string[]>([]);
+const handledMissingKeys = ref<string[]>([]);
 const saving = ref(false);
 const checking = ref(false);
 const convertVisible = ref(false);
@@ -223,6 +232,29 @@ const ignoredHints = computed<string[]>(() => {
   }
 });
 
+// 弹窗缺失列表隐藏的 key：已忽略（留痕）+ 本次已「添加」处理
+const dialogHiddenMissing = computed<string[]>(() => [
+  ...ignoredHints.value,
+  ...handledMissingKeys.value
+]);
+
+// 有已完成的检查即可「查看上次检查」（采纳修正稿或再编辑会置空 status，按钮随之隐藏）
+const hasCompletedCheck = computed(
+  () => draft.value?.completeness_status === "done"
+);
+
+// 从 axios 错误体提取后端 error.message（类型安全，无 as any）
+const apiErrorMessage = (e: unknown, fallback: string): string => {
+  if (e && typeof e === "object") {
+    const resp = (
+      e as { response?: { data?: { error?: { message?: unknown } } } }
+    ).response;
+    const msg = resp?.data?.error?.message;
+    if (typeof msg === "string" && msg.length > 0) return msg;
+  }
+  return fallback;
+};
+
 const applyDetail = (detail: {
   draft: ContractDraft;
   sections: ContractDraftSection[];
@@ -282,7 +314,11 @@ const onBackToList = async () => {
   templates.value = [];
   keywords.value = {};
   activeSectionId.value = null;
-  missingHints.value = [];
+  currentReport.value = null;
+  completenessVersions.value = [];
+  currentCheckId.value = null;
+  appliedSectionKeys.value = [];
+  handledMissingKeys.value = [];
 };
 
 // Banner 内表单变更以不可变 patch 方式合入草稿
@@ -349,7 +385,7 @@ const refreshSection = (section: ContractDraftSection | null) => {
   sections.value = sections.value.map(s => (s.id === section.id ? section : s));
 };
 
-// 内容变更后本地同步失效完整性状态（服务端已真源失效），保证定稿按钮态即时正确。
+// 内容变更后本地同步失效完整检查状态（服务端已真源失效），保证定稿按钮态即时正确。
 // 与服务端口径一致：仅 drafting 态失效。
 const invalidateCompletenessLocal = () => {
   if (!draft.value || draft.value.status !== "drafting") return;
@@ -361,7 +397,7 @@ const invalidateCompletenessLocal = () => {
   };
 };
 
-// 定稿门禁：drafting 态必须先通过完整性检查；finalized 态保持可重试转化
+// 定稿门禁：drafting 态必须先通过完整检查；finalized 态保持可重试转化
 const completenessGateBlocked = computed(
   () =>
     draft.value?.status === "drafting" &&
@@ -401,7 +437,8 @@ const onSave = async (payload: { sectionId: number; content: string }) => {
   if (prevContent !== payload.content) invalidateCompletenessLocal();
 };
 
-// AI 审查修正稿一键替换：走既有节更新接口（服务端置 source=manual 并失效完整性）
+// 节内 AI 审查修正稿一键替换：走既有节更新接口（服务端置 source=manual 并失效完整检查）。
+// 注意：与弹窗的「完整检查一键采纳」(onApplyCompletenessRevision) 是两条不同链路。
 const onApplyRevision = async (payload: {
   sectionId: number;
   content: string;
@@ -492,50 +529,115 @@ const onReorder = async (orderedIds: number[]) => {
   }
 };
 
+// 拉取历史版本列表 + 指定版本（checkId=null 取最新）结果，解析为递进报告并填充弹窗态。
+// 返回是否成功（解析失败/无版本时提示并返回 false）。
+const loadCheckReport = async (
+  draftId: number,
+  checkId: number | null
+): Promise<boolean> => {
+  const versions = await listChecks(draftId);
+  completenessVersions.value = versions;
+  const targetId = checkId ?? versions[0]?.id ?? null;
+  if (targetId == null) {
+    ElMessage.error("没有可用的检查结果");
+    return false;
+  }
+  const check = await getCheck(draftId, targetId);
+  const report = parseCompletenessReport(check.result_json);
+  if (!report) {
+    ElMessage.error("检查结果无法解析，请重新检查");
+    return false;
+  }
+  currentReport.value = report;
+  currentCheckId.value = check.id;
+  return true;
+};
+
 const runCompleteness = async () => {
   if (!draft.value) return;
+  const draftId = draft.value.id;
   checking.value = true;
   try {
-    await requestCompleteness(draft.value.id);
-    // 轮询草稿完整性状态（2s × 150 次：双模型全量审最长约 5 分钟）
+    await requestCompleteness(draftId);
+    // 轮询草稿完整检查状态（2s × 150 次：前后递进双模型最长约 5 分钟）
     for (let i = 0; i < 150; i++) {
-      const detail = await getDraft(draft.value.id);
+      const detail = await getDraft(draftId);
       if (detail.draft.completeness_status === "done") {
         applyDetail(detail);
-        // 新结构：{runs:[{model, result}]}，双模型全量结果；解析宽容
-        let runs: CompletenessRun[] = [];
-        try {
-          const parsed = JSON.parse(
-            detail.draft.completeness_result_json ?? "{}"
-          ) as { runs?: unknown };
-          if (Array.isArray(parsed.runs)) {
-            runs = parsed.runs as CompletenessRun[];
-          }
-        } catch {
-          runs = [];
+        // 新一次检查：重置弹窗内的采纳/添加处理态
+        appliedSectionKeys.value = [];
+        handledMissingKeys.value = [];
+        if (await loadCheckReport(draftId, null)) {
+          completenessVisible.value = true;
         }
-        completenessRuns.value = runs;
-        missingHints.value = mergeMissingHints(runs);
-        completenessVisible.value = true;
         return;
       }
       if (detail.draft.completeness_status === "error") {
-        ElMessage.error("完整性检查失败，请重试");
+        ElMessage.error("完整检查失败，请重试");
         return;
       }
       await new Promise(r => setTimeout(r, 2000));
     }
-    ElMessage.error("完整性检查超时，请重试");
+    ElMessage.error("完整检查超时，请重试");
   } finally {
     checking.value = false;
   }
 };
 
+// 「查看上次检查」：不重跑，直接拉最新历史版本打开弹窗
+const openLastCheck = async () => {
+  if (!draft.value) return;
+  appliedSectionKeys.value = [];
+  handledMissingKeys.value = [];
+  if (await loadCheckReport(draft.value.id, null)) {
+    completenessVisible.value = true;
+  }
+};
+
+// 版本切换：仅重取该版本结果重渲染，不重跑 AI（保留已采纳标记）
+const onSwitchVersion = async (checkId: number) => {
+  if (!draft.value || checkId === currentCheckId.value) return;
+  try {
+    const check = await getCheck(draft.value.id, checkId);
+    const report = parseCompletenessReport(check.result_json);
+    if (!report) {
+      ElMessage.error("该版本结果无法解析");
+      return;
+    }
+    currentReport.value = report;
+    currentCheckId.value = check.id;
+  } catch (e) {
+    ElMessage.error(apiErrorMessage(e, "加载该版本失败"));
+  }
+};
+
+// 弹窗内一键采纳某节复核通过的修正稿（门控在后端；成功后重锁定稿门禁）
+const onApplyCompletenessRevision = async (sectionKey: string) => {
+  if (!draft.value || currentCheckId.value == null) return;
+  try {
+    const section = await applyCompletenessRevision(
+      draft.value.id,
+      currentCheckId.value,
+      sectionKey
+    );
+    refreshSection(section);
+    appliedSectionKeys.value = [...appliedSectionKeys.value, sectionKey];
+    // 后端已置空 completeness_status（定稿门禁自动重锁）；本地不可变同步
+    draft.value = {
+      ...draft.value,
+      completeness_status: null,
+      completeness_result_json: null
+    };
+    ElMessage.success("已采纳修正稿");
+  } catch (e) {
+    ElMessage.error(apiErrorMessage(e, "采纳修正稿失败，请重试"));
+  }
+};
+
 const onHintAdd = async (sectionKey: string) => {
   await onAddSection({ section_key: sectionKey });
-  missingHints.value = missingHints.value.filter(
-    m => m.section_key !== sectionKey
-  );
+  // 本次弹窗内隐藏该缺失项（报告本身不可变，用本地 handled 集合驱动）
+  handledMissingKeys.value = [...handledMissingKeys.value, sectionKey];
 };
 
 const onHintIgnore = async (sectionKey: string) => {
@@ -683,13 +785,20 @@ onMounted(async () => {
               :loading="checking"
               @click="runCompleteness"
             >
-              {{ checking ? "检查中…" : "完整性检查" }}
+              {{ checking ? "检查中…" : "完整检查" }}
+            </el-button>
+            <el-button
+              v-if="hasCompletedCheck && !checking"
+              plain
+              @click="openLastCheck"
+            >
+              查看上次检查
             </el-button>
             <el-button plain @click="plainPreviewVisible = true">
               纯文本预览
             </el-button>
             <el-tooltip
-              content="完成完整性检查后方可定稿（内容变更后需重新检查）"
+              content="完成完整检查后方可定稿（内容变更后需重新检查）"
               :disabled="!completenessGateBlocked"
               placement="top"
             >
@@ -735,12 +844,16 @@ onMounted(async () => {
       </el-row>
       <CompletenessDialog
         v-model:visible="completenessVisible"
-        :runs="completenessRuns"
-        :missing="missingHints"
-        :ignored="ignoredHints"
+        :report="currentReport"
+        :versions="completenessVersions"
+        :current-version-id="currentCheckId"
+        :applied-keys="appliedSectionKeys"
+        :ignored="dialogHiddenMissing"
+        @switch-version="onSwitchVersion"
         @add="onHintAdd"
         @ignore="onHintIgnore"
         @locate="onLocateSection"
+        @apply-revision="onApplyCompletenessRevision"
       />
       <ConvertDialog
         v-model:visible="convertVisible"
@@ -797,7 +910,7 @@ onMounted(async () => {
   display: inline-block;
 }
 
-/* 完整性检查运行中：toolbar 下方全宽指示器 */
+/* 完整检查运行中：toolbar 下方全宽指示器 */
 .completeness-indicator {
   margin-bottom: 12px;
 }

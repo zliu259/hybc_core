@@ -82,34 +82,67 @@ export type DraftDetail = {
   sections: ContractDraftSection[];
 };
 
-/** 完整性检查单条问题（AI 输出，字段宽容处理） */
+/** 完整检查 v2：复核（audit）阶段对每条问题追加的裁决 */
+export type CompletenessVerdict = "confirmed" | "rejected" | "added";
+
+/** 逐节问题单条（AI 输出，字段宽容处理；audit 阶段带 verdict/audit_note） */
 export type CompletenessIssue = {
   text: string;
   severity: string;
   reason: string;
   suggestion?: string;
+  verdict?: CompletenessVerdict;
+  audit_note?: string;
 };
 
-/** 完整性检查单模型运行结果（completeness_result_json = {runs: CompletenessRun[]}） */
-export type CompletenessRun = {
-  model: string;
-  result: {
-    missing?: {
-      section_key: string;
-      title: string;
-      level: string;
-      reason: string;
-    }[];
-    section_issues?: {
-      section_key: string;
-      title: string;
-      issues: CompletenessIssue[];
-    }[];
-    overall_summary?: string;
-    ready_to_finalize?: boolean;
-    /** 模型输出无法解析为 JSON 时后端包为 {raw} */
-    raw?: string;
-  };
+/** 逐节问题分组；audit 阶段带修正稿与复核放行标记（一键修正的 gate） */
+export type CompletenessSectionIssue = {
+  section_key: string;
+  title: string;
+  issues: CompletenessIssue[];
+  revised_content?: string;
+  revision_approved?: boolean;
+};
+
+/** 单个模型阶段（initial/audit）的检查结论 */
+export type CompletenessResult = {
+  missing?: {
+    section_key: string;
+    title: string;
+    level: string;
+    reason: string;
+    verdict?: string;
+    audit_note?: string;
+  }[];
+  section_issues?: CompletenessSectionIssue[];
+  overall_summary?: string;
+  ready_to_finalize?: boolean;
+  /** 模型输出无法解析为 JSON 时后端包为 {raw} */
+  raw?: string;
+};
+
+/**
+ * 完整检查 v2 前后递进结果（completeness_result_json / check.result_json）：
+ * initial=terra 初版结论，audit=sonnet-5 复核把关（最终结论以 audit 为准）。
+ */
+export type CompletenessReport = {
+  initial: { model: string; result: CompletenessResult };
+  audit: { model: string; result: CompletenessResult };
+};
+
+/** 历史检查版本（列表项，倒序，最多 20） */
+export type CheckVersion = {
+  id: number;
+  models_json: string;
+  created_at: string;
+};
+
+/** 单个历史检查版本详情 */
+export type CheckDetail = {
+  id: number;
+  result_json: string;
+  models_json: string;
+  created_at: string;
 };
 
 export async function listClauseTemplates(
@@ -285,6 +318,48 @@ export async function ignoreCompletenessHint(
     { data: { section_key: sectionKey } }
   );
 }
+
+/** 历史检查版本列表（倒序，最多 20） */
+export async function listChecks(draftId: number): Promise<CheckVersion[]> {
+  const res = await http.request<{ success: boolean; data: CheckVersion[] }>(
+    "get",
+    `/api/v1/contract-draft/${draftId}/checks`
+  );
+  return res.data;
+}
+
+/** 单个历史检查版本详情（含 result_json 递进结果） */
+export async function getCheck(
+  draftId: number,
+  checkId: number
+): Promise<CheckDetail> {
+  const res = await http.request<{ success: boolean; data: CheckDetail }>(
+    "get",
+    `/api/v1/contract-draft/${draftId}/checks/${checkId}`
+  );
+  return res.data;
+}
+
+/**
+ * 一键采纳某节复核通过的修正稿（门控：仅该 checkId 的 audit 结果里
+ * 该节 revision_approved===true 才成功，否则后端 400）。成功返回更新后的节。
+ */
+export async function applyCompletenessRevision(
+  draftId: number,
+  checkId: number,
+  sectionKey: string
+): Promise<ContractDraftSection> {
+  const res = await http.request<{
+    success: boolean;
+    data: ContractDraftSection;
+  }>(
+    "post",
+    `/api/v1/contract-draft/${draftId}/checks/${checkId}/apply-revision`,
+    { data: { section_key: sectionKey } }
+  );
+  return res.data;
+}
+
 export type FixedSection = {
   id: number;
   section_key: string;
