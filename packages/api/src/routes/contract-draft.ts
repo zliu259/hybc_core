@@ -7,13 +7,7 @@ import { requireRoles } from "../middleware/rbac";
 import type { Env } from "../types/env";
 import { createTask } from "../services/ai-slot";
 import { writeAuditLog } from "../services/audit-log";
-import {
-  CF_AI_CHEAP_MODEL,
-  executeCfAiTask,
-  pickCriticModel,
-  pickDraftModel,
-  pickSectionModel
-} from "../services/cf-ai";
+import { CF_AI_DRAFT_MODEL, CF_AI_REVIEW_MODEL, executeCfAiTask } from "../services/cf-ai";
 import {
   buildKeywordValues,
   collectUnresolvedKeys,
@@ -94,6 +88,16 @@ const loadSection = async (
   )
     .bind(sectionId, draftId)
     .first<ContractDraftSection>();
+};
+
+/** 内容变更后完整性检查作废（定稿门禁：检查必须晚于最后一次内容变更）。 */
+const invalidateCompleteness = async (env: Env, draftId: number): Promise<void> => {
+  await env.DB.prepare(
+    `UPDATE contract_draft SET completeness_status = NULL, completeness_result_json = NULL,
+       updated_at = ? WHERE id = ? AND status = 'drafting'`
+  )
+    .bind(nowIso(), draftId)
+    .run();
 };
 
 const listSections = async (env: Env, draftId: number): Promise<ContractDraftSection[]> => {
@@ -350,6 +354,7 @@ contractDraftRoutes.post("/:id/sections", async (c) => {
         now
       )
       .run();
+    await invalidateCompleteness(c.env, draft.id);
     const section = await loadSection(c.env, draft.id, ins.meta.last_row_id);
     return c.json({ success: true, data: section });
   }
@@ -365,6 +370,7 @@ contractDraftRoutes.post("/:id/sections", async (c) => {
   )
     .bind(draft.id, `custom_${Date.now()}`, customTitle, nextSort, now, now)
     .run();
+  await invalidateCompleteness(c.env, draft.id);
   const section = await loadSection(c.env, draft.id, ins.meta.last_row_id);
   return c.json({ success: true, data: section });
 });
@@ -420,6 +426,9 @@ contractDraftRoutes.put("/:id/sections/:sectionId", async (c) => {
       section.id
     )
     .run();
+  if (contentChanged) {
+    await invalidateCompleteness(c.env, draft.id);
+  }
   return c.json({ success: true, data: await loadSection(c.env, draft.id, section.id) });
 });
 
@@ -471,6 +480,7 @@ contractDraftRoutes.put("/:id/sections/:sectionId/apply-variant", async (c) => {
   )
     .bind(tpl.body_template, tpl.title, tpl.variant_key, nowIso(), section.id)
     .run();
+  await invalidateCompleteness(c.env, draft.id);
   return c.json({ success: true, data: await loadSection(c.env, draft.id, section.id) });
 });
 
@@ -487,6 +497,7 @@ contractDraftRoutes.delete("/:id/sections/:sectionId", async (c) => {
   )
     .bind(nowIso(), section.id)
     .run();
+  await invalidateCompleteness(c.env, draft.id);
   return c.json({ success: true, data: { id: section.id } });
 });
 
@@ -519,6 +530,7 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
   if (!claim.meta.changes) {
     return c.json({ success: false, error: { message: "该节已在生成中" } }, 409);
   }
+  await invalidateCompleteness(c.env, draft.id);
 
   // 重生成前留档：已有非模板正文时快照全稿，防"regenerate 静默覆盖"
   if (section.content.trim().length > 0 && section.source !== "default_template") {
@@ -558,12 +570,8 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
       keywords_json: draft.keywords_json,
       instruction,
       section_sort: sectionIndex,
-      // 成本分级：已有非模板正文且带指令的修改类走 Workers AI 免费层
-      model: pickSectionModel({
-        hasContent: section.content.trim().length > 0 && section.source !== "default_template",
-        hasInstruction: instruction.length > 0,
-        sectionSort: sectionIndex
-      })
+      // 生成统一走 luna（owner 07-23：默认/按指令合一，GLM 已撤下）
+      model: CF_AI_DRAFT_MODEL
     },
     priority: 6,
     timeout_seconds: 300
@@ -600,8 +608,6 @@ contractDraftRoutes.post("/:id/sections/:sectionId/review", async (c) => {
   if (!claim.meta.changes) {
     return c.json({ success: false, error: { message: "该节已在审查中" } }, 409);
   }
-  // critic 与起草异厂商：起草模型由节序决定，审查取另一个
-  const draftModel = pickDraftModel(Math.trunc(section.sort_order / 10));
   const task = await createTask(c.env, {
     task_type: "contract_compliance_review",
     biz_type: "contract_draft",
@@ -612,7 +618,7 @@ contractDraftRoutes.post("/:id/sections/:sectionId/review", async (c) => {
       direction: draft.direction,
       section_title: section.title,
       content: section.content,
-      model: pickCriticModel(draftModel)
+      model: CF_AI_REVIEW_MODEL
     },
     priority: 6,
     timeout_seconds: 300
@@ -665,12 +671,14 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
       present_sections_json: JSON.stringify(
         sections.map((s) => ({ section_key: s.section_key, title: s.title }))
       ),
-      keywords_json: draft.keywords_json,
-      // 完整性提示属轻量辅助判断，固定走 Workers AI 免费层
-      model: CF_AI_CHEAP_MODEL
+      sections_full_json: JSON.stringify(
+        sections.map((s) => ({ section_key: s.section_key, title: s.title, content: s.content }))
+      ),
+      keywords_json: draft.keywords_json
+      // 模型选择由执行器处理：terra + sonnet-5 双模型同时全量审
     },
     priority: 6,
-    timeout_seconds: 180
+    timeout_seconds: 300
   });
   await c.env.DB.prepare("UPDATE contract_draft SET completeness_task_id = ? WHERE id = ?")
     .bind(task.id, draft.id)
@@ -730,6 +738,15 @@ contractDraftRoutes.post("/:id/finalize", async (c) => {
   );
   if (generating) {
     return c.json({ success: false, error: { message: "仍有节在生成/审查中，请稍候" } }, 400);
+  }
+  if (draft.status === "drafting" && draft.completeness_status !== "done") {
+    return c.json(
+      {
+        success: false,
+        error: { message: "定稿前需先通过完整性检查（内容变更后需重新检查）" }
+      },
+      400
+    );
   }
 
   const entity = draft.entity_id
@@ -839,7 +856,7 @@ contractDraftRoutes.post("/:id/convert", async (c) => {
          (contract_no, direction, project_id, entity_id, counterparty, contract_type,
           handler_userid, contract_date, total_amount, status, ai_review_status,
           attachments_json, remark, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'pending', ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?)`
     )
       .bind(
         contractNo,
@@ -858,22 +875,6 @@ contractDraftRoutes.post("/:id/convert", async (c) => {
       )
       .run();
     const contractId = insert.meta.last_row_id;
-
-    await createTask(c.env, {
-      task_type: "contract_review",
-      biz_type: "contract",
-      biz_id: contractId,
-      priority: 3,
-      timeout_seconds: 600,
-      payload: {
-        contract_id: contractId,
-        contract_no: contractNo,
-        counterparty: draft.counterparty_name,
-        contract_type: contractType,
-        total_amount: totalAmount,
-        attachments
-      }
-    });
     await c.env.DB.prepare(
       "UPDATE contract_draft SET converted_contract_id = ?, updated_at = ? WHERE id = ?"
     )

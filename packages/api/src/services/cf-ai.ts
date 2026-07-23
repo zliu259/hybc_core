@@ -14,14 +14,23 @@ export const CF_AI_TASK_TYPES = [
 ] as const;
 export type CfAiTaskType = (typeof CF_AI_TASK_TYPES)[number];
 
-/** 决策：sol 暂缓启用；terra 与 sonnet-5 均衡交替，critic 异厂商。 */
-export const CF_AI_MODELS = ["openai/gpt-5.6-terra", "anthropic/claude-sonnet-5"] as const;
+/**
+ * 模型分工（owner 07-23 定稿）：
+ * - 生成（默认/按指令合一）= gpt-5.6-luna（GPT-5.6 家族成本优化档）
+ * - AI 审查 = claude-sonnet-5（异厂商挑错 + 输出修正稿）
+ * - 完整性检查 = terra 与 sonnet-5 双模型同时全量审（定稿前最后一道关）
+ * GLM 免费层因输出质量不达标已于 07-23 撤下。
+ */
+export const CF_AI_DRAFT_MODEL = "openai/gpt-5.6-luna";
+export const CF_AI_REVIEW_MODEL = "anthropic/claude-sonnet-5";
+export const CF_AI_COMPLETENESS_MODELS = [
+  "openai/gpt-5.6-terra",
+  "anthropic/claude-sonnet-5"
+] as const;
 
 const MAX_OUTPUT_TOKENS = 8192;
-/** 廉价档收紧输出预算：硬性缩短生成时长，防 reasoning 模型长时间占用执行上下文。 */
+/** @cf/ 开源模型档收紧输出预算：防 reasoning 模型长时间占用执行上下文。 */
 const CHEAP_MAX_OUTPUT_TOKENS = 2048;
-/** 廉价档调用超时：超过即视为失败，就地降级高档模型。 */
-const CHEAP_CALL_TIMEOUT_MS = 30_000;
 
 const nowIso = () => new Date().toISOString();
 
@@ -37,23 +46,15 @@ export const raceWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> 
 export const isCfAiTaskType = (taskType: string): taskType is CfAiTaskType =>
   (CF_AI_TASK_TYPES as readonly string[]).includes(taskType);
 
-export const pickDraftModel = (sectionSort: number): string =>
-  CF_AI_MODELS[Math.abs(Math.trunc(sectionSort)) % CF_AI_MODELS.length];
-
-export const pickCriticModel = (draftModel: string): string =>
-  CF_AI_MODELS.find((m) => m !== draftModel) ?? CF_AI_MODELS[0];
-
-/** 成本分级（owner 07-22）：修改类走 Workers AI 免费层；首次起草保持高档交替。 */
-export const CF_AI_CHEAP_MODEL = "@cf/zai-org/glm-4.7-flash";
-
-export interface SectionModelContext {
-  hasContent: boolean;
-  hasInstruction: boolean;
-  sectionSort: number;
-}
-
-export const pickSectionModel = (ctx: SectionModelContext): string =>
-  ctx.hasContent && ctx.hasInstruction ? CF_AI_CHEAP_MODEL : pickDraftModel(ctx.sectionSort);
+/** 宽容 JSON 解析：剥 markdown 围栏，失败则包为 {raw}。 */
+const tolerantJsonParse = (raw: string): unknown => {
+  const stripped = raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
+  try {
+    return JSON.parse(stripped);
+  } catch {
+    return { raw };
+  }
+};
 
 interface CfAiPrompt {
   system: string;
@@ -208,6 +209,7 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
     await failTask(env, taskId, CF_AI_NODE_ID, `cf_ai 不支持任务类型 ${task.task_type}`);
     return;
   }
+  const cfTaskType: CfAiTaskType = task.task_type;
 
   try {
     const rule = await env.DB.prepare(
@@ -231,40 +233,43 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
     const prompt = await resolvePrompt(env, rule.prompt_template_id, payload);
     if (!prompt) throw new Error(`提示词模板 ${rule.prompt_template_id} 不存在或未启用`);
 
-    const preferredModel =
+    // 完整性检查：terra 与 sonnet-5 双模型同时全量审，两路都成功才算完成（定稿前最后一道关）
+    if (task.task_type === "contract_completeness_check") {
+      const startedAtMs = Date.now();
+      const settled = await Promise.allSettled(
+        CF_AI_COMPLETENESS_MODELS.map((m) => callCfAi(env, m, cfTaskType, prompt))
+      );
+      const runs: Array<Record<string, unknown>> = [];
+      const failures: string[] = [];
+      settled.forEach((s, i) => {
+        const m = CF_AI_COMPLETENESS_MODELS[i];
+        if (s.status === "fulfilled" && s.value.output.trim()) {
+          runs.push({ model: m, result: tolerantJsonParse(s.value.output) });
+        } else {
+          failures.push(`${m}: ${s.status === "rejected" ? String(s.reason) : "空输出"}`);
+        }
+      });
+      if (failures.length > 0) {
+        throw new Error(`完整性检查未全部完成：${failures.join("；")}`);
+      }
+      await completeTask(env, taskId, CF_AI_NODE_ID, {
+        output: JSON.stringify({ runs }),
+        latency_ms: Date.now() - startedAtMs,
+        metadata: { models: [...CF_AI_COMPLETENESS_MODELS] }
+      });
+      return;
+    }
+
+    const model =
       typeof payload.model === "string" && payload.model.length > 0
         ? payload.model
-        : pickDraftModel(Number(payload.section_sort ?? 0));
-
-    // 廉价模型（Workers AI 免费层）失败或空输出时就地回退高档模型，
-    // 避免任务进入"重试3次×cron兜底"的漫长失败循环。
-    let usedModel = preferredModel;
-    const firstAttempt =
-      preferredModel === CF_AI_CHEAP_MODEL
-        ? raceWithTimeout(
-            callCfAi(env, preferredModel, task.task_type, prompt),
-            CHEAP_CALL_TIMEOUT_MS
-          )
-        : callCfAi(env, preferredModel, task.task_type, prompt);
-    let result: CfAiCallResult | null = await firstAttempt.catch((err: unknown) => {
-      if (preferredModel !== CF_AI_CHEAP_MODEL) throw err;
-      console.warn(`cf_ai 廉价模型调用失败，回退高档模型 task=${taskId}`, err);
-      return null;
-    });
-    if ((result === null || !result.output.trim()) && preferredModel === CF_AI_CHEAP_MODEL) {
-      usedModel = pickDraftModel(Number(payload.section_sort ?? 0));
-      result = await callCfAi(env, usedModel, task.task_type, prompt);
-    }
-    if (!result || !result.output.trim()) {
-      throw new Error(`模型 ${usedModel} 返回空输出`);
-    }
+        : CF_AI_DRAFT_MODEL;
+    const { output, latency_ms } = await callCfAi(env, model, cfTaskType, prompt);
+    if (!output.trim()) throw new Error(`模型 ${model} 返回空输出`);
     await completeTask(env, taskId, CF_AI_NODE_ID, {
-      output: result.output,
-      latency_ms: result.latency_ms,
-      metadata:
-        usedModel === preferredModel
-          ? { model: usedModel }
-          : { model: usedModel, fallback_from: preferredModel }
+      output,
+      latency_ms,
+      metadata: { model }
     });
   } catch (err) {
     await failTask(env, taskId, CF_AI_NODE_ID, err instanceof Error ? err.message : String(err));

@@ -1,31 +1,25 @@
-// packages/api/test/cf-ai-cheap-routing.test.ts
 import { describe, it, expect } from "vitest";
+// packages/api/test/cf-ai-cheap-routing.test.ts
 import {
-  CF_AI_CHEAP_MODEL,
-  CF_AI_MODELS,
+  CF_AI_COMPLETENESS_MODELS,
+  CF_AI_DRAFT_MODEL,
+  CF_AI_REVIEW_MODEL,
   parseCfAiTextOutput,
-  pickSectionModel,
   raceWithTimeout
 } from "../src/services/cf-ai";
 
-describe("成本分级路由", () => {
-  it("首次起草（无正文）走高档交替", () => {
-    expect(pickSectionModel({ hasContent: false, hasInstruction: false, sectionSort: 0 })).toBe(
-      CF_AI_MODELS[0]
-    );
-    expect(pickSectionModel({ hasContent: false, hasInstruction: true, sectionSort: 1 })).toBe(
-      CF_AI_MODELS[1]
-    );
+describe("模型分工（owner 07-23）", () => {
+  it("生成统一走 luna", () => {
+    expect(CF_AI_DRAFT_MODEL).toBe("openai/gpt-5.6-luna");
   });
-  it("已有AI/手工正文且带指令的修改走廉价模型", () => {
-    expect(pickSectionModel({ hasContent: true, hasInstruction: true, sectionSort: 0 })).toBe(
-      CF_AI_CHEAP_MODEL
-    );
+  it("AI 审查固定 sonnet-5", () => {
+    expect(CF_AI_REVIEW_MODEL).toBe("anthropic/claude-sonnet-5");
   });
-  it("已有正文但无指令（整节重生成）仍走高档", () => {
-    expect(pickSectionModel({ hasContent: true, hasInstruction: false, sectionSort: 2 })).toBe(
-      CF_AI_MODELS[0]
-    );
+  it("完整性检查 terra+sonnet-5 双模型", () => {
+    expect([...CF_AI_COMPLETENESS_MODELS]).toEqual([
+      "openai/gpt-5.6-terra",
+      "anthropic/claude-sonnet-5"
+    ]);
   });
 });
 
