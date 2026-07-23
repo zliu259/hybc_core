@@ -71,4 +71,62 @@ describe("useContractDraftAI", () => {
     expect(ai.stateOf(1).phase).toBe("error");
     expect(ai.stateOf(1).error).toContain("超时");
   });
+
+  it("恢复生成：只轮询不入队，至 done 回填并携带 startedAt", async () => {
+    const polls = [
+      sectionWith({ ai_status: "generating" }),
+      sectionWith({ ai_status: "done", content: "恢复后回填正文" })
+    ];
+    let i = 0;
+    let generateCalls = 0;
+    const ai = useContractDraftAI({
+      generate: async () => {
+        generateCalls++;
+        return 42;
+      },
+      getSection: async () => polls[Math.min(i++, polls.length - 1)],
+      sleep: async () => undefined,
+      intervalMs: 1,
+      maxPolls: 10
+    });
+    const result = await ai.resumeSection(9, 1, "ai_status", 1_700_000_000_000);
+    expect(result?.content).toBe("恢复后回填正文");
+    expect(ai.stateOf(1).phase).toBe("done");
+    expect(generateCalls).toBe(0); // 恢复不重新入队
+  });
+
+  it("恢复审查：只轮询不入队，reviewing→done", async () => {
+    const polls = [
+      sectionWith({ review_status: "generating" }),
+      sectionWith({ review_status: "done" })
+    ];
+    let i = 0;
+    let reviewCalls = 0;
+    const ai = useContractDraftAI({
+      review: async () => {
+        reviewCalls++;
+        return 42;
+      },
+      getSection: async () => polls[Math.min(i++, polls.length - 1)],
+      sleep: async () => undefined,
+      intervalMs: 1,
+      maxPolls: 10
+    });
+    const result = await ai.resumeSection(9, 1, "review_status");
+    expect(result).not.toBeNull();
+    expect(ai.stateOf(1).phase).toBe("done");
+    expect(reviewCalls).toBe(0); // 恢复不重新入队
+  });
+
+  it("恢复：字段停留在 error 时 phase=error", async () => {
+    const ai = useContractDraftAI({
+      getSection: async () => sectionWith({ ai_status: "error" }),
+      sleep: async () => undefined,
+      intervalMs: 1,
+      maxPolls: 5
+    });
+    const result = await ai.resumeSection(9, 1, "ai_status");
+    expect(result).toBeNull();
+    expect(ai.stateOf(1).phase).toBe("error");
+  });
 });

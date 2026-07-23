@@ -8,7 +8,7 @@ import {
   watch
 } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { ElMessage } from "element-plus";
+import { ElMessage, ElMessageBox } from "element-plus";
 import {
   addSection as apiAddSection,
   applyCompletenessRevision,
@@ -71,6 +71,8 @@ const appliedSectionKeys = ref<string[]>([]);
 const handledMissingKeys = ref<string[]>([]);
 const saving = ref(false);
 const checking = ref(false);
+// 完整检查指示器起算时刻（毫秒）：新发起=当前时刻；进入页面恢复=草稿 updated_at
+const completenessStartedAt = ref<number | undefined>(undefined);
 const convertVisible = ref(false);
 const plainPreviewVisible = ref(false);
 const entityBankAccounts = ref<EntityBankAccount[]>([]);
@@ -242,6 +244,15 @@ const dialogHiddenMissing = computed<string[]>(() => [
 const hasCompletedCheck = computed(
   () => draft.value?.completeness_status === "done"
 );
+
+// ISO 8601 时间戳解析为毫秒；缺省/非法返回 undefined（指示器回退挂载时刻）
+const parseTimestampMs = (
+  iso: string | null | undefined
+): number | undefined => {
+  if (!iso) return undefined;
+  const ms = Date.parse(iso);
+  return Number.isFinite(ms) ? ms : undefined;
+};
 
 // 从 axios 错误体提取后端 error.message（类型安全，无 as any）
 const apiErrorMessage = (e: unknown, fallback: string): string => {
@@ -553,12 +564,11 @@ const loadCheckReport = async (
   return true;
 };
 
-const runCompleteness = async () => {
-  if (!draft.value) return;
-  const draftId = draft.value.id;
+// 只轮询完整检查状态（不重新入队），done 后拉结果开窗。
+// 新发起（runCompleteness）与进入页面恢复（resumeInFlightAi）共用此循环。
+const pollCompleteness = async (draftId: number) => {
   checking.value = true;
   try {
-    await requestCompleteness(draftId);
     // 轮询草稿完整检查状态（2s × 150 次：前后递进双模型最长约 5 分钟）
     for (let i = 0; i < 150; i++) {
       const detail = await getDraft(draftId);
@@ -579,9 +589,44 @@ const runCompleteness = async () => {
       await new Promise(r => setTimeout(r, 2000));
     }
     ElMessage.error("完整检查超时，请重试");
+  } catch (e) {
+    ElMessage.error(apiErrorMessage(e, "完整检查状态获取失败，请重试"));
   } finally {
     checking.value = false;
   }
+};
+
+const runCompleteness = async () => {
+  if (!draft.value) return;
+  const draftId = draft.value.id;
+  completenessStartedAt.value = Date.now();
+  checking.value = true;
+  try {
+    await requestCompleteness(draftId);
+  } catch (e) {
+    checking.value = false;
+    ElMessage.error(apiErrorMessage(e, "完整检查发起失败，请重试"));
+    return;
+  }
+  await pollCompleteness(draftId);
+};
+
+// 「完整检查」二次确认（AI 调用耗时且计费，防误点）后再发起
+const onClickRunCompleteness = async () => {
+  try {
+    await ElMessageBox.confirm(
+      "完整检查将由两个 AI 模型先后全量审查整份合同，约 2-4 分钟，期间可继续浏览其他章节。确定开始吗？",
+      "完整检查",
+      {
+        type: "warning",
+        confirmButtonText: "开始检查",
+        cancelButtonText: "取消"
+      }
+    );
+  } catch {
+    return;
+  }
+  await runCompleteness();
 };
 
 // 「查看上次检查」：不重跑，直接拉最新历史版本打开弹窗
@@ -727,6 +772,39 @@ const onSelectSection = (id: number) => {
   }, 150);
 };
 
+// 进入/刷新页面时，恢复某节仍在后台跑的生成/审查：只轮询回填，不重新入队。
+const resumeSectionAi = async (
+  section: ContractDraftSection,
+  field: "ai_status" | "review_status"
+) => {
+  if (!draft.value) return;
+  const updated = await ai.resumeSection(
+    draft.value.id,
+    section.id,
+    field,
+    parseTimestampMs(section.updated_at)
+  );
+  if (!updated) return;
+  refreshSection(updated);
+  // 生成会改动正文 → 本地失效完整检查（与 onGenerate 同口径；审查不改正文，不失效）
+  if (field === "ai_status") invalidateCompletenessLocal();
+};
+
+// 加载草稿后，恢复所有后台进行中的 AI 加载态与轮询（离开再回来/刷新不再假死）
+const resumeInFlightAi = () => {
+  const cp = draft.value;
+  if (!cp) return;
+  if (cp.completeness_status === "generating") {
+    completenessStartedAt.value = parseTimestampMs(cp.updated_at);
+    void pollCompleteness(cp.id);
+  }
+  for (const s of sections.value) {
+    if (s.ai_status === "generating") void resumeSectionAi(s, "ai_status");
+    if (s.review_status === "generating")
+      void resumeSectionAi(s, "review_status");
+  }
+};
+
 onMounted(async () => {
   await Promise.all([
     loadProjects(),
@@ -735,6 +813,7 @@ onMounted(async () => {
   const id = Number(route.query.id);
   if (Number.isInteger(id) && id > 0) {
     await loadDraft(id);
+    resumeInFlightAi();
   }
 });
 </script>
@@ -783,7 +862,7 @@ onMounted(async () => {
               type="warning"
               plain
               :loading="checking"
-              @click="runCompleteness"
+              @click="onClickRunCompleteness"
             >
               {{ checking ? "检查中…" : "完整检查" }}
             </el-button>
@@ -823,6 +902,7 @@ onMounted(async () => {
           <AiWorkingIndicator
             v-if="checking"
             mode="completeness"
+            :started-at="completenessStartedAt"
             class="completeness-indicator"
           />
           <SectionCard

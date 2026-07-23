@@ -130,6 +130,42 @@ const onApplyRevision = async () => {
   emit("apply-revision", { sectionId: props.section.id, content: revised });
 };
 
+// AI 生成/审查前二次确认：AI 调用耗时且计费，防误点（用户取消则不触发）。
+const onClickGenerate = async () => {
+  const instr = instruction.value.trim();
+  const tail = instr ? "将按你的指令改写。" : "";
+  try {
+    await ElMessageBox.confirm(
+      `确定用 AI 生成/改写「${props.section.title}」这一节吗？AI 生成需要约 1-2 分钟。${tail}`,
+      "AI 生成",
+      {
+        type: "warning",
+        confirmButtonText: "开始生成",
+        cancelButtonText: "取消"
+      }
+    );
+  } catch {
+    return;
+  }
+  emit("generate", { sectionId: props.section.id, instruction: instr });
+};
+const onClickReview = async () => {
+  try {
+    await ElMessageBox.confirm(
+      `确定对「${props.section.title}」进行 AI 审查吗？`,
+      "AI 审查",
+      {
+        type: "warning",
+        confirmButtonText: "开始审查",
+        cancelButtonText: "取消"
+      }
+    );
+  } catch {
+    return;
+  }
+  emit("review", props.section.id);
+};
+
 const startEdit = () => {
   editContent.value = props.section.content;
   editing.value = true;
@@ -182,12 +218,7 @@ const saveEdit = () => {
             type="primary"
             :loading="aiState.phase === 'generating'"
             :disabled="readonly || busy"
-            @click="
-              emit('generate', {
-                sectionId: section.id,
-                instruction: instruction.trim()
-              })
-            "
+            @click="onClickGenerate"
           >
             {{ aiState.phase === "generating" ? "生成中…" : "AI 生成" }}
           </el-button>
@@ -195,7 +226,7 @@ const saveEdit = () => {
             size="small"
             :loading="aiState.phase === 'reviewing'"
             :disabled="!section.content || readonly || busy"
-            @click="emit('review', section.id)"
+            @click="onClickReview"
           >
             {{ aiState.phase === "reviewing" ? "审查中…" : "AI 审查" }}
           </el-button>
@@ -227,6 +258,7 @@ const saveEdit = () => {
     <AiWorkingIndicator
       v-if="aiState.phase === 'generating'"
       mode="generate"
+      :started-at="aiState.startedAt"
       class="gen-indicator"
     />
 
@@ -311,6 +343,7 @@ const saveEdit = () => {
     <AiWorkingIndicator
       v-if="aiState.phase === 'reviewing'"
       mode="review"
+      :started-at="aiState.startedAt"
       class="review-indicator"
     />
 
