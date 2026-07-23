@@ -240,10 +240,9 @@ const dialogHiddenMissing = computed<string[]>(() => [
   ...handledMissingKeys.value
 ]);
 
-// 有已完成的检查即可「查看上次检查」（采纳修正稿或再编辑会置空 status，按钮随之隐藏）
-const hasCompletedCheck = computed(
-  () => draft.value?.completeness_status === "done"
-);
+// 存在历史检查版本即可「查看上次检查」——不限当前状态：内容变更/失败后 status 会置空，
+// 但历史版本仍可回看（owner：即使检查未通过也要能看历史结果）。
+const hasCompletedCheck = computed(() => completenessVersions.value.length > 0);
 
 // ISO 8601 时间戳解析为毫秒；缺省/非法返回 undefined（指示器回退挂载时刻）
 const parseTimestampMs = (
@@ -297,6 +296,12 @@ const loadDraft = async (id: number) => {
   const detail = await getDraft(id);
   applyDetail(detail);
   await loadTemplates(detail.draft.direction, detail.draft.family);
+  // 预载历史检查版本，使「查看上次检查」在有历史时即可见（不依赖当前 status）
+  try {
+    completenessVersions.value = await listChecks(id);
+  } catch {
+    completenessVersions.value = [];
+  }
 };
 
 const onCreate = async (payload: {

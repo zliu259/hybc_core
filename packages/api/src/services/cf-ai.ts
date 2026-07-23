@@ -32,8 +32,12 @@ export const CF_AI_COMPLETENESS_MODELS = [
 const MAX_OUTPUT_TOKENS = 8192;
 /** @cf/ 开源模型档收紧输出预算：防 reasoning 模型长时间占用执行上下文。 */
 const CHEAP_MAX_OUTPUT_TOKENS = 2048;
-/** 完整检查全量审整份合同+逐节修正稿，输出量大，需要更高预算防截断。 */
-const COMPLETENESS_MAX_OUTPUT_TOKENS = 32000;
+/**
+ * 完整检查输出预算：8192。生产验证 32000 反害——模型按大预算放飞生成超长输出，
+ * 单次调用几分钟超时失败（sonnet 复核 500 秒 Model execution failed）。诊断+精简修正稿
+ * 8192 足够，配合 salvage 兜底截断。
+ */
+const COMPLETENESS_MAX_OUTPUT_TOKENS = 8192;
 /** 单次模型调用超时：超过即失败重试，防 env.AI.run 长时间 hang 拖死执行上下文。 */
 const CALL_TIMEOUT_MS = 220_000;
 
