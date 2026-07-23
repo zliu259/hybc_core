@@ -36,6 +36,7 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
 import { mergeMissingHints, type MissingHint } from "./lib/completeness-merge";
+import AiWorkingIndicator from "./components/AiWorkingIndicator.vue";
 import DraftInitCard from "./components/DraftInitCard.vue";
 import DraftListCard from "./components/DraftListCard.vue";
 import DraftBanner from "./components/DraftBanner.vue";
@@ -496,8 +497,8 @@ const runCompleteness = async () => {
   checking.value = true;
   try {
     await requestCompleteness(draft.value.id);
-    // 轮询草稿完整性状态（沿用 2s × 60 次）
-    for (let i = 0; i < 60; i++) {
+    // 轮询草稿完整性状态（2s × 150 次：双模型全量审最长约 5 分钟）
+    for (let i = 0; i < 150; i++) {
       const detail = await getDraft(draft.value.id);
       if (detail.draft.completeness_status === "done") {
         applyDetail(detail);
@@ -682,7 +683,7 @@ onMounted(async () => {
               :loading="checking"
               @click="runCompleteness"
             >
-              完整性检查
+              {{ checking ? "检查中…" : "完整性检查" }}
             </el-button>
             <el-button plain @click="plainPreviewVisible = true">
               纯文本预览
@@ -710,6 +711,11 @@ onMounted(async () => {
               </span>
             </el-tooltip>
           </div>
+          <AiWorkingIndicator
+            v-if="checking"
+            mode="completeness"
+            class="completeness-indicator"
+          />
           <SectionCard
             v-for="s in sections"
             :key="s.id"
@@ -789,6 +795,11 @@ onMounted(async () => {
 /* 禁用按钮不触发 hover 事件，包一层 span 承接门禁 tooltip */
 .convert-btn-wrap {
   display: inline-block;
+}
+
+/* 完整性检查运行中：toolbar 下方全宽指示器 */
+.completeness-indicator {
+  margin-bottom: 12px;
 }
 
 .section-card {

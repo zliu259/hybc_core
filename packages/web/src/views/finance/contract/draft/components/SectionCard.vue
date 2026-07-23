@@ -19,6 +19,7 @@ import {
   sectionSourceLabelMap,
   toDraftLabel
 } from "../draft-labels";
+import AiWorkingIndicator from "./AiWorkingIndicator.vue";
 
 const props = defineProps<{
   section: ContractDraftSection;
@@ -140,7 +141,11 @@ const saveEdit = () => {
 </script>
 
 <template>
-  <el-card :id="`section-${section.id}`" class="section-card">
+  <el-card
+    :id="`section-${section.id}`"
+    class="section-card"
+    :class="{ 'ai-busy': busy }"
+  >
     <template #header>
       <div class="card-header">
         <span>
@@ -175,8 +180,8 @@ const saveEdit = () => {
           <el-button
             size="small"
             type="primary"
-            :loading="busy"
-            :disabled="readonly"
+            :loading="aiState.phase === 'generating'"
+            :disabled="readonly || busy"
             @click="
               emit('generate', {
                 sectionId: section.id,
@@ -184,15 +189,15 @@ const saveEdit = () => {
               })
             "
           >
-            AI 生成
+            {{ aiState.phase === "generating" ? "生成中…" : "AI 生成" }}
           </el-button>
           <el-button
             size="small"
-            :loading="busy"
-            :disabled="!section.content || readonly"
+            :loading="aiState.phase === 'reviewing'"
+            :disabled="!section.content || readonly || busy"
             @click="emit('review', section.id)"
           >
-            AI 审查
+            {{ aiState.phase === "reviewing" ? "审查中…" : "AI 审查" }}
           </el-button>
           <el-button
             v-if="!editing && !readonly"
@@ -219,7 +224,17 @@ const saveEdit = () => {
       :closable="false"
     />
 
-    <div v-if="!editing" class="content-view">
+    <AiWorkingIndicator
+      v-if="aiState.phase === 'generating'"
+      mode="generate"
+      class="gen-indicator"
+    />
+
+    <div
+      v-if="!editing"
+      class="content-view"
+      :class="{ 'content-dimmed': aiState.phase === 'generating' }"
+    >
       <template v-for="(seg, i) in segments" :key="i">
         <span v-if="seg.kind === 'plain'">{{ seg.text }}</span>
         <el-popover
@@ -274,7 +289,7 @@ const saveEdit = () => {
         </el-tooltip>
       </template>
       <el-empty
-        v-if="!section.content"
+        v-if="!section.content && aiState.phase !== 'generating'"
         description="尚无正文，点击生成或编辑"
         :image-size="48"
       />
@@ -292,6 +307,12 @@ const saveEdit = () => {
         >
       </div>
     </div>
+
+    <AiWorkingIndicator
+      v-if="aiState.phase === 'reviewing'"
+      mode="review"
+      class="review-indicator"
+    />
 
     <div v-if="reviewResult" class="review-result">
       <div class="review-head">
@@ -339,6 +360,17 @@ const saveEdit = () => {
 </template>
 
 <style scoped>
+@keyframes ai-card-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 1px var(--el-color-primary-light-8);
+  }
+
+  50% {
+    box-shadow: 0 0 10px 2px var(--el-color-primary-light-5);
+  }
+}
+
 .card-header {
   display: flex;
   flex-wrap: wrap;
@@ -351,9 +383,29 @@ const saveEdit = () => {
   margin-bottom: 8px;
 }
 
+/* AI 运行中卡片：细微 box-shadow 呼吸，表达后台任务进行中 */
+.section-card.ai-busy {
+  animation: ai-card-breathe 2s ease-in-out infinite;
+}
+
+.gen-indicator {
+  margin-bottom: 8px;
+}
+
+.review-indicator {
+  margin-top: 8px;
+}
+
 .content-view {
   line-height: 1.9;
   white-space: pre-wrap;
+  transition: opacity 0.3s ease;
+}
+
+/* 生成中：旧正文压暗且不可交互，表达「待替换」 */
+.content-view.content-dimmed {
+  pointer-events: none;
+  opacity: 0.45;
 }
 
 .seg-keyword {

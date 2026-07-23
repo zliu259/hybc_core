@@ -123,6 +123,7 @@ const submitAdd = () => {
             v-if="s.ai_status"
             size="small"
             :type="sectionAiStatusTagType[s.ai_status] ?? 'info'"
+            :class="{ 'tag-generating': s.ai_status === 'generating' }"
           >
             {{ toDraftLabel(sectionAiStatusLabelMap, s.ai_status) }}
           </el-tag>
@@ -176,6 +177,25 @@ const submitAdd = () => {
 </template>
 
 <style scoped>
+@keyframes tag-ellipsis {
+  0% {
+    content: "";
+  }
+
+  25% {
+    content: ".";
+  }
+
+  50% {
+    content: "..";
+  }
+
+  75%,
+  100% {
+    content: "...";
+  }
+}
+
 /* 目录卡片在 sticky 容器内纵向 flex：header/添加按钮固定，条目区内滚 */
 .toc-card {
   display: flex;
@@ -260,5 +280,14 @@ const submitAdd = () => {
 
 .section-list li:hover .del {
   visibility: visible;
+}
+
+/* 生成中 tag：::after 定宽动画省略号（纯 CSS，不改数据流；定宽避免布局抖动） */
+.tag-generating::after {
+  display: inline-block;
+  width: 1.1em;
+  text-align: left;
+  content: "";
+  animation: tag-ellipsis 1.6s linear infinite;
 }
 </style>
