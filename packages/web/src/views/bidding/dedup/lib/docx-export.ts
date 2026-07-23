@@ -2,8 +2,10 @@ import {
   AlignmentType,
   BorderStyle,
   Document,
+  Footer,
   LineRuleType,
   Packer,
+  PageNumber,
   Paragraph,
   Table,
   TableCell,
@@ -91,6 +93,30 @@ const PAGE_A4 = {
   size: { width: 11906, height: 16838 },
   margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
 } as const;
+
+// 页脚居中页码「第 X 页 共 Y 页」（宋体五号），中式合同惯例。
+function buildPageFooter(): Footer {
+  return new Footer({
+    children: [
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          new TextRun({
+            children: [
+              "第 ",
+              PageNumber.CURRENT,
+              " 页 共 ",
+              PageNumber.TOTAL_PAGES,
+              " 页"
+            ],
+            size: SIZE_NOTE,
+            font: FONT_BODY
+          })
+        ]
+      })
+    ]
+  });
+}
 
 // 列宽折算成百分比：宽表在 A4 纵向按比例压缩列宽（文字自动换行），避免溢出页宽。
 function columnPercents(colCount: number, widths?: number[]): number[] {
@@ -208,7 +234,11 @@ export async function buildDocxBlobFromBlocks(
 ): Promise<Blob> {
   const doc = new Document({
     sections: [
-      { properties: { page: PAGE_A4 }, children: buildBlockChildren(blocks) }
+      {
+        properties: { page: PAGE_A4 },
+        footers: { default: buildPageFooter() },
+        children: buildBlockChildren(blocks)
+      }
     ]
   });
   return Packer.toBlob(doc);
