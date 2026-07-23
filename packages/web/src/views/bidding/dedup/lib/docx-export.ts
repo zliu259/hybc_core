@@ -118,12 +118,16 @@ function buildBlockChildren(blocks: DocxBlock[]): (Paragraph | Table)[] {
     : [new Paragraph({ children: [new TextRun("")] })];
 }
 
-/** 由块模型（段落 + 真表格）生成 docx buffer，用于合同定稿导出。 */
-export async function buildDocxBufferFromBlocks(
+/**
+ * 由块模型（段落 + 真表格）生成 docx Blob，用于合同定稿导出（浏览器上传）。
+ * 必须用 Packer.toBlob：toBuffer 走 JSZip nodebuffer，在浏览器抛
+ * "nodebuffer is not supported by this platform"，仅 Node 可用。
+ */
+export async function buildDocxBlobFromBlocks(
   blocks: DocxBlock[]
-): Promise<Buffer> {
+): Promise<Blob> {
   const doc = new Document({
     sections: [{ children: buildBlockChildren(blocks) }]
   });
-  return Packer.toBuffer(doc);
+  return Packer.toBlob(doc);
 }

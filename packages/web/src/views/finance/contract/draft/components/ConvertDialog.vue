@@ -8,7 +8,7 @@ import {
   type FixedSection
 } from "@/api/contract-draft";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
-import { buildDocxBufferFromBlocks } from "@/views/bidding/dedup/lib/docx-export";
+import { buildDocxBlobFromBlocks } from "@/views/bidding/dedup/lib/docx-export";
 import { buildContractDocxBlocks } from "../lib/contract-docx-blocks";
 
 const CONTRACT_TYPE_OPTIONS = ["人工", "机械", "总包", "材料", "其他"];
@@ -41,7 +41,7 @@ async function runConvert(): Promise<void> {
   step.value = "working";
   try {
     if (!finalized.value) await runFinalize();
-    const buffer = await buildDocxBufferFromBlocks(docxBlocks.value);
+    const blob = await buildDocxBlobFromBlocks(docxBlocks.value);
     const fileName = `${props.draft.title || "合同草稿"}.docx`;
     const signRes = await createUploadSignature({
       fileName,
@@ -53,7 +53,7 @@ async function runConvert(): Promise<void> {
         "Content-Type":
           "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
       },
-      body: new Uint8Array(buffer)
+      body: blob
     });
     if (!uploadResp.ok)
       throw new Error(`文档上传失败（HTTP ${uploadResp.status}）`);
@@ -61,7 +61,7 @@ async function runConvert(): Promise<void> {
       contract_type: contractType.value,
       file_key: signRes.data.key,
       file_name: fileName,
-      file_size: buffer.byteLength
+      file_size: blob.size
     });
     ElMessage.success(`已生成正式合同 ${converted.contract_no}`);
     emit("converted", converted);
