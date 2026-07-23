@@ -30,7 +30,7 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "update:visible", v: boolean): void;
   (e: "switch-version", checkId: number): void;
-  (e: "add", sectionKey: string): void;
+  (e: "add", payload: { section_key: string; title: string }): void;
   (e: "ignore", sectionKey: string): void;
   (e: "locate", sectionKey: string): void;
   (e: "apply-revision", sectionKey: string): void;
@@ -223,7 +223,7 @@ const onApplyRevision = async (g: CompletenessSectionIssue) => {
             size="small"
             type="primary"
             plain
-            @click="emit('add', m.section_key)"
+            @click="emit('add', { section_key: m.section_key, title: m.title })"
             >添加该节</el-button
           >
           <el-button size="small" @click="emit('ignore', m.section_key)"

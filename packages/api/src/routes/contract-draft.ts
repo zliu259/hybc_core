@@ -331,24 +331,32 @@ contractDraftRoutes.post("/:id/sections", async (c) => {
     )
       .bind(draft.family, body.section_key, draft.direction, variantKey)
       .first<ContractClauseTemplate>();
-    if (!tpl) return c.json({ success: false, error: { message: "条款库中无该节" } }, 404);
+    const dupKey = tpl?.section_key ?? body.section_key;
     const dup = await c.env.DB.prepare(
       "SELECT id FROM contract_draft_section WHERE draft_id = ? AND section_key = ? AND status != 'deleted'"
     )
-      .bind(draft.id, tpl.section_key)
+      .bind(draft.id, dupKey)
       .first<{ id: number }>();
     if (dup) return c.json({ success: false, error: { message: "该节已存在" } }, 400);
+    // 条款库有模板 → 用模板正文；无模板（如完整检查复核 AI 新增的建议节，其 key 不在库中）
+    // → 降级为空白节，用请求带的 title，让用户手写/AI 生成，而不是 404 挡住添加。
+    const insTitle = tpl?.title
+      ? tpl.title
+      : typeof body.title === "string" && body.title.trim().length > 0
+        ? body.title.trim().slice(0, MAX_TITLE)
+        : "新增条款";
     const ins = await c.env.DB.prepare(
       `INSERT INTO contract_draft_section
          (draft_id, section_key, title, variant_key, source, content, sort_order, status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, 'default_template', ?, ?, 'active', ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'active', ?, ?)`
     )
       .bind(
         draft.id,
-        tpl.section_key,
-        tpl.title,
-        tpl.variant_key,
-        tpl.body_template,
+        body.section_key,
+        insTitle,
+        tpl?.variant_key ?? "default",
+        tpl ? "default_template" : "manual",
+        tpl?.body_template ?? "",
         nextSort,
         now,
         now

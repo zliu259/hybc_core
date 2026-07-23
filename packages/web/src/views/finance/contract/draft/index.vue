@@ -40,6 +40,7 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
 import { parseCompletenessReport } from "./lib/completeness-report";
+import { amountToChinese } from "./lib/amount-cn";
 import AiWorkingIndicator from "./components/AiWorkingIndicator.vue";
 import DraftInitCard from "./components/DraftInitCard.vue";
 import DraftListCard from "./components/DraftListCard.vue";
@@ -167,6 +168,11 @@ const keywordValues = computed<Record<string, string>>(() => {
   const base: Record<string, string> = {};
   for (const [k, v] of Object.entries(keywords.value)) {
     if (v && v.trim().length > 0) base[k] = v.trim();
+  }
+  // amount 与 amount_cn 关联：填了数字金额即自动派生大写（展示用；定稿以后端为权威）
+  const amountNum = Number(base.amount);
+  if (Number.isFinite(amountNum) && amountNum > 0) {
+    base.amount_cn = amountToChinese(amountNum);
   }
   if (!cp) return base;
   const acct = selectedBankAccount.value;
@@ -684,10 +690,13 @@ const onApplyCompletenessRevision = async (sectionKey: string) => {
   }
 };
 
-const onHintAdd = async (sectionKey: string) => {
-  await onAddSection({ section_key: sectionKey });
+const onHintAdd = async (payload: { section_key: string; title: string }) => {
+  await onAddSection({
+    section_key: payload.section_key,
+    title: payload.title
+  });
   // 本次弹窗内隐藏该缺失项（报告本身不可变，用本地 handled 集合驱动）
-  handledMissingKeys.value = [...handledMissingKeys.value, sectionKey];
+  handledMissingKeys.value = [...handledMissingKeys.value, payload.section_key];
 };
 
 const onHintIgnore = async (sectionKey: string) => {
