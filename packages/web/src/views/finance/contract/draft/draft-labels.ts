@@ -30,6 +30,18 @@ export const familyLabelMap: Record<string, string> = {
   materials_sale: "材料购销"
 };
 
+export const reviewOverallTagType: Record<string, DraftTagType> = {
+  pass: "success",
+  warn: "warning",
+  fail: "danger"
+};
+
+export const reviewOverallLabelMap: Record<string, string> = {
+  pass: "审查通过",
+  warn: "有风险提示",
+  fail: "高风险"
+};
+
 export const requiredLevelLabelMap: Record<string, string> = {
   core: "核心",
   recommended: "建议",

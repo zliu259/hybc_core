@@ -82,6 +82,36 @@ export type DraftDetail = {
   sections: ContractDraftSection[];
 };
 
+/** 完整性检查单条问题（AI 输出，字段宽容处理） */
+export type CompletenessIssue = {
+  text: string;
+  severity: string;
+  reason: string;
+  suggestion?: string;
+};
+
+/** 完整性检查单模型运行结果（completeness_result_json = {runs: CompletenessRun[]}） */
+export type CompletenessRun = {
+  model: string;
+  result: {
+    missing?: {
+      section_key: string;
+      title: string;
+      level: string;
+      reason: string;
+    }[];
+    section_issues?: {
+      section_key: string;
+      title: string;
+      issues: CompletenessIssue[];
+    }[];
+    overall_summary?: string;
+    ready_to_finalize?: boolean;
+    /** 模型输出无法解析为 JSON 时后端包为 {raw} */
+    raw?: string;
+  };
+};
+
 export async function listClauseTemplates(
   direction: DraftDirection,
   family: ContractFamily

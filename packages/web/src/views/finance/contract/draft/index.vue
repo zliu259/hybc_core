@@ -21,6 +21,7 @@ import {
   updateDraft,
   updateSection,
   type ClauseTemplate,
+  type CompletenessRun,
   type ContractDraft,
   type ContractDraftSection,
   type ContractFamily,
@@ -34,14 +35,13 @@ import {
 } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
+import { mergeMissingHints, type MissingHint } from "./lib/completeness-merge";
 import DraftInitCard from "./components/DraftInitCard.vue";
 import DraftListCard from "./components/DraftListCard.vue";
 import DraftBanner from "./components/DraftBanner.vue";
 import SectionListPanel from "./components/SectionListPanel.vue";
 import SectionCard from "./components/SectionCard.vue";
-import CompletenessDialog, {
-  type MissingHint
-} from "./components/CompletenessDialog.vue";
+import CompletenessDialog from "./components/CompletenessDialog.vue";
 import ConvertDialog from "./components/ConvertDialog.vue";
 import PlainPreviewDrawer from "./components/PlainPreviewDrawer.vue";
 
@@ -58,6 +58,7 @@ const entities = ref<Entity[]>([]);
 const activeSectionId = ref<number | null>(null);
 const completenessVisible = ref(false);
 const missingHints = ref<MissingHint[]>([]);
+const completenessRuns = ref<CompletenessRun[]>([]);
 const saving = ref(false);
 const checking = ref(false);
 const convertVisible = ref(false);
@@ -347,18 +348,37 @@ const refreshSection = (section: ContractDraftSection | null) => {
   sections.value = sections.value.map(s => (s.id === section.id ? section : s));
 };
 
+// 内容变更后本地同步失效完整性状态（服务端已真源失效），保证定稿按钮态即时正确。
+// 与服务端口径一致：仅 drafting 态失效。
+const invalidateCompletenessLocal = () => {
+  if (!draft.value || draft.value.status !== "drafting") return;
+  if (draft.value.completeness_status === null) return;
+  draft.value = {
+    ...draft.value,
+    completeness_status: null,
+    completeness_result_json: null
+  };
+};
+
+// 定稿门禁：drafting 态必须先通过完整性检查；finalized 态保持可重试转化
+const completenessGateBlocked = computed(
+  () =>
+    draft.value?.status === "drafting" &&
+    draft.value.completeness_status !== "done"
+);
+
 const onGenerate = async (payload: {
   sectionId: number;
   instruction: string;
 }) => {
   if (!draft.value) return;
-  refreshSection(
-    await ai.generateForSection(
-      draft.value.id,
-      payload.sectionId,
-      payload.instruction
-    )
+  const section = await ai.generateForSection(
+    draft.value.id,
+    payload.sectionId,
+    payload.instruction
   );
+  refreshSection(section);
+  if (section) invalidateCompletenessLocal();
 };
 
 const onReview = async (sectionId: number) => {
@@ -368,12 +388,31 @@ const onReview = async (sectionId: number) => {
 
 const onSave = async (payload: { sectionId: number; content: string }) => {
   if (!draft.value) return;
+  const prevContent = sections.value.find(
+    s => s.id === payload.sectionId
+  )?.content;
   refreshSection(
     await updateSection(draft.value.id, payload.sectionId, {
       content: payload.content
     })
   );
   ElMessage.success("已保存该节");
+  if (prevContent !== payload.content) invalidateCompletenessLocal();
+};
+
+// AI 审查修正稿一键替换：走既有节更新接口（服务端置 source=manual 并失效完整性）
+const onApplyRevision = async (payload: {
+  sectionId: number;
+  content: string;
+}) => {
+  if (!draft.value) return;
+  refreshSection(
+    await updateSection(draft.value.id, payload.sectionId, {
+      content: payload.content
+    })
+  );
+  invalidateCompletenessLocal();
+  ElMessage.success("已替换为审查修正稿");
 };
 
 const onAddSection = async (payload: {
@@ -386,6 +425,7 @@ const onAddSection = async (payload: {
   sections.value = [...sections.value, section].sort(
     (a, b) => a.sort_order - b.sort_order || a.id - b.id
   );
+  invalidateCompletenessLocal();
 };
 
 // 同 section_key 的可用模版变体（direction 特定行优先于 both，按 variant_key 去重）
@@ -408,6 +448,7 @@ const onApplyVariant = async (payload: {
   refreshSection(
     await applyVariant(draft.value.id, payload.sectionId, payload.variantKey)
   );
+  invalidateCompletenessLocal();
   ElMessage.success("已切换模版");
 };
 
@@ -415,6 +456,7 @@ const onRemoveSection = async (sectionId: number) => {
   if (!draft.value) return;
   await removeSection(draft.value.id, sectionId);
   sections.value = sections.value.filter(s => s.id !== sectionId);
+  invalidateCompletenessLocal();
 };
 
 // 拖拽排序：先本地重排（右侧卡片即时跟随），仅对 sort_order 变化的节并行持久化；失败回读服务端真序
@@ -459,16 +501,20 @@ const runCompleteness = async () => {
       const detail = await getDraft(draft.value.id);
       if (detail.draft.completeness_status === "done") {
         applyDetail(detail);
+        // 新结构：{runs:[{model, result}]}，双模型全量结果；解析宽容
+        let runs: CompletenessRun[] = [];
         try {
           const parsed = JSON.parse(
             detail.draft.completeness_result_json ?? "{}"
-          ) as {
-            missing?: MissingHint[];
-          };
-          missingHints.value = parsed.missing ?? [];
+          ) as { runs?: unknown };
+          if (Array.isArray(parsed.runs)) {
+            runs = parsed.runs as CompletenessRun[];
+          }
         } catch {
-          missingHints.value = [];
+          runs = [];
         }
+        completenessRuns.value = runs;
+        missingHints.value = mergeMissingHints(runs);
         completenessVisible.value = true;
         return;
       }
@@ -496,6 +542,15 @@ const onHintIgnore = async (sectionKey: string) => {
   await ignoreCompletenessHint(draft.value.id, sectionKey);
   const detail = await getDraft(draft.value.id);
   applyDetail(detail);
+};
+
+// 逐节问题组标题点击定位：关弹窗后按 section_key 滚动到对应节
+const onLocateSection = async (sectionKey: string) => {
+  const target = sections.value.find(s => s.section_key === sectionKey);
+  if (!target) return;
+  completenessVisible.value = false;
+  await nextTick();
+  onSelectSection(target.id);
 };
 
 // —— 目录滚动跟随（scrollspy）：视口内最靠上的节高亮；点击跳转短暂抑制防跳变 ——
@@ -632,17 +687,28 @@ onMounted(async () => {
             <el-button plain @click="plainPreviewVisible = true">
               纯文本预览
             </el-button>
-            <el-button
-              type="primary"
-              :disabled="!['drafting', 'finalized'].includes(draft.status)"
-              @click="convertVisible = true"
+            <el-tooltip
+              content="完成完整性检查后方可定稿（内容变更后需重新检查）"
+              :disabled="!completenessGateBlocked"
+              placement="top"
             >
-              {{
-                draft.status === "finalized"
-                  ? "重试转正式合同"
-                  : "定稿转正式合同"
-              }}
-            </el-button>
+              <span class="convert-btn-wrap">
+                <el-button
+                  type="primary"
+                  :disabled="
+                    !['drafting', 'finalized'].includes(draft.status) ||
+                    completenessGateBlocked
+                  "
+                  @click="convertVisible = true"
+                >
+                  {{
+                    draft.status === "finalized"
+                      ? "重试转正式合同"
+                      : "定稿转正式合同"
+                  }}
+                </el-button>
+              </span>
+            </el-tooltip>
           </div>
           <SectionCard
             v-for="s in sections"
@@ -657,15 +723,18 @@ onMounted(async () => {
             @save="onSave"
             @apply-variant="onApplyVariant"
             @update-keyword="onUpdateKeyword"
+            @apply-revision="onApplyRevision"
           />
         </el-col>
       </el-row>
       <CompletenessDialog
         v-model:visible="completenessVisible"
+        :runs="completenessRuns"
         :missing="missingHints"
         :ignored="ignoredHints"
         @add="onHintAdd"
         @ignore="onHintIgnore"
+        @locate="onLocateSection"
       />
       <ConvertDialog
         v-model:visible="convertVisible"
@@ -715,6 +784,11 @@ onMounted(async () => {
 
 .toolbar :deep(.el-alert) {
   flex: 1;
+}
+
+/* 禁用按钮不触发 hover 事件，包一层 span 承接门禁 tooltip */
+.convert-btn-wrap {
+  display: inline-block;
 }
 
 .section-card {

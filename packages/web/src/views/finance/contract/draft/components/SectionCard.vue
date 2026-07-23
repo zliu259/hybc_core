@@ -11,8 +11,14 @@ import {
   type RenderSegment
 } from "../lib/segments";
 import { instructionPlaceholder } from "../lib/instruction-placeholders";
+import { parseReviewResult } from "../lib/review-result";
 import type { SectionAiState } from "../composables/useContractDraftAI";
-import { sectionSourceLabelMap, toDraftLabel } from "../draft-labels";
+import {
+  reviewOverallLabelMap,
+  reviewOverallTagType,
+  sectionSourceLabelMap,
+  toDraftLabel
+} from "../draft-labels";
 
 const props = defineProps<{
   section: ContractDraftSection;
@@ -30,6 +36,7 @@ const emit = defineEmits<{
     payload: { sectionId: number; variantKey: string }
   ): void;
   (e: "update-keyword", payload: { key: string; value: string }): void;
+  (e: "apply-revision", payload: { sectionId: number; content: string }): void;
 }>();
 
 const instruction = ref(props.section.instruction ?? "");
@@ -99,22 +106,28 @@ const segments = computed(() =>
     props.keywordValues
   )
 );
-const reviewIssues = computed(() => {
-  if (!props.section.review_result_json) return [];
-  try {
-    const parsed = JSON.parse(props.section.review_result_json) as {
-      issues?: Array<{
-        text: string;
-        severity: string;
-        reason: string;
-        suggestion?: string;
-      }>;
-    };
-    return parsed.issues ?? [];
-  } catch {
-    return [];
-  }
+const reviewResult = computed(() =>
+  parseReviewResult(props.section.review_result_json)
+);
+// 修正稿非空且与当前正文不同才提供一键替换（旧结构无 revised_content 时不显示）
+const canApplyRevision = computed(() => {
+  const revised = reviewResult.value?.revisedContent ?? "";
+  return revised.trim().length > 0 && revised !== props.section.content;
 });
+const onApplyRevision = async () => {
+  const revised = reviewResult.value?.revisedContent;
+  if (!revised || !canApplyRevision.value) return;
+  try {
+    await ElMessageBox.confirm(
+      "将用 AI 审查修正稿覆盖本节当前正文，是否继续？",
+      "替换为修正稿",
+      { type: "warning", confirmButtonText: "替换", cancelButtonText: "取消" }
+    );
+  } catch {
+    return;
+  }
+  emit("apply-revision", { sectionId: props.section.id, content: revised });
+};
 
 const startEdit = () => {
   editContent.value = props.section.content;
@@ -161,21 +174,17 @@ const saveEdit = () => {
         <span class="actions">
           <el-button
             size="small"
+            type="primary"
             :loading="busy"
             :disabled="readonly"
             @click="
-              emit('generate', { sectionId: section.id, instruction: '' })
+              emit('generate', {
+                sectionId: section.id,
+                instruction: instruction.trim()
+              })
             "
           >
-            默认生成
-          </el-button>
-          <el-button
-            size="small"
-            :loading="busy"
-            :disabled="!instruction.trim() || readonly"
-            @click="emit('generate', { sectionId: section.id, instruction })"
-          >
-            按指令生成
+            AI 生成
           </el-button>
           <el-button
             size="small"
@@ -183,7 +192,7 @@ const saveEdit = () => {
             :disabled="!section.content || readonly"
             @click="emit('review', section.id)"
           >
-            AI 交叉审查
+            AI 审查
           </el-button>
           <el-button
             v-if="!editing && !readonly"
@@ -284,26 +293,48 @@ const saveEdit = () => {
       </div>
     </div>
 
-    <el-collapse v-if="reviewIssues.length">
-      <el-collapse-item :title="`交叉审查发现 ${reviewIssues.length} 个问题`">
-        <ul class="review-list">
-          <li v-for="(issue, i) in reviewIssues" :key="i">
-            <el-tag
-              size="small"
-              :type="issue.severity === 'red' ? 'danger' : 'warning'"
-            >
-              {{ issue.severity === "red" ? "红" : "黄" }}
-            </el-tag>
-            <span class="issue-text"
-              >「{{ issue.text }}」{{ issue.reason }}</span
-            >
-            <span v-if="issue.suggestion" class="issue-suggestion"
-              >建议：{{ issue.suggestion }}</span
-            >
-          </li>
-        </ul>
-      </el-collapse-item>
-    </el-collapse>
+    <div v-if="reviewResult" class="review-result">
+      <div class="review-head">
+        <el-tag
+          v-if="reviewResult.overall"
+          size="small"
+          :type="reviewOverallTagType[reviewResult.overall] ?? 'info'"
+        >
+          {{ toDraftLabel(reviewOverallLabelMap, reviewResult.overall) }}
+        </el-tag>
+        <span class="review-count">
+          AI 审查{{
+            reviewResult.issues.length
+              ? `发现 ${reviewResult.issues.length} 个问题`
+              : "未发现问题"
+          }}
+        </span>
+        <el-button
+          v-if="canApplyRevision"
+          size="small"
+          type="warning"
+          plain
+          :disabled="busy || readonly"
+          @click="onApplyRevision"
+        >
+          一键替换为修正稿
+        </el-button>
+      </div>
+      <ul v-if="reviewResult.issues.length" class="review-list">
+        <li v-for="(issue, i) in reviewResult.issues" :key="i">
+          <el-tag
+            size="small"
+            :type="issue.severity === 'red' ? 'danger' : 'warning'"
+          >
+            {{ issue.severity === "red" ? "红" : "黄" }}
+          </el-tag>
+          <span class="issue-text">「{{ issue.text }}」{{ issue.reason }}</span>
+          <span v-if="issue.suggestion" class="issue-suggestion"
+            >建议：{{ issue.suggestion }}</span
+          >
+        </li>
+      </ul>
+    </div>
   </el-card>
 </template>
 
@@ -365,6 +396,25 @@ const saveEdit = () => {
 .edit-actions {
   margin-top: 8px;
   text-align: right;
+}
+
+.review-result {
+  padding-top: 8px;
+  margin-top: 8px;
+  border-top: 1px dashed var(--el-border-color-lighter);
+}
+
+.review-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.review-count {
+  font-size: 13px;
+  color: var(--el-text-color-secondary);
 }
 
 .review-list {

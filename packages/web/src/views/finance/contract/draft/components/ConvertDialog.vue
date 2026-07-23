@@ -91,7 +91,7 @@ async function runConvert(): Promise<void> {
     <el-alert
       type="warning"
       :closable="false"
-      title="定稿后草稿锁定编辑；将固化关键字、生成 docx 并创建正式合同（自动触发 AI 审查），随后请在合同详情页提交审批。"
+      title="定稿后草稿锁定编辑；将固化关键字、生成 docx 并创建正式合同，随后请在合同详情页提交审批。"
     />
     <el-form label-width="96px" class="convert-form">
       <el-form-item label="合同类型" required>
