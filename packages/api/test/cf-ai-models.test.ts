@@ -9,11 +9,12 @@ describe("cf_ai 任务类型", () => {
     expect(isCfAiTaskType("contract_draft_section")).toBe(true);
     expect(isCfAiTaskType("contract_review")).toBe(false);
   });
-  it("三类任务全部登记", () => {
+  it("四类任务全部登记（含完整检查两阶段）", () => {
     expect([...CF_AI_TASK_TYPES]).toEqual([
       "contract_draft_section",
       "contract_compliance_review",
-      "contract_completeness_check"
+      "contract_completeness_check",
+      "contract_completeness_audit"
     ]);
   });
 });

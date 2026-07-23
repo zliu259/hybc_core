@@ -11,7 +11,7 @@ import type {
 import type { AiGateHandler } from "../types/approval";
 import { applyExternalLogAuditResult } from "./external-log-audit";
 import { checkClauseText, parseContractSectionOutput } from "./contract-draft-rules";
-import { CF_AI_COMPLETENESS_MODELS } from "./cf-ai";
+import { CF_AI_COMPLETENESS_MODELS, tolerantJsonParse } from "./cf-ai";
 import { publishEvent } from "./event-bus";
 import { generateSerial } from "./serial";
 import { normalizeWarehouseManualDraftResultContent } from "./warehouse-manual-ai";
@@ -566,31 +566,72 @@ export const completeTask = async (
       .run();
   }
 
+  // 完整检查递进链第一阶段（初版诊断）完成：不写 done，派生复核（audit）任务。
+  // 拆两阶段是为避免单任务内串行两次大调用超时（owner 07-23 卡死修复）。
   if (task.task_type === "contract_completeness_check" && task.biz_type === "contract_draft") {
-    const draftRow = await env.DB.prepare(
-      "SELECT id FROM contract_draft WHERE completeness_task_id = ?"
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = JSON.parse(task.payload_json) as Record<string, unknown>;
+    } catch {
+      payload = {};
+    }
+    const [initialModel, auditModel] = CF_AI_COMPLETENESS_MODELS;
+    const initialResult = tolerantJsonParse(result.output);
+    const auditTask = await createTask(env, {
+      task_type: "contract_completeness_audit",
+      biz_type: "contract_draft",
+      biz_id: task.biz_id,
+      priority: 6,
+      timeout_seconds: 300,
+      payload: {
+        draft_id: payload.draft_id ?? task.biz_id,
+        direction: payload.direction ?? "",
+        sections_full_json: payload.sections_full_json ?? "",
+        initial_model: initialModel,
+        initial_result_json: JSON.stringify(initialResult),
+        model: auditModel
+      }
+    });
+    // 让 draft 的完整性任务指针跟随 audit 任务（超时回收/前端轮询以 audit 为准）
+    await env.DB.prepare(
+      "UPDATE contract_draft SET completeness_task_id = ?, updated_at = ? WHERE completeness_task_id = ?"
     )
-      .bind(taskId)
-      .first<{ id: number }>();
+      .bind(auditTask.id, now, taskId)
+      .run();
+  }
+
+  // 完整检查递进链第二阶段（复核）完成：组装 {initial, audit} 写 draft + 历史版本。
+  if (task.task_type === "contract_completeness_audit" && task.biz_type === "contract_draft") {
+    let payload: Record<string, unknown> = {};
+    try {
+      payload = JSON.parse(task.payload_json) as Record<string, unknown>;
+    } catch {
+      payload = {};
+    }
+    const draftId = Number(payload.draft_id ?? task.biz_id);
+    const [defaultInitialModel, defaultAuditModel] = CF_AI_COMPLETENESS_MODELS;
+    const initialModel =
+      typeof payload.initial_model === "string" ? payload.initial_model : defaultInitialModel;
+    const initialResult = tolerantJsonParse(
+      typeof payload.initial_result_json === "string" ? payload.initial_result_json : "{}"
+    );
+    const combined = JSON.stringify({
+      initial: { model: initialModel, result: initialResult },
+      audit: { model: defaultAuditModel, result: tolerantJsonParse(result.output) }
+    });
     await env.DB.prepare(
       `UPDATE contract_draft SET
          completeness_result_json = ?, completeness_status = 'done', updated_at = ?
-       WHERE completeness_task_id = ?`
+       WHERE id = ?`
     )
-      .bind(result.output, now, taskId)
+      .bind(combined, now, draftId)
       .run();
-    // 历史化：每次完成的检查存一版，供回看/切换版本（owner 07-23）
-    if (draftRow) {
-      const models = Array.isArray(result.metadata?.models)
-        ? (result.metadata?.models as string[])
-        : [...CF_AI_COMPLETENESS_MODELS];
-      await env.DB.prepare(
-        `INSERT INTO contract_draft_check (draft_id, result_json, models_json, created_at)
-         VALUES (?, ?, ?, ?)`
-      )
-        .bind(draftRow.id, result.output, JSON.stringify(models), now)
-        .run();
-    }
+    await env.DB.prepare(
+      `INSERT INTO contract_draft_check (draft_id, result_json, models_json, created_at)
+       VALUES (?, ?, ?, ?)`
+    )
+      .bind(draftId, combined, JSON.stringify([...CF_AI_COMPLETENESS_MODELS]), now)
+      .run();
   }
 
   // Write audit log
@@ -661,7 +702,10 @@ const markContractDraftTaskError = async (
     )
       .bind(now, task.id)
       .run();
-  } else if (task.task_type === "contract_completeness_check") {
+  } else if (
+    task.task_type === "contract_completeness_check" ||
+    task.task_type === "contract_completeness_audit"
+  ) {
     await env.DB.prepare(
       "UPDATE contract_draft SET completeness_status = 'error', updated_at = ? WHERE completeness_task_id = ?"
     )

@@ -10,7 +10,8 @@ export const CF_AI_NODE_ID = "cf-ai-worker";
 export const CF_AI_TASK_TYPES = [
   "contract_draft_section",
   "contract_compliance_review",
-  "contract_completeness_check"
+  "contract_completeness_check",
+  "contract_completeness_audit"
 ] as const;
 export type CfAiTaskType = (typeof CF_AI_TASK_TYPES)[number];
 
@@ -33,6 +34,8 @@ const MAX_OUTPUT_TOKENS = 8192;
 const CHEAP_MAX_OUTPUT_TOKENS = 2048;
 /** 完整检查全量审整份合同+逐节修正稿，输出量大，需要更高预算防截断。 */
 const COMPLETENESS_MAX_OUTPUT_TOKENS = 32000;
+/** 单次模型调用超时：超过即失败重试，防 env.AI.run 长时间 hang 拖死执行上下文。 */
+const CALL_TIMEOUT_MS = 220_000;
 
 const nowIso = () => new Date().toISOString();
 
@@ -107,7 +110,7 @@ export const isCfAiTaskType = (taskType: string): taskType is CfAiTaskType =>
   (CF_AI_TASK_TYPES as readonly string[]).includes(taskType);
 
 /** 宽容 JSON 解析：剥 markdown 围栏；失败尝试抢救截断输出；仍失败则包为 {raw}。 */
-const tolerantJsonParse = (raw: string): unknown => {
+export const tolerantJsonParse = (raw: string): unknown => {
   const stripped = raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "");
   try {
     return JSON.parse(stripped);
@@ -130,8 +133,8 @@ interface CfAiCallResult {
   latency_ms: number;
 }
 
-const mockOutput = (taskType: CfAiTaskType, variant?: "audit"): string => {
-  if (taskType === "contract_completeness_check" && variant === "audit") {
+const mockOutput = (taskType: CfAiTaskType): string => {
+  if (taskType === "contract_completeness_audit") {
     return JSON.stringify({
       missing: [
         {
@@ -257,16 +260,16 @@ export const callCfAi = async (
   env: Env,
   model: string,
   taskType: CfAiTaskType,
-  prompt: CfAiPrompt,
-  variant?: "audit"
+  prompt: CfAiPrompt
 ): Promise<CfAiCallResult> => {
   const startedAt = Date.now();
   if (env.APP_ENV === "local") {
-    return { output: mockOutput(taskType, variant), latency_ms: 0 };
+    return { output: mockOutput(taskType), latency_ms: 0 };
   }
-  // 完整检查全量审+逐节修正稿输出量大，需要高输出预算（8192 会截断整份合同的诊断）。
-  const budget =
-    taskType === "contract_completeness_check" ? COMPLETENESS_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS;
+  // 完整检查两阶段（初版诊断/复核出修正稿）输出量大，需要高预算防截断。
+  const isCompleteness =
+    taskType === "contract_completeness_check" || taskType === "contract_completeness_audit";
+  const budget = isCompleteness ? COMPLETENESS_MAX_OUTPUT_TOKENS : MAX_OUTPUT_TOKENS;
   if (model.startsWith("@cf/")) {
     // Workers AI 开源模型（OpenAI 兼容 schema）：关闭思考模式并收紧输出预算，
     // 否则 reasoning 模型（如 GLM-4.7-flash）会把预算烧在推理块上、耗时数分钟。
@@ -282,19 +285,25 @@ export const callCfAi = async (
     return { output: parseCfAiTextOutput(resp), latency_ms: Date.now() - startedAt };
   }
   if (model.startsWith("anthropic/")) {
-    const resp = (await env.AI.run(model, {
-      system: prompt.system,
-      messages: [{ role: "user", content: prompt.user }],
-      max_tokens: budget
-    })) as { content?: Array<{ text?: string }> };
+    const resp = (await raceWithTimeout(
+      env.AI.run(model, {
+        system: prompt.system,
+        messages: [{ role: "user", content: prompt.user }],
+        max_tokens: budget
+      }),
+      CALL_TIMEOUT_MS
+    )) as { content?: Array<{ text?: string }> };
     const output = (resp.content ?? []).map((block) => block.text ?? "").join("");
     return { output, latency_ms: Date.now() - startedAt };
   }
-  const resp = (await env.AI.run(model, {
-    input: prompt.user,
-    instructions: prompt.system,
-    max_output_tokens: budget
-  })) as {
+  const resp = (await raceWithTimeout(
+    env.AI.run(model, {
+      input: prompt.user,
+      instructions: prompt.system,
+      max_output_tokens: budget
+    }),
+    CALL_TIMEOUT_MS
+  )) as {
     output_text?: string;
     output?: Array<{ content?: Array<{ text?: string }> }>;
   };
@@ -353,39 +362,9 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
     const prompt = await resolvePrompt(env, rule.prompt_template_id, payload);
     if (!prompt) throw new Error(`提示词模板 ${rule.prompt_template_id} 不存在或未启用`);
 
-    // 完整检查：递进流水线——terra 出初版结论（含每节修正稿）→ sonnet-5 复核把关。
-    // 复核结果是 UI"一键修正"的 gate（仅 revision_approved 的修正稿可一键应用）。
-    if (cfTaskType === "contract_completeness_check") {
-      const startedAtMs = Date.now();
-      const [draftModel, auditModel] = CF_AI_COMPLETENESS_MODELS;
-      const initial = await callCfAi(env, draftModel, cfTaskType, prompt);
-      if (!initial.output.trim()) throw new Error(`初版检查（${draftModel}）返回空输出`);
-      const initialResult = tolerantJsonParse(initial.output);
-
-      const auditTemplate = await env.DB.prepare(
-        "SELECT id FROM ai_prompt_template WHERE template_key = 'prompt-contract-completeness-audit-v1' AND status = 'active'"
-      ).first<{ id: number }>();
-      if (!auditTemplate) throw new Error("缺少完整检查复核提示词模板");
-      const auditPrompt = await resolvePrompt(env, auditTemplate.id, {
-        direction: payload.direction ?? "",
-        sections_full_json: payload.sections_full_json ?? "",
-        initial_result_json: JSON.stringify(initialResult)
-      });
-      if (!auditPrompt) throw new Error("复核提示词渲染失败");
-      const audit = await callCfAi(env, auditModel, cfTaskType, auditPrompt, "audit");
-      if (!audit.output.trim()) throw new Error(`复核（${auditModel}）返回空输出`);
-
-      await completeTask(env, taskId, CF_AI_NODE_ID, {
-        output: JSON.stringify({
-          initial: { model: draftModel, result: initialResult },
-          audit: { model: auditModel, result: tolerantJsonParse(audit.output) }
-        }),
-        latency_ms: Date.now() - startedAtMs,
-        metadata: { models: [...CF_AI_COMPLETENESS_MODELS], pipeline: "draft_then_audit" }
-      });
-      return;
-    }
-
+    // 完整检查两阶段（check=terra 初版诊断 / audit=sonnet 复核出修正稿）与生成/审查一样
+    // 走通用单模型流程：每个任务只一次调用，单独在时限内。递进链由 completeTask 串接
+    // （check 完成后自动派生 audit 任务），避免单任务内串行两次大调用超时。
     const model =
       typeof payload.model === "string" && payload.model.length > 0
         ? payload.model

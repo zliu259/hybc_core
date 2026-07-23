@@ -681,8 +681,9 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
       sections_full_json: JSON.stringify(
         sections.map((s) => ({ section_key: s.section_key, title: s.title, content: s.content }))
       ),
-      keywords_json: draft.keywords_json
-      // 模型选择由执行器处理：terra + sonnet-5 双模型同时全量审
+      keywords_json: draft.keywords_json,
+      // 递进链第一阶段=terra 初版诊断；完成后 completeTask 自动派生 sonnet 复核任务
+      model: "openai/gpt-5.6-terra"
     },
     priority: 6,
     timeout_seconds: 300
@@ -787,9 +788,7 @@ contractDraftRoutes.post("/:id/checks/:checkId/apply-revision", async (c) => {
       audit?: { result?: { section_issues?: Array<Record<string, unknown>> } };
     };
     const issues = parsed.audit?.result?.section_issues ?? [];
-    const hit = issues.find(
-      (si) => si.section_key === key && si.revision_approved === true
-    );
+    const hit = issues.find((si) => si.section_key === key && si.revision_approved === true);
     revised = typeof hit?.revised_content === "string" ? hit.revised_content : "";
   } catch {
     revised = "";

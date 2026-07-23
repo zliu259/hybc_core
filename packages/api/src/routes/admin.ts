@@ -1047,6 +1047,11 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
       draft_id: bizId,
       direction: "outbound",
       section_keys: ["test_section"]
+    },
+    contract_completeness_audit: {
+      draft_id: bizId,
+      direction: "outbound",
+      initial_result_json: "{}"
     }
   };
 
