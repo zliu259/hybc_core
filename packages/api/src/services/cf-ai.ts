@@ -152,24 +152,37 @@ const mockOutput = (taskType: CfAiTaskType): string => {
       ],
       section_issues: [
         {
+          section_key: "breach",
+          title: "违约责任",
+          issues: [
+            {
+              text: "停滞补偿费",
+              severity: "yellow",
+              reason: "引用了全文未定义的费用（mock复核确认，可AI修正）",
+              suggestion: "删除或替换为合同已有表述",
+              verdict: "confirmed",
+              audit_note: ""
+            }
+          ],
+          fixable: true
+        },
+        {
           section_key: "payment",
           title: "价款结算与支付",
           issues: [
             {
               text: "{{late_fee_rate}}",
               severity: "yellow",
-              reason: "逾期违约金费率占位符未填写（mock复核确认）",
-              suggestion: "建议填写为日万分之五",
+              reason: "逾期违约金费率占位符未填写（mock复核，填空题）",
+              suggestion: "填写为日万分之五",
               verdict: "confirmed",
               audit_note: ""
             }
           ],
-          revised_content:
-            "【本地MOCK复核修正稿】甲方逾期付款的，每逾期一日按未付金额的万分之五向乙方支付违约金。其余内容保持原节不变。",
-          revision_approved: true
+          fixable: false
         }
       ],
-      overall_summary: "【本地MOCK复核】初版结论基本成立，修正稿已通过复核。",
+      overall_summary: "【本地MOCK复核】初版结论基本成立，占位符类需填空、条款缺陷可AI修正。",
       ready_to_finalize: false
     });
   }
