@@ -18,8 +18,21 @@ export type CfAiTaskType = (typeof CF_AI_TASK_TYPES)[number];
 export const CF_AI_MODELS = ["openai/gpt-5.6-terra", "anthropic/claude-sonnet-5"] as const;
 
 const MAX_OUTPUT_TOKENS = 8192;
+/** 廉价档收紧输出预算：硬性缩短生成时长，防 reasoning 模型长时间占用执行上下文。 */
+const CHEAP_MAX_OUTPUT_TOKENS = 2048;
+/** 廉价档调用超时：超过即视为失败，就地降级高档模型。 */
+const CHEAP_CALL_TIMEOUT_MS = 30_000;
 
 const nowIso = () => new Date().toISOString();
+
+/** Promise 超时竞速（AI binding 不支持 abort，超时后放弃等待原调用）。 */
+export const raceWithTimeout = <T>(promise: Promise<T>, ms: number): Promise<T> =>
+  Promise.race([
+    promise,
+    new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error(`调用超时（${ms}ms）`)), ms);
+    })
+  ]);
 
 export const isCfAiTaskType = (taskType: string): taskType is CfAiTaskType =>
   (CF_AI_TASK_TYPES as readonly string[]).includes(taskType);
@@ -134,12 +147,16 @@ export const callCfAi = async (
     return { output: mockOutput(taskType), latency_ms: 0 };
   }
   if (model.startsWith("@cf/")) {
+    // Workers AI 开源模型（OpenAI 兼容 schema）：关闭思考模式并收紧输出预算，
+    // 否则 reasoning 模型（如 GLM-4.7-flash）会把预算烧在推理块上、耗时数分钟。
     const resp = await env.AI.run(model, {
       messages: [
         { role: "system", content: prompt.system },
         { role: "user", content: prompt.user }
       ],
-      max_tokens: MAX_OUTPUT_TOKENS
+      max_tokens: CHEAP_MAX_OUTPUT_TOKENS,
+      reasoning_effort: "low",
+      chat_template_kwargs: { enable_thinking: false }
     });
     return { output: parseCfAiTextOutput(resp), latency_ms: Date.now() - startedAt };
   }
@@ -222,12 +239,14 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
     // 廉价模型（Workers AI 免费层）失败或空输出时就地回退高档模型，
     // 避免任务进入"重试3次×cron兜底"的漫长失败循环。
     let usedModel = preferredModel;
-    let result: CfAiCallResult | null = await callCfAi(
-      env,
-      preferredModel,
-      task.task_type,
-      prompt
-    ).catch((err: unknown) => {
+    const firstAttempt =
+      preferredModel === CF_AI_CHEAP_MODEL
+        ? raceWithTimeout(
+            callCfAi(env, preferredModel, task.task_type, prompt),
+            CHEAP_CALL_TIMEOUT_MS
+          )
+        : callCfAi(env, preferredModel, task.task_type, prompt);
+    let result: CfAiCallResult | null = await firstAttempt.catch((err: unknown) => {
       if (preferredModel !== CF_AI_CHEAP_MODEL) throw err;
       console.warn(`cf_ai 廉价模型调用失败，回退高档模型 task=${taskId}`, err);
       return null;

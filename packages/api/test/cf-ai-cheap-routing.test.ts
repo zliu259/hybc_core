@@ -4,7 +4,8 @@ import {
   CF_AI_CHEAP_MODEL,
   CF_AI_MODELS,
   parseCfAiTextOutput,
-  pickSectionModel
+  pickSectionModel,
+  raceWithTimeout
 } from "../src/services/cf-ai";
 
 describe("成本分级路由", () => {
@@ -49,5 +50,17 @@ describe("parseCfAiTextOutput（GLM等reasoning模型返回形状宽容解析）
   it("空白/未知形状返回空串", () => {
     expect(parseCfAiTextOutput({ response: "   " })).toBe("");
     expect(parseCfAiTextOutput(null)).toBe("");
+  });
+});
+
+describe("raceWithTimeout", () => {
+  it("按时完成则透传结果", async () => {
+    await expect(raceWithTimeout(Promise.resolve("ok"), 1000)).resolves.toBe("ok");
+  });
+  it("超时则拒绝并携带超时信息", async () => {
+    const slow = new Promise<string>((resolve) => {
+      setTimeout(() => resolve("late"), 200);
+    });
+    await expect(raceWithTimeout(slow, 20)).rejects.toThrow("调用超时");
   });
 });
