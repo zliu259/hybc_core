@@ -11,6 +11,7 @@ import type {
 import type { AiGateHandler } from "../types/approval";
 import { applyExternalLogAuditResult } from "./external-log-audit";
 import { checkClauseText, parseContractSectionOutput } from "./contract-draft-rules";
+import { CF_AI_COMPLETENESS_MODELS } from "./cf-ai";
 import { publishEvent } from "./event-bus";
 import { generateSerial } from "./serial";
 import { normalizeWarehouseManualDraftResultContent } from "./warehouse-manual-ai";
@@ -566,6 +567,11 @@ export const completeTask = async (
   }
 
   if (task.task_type === "contract_completeness_check" && task.biz_type === "contract_draft") {
+    const draftRow = await env.DB.prepare(
+      "SELECT id FROM contract_draft WHERE completeness_task_id = ?"
+    )
+      .bind(taskId)
+      .first<{ id: number }>();
     await env.DB.prepare(
       `UPDATE contract_draft SET
          completeness_result_json = ?, completeness_status = 'done', updated_at = ?
@@ -573,6 +579,18 @@ export const completeTask = async (
     )
       .bind(result.output, now, taskId)
       .run();
+    // 历史化：每次完成的检查存一版，供回看/切换版本（owner 07-23）
+    if (draftRow) {
+      const models = Array.isArray(result.metadata?.models)
+        ? (result.metadata?.models as string[])
+        : [...CF_AI_COMPLETENESS_MODELS];
+      await env.DB.prepare(
+        `INSERT INTO contract_draft_check (draft_id, result_json, models_json, created_at)
+         VALUES (?, ?, ?, ?)`
+      )
+        .bind(draftRow.id, result.output, JSON.stringify(models), now)
+        .run();
+    }
   }
 
   // Write audit log

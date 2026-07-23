@@ -66,7 +66,42 @@ interface CfAiCallResult {
   latency_ms: number;
 }
 
-const mockOutput = (taskType: CfAiTaskType): string => {
+const mockOutput = (taskType: CfAiTaskType, variant?: "audit"): string => {
+  if (taskType === "contract_completeness_check" && variant === "audit") {
+    return JSON.stringify({
+      missing: [
+        {
+          section_key: "service_notice",
+          title: "送达条款",
+          level: "recommended",
+          reason: "缺失送达条款会导致争议阶段送达僵局（mock复核确认）",
+          verdict: "confirmed",
+          audit_note: ""
+        }
+      ],
+      section_issues: [
+        {
+          section_key: "payment",
+          title: "价款结算与支付",
+          issues: [
+            {
+              text: "{{late_fee_rate}}",
+              severity: "yellow",
+              reason: "逾期违约金费率占位符未填写（mock复核确认）",
+              suggestion: "建议填写为日万分之五",
+              verdict: "confirmed",
+              audit_note: ""
+            }
+          ],
+          revised_content:
+            "【本地MOCK复核修正稿】甲方逾期付款的，每逾期一日按未付金额的万分之五向乙方支付违约金。其余内容保持原节不变。",
+          revision_approved: true
+        }
+      ],
+      overall_summary: "【本地MOCK复核】初版结论基本成立，修正稿已通过复核。",
+      ready_to_finalize: false
+    });
+  }
   if (taskType === "contract_draft_section") {
     return JSON.stringify({
       content:
@@ -158,11 +193,12 @@ export const callCfAi = async (
   env: Env,
   model: string,
   taskType: CfAiTaskType,
-  prompt: CfAiPrompt
+  prompt: CfAiPrompt,
+  variant?: "audit"
 ): Promise<CfAiCallResult> => {
   const startedAt = Date.now();
   if (env.APP_ENV === "local") {
-    return { output: mockOutput(taskType), latency_ms: 0 };
+    return { output: mockOutput(taskType, variant), latency_ms: 0 };
   }
   if (model.startsWith("@cf/")) {
     // Workers AI 开源模型（OpenAI 兼容 schema）：关闭思考模式并收紧输出预算，
@@ -250,31 +286,36 @@ export const executeCfAiTask = async (env: Env, taskId: number): Promise<void> =
     const prompt = await resolvePrompt(env, rule.prompt_template_id, payload);
     if (!prompt) throw new Error(`提示词模板 ${rule.prompt_template_id} 不存在或未启用`);
 
-    // 完整性检查：terra 与 sonnet-5 双模型同时全量审，两路都成功才算完成（定稿前最后一道关）
-    if (task.task_type === "contract_completeness_check") {
+    // 完整检查：递进流水线——terra 出初版结论（含每节修正稿）→ sonnet-5 复核把关。
+    // 复核结果是 UI"一键修正"的 gate（仅 revision_approved 的修正稿可一键应用）。
+    if (cfTaskType === "contract_completeness_check") {
       const startedAtMs = Date.now();
-      const settled = await Promise.allSettled(
-        CF_AI_COMPLETENESS_MODELS.map((m) => callCfAi(env, m, cfTaskType, prompt))
-      );
-      const runs: Array<Record<string, unknown>> = [];
-      const failures: string[] = [];
-      settled.forEach((s, i) => {
-        const m = CF_AI_COMPLETENESS_MODELS[i];
-        if (s.status === "fulfilled" && s.value.output.trim()) {
-          runs.push({ model: m, result: tolerantJsonParse(s.value.output) });
-        } else {
-          failures.push(`${m}: ${s.status === "rejected" ? String(s.reason) : "空输出"}`);
-        }
+      const [draftModel, auditModel] = CF_AI_COMPLETENESS_MODELS;
+      const initial = await callCfAi(env, draftModel, cfTaskType, prompt);
+      if (!initial.output.trim()) throw new Error(`初版检查（${draftModel}）返回空输出`);
+      const initialResult = tolerantJsonParse(initial.output);
+
+      const auditTemplate = await env.DB.prepare(
+        "SELECT id FROM ai_prompt_template WHERE template_key = 'prompt-contract-completeness-audit-v1' AND status = 'active'"
+      ).first<{ id: number }>();
+      if (!auditTemplate) throw new Error("缺少完整检查复核提示词模板");
+      const auditPrompt = await resolvePrompt(env, auditTemplate.id, {
+        direction: payload.direction ?? "",
+        sections_full_json: payload.sections_full_json ?? "",
+        initial_result_json: JSON.stringify(initialResult)
       });
-      if (failures.length > 0) {
-        throw new Error(`完整性检查未全部完成：${failures.join("；")}`);
-      }
+      if (!auditPrompt) throw new Error("复核提示词渲染失败");
+      const audit = await callCfAi(env, auditModel, cfTaskType, auditPrompt, "audit");
+      if (!audit.output.trim()) throw new Error(`复核（${auditModel}）返回空输出`);
+
       await completeTask(env, taskId, CF_AI_NODE_ID, {
-        output: JSON.stringify({ runs }),
+        output: JSON.stringify({
+          initial: { model: draftModel, result: initialResult },
+          audit: { model: auditModel, result: tolerantJsonParse(audit.output) }
+        }),
         latency_ms: Date.now() - startedAtMs,
-        metadata: { models: [...CF_AI_COMPLETENESS_MODELS] }
-      });
-      return;
+        metadata: { models: [...CF_AI_COMPLETENESS_MODELS], pipeline: "draft_then_audit" }
+      });      return;
     }
 
     const model =

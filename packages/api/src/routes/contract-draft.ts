@@ -727,6 +727,111 @@ contractDraftRoutes.post("/:id/completeness-ignore", async (c) => {
   return c.json({ success: true, data: { ignored } });
 });
 
+// 历史检查版本列表（可回看/切换版本，owner 07-23）
+contractDraftRoutes.get("/:id/checks", async (c) => {
+  const auth = c.get("auth");
+  const draft = await loadDraft(c.env, Number(c.req.param("id")));
+  if (!draft || !canAccess(draft, auth)) {
+    return c.json({ success: false, error: { message: "草稿不存在" } }, 404);
+  }
+  const rows = await c.env.DB.prepare(
+    `SELECT id, models_json, created_at FROM contract_draft_check
+      WHERE draft_id = ? ORDER BY id DESC LIMIT 20`
+  )
+    .bind(draft.id)
+    .all<{ id: number; models_json: string; created_at: string }>();
+  return c.json({ success: true, data: rows.results ?? [] });
+});
+
+// 单个历史检查版本详情
+contractDraftRoutes.get("/:id/checks/:checkId", async (c) => {
+  const auth = c.get("auth");
+  const draft = await loadDraft(c.env, Number(c.req.param("id")));
+  if (!draft || !canAccess(draft, auth)) {
+    return c.json({ success: false, error: { message: "草稿不存在" } }, 404);
+  }
+  const check = await c.env.DB.prepare(
+    "SELECT id, result_json, models_json, created_at FROM contract_draft_check WHERE id = ? AND draft_id = ?"
+  )
+    .bind(Number(c.req.param("checkId")), draft.id)
+    .first<{ id: number; result_json: string; models_json: string; created_at: string }>();
+  if (!check) return c.json({ success: false, error: { message: "检查版本不存在" } }, 404);
+  return c.json({ success: true, data: check });
+});
+
+// 一键应用完整检查的修正稿（门控：仅 checkId 存在且该节 revision_approved=true 才允许）
+contractDraftRoutes.post("/:id/checks/:checkId/apply-revision", async (c) => {
+  const auth = c.get("auth");
+  const draft = await loadDraft(c.env, Number(c.req.param("id")));
+  if (!draft || !canAccess(draft, auth)) {
+    return c.json({ success: false, error: { message: "草稿不存在" } }, 404);
+  }
+  if (draft.status !== "drafting") {
+    return c.json({ success: false, error: { message: "当前状态不可编辑" } }, 400);
+  }
+  const body = (await c.req.json().catch(() => null)) as { section_key?: unknown } | null;
+  const key = typeof body?.section_key === "string" ? body.section_key : "";
+  if (!key) return c.json({ success: false, error: { message: "缺少 section_key" } }, 400);
+
+  const check = await c.env.DB.prepare(
+    "SELECT result_json FROM contract_draft_check WHERE id = ? AND draft_id = ?"
+  )
+    .bind(Number(c.req.param("checkId")), draft.id)
+    .first<{ result_json: string }>();
+  if (!check) return c.json({ success: false, error: { message: "检查版本不存在" } }, 404);
+
+  // 只信复核（audit）结果里 revision_approved=true 的修正稿——递进流水线的 gate
+  let revised = "";
+  try {
+    const parsed = JSON.parse(check.result_json) as {
+      audit?: { result?: { section_issues?: Array<Record<string, unknown>> } };
+    };
+    const issues = parsed.audit?.result?.section_issues ?? [];
+    const hit = issues.find(
+      (si) => si.section_key === key && si.revision_approved === true
+    );
+    revised = typeof hit?.revised_content === "string" ? hit.revised_content : "";
+  } catch {
+    revised = "";
+  }
+  if (!revised.trim()) {
+    return c.json(
+      { success: false, error: { message: "该节没有经复核通过的修正稿，无法一键修正" } },
+      400
+    );
+  }
+
+  const section = await c.env.DB.prepare(
+    "SELECT * FROM contract_draft_section WHERE draft_id = ? AND section_key = ? AND status != 'deleted' ORDER BY sort_order ASC LIMIT 1"
+  )
+    .bind(draft.id, key)
+    .first<ContractDraftSection>();
+  if (!section) return c.json({ success: false, error: { message: "对应节不存在" } }, 404);
+  if (section.ai_status === "generating") {
+    return c.json({ success: false, error: { message: "该节正在生成中" } }, 400);
+  }
+
+  // 覆盖前留档
+  const allSections = await listSections(c.env, draft.id);
+  await c.env.DB.prepare(
+    `INSERT INTO contract_draft_revision (draft_id, snapshot_json, trigger_action, created_by_userid, created_at)
+     VALUES (?, ?, 'completeness_revision', ?, ?)`
+  )
+    .bind(draft.id, JSON.stringify({ draft, sections: allSections }), auth.sub, nowIso())
+    .run();
+
+  const annotations = checkClauseText(revised);
+  await c.env.DB.prepare(
+    `UPDATE contract_draft_section SET
+       content = ?, source = 'manual', risk_annotations_json = ?, updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(revised, JSON.stringify(annotations), nowIso(), section.id)
+    .run();
+  await invalidateCompleteness(c.env, draft.id);
+  return c.json({ success: true, data: await loadSection(c.env, draft.id, section.id) });
+});
+
 // ── 定稿与转正式合同 ──
 contractDraftRoutes.post("/:id/finalize", async (c) => {
   const auth = c.get("auth");
@@ -754,7 +859,7 @@ contractDraftRoutes.post("/:id/finalize", async (c) => {
     return c.json(
       {
         success: false,
-        error: { message: "定稿前需先通过完整性检查（内容变更后需重新检查）" }
+        error: { message: "定稿前需先通过完整检查（内容变更后需重新检查）" }
       },
       400
     );
