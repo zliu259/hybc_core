@@ -13,6 +13,7 @@ import {
 import { instructionPlaceholder } from "../lib/instruction-placeholders";
 import { isDateKey } from "../lib/keyword-fields";
 import { parseReviewResult } from "../lib/review-result";
+import { presetForSection } from "../lib/table-presets";
 import type { SectionAiState } from "../composables/useContractDraftAI";
 import {
   reviewOverallLabelMap,
@@ -21,6 +22,7 @@ import {
   toDraftLabel
 } from "../draft-labels";
 import AiWorkingIndicator from "./AiWorkingIndicator.vue";
+import TableEditor from "./TableEditor.vue";
 
 const props = defineProps<{
   section: ContractDraftSection;
@@ -39,7 +41,20 @@ const emit = defineEmits<{
   ): void;
   (e: "update-keyword", payload: { key: string; value: string }): void;
   (e: "apply-revision", payload: { sectionId: number; content: string }): void;
+  (e: "save-table", payload: { sectionId: number; tableJson: string }): void;
 }>();
+
+// 清单表格节（设备/材料）：按 section_key + variant_key 派生预设；非清单节为 null。
+const tablePreset = computed(() =>
+  presetForSection(props.section.section_key, props.section.variant_key)
+);
+const contractAmount = computed(() => {
+  const n = Number(props.keywordValues.amount);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+});
+const onSaveTable = (tableJson: string) => {
+  emit("save-table", { sectionId: props.section.id, tableJson });
+};
 
 const instruction = ref(props.section.instruction ?? "");
 const editing = ref(false);
@@ -352,6 +367,16 @@ const saveEdit = () => {
         >
       </div>
     </div>
+
+    <TableEditor
+      v-if="tablePreset"
+      :preset="tablePreset"
+      :model-value="section.table_json"
+      :contract-amount="contractAmount"
+      :readonly="readonly"
+      :busy="busy"
+      @save="onSaveTable"
+    />
 
     <AiWorkingIndicator
       v-if="aiState.phase === 'reviewing'"

@@ -65,6 +65,7 @@ export interface ContractDraftSection {
   review_task_id: number | null;
   review_status: SectionAiStatus | null;
   review_result_json: string | null;
+  table_json: string | null;
   sort_order: number;
   status: "active" | "deleted";
   created_at: string;

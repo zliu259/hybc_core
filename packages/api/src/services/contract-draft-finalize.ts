@@ -2,6 +2,7 @@
 // 定稿固化：服务端关键字表构建（与 web 端 keywordValues 同口径）+ 占位符替换。
 // 大写金额由本服务经 toAmountChinese 生成，AI 与前端不生成数字。
 import { toAmountChinese } from "./amount-cn";
+import { TABLE_SENTINEL } from "./contract-draft-table";
 import type { ContractDraft } from "../types/contract-draft";
 
 export interface OurEntityInfo {
@@ -137,6 +138,8 @@ export const fillPlaceholdersForAi = (
   values: Record<string, string>
 ): string =>
   text.replace(PLACEHOLDER_RE, (_raw, key: string) => {
+    // 清单表格哨兵：喂 AI 的文本里换成人话提示，避免 AI 把 {{__table__}} 当条款缺陷。
+    if (key === TABLE_SENTINEL) return "（详见清单表格）";
     const v = values[key];
     if (v && v.length > 0) return v;
     const label = PLACEHOLDER_LABELS[key] ?? key;
@@ -151,6 +154,8 @@ export const collectUnresolvedKeys = (
   for (const text of texts) {
     for (const m of text.matchAll(PLACEHOLDER_RE)) {
       const key = m[1];
+      // 清单表格哨兵不是待填关键字：由 docx 渲染真表格，不计入未解析。
+      if (key === TABLE_SENTINEL) continue;
       if (!(values[key] && values[key].length > 0)) unresolved.add(key);
     }
   }

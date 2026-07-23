@@ -45,8 +45,24 @@ SectionCard 检测 section_key ∈ {equipment_schedule, goods_spec} → 在 `{{_
 
 **风险**：① __table__ 被 \w+ 误吞（必排除）；② 合计联动保持后端 amount-cn 权威（web/api 双实现同步）；③ docx 中文字体+宽表 A4 宽度（可能需横向/缩字号）；④ 干湿租列差异由 variant 驱动；⑤ 是给既有节补表格，非新建族，改动面收敛。
 
-## 待 owner 决策
+## Owner 决策（2026-07-23 已拍板）
 
-1. 是否按方案 C 做（table_json + docx 真表格）？
-2. 先做 MVP（手工填表+docx渲染），还是一步到位含 AI 审表？
-3. 设备清单湿租 operator 列强制——认可否？
+1. ✅ 按方案 C 做（table_json + 正文 {{__table__}} 哨兵 + 定稿 docx 真表格 + 合计校验）。
+2. ✅ 先做 MVP（手工填表 + 自动算金额 + 合计一致性徽标 + docx 真表格渲染）；AI 审表放下一期。
+3. ✅ 设备清单湿租 operator 列强制（结构上恒在必填之列；保存时缺填强确认提示）。
+
+## MVP 实现落点（已交付）
+
+- 迁移 `0075_section_table_json.sql`：`contract_draft_section.table_json TEXT`（nullable）。
+- 后端 `services/contract-draft-table.ts`：`validateTableJson`（preset 枚举 / 行数≤200 / 单元格≤500 / 归一化再序列化）+ `TABLE_SENTINEL`。节 PUT 接受 `table_json`；`finalize` 的 `collectUnresolvedKeys`/`fillPlaceholdersForAi` 特判跳过 `__table__`。
+- web 纯函数 `lib/table-presets.ts`：三预设列 schema、`presetForSection`、`computeRowAmount`/`computeTableTotal`、`emptyRow`、`parse/serializeTable`、`validateTable`、`tableToGrid`/`tableToPlainText`。
+- web docx 块模型 `docx-export.ts` 新增 `buildDocxBufferFromBlocks`（段落 + 真 Table，列宽按比例适配 A4 纵向）；`lib/contract-docx-blocks.ts` 装配 FixedSection→块（哨兵处插表 / 无哨兵附节末）；`ConvertDialog` 改用块 builder。
+- web `TableEditor.vue`：可编辑行（加/删/上下移）、含税金额只读自动算、合计 + 「= / ≠ 合同总价」徽标、湿租 operator 下拉必填、缺填强确认；`SectionCard` 对 equipment_schedule/goods_spec 渲染，经节 PUT 存 `table_json`，定稿只读。
+
+## 下一期（未做，留待 owner 再定）
+
+- AI 审表：table→markdown 注入合规审查上下文，审「湿租含操作人员却开设备租赁发票」等自洽性（AI 不出数字）。
+- AI 从粘贴报价文本抽取成行（正则 + LLM 兜底，需用户确认）。
+- 定稿/转正式合同时对清单必填做硬门禁（当前为编辑器内强确认，非硬阻断）。
+- miniapp 卡片式行编辑。
+- 干湿租切换时清单预设的迁移提示（换 variant 覆盖正文，operator/work_content 列增减）。

@@ -8,7 +8,8 @@ import {
   type FixedSection
 } from "@/api/contract-draft";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
-import { buildDocxBuffer } from "@/views/bidding/dedup/lib/docx-export";
+import { buildDocxBufferFromBlocks } from "@/views/bidding/dedup/lib/docx-export";
+import { buildContractDocxBlocks } from "../lib/contract-docx-blocks";
 
 const CONTRACT_TYPE_OPTIONS = ["人工", "机械", "总包", "材料", "其他"];
 
@@ -24,17 +25,9 @@ const unresolvedKeys = ref<string[]>([]);
 const fixedSections = ref<FixedSection[]>([]);
 const finalized = ref(false);
 
-const docxParagraphs = computed(() => {
-  const paras: string[] = [props.draft.title];
-  for (const s of fixedSections.value) {
-    paras.push("");
-    paras.push(s.title);
-    paras.push(...s.content.split("\n"));
-  }
-  paras.push("");
-  paras.push("【本文档由 AI 辅助起草，须经负责人审核后方可作为正式合同使用】");
-  return paras;
-});
+const docxBlocks = computed(() =>
+  buildContractDocxBlocks(props.draft.title, fixedSections.value)
+);
 
 async function runFinalize(): Promise<boolean> {
   const res = await finalizeDraft(props.draft.id);
@@ -48,7 +41,7 @@ async function runConvert(): Promise<void> {
   step.value = "working";
   try {
     if (!finalized.value) await runFinalize();
-    const buffer = await buildDocxBuffer(docxParagraphs.value);
+    const buffer = await buildDocxBufferFromBlocks(docxBlocks.value);
     const fileName = `${props.draft.title || "合同草稿"}.docx`;
     const signRes = await createUploadSignature({
       fileName,

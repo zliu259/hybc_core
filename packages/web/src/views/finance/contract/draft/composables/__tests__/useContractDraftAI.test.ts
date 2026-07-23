@@ -19,6 +19,7 @@ const sectionWith = (
   review_task_id: null,
   review_status: null,
   review_result_json: null,
+  table_json: null,
   sort_order: 70,
   status: "active",
   created_at: "",

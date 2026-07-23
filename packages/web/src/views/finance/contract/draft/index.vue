@@ -464,6 +464,21 @@ const onSave = async (payload: { sectionId: number; content: string }) => {
   if (prevContent !== payload.content) invalidateCompletenessLocal();
 };
 
+// 清单表格保存：走同一节更新接口存 table_json（服务端边界校验+失效完整检查）。
+// 组件内已 ElMessage 成功提示，此处只回写状态与本地失效完整检查。
+const onSaveTable = async (payload: {
+  sectionId: number;
+  tableJson: string;
+}) => {
+  if (!draft.value) return;
+  refreshSection(
+    await updateSection(draft.value.id, payload.sectionId, {
+      table_json: payload.tableJson
+    })
+  );
+  invalidateCompletenessLocal();
+};
+
 // 节内 AI 审查修正稿一键替换：走既有节更新接口（服务端置 source=manual 并失效完整检查）。
 // 注意：与弹窗的「AI 修正此节」(onFixCompletenessSection) 是两条不同链路（后者会先跑审查）。
 const onApplyRevision = async (payload: {
@@ -977,6 +992,7 @@ onMounted(async () => {
             @apply-variant="onApplyVariant"
             @update-keyword="onUpdateKeyword"
             @apply-revision="onApplyRevision"
+            @save-table="onSaveTable"
           />
         </el-col>
       </el-row>

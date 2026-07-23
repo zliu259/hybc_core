@@ -57,6 +57,7 @@ export type ContractDraftSection = {
   review_task_id: number | null;
   review_status: SectionAiStatus;
   review_result_json: string | null;
+  table_json: string | null;
   sort_order: number;
   status: string;
   created_at: string;
@@ -374,6 +375,7 @@ export type FixedSection = {
   section_key: string;
   title: string;
   content: string;
+  table_json: string | null;
 };
 
 export async function finalizeDraft(id: number): Promise<{

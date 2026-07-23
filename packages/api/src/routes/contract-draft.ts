@@ -16,6 +16,7 @@ import {
   type OurEntityInfo
 } from "../services/contract-draft-finalize";
 import { checkClauseText, checkDraftDates } from "../services/contract-draft-rules";
+import { validateTableJson } from "../services/contract-draft-table";
 import { generateSerial } from "../services/serial";
 import type {
   ContractClauseTemplate,
@@ -431,10 +432,29 @@ contractDraftRoutes.put("/:id/sections/:sectionId", async (c) => {
   // 人工改稿即重跑规则层（AI 标注保留需重新生成才更新）
   const annotations = contentChanged ? checkClauseText(nextContent) : null;
 
+  // 清单表格：未传字段则保留原值；传 null 清空；传字符串则边界校验+归一化后入库。
+  let nextTableJson = section.table_json;
+  let tableChanged = false;
+  if ("table_json" in body) {
+    const raw = body.table_json;
+    if (raw === null) {
+      nextTableJson = null;
+      tableChanged = section.table_json !== null;
+    } else if (typeof raw === "string") {
+      const check = validateTableJson(raw);
+      if (!check.ok) return c.json({ success: false, error: { message: check.message } }, 400);
+      nextTableJson = check.value;
+      tableChanged = check.value !== section.table_json;
+    } else {
+      return c.json({ success: false, error: { message: "table_json 必须是字符串或 null" } }, 400);
+    }
+  }
+
   await c.env.DB.prepare(
     `UPDATE contract_draft_section SET
        title = ?, content = ?, instruction = ?, sort_order = ?,
-       source = ?, risk_annotations_json = COALESCE(?, risk_annotations_json), updated_at = ?
+       source = ?, risk_annotations_json = COALESCE(?, risk_annotations_json),
+       table_json = ?, updated_at = ?
      WHERE id = ?`
   )
     .bind(
@@ -448,11 +468,13 @@ contractDraftRoutes.put("/:id/sections/:sectionId", async (c) => {
       typeof body.sort_order === "number" ? body.sort_order : section.sort_order,
       contentChanged ? "manual" : section.source,
       annotations ? JSON.stringify(annotations) : null,
+      nextTableJson,
       nowIso(),
       section.id
     )
     .run();
-  if (contentChanged) {
+  // 清单改动同样使既有完整检查作废（定稿门禁：检查须晚于最后一次内容变更）
+  if (contentChanged || tableChanged) {
     await invalidateCompleteness(c.env, draft.id);
   }
   return c.json({ success: true, data: await loadSection(c.env, draft.id, section.id) });
@@ -940,7 +962,8 @@ contractDraftRoutes.post("/:id/finalize", async (c) => {
     id: s.id,
     section_key: s.section_key,
     title: s.title,
-    content: fillPlaceholders(s.content, values)
+    content: fillPlaceholders(s.content, values),
+    table_json: s.table_json
   }));
   const unresolved = collectUnresolvedKeys(
     sections.map((s) => s.content),
