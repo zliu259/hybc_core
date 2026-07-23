@@ -1,128 +1,144 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 import { ElMessage } from "element-plus";
-import {
-  convertDraft,
-  finalizeDraft,
-  type ContractDraft,
-  type FixedSection
+import type {
+  ContractDraft,
+  ContractDraftSection,
+  FixedSection
 } from "@/api/contract-draft";
-import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { buildDocxBlobFromBlocks } from "@/views/bidding/dedup/lib/docx-export";
 import { buildContractDocxBlocks } from "../lib/contract-docx-blocks";
+import { collectUnfilledKeys, fillPlaceholdersForDoc } from "../lib/segments";
 
-const CONTRACT_TYPE_OPTIONS = ["人工", "机械", "总包", "材料", "其他"];
-
-const props = defineProps<{ visible: boolean; draft: ContractDraft }>();
-const emit = defineEmits<{
-  (e: "update:visible", v: boolean): void;
-  (e: "converted", payload: { contract_id: number; contract_no: string }): void;
+const props = defineProps<{
+  visible: boolean;
+  draft: ContractDraft;
+  sections: ContractDraftSection[];
+  keywordValues: Record<string, string>;
 }>();
+const emit = defineEmits<{ (e: "update:visible", v: boolean): void }>();
 
-const step = ref<"confirm" | "working">("confirm");
-const contractType = ref("机械");
-const unresolvedKeys = ref<string[]>([]);
-const fixedSections = ref<FixedSection[]>([]);
-const finalized = ref(false);
+const generating = ref(false);
+const downloadUrl = ref<string | null>(null);
+const downloadName = ref("");
+const dlAnchor = ref<HTMLAnchorElement | null>(null);
 
+// 已填占位符换真实值、未填换下划线空白（保留 {{__table__}} 哨兵），组装为 docx 块。
+const fixedSections = computed<FixedSection[]>(() =>
+  props.sections.map(s => ({
+    id: s.id,
+    section_key: s.section_key,
+    title: s.title,
+    content: fillPlaceholdersForDoc(s.content, props.keywordValues),
+    table_json: s.table_json
+  }))
+);
 const docxBlocks = computed(() =>
   buildContractDocxBlocks(props.draft.title, fixedSections.value)
 );
+const unfilledKeys = computed(() =>
+  collectUnfilledKeys(
+    props.sections.map(s => s.content),
+    props.keywordValues
+  )
+);
 
-async function runFinalize(): Promise<boolean> {
-  const res = await finalizeDraft(props.draft.id);
-  fixedSections.value = res.fixed_sections;
-  unresolvedKeys.value = res.unresolved_keys;
-  finalized.value = true;
-  return true;
-}
+const revokeUrl = () => {
+  if (downloadUrl.value) {
+    URL.revokeObjectURL(downloadUrl.value);
+    downloadUrl.value = null;
+  }
+};
 
-async function runConvert(): Promise<void> {
-  step.value = "working";
+async function runDownload(): Promise<void> {
+  generating.value = true;
   try {
-    if (!finalized.value) await runFinalize();
     const blob = await buildDocxBlobFromBlocks(docxBlocks.value);
-    const fileName = `${props.draft.title || "合同草稿"}.docx`;
-    const signRes = await createUploadSignature({
-      fileName,
-      category: "contract-draft"
-    });
-    const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
-      method: "PUT",
-      headers: {
-        "Content-Type":
-          "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-      },
-      body: blob
-    });
-    if (!uploadResp.ok)
-      throw new Error(`文档上传失败（HTTP ${uploadResp.status}）`);
-    const converted = await convertDraft(props.draft.id, {
-      contract_type: contractType.value,
-      file_key: signRes.data.key,
-      file_name: fileName,
-      file_size: blob.size
-    });
-    ElMessage.success(`已生成正式合同 ${converted.contract_no}`);
-    emit("converted", converted);
-    emit("update:visible", false);
+    revokeUrl();
+    downloadUrl.value = URL.createObjectURL(blob);
+    downloadName.value = `${props.draft.title || "合同"}.docx`;
+    await nextTick();
+    dlAnchor.value?.click(); // 弹出下载链接后自动开始下载
+    ElMessage.success("已生成并开始下载");
   } catch (e: unknown) {
-    ElMessage.error(e instanceof Error ? e.message : "转化失败，请重试");
-    step.value = "confirm";
+    ElMessage.error(e instanceof Error ? e.message : "生成失败，请重试");
+  } finally {
+    generating.value = false;
   }
 }
+
+// 关闭时释放对象 URL，避免内存泄漏
+watch(
+  () => props.visible,
+  v => {
+    if (!v) revokeUrl();
+  }
+);
 </script>
 
 <template>
   <el-dialog
     :model-value="visible"
-    title="定稿并转为正式合同"
-    width="560px"
+    title="生成合同 Word 文档"
+    width="520px"
     :close-on-click-modal="false"
     @update:model-value="v => emit('update:visible', v)"
   >
     <el-alert
+      type="info"
+      :closable="false"
+      title="按当前草稿内容生成 Word 文档（.docx）并下载。生成不会锁定草稿、不发起审批；如需正式归档请在合同管理中另行提交。"
+    />
+    <el-alert
+      v-if="unfilledKeys.length"
+      class="unfilled"
       type="warning"
       :closable="false"
-      title="定稿后草稿锁定编辑；将固化关键字、生成 docx 并创建正式合同，随后请在合同详情页提交审批。"
+      :title="`有 ${unfilledKeys.length} 个字段未填写，文档中将以下划线空白留位，可下载后手工补填。`"
     />
-    <el-form label-width="96px" class="convert-form">
-      <el-form-item label="合同类型" required>
-        <el-select v-model="contractType" style="width: 100%">
-          <el-option
-            v-for="t in CONTRACT_TYPE_OPTIONS"
-            :key="t"
-            :value="t"
-            :label="t"
-          />
-        </el-select>
-      </el-form-item>
-    </el-form>
-    <el-alert
-      v-if="unresolvedKeys.length"
-      type="error"
-      :closable="false"
-      :title="`仍有未填写的关键字：${unresolvedKeys.join('、')}（导出文档将保留占位符原样）`"
-    />
+    <div v-if="downloadUrl" class="dl-line">
+      <span class="dl-label">📄 已生成：</span>
+      <a
+        ref="dlAnchor"
+        :href="downloadUrl"
+        :download="downloadName"
+        class="dl-link"
+      >
+        {{ downloadName }}
+      </a>
+      <span class="dl-hint">（未自动下载？点击文件名下载）</span>
+    </div>
     <template #footer>
-      <el-button
-        :disabled="step === 'working'"
-        @click="emit('update:visible', false)"
-        >取消</el-button
+      <el-button :disabled="generating" @click="emit('update:visible', false)"
+        >关闭</el-button
       >
-      <el-button
-        type="primary"
-        :loading="step === 'working'"
-        @click="runConvert"
-      >
-        定稿并转正式合同
+      <el-button type="primary" :loading="generating" @click="runDownload">
+        {{ downloadUrl ? "重新生成并下载" : "生成并下载" }}
       </el-button>
     </template>
   </el-dialog>
 </template>
 
 <style scoped>
-.convert-form {
-  margin-top: 12px;
+.unfilled {
+  margin-top: 10px;
+}
+
+.dl-line {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-top: 14px;
+  font-size: 14px;
+}
+
+.dl-link {
+  color: var(--el-color-primary);
+  text-decoration: underline;
+}
+
+.dl-hint {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 </style>

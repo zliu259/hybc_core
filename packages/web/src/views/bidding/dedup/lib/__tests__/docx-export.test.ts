@@ -17,8 +17,8 @@ describe("buildDocxBlobFromBlocks", () => {
   // 浏览器路径必须走 toBlob（toBuffer 在浏览器抛 nodebuffer not supported）。
   it("produces a non-empty docx Blob from mixed paragraph + table blocks", async () => {
     const blob = await buildDocxBlobFromBlocks([
-      { type: "paragraph", text: "合同标题", heading: true },
-      { type: "paragraph", text: "正文一段。" },
+      { type: "paragraph", text: "合同标题", style: "title" },
+      { type: "paragraph", text: "正文一段。", style: "body" },
       {
         type: "table",
         header: ["序号", "设备名称", "含税金额(元)"],

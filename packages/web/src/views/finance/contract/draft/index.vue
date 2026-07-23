@@ -81,9 +81,6 @@ const plainPreviewVisible = ref(false);
 const entityBankAccounts = ref<EntityBankAccount[]>([]);
 const selectedBankAccountId = ref<number | null>(null);
 
-const onConverted = (payload: { contract_id: number }) => {
-  router.push(`/finance/contract/detail/${payload.contract_id}`);
-};
 const onViewContract = (contractId: number) => {
   router.push(`/finance/contract/detail/${contractId}`);
 };
@@ -422,13 +419,9 @@ const invalidateCompletenessLocal = () => {
   };
 };
 
-// 定稿门禁：drafting 态需先通过完整检查（status==='done'），或已累计 ≥2 次检查历史
-// 亦解锁（与后端 finalize 放宽口径一致）；finalized 态保持可重试转化。
-const completenessGateBlocked = computed(
-  () =>
-    draft.value?.status === "drafting" &&
-    draft.value.completeness_status !== "done" &&
-    completenessVersions.value.length < 2
+// 生成 Word 只需有正文即可（非破坏性下载，不锁草稿、不发起审批）。
+const hasAnyContent = computed(() =>
+  sections.value.some(s => s.content.trim().length > 0)
 );
 
 const onGenerate = async (payload: {
@@ -949,28 +942,13 @@ onMounted(async () => {
             <el-button plain @click="plainPreviewVisible = true">
               纯文本预览
             </el-button>
-            <el-tooltip
-              content="完成完整检查后可定稿；已累计 2 次以上检查也可直接定稿"
-              :disabled="!completenessGateBlocked"
-              placement="top"
+            <el-button
+              type="primary"
+              :disabled="!hasAnyContent"
+              @click="convertVisible = true"
             >
-              <span class="convert-btn-wrap">
-                <el-button
-                  type="primary"
-                  :disabled="
-                    !['drafting', 'finalized'].includes(draft.status) ||
-                    completenessGateBlocked
-                  "
-                  @click="convertVisible = true"
-                >
-                  {{
-                    draft.status === "finalized"
-                      ? "重试转正式合同"
-                      : "定稿转正式合同"
-                  }}
-                </el-button>
-              </span>
-            </el-tooltip>
+              生成合同 Word
+            </el-button>
           </div>
           <AiWorkingIndicator
             v-if="checking"
@@ -1014,7 +992,8 @@ onMounted(async () => {
       <ConvertDialog
         v-model:visible="convertVisible"
         :draft="draft"
-        @converted="onConverted"
+        :sections="sections"
+        :keyword-values="keywordValues"
       />
       <PlainPreviewDrawer
         v-model:visible="plainPreviewVisible"
@@ -1059,11 +1038,6 @@ onMounted(async () => {
 
 .toolbar :deep(.el-alert) {
   flex: 1;
-}
-
-/* 禁用按钮不触发 hover 事件，包一层 span 承接门禁 tooltip */
-.convert-btn-wrap {
-  display: inline-block;
 }
 
 /* 完整检查运行中：toolbar 下方全宽指示器 */

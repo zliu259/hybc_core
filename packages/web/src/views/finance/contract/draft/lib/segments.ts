@@ -21,6 +21,39 @@ export function fillPlaceholders(
   });
 }
 
+const DOC_BLANK = "＿＿＿＿＿＿";
+
+/**
+ * 生成 Word 文档用的占位符填充：已填→真实值；未填→下划线空白（可手填，中国式合同惯例）；
+ * 保留 {{__table__}} 哨兵不动，交给 docx 表格渲染。
+ */
+export function fillPlaceholdersForDoc(
+  text: string,
+  values: Record<string, string>
+): string {
+  return text.replace(PLACEHOLDER_RE, (raw, key: string) => {
+    if (key === "__table__") return raw;
+    const v = values[key];
+    return v && v.length > 0 ? v : DOC_BLANK;
+  });
+}
+
+/** 正文中未填写的占位符键（排除表格哨兵），用于生成前提示。 */
+export function collectUnfilledKeys(
+  texts: string[],
+  values: Record<string, string>
+): string[] {
+  const unresolved = new Set<string>();
+  for (const text of texts) {
+    for (const m of text.matchAll(PLACEHOLDER_RE)) {
+      const key = m[1];
+      if (key === "__table__") continue;
+      if (!(values[key] && values[key].length > 0)) unresolved.add(key);
+    }
+  }
+  return [...unresolved];
+}
+
 function splitByPlaceholders(
   text: string,
   values: Record<string, string>

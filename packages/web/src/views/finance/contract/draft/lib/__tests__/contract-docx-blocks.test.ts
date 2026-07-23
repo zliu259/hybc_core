@@ -27,19 +27,69 @@ const wetTable: ContractTable = {
   ]
 };
 
+const paragraphTexts = (
+  blocks: ReturnType<typeof buildContractDocxBlocks>
+): string[] => blocks.flatMap(b => (b.type === "paragraph" ? [b.text] : []));
+
 describe("buildContractDocxBlocks", () => {
-  it("emits a title heading and a trailing disclaimer paragraph", () => {
+  it("emits a centered title as the first block", () => {
     const blocks = buildContractDocxBlocks("设备租赁合同", [
-      section({ title: "首部", content: "甲乙双方…" })
+      section({
+        title: "首部",
+        section_key: "parties_basis",
+        content: "甲乙双方…"
+      })
     ]);
     expect(blocks[0]).toEqual({
       type: "paragraph",
       text: "设备租赁合同",
-      heading: true
+      style: "title"
     });
-    const last = blocks[blocks.length - 1];
-    expect(last.type).toBe("paragraph");
-    expect(last.type === "paragraph" && last.text).toContain("AI 辅助起草");
+  });
+
+  it("numbers clauses with Chinese ordinals, skipping 首部/落款", () => {
+    const blocks = buildContractDocxBlocks("合同", [
+      section({
+        section_key: "parties_basis",
+        title: "首部",
+        content: "甲乙双方…"
+      }),
+      section({
+        section_key: "lease_term",
+        title: "租赁期限",
+        content: "自 A 至 B。"
+      }),
+      section({ section_key: "payment", title: "租金支付", content: "月结。" }),
+      section({
+        section_key: "signature_block",
+        title: "落款",
+        content: "甲方：___"
+      })
+    ]);
+    const texts = paragraphTexts(blocks);
+    // 首部/落款不出现条号
+    expect(texts.some(t => t.startsWith("第") && t.includes("首部"))).toBe(
+      false
+    );
+    expect(texts.some(t => t.startsWith("第") && t.includes("落款"))).toBe(
+      false
+    );
+    // 两个中间条款依次为第一条 / 第二条
+    expect(texts).toContain("第一条　租赁期限");
+    expect(texts).toContain("第二条　租金支付");
+    // 首部正文顶格(plain)，条款正文首行缩进(body)
+    const preamble = blocks.find(
+      b => b.type === "paragraph" && b.text === "甲乙双方…"
+    );
+    expect(preamble && preamble.type === "paragraph" && preamble.style).toBe(
+      "plain"
+    );
+    const clauseBody = blocks.find(
+      b => b.type === "paragraph" && b.text === "自 A 至 B。"
+    );
+    expect(
+      clauseBody && clauseBody.type === "paragraph" && clauseBody.style
+    ).toBe("body");
   });
 
   it("appends a table block at the section end when content has no sentinel", () => {
@@ -53,7 +103,6 @@ describe("buildContractDocxBlocks", () => {
     ]);
     const tables = blocks.filter(b => b.type === "table");
     expect(tables).toHaveLength(1);
-    // 表格出现在该节正文之后
     const contentIdx = blocks.findIndex(
       b => b.type === "paragraph" && b.text === "详见清单。"
     );
@@ -70,15 +119,9 @@ describe("buildContractDocxBlocks", () => {
         table_json: serializeTable(wetTable)
       })
     ]);
-    const texts = blocks
-      .filter(
-        (b): b is { type: "paragraph"; text: string; heading?: boolean } =>
-          b.type === "paragraph"
-      )
-      .map(b => b.text);
+    const texts = paragraphTexts(blocks);
     expect(texts).toContain("上文");
     expect(texts).toContain("下文");
-    // 原始哨兵不得出现在成稿
     expect(texts.some(t => t.includes("__table__"))).toBe(false);
     const tableIdx = blocks.findIndex(b => b.type === "table");
     const upIdx = blocks.findIndex(

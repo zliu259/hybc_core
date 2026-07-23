@@ -1,6 +1,8 @@
 import {
+  AlignmentType,
   BorderStyle,
   Document,
+  LineRuleType,
   Packer,
   Paragraph,
   Table,
@@ -27,13 +29,8 @@ export async function buildDocxBuffer(
   return Packer.toBuffer(doc);
 }
 
-export async function downloadDocx(
-  paragraphTexts: string[],
-  filename: string
-): Promise<void> {
-  const blob = await Packer.toBlob(
-    new Document({ sections: [{ children: buildChildren(paragraphTexts) }] })
-  );
+// 浏览器触发 Blob 下载（临时 <a> 点击）。所有 docx 下载入口复用它。
+function triggerBlobDownload(blob: Blob, filename: string): void {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
@@ -45,11 +42,35 @@ export async function downloadDocx(
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-// ── 块模型（段落 + 真表格）：合同定稿导出用，清单表格渲染为 Word Table ──
+export async function downloadDocx(
+  paragraphTexts: string[],
+  filename: string
+): Promise<void> {
+  const blob = await Packer.toBlob(
+    new Document({ sections: [{ children: buildChildren(paragraphTexts) }] })
+  );
+  triggerBlobDownload(blob, filename);
+}
+
+// ── 块模型（中国式合同排版）：段落按语义分级排版 + 清单渲染为 Word 真表格 ──
+
+/** title=居中大标题；heading=第X条黑体加粗；body=正文宋体首行缩进；plain=顶部/落款不缩进；note=脚注 */
+export type ParagraphStyle = "title" | "heading" | "body" | "plain" | "note";
 
 export type DocxBlock =
-  | { type: "paragraph"; text: string; heading?: boolean }
+  | { type: "paragraph"; text: string; style?: ParagraphStyle }
   | { type: "table"; header: string[]; rows: string[][]; widths?: number[] };
+
+// 中文正文用宋体、标题/条号用黑体（eastAsia 决定中文字形），西文/数字用 Times New Roman。
+const FONT_BODY = { eastAsia: "宋体", ascii: "Times New Roman" } as const;
+const FONT_HEAD = { eastAsia: "黑体", ascii: "Times New Roman" } as const;
+const SIZE_TITLE = 36; // 18pt（小二）
+const SIZE_HEADING = 26; // 13pt
+const SIZE_BODY = 24; // 12pt（小四）
+const SIZE_NOTE = 20; // 10pt（五号）
+const SIZE_CELL = 21; // 10.5pt
+const LINE_1_5 = 360; // 1.5 倍行距
+const INDENT_2CH = 480; // 首行缩进 2 字符（12pt）
 
 const CELL_BORDER = {
   style: BorderStyle.SINGLE,
@@ -65,6 +86,12 @@ const TABLE_BORDERS = {
   insideVertical: CELL_BORDER
 };
 
+// A4 纵向 + 2.5cm 页边距（twips）。
+const PAGE_A4 = {
+  size: { width: 11906, height: 16838 },
+  margin: { top: 1440, right: 1440, bottom: 1440, left: 1440 }
+} as const;
+
 // 列宽折算成百分比：宽表在 A4 纵向按比例压缩列宽（文字自动换行），避免溢出页宽。
 function columnPercents(colCount: number, widths?: number[]): number[] {
   if (!widths || widths.length !== colCount || colCount === 0) {
@@ -79,7 +106,14 @@ function columnPercents(colCount: number, widths?: number[]): number[] {
 function tableCell(text: string, pct: number, bold: boolean): TableCell {
   return new TableCell({
     width: { size: pct, type: WidthType.PERCENTAGE },
-    children: [new Paragraph({ children: [new TextRun({ text, bold })] })]
+    children: [
+      new Paragraph({
+        alignment: bold ? AlignmentType.CENTER : AlignmentType.LEFT,
+        children: [
+          new TextRun({ text, bold, size: SIZE_CELL, font: FONT_BODY })
+        ]
+      })
+    ]
   });
 }
 
@@ -105,11 +139,57 @@ function renderTable(block: Extract<DocxBlock, { type: "table" }>): Table {
   });
 }
 
+function renderParagraph(
+  block: Extract<DocxBlock, { type: "paragraph" }>
+): Paragraph {
+  const text = block.text;
+  const line = { line: LINE_1_5, lineRule: LineRuleType.AUTO } as const;
+  switch (block.style) {
+    case "title":
+      return new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 320, ...line },
+        children: [
+          new TextRun({ text, bold: true, size: SIZE_TITLE, font: FONT_HEAD })
+        ]
+      });
+    case "heading":
+      return new Paragraph({
+        spacing: { before: 220, after: 80, ...line },
+        children: [
+          new TextRun({ text, bold: true, size: SIZE_HEADING, font: FONT_HEAD })
+        ]
+      });
+    case "plain":
+      return new Paragraph({
+        spacing: line,
+        children: [new TextRun({ text, size: SIZE_BODY, font: FONT_BODY })]
+      });
+    case "note":
+      return new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 240, ...line },
+        children: [
+          new TextRun({
+            text,
+            italics: true,
+            size: SIZE_NOTE,
+            color: "888888",
+            font: FONT_BODY
+          })
+        ]
+      });
+    default:
+      return new Paragraph({
+        indent: { firstLine: INDENT_2CH },
+        spacing: line,
+        children: [new TextRun({ text, size: SIZE_BODY, font: FONT_BODY })]
+      });
+  }
+}
+
 function renderBlock(block: DocxBlock): Paragraph | Table {
-  if (block.type === "table") return renderTable(block);
-  return new Paragraph({
-    children: [new TextRun({ text: block.text, bold: block.heading === true })]
-  });
+  return block.type === "table" ? renderTable(block) : renderParagraph(block);
 }
 
 function buildBlockChildren(blocks: DocxBlock[]): (Paragraph | Table)[] {
@@ -119,7 +199,7 @@ function buildBlockChildren(blocks: DocxBlock[]): (Paragraph | Table)[] {
 }
 
 /**
- * 由块模型（段落 + 真表格）生成 docx Blob，用于合同定稿导出（浏览器上传）。
+ * 由块模型（段落 + 真表格）生成 docx Blob，用于合同导出（浏览器下载）。
  * 必须用 Packer.toBlob：toBuffer 走 JSZip nodebuffer，在浏览器抛
  * "nodebuffer is not supported by this platform"，仅 Node 可用。
  */
@@ -127,7 +207,17 @@ export async function buildDocxBlobFromBlocks(
   blocks: DocxBlock[]
 ): Promise<Blob> {
   const doc = new Document({
-    sections: [{ children: buildBlockChildren(blocks) }]
+    sections: [
+      { properties: { page: PAGE_A4 }, children: buildBlockChildren(blocks) }
+    ]
   });
   return Packer.toBlob(doc);
+}
+
+/** 由块模型生成 docx 并触发浏览器下载。 */
+export async function downloadDocxFromBlocks(
+  blocks: DocxBlock[],
+  filename: string
+): Promise<void> {
+  triggerBlobDownload(await buildDocxBlobFromBlocks(blocks), filename);
 }
