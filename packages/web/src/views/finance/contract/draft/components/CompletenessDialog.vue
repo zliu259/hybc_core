@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { ElMessageBox } from "element-plus";
 import type {
   CheckVersion,
   CompletenessReport,
@@ -20,10 +19,12 @@ const props = defineProps<{
   report: CompletenessReport | null;
   /** 历史检查版本（倒序，最新在前） */
   versions: CheckVersion[];
-  /** 当前查看的版本 id（版本切换器选中值，也是一键修正的 checkId） */
+  /** 当前查看的版本 id（版本切换器选中值） */
   currentVersionId: number | null;
-  /** 本次弹窗内已一键采纳修正稿的节 key（按钮变「已采纳」禁用） */
-  appliedKeys: string[];
+  /** 正在 AI 修正的节 key（按钮变 loading「生成中…」禁用） */
+  fixingKeys: string[];
+  /** 本次弹窗内已 AI 修正并采纳的节 key（按钮变「已修正」禁用） */
+  fixedKeys: string[];
   /** 需从缺失列表隐藏的 key（已忽略 + 已添加处理） */
   ignored: string[];
 }>();
@@ -33,7 +34,7 @@ const emit = defineEmits<{
   (e: "add", payload: { section_key: string; title: string }): void;
   (e: "ignore", sectionKey: string): void;
   (e: "locate", sectionKey: string): void;
-  (e: "apply-revision", sectionKey: string): void;
+  (e: "fix-section", sectionKey: string): void;
 }>();
 
 const initialResult = computed<CompletenessResult | null>(
@@ -106,30 +107,12 @@ const versionOptions = computed(() =>
   }))
 );
 
-const canApply = (g: CompletenessSectionIssue): boolean =>
-  g.revision_approved === true && (g.revised_content ?? "").trim().length > 0;
-const isApplied = (sectionKey: string): boolean =>
-  props.appliedKeys.includes(sectionKey);
-
-const onApplyRevision = async (g: CompletenessSectionIssue) => {
-  if (!canApply(g) || isApplied(g.section_key)) return;
-  const revised = g.revised_content ?? "";
-  const preview = revised.slice(0, 100);
-  try {
-    await ElMessageBox.confirm(
-      `修正稿预览：${preview}${revised.length > 100 ? "…" : ""}　采纳后将覆盖「${g.title}」当前正文，且需重新完整检查才能定稿。`,
-      "采纳修正稿",
-      {
-        type: "warning",
-        confirmButtonText: "采纳修正稿",
-        cancelButtonText: "取消"
-      }
-    );
-  } catch {
-    return;
-  }
-  emit("apply-revision", g.section_key);
-};
+// 逐节问题按钮态：可 AI 修正的节由 fixable===true 决定；正在生成/已修正由父组件驱动。
+// 二次确认统一由父组件做（与「所有 AI 操作二次确认」口径一致），此处仅派发事件。
+const isFixing = (sectionKey: string): boolean =>
+  props.fixingKeys.includes(sectionKey);
+const isFixed = (sectionKey: string): boolean =>
+  props.fixedKeys.includes(sectionKey);
 </script>
 
 <template>
@@ -278,28 +261,37 @@ const onApplyRevision = async (g: CompletenessSectionIssue) => {
           </li>
         </ul>
         <div class="group-footer">
-          <template v-if="canApply(g)">
+          <template v-if="g.fixable === true">
             <el-button
-              v-if="!isApplied(g.section_key)"
+              v-if="isFixed(g.section_key)"
+              size="small"
+              type="success"
+              plain
+              disabled
+            >
+              已修正
+            </el-button>
+            <el-button
+              v-else
               size="small"
               type="warning"
-              @click="onApplyRevision(g)"
+              :loading="isFixing(g.section_key)"
+              :disabled="isFixing(g.section_key)"
+              @click="emit('fix-section', g.section_key)"
             >
-              一键采纳修正稿
-            </el-button>
-            <el-button v-else size="small" type="success" plain disabled>
-              已采纳
+              {{ isFixing(g.section_key) ? "生成中…" : "AI 修正此节" }}
             </el-button>
           </template>
           <span v-else class="no-revision-hint">
-            复核未通过修正稿，请手动修改
+            占位符/填空类问题，请在正文中直接填写
           </span>
         </div>
       </div>
     </template>
 
     <div class="dialog-note">
-      完整检查通过后即可定稿；再次修改任何内容需重新检查。修正稿已经复核模型把关，可放心一键采纳。
+      完整检查通过后即可定稿；再次修改任何内容需重新检查。点「AI 修正此节」将由
+      AI 审查该节并生成修正稿后自动采纳。
     </div>
   </el-dialog>
 </template>

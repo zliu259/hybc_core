@@ -1,7 +1,8 @@
 // 完整检查 v2（前后递进）结果宽容解析纯函数：
 // 后端 result_json / completeness_result_json 形如
 // {initial:{model,result}, audit:{model,result}}；两阶段 result 结构同构，
-// audit 额外带 verdict / audit_note / revised_content / revision_approved。
+// audit 额外带 verdict / audit_note，逐节问题带 fixable（是否可 AI 修正）。
+// revised_content / revision_approved 后端已不再产出，仍兼容解析旧历史数据。
 // AI 输出不可信，所有字段做运行时守卫，畸形一律回退安全默认。
 import type {
   CompletenessIssue,
@@ -74,6 +75,9 @@ const normalizeSectionIssue = (v: unknown): CompletenessSectionIssue | null => {
     section_key: sectionKey,
     title: asString(o.title) || sectionKey,
     issues,
+    // 新版复核字段：该节是否可由 AI 修正（缺省则 undefined，视为不可 AI 修正）
+    fixable: typeof o.fixable === "boolean" ? o.fixable : undefined,
+    // 以下两项后端已不再产出，仅兼容旧历史版本数据
     revised_content: revised,
     revision_approved: o.revision_approved === true
   };

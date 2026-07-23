@@ -11,7 +11,6 @@ import { useRoute, useRouter } from "vue-router";
 import { ElMessage, ElMessageBox } from "element-plus";
 import {
   addSection as apiAddSection,
-  applyCompletenessRevision,
   applyVariant,
   createDraft,
   getCheck,
@@ -40,6 +39,7 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
 import { parseCompletenessReport } from "./lib/completeness-report";
+import { parseReviewResult } from "./lib/review-result";
 import { amountToChinese } from "./lib/amount-cn";
 import AiWorkingIndicator from "./components/AiWorkingIndicator.vue";
 import DraftInitCard from "./components/DraftInitCard.vue";
@@ -67,8 +67,10 @@ const completenessVisible = ref(false);
 const currentReport = ref<CompletenessReport | null>(null);
 const completenessVersions = ref<CheckVersion[]>([]);
 const currentCheckId = ref<number | null>(null);
-// 本次弹窗内已一键采纳修正稿 / 已「添加」处理的缺失节 key（用于按钮态与列表隐藏）
-const appliedSectionKeys = ref<string[]>([]);
+// 逐节问题区：正在 AI 修正 / 本次弹窗内已修正采纳的节 key（驱动按钮 loading 与「已修正」态）
+const completenessFixingKeys = ref<string[]>([]);
+const completenessFixedKeys = ref<string[]>([]);
+// 本次弹窗内已「添加」处理的缺失节 key（从缺失列表隐藏）
 const handledMissingKeys = ref<string[]>([]);
 const saving = ref(false);
 const checking = ref(false);
@@ -339,7 +341,8 @@ const onBackToList = async () => {
   currentReport.value = null;
   completenessVersions.value = [];
   currentCheckId.value = null;
-  appliedSectionKeys.value = [];
+  completenessFixingKeys.value = [];
+  completenessFixedKeys.value = [];
   handledMissingKeys.value = [];
 };
 
@@ -460,7 +463,7 @@ const onSave = async (payload: { sectionId: number; content: string }) => {
 };
 
 // 节内 AI 审查修正稿一键替换：走既有节更新接口（服务端置 source=manual 并失效完整检查）。
-// 注意：与弹窗的「完整检查一键采纳」(onApplyCompletenessRevision) 是两条不同链路。
+// 注意：与弹窗的「AI 修正此节」(onFixCompletenessSection) 是两条不同链路（后者会先跑审查）。
 const onApplyRevision = async (payload: {
   sectionId: number;
   content: string;
@@ -585,8 +588,8 @@ const pollCompleteness = async (draftId: number) => {
       const detail = await getDraft(draftId);
       if (detail.draft.completeness_status === "done") {
         applyDetail(detail);
-        // 新一次检查：重置弹窗内的采纳/添加处理态
-        appliedSectionKeys.value = [];
+        // 新一次检查：重置弹窗内的已修正/添加处理态
+        completenessFixedKeys.value = [];
         handledMissingKeys.value = [];
         if (await loadCheckReport(draftId, null)) {
           completenessVisible.value = true;
@@ -643,14 +646,14 @@ const onClickRunCompleteness = async () => {
 // 「查看上次检查」：不重跑，直接拉最新历史版本打开弹窗
 const openLastCheck = async () => {
   if (!draft.value) return;
-  appliedSectionKeys.value = [];
+  completenessFixedKeys.value = [];
   handledMissingKeys.value = [];
   if (await loadCheckReport(draft.value.id, null)) {
     completenessVisible.value = true;
   }
 };
 
-// 版本切换：仅重取该版本结果重渲染，不重跑 AI（保留已采纳标记）
+// 版本切换：仅重取该版本结果重渲染，不重跑 AI；切换视图后清空「已修正」标记
 const onSwitchVersion = async (checkId: number) => {
   if (!draft.value || checkId === currentCheckId.value) return;
   try {
@@ -662,31 +665,70 @@ const onSwitchVersion = async (checkId: number) => {
     }
     currentReport.value = report;
     currentCheckId.value = check.id;
+    completenessFixedKeys.value = [];
   } catch (e) {
     ElMessage.error(apiErrorMessage(e, "加载该版本失败"));
   }
 };
 
-// 弹窗内一键采纳某节复核通过的修正稿（门控在后端；成功后重锁定稿门禁）
-const onApplyCompletenessRevision = async (sectionKey: string) => {
-  if (!draft.value || currentCheckId.value == null) return;
+// 弹窗内「AI 修正此节」：复用节级 AI 审查（contract_compliance_review），完成后从
+// review_result_json 取修正稿自动采纳回写正文；内容变更即本地失效完整检查（定稿门禁重锁）。
+const onFixCompletenessSection = async (sectionKey: string) => {
+  if (!draft.value) return;
+  const draftId = draft.value.id;
+  // 同 section_key 可能有多条，取未删除中 sort_order 最小的那条
+  const section = sections.value
+    .filter(s => s.section_key === sectionKey && s.status !== "deleted")
+    .sort((a, b) => a.sort_order - b.sort_order)[0];
+  if (!section) {
+    ElMessage.warning("未找到对应章节");
+    return;
+  }
   try {
-    const section = await applyCompletenessRevision(
-      draft.value.id,
-      currentCheckId.value,
-      sectionKey
+    await ElMessageBox.confirm(
+      `将由 AI 审查「${section.title}」并生成修正稿后自动采纳，约几秒。确定吗？`,
+      "AI 修正此节",
+      {
+        type: "warning",
+        confirmButtonText: "开始修正",
+        cancelButtonText: "取消"
+      }
     );
-    refreshSection(section);
-    appliedSectionKeys.value = [...appliedSectionKeys.value, sectionKey];
-    // 后端已置空 completeness_status（定稿门禁自动重锁）；本地不可变同步
-    draft.value = {
-      ...draft.value,
-      completeness_status: null,
-      completeness_result_json: null
-    };
-    ElMessage.success("已采纳修正稿");
+  } catch {
+    return;
+  }
+  completenessFixingKeys.value = [...completenessFixingKeys.value, sectionKey];
+  try {
+    const updated = await ai.reviewForSection(draftId, section.id);
+    if (!updated) {
+      ElMessage.error("AI 修正失败，请重试");
+      return;
+    }
+    // 回填审查结果到卡片（与 onReview 同口径）
+    refreshSection(updated);
+    const revised = parseReviewResult(
+      updated.review_result_json
+    )?.revisedContent;
+    if (revised && revised.trim().length > 0 && revised !== updated.content) {
+      const saved = await updateSection(draftId, section.id, {
+        content: revised
+      });
+      refreshSection(saved);
+      completenessFixedKeys.value = [
+        ...completenessFixedKeys.value,
+        sectionKey
+      ];
+      invalidateCompletenessLocal();
+      ElMessage.success("已生成并采纳修正稿");
+    } else {
+      ElMessage.info("AI 未给出可自动采纳的修正稿，请手动修改该节");
+    }
   } catch (e) {
-    ElMessage.error(apiErrorMessage(e, "采纳修正稿失败，请重试"));
+    ElMessage.error(apiErrorMessage(e, "AI 修正失败，请重试"));
+  } finally {
+    completenessFixingKeys.value = completenessFixingKeys.value.filter(
+      k => k !== sectionKey
+    );
   }
 };
 
@@ -941,13 +983,14 @@ onMounted(async () => {
         :report="currentReport"
         :versions="completenessVersions"
         :current-version-id="currentCheckId"
-        :applied-keys="appliedSectionKeys"
+        :fixing-keys="completenessFixingKeys"
+        :fixed-keys="completenessFixedKeys"
         :ignored="dialogHiddenMissing"
         @switch-version="onSwitchVersion"
         @add="onHintAdd"
         @ignore="onHintIgnore"
         @locate="onLocateSection"
-        @apply-revision="onApplyCompletenessRevision"
+        @fix-section="onFixCompletenessSection"
       />
       <ConvertDialog
         v-model:visible="convertVisible"

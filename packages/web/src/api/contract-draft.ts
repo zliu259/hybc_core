@@ -95,12 +95,19 @@ export type CompletenessIssue = {
   audit_note?: string;
 };
 
-/** 逐节问题分组；audit 阶段带修正稿与复核放行标记（一键修正的 gate） */
+/**
+ * 逐节问题分组；audit 阶段带 fixable：true=条款实质缺陷、可「AI 修正此节」，
+ * false=占位符/填空类、需在正文直接填写。revised_content / revision_approved
+ * 后端已不再产出，保留为可选仅为兼容旧历史版本数据（读旧版本时可能仍有）。
+ */
 export type CompletenessSectionIssue = {
   section_key: string;
   title: string;
   issues: CompletenessIssue[];
+  fixable?: boolean;
+  /** @deprecated 后端不再产出，仅兼容旧历史数据 */
   revised_content?: string;
+  /** @deprecated 后端不再产出，仅兼容旧历史数据 */
   revision_approved?: boolean;
 };
 

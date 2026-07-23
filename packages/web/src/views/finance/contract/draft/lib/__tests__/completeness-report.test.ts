@@ -42,8 +42,7 @@ describe("parseCompletenessReport", () => {
                 reason: "占位符未填写",
                 suggestion: "填日万分之五"
               }
-            ],
-            revised_content: "初版修正稿"
+            ]
           }
         ],
         overall_summary: "初版总评",
@@ -65,6 +64,21 @@ describe("parseCompletenessReport", () => {
         ],
         section_issues: [
           {
+            section_key: "breach",
+            title: "违约责任",
+            issues: [
+              {
+                text: "违约金比例过高",
+                severity: "red",
+                reason: "畸高",
+                suggestion: "下调至合理区间",
+                verdict: "confirmed",
+                audit_note: "同意初版"
+              }
+            ],
+            fixable: true
+          },
+          {
             section_key: "payment",
             title: "价款结算与支付",
             issues: [
@@ -72,13 +86,10 @@ describe("parseCompletenessReport", () => {
                 text: "{{late_fee_rate}}",
                 severity: "yellow",
                 reason: "占位符未填写",
-                suggestion: "填日万分之五",
-                verdict: "confirmed",
-                audit_note: "同意初版"
+                verdict: "confirmed"
               }
             ],
-            revised_content: "复核修正稿",
-            revision_approved: true
+            fixable: false
           }
         ],
         overall_summary: "复核总评",
@@ -87,17 +98,40 @@ describe("parseCompletenessReport", () => {
     }
   });
 
-  it("完整解析 initial/audit 双阶段结果", () => {
+  it("完整解析 initial/audit 双阶段结果（含 fixable 透传）", () => {
     const report = parseCompletenessReport(fullJson);
     expect(report).not.toBeNull();
     expect(report?.initial.model).toBe("openai/gpt-5.6-terra");
     expect(report?.audit.model).toBe("anthropic/claude-sonnet-5");
     expect(report?.audit.result.missing?.[0].verdict).toBe("confirmed");
-    const auditPayment = report?.audit.result.section_issues?.[0];
-    expect(auditPayment?.revision_approved).toBe(true);
-    expect(auditPayment?.revised_content).toBe("复核修正稿");
-    expect(auditPayment?.issues[0].verdict).toBe("confirmed");
-    expect(auditPayment?.issues[0].audit_note).toBe("同意初版");
+    const auditGroups = report?.audit.result.section_issues ?? [];
+    const breach = auditGroups.find(g => g.section_key === "breach");
+    const payment = auditGroups.find(g => g.section_key === "payment");
+    // 实质缺陷可 AI 修正、占位符类不可 AI 修正
+    expect(breach?.fixable).toBe(true);
+    expect(payment?.fixable).toBe(false);
+    expect(breach?.issues[0].verdict).toBe("confirmed");
+    expect(breach?.issues[0].audit_note).toBe("同意初版");
+  });
+
+  it("fixable 缺省视为 undefined（不显示 AI 修正按钮的口径）", () => {
+    const report = parseCompletenessReport(
+      JSON.stringify({
+        audit: {
+          model: "y",
+          result: {
+            section_issues: [
+              {
+                section_key: "scope",
+                title: "工程范围",
+                issues: [{ text: "范围不清", severity: "yellow", reason: "" }]
+              }
+            ]
+          }
+        }
+      })
+    );
+    expect(report?.audit.result.section_issues?.[0].fixable).toBeUndefined();
   });
 
   it("剥 markdown 围栏后解析", () => {
@@ -147,7 +181,8 @@ describe("parseCompletenessReport", () => {
     expect(report?.audit.result.section_issues?.[0].issues).toHaveLength(1);
   });
 
-  it("空节但有修正稿仍保留", () => {
+  // 向后兼容：旧历史版本数据仍带 revised_content/revision_approved，需继续解析
+  it("旧数据：空节但有修正稿仍保留且 revision_approved 透传", () => {
     const report = parseCompletenessReport(
       JSON.stringify({
         audit: {
@@ -169,6 +204,9 @@ describe("parseCompletenessReport", () => {
     expect(report?.audit.result.section_issues).toHaveLength(1);
     expect(report?.audit.result.section_issues?.[0].revision_approved).toBe(
       true
+    );
+    expect(report?.audit.result.section_issues?.[0].revised_content).toBe(
+      "仅修正稿无问题项"
     );
   });
 
