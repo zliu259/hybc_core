@@ -579,12 +579,15 @@ contractDraftRoutes.post("/:id/sections/:sectionId/generate", async (c) => {
   await c.env.DB.prepare("UPDATE contract_draft_section SET ai_task_id = ? WHERE id = ?")
     .bind(task.id, section.id)
     .run();
-  // 即时执行（本地无 Queue 也能跑通）；Queue 事件与 cron 为后备，原子抢占保证幂等。
-  c.executionCtx.waitUntil(
-    executeCfAiTask(c.env, task.id).catch((err) =>
-      console.error("cf_ai execute failed", task.id, err)
-    )
-  );
+  // 生产：交由 Queue 消费者执行（TASK_CREATED 事件，长上下文可承载长输出生成；
+  // 请求 waitUntil 存活时间不足，曾致长调用中途被杀成僵尸任务）。本地 mock 即时执行。
+  if (c.env.APP_ENV === "local") {
+    c.executionCtx.waitUntil(
+      executeCfAiTask(c.env, task.id).catch((err) =>
+        console.error("cf_ai execute failed", task.id, err)
+      )
+    );
+  }
   return c.json({ success: true, data: { task_id: task.id, section_id: section.id } });
 });
 
@@ -626,11 +629,15 @@ contractDraftRoutes.post("/:id/sections/:sectionId/review", async (c) => {
   await c.env.DB.prepare("UPDATE contract_draft_section SET review_task_id = ? WHERE id = ?")
     .bind(task.id, section.id)
     .run();
-  c.executionCtx.waitUntil(
-    executeCfAiTask(c.env, task.id).catch((err) =>
-      console.error("cf_ai review failed", task.id, err)
-    )
-  );
+  // 生产：交由 Queue 消费者执行（TASK_CREATED 事件，长上下文可承载长输出生成；
+  // 请求 waitUntil 存活时间不足，曾致长调用中途被杀成僵尸任务）。本地 mock 即时执行。
+  if (c.env.APP_ENV === "local") {
+    c.executionCtx.waitUntil(
+      executeCfAiTask(c.env, task.id).catch((err) =>
+        console.error("cf_ai review failed", task.id, err)
+      )
+    );
+  }
   return c.json({ success: true, data: { task_id: task.id, section_id: section.id } });
 });
 
@@ -683,11 +690,15 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
   await c.env.DB.prepare("UPDATE contract_draft SET completeness_task_id = ? WHERE id = ?")
     .bind(task.id, draft.id)
     .run();
-  c.executionCtx.waitUntil(
-    executeCfAiTask(c.env, task.id).catch((err) =>
-      console.error("cf_ai completeness failed", task.id, err)
-    )
-  );
+  // 生产：交由 Queue 消费者执行（TASK_CREATED 事件，长上下文可承载长输出生成；
+  // 请求 waitUntil 存活时间不足，曾致长调用中途被杀成僵尸任务）。本地 mock 即时执行。
+  if (c.env.APP_ENV === "local") {
+    c.executionCtx.waitUntil(
+      executeCfAiTask(c.env, task.id).catch((err) =>
+        console.error("cf_ai completeness failed", task.id, err)
+      )
+    );
+  }
   return c.json({ success: true, data: { task_id: task.id } });
 });
 
