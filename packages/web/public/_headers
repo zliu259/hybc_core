@@ -1,5 +1,9 @@
 /index.html
   Cache-Control: no-store
 
+# 注意：不要加 immutable。immutable 会让浏览器“重载也不回源校验”，
+# 一旦部署窗口内某个 hash chunk 被缓存成 SPA 回退页（text/html），
+# 用户即便硬刷新也无法自愈。去掉 immutable 后，hash 文件名仍保证长缓存命中，
+# 而显式重载时允许条件请求回源校验，可修复被污染的缓存。
 /static/*
-  Cache-Control: public, max-age=31536000, immutable
+  Cache-Control: public, max-age=31536000

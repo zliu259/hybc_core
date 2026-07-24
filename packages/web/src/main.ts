@@ -66,7 +66,65 @@ const shouldHandleDynamicImportError = (message: string): boolean => {
   );
 };
 
+const extractModuleUrl = (message: string): string => {
+  const matched = message.match(/https?:\/\/[^\s"')]+\.js/);
+  return matched ? matched[0] : "";
+};
+
+/**
+ * 自愈被“污染”的 chunk 缓存。
+ *
+ * 背景：部署传播窗口内，Cloudflare Pages 可能对尚未就绪的 hash chunk 返回 SPA 回退页
+ * （Content-Type: text/html），而 `/static/*` 带 `immutable` 缓存头，浏览器会把这份
+ * “冒充 JS 的 HTML”长期缓存。此后 `import()` 该 chunk（或其被污染的传递依赖）会一直拿到
+ * HTML → 模块加载失败 → 白屏。普通 `location.reload()` 绕不过该缓存条目。
+ *
+ * 这里用 `cache: "reload"` 从网络强制回源并**覆盖**被污染的缓存条目，并沿相对静态依赖
+ * （`./xxx.js`）递归修复整条链路；完成后再重载，`import()` 即命中已修复的缓存而恢复。
+ */
+const refreshPoisonedModuleGraph = async (rootUrl: string): Promise<void> => {
+  const seen = new Set<string>();
+  const queue: string[] = [rootUrl];
+  let budget = 60; // 兜底上限，避免异常情况下无限抓取
+  while (queue.length > 0 && budget > 0) {
+    budget -= 1;
+    const url = queue.shift() as string;
+    if (seen.has(url)) continue;
+    seen.add(url);
+    let response: Response;
+    try {
+      response = await fetch(url, { cache: "reload" });
+    } catch {
+      continue;
+    }
+    if (!response.ok) continue;
+    const contentType = response.headers.get("content-type") || "";
+    if (!/javascript|ecmascript/.test(contentType)) continue;
+    let source = "";
+    try {
+      source = await response.text();
+    } catch {
+      continue;
+    }
+    // 仅跟随相对静态依赖（./xxx.js）——它们才是阻断模块链接的传递依赖
+    const importRe = /(?:from|import)"(\.\/[^"]+\.js)"/g;
+    let match: RegExpExecArray | null;
+    while ((match = importRe.exec(source)) !== null) {
+      try {
+        queue.push(new URL(match[1], url).href);
+      } catch {
+        /* 忽略无法解析的说明符 */
+      }
+    }
+  }
+};
+
+let dynamicImportHandling = false;
+
 const reloadOnDynamicImportError = (message: string): void => {
+  if (dynamicImportHandling) return;
+  dynamicImportHandling = true;
+
   const token = currentRouteToken();
   const prev = readReloadState();
   const count = prev?.token === token ? prev.count : 0;
@@ -82,7 +140,15 @@ const reloadOnDynamicImportError = (message: string): void => {
     count: count + 1,
     message: message.slice(0, 300)
   });
-  window.location.reload();
+
+  const rootUrl = extractModuleUrl(message);
+  const reload = () => window.location.reload();
+  if (rootUrl) {
+    // 先覆盖被污染的缓存再重载；无论成功与否都重载，避免卡死
+    refreshPoisonedModuleGraph(rootUrl).then(reload, reload);
+  } else {
+    reload();
+  }
 };
 
 window.addEventListener("vite:preloadError", event => {
