@@ -48,7 +48,7 @@ export default {
       redirect: "/admin/ai-center",
       meta: {
         title: "AI 与计算节点",
-        roles: ["super_admin", "manager", "site_manager"]
+        roles: ["super_admin", "manager", "site_manager", "finance", "operator"]
       },
       children: [
         {
@@ -85,6 +85,36 @@ export default {
           meta: {
             title: "Vertex现场控制区",
             roles: ["super_admin", "manager", "site_manager"]
+          }
+        },
+        {
+          path: "/agent/setup",
+          name: "AgentSetup",
+          component: () => import("@/views/agent/setup.vue"),
+          meta: {
+            title: "智能体接入配置",
+            roles: [
+              "super_admin",
+              "manager",
+              "site_manager",
+              "finance",
+              "operator"
+            ]
+          }
+        },
+        {
+          path: "/agent/grants",
+          name: "AgentGrants",
+          component: () => import("@/views/agent/grants.vue"),
+          meta: {
+            title: "设备授权",
+            roles: [
+              "super_admin",
+              "manager",
+              "site_manager",
+              "finance",
+              "operator"
+            ]
           }
         }
       ]

@@ -1638,14 +1638,14 @@
 
 ### 9.1 页面与路由映射
 
-- 接入配置：`/agent/setup` → `packages/web/src/views/agent/setup.vue`（菜单：智能体接入 → 接入配置，全角色可见）
+- 接入配置：`/agent/setup` → `packages/web/src/views/agent/setup.vue`（菜单：系统设置 → AI 与计算节点 → 智能体接入配置，全角色可见）
   - 选择 Agent 类型（Claude Code 推荐 / Codex / Claude Desktop / 其它）并填写设备名称，生成一键安装命令：macOS/Linux `curl | sh` 与 Windows PowerShell 两条，均带复制按钮。
   - 命令内含一次性 boot 授权码，有效期由接口返回的 `expires_in` 动态显示（当前 10 分钟、一次性）；访问令牌不落屏。授权有效期 180 天。
 - 设备授权确认：`/agent/authorize?user_code=` → `packages/web/src/views/agent/authorize.vue`（不进菜单，由 CLI 设备流链接进入）
   - 未登录先经 WeCom OAuth，登录后自动回到本页（redirect 经 sessionStorage 贯通）。
   - 自动按 `user_code` 查询并展示设备名 / Agent / 客户端信息与只读权限说明；「同意授权」后设备端轮询自动发令牌，「拒绝」后设备端收到 denied。
   - 同意/拒绝动作绑定已加载记录（修改输入框即隐藏卡片，需重新查询）；`user_code` 变化时页面响应式刷新。
-- 设备授权：`/agent/grants` → `packages/web/src/views/agent/grants.vue`（菜单可见，全角色）
+- 设备授权：`/agent/grants` → `packages/web/src/views/agent/grants.vue`（菜单：系统设置 → AI 与计算节点 → 设备授权，全角色可见）
   - 本人授权设备表：设备 / Agent / 令牌前缀 / 状态标签 / 创建 / 到期 / 最近使用（本地时区显示）；active 行可「吊销」（确认框，即时生效）。
   - super_admin 有「查看全部员工」开关（切换 admin 接口并增加员工列）。
 
@@ -1656,11 +1656,11 @@
 - 本人授权管理：`GET /api/v1/agent/grants`、`POST /api/v1/agent/grants/:id/revoke`
 - 管理员全量视图：`GET /api/v1/admin/agent/grants`、`POST /api/v1/admin/agent/grants/:id/revoke`
 - 高危操作确认页：`GET /api/v1/agent/pending/by-token/:token`（凭确认令牌取件）、`POST /api/v1/agent/pending/:id/confirm`、`POST /api/v1/agent/pending/:id/reject`
-- Web API 封装：`packages/web/src/api/agent.ts`；路由模块：`packages/web/src/router/modules/agent.ts`
+- Web API 封装：`packages/web/src/api/agent.ts`；可见菜单路由：`packages/web/src/router/modules/admin.ts`；隐藏确认路由：`packages/web/src/router/modules/agent.ts`
 
 ### 9.3 备注
 
-- P2 前存在运营性令牌发放冻结；如需临时隐藏入口，把 `packages/web/src/router/modules/agent.ts` 模块 meta 加 `showLink: false` 即可（一行）。
+- “智能体接入配置”和“设备授权”位于“系统设置 → AI 与计算节点”，对全部现有角色可见；`/agent/authorize` 与 `/agent/confirm` 始终隐藏，仅允许业务链接直达。
 
 ### 9.4 高危操作确认页（P2b，2026-07-19）
 
