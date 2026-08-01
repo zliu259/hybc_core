@@ -344,7 +344,12 @@ watch(
     </div>
   </el-card>
 
-  <el-dialog v-model="paidDialogVisible" title="登记付款执行信息" width="560px">
+  <el-dialog
+    v-model="paidDialogVisible"
+    title="登记付款执行信息"
+    width="560px"
+    append-to-body
+  >
     <el-form label-width="120px">
       <el-form-item label="支付日期">
         <el-date-picker
@@ -372,7 +377,10 @@ watch(
     </el-form>
     <template #footer>
       <el-button @click="paidDialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="paidSubmitting" @click="confirmMarkPaid"
+      <el-button
+        type="primary"
+        :loading="paidSubmitting"
+        @click="confirmMarkPaid"
         >确认标记</el-button
       >
     </template>

@@ -6,6 +6,7 @@ import { message } from "@/utils/message";
 import { contractTypeLabel } from "@/utils/enum-labels";
 import { listContracts, deleteContract, type Contract } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
+import ContractDetailDrawer from "./components/ContractDetailDrawer.vue";
 
 defineOptions({ name: "ContractList" });
 
@@ -19,6 +20,9 @@ const projects = ref<Project[]>([]);
 const page = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
+
+const detailDrawerVisible = ref(false);
+const activeContractId = ref<number | null>(null);
 
 const filters = ref({
   direction: "outbound",
@@ -99,7 +103,8 @@ const goDraft = () => {
 };
 
 const goDetail = (id: number) => {
-  router.push(`/finance/contract/detail/${id}`);
+  activeContractId.value = id;
+  detailDrawerVisible.value = true;
 };
 
 const onDelete = async (row: Contract) => {
@@ -256,4 +261,10 @@ onMounted(async () => {
       "
     />
   </el-card>
+
+  <ContractDetailDrawer
+    v-model:visible="detailDrawerVisible"
+    :contract-id="activeContractId"
+    @closed="loadData"
+  />
 </template>

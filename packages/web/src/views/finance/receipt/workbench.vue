@@ -49,8 +49,10 @@ const titleMap: Record<ReceiptWorkflowStep, string> = {
 };
 
 const hintMap: Record<ReceiptWorkflowStep, string> = {
-  contract: "办公室先在这里建立或核对收款合同，确认项目、客户、金额和审批状态。",
-  invoice: "合同确认后在这里发起开票申请、提交审批，并在审批通过后签发正式发票。",
+  contract:
+    "办公室先在这里建立或核对收款合同，确认项目、客户、金额和审批状态。",
+  invoice:
+    "合同确认后在这里发起开票申请、提交审批，并在审批通过后签发正式发票。",
   receipt: "客户到账后在这里登记收款金额、收款账户和凭证，也可以处理退款。",
   snapshot: "查看收款合同、开票、到账和退款的整体数据，作为对账入口。"
 };

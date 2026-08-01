@@ -10,6 +10,7 @@ import {
   type Contract
 } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
+import ContractDetailDrawer from "@/views/finance/contract/components/ContractDetailDrawer.vue";
 
 defineOptions({ name: "InboundContractList" });
 
@@ -26,6 +27,9 @@ const drawerVisible = ref(false);
 const submitting = ref(false);
 const activeRow = ref<Contract | null>(null);
 const amountForm = ref({ new_amount: 0, reason: "" });
+
+const detailDrawerVisible = ref(false);
+const activeContractId = ref<number | null>(null);
 
 const filters = ref({
   project_id: undefined as number | undefined,
@@ -69,7 +73,8 @@ const goCreate = () => {
 };
 
 const goDetail = (id: number) => {
-  router.push(`/finance/contract/detail/${id}`);
+  activeContractId.value = id;
+  detailDrawerVisible.value = true;
 };
 
 const openAmountDrawer = (row: Contract) => {
@@ -259,4 +264,10 @@ onMounted(async () => {
       </el-button>
     </template>
   </el-drawer>
+
+  <ContractDetailDrawer
+    v-model:visible="detailDrawerVisible"
+    :contract-id="activeContractId"
+    @closed="loadData"
+  />
 </template>

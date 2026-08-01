@@ -11,6 +11,7 @@ import {
 } from "@/api/payment";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import PaymentDetailDrawer from "./components/PaymentDetailDrawer.vue";
 import {
   formatBeijingDateTime,
   paymentStatusTagType,
@@ -161,8 +162,17 @@ const onHeaderSearch = () => {
   loadData();
 };
 
+const detailDrawerVisible = ref(false);
+const activeRequestId = ref<number | null>(null);
+
 const goCreate = () => router.push("/finance/payment/wizard");
-const goDetail = (id: number) => router.push(`/finance/payment/detail/${id}`);
+const goDetail = (id: number) => {
+  activeRequestId.value = id;
+  detailDrawerVisible.value = true;
+};
+const onDetailDrawerClosed = async () => {
+  await Promise.all([loadData(), loadSummary()]);
+};
 const goEdit = (id: number) =>
   router.push(`/finance/payment/detail/${id}?edit=1`);
 const goApproval = (row: PaymentRequest) => {
@@ -398,6 +408,12 @@ onMounted(async () => {
       "
     />
   </el-card>
+
+  <PaymentDetailDrawer
+    v-model:visible="detailDrawerVisible"
+    :request-id="activeRequestId"
+    @closed="onDetailDrawerClosed"
+  />
 </template>
 
 <style scoped>

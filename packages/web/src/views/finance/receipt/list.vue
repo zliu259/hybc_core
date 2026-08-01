@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
-import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { statusLabel } from "@/utils/enum-labels";
 import { formatToken, getToken } from "@/utils/auth";
@@ -21,10 +20,9 @@ import {
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { resolveApiErrorMessage } from "@/utils/api-error";
 import { invoiceReceivableAmount } from "@/utils/invoice-amount";
+import ReceiptDetailDrawer from "./components/ReceiptDetailDrawer.vue";
 
 defineOptions({ name: "ReceiptList" });
-
-const router = useRouter();
 
 const loading = ref(false);
 const list = ref<Receipt[]>([]);
@@ -297,8 +295,12 @@ const onDelete = async (row: Receipt) => {
   }
 };
 
+const detailDrawerVisible = ref(false);
+const activeReceiptId = ref<number | null>(null);
+
 const goDetail = (row: Receipt) => {
-  router.push(`/finance/receipt/detail/${row.id}`);
+  activeReceiptId.value = row.id;
+  detailDrawerVisible.value = true;
 };
 
 onMounted(async () => {
@@ -579,4 +581,10 @@ onMounted(async () => {
       >
     </template>
   </el-dialog>
+
+  <ReceiptDetailDrawer
+    v-model:visible="detailDrawerVisible"
+    :receipt-id="activeReceiptId"
+    @closed="loadData"
+  />
 </template>

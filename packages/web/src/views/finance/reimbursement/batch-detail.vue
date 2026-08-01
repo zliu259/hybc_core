@@ -601,7 +601,7 @@ watch(
 </script>
 
 <template>
-  <div class="batch-detail-page" v-loading="loading">
+  <div v-loading="loading" class="batch-detail-page">
     <div class="page-header">
       <div>
         <div class="page-title">批次详情</div>

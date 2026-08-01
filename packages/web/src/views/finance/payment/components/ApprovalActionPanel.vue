@@ -147,9 +147,7 @@ const currentNodeLabel = computed(() => {
 const roundNodes = computed(() => {
   if (!props.approvalDetail) return [];
   return props.approvalDetail.nodes
-    .filter(
-      item => item.round === props.approvalDetail?.instance.current_round
-    )
+    .filter(item => item.round === props.approvalDetail?.instance.current_round)
     .sort((a, b) => a.sort_order - b.sort_order);
 });
 

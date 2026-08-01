@@ -175,7 +175,7 @@
 
 - 固定筛选：合同方向、项目、状态、关键字。
 - 表格列：合同号、方向、对方单位、合同类型、总额、已付、剩余、状态、AI审查状态。
-- 行操作：查看详情、软删除。
+- 行操作：查看详情（2026-08 起点击行或「详情」按钮改为右侧抽屉打开，见 §10 财务详情抽屉化）、软删除。
 - API 指向：`/api/v1/contract`
 
 #### E. 合同详情 `views/finance/contract/detail.vue`
@@ -183,6 +183,7 @@
 - 表单区：方向、项目、实体、对方单位、类型、经办人、日期、金额、附件、备注。
 - 摘要区：合同总额、已付金额、剩余额度。
 - AI区：审查状态、风险等级、分数、总结、建议。
+- （2026-08）页面主体抽为 `components/ContractDetailPanel.vue`（合同 id 走 props），`detail.vue` 保留为读路由参数的薄壳供新建与深链接使用；列表侧通过 `components/ContractDetailDrawer.vue` 右侧抽屉打开，见 §10。
 - API 指向：`/api/v1/contract/:id`, `/api/v1/contract/:id/ai-review`
 
 #### E-1. 合同生成工作台 `views/finance/contract/draft/index.vue`（2026-07-22 新增 M1；2026-07-23 布局重构 UI2）
@@ -207,7 +208,7 @@
 - 五阶段页签（`el-tabs` + 徽标计数）：待处理（`draft`，退回件叠加「已退回」标签）、审批中（`pending_approval`）、待付款（`approved`，超期行标红且置顶排序）、已付款（`paid`）、全部（不筛状态）。
 - 表格列：流水号、所属项目、付款内容（表头内嵌全局搜索框，回车/清空即触发服务端模糊检索 `serial_no`/`content`）、金额、金额大写、付款方式（中文）、标签（已退回/超期/状态）、AI风险、申请时间、支付时间（2026-07-08：移除合同号列，新增付款内容列）。
 - 筛选保留：所属项目、申请人（企微通讯录选择）；已移除合同号筛选与状态下拉筛选（阶段页签取代原状态筛选）。
-- 行内动作随页签/行状态变化：待处理页签或退回行显示「去修改」（跳转 `detail/:id?edit=1`）；退回行或审批中页签显示「审批详情」（跳转 `/approval/detail/:id`）；`approved` 行显示「标记付款」；始终显示「详情」。
+- 行内动作随页签/行状态变化：待处理页签或退回行显示「去修改」（跳转 `detail/:id?edit=1`）；退回行或审批中页签显示「审批详情」（跳转 `/approval/detail/:id`）；`approved` 行显示「标记付款」；始终显示「详情」（2026-08 起改为右侧抽屉打开，见 §10；「去修改」仍走详情页路由）。
 - 发起付款统一跳转智能发单向导（`/finance/payment/wizard`），列表页不再承担创建职责。
 - API 指向：`/api/v1/payment`、`/api/v1/payment/console-summary`（2026-07-08 新增，聚合五阶段计数/待付总额/本月已付金额/超期数/退回数）。
 
@@ -228,6 +229,7 @@
   - `components/ApprovalActionPanel.vue`：审批与风险面板，审批轨迹、风险评估报告、通过/拒绝/退回/转签动作。
   - `components/AdminEditPanel.vue`：超管编辑面板，绕锁开关与编辑备注输入。
 - （2026-07-08）支持 `?edit=1` 深链：从付款处理台「去修改」跳转时自动进入编辑态并滚动定位到申请信息卡。
+- （2026-08）容器主体再抽为 `components/PaymentDetailPanel.vue`（付款 id / autoEdit 走 props），`detail.vue` 保留为薄壳负责路由参数与返回目标（workspace 判断）；付款处理台「详情」改为 `components/PaymentDetailDrawer.vue` 右侧抽屉打开，见 §10。
 - API 指向：`/api/v1/payment/:id`, `/api/v1/payment/:id/mark-paid`, `/api/v1/approval/:id/*`
 
 #### H. 收款人管理 `views/finance/payee/index.vue`
@@ -361,7 +363,7 @@
 
 - 核心列：合同号、项目、对方单位、合同总额、已开票、已收款、状态。
 - “已开票”展示税后价税合计口径，由后端按发票 `amount_with_tax` 汇总并兼容旧发票 `amount`：`packages/web/src/views/finance/receipt/contract.vue`、`packages/api/src/routes/contract.ts`、`packages/api/src/routes/receipt.ts`
-- 操作：新建收款合同（direction=inbound）、查看合同详情并提交审批。
+- 操作：新建收款合同（direction=inbound，仍走路由页）、查看合同详情并提交审批（2026-08 起「详情」改为右侧抽屉打开，复用 `ContractDetailDrawer`，见 §10）。
 - API 指向：`/api/v1/contract?direction=inbound`, `/api/v1/contract/:id/submit-approval`
 
 #### G-2. 发票管理 `views/finance/receipt/invoice.vue`
@@ -406,6 +408,7 @@
 #### G-3-1. 收款登记详情 `views/finance/receipt/detail.vue`
 
 - 展示维度：收款登记主信息、合同信息、关联发票信息、收款凭证附件列表、退款记录列表。
+- （2026-08）页面主体抽为 `components/ReceiptDetailPanel.vue`（收款 id 走 props），路由页保留为薄壳供深链接使用；收款登记列表「详情」改为 `components/ReceiptDetailDrawer.vue` 右侧抽屉打开，见 §10。
 - 附件能力：收款凭证支持明细查看；退款记录支持在详情页上传并维护“银行汇款单”附件。
 - 退款操作：可在详情页发起全额/部分退款并立即提审，形成“查看-操作”闭环。
 - API 指向：`/api/v1/receipt/:id`、`/api/v1/receipt/refund`、`/api/v1/receipt/refund/:id/submit-approval`、`/api/v1/receipt/refund/:id/bank-slips`
@@ -1700,3 +1703,35 @@
 
 - **503 可重试**：服务端重放密钥（`AGENT_REPLAY_SECRET`）暂不可用时返回 503。此时服务端**并未认领**该动作，行仍是可重试的，故页面只提示「系统尚未完成配置，请稍后重试或联系管理员」并**保持当前状态不变**，绝不让员工误以为动作已永久失败。
 - **非本人打开**：后端对「令牌有效但不属于当前登录账号」和「令牌根本不存在」一律返回 **404**（而非 403 —— 403 等于向转发链上的任何人确认「这个令牌是真的」）。页面统一显示「无法打开此确认链接 / 链接可能已失效、已被处理，或不属于当前登录账号」，且**不渲染任何操作按钮**。该端点对智能体令牌永久关闭（只读白名单 + `requireHumanSession` 双道守门）。
+
+## 10. 财务详情抽屉化（2026-08）
+
+合同管理、对外付款处理台、收款工作台三处「查看详情」由整页路由跳转改为**右侧抽屉（el-drawer）**打开，减少列表↔详情往返的上下文切换。
+
+### 统一架构：Panel + 薄壳路由页 + Drawer
+
+每个业务详情拆为三层，**原路由不删**（审批详情、发单向导、看板等多处深链接仍指向 `/finance/*/detail/:id`）：
+
+| 业务 | Panel（主体，id 走 props） | 薄壳路由页 | Drawer |
+| --- | --- | --- | --- |
+| 合同 | `contract/components/ContractDetailPanel.vue` | `contract/detail.vue` | `contract/components/ContractDetailDrawer.vue`（size 72%） |
+| 付款 | `payment/components/PaymentDetailPanel.vue` | `payment/detail.vue` | `payment/components/PaymentDetailDrawer.vue`（size 72%） |
+| 收款登记 | `receipt/components/ReceiptDetailPanel.vue` | `receipt/detail.vue` | `receipt/components/ReceiptDetailDrawer.vue`（size 640px） |
+
+- **Panel**：原详情页全部逻辑与模板，业务 id（及合同的新建模式/初始方向、付款的 autoEdit）改由 props 传入；「返回」按钮 emit `back`。
+- **薄壳路由页**：保留原组件名（keep-alive 依赖）与路由行为，读 `route.params`/`query` 后渲染 Panel，并以 `:key="String(route.params.id)"` 保证同路由换 id 强制重挂载；合同新建成功后 `router.replace` 至新 id。
+- **Drawer**：`visible` prop + `update:visible`/`closed` emit（与既有 `PlainPreviewDrawer`/发票详情抽屉同约定），`direction="rtl"` + `destroy-on-close` + `append-to-body`；Panel 以 `v-if="id !== null"` 挂载，每次打开重新拉数据。
+
+### 接入点
+
+- 合同管理列表 `contract/index.vue`：点击行或「详情」开抽屉；「新建合同」「合同生成」仍走路由。
+- 收款工作台·收款合同 `receipt/contract.vue`：「详情」开抽屉（复用 `ContractDetailDrawer`）；「新建收款合同」仍走路由。
+- 对外付款处理台 `payment/index.vue`：「详情」开抽屉；「去修改」（`?edit=1`）与「审批详情」仍走路由（审批改单链路 `approval/biz-edit-routes.ts` 依赖页面路由）。
+- 收款工作台·收款登记 `receipt/list.vue`：「详情」开抽屉。
+
+### 交互约束
+
+- **加载提示**：Panel 的 loading 覆盖全部初始化请求（含实体/项目/企微人员等参照数据，不只主详情接口），根元素 `v-loading` + `min-height: 240px`，抽屉打开即见加载动画。
+- **关闭即刷新**：抽屉 `closed` 后列表重新拉数据（付款处理台同时刷新汇总条），抽屉内保存/提审/标记付款/退款的结果立即反映到列表。
+- **弹层层级**：Panel 内的 el-dialog / 附件预览抽屉统一加 `append-to-body`，避免被外层抽屉 transform/overflow 裁剪。
+- **健壮性**：`PaymentInfoCard` 的 requestId 改为取自 `detail.id`（不再依赖路由参数），详情未加载成功时保存/提审/风险评估/附件同步均拦截并提示，杜绝 `/payment/NaN` 畸形请求。

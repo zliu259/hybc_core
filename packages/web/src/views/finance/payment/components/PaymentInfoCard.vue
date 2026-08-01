@@ -1,7 +1,6 @@
 <script setup lang="ts">
 import { type UploadRequestOptions } from "element-plus";
 import { computed, nextTick, ref, watch } from "vue";
-import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import {
@@ -45,8 +44,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{ (e: "refresh"): void }>();
 
-const route = useRoute();
-const requestId = computed(() => Number(route.params.id));
+const requestId = computed(() => props.detail?.id ?? null);
 const userStore = useUserStoreHook();
 
 const isSuperAdmin = computed(() =>
@@ -123,9 +121,7 @@ const selectedPayee = computed(() => {
   return props.payees.find(item => item.id === form.value.payee_id) ?? null;
 });
 const projectName = computed(() => {
-  const target = props.projects.find(
-    item => item.id === form.value.project_id
-  );
+  const target = props.projects.find(item => item.id === form.value.project_id);
   return target ? `${target.project_name} (${target.project_code})` : "";
 });
 const selectedEntity = computed(() => {
@@ -383,9 +379,15 @@ const onSave = async () => {
     return;
   }
 
+  const id = requestId.value;
+  if (id === null) {
+    message("付款详情未加载，无法保存", { type: "warning" });
+    return;
+  }
+
   saving.value = true;
   try {
-    await updatePaymentRequest(requestId.value, {
+    await updatePaymentRequest(id, {
       expected_payment_date: form.value.expected_payment_date,
       category: form.value.category,
       payee_id: form.value.payee_id,
@@ -426,6 +428,11 @@ const onSubmitApproval = async () => {
 
 const confirmSubmitApproval = async () => {
   if (submitApprovalLoading.value) return;
+  const id = requestId.value;
+  if (id === null) {
+    message("付款详情未加载，无法提交审批", { type: "warning" });
+    return;
+  }
 
   let instanceConfig: InstanceConfig | undefined;
   if (approvalConfigMode.value === "json") {
@@ -454,7 +461,7 @@ const confirmSubmitApproval = async () => {
 
   const summary = approvalSummary.value.trim();
   const submitFingerprint = JSON.stringify({
-    request_id: requestId.value,
+    request_id: id,
     biz_summary: summary,
     instance_config: instanceConfig ?? null
   });
@@ -467,7 +474,7 @@ const confirmSubmitApproval = async () => {
   submitApprovalLoading.value = true;
   try {
     await submitPaymentApproval(
-      requestId.value,
+      id,
       {
         biz_summary: summary || undefined,
         instance_config: instanceConfig
@@ -488,13 +495,23 @@ const confirmSubmitApproval = async () => {
 };
 
 const onRiskAssessment = async () => {
-  await triggerRiskAssessment(requestId.value);
+  const id = requestId.value;
+  if (id === null) {
+    message("付款详情未加载，无法触发风险评估", { type: "warning" });
+    return;
+  }
+  await triggerRiskAssessment(id);
   message("已触发风险评估", { type: "success" });
   emit("refresh");
 };
 
 const persistAttachments = async () => {
-  await updatePaymentRequest(requestId.value, {
+  const id = requestId.value;
+  if (id === null) {
+    message("付款详情未加载，附件未能同步保存", { type: "warning" });
+    return;
+  }
+  await updatePaymentRequest(id, {
     attachments_json: serializeAttachments()
   });
 };
@@ -601,7 +618,9 @@ watch(
     <el-button
       type="warning"
       :loading="submitApprovalLoading"
-      :disabled="approvalFinishedLock || inApprovalFlow || submitApprovalLoading"
+      :disabled="
+        approvalFinishedLock || inApprovalFlow || submitApprovalLoading
+      "
       @click="onSubmitApproval"
       >提交审批</el-button
     >
@@ -788,11 +807,7 @@ watch(
           </template>
         </el-upload>
 
-        <el-table
-          :data="attachmentItems"
-          size="small"
-          style="margin-top: 12px"
-        >
+        <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
           <el-table-column label="文件名" min-width="260">
             <template #default="scope">{{ scope.row.file_name }}</template>
           </el-table-column>
@@ -888,7 +903,12 @@ watch(
     </el-descriptions-item>
   </el-descriptions>
 
-  <el-drawer v-model="previewDrawerVisible" title="附件预览" size="70%">
+  <el-drawer
+    v-model="previewDrawerVisible"
+    title="附件预览"
+    size="70%"
+    append-to-body
+  >
     <div style="height: calc(100vh - 120px)">
       <div style="margin-bottom: 8px; color: #666">
         {{ previewFileName }}
@@ -914,7 +934,12 @@ watch(
     </div>
   </el-drawer>
 
-  <el-dialog v-model="approvalDialogVisible" title="审批提交设置" width="560px">
+  <el-dialog
+    v-model="approvalDialogVisible"
+    title="审批提交设置"
+    width="560px"
+    append-to-body
+  >
     <el-alert
       type="info"
       :closable="false"

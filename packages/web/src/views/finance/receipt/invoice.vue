@@ -1650,7 +1650,11 @@ onMounted(async () => {
           <el-table-column prop="specification" label="规格" width="100" />
           <el-table-column prop="unit" label="单位" width="70" />
           <el-table-column prop="quantity" label="数量" width="80" />
-          <el-table-column prop="amount_with_tax" label="含税金额" width="110" />
+          <el-table-column
+            prop="amount_with_tax"
+            label="含税金额"
+            width="110"
+          />
         </el-table>
         <el-empty v-else description="暂无开票明细" :image-size="60" />
       </div>
