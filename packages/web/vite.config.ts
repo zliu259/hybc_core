@@ -59,10 +59,12 @@ export default ({ mode }: ConfigEnv): UserConfigExport => {
           index: pathResolve("./index.html", import.meta.url)
         },
         // 静态资源分类打包
+        // hash 长度 10：2026-08-02 边缘缓存把部分 8 位 hash 的 .js URL 缓存成了
+        // SPA 回退 HTML（部署窗口中毒），改长度整体轮换 URL 使坏缓存作废；勿改回默认 8
         output: {
-          chunkFileNames: "static/js/[name]-[hash].js",
-          entryFileNames: "static/js/[name]-[hash].js",
-          assetFileNames: "static/[ext]/[name]-[hash].[ext]"
+          chunkFileNames: "static/js/[name]-[hash:10].js",
+          entryFileNames: "static/js/[name]-[hash:10].js",
+          assetFileNames: "static/[ext]/[name]-[hash:10].[ext]"
         }
       }
     },
