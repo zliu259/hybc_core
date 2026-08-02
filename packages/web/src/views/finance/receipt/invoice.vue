@@ -760,7 +760,7 @@ const runVerify = async (row: Invoice) => {
 const invoiceStatusLabelMap: Record<string, string> = {
   issued: "已签发",
   voided: "已作废",
-  red_flushed: "已红冲",
+  red_issued: "已红冲",
   cancelled: "已取消"
 };
 const verificationStatusLabelMap: Record<string, string> = {
