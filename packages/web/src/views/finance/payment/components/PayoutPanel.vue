@@ -13,6 +13,8 @@ import type { Contract } from "@/api/contract";
 import type { Entity, EntityBankAccount } from "@/api/entity";
 import type { ApprovalDetailResponse } from "@/api/approval";
 import { useUserStoreHook } from "@/store/modules/user";
+import FinSection from "../../shared/components/FinSection.vue";
+import { formatBeijingDateTime } from "../payment-labels";
 
 defineOptions({ name: "PaymentPayoutPanel" });
 
@@ -82,6 +84,12 @@ const payoutEntityAccounts = computed(() => {
 const canAdjustPayoutInApproval = computed(() => {
   if (!props.inApprovalFlow) return false;
   return Boolean(props.approvalDetail);
+});
+
+/** 是否存在可见的付款动作按钮：普通用户仅在已审批时可标记付款，超管始终可见废除/激活 */
+const hasPayoutActions = computed(() => {
+  if (!props.detail) return false;
+  return props.detail.status === "approved" || isSuperAdmin.value;
 });
 
 const onPayoutEntityChange = (entityId: number | undefined) => {
@@ -257,92 +265,111 @@ watch(
 </script>
 
 <template>
-  <div style="margin-bottom: 12px">
-    <el-button
-      type="primary"
-      plain
-      :disabled="detail?.status !== 'approved'"
-      @click="onMarkPaid"
-    >
-      标记付款
-    </el-button>
-    <el-button
-      v-if="isSuperAdmin"
-      type="danger"
-      plain
-      :loading="voiding"
-      :disabled="detail?.status === 'cancelled'"
-      @click="onVoidPayment"
-    >
-      废除付款
-    </el-button>
-    <el-button
-      v-if="isSuperAdmin"
-      type="primary"
-      plain
-      :loading="reactivating"
-      :disabled="detail?.status !== 'cancelled'"
-      @click="onReactivatePayment"
-    >
-      重新激活
-    </el-button>
-  </div>
-
-  <el-card
-    v-if="canAdjustPayoutInApproval"
-    shadow="never"
-    style="margin-bottom: 12px; border: 1px solid #f3d19e"
-  >
-    <template #header>
-      <span>审批操作区 - 付款主体与账户调整</span>
-    </template>
-    <el-form inline>
-      <el-form-item label="付款主体">
-        <el-select
-          v-model="payoutForm.payment_entity_id"
-          clearable
-          filterable
-          style="width: 260px"
-          @change="onPayoutEntityChange"
-        >
-          <el-option
-            v-for="item in entities"
-            :key="item.id"
-            :label="item.entity_name"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="付款账户">
-        <el-select
-          v-model="payoutForm.payment_entity_bank_account_id"
-          clearable
-          filterable
-          style="width: 360px"
-          @change="onPayoutAccountChange"
-        >
-          <el-option
-            v-for="item in payoutEntityAccounts"
-            :key="item.id"
-            :label="`${item.bank_name} / ${item.account_no}`"
-            :value="item.id"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item>
-        <el-button
-          type="primary"
-          :loading="payoutSaving"
-          @click="savePayoutSelection"
-          >保存出纳账户选择</el-button
-        >
-      </el-form-item>
-    </el-form>
-    <div style="margin-top: 8px; color: #8c6a2f; font-size: 12px">
-      当前选择：{{ payoutEntity?.entity_name || "-" }} /
-      {{ payoutForm.payment_account || "-" }}
+  <FinSection title="付款执行">
+    <div v-if="hasPayoutActions" style="margin-bottom: 12px">
+      <el-button
+        type="primary"
+        plain
+        :disabled="detail?.status !== 'approved'"
+        @click="onMarkPaid"
+      >
+        标记付款
+      </el-button>
+      <el-button
+        v-if="isSuperAdmin"
+        type="danger"
+        plain
+        :loading="voiding"
+        :disabled="detail?.status === 'cancelled'"
+        @click="onVoidPayment"
+      >
+        废除付款
+      </el-button>
+      <el-button
+        v-if="isSuperAdmin"
+        type="primary"
+        plain
+        :loading="reactivating"
+        :disabled="detail?.status !== 'cancelled'"
+        @click="onReactivatePayment"
+      >
+        重新激活
+      </el-button>
     </div>
-  </el-card>
+    <div
+      v-else-if="detail && !canAdjustPayoutInApproval && !detail.paid_at"
+      class="payout-empty"
+    >
+      当前状态无可执行的付款动作
+    </div>
+
+    <el-descriptions
+      v-if="detail?.paid_at"
+      :column="3"
+      border
+      style="margin-bottom: 12px"
+    >
+      <el-descriptions-item label="支付日期">
+        {{ formatBeijingDateTime(detail.paid_at) }}
+      </el-descriptions-item>
+      <el-descriptions-item label="支付流水号">
+        {{ detail.payment_reference || "-" }}
+      </el-descriptions-item>
+      <el-descriptions-item label="付款账户">
+        {{ detail.payment_account || "-" }}
+      </el-descriptions-item>
+    </el-descriptions>
+
+    <div v-if="canAdjustPayoutInApproval" class="payout-adjust">
+      <div class="payout-adjust__title">审批操作区 - 付款主体与账户调整</div>
+      <el-form inline>
+        <el-form-item label="付款主体">
+          <el-select
+            v-model="payoutForm.payment_entity_id"
+            clearable
+            filterable
+            style="width: 260px"
+            @change="onPayoutEntityChange"
+          >
+            <el-option
+              v-for="item in entities"
+              :key="item.id"
+              :label="item.entity_name"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="付款账户">
+          <el-select
+            v-model="payoutForm.payment_entity_bank_account_id"
+            clearable
+            filterable
+            style="width: 360px"
+            @change="onPayoutAccountChange"
+          >
+            <el-option
+              v-for="item in payoutEntityAccounts"
+              :key="item.id"
+              :label="`${item.bank_name} / ${item.account_no}`"
+              :value="item.id"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item>
+          <el-button
+            type="primary"
+            :loading="payoutSaving"
+            @click="savePayoutSelection"
+            >保存出纳账户选择</el-button
+          >
+        </el-form-item>
+      </el-form>
+      <div class="payout-adjust__hint">
+        当前选择：{{ payoutEntity?.entity_name || "-" }} /
+        {{ payoutForm.payment_account || "-" }}
+      </div>
+    </div>
+  </FinSection>
 
   <el-dialog
     v-model="paidDialogVisible"
@@ -386,3 +413,32 @@ watch(
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.payout-empty {
+  margin-bottom: 12px;
+  font-size: 13px;
+  color: #9a917f;
+}
+
+.payout-adjust {
+  padding: 12px;
+  margin-bottom: 12px;
+  background: #fdf8ee;
+  border: 1px dashed #e3d5b8;
+  border-radius: 8px;
+}
+
+.payout-adjust__title {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #6b4f2a;
+}
+
+.payout-adjust__hint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #8c6a2f;
+}
+</style>

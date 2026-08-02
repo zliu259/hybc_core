@@ -22,6 +22,13 @@ import {
   isApprovalFinishedLocked,
   isApprovalInProgress
 } from "../../shared/approvalLock";
+import FinanceDetailHeader from "../../shared/components/FinanceDetailHeader.vue";
+import {
+  paymentStatusTagType,
+  toPaymentMethodLabel,
+  toPaymentStatusLabel,
+  type PaymentTagType
+} from "../payment-labels";
 import AdminEditPanel from "./AdminEditPanel.vue";
 import ApprovalActionPanel from "./ApprovalActionPanel.vue";
 import PayoutPanel from "./PayoutPanel.vue";
@@ -71,6 +78,67 @@ const canEditFields = computed(
     (!inApprovalFlow.value && !approvalFinishedLock.value) ||
     (isSuperAdmin.value && superEditMode.value)
 );
+
+const riskTagTypeMap: Record<string, PaymentTagType> = {
+  none: "info",
+  pending: "warning",
+  completed: "success",
+  failed: "danger"
+};
+const riskStatusLabelMap: Record<string, string> = {
+  none: "未触发",
+  pending: "评估中",
+  completed: "已完成",
+  failed: "评估失败"
+};
+
+const paymentCategoryLabelMap: Record<string, string> = {
+  special_approval: "特殊审批",
+  admin_fee: "行政费",
+  labor_fee: "劳务费",
+  machinery_fee: "机械费",
+  material_fee: "材料费",
+  other_fee: "其他费用",
+  specialApproval: "特殊审批",
+  adminFee: "行政费",
+  laborFee: "劳务费",
+  machineryFee: "机械费",
+  materialFee: "材料费",
+  otherFee: "其他费用",
+  特殊审批: "特殊审批",
+  行政费: "行政费",
+  劳务费: "劳务费",
+  机械费: "机械费",
+  材料费: "材料费",
+  其他费用: "其他费用"
+};
+
+const categoryLabel = computed(() => {
+  const category = detail.value?.category;
+  if (!category) return "-";
+  return paymentCategoryLabelMap[category] ?? category;
+});
+
+const projectLabel = computed(() => {
+  const target = projects.value.find(
+    item => item.id === detail.value?.project_id
+  );
+  return target ? `${target.project_name} (${target.project_code})` : "-";
+});
+
+const payeeLabel = computed(() => {
+  const payee = detail.value?.payee;
+  if (!payee) return "-";
+  const tail = payee.bank_account ? payee.bank_account.slice(-4) : "";
+  return tail ? `${payee.name}（尾号${tail}）` : payee.name;
+});
+
+const applicantLabel = computed(() => {
+  const userid = detail.value?.applicant_userid;
+  if (!userid) return "-";
+  const target = wecomUsers.value.find(item => item.userid === userid);
+  return target?.name || userid;
+});
 
 const loadRefs = async () => {
   const [contractRes, payeeRes, projectRes, entityRes] = await Promise.all([
@@ -135,25 +203,43 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card
-    v-loading="loading"
-    shadow="never"
-    style="min-height: 240px; background: #fffaf2"
-  >
-    <template #header>
-      <div
-        style="
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        "
-      >
-        <span>付款详情 - {{ detail?.serial_no || "" }}</span>
-        <div>
-          <el-button @click="emit('back')">返回</el-button>
-        </div>
-      </div>
-    </template>
+  <div v-loading="loading" class="payment-detail-panel">
+    <FinanceDetailHeader
+      serial-label="流水号"
+      :serial="detail?.serial_no ?? null"
+      amount-label="申请金额"
+      :amount="detail?.amount"
+      :amount-cn="detail?.amount_cn ?? null"
+    >
+      <template #tags>
+        <el-tag
+          v-if="detail"
+          :type="paymentStatusTagType[detail.status] ?? 'info'"
+        >
+          {{ toPaymentStatusLabel(detail.status) }}
+        </el-tag>
+        <el-tag
+          v-if="detail"
+          :type="riskTagTypeMap[riskStatus] ?? 'info'"
+          effect="plain"
+        >
+          AI风险：{{ riskStatusLabelMap[riskStatus] ?? riskStatus }}
+        </el-tag>
+      </template>
+      <template #meta>
+        <span>所属项目：{{ projectLabel }}</span>
+        <span>收款人：{{ payeeLabel }}</span>
+        <span>付款类别：{{ categoryLabel }}</span>
+        <span
+          >付款方式：{{ toPaymentMethodLabel(detail?.payment_method) }}</span
+        >
+        <span>预计付款日：{{ detail?.expected_payment_date || "-" }}</span>
+        <span>申请人：{{ applicantLabel }}</span>
+      </template>
+      <template #actions>
+        <el-button @click="emit('back')">返回</el-button>
+      </template>
+    </FinanceDetailHeader>
 
     <el-alert
       v-if="inApprovalFlow"
@@ -209,5 +295,11 @@ onMounted(async () => {
       :risk-report="riskReport"
       :wecom-users="wecomUsers"
     />
-  </el-card>
+  </div>
 </template>
+
+<style scoped>
+.payment-detail-panel {
+  min-height: 240px;
+}
+</style>

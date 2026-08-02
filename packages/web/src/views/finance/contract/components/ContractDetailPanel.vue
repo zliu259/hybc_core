@@ -3,6 +3,7 @@ import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
+import { contractTypeLabel } from "@/utils/enum-labels";
 import {
   createContract,
   getAiReview,
@@ -33,6 +34,14 @@ import {
   isApprovalFinishedLocked,
   isApprovalInProgress
 } from "../../shared/approvalLock";
+import FinanceDetailHeader from "../../shared/components/FinanceDetailHeader.vue";
+import FinSection from "../../shared/components/FinSection.vue";
+import { formatMoney } from "../../shared/format";
+import PaymentDetailDrawer from "../../payment/components/PaymentDetailDrawer.vue";
+import {
+  paymentStatusTagType,
+  toPaymentStatusLabel
+} from "../../payment/payment-labels";
 
 defineOptions({ name: "ContractDetailPanel" });
 
@@ -124,6 +133,24 @@ const aiStatusLabelMap: Record<string, string> = {
   failed: "失败"
 };
 
+const contractStatusTagType: Record<string, TagType> = {
+  draft: "info",
+  pending_review: "warning",
+  pending_approval: "warning",
+  active: "success",
+  completed: "primary",
+  terminated: "danger"
+};
+
+const contractStatusLabelMap: Record<string, string> = {
+  draft: "草稿",
+  pending_review: "待审查",
+  pending_approval: "待审批",
+  active: "生效中",
+  completed: "已完成",
+  terminated: "已终止"
+};
+
 const bizStatusLabelMap: Record<string, string> = {
   draft: "草稿",
   pending: "待处理",
@@ -140,6 +167,15 @@ const bizStatusLabelMap: Record<string, string> = {
 const toBizStatusLabel = (value: string | null | undefined) => {
   if (!value) return "-";
   return bizStatusLabelMap[value] ?? value;
+};
+
+const amountChangeStatusTagType = (
+  status: string | null | undefined
+): TagType => {
+  if (status === "pending") return "warning";
+  if (status === "approved") return "success";
+  if (status === "rejected") return "danger";
+  return "info";
 };
 
 const toAiStatusLabel = (value: string | null | undefined) => {
@@ -194,6 +230,57 @@ const remainingAmount = computed(() => {
   if (!detail.value) return 0;
   return detail.value.total_amount - detail.value.paid_amount;
 });
+
+const editing = ref(false);
+const isEditing = computed(() => isCreate.value || editing.value);
+
+const paidPercentage = computed(() => {
+  const total = detail.value?.total_amount ?? 0;
+  const paid = detail.value?.paid_amount ?? 0;
+  return total > 0 ? Math.min(100, Math.round((paid / total) * 100)) : 0;
+});
+const isOverPaid = computed(() => {
+  if (!detail.value) return false;
+  return detail.value.paid_amount > detail.value.total_amount;
+});
+
+const projectName = computed(() => {
+  const id = detail.value?.project_id;
+  if (!id) return "-";
+  return projects.value.find(item => item.id === id)?.project_name ?? `#${id}`;
+});
+
+const handlerName = computed(() => {
+  const userid = detail.value?.handler_userid;
+  if (!userid) return "-";
+  return wecomUsers.value.find(item => item.userid === userid)?.name ?? userid;
+});
+
+type ContractPaymentRequest = ContractDetail["payment_requests"][number];
+
+const paymentRequests = computed<ContractPaymentRequest[]>(
+  () => detail.value?.payment_requests ?? []
+);
+const paymentTotalAmount = computed(() =>
+  paymentRequests.value.reduce((sum, item) => sum + item.amount, 0)
+);
+
+const activePaymentId = ref<number | null>(null);
+const paymentDrawerVisible = ref(false);
+
+const openPaymentDrawer = (id: number) => {
+  activePaymentId.value = id;
+  paymentDrawerVisible.value = true;
+};
+
+const onPaymentRowClick = (row: ContractPaymentRequest) => {
+  openPaymentDrawer(row.id);
+};
+
+const onPaymentDrawerClosed = async () => {
+  activePaymentId.value = null;
+  await loadDetail();
+};
 
 const amountInput = computed({
   get: () =>
@@ -394,23 +481,27 @@ const loadBaseData = async () => {
   entityBankAccountMap.value = Object.fromEntries(entries);
 };
 
+const syncFormFromDetail = (data: ContractDetail) => {
+  form.value = {
+    direction: data.direction,
+    project_id: data.project_id,
+    entity_id: data.entity_id,
+    counterparty: data.counterparty,
+    contract_type: data.contract_type,
+    handler_userid: data.handler_userid,
+    contract_date: data.contract_date,
+    total_amount: data.total_amount,
+    remark: data.remark ?? ""
+  };
+};
+
 const loadDetail = async () => {
   if (isCreate.value) return;
   loading.value = true;
   try {
     const result = await getContract(contractId.value);
     detail.value = result.data;
-    form.value = {
-      direction: result.data.direction,
-      project_id: result.data.project_id,
-      entity_id: result.data.entity_id,
-      counterparty: result.data.counterparty,
-      contract_type: result.data.contract_type,
-      handler_userid: result.data.handler_userid,
-      contract_date: result.data.contract_date,
-      total_amount: result.data.total_amount,
-      remark: result.data.remark ?? ""
-    };
+    syncFormFromDetail(result.data);
     superEditMode.value = false;
     superEditNote.value = "";
     attachmentItems.value = parseAttachments(result.data.attachments_json);
@@ -425,6 +516,24 @@ const loadAiReview = async () => {
   const result = await getAiReview(contractId.value);
   aiStatus.value = result.data.status;
   aiReviewData.value = result.data.result;
+};
+
+const enterEdit = () => {
+  if (!canEdit.value) {
+    message("当前状态不可编辑；如需修改请联系超管开启编辑模式", {
+      type: "warning"
+    });
+    return;
+  }
+  editing.value = true;
+};
+
+const cancelEdit = () => {
+  if (detail.value) {
+    syncFormFromDetail(detail.value);
+    attachmentItems.value = parseAttachments(detail.value.attachments_json);
+  }
+  editing.value = false;
 };
 
 const onSave = async () => {
@@ -488,6 +597,7 @@ const onSave = async () => {
           : undefined
     });
     message("保存成功", { type: "success" });
+    editing.value = false;
     await loadDetail();
   } catch {
     message("保存失败", { type: "error" });
@@ -623,7 +733,8 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       file_size: rawFile.size
     });
 
-    if (!isCreate.value && !canEdit.value) {
+    // 编辑态附件跟随「保存」一并提交；非编辑态（含锁定补传）上传即落库
+    if (!isCreate.value && !isEditing.value) {
       await updateContract(contractId.value, {
         attachments_json: serializeAttachments()
       });
@@ -639,9 +750,19 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
   }
 };
 
-const removeAttachment = (index: number) => {
+const removeAttachment = async (index: number) => {
   if (!canEdit.value) return;
   attachmentItems.value.splice(index, 1);
+  if (isCreate.value || isEditing.value) return;
+  try {
+    await updateContract(contractId.value, {
+      attachments_json: serializeAttachments()
+    });
+    message("附件已移除", { type: "success" });
+  } catch {
+    message("附件移除失败", { type: "error" });
+    await loadDetail();
+  }
 };
 
 const onSubmitAmountChange = async (row: ContractAmountChange) => {
@@ -670,235 +791,102 @@ onMounted(async () => {
 </script>
 
 <template>
-  <el-card
-    v-loading="loading"
-    shadow="never"
-    style="min-height: 240px; background: #fffaf2"
-  >
-    <template #header>
-      <div
-        style="
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-        "
-      >
-        <span>{{
-          isCreate ? "新建合同" : `合同详情 - ${detail?.contract_no || ""}`
-        }}</span>
-        <div>
-          <el-button @click="goBack">返回</el-button>
-          <el-button
-            type="primary"
-            :loading="saving"
-            :disabled="!canEdit"
-            @click="onSave"
-            >保存</el-button
-          >
-          <el-button
-            type="warning"
-            :disabled="isCreate || approvalFinishedLock || inApprovalFlow"
-            @click="onSubmitApproval"
-          >
-            提交审批
-          </el-button>
-          <el-button
-            type="success"
-            :disabled="isCreate || approvalFinishedLock || inApprovalFlow"
-            @click="onTriggerAiReview"
-          >
-            触发AI审查
-          </el-button>
-        </div>
-      </div>
-    </template>
-
-    <el-form label-width="110px" style="max-width: 900px">
-      <el-form-item label="合同方向">
-        <el-radio-group
-          v-model="form.direction"
-          :disabled="!isCreate && !canEdit"
+  <div v-loading="loading" class="contract-detail-panel">
+    <FinanceDetailHeader
+      v-if="!isCreate"
+      serial-label="合同号"
+      :serial="detail?.contract_no ?? null"
+      amount-label="合同金额"
+      :amount="detail?.total_amount ?? null"
+      :amount-cn="detail ? toChineseAmount(detail.total_amount) : null"
+    >
+      <template #tags>
+        <el-tag
+          v-if="detail"
+          :type="detail.direction === 'outbound' ? 'warning' : 'success'"
         >
-          <el-radio label="outbound">对外付款</el-radio>
-          <el-radio label="inbound">收款</el-radio>
-        </el-radio-group>
-      </el-form-item>
-      <el-form-item label="所属项目">
-        <el-select
-          v-model="form.project_id"
-          filterable
-          clearable
-          style="width: 360px"
-          :disabled="!isCreate && !canEdit"
+          {{ detail.direction === "outbound" ? "对外付款" : "收款" }}
+        </el-tag>
+        <el-tag
+          v-if="detail"
+          :type="contractStatusTagType[detail.status] || 'info'"
         >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :value="item.id"
-            :label="item.project_name"
-          />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="我方主体">
-        <div style="width: 100%">
-          <el-select
-            v-model="form.entity_id"
-            filterable
-            clearable
-            style="width: 360px"
-            :disabled="!isCreate && !canEdit"
-          >
-            <el-option
-              v-for="item in entities"
-              :key="item.id"
-              :value="item.id"
-              :label="item.entity_name"
-            />
-          </el-select>
-          <div
-            v-if="selectedEntity"
-            style="margin-top: 6px; color: #6e6458; font-size: 13px"
-          >
-            {{ selectedEntity.entity_name }}
-            <span v-if="selectedEntityAccount">
-              | {{ selectedEntityAccount.bank_name }} /
-              {{ selectedEntityAccount.account_no }}
+          {{ contractStatusLabelMap[detail.status] || detail.status }}
+        </el-tag>
+        <el-tag :type="aiStatusTagType[aiStatus] || 'info'">
+          AI审查：{{ toAiStatusLabel(aiStatus) }}
+        </el-tag>
+      </template>
+      <template #meta>
+        <span>所属项目：{{ projectName }}</span>
+        <span>对方单位：{{ detail?.counterparty || "-" }}</span>
+        <span>
+          合同类型：{{
+            detail?.contract_type
+              ? contractTypeLabel(detail.contract_type)
+              : "-"
+          }}
+        </span>
+        <span>合同日期：{{ detail?.contract_date || "-" }}</span>
+        <span>经办人：{{ handlerName }}</span>
+      </template>
+      <template #actions>
+        <el-button
+          v-if="!editing && canEdit"
+          type="primary"
+          plain
+          @click="enterEdit"
+        >
+          编辑资料
+        </el-button>
+        <el-button
+          type="warning"
+          plain
+          :disabled="isCreate || approvalFinishedLock || inApprovalFlow"
+          @click="onSubmitApproval"
+        >
+          提交审批
+        </el-button>
+        <el-button
+          type="success"
+          plain
+          :disabled="isCreate || approvalFinishedLock || inApprovalFlow"
+          @click="onTriggerAiReview"
+        >
+          触发AI审查
+        </el-button>
+        <el-button @click="goBack">返回</el-button>
+      </template>
+      <template #extra>
+        <div v-if="detail" class="pay-progress">
+          <div class="pay-progress__figures">
+            <span>
+              合同总额
+              <b class="mono">{{ formatMoney(detail.total_amount) }}</b>
+            </span>
+            <span>
+              已付
+              <b class="mono">{{ formatMoney(detail.paid_amount) }}</b>
+            </span>
+            <span>
+              剩余
+              <b class="mono">{{ formatMoney(remainingAmount) }}</b>
             </span>
           </div>
-        </div>
-      </el-form-item>
-      <el-form-item label="对方单位">
-        <el-input
-          v-model="form.counterparty"
-          :disabled="!canEdit"
-          placeholder="请输入对方单位"
-        />
-      </el-form-item>
-      <el-form-item label="合同类型">
-        <el-select
-          v-model="form.contract_type"
-          clearable
-          style="width: 220px"
-          :disabled="!canEdit"
-        >
-          <el-option label="人工" value="人工" />
-          <el-option label="机械" value="机械" />
-          <el-option label="总包" value="总包" />
-          <el-option label="材料" value="材料" />
-          <el-option label="其他" value="其他" />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="经办人">
-        <el-select
-          v-model="form.handler_userid"
-          clearable
-          filterable
-          placeholder="选择公司人员"
-          style="width: 360px"
-          :disabled="!canEdit"
-        >
-          <el-option
-            v-for="item in wecomUsers"
-            :key="item.userid"
-            :label="item.name"
-            :value="item.userid"
+          <el-progress
+            :percentage="paidPercentage"
+            :stroke-width="8"
+            :color="isOverPaid ? '' : '#c9a35c'"
+            :status="isOverPaid ? 'exception' : ''"
           />
-        </el-select>
-      </el-form-item>
-      <el-form-item label="合同日期">
-        <el-date-picker
-          v-model="form.contract_date"
-          type="date"
-          value-format="YYYY-MM-DD"
-          placeholder="选择日期"
-          :disabled="!canEdit"
-        />
-      </el-form-item>
-      <el-form-item label="合同金额">
-        <div style="display: flex; align-items: center; gap: 12px; width: 100%">
-          <el-input
-            v-model="amountInput"
-            type="number"
-            placeholder="请输入金额"
-            style="max-width: 260px"
-            :disabled="!canEdit"
-          />
-          <span style="font-weight: 700; color: #6b4f2a">{{
-            amountDisplay
-          }}</span>
         </div>
-      </el-form-item>
-      <el-form-item label="合同附件">
-        <div style="width: 100%">
-          <el-upload
-            drag
-            action="#"
-            :show-file-list="false"
-            :disabled="uploadingAttachment || inApprovalFlow"
-            :http-request="uploadAttachment"
-            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
-          >
-            <div class="el-upload__text">
-              拖拽文件到这里，或 <em>点击上传</em>
-            </div>
-            <template #tip>
-              <div class="el-upload__tip">
-                支持常见文档和图片，上传后可预览/下载
-              </div>
-            </template>
-          </el-upload>
+      </template>
+    </FinanceDetailHeader>
 
-          <el-table
-            :data="attachmentItems"
-            size="small"
-            style="margin-top: 12px"
-          >
-            <el-table-column label="文件名" min-width="260">
-              <template #default="scope">{{ scope.row.file_name }}</template>
-            </el-table-column>
-            <el-table-column label="大小" width="120">
-              <template #default="scope">{{
-                scope.row.file_size ?? "-"
-              }}</template>
-            </el-table-column>
-            <el-table-column label="操作" width="220" fixed="right">
-              <template #default="scope">
-                <el-link
-                  type="primary"
-                  @click="openAttachment(scope.row.file_key)"
-                >
-                  预览
-                </el-link>
-                <el-link
-                  type="success"
-                  style="margin-left: 12px"
-                  @click="openAttachment(scope.row.file_key)"
-                >
-                  下载
-                </el-link>
-                <el-button
-                  link
-                  type="danger"
-                  style="margin-left: 12px"
-                  :disabled="!canEdit"
-                  @click="removeAttachment(scope.$index)"
-                >
-                  移除
-                </el-button>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-      </el-form-item>
-      <el-form-item label="备注">
-        <el-input
-          v-model="form.remark"
-          type="textarea"
-          :rows="3"
-          :disabled="!canEdit"
-        />
-      </el-form-item>
-    </el-form>
+    <header v-else class="create-masthead">
+      <span class="create-masthead__title">新建合同</span>
+      <el-button @click="goBack">返回</el-button>
+    </header>
 
     <el-alert
       v-if="inApprovalFlow"
@@ -942,77 +930,347 @@ onMounted(async () => {
       style="margin-bottom: 12px"
     />
 
-    <el-divider v-if="detail">财务摘要</el-divider>
-    <el-row v-if="detail" :gutter="12" style="margin-bottom: 8px">
-      <el-col :span="6"
-        ><el-statistic title="合同总额" :value="detail.total_amount"
-      /></el-col>
-      <el-col :span="6"
-        ><el-statistic title="已付金额" :value="detail.paid_amount"
-      /></el-col>
-      <el-col :span="6"
-        ><el-statistic title="剩余额度" :value="remainingAmount"
-      /></el-col>
-      <el-col :span="6">
-        <div style="margin-top: 8px">
-          AI审查状态
-          <el-tag
-            :type="aiStatusTagType[aiStatus] || 'info'"
-            style="margin-left: 8px"
+    <FinSection v-if="isEditing" title="合同信息">
+      <el-form label-width="110px" style="max-width: 900px">
+        <el-form-item label="合同方向">
+          <el-radio-group
+            v-model="form.direction"
+            :disabled="!isCreate && !canEdit"
           >
-            {{ toAiStatusLabel(aiStatus) }}
-          </el-tag>
-        </div>
-      </el-col>
-    </el-row>
-
-    <el-divider v-if="aiReviewData">AI审查报告</el-divider>
-    <el-descriptions v-if="aiReviewData" :column="2" border>
-      <el-descriptions-item label="风险等级">
-        <el-tag :type="toRiskLevelTagType(aiReviewData.overall_risk)">
-          {{ toRiskLevelLabel(aiReviewData.overall_risk) }}
-        </el-tag>
-      </el-descriptions-item>
-      <el-descriptions-item label="风险分数">
-        {{ aiReviewData.score ?? "-" }}
-      </el-descriptions-item>
-      <el-descriptions-item label="总结" :span="2">
-        {{ aiReviewData.summary || "-" }}
-      </el-descriptions-item>
-      <el-descriptions-item label="建议" :span="2">
-        {{
-          Array.isArray(aiReviewData.recommendations)
-            ? aiReviewData.recommendations.join("；")
-            : "-"
-        }}
-      </el-descriptions-item>
-    </el-descriptions>
-
-    <el-divider v-if="detail">金额变更记录</el-divider>
-    <el-table v-if="detail" :data="detail.amount_changes" size="small">
-      <el-table-column prop="created_at" label="创建时间" width="180" />
-      <el-table-column prop="change_type" label="类型" width="100" />
-      <el-table-column prop="old_amount" label="原金额" width="120" />
-      <el-table-column prop="new_amount" label="新金额" width="120" />
-      <el-table-column label="状态" width="100">
-        <template #default="scope">{{
-          toBizStatusLabel(scope.row.status)
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="reason" label="原因" min-width="220" />
-      <el-table-column label="操作" width="150" fixed="right">
-        <template #default="scope">
+            <el-radio label="outbound">对外付款</el-radio>
+            <el-radio label="inbound">收款</el-radio>
+          </el-radio-group>
+        </el-form-item>
+        <el-form-item label="所属项目">
+          <el-select
+            v-model="form.project_id"
+            filterable
+            clearable
+            style="width: 360px"
+            :disabled="!isCreate && !canEdit"
+          >
+            <el-option
+              v-for="item in projects"
+              :key="item.id"
+              :value="item.id"
+              :label="item.project_name"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="我方主体">
+          <div style="width: 100%">
+            <el-select
+              v-model="form.entity_id"
+              filterable
+              clearable
+              style="width: 360px"
+              :disabled="!isCreate && !canEdit"
+            >
+              <el-option
+                v-for="item in entities"
+                :key="item.id"
+                :value="item.id"
+                :label="item.entity_name"
+              />
+            </el-select>
+            <div
+              v-if="selectedEntity"
+              style="margin-top: 6px; color: #6e6458; font-size: 13px"
+            >
+              {{ selectedEntity.entity_name }}
+              <span v-if="selectedEntityAccount">
+                | {{ selectedEntityAccount.bank_name }} /
+                {{ selectedEntityAccount.account_no }}
+              </span>
+            </div>
+          </div>
+        </el-form-item>
+        <el-form-item label="对方单位">
+          <el-input
+            v-model="form.counterparty"
+            :disabled="!canEdit"
+            placeholder="请输入对方单位"
+          />
+        </el-form-item>
+        <el-form-item label="合同类型">
+          <el-select
+            v-model="form.contract_type"
+            clearable
+            style="width: 220px"
+            :disabled="!canEdit"
+          >
+            <el-option label="人工" value="人工" />
+            <el-option label="机械" value="机械" />
+            <el-option label="总包" value="总包" />
+            <el-option label="材料" value="材料" />
+            <el-option label="其他" value="其他" />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="经办人">
+          <el-select
+            v-model="form.handler_userid"
+            clearable
+            filterable
+            placeholder="选择公司人员"
+            style="width: 360px"
+            :disabled="!canEdit"
+          >
+            <el-option
+              v-for="item in wecomUsers"
+              :key="item.userid"
+              :label="item.name"
+              :value="item.userid"
+            />
+          </el-select>
+        </el-form-item>
+        <el-form-item label="合同日期">
+          <el-date-picker
+            v-model="form.contract_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            placeholder="选择日期"
+            :disabled="!canEdit"
+          />
+        </el-form-item>
+        <el-form-item label="合同金额">
+          <div
+            style="display: flex; align-items: center; gap: 12px; width: 100%"
+          >
+            <el-input
+              v-model="amountInput"
+              type="number"
+              placeholder="请输入金额"
+              style="max-width: 260px"
+              :disabled="!canEdit"
+            />
+            <span style="font-weight: 700; color: #6b4f2a">{{
+              amountDisplay
+            }}</span>
+          </div>
+        </el-form-item>
+        <el-form-item label="备注">
+          <el-input
+            v-model="form.remark"
+            type="textarea"
+            :rows="3"
+            :disabled="!canEdit"
+          />
+        </el-form-item>
+        <el-form-item>
           <el-button
-            v-if="scope.row.status === 'pending'"
-            link
             type="primary"
-            @click="onSubmitAmountChange(scope.row)"
+            :loading="saving"
+            :disabled="!canEdit"
+            @click="onSave"
           >
-            提交审批
+            保存
           </el-button>
+          <el-button v-if="!isCreate" :disabled="saving" @click="cancelEdit">
+            取消编辑
+          </el-button>
+        </el-form-item>
+      </el-form>
+    </FinSection>
+
+    <FinSection v-else title="合同信息">
+      <el-descriptions :column="2" border>
+        <el-descriptions-item label="所属项目">
+          {{ projectName }}
+        </el-descriptions-item>
+        <el-descriptions-item label="我方主体">
+          <template v-if="selectedEntity">
+            {{ selectedEntity.entity_name }}
+            <span v-if="selectedEntityAccount">
+              （{{ selectedEntityAccount.bank_name }} /
+              {{ selectedEntityAccount.account_no }}）
+            </span>
+          </template>
+          <template v-else>-</template>
+        </el-descriptions-item>
+        <el-descriptions-item label="对方单位">
+          {{ detail?.counterparty || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="合同类型">
+          {{
+            detail?.contract_type
+              ? contractTypeLabel(detail.contract_type)
+              : "-"
+          }}
+        </el-descriptions-item>
+        <el-descriptions-item label="经办人">
+          {{ handlerName }}
+        </el-descriptions-item>
+        <el-descriptions-item label="合同日期">
+          {{ detail?.contract_date || "-" }}
+        </el-descriptions-item>
+        <el-descriptions-item label="备注" :span="2">
+          {{ detail?.remark || "-" }}
+        </el-descriptions-item>
+      </el-descriptions>
+    </FinSection>
+
+    <FinSection title="合同附件">
+      <div class="attachment-upload">
+        <el-upload
+          drag
+          action="#"
+          :show-file-list="false"
+          :disabled="uploadingAttachment || inApprovalFlow"
+          :http-request="uploadAttachment"
+          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+        >
+          <div class="el-upload__text">
+            拖拽文件到这里，或 <em>点击上传</em>
+          </div>
+          <template #tip>
+            <div class="el-upload__tip">
+              支持常见文档和图片，上传后可预览/下载
+            </div>
+          </template>
+        </el-upload>
+      </div>
+
+      <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
+        <el-table-column label="文件名" min-width="260">
+          <template #default="scope">{{ scope.row.file_name }}</template>
+        </el-table-column>
+        <el-table-column label="大小" width="120">
+          <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="220" fixed="right">
+          <template #default="scope">
+            <el-link type="primary" @click="openAttachment(scope.row.file_key)">
+              预览
+            </el-link>
+            <el-link
+              type="success"
+              style="margin-left: 12px"
+              @click="openAttachment(scope.row.file_key)"
+            >
+              下载
+            </el-link>
+            <el-button
+              link
+              type="danger"
+              style="margin-left: 12px"
+              :disabled="!canEdit"
+              @click="removeAttachment(scope.$index)"
+            >
+              移除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </FinSection>
+
+    <template v-if="!isEditing">
+      <FinSection v-if="aiReviewData" title="AI审查报告">
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="风险等级">
+            <el-tag :type="toRiskLevelTagType(aiReviewData.overall_risk)">
+              {{ toRiskLevelLabel(aiReviewData.overall_risk) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="风险分数">
+            {{ aiReviewData.score ?? "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="总结" :span="2">
+            {{ aiReviewData.summary || "-" }}
+          </el-descriptions-item>
+          <el-descriptions-item label="建议" :span="2">
+            {{
+              Array.isArray(aiReviewData.recommendations)
+                ? aiReviewData.recommendations.join("；")
+                : "-"
+            }}
+          </el-descriptions-item>
+        </el-descriptions>
+      </FinSection>
+
+      <FinSection v-if="detail" title="金额变更记录">
+        <el-table :data="detail.amount_changes" size="small">
+          <el-table-column prop="created_at" label="创建时间" width="180" />
+          <el-table-column prop="change_type" label="类型" width="100" />
+          <el-table-column label="原金额" width="130" align="right">
+            <template #default="scope">
+              {{ formatMoney(scope.row.old_amount) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="新金额" width="130" align="right">
+            <template #default="scope">
+              {{ formatMoney(scope.row.new_amount) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="100">
+            <template #default="scope">
+              <el-tag :type="amountChangeStatusTagType(scope.row.status)">
+                {{ toBizStatusLabel(scope.row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="reason" label="原因" min-width="220" />
+          <el-table-column label="操作" width="150" fixed="right">
+            <template #default="scope">
+              <el-button
+                v-if="scope.row.status === 'pending'"
+                link
+                type="primary"
+                @click="onSubmitAmountChange(scope.row)"
+              >
+                提交审批
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+      </FinSection>
+
+      <FinSection v-if="detail" title="关联付款申请">
+        <template #extra>
+          <span class="section-stat">
+            共 {{ paymentRequests.length }} 笔 / 合计
+            {{ formatMoney(paymentTotalAmount) }}
+          </span>
         </template>
-      </el-table-column>
-    </el-table>
+        <el-table
+          v-if="paymentRequests.length"
+          class="payment-table"
+          :data="paymentRequests"
+          size="small"
+          @row-click="onPaymentRowClick"
+        >
+          <el-table-column label="流水号" min-width="170">
+            <template #default="scope">
+              <span class="mono">{{ scope.row.serial_no }}</span>
+            </template>
+          </el-table-column>
+          <el-table-column label="金额" width="140" align="right">
+            <template #default="scope">
+              {{ formatMoney(scope.row.amount) }}
+            </template>
+          </el-table-column>
+          <el-table-column label="状态" width="110">
+            <template #default="scope">
+              <el-tag :type="paymentStatusTagType[scope.row.status] || 'info'">
+                {{ toPaymentStatusLabel(scope.row.status) }}
+              </el-tag>
+            </template>
+          </el-table-column>
+          <el-table-column prop="created_at" label="创建时间" width="180" />
+          <el-table-column label="操作" width="80" fixed="right">
+            <template #default="scope">
+              <el-button
+                link
+                type="primary"
+                @click.stop="openPaymentDrawer(scope.row.id)"
+              >
+                查看
+              </el-button>
+            </template>
+          </el-table-column>
+        </el-table>
+        <el-empty v-else description="暂无关联付款" :image-size="64" />
+      </FinSection>
+    </template>
 
     <el-dialog
       v-model="approvalDialogVisible"
@@ -1107,17 +1365,65 @@ onMounted(async () => {
       </template>
     </el-dialog>
 
-    <el-divider v-if="detail">关联付款申请</el-divider>
-    <el-table v-if="detail" :data="detail.payment_requests" size="small">
-      <el-table-column prop="id" label="ID" width="80" />
-      <el-table-column prop="serial_no" label="流水号" width="160" />
-      <el-table-column prop="amount" label="金额" width="120" />
-      <el-table-column label="状态" width="120">
-        <template #default="scope">{{
-          toBizStatusLabel(scope.row.status)
-        }}</template>
-      </el-table-column>
-      <el-table-column prop="created_at" label="创建时间" width="180" />
-    </el-table>
-  </el-card>
+    <PaymentDetailDrawer
+      v-model:visible="paymentDrawerVisible"
+      :request-id="activePaymentId"
+      @closed="onPaymentDrawerClosed"
+    />
+  </div>
 </template>
+
+<style scoped>
+.contract-detail-panel {
+  min-height: 240px;
+}
+
+.mono {
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.create-masthead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: linear-gradient(180deg, #fffdf7 0%, #f9f1e0 100%);
+  border: 1px solid #e3d5b8;
+  border-radius: 10px;
+}
+
+.create-masthead__title {
+  font-size: 16px;
+  font-weight: 700;
+  color: #3f3527;
+}
+
+.pay-progress__figures {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 24px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  color: #6e6458;
+}
+
+.pay-progress__figures b {
+  color: #3f3527;
+}
+
+.section-stat {
+  font-size: 12px;
+  color: #8c6a2f;
+}
+
+.payment-table :deep(.el-table__row) {
+  cursor: pointer;
+}
+
+.attachment-upload :deep(.el-upload-dragger) {
+  padding: 16px 20px;
+}
+</style>

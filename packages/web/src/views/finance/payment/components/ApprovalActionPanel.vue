@@ -4,6 +4,7 @@ import { useRouter } from "vue-router";
 import type { PaymentRequestDetail } from "@/api/payment";
 import type { ApprovalDetailResponse } from "@/api/approval";
 import type { WeComUser } from "@/api/wecom";
+import FinSection from "../../shared/components/FinSection.vue";
 import type { PaymentTagType } from "../payment-labels";
 
 defineOptions({ name: "PaymentApprovalActionPanel" });
@@ -53,6 +54,42 @@ const approvalStatusLabelMap: Record<string, string> = {
   withdrawn: "已撤回",
   completed: "已完成"
 };
+
+const approvalStatusTagTypeMap: Record<string, PaymentTagType> = {
+  pending: "warning",
+  in_progress: "warning",
+  approved: "success",
+  rejected: "danger",
+  cancelled: "info",
+  withdrawn: "info",
+  completed: "success"
+};
+
+const nodeStatusTagTypeMap: Record<string, PaymentTagType> = {
+  pending: "info",
+  in_progress: "warning",
+  completed: "success",
+  rejected: "danger",
+  skipped: "info",
+  cancelled: "info"
+};
+
+const aiReviewStatusTagTypeMap: Record<string, PaymentTagType> = {
+  pending: "info",
+  in_progress: "warning",
+  completed: "success",
+  failed: "danger"
+};
+
+const aiOutcomeTagTypeMap: Record<string, PaymentTagType> = {
+  approve: "success",
+  reject: "danger"
+};
+
+const toStatusTagType = (
+  map: Record<string, PaymentTagType>,
+  value: string | null | undefined
+): PaymentTagType => (value ? (map[value] ?? "info") : "info");
 
 const nodeTypeLabelMap: Record<string, string> = {
   start: "发起",
@@ -181,118 +218,156 @@ const goToApprovalDetail = () => {
 </script>
 
 <template>
-  <div v-if="detail?.approval_instance_id" style="margin-bottom: 12px">
-    <el-button type="info" plain @click="goToApprovalDetail">
-      查看审批详情
-    </el-button>
-  </div>
-
-  <el-divider v-if="detail">AI风险评估</el-divider>
-  <div v-if="detail" style="margin-bottom: 8px">
-    <el-tag :type="riskTagType[riskStatus] || 'info'">{{
-      toRiskStatusLabel(riskStatus)
-    }}</el-tag>
-  </div>
-  <el-descriptions v-if="riskReport" :column="2" border>
-    <el-descriptions-item label="风险等级">
-      <el-tag :type="toRiskLevelTagType(riskReport.overall_risk)">
-        {{ toRiskLevelLabel(riskReport.overall_risk) }}
-      </el-tag>
-    </el-descriptions-item>
-    <el-descriptions-item label="风险分数">{{
-      riskReport.score ?? "-"
-    }}</el-descriptions-item>
-    <el-descriptions-item label="总结" :span="2">{{
-      riskReport.summary || "-"
-    }}</el-descriptions-item>
-    <el-descriptions-item label="建议" :span="2">
-      {{
-        Array.isArray(riskReport.recommendations)
-          ? riskReport.recommendations.join("；")
-          : "-"
-      }}
-    </el-descriptions-item>
-  </el-descriptions>
-
-  <el-divider v-if="approvalDetail">审批信息</el-divider>
-  <el-descriptions v-if="approvalDetail" :column="2" border>
-    <el-descriptions-item label="审批单号">
-      {{ approvalDetail.instance.instance_no }}
-    </el-descriptions-item>
-    <el-descriptions-item label="审批状态">
-      {{ toApprovalStatusLabel(approvalDetail.instance.status) }}
-    </el-descriptions-item>
-    <el-descriptions-item label="当前节点">
-      {{ currentNodeLabel }}
-    </el-descriptions-item>
-    <el-descriptions-item label="发起人">
-      {{ toUserLabel(approvalDetail.instance.initiator_userid) }}
-    </el-descriptions-item>
-  </el-descriptions>
-
-  <el-table
-    v-if="approvalDetail"
-    :data="roundNodes"
-    size="small"
-    style="margin-top: 12px"
-  >
-    <el-table-column prop="node_name" label="节点" min-width="140" />
-    <el-table-column label="类型" width="120">
-      <template #default="scope">{{
-        toNodeTypeLabel(scope.row.node_type)
-      }}</template>
-    </el-table-column>
-    <el-table-column label="状态" width="110">
-      <template #default="scope">{{
-        toNodeStatusLabel(scope.row.status)
-      }}</template>
-    </el-table-column>
-    <el-table-column label="审批意见" min-width="260">
-      <template #default="scope">
-        <template v-if="getNodeTasks(scope.row.id).length">
-          <div
-            v-for="task in getNodeTasks(scope.row.id)"
-            :key="task.id"
-            style="margin-bottom: 4px"
-          >
-            {{ toUserLabel(task.assignee_userid) }}：{{
-              toActionLabel(task.action)
-            }}
-            <span v-if="task.comment">（{{ task.comment }}）</span>
-          </div>
-        </template>
-        <span v-else>-</span>
-      </template>
-    </el-table-column>
-  </el-table>
-
-  <el-divider v-if="aiGateReviews.length > 0">AI审核意见</el-divider>
-  <el-table v-if="aiGateReviews.length > 0" :data="aiGateReviews" size="small">
-    <el-table-column prop="node_key" label="节点" width="160" />
-    <el-table-column label="状态" width="100">
-      <template #default="scope">{{
-        toAiReviewStatusLabel(scope.row.status)
-      }}</template>
-    </el-table-column>
-    <el-table-column label="结论" width="100">
-      <template #default="scope">{{
-        toAiOutcomeLabel(scope.row.outcome)
-      }}</template>
-    </el-table-column>
-    <el-table-column label="总结/意见" min-width="260">
-      <template #default="scope">{{
-        scope.row.summary || scope.row.comment || "-"
-      }}</template>
-    </el-table-column>
-    <el-table-column label="建议" min-width="260">
-      <template #default="scope">
+  <FinSection v-if="detail" title="AI风险评估">
+    <div style="margin-bottom: 8px">
+      <el-tag :type="riskTagType[riskStatus] || 'info'">{{
+        toRiskStatusLabel(riskStatus)
+      }}</el-tag>
+    </div>
+    <el-descriptions v-if="riskReport" :column="2" border>
+      <el-descriptions-item label="风险等级">
+        <el-tag :type="toRiskLevelTagType(riskReport.overall_risk)">
+          {{ toRiskLevelLabel(riskReport.overall_risk) }}
+        </el-tag>
+      </el-descriptions-item>
+      <el-descriptions-item label="风险分数">{{
+        riskReport.score ?? "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="总结" :span="2">{{
+        riskReport.summary || "-"
+      }}</el-descriptions-item>
+      <el-descriptions-item label="建议" :span="2">
         {{
-          Array.isArray(scope.row.recommendations) &&
-          scope.row.recommendations.length > 0
-            ? scope.row.recommendations.join("；")
+          Array.isArray(riskReport.recommendations)
+            ? riskReport.recommendations.join("；")
             : "-"
         }}
-      </template>
-    </el-table-column>
-  </el-table>
+      </el-descriptions-item>
+    </el-descriptions>
+  </FinSection>
+
+  <FinSection
+    v-if="approvalDetail || detail?.approval_instance_id"
+    title="审批信息"
+  >
+    <template #extra>
+      <el-button
+        v-if="detail?.approval_instance_id"
+        type="info"
+        plain
+        size="small"
+        @click="goToApprovalDetail"
+      >
+        查看审批详情
+      </el-button>
+    </template>
+
+    <el-descriptions v-if="approvalDetail" :column="2" border>
+      <el-descriptions-item label="审批单号">
+        {{ approvalDetail.instance.instance_no }}
+      </el-descriptions-item>
+      <el-descriptions-item label="审批状态">
+        <el-tag
+          :type="
+            toStatusTagType(
+              approvalStatusTagTypeMap,
+              approvalDetail.instance.status
+            )
+          "
+        >
+          {{ toApprovalStatusLabel(approvalDetail.instance.status) }}
+        </el-tag>
+      </el-descriptions-item>
+      <el-descriptions-item label="当前节点">
+        {{ currentNodeLabel }}
+      </el-descriptions-item>
+      <el-descriptions-item label="发起人">
+        {{ toUserLabel(approvalDetail.instance.initiator_userid) }}
+      </el-descriptions-item>
+    </el-descriptions>
+
+    <el-table
+      v-if="approvalDetail"
+      :data="roundNodes"
+      size="small"
+      style="margin-top: 12px"
+    >
+      <el-table-column prop="node_name" label="节点" min-width="140" />
+      <el-table-column label="类型" width="120">
+        <template #default="scope">{{
+          toNodeTypeLabel(scope.row.node_type)
+        }}</template>
+      </el-table-column>
+      <el-table-column label="状态" width="110">
+        <template #default="scope">
+          <el-tag
+            size="small"
+            :type="toStatusTagType(nodeStatusTagTypeMap, scope.row.status)"
+          >
+            {{ toNodeStatusLabel(scope.row.status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="审批意见" min-width="260">
+        <template #default="scope">
+          <template v-if="getNodeTasks(scope.row.id).length">
+            <div
+              v-for="task in getNodeTasks(scope.row.id)"
+              :key="task.id"
+              style="margin-bottom: 4px"
+            >
+              {{ toUserLabel(task.assignee_userid) }}：{{
+                toActionLabel(task.action)
+              }}
+              <span v-if="task.comment">（{{ task.comment }}）</span>
+            </div>
+          </template>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+    </el-table>
+  </FinSection>
+
+  <FinSection v-if="aiGateReviews.length > 0" title="AI审核意见">
+    <el-table :data="aiGateReviews" size="small">
+      <el-table-column prop="node_key" label="节点" width="160" />
+      <el-table-column label="状态" width="100">
+        <template #default="scope">
+          <el-tag
+            size="small"
+            :type="toStatusTagType(aiReviewStatusTagTypeMap, scope.row.status)"
+          >
+            {{ toAiReviewStatusLabel(scope.row.status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="结论" width="100">
+        <template #default="scope">
+          <el-tag
+            v-if="scope.row.outcome"
+            size="small"
+            :type="toStatusTagType(aiOutcomeTagTypeMap, scope.row.outcome)"
+          >
+            {{ toAiOutcomeLabel(scope.row.outcome) }}
+          </el-tag>
+          <span v-else>-</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="总结/意见" min-width="260">
+        <template #default="scope">{{
+          scope.row.summary || scope.row.comment || "-"
+        }}</template>
+      </el-table-column>
+      <el-table-column label="建议" min-width="260">
+        <template #default="scope">
+          {{
+            Array.isArray(scope.row.recommendations) &&
+            scope.row.recommendations.length > 0
+              ? scope.row.recommendations.join("；")
+              : "-"
+          }}
+        </template>
+      </el-table-column>
+    </el-table>
+  </FinSection>
 </template>

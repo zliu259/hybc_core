@@ -20,11 +20,9 @@ import {
   isApprovalFinishedLocked,
   isApprovalInProgress
 } from "../../shared/approvalLock";
-import {
-  formatBeijingDateTime,
-  toPaymentMethodLabel,
-  toPaymentStatusLabel
-} from "../payment-labels";
+import FinSection from "../../shared/components/FinSection.vue";
+import { formatMoney } from "../../shared/format";
+import { formatBeijingDateTime, toPaymentMethodLabel } from "../payment-labels";
 
 defineOptions({ name: "PaymentInfoCard" });
 
@@ -141,6 +139,23 @@ const remainingAmount = computed(() => {
   return (
     selectedContract.value.total_amount - selectedContract.value.paid_amount
   );
+});
+
+/** 阅读态：关联合同展示，优先取详情随带的合同快照 */
+const contractDisplay = computed(() => {
+  const snapshot = props.detail?.contract;
+  if (snapshot) return `${snapshot.contract_no} | ${snapshot.counterparty}`;
+  const matched = props.contracts.find(
+    item => item.id === props.detail?.contract_id
+  );
+  return matched ? `${matched.contract_no} | ${matched.counterparty}` : "-";
+});
+
+/** 阅读态：收款人展示（姓名 + 开户行/账号） */
+const payeeDisplay = computed(() => {
+  const payee = props.detail?.payee ?? selectedPayee.value;
+  if (!payee) return "-";
+  return `${payee.name}（${payee.bank_name} / ${payee.bank_account}）`;
 });
 
 const toChineseAmount = (amount: number): string => {
@@ -607,301 +622,313 @@ watch(
 </script>
 
 <template>
-  <div ref="formCardRef" style="margin-bottom: 12px">
-    <el-button
-      type="primary"
-      :loading="saving"
-      :disabled="!canEditFields"
-      @click="onSave"
-      >保存</el-button
-    >
-    <el-button
-      type="warning"
-      :loading="submitApprovalLoading"
-      :disabled="
-        approvalFinishedLock || inApprovalFlow || submitApprovalLoading
-      "
-      @click="onSubmitApproval"
-      >提交审批</el-button
-    >
-    <el-button
-      type="success"
-      :disabled="approvalFinishedLock || inApprovalFlow"
-      @click="onRiskAssessment"
-      >触发风险评估</el-button
-    >
-  </div>
-
-  <el-form label-width="120px" style="max-width: 900px">
-    <el-form-item label="关联合同">
-      <el-select
-        v-model="form.contract_id"
-        filterable
-        clearable
-        style="width: 360px"
-        disabled
-        @change="onSelectContract"
-      >
-        <el-option
-          v-for="item in contracts"
-          :key="item.id"
-          :value="item.id"
-          :label="`${item.contract_no} | ${item.counterparty}`"
-        />
-      </el-select>
-    </el-form-item>
-
-    <el-form-item label="所属项目">
-      <el-input
-        :model-value="projectName || '-'"
-        disabled
-        style="width: 360px"
-      />
-    </el-form-item>
-
-    <el-form-item label="剩余额度">
-      <el-tag type="success">{{ remainingAmountDisplay }}</el-tag>
-    </el-form-item>
-
-    <el-form-item label="付款类别">
-      <el-select
-        v-model="form.category"
-        clearable
-        style="width: 220px"
-        :disabled="!canEditFields"
-      >
-        <el-option label="特殊审批" value="特殊审批" />
-        <el-option label="行政费" value="行政费" />
-        <el-option label="劳务费" value="劳务费" />
-        <el-option label="机械费" value="机械费" />
-        <el-option label="材料费" value="材料费" />
-        <el-option label="其他费用" value="其他费用" />
-      </el-select>
-    </el-form-item>
-
-    <el-form-item label="收款人">
-      <el-select
-        v-model="form.payee_id"
-        filterable
-        clearable
-        style="width: 360px"
-        :disabled="!canEditFields"
-      >
-        <el-option
-          v-for="item in payees"
-          :key="item.id"
-          :value="item.id"
-          :label="`${item.name} (${item.bank_account})`"
-        />
-      </el-select>
-    </el-form-item>
-
-    <el-form-item label="申请金额">
-      <div style="display: flex; align-items: center; gap: 12px">
-        <el-input-number
-          v-model="form.amount"
-          :min="0"
-          :precision="2"
-          :step="1000"
-          :disabled="!canEditFields"
-        />
-        <span style="font-weight: 700; color: #6b4f2a">{{
-          amountDisplay
-        }}</span>
-      </div>
-    </el-form-item>
-
-    <el-form-item label="预计付款日">
-      <el-date-picker
-        v-model="form.expected_payment_date"
-        type="date"
-        value-format="YYYY-MM-DD"
-        :disabled="!canEditFields"
-      />
-    </el-form-item>
-
-    <el-form-item label="付款方式">
-      <el-select
-        v-model="form.payment_method"
-        clearable
-        style="width: 220px"
-        :disabled="!canEditFields"
-      >
-        <el-option label="对公转账" value="对公转账" />
-        <el-option label="现金" value="现金" />
-        <el-option label="票据" value="票据" />
-        <el-option label="其他" value="其他" />
-      </el-select>
-    </el-form-item>
-
-    <el-form-item label="付款内容">
-      <el-input
-        v-model="form.content"
-        type="textarea"
-        :rows="3"
-        :disabled="!canEditFields"
-      />
-    </el-form-item>
-
-    <el-form-item label="备注">
-      <el-input
-        v-model="form.remark"
-        type="textarea"
-        :rows="2"
-        :disabled="!canEditFields"
-      />
-    </el-form-item>
-    <el-form-item label="我方付款主体">
-      <el-input
-        :model-value="selectedEntity ? selectedEntity.entity_name : '-'"
-        disabled
-        style="width: 360px"
-      />
-    </el-form-item>
-    <el-form-item label="我方付款账号">
-      <el-input
-        :model-value="
-          selectedEntityAccount
-            ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
-            : '-'
-        "
-        disabled
-        style="width: 520px"
-      />
-    </el-form-item>
-    <el-form-item label="对方主体">
-      <el-input
-        :model-value="selectedPayee ? selectedPayee.name : '-'"
-        disabled
-        style="width: 360px"
-      />
-    </el-form-item>
-    <el-form-item label="对方收款账号">
-      <el-input
-        :model-value="
-          selectedPayee
-            ? `${selectedPayee.bank_name} / ${selectedPayee.bank_account}`
-            : '-'
-        "
-        disabled
-        style="width: 520px"
-      />
-    </el-form-item>
-    <el-form-item label="付款附件">
-      <div style="width: 100%">
-        <el-upload
-          drag
-          action="#"
-          :show-file-list="false"
-          :disabled="uploadingAttachment"
-          :http-request="uploadAttachment"
-          accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+  <div ref="formCardRef">
+    <FinSection title="申请信息">
+      <div style="margin-bottom: 12px">
+        <el-button
+          v-if="canEditFields"
+          type="primary"
+          :loading="saving"
+          @click="onSave"
+          >保存</el-button
         >
-          <div class="el-upload__text">
-            拖拽文件到这里，或 <em>点击上传</em>
-          </div>
-          <template #tip>
-            <div class="el-upload__tip">
-              审批结束后支持补传凭证附件；审批中及已结束默认不允许删除附件
-            </div>
-          </template>
-        </el-upload>
-
-        <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
-          <el-table-column label="文件名" min-width="260">
-            <template #default="scope">{{ scope.row.file_name }}</template>
-          </el-table-column>
-          <el-table-column label="大小" width="120">
-            <template #default="scope">{{
-              scope.row.file_size ?? "-"
-            }}</template>
-          </el-table-column>
-          <el-table-column label="操作" width="220" fixed="right">
-            <template #default="scope">
-              <el-link
-                type="primary"
-                @click="
-                  openAttachmentPreview(
-                    scope.row.file_key,
-                    scope.row.file_name || scope.row.file_key
-                  )
-                "
-              >
-                预览
-              </el-link>
-              <el-link
-                :href="fileUrl(scope.row.file_key)"
-                target="_blank"
-                :download="scope.row.file_name || true"
-                rel="noopener noreferrer"
-                type="success"
-                style="margin-left: 12px"
-              >
-                下载
-              </el-link>
-              <el-button
-                link
-                type="danger"
-                style="margin-left: 12px"
-                :disabled="inApprovalFlow"
-                @click="removeAttachment(scope.$index)"
-              >
-                移除
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+        <el-button
+          type="warning"
+          :loading="submitApprovalLoading"
+          :disabled="
+            approvalFinishedLock || inApprovalFlow || submitApprovalLoading
+          "
+          @click="onSubmitApproval"
+          >提交审批</el-button
+        >
+        <el-button
+          type="success"
+          :disabled="approvalFinishedLock || inApprovalFlow"
+          @click="onRiskAssessment"
+          >触发风险评估</el-button
+        >
       </div>
-    </el-form-item>
-  </el-form>
 
-  <el-divider v-if="detail">申请摘要</el-divider>
-  <el-descriptions v-if="detail" :column="2" border>
-    <el-descriptions-item label="流水号">{{
-      detail.serial_no
-    }}</el-descriptions-item>
-    <el-descriptions-item label="状态">{{
-      toPaymentStatusLabel(detail.status)
-    }}</el-descriptions-item>
-    <el-descriptions-item label="付款类别">{{
-      toPaymentCategoryLabel(detail.category)
-    }}</el-descriptions-item>
-    <el-descriptions-item label="付款方式">{{
-      toPaymentMethodLabel(detail.payment_method)
-    }}</el-descriptions-item>
-    <el-descriptions-item label="所属项目">{{
-      projectName || detail.project_id
-    }}</el-descriptions-item>
-    <el-descriptions-item label="我方主体">{{
-      selectedEntity?.entity_name || "-"
-    }}</el-descriptions-item>
-    <el-descriptions-item label="我方账号" :span="2">{{
-      detail.payment_account ||
-      (selectedEntityAccount
-        ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
-        : "-")
-    }}</el-descriptions-item>
-    <el-descriptions-item label="对方单位">{{
-      selectedPayee?.name || detail.contract?.counterparty || "-"
-    }}</el-descriptions-item>
-    <el-descriptions-item label="对方账号">{{
-      selectedPayee
-        ? `${selectedPayee.bank_name} / ${selectedPayee.bank_account}`
-        : "-"
-    }}</el-descriptions-item>
-    <el-descriptions-item label="申请金额" :span="2">{{
-      amountDisplay
-    }}</el-descriptions-item>
-    <el-descriptions-item label="支付时间">
-      {{ formatBeijingDateTime(detail.paid_at) }}
-    </el-descriptions-item>
-    <el-descriptions-item label="支付流水号">
-      {{ detail.payment_reference || "-" }}
-    </el-descriptions-item>
-    <el-descriptions-item label="付款账户" :span="2">
-      {{ detail.payment_account || "-" }}
-    </el-descriptions-item>
-  </el-descriptions>
+      <el-form
+        v-if="canEditFields"
+        label-width="120px"
+        style="max-width: 900px"
+      >
+        <el-form-item label="关联合同">
+          <el-select
+            v-model="form.contract_id"
+            filterable
+            clearable
+            style="width: 360px"
+            disabled
+            @change="onSelectContract"
+          >
+            <el-option
+              v-for="item in contracts"
+              :key="item.id"
+              :value="item.id"
+              :label="`${item.contract_no} | ${item.counterparty}`"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="所属项目">
+          <el-input
+            :model-value="projectName || '-'"
+            disabled
+            style="width: 360px"
+          />
+        </el-form-item>
+
+        <el-form-item label="剩余额度">
+          <el-tag type="success">{{ remainingAmountDisplay }}</el-tag>
+        </el-form-item>
+
+        <el-form-item label="付款类别">
+          <el-select
+            v-model="form.category"
+            clearable
+            style="width: 220px"
+            :disabled="!canEditFields"
+          >
+            <el-option label="特殊审批" value="特殊审批" />
+            <el-option label="行政费" value="行政费" />
+            <el-option label="劳务费" value="劳务费" />
+            <el-option label="机械费" value="机械费" />
+            <el-option label="材料费" value="材料费" />
+            <el-option label="其他费用" value="其他费用" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="收款人">
+          <el-select
+            v-model="form.payee_id"
+            filterable
+            clearable
+            style="width: 360px"
+            :disabled="!canEditFields"
+          >
+            <el-option
+              v-for="item in payees"
+              :key="item.id"
+              :value="item.id"
+              :label="`${item.name} (${item.bank_account})`"
+            />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="申请金额">
+          <div style="display: flex; align-items: center; gap: 12px">
+            <el-input-number
+              v-model="form.amount"
+              :min="0"
+              :precision="2"
+              :step="1000"
+              :disabled="!canEditFields"
+            />
+            <span style="font-weight: 700; color: #6b4f2a">{{
+              amountDisplay
+            }}</span>
+          </div>
+        </el-form-item>
+
+        <el-form-item label="预计付款日">
+          <el-date-picker
+            v-model="form.expected_payment_date"
+            type="date"
+            value-format="YYYY-MM-DD"
+            :disabled="!canEditFields"
+          />
+        </el-form-item>
+
+        <el-form-item label="付款方式">
+          <el-select
+            v-model="form.payment_method"
+            clearable
+            style="width: 220px"
+            :disabled="!canEditFields"
+          >
+            <el-option label="对公转账" value="对公转账" />
+            <el-option label="现金" value="现金" />
+            <el-option label="票据" value="票据" />
+            <el-option label="其他" value="其他" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="付款内容">
+          <el-input
+            v-model="form.content"
+            type="textarea"
+            :rows="3"
+            :disabled="!canEditFields"
+          />
+        </el-form-item>
+
+        <el-form-item label="备注">
+          <el-input
+            v-model="form.remark"
+            type="textarea"
+            :rows="2"
+            :disabled="!canEditFields"
+          />
+        </el-form-item>
+        <el-form-item label="我方付款主体">
+          <el-input
+            :model-value="selectedEntity ? selectedEntity.entity_name : '-'"
+            disabled
+            style="width: 360px"
+          />
+        </el-form-item>
+        <el-form-item label="我方付款账号">
+          <el-input
+            :model-value="
+              selectedEntityAccount
+                ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
+                : '-'
+            "
+            disabled
+            style="width: 520px"
+          />
+        </el-form-item>
+        <el-form-item label="对方主体">
+          <el-input
+            :model-value="selectedPayee ? selectedPayee.name : '-'"
+            disabled
+            style="width: 360px"
+          />
+        </el-form-item>
+        <el-form-item label="对方收款账号">
+          <el-input
+            :model-value="
+              selectedPayee
+                ? `${selectedPayee.bank_name} / ${selectedPayee.bank_account}`
+                : '-'
+            "
+            disabled
+            style="width: 520px"
+          />
+        </el-form-item>
+      </el-form>
+
+      <el-descriptions v-else :column="2" border>
+        <el-descriptions-item label="关联合同">{{
+          contractDisplay
+        }}</el-descriptions-item>
+        <el-descriptions-item label="所属项目">{{
+          projectName || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="合同剩余额度">
+          <el-tag type="success">{{ remainingAmountDisplay }}</el-tag>
+        </el-descriptions-item>
+        <el-descriptions-item label="付款类别">{{
+          toPaymentCategoryLabel(detail?.category)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="收款人">{{
+          payeeDisplay
+        }}</el-descriptions-item>
+        <el-descriptions-item label="申请金额">
+          <span class="read-amount">¥ {{ formatMoney(detail?.amount) }}</span>
+          <span v-if="detail?.amount_cn" class="read-amount-cn"
+            >（{{ detail.amount_cn }}）</span
+          >
+        </el-descriptions-item>
+        <el-descriptions-item label="预计付款日">{{
+          detail?.expected_payment_date || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="付款方式">{{
+          toPaymentMethodLabel(detail?.payment_method)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="我方付款主体">{{
+          selectedEntity?.entity_name || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="我方付款账号">{{
+          detail?.payment_account ||
+          (selectedEntityAccount
+            ? `${selectedEntityAccount.bank_name} / ${selectedEntityAccount.account_no}`
+            : "-")
+        }}</el-descriptions-item>
+        <el-descriptions-item label="付款内容" :span="2">{{
+          detail?.content || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="备注" :span="2">{{
+          detail?.remark || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail?.paid_at" label="支付时间">{{
+          formatBeijingDateTime(detail.paid_at)
+        }}</el-descriptions-item>
+        <el-descriptions-item v-if="detail?.paid_at" label="支付流水号">{{
+          detail.payment_reference || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item
+          v-if="detail?.paid_at"
+          label="付款账户"
+          :span="2"
+          >{{ detail.payment_account || "-" }}</el-descriptions-item
+        >
+      </el-descriptions>
+    </FinSection>
+
+    <FinSection title="附件">
+      <el-upload
+        drag
+        action="#"
+        :show-file-list="false"
+        :disabled="uploadingAttachment"
+        :http-request="uploadAttachment"
+        accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+      >
+        <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
+        <template #tip>
+          <div class="el-upload__tip">
+            审批结束后支持补传凭证附件；审批中及已结束默认不允许删除附件
+          </div>
+        </template>
+      </el-upload>
+
+      <el-table :data="attachmentItems" size="small" style="margin-top: 12px">
+        <el-table-column label="文件名" min-width="260">
+          <template #default="scope">{{ scope.row.file_name }}</template>
+        </el-table-column>
+        <el-table-column label="大小" width="120">
+          <template #default="scope">{{ scope.row.file_size ?? "-" }}</template>
+        </el-table-column>
+        <el-table-column label="操作" width="220" fixed="right">
+          <template #default="scope">
+            <el-link
+              type="primary"
+              @click="
+                openAttachmentPreview(
+                  scope.row.file_key,
+                  scope.row.file_name || scope.row.file_key
+                )
+              "
+            >
+              预览
+            </el-link>
+            <el-link
+              :href="fileUrl(scope.row.file_key)"
+              target="_blank"
+              :download="scope.row.file_name || true"
+              rel="noopener noreferrer"
+              type="success"
+              style="margin-left: 12px"
+            >
+              下载
+            </el-link>
+            <el-button
+              link
+              type="danger"
+              style="margin-left: 12px"
+              :disabled="inApprovalFlow"
+              @click="removeAttachment(scope.$index)"
+            >
+              移除
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+    </FinSection>
+  </div>
 
   <el-drawer
     v-model="previewDrawerVisible"
@@ -1023,3 +1050,19 @@ watch(
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+.read-amount {
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  font-weight: 700;
+  color: #6b4f2a;
+  font-variant-numeric: tabular-nums;
+}
+
+.read-amount-cn {
+  margin-left: 6px;
+  font-size: 12px;
+  color: #8c6a2f;
+}
+</style>
