@@ -11,6 +11,7 @@ import {
 } from "@/api/contract";
 import { listProjects, type Project } from "@/api/project";
 import ContractDetailDrawer from "@/views/finance/contract/components/ContractDetailDrawer.vue";
+import { formatMoney } from "../shared/format";
 
 defineOptions({ name: "InboundContractList" });
 
@@ -75,6 +76,12 @@ const goCreate = () => {
 const goDetail = (id: number) => {
   activeContractId.value = id;
   detailDrawerVisible.value = true;
+};
+
+// 迷你进度百分比：相对合同总额，封顶 100（超额由 exception 状态提示）
+const progressPercent = (amount: number, totalAmount: number) => {
+  if (!(totalAmount > 0)) return 0;
+  return Math.min(100, Math.round((amount / totalAmount) * 100));
 };
 
 const openAmountDrawer = (row: Contract) => {
@@ -178,9 +185,69 @@ onMounted(async () => {
         }}</template>
       </el-table-column>
       <el-table-column prop="counterparty" label="对方单位" min-width="180" />
-      <el-table-column prop="total_amount" label="合同总额" width="120" />
-      <el-table-column prop="invoiced_amount" label="已开票" width="120" />
-      <el-table-column prop="received_amount" label="已收款" width="120" />
+      <el-table-column label="合同总额" width="130" align="right">
+        <template #default="scope">{{
+          formatMoney(scope.row.total_amount)
+        }}</template>
+      </el-table-column>
+      <el-table-column label="收款进度" min-width="220">
+        <template #default="scope">
+          <div class="mini-progress">
+            <span class="mini-progress__label">开票</span>
+            <el-progress
+              class="mini-progress__bar"
+              :stroke-width="6"
+              :show-text="false"
+              :percentage="
+                progressPercent(
+                  scope.row.invoiced_amount,
+                  scope.row.total_amount
+                )
+              "
+              :color="
+                scope.row.invoiced_amount > scope.row.total_amount
+                  ? ''
+                  : '#c9a35c'
+              "
+              :status="
+                scope.row.invoiced_amount > scope.row.total_amount
+                  ? 'exception'
+                  : ''
+              "
+            />
+            <span class="mini-progress__amount">{{
+              formatMoney(scope.row.invoiced_amount)
+            }}</span>
+          </div>
+          <div class="mini-progress">
+            <span class="mini-progress__label">到账</span>
+            <el-progress
+              class="mini-progress__bar"
+              :stroke-width="6"
+              :show-text="false"
+              :percentage="
+                progressPercent(
+                  scope.row.received_amount,
+                  scope.row.total_amount
+                )
+              "
+              :color="
+                scope.row.received_amount > scope.row.total_amount
+                  ? ''
+                  : '#c9a35c'
+              "
+              :status="
+                scope.row.received_amount > scope.row.total_amount
+                  ? 'exception'
+                  : ''
+              "
+            />
+            <span class="mini-progress__amount">{{
+              formatMoney(scope.row.received_amount)
+            }}</span>
+          </div>
+        </template>
+      </el-table-column>
       <el-table-column label="状态" width="120">
         <template #default="scope">{{
           statusLabel(scope.row.status)
@@ -271,3 +338,32 @@ onMounted(async () => {
     @closed="loadData"
   />
 </template>
+
+<style scoped>
+.mini-progress {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.mini-progress + .mini-progress {
+  margin-top: 4px;
+}
+
+.mini-progress__label {
+  flex-shrink: 0;
+  font-size: 12px;
+  color: #6e6458;
+}
+
+.mini-progress__bar {
+  flex: 1;
+}
+
+.mini-progress__amount {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: #3f3527;
+}
+</style>

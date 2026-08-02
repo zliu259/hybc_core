@@ -8,7 +8,14 @@ defineProps<{
 const emit = defineEmits<{
   (e: "update:visible", value: boolean): void;
   (e: "closed"): void;
+  /** 面板发起页面级跳转：本抽屉关闭并继续向上冒泡，让外层抽屉一并关闭 */
+  (e: "nav"): void;
 }>();
+
+const onPanelNav = () => {
+  emit("update:visible", false);
+  emit("nav");
+};
 </script>
 
 <template>
@@ -27,6 +34,7 @@ const emit = defineEmits<{
       :contract-id="contractId"
       @back="emit('update:visible', false)"
       @created="emit('update:visible', false)"
+      @nav="onPanelNav"
     />
   </el-drawer>
 </template>

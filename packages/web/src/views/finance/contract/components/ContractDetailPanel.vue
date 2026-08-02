@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
+import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
-import { contractTypeLabel } from "@/utils/enum-labels";
+import { contractTypeLabel, statusLabel } from "@/utils/enum-labels";
 import {
   createContract,
   getAiReview,
@@ -16,6 +17,14 @@ import {
   type ContractAmountChange,
   type ContractDetail
 } from "@/api/contract";
+import {
+  listInvoiceRequests,
+  listInvoices,
+  listReceipts,
+  type Invoice,
+  type InvoiceRequest,
+  type Receipt
+} from "@/api/receipt";
 import {
   createUploadSignature,
   resolveUploadUrl,
@@ -37,6 +46,7 @@ import {
 import FinanceDetailHeader from "../../shared/components/FinanceDetailHeader.vue";
 import FinSection from "../../shared/components/FinSection.vue";
 import { formatMoney } from "../../shared/format";
+import ReceiptDetailDrawer from "../../receipt/components/ReceiptDetailDrawer.vue";
 import PaymentDetailDrawer from "../../payment/components/PaymentDetailDrawer.vue";
 import {
   paymentStatusTagType,
@@ -52,6 +62,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   (e: "back"): void;
   (e: "created", id: number): void;
+  /** 面板内发起了页面级跳转（如去开票），宿主抽屉应随之关闭 */
+  (e: "nav"): void;
 }>();
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
@@ -93,6 +105,8 @@ const getOrCreateSnapshotKey = (
 const { projects, loadProjects } = useProjectOptions();
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const userStore = useUserStoreHook();
+// 仅用于跳转导航（收款工作台），Panel 不读取路由参数
+const router = useRouter();
 const entities = ref<Entity[]>([]);
 const entityBankAccountMap = ref<Record<number, EntityBankAccount[]>>({});
 const detail = ref<ContractDetail | null>(null);
@@ -267,6 +281,122 @@ const paymentTotalAmount = computed(() =>
 
 const activePaymentId = ref<number | null>(null);
 const paymentDrawerVisible = ref(false);
+
+// ===== 收款合同（inbound）：开票记录 + 收款登记 =====
+const invoiceRequests = ref<InvoiceRequest[]>([]);
+const invoices = ref<Invoice[]>([]);
+const receipts = ref<Receipt[]>([]);
+
+const isInbound = computed(() => detail.value?.direction === "inbound");
+
+// 开票申请/正式发票共用一套状态口径（键覆盖后端两套枚举全集，文案与 invoice.vue 一致）
+const invoiceStatusTagTypeMap: Record<string, TagType> = {
+  draft: "info",
+  submitted: "warning",
+  pending_approval: "warning",
+  approved: "primary",
+  ready_to_issue: "warning",
+  issued: "success",
+  rejected: "danger",
+  cancelled: "info",
+  red_issued: "warning",
+  voided: "info"
+};
+const invoiceStatusLabelMap: Record<string, string> = {
+  draft: "草稿",
+  submitted: "已提交",
+  pending_approval: "审批中",
+  approved: "已通过",
+  ready_to_issue: "待签发",
+  issued: "已签发",
+  rejected: "已驳回",
+  cancelled: "已取消",
+  red_issued: "已红冲",
+  voided: "已作废"
+};
+const toInvoiceStatusTagType = (value: string): TagType =>
+  invoiceStatusTagTypeMap[value] ?? "info";
+const toInvoiceStatusLabel = (value: string) =>
+  invoiceStatusLabelMap[value] ?? statusLabel(value);
+
+const receiptStatusTagTypeMap: Record<string, TagType> = {
+  recorded: "success",
+  partial_refunded: "warning",
+  refunded: "info"
+};
+const toReceiptStatusTagType = (value: string): TagType =>
+  receiptStatusTagTypeMap[value] ?? "info";
+
+const invoicedPercentage = computed(() => {
+  const total = detail.value?.total_amount ?? 0;
+  const invoiced = detail.value?.invoiced_amount ?? 0;
+  return total > 0 ? Math.min(100, Math.round((invoiced / total) * 100)) : 0;
+});
+const isOverInvoiced = computed(() => {
+  if (!detail.value) return false;
+  return detail.value.invoiced_amount > detail.value.total_amount;
+});
+const receivedPercentage = computed(() => {
+  const total = detail.value?.total_amount ?? 0;
+  const received = detail.value?.received_amount ?? 0;
+  return total > 0 ? Math.min(100, Math.round((received / total) * 100)) : 0;
+});
+const isOverReceived = computed(() => {
+  if (!detail.value) return false;
+  return detail.value.received_amount > detail.value.total_amount;
+});
+
+// 仅 inbound 拉取；isCreate/outbound 时清空并跳过
+const loadInboundRecords = async () => {
+  if (isCreate.value || !isInbound.value) {
+    invoiceRequests.value = [];
+    invoices.value = [];
+    receipts.value = [];
+    return;
+  }
+  const [requestRes, invoiceRes, receiptRes] = await Promise.all([
+    listInvoiceRequests({ contract_id: contractId.value, pageSize: 100 }),
+    listInvoices({ contract_id: contractId.value, pageSize: 100 }),
+    listReceipts({ contract_id: contractId.value, pageSize: 100 })
+  ]);
+  invoiceRequests.value = requestRes.data;
+  invoices.value = invoiceRes.data;
+  receipts.value = receiptRes.data;
+};
+
+// 在途开票申请：已签发/已驳回/已取消的申请属于历史，不再算在途（与项目收款全貌口径一致）
+const pendingInvoiceRequests = computed(() =>
+  invoiceRequests.value.filter(
+    item =>
+      item.status !== "issued" &&
+      item.status !== "rejected" &&
+      item.status !== "cancelled"
+  )
+);
+
+const activeReceiptId = ref<number | null>(null);
+const receiptDrawerVisible = ref(false);
+
+const openReceiptDrawer = (id: number) => {
+  activeReceiptId.value = id;
+  receiptDrawerVisible.value = true;
+};
+
+const onReceiptDrawerClosed = async () => {
+  activeReceiptId.value = null;
+  // 收款登记可能在抽屉里发生变化，重载详情以刷新 received_amount 等口径
+  await loadDetail();
+};
+
+const goInvoiceWorkbench = () => {
+  router.push("/finance/receipt/workbench?step=invoice");
+  emit("nav");
+};
+
+const goReceiptWorkbench = () => {
+  router.push("/finance/receipt/workbench?step=receipt");
+  emit("nav");
+};
 
 const openPaymentDrawer = (id: number) => {
   activePaymentId.value = id;
@@ -505,7 +635,7 @@ const loadDetail = async () => {
     superEditMode.value = false;
     superEditNote.value = "";
     attachmentItems.value = parseAttachments(result.data.attachments_json);
-    await loadAiReview();
+    await Promise.all([loadAiReview(), loadInboundRecords()]);
   } finally {
     loading.value = false;
   }
@@ -858,7 +988,37 @@ onMounted(async () => {
         <el-button @click="goBack">返回</el-button>
       </template>
       <template #extra>
-        <div v-if="detail" class="pay-progress">
+        <div v-if="detail && isInbound" class="pay-progress">
+          <div class="pay-progress__figures">
+            <span>
+              已开票
+              <b class="mono">{{ formatMoney(detail.invoiced_amount) }}</b>
+              /
+              <b class="mono">{{ formatMoney(detail.total_amount) }}</b>
+            </span>
+          </div>
+          <el-progress
+            :percentage="invoicedPercentage"
+            :stroke-width="8"
+            :color="isOverInvoiced ? '' : '#c9a35c'"
+            :status="isOverInvoiced ? 'exception' : ''"
+          />
+          <div class="pay-progress__figures" style="margin-top: 8px">
+            <span>
+              已到账
+              <b class="mono">{{ formatMoney(detail.received_amount) }}</b>
+              /
+              <b class="mono">{{ formatMoney(detail.total_amount) }}</b>
+            </span>
+          </div>
+          <el-progress
+            :percentage="receivedPercentage"
+            :stroke-width="8"
+            :color="isOverReceived ? '' : '#c9a35c'"
+            :status="isOverReceived ? 'exception' : ''"
+          />
+        </div>
+        <div v-else-if="detail" class="pay-progress">
           <div class="pay-progress__figures">
             <span>
               合同总额
@@ -1224,7 +1384,11 @@ onMounted(async () => {
         </el-table>
       </FinSection>
 
-      <FinSection v-if="detail" title="关联付款申请">
+      <!-- 收款合同不存在对外付款，仅 outbound 展示 -->
+      <FinSection
+        v-if="detail && detail.direction === 'outbound'"
+        title="关联付款申请"
+      >
         <template #extra>
           <span class="section-stat">
             共 {{ paymentRequests.length }} 笔 / 合计
@@ -1271,6 +1435,119 @@ onMounted(async () => {
         <el-empty v-else description="暂无关联付款" :image-size="64" />
       </FinSection>
     </template>
+
+    <!-- 收款合同专属：开票记录 / 收款登记（阅读态与编辑态均展示） -->
+    <FinSection v-if="detail && isInbound" title="开票记录">
+      <template #extra>
+        <span class="section-stat">
+          已开票合计 ¥{{ formatMoney(detail.invoiced_amount) }}
+        </span>
+        <el-button link type="primary" @click="goInvoiceWorkbench">
+          去开票
+        </el-button>
+      </template>
+      <template v-if="pendingInvoiceRequests.length || invoices.length">
+        <div v-if="pendingInvoiceRequests.length" class="record-block">
+          <div class="record-block__title">在途开票申请</div>
+          <el-table :data="pendingInvoiceRequests" size="small">
+            <el-table-column label="申请单号" min-width="170">
+              <template #default="scope">
+                <span class="mono">{{ scope.row.request_no }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column
+              prop="invoice_category"
+              label="发票类目"
+              min-width="140"
+            />
+            <el-table-column label="含税金额" width="140" align="right">
+              <template #default="scope">
+                {{ formatMoney(scope.row.amount_with_tax) }}
+              </template>
+            </el-table-column>
+            <el-table-column label="状态" width="110">
+              <template #default="scope">
+                <el-tag :type="toInvoiceStatusTagType(scope.row.status)">
+                  {{ toInvoiceStatusLabel(scope.row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+        <div v-if="invoices.length" class="record-block">
+          <div class="record-block__title">正式发票</div>
+          <el-table :data="invoices" size="small">
+            <el-table-column label="发票单号" min-width="170">
+              <template #default="scope">
+                <span class="mono">{{ scope.row.invoice_no }}</span>
+              </template>
+            </el-table-column>
+            <el-table-column label="含税金额" width="140" align="right">
+              <template #default="scope">
+                {{ formatMoney(scope.row.amount_with_tax ?? scope.row.amount) }}
+              </template>
+            </el-table-column>
+            <el-table-column prop="issue_date" label="开票日期" width="130" />
+            <el-table-column label="状态" width="110">
+              <template #default="scope">
+                <el-tag :type="toInvoiceStatusTagType(scope.row.status)">
+                  {{ toInvoiceStatusLabel(scope.row.status) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+          </el-table>
+        </div>
+      </template>
+      <el-empty v-else description="暂无开票记录" :image-size="64" />
+    </FinSection>
+
+    <FinSection v-if="detail && isInbound" title="收款登记">
+      <template #extra>
+        <span class="section-stat">
+          已到账合计 ¥{{ formatMoney(detail.received_amount) }}
+        </span>
+        <el-button link type="primary" @click="goReceiptWorkbench">
+          新增收款登记
+        </el-button>
+      </template>
+      <el-table v-if="receipts.length" :data="receipts" size="small">
+        <el-table-column label="收款单号" min-width="170">
+          <template #default="scope">
+            <span class="mono">{{ scope.row.receipt_no }}</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="金额" width="140" align="right">
+          <template #default="scope">
+            {{ formatMoney(scope.row.amount) }}
+          </template>
+        </el-table-column>
+        <el-table-column prop="received_date" label="到账日期" width="130" />
+        <el-table-column label="收款账户" min-width="160">
+          <template #default="scope">
+            {{ scope.row.payment_account || "-" }}
+          </template>
+        </el-table-column>
+        <el-table-column label="状态" width="110">
+          <template #default="scope">
+            <el-tag :type="toReceiptStatusTagType(scope.row.status)">
+              {{ statusLabel(scope.row.status) }}
+            </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="80" fixed="right">
+          <template #default="scope">
+            <el-button
+              link
+              type="primary"
+              @click="openReceiptDrawer(scope.row.id)"
+            >
+              查看
+            </el-button>
+          </template>
+        </el-table-column>
+      </el-table>
+      <el-empty v-else description="暂无收款登记" :image-size="64" />
+    </FinSection>
 
     <el-dialog
       v-model="approvalDialogVisible"
@@ -1370,6 +1647,12 @@ onMounted(async () => {
       :request-id="activePaymentId"
       @closed="onPaymentDrawerClosed"
     />
+
+    <ReceiptDetailDrawer
+      v-model:visible="receiptDrawerVisible"
+      :receipt-id="activeReceiptId"
+      @closed="onReceiptDrawerClosed"
+    />
   </div>
 </template>
 
@@ -1416,6 +1699,17 @@ onMounted(async () => {
 
 .section-stat {
   font-size: 12px;
+  color: #8c6a2f;
+}
+
+.record-block + .record-block {
+  margin-top: 14px;
+}
+
+.record-block__title {
+  margin-bottom: 6px;
+  font-size: 12px;
+  font-weight: 600;
   color: #8c6a2f;
 }
 

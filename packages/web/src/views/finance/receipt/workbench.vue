@@ -1,6 +1,9 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { message } from "@/utils/message";
+import { listProjects, type Project } from "@/api/project";
+import ProjectReceiptDrawer from "./components/ProjectReceiptDrawer.vue";
 import InboundContractList from "./contract.vue";
 import ReceiptDashboard from "./dashboard.vue";
 import InvoiceList from "./invoice.vue";
@@ -60,6 +63,24 @@ const hintMap: Record<ReceiptWorkflowStep, string> = {
 const currentTitle = computed(() => titleMap[activeStep.value]);
 const currentHint = computed(() => hintMap[activeStep.value]);
 
+const projectOptions = ref<Project[]>([]);
+const activeProjectId = ref<number | null>(null);
+const drawerVisible = ref(false);
+
+const loadProjectOptions = async () => {
+  try {
+    const res = await listProjects({ page: 1, pageSize: 500 });
+    projectOptions.value = res.data;
+  } catch {
+    message("项目列表加载失败，收款全貌入口暂不可用", { type: "warning" });
+  }
+};
+
+const openProjectDrawer = () => {
+  if (!activeProjectId.value) return;
+  drawerVisible.value = true;
+};
+
 const stepFromQuery = (): ReceiptWorkflowStep | null => {
   const step = String(route.query.step || "");
   if (["contract", "invoice", "receipt", "snapshot"].includes(step)) {
@@ -78,6 +99,7 @@ const switchStep = (step: ReceiptWorkflowStep) => {
 
 onMounted(() => {
   activeStep.value = stepFromQuery() || "contract";
+  void loadProjectOptions();
 });
 
 watch(
@@ -96,6 +118,30 @@ watch(
       <div>
         <div class="page-title">{{ currentTitle }}</div>
         <div class="page-subtitle">{{ currentHint }}</div>
+      </div>
+      <div class="page-header-actions">
+        <el-select
+          v-model="activeProjectId"
+          filterable
+          clearable
+          placeholder="按项目查看收款全貌"
+          style="width: 240px"
+        >
+          <el-option
+            v-for="item in projectOptions"
+            :key="item.id"
+            :value="item.id"
+            :label="item.project_name"
+          />
+        </el-select>
+        <el-button
+          type="primary"
+          plain
+          :disabled="!activeProjectId"
+          @click="openProjectDrawer"
+        >
+          收款全貌
+        </el-button>
       </div>
     </div>
 
@@ -119,6 +165,11 @@ watch(
       <ReceiptList v-else-if="activeStep === 'receipt'" />
       <ReceiptDashboard v-else />
     </section>
+
+    <ProjectReceiptDrawer
+      v-model:visible="drawerVisible"
+      :project-id="activeProjectId"
+    />
   </div>
 </template>
 
@@ -148,6 +199,12 @@ watch(
 .page-subtitle {
   margin-top: 4px;
   color: #6b7280;
+}
+
+.page-header-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 
 .workflow-steps {
@@ -187,6 +244,12 @@ watch(
 @media (max-width: 960px) {
   .page-header {
     align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .page-header-actions {
+    margin-top: 12px;
+    align-items: stretch;
     flex-direction: column;
   }
 

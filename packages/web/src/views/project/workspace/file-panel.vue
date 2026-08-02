@@ -125,7 +125,10 @@ onMounted(loadData);
 </script>
 
 <template>
-  <el-card v-loading="loading" shadow="never" header="文件库">
+  <el-card v-loading="loading" shadow="never" class="file-panel">
+    <template #header>
+      <span class="sec-title">文件库</span>
+    </template>
     <div class="toolbar">
       <el-select
         v-model="form.section_id"
@@ -161,6 +164,9 @@ onMounted(loadData);
     </div>
 
     <el-table :data="rows" size="small" stripe style="margin-top: 10px">
+      <template #empty>
+        <el-empty description="暂无文件" :image-size="48" />
+      </template>
       <el-table-column prop="file_name" label="文件名" min-width="220" />
       <el-table-column label="工作段" min-width="160">
         <template #default="scope">
@@ -176,7 +182,7 @@ onMounted(loadData);
           fileCategoryLabel(scope.row.category)
         }}</template>
       </el-table-column>
-      <el-table-column label="大小" width="110">
+      <el-table-column label="大小" width="110" align="right">
         <template #default="scope">{{
           formatBytes(scope.row.file_size)
         }}</template>
@@ -184,20 +190,22 @@ onMounted(loadData);
       <el-table-column prop="uploaded_by_userid" label="上传人" width="120" />
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openDrawer(scope.row)"
-            >详情</el-button
-          >
-          <el-link :href="scope.row.file_url" target="_blank" type="primary"
-            >查看</el-link
-          >
-          <el-popconfirm
-            title="确认移除该文件？"
-            @confirm="removeFile(scope.row)"
-          >
-            <template #reference>
-              <el-button link type="danger">移除</el-button>
-            </template>
-          </el-popconfirm>
+          <div class="op-cell">
+            <el-button link type="primary" @click="openDrawer(scope.row)"
+              >详情</el-button
+            >
+            <el-link :href="scope.row.file_url" target="_blank" type="primary"
+              >查看</el-link
+            >
+            <el-popconfirm
+              title="确认移除该文件？"
+              @confirm="removeFile(scope.row)"
+            >
+              <template #reference>
+                <el-button link type="danger">移除</el-button>
+              </template>
+            </el-popconfirm>
+          </div>
         </template>
       </el-table-column>
     </el-table>
@@ -237,9 +245,30 @@ onMounted(loadData);
 </template>
 
 <style scoped>
+.file-panel {
+  min-height: 200px;
+}
+
+.sec-title {
+  padding-left: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: #6b4f2a;
+  letter-spacing: 0.06em;
+  border-left: 3px solid #c9a35c;
+}
+
 .toolbar {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
+}
+
+.op-cell {
+  display: flex;
+  gap: 8px;
+  align-items: center;
 }
 </style>

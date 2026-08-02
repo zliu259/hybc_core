@@ -1749,3 +1749,32 @@
 - **关闭即刷新**：抽屉 `closed` 后列表重新拉数据（付款处理台同时刷新汇总条），抽屉内保存/提审/标记付款/退款的结果立即反映到列表。
 - **弹层层级**：Panel 内的 el-dialog / 附件预览抽屉统一加 `append-to-body`，避免被外层抽屉 transform/overflow 裁剪。
 - **健壮性**：`PaymentInfoCard` 的 requestId 改为取自 `detail.id`（不再依赖路由参数），详情未加载成功时保存/提审/风险评估/附件同步均拦截并提示，杜绝 `/payment/NaN` 畸形请求。
+
+## 11. 收款以合同/项目为中心的整合 + 项目大厅重设计（2026-08）
+
+### 11.1 收款合同版面集成开票与到账
+
+- 收款合同详情（`ContractDetailPanel`，inbound 方向）表头进度条为「已开票/已到账」双口径（`invoiced_amount`/`received_amount`）；正文新增两节：
+  - 「开票记录」：在途开票申请（过滤 issued/rejected/cancelled）+ 正式发票表；#extra 已开票合计 + 「去开票」。
+  - 「收款登记」：该合同到账记录表，「查看」嵌套 `ReceiptDetailDrawer`；#extra 已到账合计 + 「新增收款登记」。
+  - 「关联付款申请」节仅 outbound 渲染。
+- 「去开票/新增收款登记」跳转收款工作台对应页签并发 `nav` 事件：抽屉链逐层关闭（Panel→ContractDetailDrawer→ProjectReceiptPanel→ProjectReceiptDrawer），避免抽屉遮挡目标页。
+- 收款合同列表（`receipt/contract.vue`）：「已开票/已收款」合并为「收款进度」列（开票/到账两行迷你进度 + 金额）。
+
+### 11.2 项目收款全貌抽屉 `receipt/components/ProjectReceiptPanel.vue` + `ProjectReceiptDrawer.vue`
+
+- 项目视角收款汇总：凭证表头（项目编号/状态签/项目名/负责人 + 收款合同总额 + 开票/到账双进度）+ 三节（收款合同→嵌套合同抽屉、开票记录、收款登记→嵌套收款抽屉）。
+- 数据：getProjectById + listContracts(inbound,project_id) + listInvoices/listInvoiceRequests/listReceipts(project_id)；超出拉取上限（合同200/发票500/申请200/收款500）时顶部 el-alert 提示数据不完整；加载失败 message 报错不静默。
+- 入口：收款工作台头部「按项目查看收款全貌」（项目下拉 pageSize 500）+ 项目工作区财务面板主按钮（maskSensitive=true 不渲染）。
+
+### 11.3 项目选择大厅 `project/hub.vue` 重设计
+
+- 删除按状态硬编码百分比的圆环进度（原 active 恒 72% 假数据）。
+- 卡片：左缘 4px 状态色条；状态签+开工日期首行；项目名+等宽编号；**五段生命周期阶段条**（规划→筹备→施工→收尾→归档：已过浅色/当前实色加高并显标签/未到空底，archived 整条灰化）；位置/负责人小标签 meta；briefing 两行 clamp；hover 抬升 + 右下「进入工作区 →」。
+- 状态筛选改为 chips 行（激活琥珀实底）；关键字/位置/重置/创建保留。
+
+### 11.4 项目工作区 `project/workspace/`
+
+- `index.vue` 头卡：getProjectById 显示项目名/等宽编号/状态签 + 迷你阶段条 + 位置/负责人/开工日期；加载失败降级显示项目 ID，tabs 不受影响。
+- `finance-panel.vue`：四个暖纸统计块（对外已付/已开票/已到账/报销累计，maskSensitive 显 ***）+ 收款登记笔数 + 「项目收款全貌」按钮（抽屉 @closed 回刷摘要）+ 保留快捷入口。
+- `equipment-panel.vue`/`file-panel.vue`：节标题统一琥珀竖条样式、表格空态 el-empty、金额/数量列右对齐、按钮排布对齐（逻辑零改动）。`project-panel.vue` 未动。

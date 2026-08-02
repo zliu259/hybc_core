@@ -27,18 +27,49 @@ const statusOptions = [
   { value: "archived", label: "已归档" }
 ];
 
+const statusChips = [{ value: "", label: "全部" }, ...statusOptions];
+
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
-const statusMap: Record<
-  string,
-  { label: string; type: TagType; progress: number }
-> = {
-  planning: { label: "规划中", type: "info", progress: 10 },
-  preparing: { label: "筹备中", type: "warning", progress: 35 },
-  active: { label: "施工中", type: "success", progress: 72 },
-  completing: { label: "收尾中", type: "primary", progress: 90 },
-  archived: { label: "已归档", type: "info", progress: 100 }
+const statusMap: Record<string, { label: string; type: TagType }> = {
+  planning: { label: "规划中", type: "info" },
+  preparing: { label: "筹备中", type: "warning" },
+  active: { label: "施工中", type: "success" },
+  completing: { label: "收尾中", type: "primary" },
+  archived: { label: "已归档", type: "info" }
 };
+
+const statusColor: Record<string, string> = {
+  planning: "#909399",
+  preparing: "#e6a23c",
+  active: "#67c23a",
+  completing: "#409eff",
+  archived: "#c0c4cc"
+};
+
+const statusColorLight: Record<string, string> = {
+  planning: "#dedfe0",
+  preparing: "#f8e3c5",
+  active: "#d5edc8",
+  completing: "#c6e2ff",
+  archived: "#e4e7ed"
+};
+
+const lifecycleStages = [
+  { key: "planning", label: "规划" },
+  { key: "preparing", label: "筹备" },
+  { key: "active", label: "施工" },
+  { key: "completing", label: "收尾" },
+  { key: "archived", label: "归档" }
+];
+
+const stageIndexOf = (status: string): number =>
+  lifecycleStages.findIndex(stage => stage.key === status);
+
+const cardStyle = (status: string) => ({
+  "--status-color": statusColor[status] || "#909399",
+  "--status-color-light": statusColorLight[status] || "#dedfe0"
+});
 
 const statusRank: Record<string, number> = {
   active: 1,
@@ -102,6 +133,11 @@ const onSearch = async () => {
   await loadData();
 };
 
+const onStatusChip = async (value: string) => {
+  filters.value.status = value;
+  await onSearch();
+};
+
 const onReset = async () => {
   filters.value = { keyword: "", status: "", location: "" };
   page.value = 1;
@@ -141,19 +177,6 @@ onMounted(loadData);
             placeholder="搜索项目编号/名称"
             style="width: 220px"
           />
-          <el-select
-            v-model="filters.status"
-            clearable
-            placeholder="状态筛选"
-            style="width: 140px"
-          >
-            <el-option
-              v-for="item in statusOptions"
-              :key="item.value"
-              :label="item.label"
-              :value="item.value"
-            />
-          </el-select>
           <el-input
             v-model="filters.location"
             clearable
@@ -171,6 +194,18 @@ onMounted(loadData);
           </el-button>
         </div>
       </div>
+      <div class="status-chips">
+        <button
+          v-for="chip in statusChips"
+          :key="chip.value"
+          type="button"
+          class="status-chip"
+          :class="{ 'is-active': filters.status === chip.value }"
+          @click="onStatusChip(chip.value)"
+        >
+          {{ chip.label }}
+        </button>
+      </div>
     </template>
 
     <el-row :gutter="16">
@@ -182,34 +217,59 @@ onMounted(loadData);
         :md="8"
         :lg="6"
       >
-        <div class="project-card" @click="goWorkspace(item.id)">
-          <div class="project-card__tag">
+        <div
+          class="project-card"
+          :style="cardStyle(item.status)"
+          @click="goWorkspace(item.id)"
+        >
+          <div class="project-card__top">
             <el-tag :type="statusMap[item.status]?.type || 'info'" size="small">
               {{ statusMap[item.status]?.label || item.status }}
             </el-tag>
+            <span class="project-card__date">{{
+              projectDisplayDate(item)
+            }}</span>
           </div>
           <div class="project-card__title">{{ item.project_name }}</div>
           <div class="project-card__code">{{ item.project_code }}</div>
-          <div class="project-card__meta">
-            开工时间：{{ projectDisplayDate(item) }}
+          <div class="project-card__stages">
+            <div class="project-card__stage-bar">
+              <span
+                v-for="(stage, index) in lifecycleStages"
+                :key="stage.key"
+                class="project-card__stage-seg"
+                :class="{
+                  'is-past': index < stageIndexOf(item.status),
+                  'is-current': index === stageIndexOf(item.status)
+                }"
+              />
+            </div>
+            <div class="project-card__stage-labels">
+              <span
+                v-for="(stage, index) in lifecycleStages"
+                :key="stage.key"
+                class="project-card__stage-label"
+              >
+                {{ index === stageIndexOf(item.status) ? stage.label : "" }}
+              </span>
+            </div>
           </div>
           <div class="project-card__meta">
-            位置：{{ item.location_text || "未设置" }}
+            <span class="project-card__meta-label">位置</span>
+            <span class="project-card__meta-value">{{
+              item.location_text || "未设置"
+            }}</span>
+          </div>
+          <div class="project-card__meta">
+            <span class="project-card__meta-label">负责人</span>
+            <span class="project-card__meta-value">{{
+              item.manager_userid || "未指定"
+            }}</span>
           </div>
           <div class="project-card__briefing">
             项目交底：{{ item.project_briefing || "暂无" }}
           </div>
-          <div class="project-card__progress">
-            <el-progress
-              type="circle"
-              :percentage="statusMap[item.status]?.progress || 0"
-              :width="88"
-              :stroke-width="8"
-            />
-          </div>
-          <div class="project-card__foot">
-            负责人：{{ item.manager_userid || "未指定" }}
-          </div>
+          <div class="project-card__enter">进入工作区 →</div>
         </div>
       </el-col>
     </el-row>
@@ -253,6 +313,38 @@ onMounted(loadData);
   gap: 8px;
 }
 
+.status-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.status-chip {
+  padding: 4px 14px;
+  font-size: 12px;
+  color: #6b4f2a;
+  cursor: pointer;
+  background: #fffdf7;
+  border: 1px solid #e3d5b8;
+  border-radius: 999px;
+  transition:
+    background 0.2s ease,
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.status-chip:hover {
+  border-color: #c9a35c;
+  color: #8c6a2f;
+}
+
+.status-chip.is-active {
+  background: #c9a35c;
+  border-color: #c9a35c;
+  color: #fff;
+}
+
 @media (max-width: 768px) {
   .head {
     flex-direction: column;
@@ -270,7 +362,8 @@ onMounted(loadData);
 .project-card {
   position: relative;
   margin-bottom: 16px;
-  padding: 16px;
+  padding: 14px 16px 30px;
+  overflow: hidden;
   border: 1px solid #d9ceb9;
   border-radius: 10px;
   background: linear-gradient(180deg, #fffdf8 0%, #fff8ec 100%);
@@ -280,33 +373,110 @@ onMounted(loadData);
     box-shadow 0.2s ease;
 }
 
+.project-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 4px;
+  background: var(--status-color);
+  border-radius: 10px 0 0 10px;
+}
+
 .project-card:hover {
   transform: translateY(-4px);
   box-shadow: 0 10px 20px rgb(42 36 29 / 12%);
 }
 
-.project-card__tag {
+.project-card__top {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.project-card__date {
+  font-size: 11px;
+  color: #6e6458;
 }
 
 .project-card__title {
-  margin-top: 2px;
+  margin-top: 8px;
   font-size: 16px;
-  font-weight: 600;
+  font-weight: 700;
   color: #2a241d;
 }
 
 .project-card__code {
   margin-top: 4px;
+  font-family:
+    ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
   font-size: 12px;
-  color: #6e6458;
+  color: #8c6a2f;
+}
+
+.project-card__stages {
+  margin: 12px 0 10px;
+}
+
+.project-card__stage-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  min-height: 8px;
+}
+
+.project-card__stage-seg {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: #ece3d0;
+  transition: background 0.2s ease;
+}
+
+.project-card__stage-seg.is-past {
+  background: var(--status-color-light);
+}
+
+.project-card__stage-seg.is-current {
+  height: 8px;
+  background: var(--status-color);
+}
+
+.project-card__stage-labels {
+  display: flex;
+  gap: 3px;
+  margin-top: 3px;
+}
+
+.project-card__stage-label {
+  flex: 1;
+  min-height: 13px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--status-color);
+  text-align: center;
 }
 
 .project-card__meta {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   margin-top: 4px;
   font-size: 12px;
+  color: #3f3527;
+}
+
+.project-card__meta-label {
+  flex: none;
+  font-size: 11px;
   color: #6e6458;
+}
+
+.project-card__meta-value {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .project-card__briefing {
@@ -321,14 +491,19 @@ onMounted(loadData);
   overflow: hidden;
 }
 
-.project-card__progress {
-  display: flex;
-  justify-content: center;
-  margin: 14px 0 10px;
+.project-card__enter {
+  position: absolute;
+  right: 14px;
+  bottom: 9px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #c9a35c;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.2s ease;
 }
 
-.project-card__foot {
-  font-size: 12px;
-  color: #6e6458;
+.project-card:hover .project-card__enter {
+  opacity: 1;
 }
 </style>

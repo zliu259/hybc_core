@@ -60,7 +60,7 @@ onMounted(loadData);
 </script>
 
 <template>
-  <div v-loading="loading">
+  <div v-loading="loading" class="equipment-panel">
     <el-alert
       v-if="rentalAlert.active_count > 0"
       style="margin-bottom: 12px"
@@ -74,8 +74,14 @@ onMounted(loadData);
     />
     <el-row :gutter="16">
       <el-col :md="14" :xs="24">
-        <el-card shadow="never" header="项目设备列表">
+        <el-card shadow="never">
+          <template #header>
+            <span class="sec-title">项目设备列表</span>
+          </template>
           <el-table :data="trackedAssets">
+            <template #empty>
+              <el-empty description="暂无设备" :image-size="48" />
+            </template>
             <el-table-column prop="asset_code" label="资产编码" width="160" />
             <el-table-column
               prop="asset_name"
@@ -136,10 +142,21 @@ onMounted(loadData);
         </el-card>
       </el-col>
       <el-col :md="10" :xs="24">
-        <el-card shadow="never" header="物资消耗">
+        <el-card shadow="never">
+          <template #header>
+            <span class="sec-title">物资消耗</span>
+          </template>
           <el-table :data="consumptions">
+            <template #empty>
+              <el-empty description="暂无消耗记录" :image-size="48" />
+            </template>
             <el-table-column prop="type_name" label="类型" min-width="120" />
-            <el-table-column prop="total_qty" label="总消耗" width="110" />
+            <el-table-column
+              prop="total_qty"
+              label="总消耗"
+              width="110"
+              align="right"
+            />
           </el-table>
         </el-card>
       </el-col>
@@ -190,3 +207,19 @@ onMounted(loadData);
     </el-drawer>
   </div>
 </template>
+
+<style scoped>
+.equipment-panel {
+  min-height: 200px;
+}
+
+.sec-title {
+  padding-left: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+  color: #6b4f2a;
+  letter-spacing: 0.06em;
+  border-left: 3px solid #c9a35c;
+}
+</style>
