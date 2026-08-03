@@ -25,14 +25,20 @@ defineOptions({ name: "WorkspaceMyApplications" });
 
 const router = useRouter();
 const loading = ref(false);
+const PAGE_SIZE = 8;
 const paymentList = ref<PaymentRequest[]>([]);
+const paymentPage = ref(1);
+const paymentTotal = ref(0);
 const reimbursementList = ref<ReimbursementEnvelope[]>([]);
+const reimbursementPage = ref(1);
+const reimbursementTotal = ref(0);
 const fuelList = ref<FuelQuotaApplication[]>([]);
+const fuelPage = ref(1);
+const fuelTotal = ref(0);
 const approvalList = ref<ApprovalInstance[]>([]);
 const approvalBucket = ref<InitiatedBucket>("returned_needs_action");
 const approvalPage = ref(1);
 const approvalTotal = ref(0);
-const APPROVAL_PAGE_SIZE = 8;
 const approvalSummary = ref<InitiatedApprovalSummary>({
   total: 0,
   returned_needs_action: 0,
@@ -53,12 +59,58 @@ const initiatedBucketTagType = (bucket: InitiatedBucket) => {
   return "warning" as const;
 };
 
+const loadPayments = async () => {
+  const paymentResult = await listPaymentRequests({
+    mine: true,
+    page: paymentPage.value,
+    pageSize: PAGE_SIZE
+  });
+  paymentList.value = paymentResult.data;
+  paymentTotal.value = paymentResult.pagination.total;
+};
+
+const changePaymentPage = async (page: number) => {
+  paymentPage.value = page;
+  await loadPayments();
+};
+
+const loadReimbursements = async () => {
+  const reimbursementResult = await listReimbursementEnvelopes({
+    creator_id: "me",
+    exclude_cancelled: true,
+    page: reimbursementPage.value,
+    pageSize: PAGE_SIZE
+  });
+  reimbursementList.value = reimbursementResult.data;
+  reimbursementTotal.value = reimbursementResult.pagination.total;
+};
+
+const changeReimbursementPage = async (page: number) => {
+  reimbursementPage.value = page;
+  await loadReimbursements();
+};
+
+const loadFuelApplications = async () => {
+  const fuelResult = await listFuelQuotaApplications({
+    mine: true,
+    page: fuelPage.value,
+    pageSize: PAGE_SIZE
+  });
+  fuelList.value = fuelResult.data;
+  fuelTotal.value = fuelResult.pagination?.total ?? fuelResult.data.length;
+};
+
+const changeFuelPage = async (page: number) => {
+  fuelPage.value = page;
+  await loadFuelApplications();
+};
+
 const loadInitiatedApprovals = async () => {
   const approvalResult = await listApprovalInstances({
     initiator: "me",
     initiatedBucket: approvalBucket.value,
     page: approvalPage.value,
-    pageSize: APPROVAL_PAGE_SIZE
+    pageSize: PAGE_SIZE
   });
   approvalList.value = approvalResult.data;
   approvalTotal.value = approvalResult.pagination.total;
@@ -139,35 +191,14 @@ const fuelProcessResult = (item: FuelQuotaApplication) => {
 const loadData = async () => {
   loading.value = true;
   try {
-    const [
-      paymentResult,
-      reimbursementResult,
-      fuelResult,
-      approvalSummaryResult,
-      approvalResult
-    ] = await Promise.all([
-      listPaymentRequests({ mine: true, page: 1, pageSize: 8 }),
-      listReimbursementEnvelopes({
-        creator_id: "me",
-        exclude_cancelled: true,
-        page: 1,
-        pageSize: 8
-      }),
-      listFuelQuotaApplications({ mine: true }),
+    const [approvalSummaryResult] = await Promise.all([
       getInitiatedApprovalSummary({ initiator: "me" }),
-      listApprovalInstances({
-        initiator: "me",
-        initiatedBucket: approvalBucket.value,
-        page: approvalPage.value,
-        pageSize: APPROVAL_PAGE_SIZE
-      })
+      loadPayments(),
+      loadReimbursements(),
+      loadFuelApplications(),
+      loadInitiatedApprovals()
     ]);
-    paymentList.value = paymentResult.data;
-    reimbursementList.value = reimbursementResult.data;
-    fuelList.value = fuelResult.data.slice(0, 8);
     approvalSummary.value = approvalSummaryResult.data;
-    approvalList.value = approvalResult.data;
-    approvalTotal.value = approvalResult.pagination.total;
   } finally {
     loading.value = false;
   }
@@ -198,18 +229,15 @@ onMounted(loadData);
 
     <el-row :gutter="12" style="margin-bottom: 12px">
       <el-col :md="6" :xs="24"
-        ><el-card shadow="never"
-          >对外付款申请：{{ paymentList.length }}</el-card
+        ><el-card shadow="never">对外付款申请：{{ paymentTotal }}</el-card
         ></el-col
       >
       <el-col :md="6" :xs="24"
-        ><el-card shadow="never"
-          >报销申请：{{ reimbursementList.length }}</el-card
+        ><el-card shadow="never">报销申请：{{ reimbursementTotal }}</el-card
         ></el-col
       >
       <el-col :md="6" :xs="24"
-        ><el-card shadow="never"
-          >油卡额度申请：{{ fuelList.length }}</el-card
+        ><el-card shadow="never">油卡额度申请：{{ fuelTotal }}</el-card
         ></el-col
       >
       <el-col :md="6" :xs="24"
@@ -255,6 +283,16 @@ onMounted(loadData);
             </template>
           </el-table-column>
         </el-table>
+
+        <el-pagination
+          style="margin-top: 12px; justify-content: flex-end"
+          background
+          layout="prev, pager, next, total"
+          :current-page="paymentPage"
+          :page-size="PAGE_SIZE"
+          :total="paymentTotal"
+          @current-change="changePaymentPage"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="报销申请">
@@ -298,6 +336,16 @@ onMounted(loadData);
             </template>
           </el-table-column>
         </el-table>
+
+        <el-pagination
+          style="margin-top: 12px; justify-content: flex-end"
+          background
+          layout="prev, pager, next, total"
+          :current-page="reimbursementPage"
+          :page-size="PAGE_SIZE"
+          :total="reimbursementTotal"
+          @current-change="changeReimbursementPage"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="油卡额度申请">
@@ -335,6 +383,16 @@ onMounted(loadData);
           />
           <el-table-column prop="requested_at" label="申请时间" width="180" />
         </el-table>
+
+        <el-pagination
+          style="margin-top: 12px; justify-content: flex-end"
+          background
+          layout="prev, pager, next, total"
+          :current-page="fuelPage"
+          :page-size="PAGE_SIZE"
+          :total="fuelTotal"
+          @current-change="changeFuelPage"
+        />
       </el-tab-pane>
 
       <el-tab-pane label="我发起的审批">
@@ -453,7 +511,7 @@ onMounted(loadData);
           background
           layout="prev, pager, next, total"
           :current-page="approvalPage"
-          :page-size="APPROVAL_PAGE_SIZE"
+          :page-size="PAGE_SIZE"
           :total="approvalTotal"
           @current-change="changeApprovalPage"
         />
