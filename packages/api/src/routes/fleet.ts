@@ -627,66 +627,32 @@ fleetRoutes.get("/fuel-applications", async (c) => {
   const mine = c.req.query("mine") === "true";
   const shouldScopeToMine = mine || !canViewFleetWide(auth.roles);
   const status = c.req.query("status");
-  const pageValue = c.req.query("page");
-  const pageSizeValue = c.req.query("pageSize");
-  // 分页为可选：不传 page/pageSize 时保持全量返回，兼容存量调用方
-  const wantsPagination = pageValue !== undefined || pageSizeValue !== undefined;
-  const pagination = wantsPagination ? parseBoundedPagination(pageValue, pageSizeValue) : null;
-  if (wantsPagination && !pagination) {
-    return c.json(
-      {
-        success: false,
-        error: { message: `page and pageSize must be positive integers; pageSize max is ${maxPageSize}` }
-      },
-      400
-    );
-  }
 
-  let filterSql = "";
-  const params: string[] = [];
-
-  if (shouldScopeToMine) {
-    filterSql += " AND a.applicant_userid = ?";
-    params.push(auth.sub);
-  }
-  if (status) {
-    filterSql += " AND a.status = ?";
-    params.push(status);
-  }
-
-  const baseFrom = `FROM fuel_quota_application a
-   JOIN company_vehicle v ON v.id = a.vehicle_id
-   LEFT JOIN fuel_card card ON card.id = a.fuel_card_id
-   WHERE 1=1${filterSql}`;
-  const selectSql = `SELECT
+  let sql = `SELECT
     a.*,
     v.vehicle_uuid,
     v.current_plate_no,
     v.ownership_type,
     card.card_no,
     card.latest_balance as card_latest_balance
-   ${baseFrom}
-   ORDER BY a.id DESC`;
+   FROM fuel_quota_application a
+   JOIN company_vehicle v ON v.id = a.vehicle_id
+   LEFT JOIN fuel_card card ON card.id = a.fuel_card_id
+   WHERE 1=1`;
+  const params: string[] = [];
 
-  if (!pagination) {
-    const rows = await c.env.DB.prepare(selectSql).bind(...params).all();
-    return c.json({ success: true, data: rows.results ?? [] });
+  if (shouldScopeToMine) {
+    sql += " AND a.applicant_userid = ?";
+    params.push(auth.sub);
   }
+  if (status) {
+    sql += " AND a.status = ?";
+    params.push(status);
+  }
+  sql += " ORDER BY a.id DESC";
 
-  const { page, pageSize } = pagination;
-  const offset = (page - 1) * pageSize;
-  const countRow = await c.env.DB.prepare(`SELECT COUNT(*) AS total ${baseFrom}`)
-    .bind(...params)
-    .first<{ total: number }>();
-  const rows = await c.env.DB.prepare(`${selectSql} LIMIT ? OFFSET ?`)
-    .bind(...params, pageSize, offset)
-    .all();
-
-  return c.json({
-    success: true,
-    data: rows.results ?? [],
-    pagination: { page, pageSize, total: countRow?.total ?? 0 }
-  });
+  const rows = await c.env.DB.prepare(sql).bind(...params).all();
+  return c.json({ success: true, data: rows.results ?? [] });
 });
 
 fleetRoutes.get(

@@ -255,15 +255,12 @@ export const bindFuelCardUser = (
 export const listFuelQuotaApplications = (params?: {
   mine?: boolean;
   status?: string;
-  page?: number;
-  pageSize?: number;
 }) => {
-  // pagination 仅在传 page/pageSize 时由后端返回
-  return http.request<{
-    success: boolean;
-    data: FuelQuotaApplication[];
-    pagination?: FleetPagination;
-  }>("get", "/api/v1/fleet/fuel-applications", { params });
+  return http.request<{ success: boolean; data: FuelQuotaApplication[] }>(
+    "get",
+    "/api/v1/fleet/fuel-applications",
+    { params }
+  );
 };
 
 export const getFuelQuotaPendingSummary = () => {
