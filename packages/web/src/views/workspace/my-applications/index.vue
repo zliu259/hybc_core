@@ -30,6 +30,9 @@ const reimbursementList = ref<ReimbursementEnvelope[]>([]);
 const fuelList = ref<FuelQuotaApplication[]>([]);
 const approvalList = ref<ApprovalInstance[]>([]);
 const approvalBucket = ref<InitiatedBucket>("returned_needs_action");
+const approvalPage = ref(1);
+const approvalTotal = ref(0);
+const APPROVAL_PAGE_SIZE = 8;
 const approvalSummary = ref<InitiatedApprovalSummary>({
   total: 0,
   returned_needs_action: 0,
@@ -50,15 +53,26 @@ const initiatedBucketTagType = (bucket: InitiatedBucket) => {
   return "warning" as const;
 };
 
-const refreshInitiatedApprovalList = async (bucket: InitiatedBucket) => {
-  approvalBucket.value = bucket;
+const loadInitiatedApprovals = async () => {
   const approvalResult = await listApprovalInstances({
     initiator: "me",
-    initiatedBucket: bucket,
-    page: 1,
-    pageSize: 8
+    initiatedBucket: approvalBucket.value,
+    page: approvalPage.value,
+    pageSize: APPROVAL_PAGE_SIZE
   });
   approvalList.value = approvalResult.data;
+  approvalTotal.value = approvalResult.pagination.total;
+};
+
+const refreshInitiatedApprovalList = async (bucket: InitiatedBucket) => {
+  approvalBucket.value = bucket;
+  approvalPage.value = 1;
+  await loadInitiatedApprovals();
+};
+
+const changeApprovalPage = async (page: number) => {
+  approvalPage.value = page;
+  await loadInitiatedApprovals();
 };
 
 const canEditBiz = (item: ApprovalInstance) =>
@@ -144,8 +158,8 @@ const loadData = async () => {
       listApprovalInstances({
         initiator: "me",
         initiatedBucket: approvalBucket.value,
-        page: 1,
-        pageSize: 8
+        page: approvalPage.value,
+        pageSize: APPROVAL_PAGE_SIZE
       })
     ]);
     paymentList.value = paymentResult.data;
@@ -153,6 +167,7 @@ const loadData = async () => {
     fuelList.value = fuelResult.data.slice(0, 8);
     approvalSummary.value = approvalSummaryResult.data;
     approvalList.value = approvalResult.data;
+    approvalTotal.value = approvalResult.pagination.total;
   } finally {
     loading.value = false;
   }
@@ -432,6 +447,16 @@ onMounted(loadData);
             </template>
           </el-table-column>
         </el-table>
+
+        <el-pagination
+          style="margin-top: 12px; justify-content: flex-end"
+          background
+          layout="prev, pager, next, total"
+          :current-page="approvalPage"
+          :page-size="APPROVAL_PAGE_SIZE"
+          :total="approvalTotal"
+          @current-change="changeApprovalPage"
+        />
       </el-tab-pane>
     </el-tabs>
   </el-card>
