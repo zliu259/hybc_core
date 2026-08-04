@@ -4,6 +4,7 @@ import { checkTimeouts } from "./services/ai-slot";
 import { sweepStalePendingActions } from "./services/agent-pending";
 import { checkApprovalTimeouts } from "./services/approval/engine";
 import { sweepPendingCfAiTasks } from "./services/cf-ai";
+import { reconcileStuckPrechecks } from "./services/contract-precheck";
 import {
   checkNodeHeartbeat,
   detectMissingLogs,
@@ -57,6 +58,10 @@ export const scheduled = async (
         await requeueTimedOutTasks(env);
         // cf_ai 任务重试/超时后回 pending 无新事件，cron 兜底补执行。
         await sweepPendingCfAiTasks(env, 5);
+        // 预审单卡 reviewing 孤儿回收（回写丢失/任务消失），永不抛出
+        await reconcileStuckPrechecks(env).catch((error) =>
+          console.error("Precheck reconcile failed", error)
+        );
         return;
       }
 

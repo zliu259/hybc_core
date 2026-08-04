@@ -14,6 +14,10 @@ import {
   normalizeContractReviewOutput,
   normalizePaymentRiskOutput
 } from "./approval/risk-score";
+import {
+  applyContractPrecheckResult,
+  markContractPrecheckTaskError
+} from "./contract-precheck";
 import { applyExternalLogAuditResult } from "./external-log-audit";
 import { checkClauseText, parseContractSectionOutput } from "./contract-draft-rules";
 import { CF_AI_COMPLETENESS_MODELS, tolerantJsonParse } from "./cf-ai";
@@ -595,6 +599,15 @@ export const completeTask = async (
       .run();
   }
 
+  // 合同预审：AI 多维审计 + 确定性红线规则合并后落库（明显错误 → reviewed，否则 passed）
+  if (task.task_type === "contract_precheck_review" && task.biz_type === "contract_precheck") {
+    const model =
+      result.metadata && typeof result.metadata === "object" && typeof result.metadata.model === "string"
+        ? result.metadata.model
+        : null;
+    await applyContractPrecheckResult(env, task, result.output, model);
+  }
+
   if (task.task_type === "contract_compliance_review" && task.biz_type === "contract_draft") {
     await env.DB.prepare(
       `UPDATE contract_draft_section SET
@@ -703,7 +716,8 @@ export const completeTask = async (
     )
     .run();
 
-  if (task.biz_type === "contract_draft") {
+  // 合同正文属敏感数据：起草/预审域任务完成后清洗队列里的 payload/result
+  if (task.biz_type === "contract_draft" || task.biz_type === "contract_precheck") {
     await env.DB.prepare(
       "UPDATE task_queue SET payload_json = '{}', result_json = '{}' WHERE id = ?"
     )
@@ -841,6 +855,10 @@ export const failTask = async (
 
   if (task.biz_type === "contract_draft" && newStatus === "failed") {
     await markContractDraftTaskError(env, task, now);
+  }
+
+  if (task.biz_type === "contract_precheck" && newStatus === "failed") {
+    await markContractPrecheckTaskError(env, task, now);
   }
 
   // Write error audit log
@@ -1020,6 +1038,11 @@ export const checkTimeouts = async (env: Env): Promise<number> => {
     // 否则节会永久卡在 generating（generate 抢占 409、编辑被 generating 守卫挡住）无法恢复。
     if (task.biz_type === "contract_draft" && task.retry_count >= task.max_retries) {
       await markContractDraftTaskError(env, task, now);
+    }
+
+    // 预审任务终态超时同理：不回写 error 会让预审单永久卡在 reviewing
+    if (task.biz_type === "contract_precheck" && task.retry_count >= task.max_retries) {
+      await markContractPrecheckTaskError(env, task, now);
     }
   }
 

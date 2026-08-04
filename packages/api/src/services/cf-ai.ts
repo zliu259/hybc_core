@@ -11,7 +11,8 @@ export const CF_AI_TASK_TYPES = [
   "contract_draft_section",
   "contract_compliance_review",
   "contract_completeness_check",
-  "contract_completeness_audit"
+  "contract_completeness_audit",
+  "contract_precheck_review"
 ] as const;
 export type CfAiTaskType = (typeof CF_AI_TASK_TYPES)[number];
 
@@ -138,6 +139,28 @@ interface CfAiCallResult {
 }
 
 const mockOutput = (taskType: CfAiTaskType): string => {
+  if (taskType === "contract_precheck_review") {
+    return JSON.stringify({
+      summary: "本地模拟预审：付款条款存在背靠背风险，违约金约定不对等，建议修改后再签署。",
+      overall: "major",
+      issues: [
+        {
+          dimension: "liability_balance",
+          severity: "major",
+          quote: "乙方逾期履行的，每日按合同总价的1%支付违约金",
+          problem: "违约金单向且费率畸高，存在被法院调减风险。",
+          suggestion: "双方违约责任对等约定；逾期违约金按日万分之五计，累计不超过合同总价的10%。"
+        },
+        {
+          dimension: "clause_completeness",
+          severity: "minor",
+          quote: "",
+          problem: "缺少争议解决条款，发生纠纷时管辖不明。",
+          suggestion: "增加条款：因本合同发生争议，双方协商不成的，提交合同签订地人民法院诉讼解决。"
+        }
+      ]
+    });
+  }
   if (taskType === "contract_completeness_audit") {
     return JSON.stringify({
       missing: [

@@ -20,6 +20,7 @@ import type {
 import { taskTypes } from "../types/ai";
 import { validateTemplate } from "../services/approval/template-parser";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
+import { CF_AI_REVIEW_MODEL } from "../services/cf-ai";
 import { advanceWorkflow } from "../services/approval/engine";
 import {
   resolveApplicantDisplayName,
@@ -1055,6 +1056,17 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
       draft_id: bizId,
       direction: "outbound",
       initial_result_json: "{}"
+    },
+    contract_precheck_review: {
+      precheck_id: bizId,
+      round: 1,
+      title: "AI Runtime Test 预审合同",
+      counterparty: "测试相对方",
+      direction: "inbound",
+      direction_label: "inbound（我方为乙方，即我方收款）",
+      contract_text: "甲乙双方经协商一致，依据《中华人民共和国民法典》订立本合同。测试文本。",
+      // 对齐生产 pin 的模型，让冒烟测试走同一条 anthropic Messages 调用/解析路径
+      model: CF_AI_REVIEW_MODEL
     }
   };
 

@@ -28,6 +28,15 @@ export default {
         title: "合同生成",
         roles: ["super_admin", "manager", "finance"]
       }
+    },
+    {
+      path: "/bidding/contract-precheck",
+      name: "ContractPrecheck",
+      component: () => import("@/views/bidding/contract-precheck/index.vue"),
+      meta: {
+        title: "合同预审",
+        roles: ["super_admin", "manager", "finance"]
+      }
     }
   ]
 } satisfies RouteConfigsTable;
