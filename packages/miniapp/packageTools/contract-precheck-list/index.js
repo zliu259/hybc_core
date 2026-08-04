@@ -1,6 +1,49 @@
 const { request } = require("../../utils/request");
 const { uploadFileToR2 } = require("../../utils/upload");
-const { wxChooseMessageFile, wxChooseLocalFile } = require("../../utils/wx");
+const {
+  wxChooseMessageFile,
+  wxChooseLocalFile,
+  isMessageFilePickerSupported
+} = require("../../utils/wx");
+
+// 与 packageFinance/payment-apply 同款错误处理：企微/微信客户端差异较大，
+// 本地文件选择不可用时引导改用会话文件
+const extractErrorMessage = (error, fallback = "操作失败") => {
+  if (error instanceof Error && error.message) return error.message;
+  if (typeof error === "string" && error.trim()) return error.trim();
+  if (error && typeof error === "object") {
+    const errMsg = error.errMsg || error.message;
+    if (typeof errMsg === "string" && errMsg.trim()) return errMsg.trim();
+  }
+  return fallback;
+};
+
+const isLocalFilePickerUnsupportedError = (error) => {
+  const message = extractErrorMessage(error, "").toLowerCase();
+  return (
+    message.includes("不支持本地文件选择") ||
+    message.includes("local file") ||
+    message.includes("choosefile")
+  );
+};
+
+const confirmMessageFileFallback = () =>
+  new Promise((resolve) => {
+    wx.showModal({
+      title: "本地文件不可用",
+      content: "当前客户端不支持本地文件选择，是否改为“从会话文件选择”继续？",
+      confirmText: "继续选择",
+      cancelText: "取消",
+      success: (res) => resolve(Boolean(res && res.confirm)),
+      fail: () => resolve(false)
+    });
+  });
+
+/** 选择结果是 {tempFiles:[...]} 包装对象，必须取首个 tempFile（与 payment-apply 一致） */
+const pickFirstTempFile = (choose) =>
+  choose && Array.isArray(choose.tempFiles) && choose.tempFiles[0]
+    ? choose.tempFiles[0]
+    : null;
 
 const STATUS_LABELS = {
   draft: "待预审",
@@ -48,6 +91,8 @@ Page({
   data: {
     loading: false,
     submitting: false,
+    picking: false,
+    messagePickerSupported: false,
     list: [],
     total: 0,
     createVisible: false,
@@ -58,6 +103,11 @@ Page({
       counterparty: ""
     },
     picked: null
+  },
+
+  onLoad() {
+    // 企微/微信客户端能力不一：仅在支持时展示「从会话选择」入口
+    this.setData({ messagePickerSupported: isMessageFilePickerSupported() });
   },
 
   onShow() {
@@ -127,24 +177,48 @@ Page({
     this.setData({ directionIndex: Number(event.detail.value) || 0 });
   },
 
-  /** 优先从会话选文件（对方多用微信/企微发合同），失败再退到本地文件 */
+  /** 本地文件选择（与 payment-apply 同规）；客户端不支持时引导改用会话文件 */
   async chooseFile() {
-    let file = null;
+    if (this.data.picking) return;
+    this.setData({ picking: true });
     try {
-      file = await wxChooseMessageFile({ count: 1, type: "file" });
-    } catch (messageError) {
-      try {
-        file = await wxChooseLocalFile({ count: 1, extension: ALLOWED_EXT });
-      } catch (localError) {
-        wx.showToast({
-          title: (messageError && messageError.message) || (localError && localError.message) || "选择文件失败",
-          icon: "none"
-        });
+      const choose = await wxChooseLocalFile({
+        count: 1,
+        extension: [".docx", ".pdf"]
+      });
+      this.acceptPickedFile(pickFirstTempFile(choose));
+    } catch (error) {
+      if (isLocalFilePickerUnsupportedError(error) && isMessageFilePickerSupported()) {
+        const confirmed = await confirmMessageFileFallback();
+        if (!confirmed) {
+          wx.showToast({ title: "已取消", icon: "none" });
+          return;
+        }
+        await this.chooseFromMessage();
         return;
       }
+      wx.showToast({ title: extractErrorMessage(error, "选择文件失败"), icon: "none" });
+    } finally {
+      this.setData({ picking: false });
     }
-    if (!file || !file.path) return;
+  },
 
+  /** 从微信/企微会话文件选择（对方常直接把合同发到会话里） */
+  async chooseFromMessage() {
+    if (this.data.picking) return;
+    this.setData({ picking: true });
+    try {
+      const choose = await wxChooseMessageFile({ count: 1, type: "file" });
+      this.acceptPickedFile(pickFirstTempFile(choose));
+    } catch (error) {
+      wx.showToast({ title: extractErrorMessage(error, "选择文件失败"), icon: "none" });
+    } finally {
+      this.setData({ picking: false });
+    }
+  },
+
+  acceptPickedFile(file) {
+    if (!file || !file.path) return;
     const name = file.name || file.path;
     if (!ALLOWED_EXT.includes(extOf(name))) {
       wx.showToast({ title: "仅支持 .docx 与电子版 .pdf", icon: "none" });

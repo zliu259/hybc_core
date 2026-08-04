@@ -39,16 +39,21 @@
 
   <view class="field">
     <view class="field-label">合同文件<text class="req">*</text></view>
-    <view class="picker-box" bindtap="chooseFile">
+    <view class="picker-box {{picking ? 'busy' : ''}}" bindtap="chooseFile">
       <block wx:if="{{picked}}">
         <view class="picked-name">📎 {{picked.name}}</view>
         <view class="picker-hint">点击可重新选择</view>
       </block>
       <block wx:else>
-        <view class="picker-placeholder">点击选择合同文件</view>
-        <view class="picker-hint">支持 .docx 与电子版 .pdf（扫描件不支持）；可从微信/企微会话中选取</view>
+        <view class="picker-placeholder">{{picking ? '选择中…' : '点击选择合同文件'}}</view>
+        <view class="picker-hint">支持 .docx 与电子版 .pdf（扫描件不支持）</view>
       </block>
     </view>
+    <view
+      wx:if="{{messagePickerSupported}}"
+      class="picker-alt"
+      bindtap="chooseFromMessage"
+    >从微信/企微会话中选择文件</view>
   </view>
 
   <view class="field">
