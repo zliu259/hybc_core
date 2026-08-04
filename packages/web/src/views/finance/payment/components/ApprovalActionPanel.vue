@@ -2,8 +2,19 @@
 import { computed } from "vue";
 import { useRouter } from "vue-router";
 import type { PaymentRequestDetail } from "@/api/payment";
-import type { ApprovalDetailResponse } from "@/api/approval";
+import type { ApprovalDetailResponse, AiGateReview } from "@/api/approval";
 import type { WeComUser } from "@/api/wecom";
+import {
+  AI_DECISION_LABELS,
+  AI_DECISION_TAGS,
+  normalizeAiFindings,
+  toFindingDimensionLabel,
+  toFindingStatusLabel,
+  toFindingStatusTagType,
+  toReadableAiText,
+  toRiskScoreBandLabel,
+  toRiskScoreBandTagType
+} from "@/utils/ai-review";
 import FinSection from "../../shared/components/FinSection.vue";
 import type { PaymentTagType } from "../payment-labels";
 
@@ -174,6 +185,48 @@ const toRiskLevelTagType = (level: unknown): PaymentTagType => {
   return riskLevelTagTypeMap[level] ?? "info";
 };
 
+// 新版风控结果：findings 事实判定 + score_basis 分数构成（后端确定性计分）
+const riskFindings = computed(() =>
+  normalizeAiFindings(props.riskReport?.findings)
+);
+
+const riskScoreBasis = computed(() => {
+  const raw = props.riskReport?.score_basis;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === "string");
+});
+
+const riskScoreValue = computed(() => {
+  const raw = props.riskReport?.score;
+  return typeof raw === "number" && !Number.isNaN(raw) ? raw : null;
+});
+
+// 只有确定性计分的新结果（带 score_basis 键）才展示分档签——
+// 旧结果的分数是模型自打的，不能套新分档口径
+const riskScoreIsDeterministic = computed(() =>
+  Array.isArray(props.riskReport?.score_basis)
+);
+
+// AI 关卡结论：decision 三态优先，旧数据回退二值 outcome
+const toGateDecisionLabel = (row: AiGateReview): string => {
+  if (row.decision && AI_DECISION_LABELS[row.decision]) {
+    return AI_DECISION_LABELS[row.decision];
+  }
+  return toAiOutcomeLabel(row.outcome);
+};
+
+const toGateDecisionTagType = (row: AiGateReview): PaymentTagType => {
+  if (row.decision && AI_DECISION_TAGS[row.decision]) {
+    return AI_DECISION_TAGS[row.decision];
+  }
+  return toStatusTagType(aiOutcomeTagTypeMap, row.outcome);
+};
+
+// 旧数据的 summary 可能是裸 JSON，转成可读文本
+const toGateSummaryText = (row: AiGateReview): string => {
+  return toReadableAiText(row.summary) || toReadableAiText(row.comment) || "-";
+};
+
 const currentNodeLabel = computed(() => {
   const key = props.approvalDetail?.instance.current_node_key;
   if (!key) return "-";
@@ -230,12 +283,32 @@ const goToApprovalDetail = () => {
           {{ toRiskLevelLabel(riskReport.overall_risk) }}
         </el-tag>
       </el-descriptions-item>
-      <el-descriptions-item label="风险分数">{{
-        riskReport.score ?? "-"
-      }}</el-descriptions-item>
+      <el-descriptions-item label="风险分数">
+        <template v-if="riskScoreValue !== null">
+          {{ riskScoreValue }}
+          <el-tag
+            v-if="riskScoreIsDeterministic"
+            size="small"
+            :type="toRiskScoreBandTagType(riskScoreValue)"
+            style="margin-left: 6px"
+          >
+            {{ toRiskScoreBandLabel(riskScoreValue) }}
+          </el-tag>
+        </template>
+        <span v-else>-</span>
+      </el-descriptions-item>
       <el-descriptions-item label="总结" :span="2">{{
         riskReport.summary || "-"
       }}</el-descriptions-item>
+      <el-descriptions-item
+        v-if="riskScoreBasis.length > 0"
+        label="分数构成"
+        :span="2"
+      >
+        <div v-for="(item, index) in riskScoreBasis" :key="index">
+          {{ item }}
+        </div>
+      </el-descriptions-item>
       <el-descriptions-item label="建议" :span="2">
         {{
           Array.isArray(riskReport.recommendations)
@@ -244,6 +317,31 @@ const goToApprovalDetail = () => {
         }}
       </el-descriptions-item>
     </el-descriptions>
+    <el-table
+      v-if="riskFindings.length > 0"
+      :data="riskFindings"
+      size="small"
+      style="margin-top: 8px"
+    >
+      <el-table-column label="检查维度" width="140">
+        <template #default="scope">{{
+          toFindingDimensionLabel(scope.row.dimension)
+        }}</template>
+      </el-table-column>
+      <el-table-column label="判定" width="90">
+        <template #default="scope">
+          <el-tag size="small" :type="toFindingStatusTagType(scope.row.status)">
+            {{ toFindingStatusLabel(scope.row.status) }}
+          </el-tag>
+        </template>
+      </el-table-column>
+      <el-table-column label="说明" min-width="200">
+        <template #default="scope">{{ scope.row.detail || "-" }}</template>
+      </el-table-column>
+      <el-table-column label="依据" min-width="200">
+        <template #default="scope">{{ scope.row.evidence || "-" }}</template>
+      </el-table-column>
+    </el-table>
   </FinSection>
 
   <FinSection
@@ -341,22 +439,20 @@ const goToApprovalDetail = () => {
           </el-tag>
         </template>
       </el-table-column>
-      <el-table-column label="结论" width="100">
+      <el-table-column label="结论" width="140">
         <template #default="scope">
           <el-tag
-            v-if="scope.row.outcome"
+            v-if="scope.row.decision || scope.row.outcome"
             size="small"
-            :type="toStatusTagType(aiOutcomeTagTypeMap, scope.row.outcome)"
+            :type="toGateDecisionTagType(scope.row)"
           >
-            {{ toAiOutcomeLabel(scope.row.outcome) }}
+            {{ toGateDecisionLabel(scope.row) }}
           </el-tag>
           <span v-else>-</span>
         </template>
       </el-table-column>
       <el-table-column label="总结/意见" min-width="260">
-        <template #default="scope">{{
-          scope.row.summary || scope.row.comment || "-"
-        }}</template>
+        <template #default="scope">{{ toGateSummaryText(scope.row) }}</template>
       </el-table-column>
       <el-table-column label="建议" min-width="260">
         <template #default="scope">

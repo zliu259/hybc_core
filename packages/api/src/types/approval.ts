@@ -306,6 +306,10 @@ export interface AiGateReview {
   summary: string | null;
   recommendations: string[];
   outcome: "approve" | "reject" | null;
+  /** AI 三态判定：pass 通过 / warn 放行需人工关注 / reject 拒绝（旧数据为 null） */
+  decision: "pass" | "warn" | "reject" | null;
+  risk_level: "low" | "medium" | "high" | null;
+  needs_human_review: boolean;
   comment: string | null;
   error_message: string | null;
   created_at: string;

@@ -215,27 +215,23 @@ class LocalRulesProvider(AiProvider):
         )
 
     def _contract_review(self, payload: dict[str, object]) -> str:
+        """新 schema：不输出分数（由 postprocess 依 clause_analysis 确定性计算）。"""
         amount_raw = payload.get("total_amount", 0)
         amount = float(amount_raw) if isinstance(amount_raw, (int, float, str)) else 0.0
-        risk = "low"
-        score = 18
+        level = "low"
         if amount >= 5_000_000:
-            risk = "high"
-            score = 76
+            level = "high"
         elif amount >= 1_000_000:
-            risk = "medium"
-            score = 48
+            level = "medium"
 
         return json.dumps(
             {
-                "overall_risk": risk,
-                "score": score,
-                "summary": "本地模拟审查结果（非真实AI调用）。",
+                "summary": "本地模拟审查：金额分段触发关注，建议核对付款节点（非真实AI调用）。",
                 "clause_analysis": [
                     {
                         "clause": "付款条件",
-                        "risk_level": risk,
-                        "issue": "建议核对付款节点与验收条件是否一一对应。",
+                        "risk_level": level,
+                        "issue": "付款节点与验收条件对应关系待核对。",
                         "suggestion": "补充里程碑验收资料要求。",
                     }
                 ],
@@ -247,39 +243,60 @@ class LocalRulesProvider(AiProvider):
                 "recommendations": [
                     "补充违约责任条款",
                     "确认税率与发票类型一致",
-                    "在提交审批前完成法务复核",
                 ],
             },
             ensure_ascii=False,
         )
 
     def _payment_risk_assessment(self, payload: dict[str, object]) -> str:
+        """新 schema：只输出 findings，分数由 postprocess 依固定权重确定性计算。"""
         amount_raw = payload.get("amount", 0)
         amount = float(amount_raw) if isinstance(amount_raw, (int, float, str)) else 0.0
-        risk = "low"
-        score = 16
+        amount_status = "pass"
         if amount >= 500_000:
-            risk = "high"
-            score = 81
+            amount_status = "fail"
         elif amount >= 100_000:
-            risk = "medium"
-            score = 52
+            amount_status = "warn"
 
         return json.dumps(
             {
-                "overall_risk": risk,
-                "score": score,
-                "summary": "本地模拟风控结果（非真实AI调用）。",
+                "summary": "本地模拟风控：按金额分段给出模拟判定（非真实AI调用）。",
+                "findings": [
+                    {
+                        "dimension": "duplicate_payment",
+                        "status": "pass",
+                        "detail": "本地模拟：未检查重复支付。",
+                        "evidence": "recent_payments 模拟略过",
+                    },
+                    {
+                        "dimension": "overpayment",
+                        "status": amount_status,
+                        "detail": f"本地模拟：金额 {amount} 分段判定。",
+                        "evidence": f"amount={amount}",
+                    },
+                    {
+                        "dimension": "frequency_anomaly",
+                        "status": "pass",
+                        "detail": "本地模拟：未检查频率。",
+                        "evidence": "recent_payments 模拟略过",
+                    },
+                    {
+                        "dimension": "counterparty_consistency",
+                        "status": "pass",
+                        "detail": "本地模拟：未核验收款方。",
+                        "evidence": "payee 模拟略过",
+                    },
+                    {
+                        "dimension": "material_consistency",
+                        "status": "pass",
+                        "detail": "本地模拟：未核验附件。",
+                        "evidence": "attachments 模拟略过",
+                    },
+                ],
                 "recommendations": [
                     "复核合同剩余额度",
                     "校验收款账户与历史记录一致性",
-                    "必要时增加经理复核节点",
                 ],
-                "checks": {
-                    "amount_band": amount,
-                    "frequency_check": "simulated",
-                    "duplicate_check": "simulated",
-                },
             },
             ensure_ascii=False,
         )
@@ -667,14 +684,22 @@ class LocalRulesProvider(AiProvider):
 
 
     def _approval_ai_gate(self, payload: dict[str, object]) -> str:
+        """新 schema：与真实模型输出同构，metadata.outcome 由 postprocess 统一提取。"""
+        biz_type = str(payload.get("biz_type", "unknown"))
         return json.dumps(
             {
-                "output": "本地模拟AI关卡建议通过。",
-                "metadata": {
-                    "outcome": "approve",
-                    "comment": "local-mock ai_gate approve",
-                },
-                "input": payload,
+                "decision": "pass",
+                "risk_level": "low",
+                "summary": f"本地模拟AI关卡：{biz_type} 各项检查未见异常（非真实AI调用）。",
+                "findings": [
+                    {
+                        "dimension": "data_consistency",
+                        "status": "pass",
+                        "detail": "本地模拟：数据一致性检查通过。",
+                        "evidence": "local mock",
+                    }
+                ],
+                "suggestions": [],
             },
             ensure_ascii=False,
         )

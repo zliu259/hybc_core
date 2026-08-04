@@ -136,7 +136,7 @@
       <view class="ai-item {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}">
         <view class="meta-row">
           <t-tag theme="default" variant="light">{{item.node_key || '-'}}</t-tag>
-          <t-tag theme="{{item.outcomeLabel === '建议通过' ? 'success' : item.outcomeLabel === '建议补充材料' ? 'warning' : item.outcomeLabel === '建议拒绝' ? 'danger' : 'default'}}" variant="light">{{item.outcomeLabel}}</t-tag>
+          <t-tag theme="{{item.outcomeTheme || 'default'}}" variant="light">{{item.outcomeLabel}}</t-tag>
             </view>
             <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">状态</text><text class="v">{{item.statusLabel}}</text></view>
             <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">总结</text><text class="v">{{item.commentText}}</text></view>

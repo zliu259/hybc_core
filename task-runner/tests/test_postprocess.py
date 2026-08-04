@@ -1,0 +1,330 @@
+import json
+
+from runner.postprocess import (
+    compute_risk_score,
+    postprocess_gate_result,
+    postprocess_payment_risk_result,
+    postprocess_contract_review_result,
+    postprocess_result,
+    risk_level_for_score,
+    tolerant_json_parse,
+)
+
+
+# ─── tolerant_json_parse ──────────
+
+
+def test_tolerant_parse_plain_json():
+    assert tolerant_json_parse('{"a": 1}') == {"a": 1}
+
+
+def test_tolerant_parse_markdown_fenced():
+    raw = '```json\n{"decision": "pass"}\n```'
+    assert tolerant_json_parse(raw) == {"decision": "pass"}
+
+
+def test_tolerant_parse_with_surrounding_prose():
+    raw = '好的，以下是审查结果：\n{"decision": "reject", "summary": "x"}\n以上。'
+    assert tolerant_json_parse(raw) == {"decision": "reject", "summary": "x"}
+
+
+def test_tolerant_parse_garbage_returns_none():
+    assert tolerant_json_parse("完全不是JSON") is None
+    assert tolerant_json_parse("") is None
+    assert tolerant_json_parse(None) is None
+
+
+# ─── gate postprocess ──────────
+
+
+def _gate_output(decision, findings, summary="测试结论"):
+    return json.dumps(
+        {
+            "decision": decision,
+            "risk_level": "high" if decision == "reject" else "low",
+            "summary": summary,
+            "findings": findings,
+            "suggestions": ["建议一"],
+        },
+        ensure_ascii=False,
+    )
+
+
+def test_gate_pass_sets_approve_metadata():
+    output, metadata = postprocess_gate_result(
+        _gate_output(
+            "pass",
+            [{"dimension": "overpayment", "status": "pass", "detail": "无超付", "evidence": "e"}],
+        ),
+        {},
+    )
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "pass"
+    assert metadata["needs_human_review"] is False
+    assert metadata["comment"].startswith("AI审查通过")
+    assert metadata["recommendations"] == ["建议一"]
+    assert json.loads(output)["decision"] == "pass"
+
+
+def test_gate_reject_with_fail_evidence_rejects():
+    output, metadata = postprocess_gate_result(
+        _gate_output(
+            "reject",
+            [
+                {
+                    "dimension": "duplicate_payment",
+                    "status": "fail",
+                    "detail": "两笔同额付款",
+                    "evidence": "FK-1/FK-2 同为 5 万",
+                }
+            ],
+        ),
+        {},
+    )
+    assert metadata["outcome"] == "reject"
+    assert metadata["comment"].startswith("AI审查不通过")
+    assert "duplicate_payment" in metadata["comment"]
+    assert json.loads(output)["decision"] == "reject"
+
+
+def test_gate_reject_without_fail_finding_downgrades_to_warn():
+    """守卫：模型给 reject 但没有 fail 级证据 → 降级放行 + 人工关注。"""
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "reject",
+            [{"dimension": "overpayment", "status": "warn", "detail": "存疑", "evidence": "e"}],
+        ),
+        {},
+    )
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "warn"
+    assert metadata["needs_human_review"] is True
+    assert "降级" in metadata["comment"]
+
+
+def test_gate_warn_approves_with_human_review_flag():
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "warn",
+            [{"dimension": "material_consistency", "status": "warn", "detail": "缺发票", "evidence": "e"}],
+        ),
+        {},
+    )
+    assert metadata["outcome"] == "approve"
+    assert metadata["needs_human_review"] is True
+    assert "material_consistency" in metadata["comment"]
+
+
+def test_gate_unparseable_output_fails_open_with_note():
+    _, metadata = postprocess_gate_result("模型抽风输出了散文", {})
+    assert metadata["outcome"] == "approve"
+    assert metadata["needs_human_review"] is True
+    assert "无法解析" in metadata["comment"]
+
+
+def test_gate_legacy_mock_wrapped_format_still_parses():
+    """旧版 local mock 把 metadata 塞进 output JSON 里。"""
+    legacy = json.dumps(
+        {
+            "output": "本地模拟AI关卡建议通过。",
+            "metadata": {"outcome": "approve", "comment": "local-mock ai_gate approve"},
+            "input": {},
+        },
+        ensure_ascii=False,
+    )
+    _, metadata = postprocess_gate_result(legacy, {})
+    assert metadata["outcome"] == "approve"
+    assert metadata["comment"] == "local-mock ai_gate approve"
+
+
+def test_gate_legacy_outcome_field_maps_to_decision():
+    """旧 DB 模板让模型直接输出 {outcome, comment}。"""
+    legacy = json.dumps({"outcome": "approve", "comment": "一切正常", "summary": "OK"})
+    _, metadata = postprocess_gate_result(legacy, {})
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "pass"
+
+
+def test_gate_legacy_outcome_reject_is_preserved():
+    """旧契约 {outcome:"reject"} 无 findings 概念，守卫不得降级——
+    否则「新 runner + 旧 DB 模板」窗口内关卡完全丧失拒绝能力。"""
+    legacy = json.dumps(
+        {"outcome": "reject", "comment": "审查摘要：金额超付；结论依据：超出合同余额"},
+        ensure_ascii=False,
+    )
+    _, metadata = postprocess_gate_result(legacy, {})
+    assert metadata["outcome"] == "reject"
+    assert metadata["decision"] == "reject"
+    # 旧契约的推理在 comment 里，必须保留进 summary
+    assert "超出合同余额" in metadata["summary"]
+
+
+def test_gate_new_contract_reject_without_findings_downgrades():
+    """新契约（有 decision 键）缺 findings 的 reject 无法验证证据 → 降级。"""
+    raw = json.dumps({"decision": "reject", "summary": "感觉有问题"}, ensure_ascii=False)
+    _, metadata = postprocess_gate_result(raw, {})
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "warn"
+
+
+def test_gate_metadata_contains_risk_level():
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "pass",
+            [{"dimension": "overpayment", "status": "pass", "detail": "", "evidence": ""}],
+        ),
+        {},
+    )
+    assert metadata["risk_level"] == "low"
+
+
+def test_gate_preserves_existing_metadata_keys():
+    _, metadata = postprocess_gate_result(
+        _gate_output("pass", []), {"input_mode": "multimodal"}
+    )
+    assert metadata["input_mode"] == "multimodal"
+
+
+# ─── scoring ──────────
+
+
+def test_score_weights_and_bands():
+    assert compute_risk_score([]) == 0
+    assert compute_risk_score([{"status": "pass"}]) == 0
+    assert compute_risk_score([{"status": "warn"}]) == 20
+    assert compute_risk_score([{"status": "fail"}]) == 50
+    assert compute_risk_score([{"status": "fail"}, {"status": "fail"}, {"status": "warn"}]) == 100
+    assert risk_level_for_score(0) == "low"
+    assert risk_level_for_score(19) == "low"
+    assert risk_level_for_score(20) == "medium"
+    assert risk_level_for_score(49) == "medium"
+    assert risk_level_for_score(50) == "high"
+
+
+# ─── payment risk postprocess ──────────
+
+
+def test_payment_risk_score_is_computed_not_model_provided():
+    raw = json.dumps(
+        {
+            "summary": "存在一笔疑似重复付款",
+            "score": 3,  # 模型擅自给的分数必须被忽略
+            "findings": [
+                {"dimension": "duplicate_payment", "status": "fail", "detail": "两笔同额", "evidence": "e"},
+                {"dimension": "overpayment", "status": "pass", "detail": "未超付", "evidence": "e"},
+            ],
+            "recommendations": ["人工复核"],
+        },
+        ensure_ascii=False,
+    )
+    output, metadata = postprocess_payment_risk_result(raw, {})
+    parsed = json.loads(output)
+    assert parsed["score"] == 50
+    assert parsed["overall_risk"] == "high"
+    assert parsed["score_basis"] == ["+50 重复支付：两笔同额"]
+    assert parsed["findings"][0]["status"] == "fail"
+    assert metadata["score"] == 50
+    assert metadata["overall_risk"] == "high"
+
+
+def test_payment_risk_all_pass_scores_zero_low():
+    raw = json.dumps(
+        {
+            "summary": "未见异常",
+            "findings": [
+                {"dimension": "duplicate_payment", "status": "pass", "detail": "", "evidence": ""},
+            ],
+            "recommendations": [],
+        }
+    )
+    output, _ = postprocess_payment_risk_result(raw, {})
+    parsed = json.loads(output)
+    assert parsed["score"] == 0
+    assert parsed["overall_risk"] == "low"
+    assert parsed["score_basis"] == []
+
+
+def test_payment_risk_legacy_checks_schema_passthrough():
+    legacy = json.dumps({"overall_risk": "low", "score": 16, "checks": {"a": 1}})
+    output, metadata = postprocess_payment_risk_result(legacy, {"m": 1})
+    assert output == legacy
+    assert metadata == {"m": 1}
+
+
+def test_payment_risk_legacy_without_checks_key_still_passthrough():
+    """旧 schema 缺 checks 键时也必须透传——不能把模型的 high/81 重打成 low/0。"""
+    legacy = json.dumps(
+        {"overall_risk": "high", "score": 81, "frequency_check": {"status": "abnormal"}}
+    )
+    output, metadata = postprocess_payment_risk_result(legacy, {"m": 1})
+    assert output == legacy
+    assert metadata == {"m": 1}
+
+
+def test_payment_risk_low_status_counts_as_pass():
+    """模型把 status 写成风险词汇 low 时按 pass 计 0 分，不得虚增。"""
+    raw = json.dumps(
+        {
+            "summary": "未见异常",
+            "findings": [
+                {"dimension": "duplicate_payment", "status": "low", "detail": "", "evidence": ""},
+                {"dimension": "overpayment", "status": "low", "detail": "", "evidence": ""},
+            ],
+            "recommendations": [],
+        }
+    )
+    output, _ = postprocess_payment_risk_result(raw, {})
+    parsed = json.loads(output)
+    assert parsed["score"] == 0
+    assert parsed["overall_risk"] == "low"
+
+
+def test_payment_risk_unparseable_passthrough():
+    output, metadata = postprocess_payment_risk_result("非JSON", {"m": 1})
+    assert output == "非JSON"
+    assert metadata == {"m": 1}
+
+
+# ─── contract review postprocess ──────────
+
+
+def test_contract_review_score_from_clause_levels():
+    raw = json.dumps(
+        {
+            "summary": "违约条款缺失",
+            "clause_analysis": [
+                {"clause": "违约责任", "risk_level": "high", "issue": "缺失", "suggestion": "补充"},
+                {"clause": "付款条件", "risk_level": "medium", "issue": "含糊", "suggestion": "明确"},
+            ],
+            "amount_assessment": {"reasonableness": "medium", "basis": "b", "risk_points": []},
+            "recommendations": ["法务复核"],
+        },
+        ensure_ascii=False,
+    )
+    output, metadata = postprocess_contract_review_result(raw, {})
+    parsed = json.loads(output)
+    assert parsed["score"] == 70
+    assert parsed["overall_risk"] == "high"
+    assert metadata["score"] == 70
+
+
+def test_contract_review_empty_clauses_scores_zero():
+    raw = json.dumps({"summary": "无问题", "clause_analysis": [], "recommendations": []})
+    output, _ = postprocess_contract_review_result(raw, {})
+    parsed = json.loads(output)
+    assert parsed["score"] == 0
+    assert parsed["overall_risk"] == "low"
+
+
+# ─── dispatch ──────────
+
+
+def test_dispatch_ignores_unknown_task_types():
+    output, metadata = postprocess_result("log_summary", "任意文本", {"k": "v"})
+    assert output == "任意文本"
+    assert metadata == {"k": "v"}
+
+
+def test_dispatch_routes_gate():
+    _, metadata = postprocess_result("approval_ai_gate", _gate_output("pass", []), {})
+    assert metadata["outcome"] == "approve"

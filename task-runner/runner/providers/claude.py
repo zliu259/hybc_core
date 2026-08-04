@@ -11,6 +11,15 @@ from .base import AiProvider, ProviderResult
 
 logger = logging.getLogger(__name__)
 
+# 审批域任务输出结构化 findings/条款分析，2048 容易截断 JSON
+_LONG_OUTPUT_TASKS = frozenset(
+    {"approval_ai_gate", "payment_risk_assessment", "risk_assessment", "contract_review"}
+)
+
+
+def _max_tokens_for_task(task_type: str) -> int:
+    return 4096 if task_type in _LONG_OUTPUT_TASKS else 2048
+
 
 class _ClaudeUsage(Protocol):
     input_tokens: int
@@ -135,7 +144,7 @@ class ClaudeProvider(AiProvider):
         try:
             response = self.client.messages.create(
                 model=self.model,
-                max_tokens=2048,
+                max_tokens=_max_tokens_for_task(task_type),
                 system=system,
                 messages=[{"role": "user", "content": user_content}],
             )

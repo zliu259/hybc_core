@@ -11,6 +11,8 @@ from urllib.parse import quote, urljoin
 
 import httpx
 
+from .postprocess import postprocess_result
+from .prompts import default_prompt_for_task
 from .providers.base import AiProvider
 from .providers.claude import ClaudeProvider
 from .providers.openai_provider import OpenAIProvider
@@ -65,7 +67,7 @@ class TaskExecutor:
             prompt = None
 
         if prompt is None:
-            prompt = self._default_prompt_for_task(task_type)
+            prompt = self._default_prompt_for_task(task_type, payload)
             if prompt is None and task_type == "bidding_dedup_rewrite":
                 prompt = build_rewrite_prompt(payload)
 
@@ -98,13 +100,16 @@ class TaskExecutor:
 
         try:
             result = provider.execute(task_type, payload, prompt)
-            metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            raw_metadata = result.metadata if isinstance(result.metadata, dict) else {}
+            # 审批域任务（AI关卡/付款风控/合同审查）的规范化出口：
+            # 解析模型输出、设置 metadata.outcome、确定性计算风险分。
+            output, metadata = postprocess_result(task_type, result.output, raw_metadata)
             if isinstance(attachment_processing, dict):
                 metadata["attachment_processing"] = attachment_processing
             if isinstance(prepared_mode, str) and prepared_mode:
                 metadata["prepared_input_mode"] = prepared_mode
             return {
-                "output": result.output,
+                "output": output,
                 "tokens_input": result.tokens_input,
                 "tokens_output": result.tokens_output,
                 "latency_ms": result.latency_ms,
@@ -323,7 +328,13 @@ class TaskExecutor:
 
         return normalized
 
-    def _default_prompt_for_task(self, task_type: str) -> dict[str, str] | None:
+    def _default_prompt_for_task(
+        self, task_type: str, payload: dict[str, object]
+    ) -> dict[str, str] | None:
+        approval_prompt = default_prompt_for_task(task_type, payload)
+        if approval_prompt is not None:
+            return approval_prompt
+
         if task_type != "ocr_extract":
             return None
 

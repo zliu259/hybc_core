@@ -10,6 +10,16 @@ from .base import AiProvider, ProviderResult
 
 logger = logging.getLogger(__name__)
 
+# 审批域任务输出结构化 findings/条款分析，且 gpt-5 系的 reasoning token
+# 也计入 max_completion_tokens，2048 容易产出空内容或截断 JSON
+_LONG_OUTPUT_TASKS = frozenset(
+    {"approval_ai_gate", "payment_risk_assessment", "risk_assessment", "contract_review"}
+)
+
+
+def _max_completion_tokens_for_task(task_type: str) -> int:
+    return 4096 if task_type in _LONG_OUTPUT_TASKS else 2048
+
 
 class OpenAIProvider(AiProvider):
     provider_key = "openai"
@@ -131,7 +141,7 @@ class OpenAIProvider(AiProvider):
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": user_message_content},
                 ],
-                "max_completion_tokens": 2048,
+                "max_completion_tokens": _max_completion_tokens_for_task(task_type),
             }
             if not self._requires_default_temperature(selected_model):
                 request_kwargs["temperature"] = 0.2

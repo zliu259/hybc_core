@@ -217,12 +217,25 @@ Page({
   },
 
   aiOutcomeLabel(outcome, comment) {
+    // 新版规范化意见带三态前缀（pass/warn/reject），优先于二值 outcome
+    const decision = this.aiDecisionFromComment(comment);
+    if (decision === "reject") return "建议拒绝";
+    if (decision === "warn") return "放行·需人工关注";
+    if (decision === "pass") return "建议通过";
     if (outcome === "approve") return "建议通过";
     if (outcome === "reject") {
       const text = comment || "";
       return /补充|资料|证据|材料/.test(text) ? "建议补充材料" : "建议拒绝";
     }
     return "-";
+  },
+
+  aiDecisionFromComment(comment) {
+    if (typeof comment !== "string") return null;
+    if (comment.indexOf("AI审查不通过") === 0) return "reject";
+    if (comment.indexOf("AI审查放行") === 0) return "warn";
+    if (comment.indexOf("AI审查通过") === 0) return "pass";
+    return null;
   },
 
   formatBeijingTime(value) {
@@ -359,18 +372,31 @@ Page({
   },
 
   normalizeAiReviews(rows) {
+    const decisionLabelMap = { pass: "建议通过", warn: "放行·需人工关注", reject: "建议拒绝" };
     return (rows || []).map((row) => {
       const embedded = this.parseAiEmbeddedSummary(row.summary);
       const outcome = row.outcome || (embedded && embedded.outcome) || null;
       const comment = row.comment || (embedded && embedded.comment) || row.summary || "-";
+      // 新版后端字段 decision 三态优先，旧数据回退 outcome+关键词启发式
+      const decision = row.decision || this.aiDecisionFromComment(comment);
+      const outcomeLabel =
+        (decision && decisionLabelMap[decision]) || this.aiOutcomeLabel(outcome, comment);
       return {
         ...row,
         statusLabel: this.statusLabel(row.status),
-        outcomeLabel: this.aiOutcomeLabel(outcome, comment),
+        outcomeLabel,
+        outcomeTheme: this.aiOutcomeTheme(outcomeLabel),
         commentText: comment,
         completedAtText: this.formatBeijingTime(row.completed_at)
       };
     });
+  },
+
+  aiOutcomeTheme(outcomeLabel) {
+    if (outcomeLabel === "建议通过") return "success";
+    if (outcomeLabel === "放行·需人工关注" || outcomeLabel === "建议补充材料") return "warning";
+    if (outcomeLabel === "建议拒绝") return "danger";
+    return "default";
   },
 
   buildTimelineNodes(detail) {

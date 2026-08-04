@@ -1,6 +1,7 @@
 import type { Env } from "./types/env";
 import { logEvent, type DomainEvent } from "./services/event-bus";
 import { advanceWorkflow } from "./services/approval/engine";
+import { parseAiGateTaskResult } from "./services/approval/ai-gate-result";
 import { createAiGateHandler } from "./services/ai-slot";
 import { executeCfAiTask, isCfAiTaskType } from "./services/cf-ai";
 import {
@@ -191,31 +192,6 @@ const handleApprovalRejected = async (env: Env, instanceId: number): Promise<voi
   }
 };
 
-const summarizeAiGateResult = (resultJson: string | null): string => {
-  if (!resultJson) return "AI关卡已执行";
-  try {
-    const parsed = JSON.parse(resultJson) as {
-      output?: string;
-      metadata?: { comment?: string; summary?: string };
-    };
-    return parsed.metadata?.comment || parsed.metadata?.summary || parsed.output || "AI关卡已执行";
-  } catch {
-    return "AI关卡已执行";
-  }
-};
-
-const parseAiGateOutcome = (resultJson: string | null): "approve" | "reject" => {
-  if (!resultJson) return "approve";
-  try {
-    const parsed = JSON.parse(resultJson) as {
-      metadata?: { outcome?: string };
-    };
-    return parsed.metadata?.outcome === "reject" ? "reject" : "approve";
-  } catch {
-    return "approve";
-  }
-};
-
 const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promise<void> => {
   const task = await env.DB.prepare("SELECT * FROM task_queue WHERE id = ?").bind(taskId).first<{
     id: number;
@@ -263,8 +239,9 @@ const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promise<void
   if (!node) return;
 
   const now = nowIso();
-  const comment = summarizeAiGateResult(task.result_json);
-  const outcome = parseAiGateOutcome(task.result_json);
+  const parsedResult = parseAiGateTaskResult(task.result_json, "AI关卡已执行");
+  const comment = parsedResult.comment;
+  const outcome = parsedResult.outcome;
   await env.DB.prepare(
     "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
   )

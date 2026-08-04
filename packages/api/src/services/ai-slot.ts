@@ -9,6 +9,11 @@ import type {
   ComputeNode
 } from "../types/ai";
 import type { AiGateHandler } from "../types/approval";
+import { parseAiGateTaskResult } from "./approval/ai-gate-result";
+import {
+  normalizeContractReviewOutput,
+  normalizePaymentRiskOutput
+} from "./approval/risk-score";
 import { applyExternalLogAuditResult } from "./external-log-audit";
 import { checkClauseText, parseContractSectionOutput } from "./contract-draft-rules";
 import { CF_AI_COMPLETENESS_MODELS, tolerantJsonParse } from "./cf-ai";
@@ -175,8 +180,27 @@ const loadBizContextFromInstance = async (
       const paymentAttachments = parseAttachmentMeta(payment.attachments_json);
       const contractAttachments = parseAttachmentMeta(contract?.attachments_json ?? null);
       const mergedAttachments = mergeAttachments(contractAttachments, paymentAttachments);
+      // 重复支付/频率异常检查的必要输入（与 payment.ts 风控任务同口径：
+      // 有合同按合同聚合，否则按收款方聚合，排除本单与已取消单）
+      const recentPayments =
+        payment.contract_id !== null
+          ? await env.DB.prepare(
+              `SELECT serial_no, amount, created_at FROM payment_request
+               WHERE contract_id = ? AND id != ? AND status != 'cancelled'
+               ORDER BY created_at DESC LIMIT 10`
+            )
+              .bind(payment.contract_id, payment.id)
+              .all()
+          : await env.DB.prepare(
+              `SELECT serial_no, amount, created_at FROM payment_request
+               WHERE payee_id = ? AND id != ? AND status != 'cancelled'
+               ORDER BY created_at DESC LIMIT 10`
+            )
+              .bind(payment.payee_id, payment.id)
+              .all();
       context = {
         ...context,
+        recent_payments: recentPayments.results ?? [],
         amount: payment.amount,
         project_id: payment.project_id,
         entity_id: contract?.entity_id,
@@ -517,10 +541,25 @@ export const completeTask = async (
       typeof result.output === "string" && result.output.trim().length > 0
         ? result.output
         : JSON.stringify(result);
+    // 兜底计分：旧 runner 不做 postprocess 时，带 findings 无 score 的结果在此规范化
     await env.DB.prepare(
       "UPDATE payment_request SET ai_risk_status = 'completed', ai_risk_result = ?, updated_at = ? WHERE id = ?"
     )
-      .bind(riskOutput, now, task.biz_id)
+      .bind(normalizePaymentRiskOutput(riskOutput), now, task.biz_id)
+      .run();
+  }
+
+  // 合同 AI 审查回写：此前只有触发方置 pending、无任何完成回写，
+  // 合同的 ai_review_result 永远为空、状态永远停在 pending
+  if (task.task_type === "contract_review" && task.biz_type === "contract") {
+    const reviewOutput =
+      typeof result.output === "string" && result.output.trim().length > 0
+        ? result.output
+        : JSON.stringify(result);
+    await env.DB.prepare(
+      "UPDATE contract SET ai_review_status = 'completed', ai_review_result = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(normalizeContractReviewOutput(reviewOutput), now, task.biz_id)
       .run();
   }
 
@@ -748,9 +787,26 @@ export const failTask = async (
     .bind(newStatus, error, newRetryCount, now, taskId)
     .run();
 
-  if (task.task_type === "payment_risk_assessment" && task.biz_type === "payment_request") {
+  // 仅终态失败才落 'failed'——非终态还会自动重试，提前落会让前端误报“评估失败”
+  if (
+    task.task_type === "payment_risk_assessment" &&
+    task.biz_type === "payment_request" &&
+    newStatus === "failed"
+  ) {
     await env.DB.prepare(
       "UPDATE payment_request SET ai_risk_status = 'failed', updated_at = ? WHERE id = ?"
+    )
+      .bind(now, task.biz_id)
+      .run();
+  }
+
+  if (
+    task.task_type === "contract_review" &&
+    task.biz_type === "contract" &&
+    newStatus === "failed"
+  ) {
+    await env.DB.prepare(
+      "UPDATE contract SET ai_review_status = 'failed', updated_at = ? WHERE id = ?"
     )
       .bind(now, task.biz_id)
       .run();
@@ -1003,19 +1059,12 @@ export const createAiGateHandler = (): AiGateHandler => ({
     if (!task) return null;
 
     if (task.status === "completed" && task.result_json) {
-      try {
-        const result = JSON.parse(task.result_json) as {
-          output?: string;
-          metadata?: { outcome?: string; comment?: string };
-        };
-        return {
-          completed: true,
-          outcome: (result.metadata?.outcome as "approve" | "reject") ?? "approve",
-          comment: result.metadata?.comment ?? result.output
-        };
-      } catch {
-        return { completed: true, outcome: "approve" };
-      }
+      const parsed = parseAiGateTaskResult(task.result_json);
+      return {
+        completed: true,
+        outcome: parsed.outcome,
+        comment: parsed.comment
+      };
     }
 
     if (task.status === "failed" || task.status === "timeout") {

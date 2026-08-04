@@ -7,6 +7,7 @@ import type {
   NodeType,
   AiGateHandler
 } from "../../types/approval";
+import { parseAiGateTaskResult } from "./ai-gate-result";
 
 // ─── Types ──────────
 
@@ -134,41 +135,6 @@ const findAiGateTask = async (
       result_json: string | null;
       error_message: string | null;
     }>();
-};
-
-const summarizeAiResult = (
-  resultJson: string | null,
-  fallback: string
-): string => {
-  if (!resultJson) return fallback;
-  try {
-    const parsed = JSON.parse(resultJson) as {
-      output?: string;
-      metadata?: { comment?: string; summary?: string };
-    };
-    return (
-      parsed.metadata?.comment ||
-      parsed.metadata?.summary ||
-      parsed.output ||
-      fallback
-    );
-  } catch {
-    return fallback;
-  }
-};
-
-const parseAiOutcome = (
-  resultJson: string | null
-): "approve" | "reject" => {
-  if (!resultJson) return "approve";
-  try {
-    const parsed = JSON.parse(resultJson) as {
-      metadata?: { outcome?: string };
-    };
-    return parsed.metadata?.outcome === "reject" ? "reject" : "approve";
-  } catch {
-    return "approve";
-  }
 };
 
 const hasAiDecisionTask = async (
@@ -530,8 +496,9 @@ class AiGateExecutor implements NodeExecutor {
 
       if (existingTask?.status === "completed") {
         const now = nowIso();
-        const comment = summarizeAiResult(existingTask.result_json, "AI关卡已完成");
-        const outcome = parseAiOutcome(existingTask.result_json);
+        const parsedResult = parseAiGateTaskResult(existingTask.result_json);
+        const comment = parsedResult.comment;
+        const outcome = parsedResult.outcome;
         await env.DB.prepare(
           "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
         )

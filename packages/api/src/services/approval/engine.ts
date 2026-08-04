@@ -16,6 +16,7 @@ import type {
   AiGateReview
 } from "../../types/approval";
 import { resolveTemplate } from "./router";
+import { parseAiGateTaskResult } from "./ai-gate-result";
 import { parseTemplate, getNextNodeKey, type ParsedNode, type ParsedTemplate } from "./template-parser";
 import { executorFactory, setAiGateHandler } from "./executors";
 import { publishEvent } from "../event-bus";
@@ -82,58 +83,43 @@ const getTimeoutHours = (
   return null;
 };
 
-type AiGateTaskResult = {
-  output?: string;
-  metadata?: {
-    summary?: string;
-    comment?: string;
-    recommendations?: unknown;
-    outcome?: unknown;
-  };
+const emptyAiGateReviewFields = {
+  summary: null,
+  recommendations: [] as string[],
+  outcome: null,
+  decision: null,
+  risk_level: null,
+  needs_human_review: false,
+  comment: null
 };
 
-const parseAiGateResult = (
+const parseAiGateReviewFields = (
   raw: string | null
 ): {
   summary: string | null;
   recommendations: string[];
   outcome: "approve" | "reject" | null;
+  decision: "pass" | "warn" | "reject" | null;
+  risk_level: "low" | "medium" | "high" | null;
+  needs_human_review: boolean;
   comment: string | null;
 } => {
-  if (!raw) {
-    return {
-      summary: null,
-      recommendations: [],
-      outcome: null,
-      comment: null
-    };
-  }
+  if (!raw) return { ...emptyAiGateReviewFields };
 
-  try {
-    const parsed = JSON.parse(raw) as AiGateTaskResult;
-    const recommendationsRaw = parsed.metadata?.recommendations;
-    const recommendations = Array.isArray(recommendationsRaw)
-      ? recommendationsRaw.filter((item): item is string => typeof item === "string")
-      : [];
-    const outcomeRaw = parsed.metadata?.outcome;
-    const outcome =
-      outcomeRaw === "approve" || outcomeRaw === "reject"
-        ? outcomeRaw
-        : null;
-    return {
-      summary: parsed.metadata?.summary ?? parsed.output ?? null,
-      recommendations,
-      outcome,
-      comment: parsed.metadata?.comment ?? null
-    };
-  } catch {
-    return {
-      summary: null,
-      recommendations: [],
-      outcome: null,
-      comment: null
-    };
+  const parsed = parseAiGateTaskResult(raw);
+  // 无法解析出明确结论的旧数据保持 outcome=null（前端显示 "-"），不冒充 approve
+  if (!parsed.explicitOutcome) {
+    return { ...emptyAiGateReviewFields, comment: parsed.comment, summary: parsed.summary };
   }
+  return {
+    summary: parsed.summary ?? parsed.comment,
+    recommendations: parsed.recommendations,
+    outcome: parsed.outcome,
+    decision: parsed.decision,
+    risk_level: parsed.riskLevel,
+    needs_human_review: parsed.needsHumanReview,
+    comment: parsed.comment
+  };
 };
 
 // ─── Submit ──────────
@@ -832,7 +818,7 @@ export const getInstanceDetail = async (
       }
     }
 
-    const parsedResult = parseAiGateResult(row.result_json);
+    const parsedResult = parseAiGateReviewFields(row.result_json);
     return {
       task_id: row.id,
       node_key: nodeKey,
@@ -841,6 +827,9 @@ export const getInstanceDetail = async (
       summary: parsedResult.summary,
       recommendations: parsedResult.recommendations,
       outcome: parsedResult.outcome,
+      decision: parsedResult.decision,
+      risk_level: parsedResult.risk_level,
+      needs_human_review: parsedResult.needs_human_review,
       comment: parsedResult.comment,
       error_message: row.error_message,
       created_at: row.created_at,

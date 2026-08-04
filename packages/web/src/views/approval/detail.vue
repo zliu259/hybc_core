@@ -48,6 +48,17 @@ import { useUserStoreHook } from "@/store/modules/user";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { formatToken, getToken } from "@/utils/auth";
 import { formatBeijingDateTime } from "@/utils/datetime";
+import {
+  AI_DECISION_LABELS,
+  AI_DECISION_TAGS,
+  deriveAiDecisionFromComment,
+  normalizeAiFindings,
+  toFindingDimensionLabel,
+  toFindingStatusLabel,
+  toFindingStatusTagType,
+  toRiskScoreBandLabel,
+  toRiskScoreBandTagType
+} from "@/utils/ai-review";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalDetail" });
@@ -321,6 +332,27 @@ const toRiskLevelTagType = (level: unknown): TagType => {
   return riskLevelTagTypeMap[level] ?? "info";
 };
 
+// 新版付款风控结果：findings 事实判定 + score_basis 分数构成（后端确定性计分）
+const paymentRiskFindings = computed(() =>
+  normalizeAiFindings(paymentRiskReport.value?.findings)
+);
+
+const paymentRiskScoreBasis = computed(() => {
+  const raw = paymentRiskReport.value?.score_basis;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === "string");
+});
+
+const paymentRiskScoreValue = computed(() => {
+  const raw = paymentRiskReport.value?.score;
+  return typeof raw === "number" && !Number.isNaN(raw) ? raw : null;
+});
+
+// 只有确定性计分的新结果（带 score_basis 键）才展示分档签
+const paymentRiskScoreIsDeterministic = computed(() =>
+  Array.isArray(paymentRiskReport.value?.score_basis)
+);
+
 const aiGateTagType: Record<string, TagType> = {
   pending: "warning",
   assigned: "warning",
@@ -333,6 +365,8 @@ const aiGateTagType: Record<string, TagType> = {
 type AiReviewRow = {
   node_key: string;
   outcome: string | null;
+  decision?: "pass" | "warn" | "reject" | null;
+  risk_level?: "low" | "medium" | "high" | null;
   comment: string | null;
   summary: string | null;
   completed_at: string | null;
@@ -577,6 +611,16 @@ const normalizeAiReview = (row: AiReviewRow): AiReviewNormalized => {
       ? row.summary
       : null) ??
     "-";
+  // 新版三态判定优先（后端字段或规范化意见前缀），旧数据回退关键词启发式
+  const decision = row.decision ?? deriveAiDecisionFromComment(comment);
+  if (decision && AI_DECISION_LABELS[decision]) {
+    return {
+      outcomeCode: outcome,
+      outcomeLabel: AI_DECISION_LABELS[decision],
+      outcomeTagType: AI_DECISION_TAGS[decision],
+      summaryText
+    };
+  }
   return {
     outcomeCode: outcome,
     outcomeLabel: toAiOutcomeLabel(outcome, comment),
@@ -605,6 +649,11 @@ const formatAiNodeDecision = (task: ApprovalTask) => {
   const embedded = parseAiDecisionFromText(task.comment);
   const outcome = embedded?.outcome ?? task.action;
   const comment = embedded?.comment ?? task.comment;
+  // 新版规范化意见带判定前缀，三态展示优先于二值 outcome
+  const decision = deriveAiDecisionFromComment(comment);
+  if (decision && AI_DECISION_LABELS[decision]) {
+    return AI_DECISION_LABELS[decision];
+  }
   if (outcome || comment) {
     return toAiOutcomeLabel(outcome, comment);
   }
@@ -620,6 +669,10 @@ const formatAiNodeDecisionTagType = (task: ApprovalTask): TagType => {
   const embedded = parseAiDecisionFromText(task.comment);
   const outcome = embedded?.outcome ?? task.action;
   const comment = embedded?.comment ?? task.comment;
+  const decision = deriveAiDecisionFromComment(comment);
+  if (decision && AI_DECISION_TAGS[decision]) {
+    return AI_DECISION_TAGS[decision];
+  }
   if (outcome || comment) {
     return toAiOutcomeTagType(outcome, comment);
   }
@@ -1394,10 +1447,33 @@ onMounted(async () => {
                   </el-tag>
                 </el-descriptions-item>
                 <el-descriptions-item label="风险分数">
-                  {{ paymentRiskReport.score ?? "-" }}
+                  <template v-if="paymentRiskScoreValue !== null">
+                    {{ paymentRiskScoreValue }}
+                    <el-tag
+                      v-if="paymentRiskScoreIsDeterministic"
+                      size="small"
+                      :type="toRiskScoreBandTagType(paymentRiskScoreValue)"
+                      style="margin-left: 6px"
+                    >
+                      {{ toRiskScoreBandLabel(paymentRiskScoreValue) }}
+                    </el-tag>
+                  </template>
+                  <span v-else>-</span>
                 </el-descriptions-item>
                 <el-descriptions-item label="总结" :span="2">
                   {{ paymentRiskReport.summary || "-" }}
+                </el-descriptions-item>
+                <el-descriptions-item
+                  v-if="paymentRiskScoreBasis.length > 0"
+                  label="分数构成"
+                  :span="2"
+                >
+                  <div
+                    v-for="(item, index) in paymentRiskScoreBasis"
+                    :key="index"
+                  >
+                    {{ item }}
+                  </div>
                 </el-descriptions-item>
                 <el-descriptions-item label="建议" :span="2">
                   {{
@@ -1407,6 +1483,38 @@ onMounted(async () => {
                   }}
                 </el-descriptions-item>
               </el-descriptions>
+              <el-table
+                v-if="paymentRiskFindings.length > 0"
+                :data="paymentRiskFindings"
+                size="small"
+                style="margin-top: 8px"
+              >
+                <el-table-column label="检查维度" width="140">
+                  <template #default="scope">{{
+                    toFindingDimensionLabel(scope.row.dimension)
+                  }}</template>
+                </el-table-column>
+                <el-table-column label="判定" width="90">
+                  <template #default="scope">
+                    <el-tag
+                      size="small"
+                      :type="toFindingStatusTagType(scope.row.status)"
+                    >
+                      {{ toFindingStatusLabel(scope.row.status) }}
+                    </el-tag>
+                  </template>
+                </el-table-column>
+                <el-table-column label="说明" min-width="180">
+                  <template #default="scope">{{
+                    scope.row.detail || "-"
+                  }}</template>
+                </el-table-column>
+                <el-table-column label="依据" min-width="180">
+                  <template #default="scope">{{
+                    scope.row.evidence || "-"
+                  }}</template>
+                </el-table-column>
+              </el-table>
             </template>
 
             <template v-if="paymentDetail">

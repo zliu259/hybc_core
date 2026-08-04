@@ -267,6 +267,13 @@ const enqueuePaymentRiskAssessment = async (env: Env, payment: PaymentRequest) =
   const contractAttachments = parseAttachmentMeta(contract?.attachments_json ?? null);
   const attachments = mergeAttachments(contractAttachments, paymentAttachments);
 
+  // 收款方与付款事由是「收款方一致性/材料一致性」检查的必要输入，缺了模型只能瞎猜
+  const payee = await env.DB.prepare(
+    "SELECT name, bank_name, bank_account FROM payee WHERE id = ?"
+  )
+    .bind(payment.payee_id)
+    .first<{ name: string; bank_name: string | null; bank_account: string | null }>();
+
   const recentPayments =
     payment.contract_id !== null
       ? await env.DB.prepare(
@@ -296,6 +303,19 @@ const enqueuePaymentRiskAssessment = async (env: Env, payment: PaymentRequest) =
       contract,
       recent_payments: recentPayments.results ?? [],
       payee_id: payment.payee_id,
+      payee: {
+        id: payment.payee_id,
+        name: payee?.name ?? null,
+        bank_name: payee?.bank_name ?? null,
+        bank_account: payee?.bank_account ?? null
+      },
+      payment: {
+        category: payment.category,
+        content: payment.content,
+        payment_method: payment.payment_method,
+        expected_payment_date: payment.expected_payment_date,
+        remark: payment.remark ?? null
+      },
       payment_attachments: paymentAttachments,
       contract_attachments: contractAttachments,
       attachments
