@@ -44,3 +44,25 @@ describe("buildPrecheckResult — 截断输出处理", () => {
     expect(result.has_blocking).toBe(false);
   });
 });
+
+describe("buildPrecheckResult — 红线规则预审语境适配", () => {
+  it("身份证号规则降级为提示（case-by-case 合同自然人签约属正常），不阻断", () => {
+    const textWithIdNumber =
+      "乙方（自然人）：张某，身份证号 11010119900101123X，依据《中华人民共和国民法典》订立本合同。";
+    const output = JSON.stringify({ summary: "未见明显问题", issues: [] });
+    const result = buildPrecheckResult(output, textWithIdNumber, null);
+    const idFinding = result.rule_findings.find(f => f.reason.includes("身份证号"));
+    expect(idFinding).toBeDefined();
+    expect(idFinding?.level).toBe("yellow");
+    expect(idFinding?.reason).toContain("自然人签约");
+    expect(idFinding?.reason).not.toContain("模板");
+    expect(result.has_blocking).toBe(false);
+  });
+
+  it("其他 red 红线不受适配影响（背靠背仍阻断）", () => {
+    const text = "甲方在收到业主付款后再向乙方支付本合同款项。";
+    const result = buildPrecheckResult(JSON.stringify({ summary: "ok", issues: [] }), text, null);
+    expect(result.rule_findings.some(f => f.level === "red")).toBe(true);
+    expect(result.has_blocking).toBe(true);
+  });
+});

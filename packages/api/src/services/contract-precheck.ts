@@ -63,6 +63,23 @@ const SEVERITY_ORDER: Record<PrecheckIssue["severity"], number> = {
 };
 
 /**
+ * 红线规则的预审语境适配：checkClauseText 是为「起草模板」写的规则集，
+ * 预审对象是 case-by-case 的真实合同——身份证号在自然人签约场景属签约必需，
+ * 不应按模板红线阻断，降级为提示并改写措辞（owner 08-04 反馈）。
+ */
+const adaptRuleFindingsForPrecheck = (findings: RiskAnnotation[]): RiskAnnotation[] =>
+  findings.map((finding) =>
+    finding.reason.includes("身份证号")
+      ? {
+          ...finding,
+          level: "yellow" as const,
+          reason:
+            "正文含身份证号明文：如为自然人签约主体属正常，请确认必要性并注意文本流转的个人信息保护"
+        }
+      : finding
+  );
+
+/**
  * 纯函数：模型输出 + 合同文本 → 规范化预审结果。
  * 模型输出无法解析时不抛错——降级为「需人工复核」并保留原文。
  */
@@ -71,7 +88,7 @@ export const buildPrecheckResult = (
   contractText: string,
   model: string | null
 ): PrecheckResult => {
-  const ruleFindings = checkClauseText(contractText ?? "");
+  const ruleFindings = adaptRuleFindingsForPrecheck(checkClauseText(contractText ?? ""));
 
   const parsed = tolerantJsonParse(output ?? "") as Record<string, unknown>;
   const rawIssues = Array.isArray(parsed?.issues) ? (parsed.issues as unknown[]) : null;

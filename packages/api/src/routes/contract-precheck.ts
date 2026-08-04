@@ -139,6 +139,14 @@ const enqueueReviewTask = async (
   input: ReviewInput
 ): Promise<number> => {
   const now = nowIso();
+  // 我方主体名单实时取自实体表（owner 08-04：不得机械假定"恒越百川建设集团"，
+  // 集团多主体签约，AI 需据此在合同文本中识别我方并核对名称写法）
+  const entityRows = await c.env.DB.prepare(
+    "SELECT entity_name FROM entity WHERE status = 'active' ORDER BY id ASC"
+  ).all<{ entity_name: string }>();
+  const ourEntities = (entityRows.results ?? [])
+    .map((item) => item.entity_name?.trim())
+    .filter((name): name is string => !!name);
   const task = await createTask(c.env, {
     task_type: "contract_precheck_review",
     biz_type: "contract_precheck",
@@ -152,6 +160,10 @@ const enqueueReviewTask = async (
       counterparty: row.counterparty ?? "（未填写）",
       direction: row.direction,
       direction_label: DIRECTION_LABELS[row.direction] ?? row.direction,
+      our_entities:
+        ourEntities.length > 0
+          ? ourEntities.join("、")
+          : "恒越百川建设集团有限公司及下属实体（实体表为空，按名称合理性判断）",
       contract_text: input.contractText,
       model: CF_AI_REVIEW_MODEL
     }

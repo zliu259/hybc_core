@@ -1064,6 +1064,7 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
       counterparty: "测试相对方",
       direction: "inbound",
       direction_label: "inbound（我方为乙方，即我方收款）",
+      our_entities: "恒越百川建设集团有限公司",
       contract_text: "甲乙双方经协商一致，依据《中华人民共和国民法典》订立本合同。测试文本。",
       // 对齐生产 pin 的模型，让冒烟测试走同一条 anthropic Messages 调用/解析路径
       model: CF_AI_REVIEW_MODEL
