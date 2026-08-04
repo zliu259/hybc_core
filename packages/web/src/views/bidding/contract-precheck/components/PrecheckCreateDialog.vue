@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { ElMessage } from "element-plus";
+import {
+  ElMessage,
+  type UploadProps,
+  type UploadRequestOptions
+} from "element-plus";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { formatToken, getToken } from "@/utils/auth";
 import { parseFile } from "@/views/bidding/dedup/lib/doc-parser";
@@ -45,11 +49,8 @@ const resetState = () => {
   parseError.value = "";
 };
 
-const onFileChange = async (event: Event) => {
-  const input = event.target as HTMLInputElement;
-  const file = input.files?.[0];
-  input.value = "";
-  if (!file) return;
+/** 选择/拖拽共用：本地解析文本并落到待提交状态 */
+const acceptFile = async (file: File) => {
   parsing.value = true;
   parseError.value = "";
   parsedText.value = "";
@@ -75,6 +76,19 @@ const onFileChange = async (event: Event) => {
   } finally {
     parsing.value = false;
   }
+};
+
+/**
+ * el-upload 拖拽/点击选择的统一入口：覆写 http-request 接管上传行为——
+ * 此处只做本地解析，真正的 R2 上传在提交时（onSubmit）走签名直传。
+ */
+const onUploadRequest = (options: UploadRequestOptions) => {
+  void acceptFile(options.file as File);
+  return Promise.resolve();
+};
+
+const onExceed: UploadProps["onExceed"] = files => {
+  if (files[0]) void acceptFile(files[0] as File);
 };
 
 const canSubmit = computed(() => {
@@ -150,15 +164,27 @@ defineExpose({ resetState });
       </template>
       <el-form-item label="合同文件" required>
         <div class="upload-block">
-          <input
-            type="file"
-            accept=".docx,.pdf"
-            :disabled="parsing"
-            @change="onFileChange"
-          />
+          <el-upload
+            drag
+            action="#"
+            :accept="'.docx,.pdf'"
+            :limit="1"
+            :show-file-list="false"
+            :disabled="parsing || uploading"
+            :http-request="onUploadRequest"
+            :on-exceed="onExceed"
+          >
+            <div class="drop-inner">
+              <div class="drop-title">
+                将合同文件拖到此处，或<em>点击选择</em>
+              </div>
+              <div class="drop-sub">
+                支持 .docx 与电子版 .pdf（扫描件暂不支持）
+              </div>
+            </div>
+          </el-upload>
           <div class="upload-hint">
-            支持 .docx 与电子版
-            .pdf（扫描件暂不支持）；文本在浏览器本地提取后随原件一并提交
+            文本在浏览器本地提取后随原件一并提交；重新拖入可替换文件
           </div>
           <el-alert
             v-if="parseError"
@@ -194,6 +220,29 @@ defineExpose({ resetState });
 <style scoped>
 .upload-block {
   width: 100%;
+}
+.upload-block :deep(.el-upload),
+.upload-block :deep(.el-upload-dragger) {
+  width: 100%;
+}
+.upload-block :deep(.el-upload-dragger) {
+  padding: 18px 12px;
+}
+.drop-inner {
+  line-height: 1.6;
+}
+.drop-title {
+  font-size: 14px;
+  color: var(--el-text-color-regular);
+}
+.drop-title em {
+  font-style: normal;
+  color: var(--el-color-primary);
+}
+.drop-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 .upload-hint {
   margin-top: 4px;
