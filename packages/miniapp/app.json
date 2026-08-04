@@ -47,6 +47,13 @@
         "reimbursement/index",
         "reimbursement-archive/index"
       ]
+    },
+    {
+      "root": "packageTools",
+      "pages": [
+        "contract-precheck-list/index",
+        "contract-precheck-detail/index"
+      ]
     }
   ],
   "window": {

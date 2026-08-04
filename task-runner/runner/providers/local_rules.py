@@ -36,6 +36,7 @@ class LocalRulesProvider(AiProvider):
             "file_generate",
             "approval_ai_gate",
             "bidding_dedup_rewrite",
+            "contract_precheck_extract",
         ]
 
     def execute(
@@ -78,6 +79,8 @@ class LocalRulesProvider(AiProvider):
             output = self._file_generate(payload)
         elif task_type == "approval_ai_gate":
             output = self._approval_ai_gate(payload)
+        elif task_type == "contract_precheck_extract":
+            output = self._contract_precheck_extract(payload)
         elif task_type == "bidding_dedup_rewrite":
             output = self._bidding_dedup_rewrite(payload)
         else:
@@ -703,6 +706,37 @@ class LocalRulesProvider(AiProvider):
             },
             ensure_ascii=False,
         )
+
+    def _contract_precheck_extract(self, payload: dict[str, object]) -> str:
+        """合同预审文本提取（无需 AI）：executor 已下载原件并抽好正文，这里汇总返回。
+
+        小程序端没有 docx/pdf 解析能力，改由本节点服务端提取；扫描件（无文字层）
+        返回空文本 + 原因，由服务端判定为提取失败并提示用户换可复制文字的文件。
+        """
+        context_raw = payload.get("_attachment_context")
+        context = context_raw if isinstance(context_raw, dict) else {}
+        blocks_raw = context.get("text_blocks")
+        blocks = blocks_raw if isinstance(blocks_raw, list) else []
+
+        parts: list[str] = []
+        for block in blocks:
+            if not isinstance(block, dict):
+                continue
+            text = block.get("text")
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+
+        text = "\n".join(parts).strip()
+        if not text:
+            return json.dumps(
+                {
+                    "text": "",
+                    "chars": 0,
+                    "error": "未能从文件中提取到文字（可能是扫描件或加密文件）",
+                },
+                ensure_ascii=False,
+            )
+        return json.dumps({"text": text, "chars": len(text)}, ensure_ascii=False)
 
     def _bidding_dedup_rewrite(self, payload: dict[str, object]) -> str:
         paragraphs_raw = payload.get("paragraphs", [])

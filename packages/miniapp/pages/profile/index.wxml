@@ -44,6 +44,15 @@
     </view>
   </hy-panel-card>
 
+  <hy-panel-card title="实用工具" icon="🧰" subtitle="与网页端实用工具同源的移动入口">
+    <view class="action-grid">
+      <view class="action-card blue" bindtap="goToContractPrecheck">
+        <view class="action-title">📝 合同预审</view>
+        <view class="action-desc">上传对方合同，AI 合规审计</view>
+      </view>
+    </view>
+  </hy-panel-card>
+
   <hy-panel-card title="我的申请时间线" icon="📌" subtitle="聚合最近个人业务动态">
     <t-empty wx:if="{{!timeline.length}}" description="暂无申请动态" />
     <view wx:for="{{timeline}}" wx:key="text" class="timeline-item">

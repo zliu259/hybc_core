@@ -1,0 +1,145 @@
+.status-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  margin-bottom: 12rpx;
+}
+
+.round-text {
+  font-size: 24rpx;
+  color: #5c667a;
+}
+
+.kv-row {
+  display: flex;
+  gap: 12rpx;
+  margin-top: 8rpx;
+  font-size: 26rpx;
+}
+
+.kv-row .k {
+  width: 140rpx;
+  color: #8a93a6;
+}
+
+.kv-row .v {
+  flex: 1;
+  color: #1f2733;
+  word-break: break-all;
+}
+
+.notice {
+  padding: 16rpx 18rpx;
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  border-radius: 12rpx;
+}
+
+.notice.warning {
+  color: #8a5a00;
+  background: #fff7e6;
+  border: 1rpx solid #ffd591;
+}
+
+.notice.danger {
+  color: #a8071a;
+  background: #fff1f0;
+  border: 1rpx solid #ffa39e;
+}
+
+.notice.info {
+  color: #174ea6;
+  background: #f7fbff;
+  border: 1rpx solid #dbe8f7;
+}
+
+.action-row {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 20rpx;
+}
+
+.btn {
+  flex: 1;
+}
+
+.summary-text {
+  font-size: 26rpx;
+  line-height: 1.7;
+  color: #1f2733;
+}
+
+.issue-card {
+  padding: 18rpx;
+  margin-bottom: 16rpx;
+  background: #fff;
+  border: 1rpx solid #e3e8f0;
+  border-radius: 14rpx;
+}
+
+.issue-card.red {
+  background: #fff1f0;
+  border-color: #ffa39e;
+}
+
+.issue-card.yellow {
+  background: #fff7e6;
+  border-color: #ffd591;
+}
+
+.issue-head {
+  display: flex;
+  gap: 10rpx;
+  margin-bottom: 10rpx;
+}
+
+.issue-problem {
+  font-size: 26rpx;
+  font-weight: 600;
+  line-height: 1.6;
+  color: #1f2733;
+}
+
+.issue-quote {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #5c667a;
+}
+
+.issue-suggestion {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  line-height: 1.6;
+  color: #0f7b4f;
+}
+
+.issue-basis {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  color: #8a93a6;
+}
+
+.adopt-btn {
+  margin-top: 14rpx;
+}
+
+.opinion-preview {
+  padding: 18rpx;
+  margin-top: 16rpx;
+  font-size: 24rpx;
+  line-height: 1.7;
+  color: #3c4658;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #f7f8fa;
+  border-radius: 12rpx;
+}
+
+.empty {
+  padding: 80rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: #8a93a6;
+}

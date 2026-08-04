@@ -111,7 +111,8 @@ const parseReviewInput = (body: Record<string, unknown>): { ok: true; value: Rev
   if (!fileKey.startsWith("contract-precheck/") || fileKey.length > 512) {
     return { ok: false, message: "缺少合同原件（需先上传 docx/pdf）" };
   }
-  if (contractText.length < MIN_TEXT) {
+  // contract_text 缺省 = 客户端无解析能力（小程序），改由 task-runner 服务端提取
+  if (contractText.length > 0 && contractText.length < MIN_TEXT) {
     return { ok: false, message: "合同文本过短，请确认文件已正确解析" };
   }
   if (contractText.length > MAX_TEXT) {
@@ -147,26 +148,30 @@ const enqueueReviewTask = async (
   const ourEntities = (entityRows.results ?? [])
     .map((item) => item.entity_name?.trim())
     .filter((name): name is string => !!name);
+  // 无客户端文本（小程序）→ 先派 runner 提取任务，其完成回调再派审计任务
+  const needsExtract = input.contractText.length === 0;
+  const sharedPayload = {
+    precheck_id: row.id,
+    round,
+    title: row.title,
+    counterparty: row.counterparty ?? "（未填写）",
+    direction: row.direction,
+    direction_label: DIRECTION_LABELS[row.direction] ?? row.direction,
+    our_entities:
+      ourEntities.length > 0
+        ? ourEntities.join("、")
+        : "恒越百川建设集团有限公司及下属实体（实体表为空，按名称合理性判断）",
+    model: CF_AI_REVIEW_MODEL
+  };
   const task = await createTask(c.env, {
-    task_type: "contract_precheck_review",
+    task_type: needsExtract ? "contract_precheck_extract" : "contract_precheck_review",
     biz_type: "contract_precheck",
     biz_id: row.id,
     priority: 6,
     timeout_seconds: 300,
-    payload: {
-      precheck_id: row.id,
-      round,
-      title: row.title,
-      counterparty: row.counterparty ?? "（未填写）",
-      direction: row.direction,
-      direction_label: DIRECTION_LABELS[row.direction] ?? row.direction,
-      our_entities:
-        ourEntities.length > 0
-          ? ourEntities.join("、")
-          : "恒越百川建设集团有限公司及下属实体（实体表为空，按名称合理性判断）",
-      contract_text: input.contractText,
-      model: CF_AI_REVIEW_MODEL
-    }
+    payload: needsExtract
+      ? { ...sharedPayload, file_key: input.fileKey, file_name: input.fileName }
+      : { ...sharedPayload, contract_text: input.contractText }
   });
 
   await c.env.DB.prepare(
@@ -175,7 +180,17 @@ const enqueueReviewTask = async (
        contract_text = ?, review_task_id = ?, updated_at = ?
      WHERE id = ?`
   )
-    .bind(round, input.fileKey, input.fileName, input.fileSize, input.contractText, task.id, now, row.id)
+    .bind(
+      round,
+      input.fileKey,
+      input.fileName,
+      input.fileSize,
+      // 提取路径下文本由 runner 回填，先置空避免残留上一轮旧文本
+      needsExtract ? null : input.contractText,
+      task.id,
+      now,
+      row.id
+    )
     .run();
 
   await c.env.DB.prepare(
@@ -186,8 +201,9 @@ const enqueueReviewTask = async (
     .bind(row.id, round, input.fileKey, input.fileName, task.id, now, now)
     .run();
 
-  // 生产走 Queue consumer；本地 waitUntil 立即执行 mock（与合同起草同规，勿在生产用 waitUntil）
-  if (c.env.APP_ENV === "local") {
+  // 生产走 Queue consumer / runner 轮询；本地 waitUntil 立即执行 cf-ai mock。
+  // 提取任务由 task-runner 领取执行，Worker 不直调（勿在生产用 waitUntil）。
+  if (c.env.APP_ENV === "local" && !needsExtract) {
     c.executionCtx.waitUntil(executeCfAiTask(c.env, task.id));
   }
   return task.id;
@@ -312,14 +328,16 @@ contractPrecheckRoutes.post("/:id/review", async (c) => {
     if (fileMissing) return c.json({ success: false, error: { message: fileMissing } }, 400);
     input = parsedInput.value;
   } else {
-    if (!row.file_key || !row.contract_text || row.contract_text.trim().length < MIN_TEXT) {
-      return c.json({ success: false, error: { message: "无存量合同文本，请上传新版本文件" } }, 400);
+    if (!row.file_key) {
+      return c.json({ success: false, error: { message: "无存量合同原件，请上传新版本文件" } }, 400);
     }
+    const storedText = row.contract_text?.trim() ?? "";
     input = {
       fileKey: row.file_key,
       fileName: row.file_name ?? "合同文件",
       fileSize: row.file_size,
-      contractText: row.contract_text
+      // 存量文本不足（如小程序上传后首次提取失败）→ 留空触发服务端重新提取
+      contractText: storedText.length >= MIN_TEXT ? storedText : ""
     };
   }
 

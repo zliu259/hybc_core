@@ -15,6 +15,7 @@ import {
   normalizePaymentRiskOutput
 } from "./approval/risk-score";
 import {
+  applyContractPrecheckExtract,
   applyContractPrecheckResult,
   markContractPrecheckTaskError
 } from "./contract-precheck";
@@ -597,6 +598,21 @@ export const completeTask = async (
     )
       .bind(parsed.content, JSON.stringify(merged), now, taskId)
       .run();
+  }
+
+  // 合同预审·服务端提取完成（小程序路径）：文本落库并派生审计任务、指针改指
+  if (task.task_type === "contract_precheck_extract" && task.biz_type === "contract_precheck") {
+    await applyContractPrecheckExtract(env, task, result.output, async (payload) => {
+      const reviewTask = await createTask(env, {
+        task_type: "contract_precheck_review",
+        biz_type: "contract_precheck",
+        biz_id: task.biz_id,
+        priority: 6,
+        timeout_seconds: 300,
+        payload
+      });
+      return { id: reviewTask.id };
+    });
   }
 
   // 合同预审：AI 多维审计 + 确定性红线规则合并后落库（明显错误 → reviewed，否则 passed）

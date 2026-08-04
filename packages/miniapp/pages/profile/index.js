@@ -1,6 +1,14 @@
 const { request, buildUrl } = require("../../utils/request");
 const { clearToken, getUserProfile, setUserProfile } = require("../../utils/auth");
 
+// 合同预审与网页端同角色口径（routes/contract-precheck.ts ROLES）
+const canUseContractPrecheck = (roles) => {
+  const list = Array.isArray(roles) ? roles : [];
+  return (
+    list.includes("super_admin") || list.includes("manager") || list.includes("finance")
+  );
+};
+
 const canLaunchPayment = (roles) => {
   const list = Array.isArray(roles) ? roles : [];
   return (
@@ -211,6 +219,15 @@ Page({
       return;
     }
     wx.navigateTo({ url: "/packageFinance/payment-apply/index" });
+  },
+
+  goToContractPrecheck() {
+    const roles = (this.data.profile && this.data.profile.roles) || [];
+    if (!canUseContractPrecheck(roles)) {
+      wx.showToast({ title: "当前角色无合同预审权限", icon: "none" });
+      return;
+    }
+    wx.navigateTo({ url: "/packageTools/contract-precheck-list/index" });
   },
 
   goToFuelApply() {

@@ -27,7 +27,8 @@ export const taskTypes = [
   "contract_compliance_review",
   "contract_completeness_check",
   "contract_completeness_audit",
-  "contract_precheck_review"
+  "contract_precheck_review",
+  "contract_precheck_extract"
 ] as const;
 export type TaskType = (typeof taskTypes)[number];
 

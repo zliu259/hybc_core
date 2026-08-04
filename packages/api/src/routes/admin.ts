@@ -1068,6 +1068,13 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
       contract_text: "甲乙双方经协商一致，依据《中华人民共和国民法典》订立本合同。测试文本。",
       // 对齐生产 pin 的模型，让冒烟测试走同一条 anthropic Messages 调用/解析路径
       model: CF_AI_REVIEW_MODEL
+    },
+    contract_precheck_extract: {
+      precheck_id: bizId,
+      round: 1,
+      title: "AI Runtime Test 预审提取",
+      file_key: "contract-precheck/runtime-test.docx",
+      file_name: "runtime-test.docx"
     }
   };
 

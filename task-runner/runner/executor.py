@@ -220,10 +220,20 @@ class TaskExecutor:
         return None
 
     def _prepare_payload_for_task(self, task_type: str, payload: dict[str, object]) -> dict[str, object]:
-        if task_type not in {"contract_review", "approval_ai_gate", "ocr_extract"}:
+        if task_type not in {
+            "contract_review",
+            "approval_ai_gate",
+            "ocr_extract",
+            "contract_precheck_extract",
+        }:
             return payload
 
         attachments: object = payload.get("attachments")
+        # 合同预审提取：小程序无法本地解析 docx/pdf，由本节点下载原件提取全文
+        if not attachments and task_type == "contract_precheck_extract":
+            file_key = payload.get("file_key")
+            if isinstance(file_key, str) and file_key.strip():
+                attachments = [{"file_key": file_key.strip()}]
         if not attachments and task_type == "ocr_extract":
             file_key = payload.get("file_key")
             file_url = payload.get("file_url")
@@ -257,6 +267,12 @@ class TaskExecutor:
         text_blocks: list[dict[str, str]] = []
         image_data_urls: list[str] = []
 
+        # 合同预审提取要的是可供法务审计的全文，默认 24000 字/20 页会把长合同截断，
+        # 该任务放宽上限（服务端 MAX_TEXT 150000 仍是最终闸门）
+        is_full_text_task = task_type == "contract_precheck_extract"
+        text_cap = 140000 if is_full_text_task else 24000
+        pdf_page_cap = 80 if is_full_text_task else 20
+
         for attachment in normalized[:6]:
             source = attachment["source"]
             content_type = attachment["content_type"]
@@ -267,20 +283,21 @@ class TaskExecutor:
             if self._is_docx(source, content_type):
                 text = self._extract_docx_text(data)
                 if text:
-                    text_blocks.append({"source": source, "text": text[:24000]})
+                    text_blocks.append({"source": source, "text": text[:text_cap]})
                 continue
 
             if self._is_doc(source, content_type):
                 text = self._extract_doc_text(data)
                 if text:
-                    text_blocks.append({"source": source, "text": text[:24000]})
+                    text_blocks.append({"source": source, "text": text[:text_cap]})
                 continue
 
             if self._is_pdf(source, content_type):
-                text = self._extract_pdf_text(data)
+                text = self._extract_pdf_text(data, max_pages=pdf_page_cap)
                 if text and len(text.strip()) >= 200:
-                    text_blocks.append({"source": source, "text": text[:24000]})
-                else:
+                    text_blocks.append({"source": source, "text": text[:text_cap]})
+                elif not is_full_text_task:
+                    # 纯提取任务不做 vision 兜底：扫描件由服务端判定为提取失败并提示用户
                     image_data_urls.extend(self._render_pdf_pages_to_data_urls(data, max_pages=3))
                 continue
 
@@ -448,12 +465,12 @@ class TaskExecutor:
         normalized = "\n".join(piece.strip() for piece in chunks if piece and piece.strip())
         return normalized[:32000]
 
-    def _extract_pdf_text(self, data: bytes) -> str:
+    def _extract_pdf_text(self, data: bytes, max_pages: int = 20) -> str:
         try:
             pypdf_module = __import__("pypdf")
             reader = pypdf_module.PdfReader(BytesIO(data))
             chunks: list[str] = []
-            for page in reader.pages[:20]:
+            for page in reader.pages[:max_pages]:
                 page_text = page.extract_text() or ""
                 page_text = page_text.strip()
                 if page_text:

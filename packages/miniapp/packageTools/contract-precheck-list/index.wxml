@@ -1,0 +1,97 @@
+<view class="page">
+  <hy-panel-card
+    title="合同预审"
+    icon="📝"
+    subtitle="上传对方提供的合同，AI 多维合规审计后再签署"
+  >
+    <view class="toolbar">
+      <t-button class="btn btn-primary" theme="primary" bindtap="openCreate">新建预审</t-button>
+      <t-button class="btn" variant="outline" bindtap="loadList" loading="{{loading}}">刷新</t-button>
+    </view>
+
+    <view wx:if="{{!list.length && !loading}}" class="empty">
+      暂无预审单，点击「新建预审」上传合同
+    </view>
+
+    <view
+      wx:for="{{list}}"
+      wx:key="id"
+      class="precheck-item"
+      data-id="{{item.id}}"
+      bindtap="openDetail"
+    >
+      <view class="item-head">
+        <view class="item-title">{{item.title}}</view>
+        <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+      </view>
+      <view class="item-meta">{{item.precheck_no}} · 第 {{item.current_round}} 轮</view>
+      <view class="item-meta">{{item.directionLabel}}</view>
+      <view class="item-meta">对方：{{item.counterparty || '未填写'}}</view>
+      <view class="item-time">{{item.updatedAtText}}</view>
+    </view>
+  </hy-panel-card>
+</view>
+
+<!-- 新建预审 -->
+<view wx:if="{{createVisible}}" class="mask" bindtap="closeCreate"></view>
+<view wx:if="{{createVisible}}" class="sheet">
+  <view class="sheet-title">新建合同预审</view>
+
+  <view class="field">
+    <view class="field-label">合同文件<text class="req">*</text></view>
+    <view class="picker-box" bindtap="chooseFile">
+      <block wx:if="{{picked}}">
+        <view class="picked-name">📎 {{picked.name}}</view>
+        <view class="picker-hint">点击可重新选择</view>
+      </block>
+      <block wx:else>
+        <view class="picker-placeholder">点击选择合同文件</view>
+        <view class="picker-hint">支持 .docx 与电子版 .pdf（扫描件不支持）；可从微信/企微会话中选取</view>
+      </block>
+    </view>
+  </view>
+
+  <view class="field">
+    <view class="field-label">合同标题<text class="req">*</text></view>
+    <input
+      class="input"
+      value="{{form.title}}"
+      maxlength="120"
+      placeholder="如：顶管机租赁合同（XX项目）"
+      bindinput="onTitleInput"
+    />
+  </view>
+
+  <view class="field">
+    <view class="field-label">我方立场<text class="req">*</text></view>
+    <picker
+      mode="selector"
+      range="{{directionOptions}}"
+      value="{{directionIndex}}"
+      bindchange="onDirectionChange"
+    >
+      <view class="picker-value">{{directionOptions[directionIndex]}}</view>
+    </picker>
+  </view>
+
+  <view class="field">
+    <view class="field-label">对方主体</view>
+    <input
+      class="input"
+      value="{{form.counterparty}}"
+      maxlength="120"
+      placeholder="对方公司全称（转入合同时必填，可后补）"
+      bindinput="onCounterpartyInput"
+    />
+  </view>
+
+  <view class="sheet-actions">
+    <t-button class="btn" variant="outline" bindtap="closeCreate">取消</t-button>
+    <t-button
+      class="btn btn-primary"
+      theme="primary"
+      loading="{{submitting}}"
+      bindtap="submitCreate"
+    >提交预审</t-button>
+  </view>
+</view>

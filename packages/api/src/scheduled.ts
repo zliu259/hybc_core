@@ -1,6 +1,6 @@
 import type { ScheduledController } from "@cloudflare/workers-types";
 
-import { checkTimeouts } from "./services/ai-slot";
+import { checkTimeouts, createTask } from "./services/ai-slot";
 import { sweepStalePendingActions } from "./services/agent-pending";
 import { checkApprovalTimeouts } from "./services/approval/engine";
 import { sweepPendingCfAiTasks } from "./services/cf-ai";
@@ -58,10 +58,19 @@ export const scheduled = async (
         await requeueTimedOutTasks(env);
         // cf_ai 任务重试/超时后回 pending 无新事件，cron 兜底补执行。
         await sweepPendingCfAiTasks(env, 5);
-        // 预审单卡 reviewing 孤儿回收（回写丢失/任务消失），永不抛出
-        await reconcileStuckPrechecks(env).catch((error) =>
-          console.error("Precheck reconcile failed", error)
-        );
+        // 预审单卡 reviewing 孤儿回收（回写丢失/任务消失），永不抛出。
+        // 注入 createTask：提取已完成但链式派生丢失时可补派审计任务
+        await reconcileStuckPrechecks(env, async (bizId, payload) => {
+          const task = await createTask(env, {
+            task_type: "contract_precheck_review",
+            biz_type: "contract_precheck",
+            biz_id: bizId,
+            priority: 6,
+            timeout_seconds: 300,
+            payload
+          });
+          return { id: task.id };
+        }).catch((error) => console.error("Precheck reconcile failed", error));
         return;
       }
 

@@ -39,6 +39,7 @@ class Settings:
             "voice_stt",
             "approval_ai_gate",
             "bidding_dedup_rewrite",
+            "contract_precheck_extract",
         ]
     )
 

@@ -1,0 +1,105 @@
+<view class="page" wx:if="{{detail}}">
+  <hy-panel-card title="{{detail.title}}" icon="📝" subtitle="{{detail.precheck_no}}">
+    <view class="status-row">
+      <t-tag theme="{{statusTheme}}" variant="light">{{statusLabel}}</t-tag>
+      <text class="round-text">第 {{detail.current_round}} 轮</text>
+    </view>
+    <view class="kv-row"><text class="k">我方立场</text><text class="v">{{directionLabel}}</text></view>
+    <view class="kv-row"><text class="k">对方主体</text><text class="v">{{detail.counterparty || '未填写'}}</text></view>
+    <view class="kv-row"><text class="k">合同文件</text><text class="v">{{detail.file_name || '-'}}</text></view>
+
+    <view wx:if="{{isReviewing}}" class="notice warning">
+      AI 审计进行中（约 1-2 分钟），可稍后回来查看，结果会自动刷新
+    </view>
+    <view wx:elif="{{detail.status === 'review_failed'}}" class="notice danger">
+      AI 审计失败，可点击「重新预审」重试
+    </view>
+
+    <view class="action-row">
+      <t-button
+        wx:if="{{canReview && !isReviewing}}"
+        class="btn"
+        variant="outline"
+        loading="{{acting}}"
+        bindtap="rerunReview"
+      >重新预审</t-button>
+      <t-button
+        wx:if="{{canConfirmSign}}"
+        class="btn btn-primary"
+        theme="primary"
+        loading="{{acting}}"
+        bindtap="confirmSigned"
+      >确认已签署</t-button>
+    </view>
+    <view wx:if="{{detail.status === 'reviewed'}}" class="notice danger">
+      存在明显错误：需与对方修改合同并复审通过后才能确认签署
+    </view>
+    <view wx:if="{{detail.status === 'signed'}}" class="notice info">
+      已确认签署，请在网页端「实用工具 → 合同预审」完成转入合同台账并发起审批
+    </view>
+    <view wx:if="{{detail.status === 'transferred'}}" class="notice info">
+      已转入合同台账，请在网页端合同详情补全信息并提交审批
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card wx:if="{{result && !isReviewing}}" title="预审结论" icon="🔍">
+    <view class="status-row">
+      <t-tag theme="{{overallTheme}}" variant="light">{{overallLabel}}</t-tag>
+    </view>
+    <view class="summary-text">{{result.summary}}</view>
+  </hy-panel-card>
+
+  <hy-panel-card
+    wx:if="{{issues.length}}"
+    title="AI 审计问题"
+    icon="⚠️"
+    subtitle="共 {{issues.length}} 条，可逐条采纳后复制清单发给对方"
+  >
+    <view wx:for="{{issues}}" wx:key="index" class="issue-card">
+      <view class="issue-head">
+        <t-tag theme="{{item.severityTheme}}" variant="light" size="small">{{item.severityLabel}}</t-tag>
+        <t-tag theme="default" variant="outline" size="small">{{item.dimensionLabel}}</t-tag>
+      </view>
+      <view class="issue-problem">{{item.problem}}</view>
+      <view wx:if="{{item.quote}}" class="issue-quote">原文：{{item.quote}}</view>
+      <view wx:if="{{item.suggestion}}" class="issue-suggestion">建议修改为：{{item.suggestion}}</view>
+      <t-button
+        class="adopt-btn"
+        size="small"
+        theme="{{item.adopted ? 'success' : 'default'}}"
+        variant="{{item.adopted ? 'base' : 'outline'}}"
+        data-index="{{item.index}}"
+        loading="{{acting}}"
+        bindtap="toggleAdopt"
+      >{{item.adopted ? '已采纳 ✓' : '采纳建议'}}</t-button>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card
+    wx:if="{{ruleFindings.length}}"
+    title="规则红线命中"
+    icon="🚫"
+    subtitle="共 {{ruleFindings.length}} 条（依据法条的硬性检查）"
+  >
+    <view wx:for="{{ruleFindings}}" wx:key="text" class="issue-card {{item.level === 'red' ? 'red' : 'yellow'}}">
+      <view class="issue-head">
+        <t-tag theme="{{item.levelTheme}}" variant="light" size="small">{{item.levelLabel}}</t-tag>
+      </view>
+      <view class="issue-problem">{{item.reason}}</view>
+      <view wx:if="{{item.text}}" class="issue-quote">原文：{{item.text}}</view>
+      <view wx:if="{{item.legal_basis}}" class="issue-basis">依据：{{item.legal_basis}}</view>
+    </view>
+  </hy-panel-card>
+
+  <hy-panel-card
+    wx:if="{{issues.length || ruleFindings.length}}"
+    title="修改意见清单"
+    icon="📋"
+    subtitle="一键复制后可直接发给对方"
+  >
+    <t-button class="btn btn-primary" theme="primary" bindtap="copyOpinions">复制清单</t-button>
+    <view class="opinion-preview">{{opinionText}}</view>
+  </hy-panel-card>
+</view>
+
+<view wx:else class="empty">加载中…</view>

@@ -1,0 +1,136 @@
+.toolbar {
+  display: flex;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.btn {
+  flex: 1;
+}
+
+.empty {
+  padding: 48rpx 0;
+  text-align: center;
+  font-size: 26rpx;
+  color: #8a93a6;
+}
+
+.precheck-item {
+  padding: 20rpx;
+  margin-bottom: 16rpx;
+  background: #fff;
+  border: 1rpx solid #e3e8f0;
+  border-radius: 16rpx;
+}
+
+.item-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  margin-bottom: 10rpx;
+}
+
+.item-title {
+  flex: 1;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2733;
+}
+
+.item-meta {
+  margin-top: 4rpx;
+  font-size: 24rpx;
+  color: #5c667a;
+}
+
+.item-time {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  color: #8a93a6;
+}
+
+/* 新建预审浮层 */
+.mask {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 101;
+  max-height: 86vh;
+  padding: 28rpx 28rpx 40rpx;
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 24rpx 24rpx 0 0;
+}
+
+.sheet-title {
+  margin-bottom: 20rpx;
+  font-size: 32rpx;
+  font-weight: 700;
+  color: #1f2733;
+}
+
+.field {
+  margin-bottom: 20rpx;
+}
+
+.field-label {
+  margin-bottom: 8rpx;
+  font-size: 26rpx;
+  color: #3c4658;
+}
+
+.req {
+  margin-left: 4rpx;
+  color: #e34d59;
+}
+
+.input,
+.picker-value {
+  padding: 16rpx 18rpx;
+  font-size: 26rpx;
+  background: #fff;
+  border: 1rpx solid #d7dbe3;
+  border-radius: 12rpx;
+}
+
+.picker-box {
+  padding: 22rpx 18rpx;
+  text-align: center;
+  background: #f7fbff;
+  border: 1rpx dashed #9dc2ee;
+  border-radius: 14rpx;
+}
+
+.picked-name {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #174ea6;
+  word-break: break-all;
+}
+
+.picker-placeholder {
+  font-size: 26rpx;
+  color: #174ea6;
+}
+
+.picker-hint {
+  margin-top: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #8a93a6;
+}
+
+.sheet-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 28rpx;
+}
