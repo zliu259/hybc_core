@@ -40,7 +40,7 @@
       <view class="item-amount">¥{{item.amountText}}</view>
       <view class="item-sub">更新时间：{{item.updatedAtText}}</view>
       <view class="actions">
-        <t-button class="btn" size="small" variant="outline" data-id="{{item.id}}" bindtap="goDetail">继续处理</t-button>
+        <t-button class="btn" size="small" variant="outline" theme="{{item.actionTheme}}" data-id="{{item.id}}" bindtap="goDetail">{{item.actionLabel}}</t-button>
       </view>
     </view>
   </hy-panel-card>

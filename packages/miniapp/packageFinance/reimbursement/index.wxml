@@ -13,7 +13,8 @@
       <hy-status-chip text="附件数：{{attachmentCount}}" theme="success" variant="light" />
     </view>
 
-    <t-notice-bar content="建议流程（与Web一致）：先绑定信封UUID（实物信封必填）并保存，再上传附件后提交；提交后系统会在后台自动核查，无需手动触发处理步骤。" theme="warning" />
+    <t-notice-bar wx:if="{{editLocked}}" content="当前状态（{{latestEnvelopeStatusText}}）已锁定，内容不可修改，仅供查看。" theme="info" />
+    <t-notice-bar wx:else content="建议流程（与Web一致）：先绑定信封UUID（实物信封必填）并保存，再上传附件后提交；提交后系统会在后台自动核查，无需手动触发处理步骤。" theme="warning" />
 
     <view class="label">报销通道</view>
     <picker mode="selector" range="{{channelOptions}}" range-key="label" value="{{channelIndex}}" bindchange="onChannelChange">
@@ -47,7 +48,7 @@
     <textarea class="textarea" value="{{draft.description}}" data-key="description" bindinput="onDraftInput" maxlength="240" disabled="{{busy}}" />
 
     <view class="row">
-      <t-button class="btn btn-primary" theme="primary" bindtap="createOrUpdateDraft" loading="{{busy}}" disabled="{{busy}}">💾 保存草稿</t-button>
+      <t-button class="btn btn-primary" theme="primary" bindtap="createOrUpdateDraft" loading="{{busy}}" disabled="{{busy || editLocked}}">💾 保存草稿</t-button>
     </view>
 
     <view class="label">附件类型</view>
@@ -56,7 +57,7 @@
     </picker>
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="onUploadTap" loading="{{busy}}" disabled="{{busy}}">📎 上传本地文件（统一入口）</t-button>
+      <t-button class="btn" variant="outline" bindtap="onUploadTap" loading="{{busy}}" disabled="{{busy || editLocked}}">📎 上传本地文件（统一入口）</t-button>
     </view>
     <view class="upload-tip">支持 PDF、图片（JPG/PNG/WEBP/TIFF/HEIC）及 OFD/XML 等常见发票与扫描格式</view>
     <view wx:if="{{draft.channel === 'electronic'}}" class="upload-tip">电子报销一单对应一张发票；已有发票时再上传，可选择替换原发票或另建一单报销</view>

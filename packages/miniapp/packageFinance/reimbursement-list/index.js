@@ -34,6 +34,9 @@ const formatTime = (value) => {
   return String(value).replace("T", " ").slice(0, 16);
 };
 
+// 仅草稿态还有待办动作；其余状态（含已打款等终态）只能查看，服务端也会拒改
+const CONTINUE_STATUSES = ["draft", "unregistered"];
+
 // 学习审批卡片：标题优先显示人类可读摘要，而不是 UUID 识别号
 const buildSummaryText = (item) => {
   const category = String(item.category || "").trim();
@@ -120,6 +123,7 @@ Page({
           item.envelope_uuid && item.envelope_uuid !== envelopeNo
             ? item.envelope_uuid
             : "";
+        const canContinue = CONTINUE_STATUSES.includes(item.status);
         return {
           id: item.id,
           summaryText: buildSummaryText(item),
@@ -129,7 +133,9 @@ Page({
           status: item.status,
           statusLabel: statusText(item.status),
           channelLabel: channelText(item.channel),
-          updatedAtText: formatTime(item.updated_at)
+          updatedAtText: formatTime(item.updated_at),
+          actionLabel: canContinue ? "继续处理" : "查看详情",
+          actionTheme: canContinue ? "primary" : "default"
         };
       });
 

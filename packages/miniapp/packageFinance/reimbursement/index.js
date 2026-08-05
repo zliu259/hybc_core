@@ -231,6 +231,9 @@ const isLocalFilePickerUnsupportedError = (error) => {
   return message.includes("不支持本地文件选择") || message.includes("local file") || message.includes("choosefile");
 };
 
+// 与服务端 PUT 闸门同口径（reimbursement.ts immutableStatuses）：这些状态不可再修改
+const LOCKED_EDIT_STATUSES = ["batched", "pending_approval", "approved", "paid"];
+
 Page({
   data: {
     mode: "create",
@@ -262,6 +265,7 @@ Page({
     latestEnvelopeUuid: "",
     latestEnvelopeStatus: "none",
     latestEnvelopeStatusText: "未创建",
+    editLocked: false,
     verificationStatusText: "待核验",
     precheckStatusText: "未复核",
     pdfStatusText: "未触发",
@@ -317,6 +321,7 @@ Page({
       latestEnvelopeUuid: "",
       latestEnvelopeStatus: "none",
       latestEnvelopeStatusText: "未创建",
+      editLocked: false,
       verificationStatusText: "待核验",
       precheckStatusText: "未复核",
       pdfStatusText: "未触发",
@@ -612,6 +617,13 @@ Page({
   },
 
   async createOrUpdateDraft() {
+    if (this.data.editLocked) {
+      sayToast({
+        title: `${this.data.latestEnvelopeStatusText}状态不可修改，仅可查看`,
+        icon: "none"
+      });
+      return;
+    }
     const { draft, latestEnvelopeId } = this.data;
     const errorText = firstError([positiveNumber(draft.project_id, "所属项目")]);
     if (errorText) {
@@ -1227,6 +1239,7 @@ Page({
         latestEnvelopeUuid: detail.envelope_uuid || "",
         latestEnvelopeStatus: detail.status || "none",
         latestEnvelopeStatusText: statusText(detail.status),
+        editLocked: LOCKED_EDIT_STATUSES.includes(detail.status),
         verificationStatusText: verificationStatusText(detail.verification_status),
         precheckStatusText: precheckStatusText(detail.precheck_status),
         pdfStatusText: taskStatusText(detail.pdf_status),
