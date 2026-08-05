@@ -501,6 +501,45 @@ const pushApprovalResultToInitiator = async (
   }
 };
 
+const REJECT_REASON_MAX_LENGTH = 200;
+
+const resolveRejectPushReason = async (env: Env, instanceId: number): Promise<string> => {
+  const fallback = "流程已驳回";
+  try {
+    const row = await env.DB.prepare(
+      `SELECT comment
+         FROM approval_task
+        WHERE instance_id = ?
+          AND action = 'reject'
+          AND comment IS NOT NULL
+          AND comment != ''
+        ORDER BY id DESC
+        LIMIT 1`
+    )
+      .bind(instanceId)
+      .first<{ comment: string }>();
+
+    const comment = row?.comment?.trim();
+    if (!comment) {
+      return fallback;
+    }
+    // 企微模板卡片文案超长会导致整卡发送失败，截断兜底；
+    // 按码点切分，避免把 emoji 的代理对切成半个字符（企微会判为非法 JSON）
+    const codePoints = Array.from(comment);
+    const clipped =
+      codePoints.length > REJECT_REASON_MAX_LENGTH
+        ? `${codePoints.slice(0, REJECT_REASON_MAX_LENGTH - 1).join("")}…`
+        : comment;
+    return `${fallback}：${clipped}`;
+  } catch (error) {
+    console.error(
+      "resolveRejectPushReason failed, fallback to default reason:",
+      error instanceof Error ? error.message : error
+    );
+    return fallback;
+  }
+};
+
 export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise<void> => {
   for (const msg of batch.messages) {
     try {
@@ -646,7 +685,8 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
           if (!Number.isNaN(instanceId) && instanceId > 0) {
             await handleApprovalRejected(env, instanceId);
             try {
-              await pushApprovalResultToInitiator(env, instanceId, "rejected", "流程已驳回");
+              const rejectReason = await resolveRejectPushReason(env, instanceId);
+              await pushApprovalResultToInitiator(env, instanceId, "rejected", rejectReason);
             } catch (error) {
               await logResultPushIsolationGuard(env, {
                 instance_id: instanceId,

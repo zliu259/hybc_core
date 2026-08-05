@@ -91,6 +91,37 @@ const roundNodes = computed(() => {
 
 const aiGateReviews = computed(() => detail.value?.ai_gate_reviews ?? []);
 
+/** 驳回结论横幅：从全量 tasks 取最新驳回意见（不受时间线轮次筛选影响），
+ * 无人工驳回记录时回退到 AI 关卡的 reject 结论 */
+const rejectionNotice = computed(() => {
+  if (!detail.value || detail.value.instance.status !== "rejected") return null;
+  const rejected = detail.value.tasks
+    .filter(t => t.action === "reject" && (t.comment ?? "").trim())
+    .sort((a, b) => (a.acted_at ?? "").localeCompare(b.acted_at ?? ""));
+  const latest = rejected[rejected.length - 1];
+  if (latest) {
+    return {
+      by:
+        latest.assignee_userid === "AI_GATE"
+          ? "AI审查"
+          : toUserLabel(latest.assignee_userid),
+      comment: (latest.comment ?? "").trim(),
+      at: latest.acted_at
+    };
+  }
+  const aiReject = [...(aiGateReviews.value as AiReviewRow[])]
+    .reverse()
+    .find(r => r.decision === "reject" && (r.comment ?? "").trim());
+  if (aiReject) {
+    return {
+      by: "AI审查",
+      comment: (aiReject.comment ?? "").trim(),
+      at: aiReject.completed_at
+    };
+  }
+  return { by: "", comment: "未留驳回意见", at: null };
+});
+
 const getNodeTasks = (nodeId: number): ApprovalTask[] => {
   if (!detail.value) return [];
   return detail.value.tasks.filter(t => t.node_instance_id === nodeId);
@@ -188,8 +219,10 @@ const payoutBizType = computed(() => detail.value?.instance.biz_type ?? "");
 const canAdjustPayoutInApprovalWorkbench = computed(() => {
   if (!detail.value) return false;
   const isSupportedBiz =
-    (payoutBizType.value === "payment_request" && Boolean(paymentDetail.value)) ||
-    (payoutBizType.value === "reimbursement_batch" && Boolean(reimbursementBatchDetail.value));
+    (payoutBizType.value === "payment_request" &&
+      Boolean(paymentDetail.value)) ||
+    (payoutBizType.value === "reimbursement_batch" &&
+      Boolean(reimbursementBatchDetail.value));
   if (!isSupportedBiz) return false;
   return (
     hasAction("approve") || hasAction("reject") || hasAction("return_prev")
@@ -526,7 +559,8 @@ const normalizePaymentMethodValue = (value: string | null | undefined) => {
   if (!value) return "";
   if (value === "transfer" || value === "bank_transfer" || value === "对公转账")
     return "transfer";
-  if (value === "personal_transfer" || value === "转账") return "personal_transfer";
+  if (value === "personal_transfer" || value === "转账")
+    return "personal_transfer";
   if (value === "cash" || value === "现金") return "cash";
   if (value === "bill" || value === "票据") return "bill";
   if (value === "other" || value === "其他") return "other";
@@ -1089,7 +1123,9 @@ const loadDetail = async () => {
       const paymentRes = await getPaymentRequest(bizId);
       paymentDetail.value = paymentRes.data;
       payoutForm.value = {
-        payment_method: normalizePaymentMethodValue(paymentRes.data.payment_method),
+        payment_method: normalizePaymentMethodValue(
+          paymentRes.data.payment_method
+        ),
         payment_entity_id: paymentRes.data.payment_entity_id ?? undefined,
         payment_entity_bank_account_id:
           paymentRes.data.payment_entity_bank_account_id ?? undefined,
@@ -1390,6 +1426,23 @@ onMounted(async () => {
     </el-page-header>
 
     <template v-if="detail">
+      <el-alert
+        v-if="rejectionNotice"
+        type="error"
+        :closable="false"
+        show-icon
+        title="该审批已被驳回"
+        style="margin-bottom: 12px"
+      >
+        <span v-if="rejectionNotice.by">{{ rejectionNotice.by }}：</span
+        >{{ rejectionNotice.comment }}
+        <span
+          v-if="rejectionNotice.at"
+          style="margin-left: 8px; color: var(--el-text-color-secondary)"
+        >
+          {{ formatBeijingDateTime(rejectionNotice.at) }}
+        </span>
+      </el-alert>
       <el-row :gutter="16">
         <el-col :md="14" :xs="24">
           <el-card shadow="never" header="业务摘要">
@@ -1776,13 +1829,16 @@ onMounted(async () => {
                 }}</el-descriptions-item>
                 <el-descriptions-item label="审批状态">{{
                   reimbursementBatchDetail.approval_instance
-                    ? toStatusLabel(reimbursementBatchDetail.approval_instance.status)
+                    ? toStatusLabel(
+                        reimbursementBatchDetail.approval_instance.status
+                      )
                     : reimbursementBatchDetail.approval_instance_id
                       ? "处理中"
                       : "-"
                 }}</el-descriptions-item>
                 <el-descriptions-item label="审批节点">{{
-                  reimbursementBatchDetail.approval_instance?.current_node_name || "-"
+                  reimbursementBatchDetail.approval_instance
+                    ?.current_node_name || "-"
                 }}</el-descriptions-item>
               </el-descriptions>
               <el-table
@@ -2265,7 +2321,11 @@ onMounted(async () => {
                     >
                     <div
                       v-if="task.comment && task.assignee_userid !== 'AI_GATE'"
-                      style="margin-top: 2px; color: #f56c6c; font-style: italic"
+                      style="
+                        margin-top: 2px;
+                        color: #f56c6c;
+                        font-style: italic;
+                      "
                     >
                       {{ task.comment }}
                     </div>

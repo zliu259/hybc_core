@@ -21,6 +21,7 @@ import {
   completeIdempotentRequest
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
+import { loadOurEntityContext } from "../services/our-entities";
 import { resubmit as resubmitOp } from "../services/approval/operations";
 import { isApprovalActive, isOwnerReworkState, isResubmittable } from "../services/approval/status";
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
@@ -400,6 +401,8 @@ contractRoutes.post(
             .bind(now, contractId)
             .run();
 
+          // 我方实体实时调取：AI 需据此核对签约主体，禁止假定「恒越百川」
+          const entityContext = await loadOurEntityContext(c.env.DB, body.entity_id);
           await createTask(c.env, {
             task_type: "contract_review",
             biz_type: "contract",
@@ -408,9 +411,12 @@ contractRoutes.post(
             payload: {
               contract_id: contractId,
               contract_no: contractNo,
+              direction: body.direction,
               counterparty: body.counterparty,
               contract_type: body.contract_type,
               total_amount: body.total_amount,
+              remark: body.remark ?? null,
+              ...entityContext,
               attachments: attachments
             },
             timeout_seconds: 600
@@ -792,6 +798,13 @@ contractRoutes.post(
     }
 
     const attachments = parseAttachmentMeta(contract.attachments_json);
+    // 首次提交的 AI 关卡任务由 engine 直接用 route_context 建，不经
+    // loadAiGateContextFromInstance——实体必须在这里就进 context，
+    // 否则主路径（首次提交）的关卡拿不到我方主体，会误判主体不符
+    const submitEntityContext = await loadOurEntityContext(
+      c.env.DB,
+      contract.entity_id
+    );
 
     let instanceNoForPayload = "";
     let instanceIdForPayload: number | null = null;
@@ -810,6 +823,7 @@ contractRoutes.post(
             project_id: contract.project_id,
             biz_type: bizType,
             biz_id: id,
+            ...submitEntityContext,
             contract: {
               contract_no: contract.contract_no,
               direction: contract.direction,
@@ -1134,6 +1148,8 @@ contractRoutes.post(
       }
     }
 
+    // 我方实体实时调取：AI 需据此核对签约主体，禁止假定「恒越百川」
+    const entityContext = await loadOurEntityContext(c.env.DB, contract.entity_id);
     await createTask(c.env, {
       task_type: "contract_review",
       biz_type: "contract",
@@ -1142,9 +1158,12 @@ contractRoutes.post(
       payload: {
         contract_id: id,
         contract_no: contract.contract_no,
+        direction: contract.direction,
         counterparty: contract.counterparty,
         contract_type: contract.contract_type,
         total_amount: contract.total_amount,
+        remark: contract.remark ?? null,
+        ...entityContext,
         attachments
       },
       timeout_seconds: 600

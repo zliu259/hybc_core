@@ -8,6 +8,7 @@ import type {
   AiGateHandler
 } from "../../types/approval";
 import { parseAiGateTaskResult } from "./ai-gate-result";
+import { loadOurEntityContext } from "../our-entities";
 
 // ─── Types ──────────
 
@@ -179,18 +180,46 @@ const loadAiGateContextFromInstance = async (
     }
   }
 
+  let context: Record<string, unknown> =
+    Object.keys(routeContext).length > 0
+      ? routeContext
+      : {
+          biz_type: instance.biz_type,
+          biz_id: instance.biz_id,
+          biz_summary: instance.biz_summary
+        };
+
+  // 合同类关卡补我方实体（实时调取，覆盖重跑/重提交时冻结的 route_context）：
+  // AI 需据 our_entity/our_entities 核对签约主体，禁止假定「恒越百川」
+  if (
+    instance.biz_type === "outbound_contract" ||
+    instance.biz_type === "inbound_contract"
+  ) {
+    // 整段容错：调用方 initializeNode 的 catch 会把异常当成派发失败并直接
+    // 放行关卡，实体补充失败绝不能扩大这个 fail-open 面——查不到就不补
+    try {
+      const entityIdRaw = routeContext.entity_id;
+      let entityId =
+        typeof entityIdRaw === "number" && Number.isFinite(entityIdRaw)
+          ? entityIdRaw
+          : 0;
+      if (!entityId) {
+        const row = await env.DB.prepare("SELECT entity_id FROM contract WHERE id = ?")
+          .bind(instance.biz_id)
+          .first<{ entity_id: number }>();
+        entityId = row?.entity_id ?? 0;
+      }
+      context = { ...context, ...(await loadOurEntityContext(env.DB, entityId)) };
+    } catch (err) {
+      console.error("AI gate entity context enrichment failed, continuing:", err);
+    }
+  }
+
   return {
     biz_type: instance.biz_type,
     biz_id: instance.biz_id,
     biz_summary: instance.biz_summary,
-    context:
-      Object.keys(routeContext).length > 0
-        ? routeContext
-        : {
-            biz_type: instance.biz_type,
-            biz_id: instance.biz_id,
-            biz_summary: instance.biz_summary
-          }
+    context
   };
 };
 

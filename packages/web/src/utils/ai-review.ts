@@ -4,7 +4,8 @@
  * 新版后端契约：
  * - AI 关卡 review 带 decision（pass/warn/reject）与 risk_level；
  * - 付款风控 result 带 findings（固定维度事实判定）与 score_basis
- *   （分数构成说明，分数由后端按 warn=20/fail=50 确定性计算）。
+ *   （分数构成说明，分数由后端按 warn=20/fail=50 确定性计算，
+ *   warn 合计封顶 40：警示项只需人工关注，不会推进高风险档）。
  * 旧数据仍可能把 JSON 塞在 summary/comment 文本里，这里提供容错解析。
  */
 
@@ -27,6 +28,7 @@ const FINDING_DIMENSION_LABELS: Record<string, string> = {
   clause_completeness: "条款完整性",
   amount_terms: "金额条款",
   counterparty_info: "相对方信息",
+  subject_match: "签约主体",
   performance_risk: "履约风险",
   item_precheck: "预审汇总",
   duplicate_invoice: "重复票据",

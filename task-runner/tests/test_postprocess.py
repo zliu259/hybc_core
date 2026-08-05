@@ -201,6 +201,15 @@ def test_score_weights_and_bands():
     assert risk_level_for_score(50) == "high"
 
 
+def test_warn_stacking_capped_below_fail_band():
+    """警示项无论多少条都不允许把结果推进 fail 档（合计封顶 40）。"""
+    warns = [{"status": "warn"}] * 5
+    assert compute_risk_score(warns) == 40
+    assert risk_level_for_score(compute_risk_score(warns)) == "medium"
+    # fail 之上的 warn 仍按封顶后的合计叠加
+    assert compute_risk_score([{"status": "fail"}, *warns]) == 90
+
+
 # ─── payment risk postprocess ──────────
 
 
@@ -314,6 +323,31 @@ def test_contract_review_empty_clauses_scores_zero():
     parsed = json.loads(output)
     assert parsed["score"] == 0
     assert parsed["overall_risk"] == "low"
+
+
+def test_contract_review_medium_stacking_capped_and_low_free():
+    """medium 条款堆叠封顶 40（不利条款不推进 fail 档）；low 条款列出但不计分。"""
+    raw = json.dumps(
+        {
+            "summary": "多条关注项",
+            "clause_analysis": [
+                {"clause": f"条款{i}", "risk_level": "medium", "issue": "关注", "suggestion": "s"}
+                for i in range(4)
+            ]
+            + [{"clause": "送达地址", "risk_level": "low", "issue": "仅列甲方", "suggestion": "补充"}],
+            "recommendations": [],
+        },
+        ensure_ascii=False,
+    )
+    output, metadata = postprocess_contract_review_result(raw, {})
+    parsed = json.loads(output)
+    assert parsed["score"] == 40
+    assert parsed["overall_risk"] == "medium"
+    assert metadata["score"] == 40
+    # low 条款保留在 clause_analysis 供人工参考，但不进 score_basis
+    assert len(parsed["clause_analysis"]) == 5
+    assert not any("送达地址" in line for line in parsed["score_basis"])
+    assert any("上限 +40" in line for line in parsed["score_basis"])
 
 
 # ─── dispatch ──────────

@@ -15,6 +15,7 @@ import {
 import { message } from "@/utils/message";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
+import { resolveBizDetailRoute } from "./biz-edit-routes";
 import { formatBeijingDateTime } from "@/utils/datetime";
 
 defineOptions({ name: "ApprovalCenter" });
@@ -188,14 +189,20 @@ const submitQuickAction = async () => {
   }
 };
 
-const businessDetailRoute = (row: { biz_type: string; biz_id?: number }) => {
-  if (row.biz_type === "reimbursement_batch" && row.biz_id) {
-    return `/finance/reimbursement/batch/${row.biz_id}`;
-  }
-  return null;
+const businessDetailRoute = (row: {
+  biz_type: string;
+  biz_id?: number;
+  biz_summary?: string | null;
+}) => {
+  if (!row.biz_id) return null;
+  return resolveBizDetailRoute(row.biz_type, row.biz_id, row.biz_summary);
 };
 
-const goToBusinessDetail = (row: { biz_type: string; biz_id?: number }) => {
+const goToBusinessDetail = (row: {
+  biz_type: string;
+  biz_id?: number;
+  biz_summary?: string | null;
+}) => {
   const target = businessDetailRoute(row);
   if (!target) return;
   router.push(target);

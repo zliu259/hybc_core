@@ -8,10 +8,13 @@
  *
  * 权重与分档必须与 task-runner/runner/postprocess.py 保持一致：
  * finding warn=20 / fail=50；clause medium=20 / high=50；0-19 低 / 20-49 中 / ≥50 高。
+ * warn/medium 合计封顶 40——警示项只需人工关注，无论多少条都不允许把结果
+ * 推进 fail 档（owner 2026-08-05：不利条款/琐碎问题堆分导致合同永远通不过）。
  */
 
 const FINDING_WEIGHTS: Record<string, number> = { pass: 0, warn: 20, fail: 50 };
 const CLAUSE_WEIGHTS: Record<string, number> = { low: 0, medium: 20, high: 50 };
+const WARN_SCORE_CAP = 40;
 
 // 与 task-runner postprocess.py DIMENSION_LABELS / web utils/ai-review.ts 同步
 const DIMENSION_LABELS: Record<string, string> = {
@@ -23,6 +26,7 @@ const DIMENSION_LABELS: Record<string, string> = {
   clause_completeness: "条款完整性",
   amount_terms: "金额条款",
   counterparty_info: "相对方信息",
+  subject_match: "签约主体",
   performance_risk: "履约风险",
   item_precheck: "预审汇总",
   duplicate_invoice: "重复票据",
@@ -81,7 +85,8 @@ export const normalizePaymentRiskOutput = (raw: string): string => {
     return raw;
   }
 
-  let score = 0;
+  let failScore = 0;
+  let warnTotal = 0;
   const scoreBasis: string[] = [];
   const findings = parsed.findings
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
@@ -90,7 +95,8 @@ export const normalizePaymentRiskOutput = (raw: string): string => {
       const dimension = typeof item.dimension === "string" ? item.dimension : "unknown";
       const detail = typeof item.detail === "string" ? item.detail : "";
       const weight = FINDING_WEIGHTS[status];
-      score += weight;
+      if (status === "fail") failScore += weight;
+      if (status === "warn") warnTotal += weight;
       if (weight > 0) {
         const label = DIMENSION_LABELS[dimension] ?? dimension;
         scoreBasis.push(`+${weight} ${label}：${detail || label}`);
@@ -102,7 +108,10 @@ export const normalizePaymentRiskOutput = (raw: string): string => {
         evidence: typeof item.evidence === "string" ? item.evidence : ""
       };
     });
-  score = Math.min(score, 100);
+  if (warnTotal > WARN_SCORE_CAP) {
+    scoreBasis.push(`（警示项合计 +${warnTotal}，按上限 +${WARN_SCORE_CAP} 计入总分）`);
+  }
+  const score = Math.min(failScore + Math.min(warnTotal, WARN_SCORE_CAP), 100);
 
   return JSON.stringify({
     overall_risk: riskLevelForScore(score),
@@ -125,7 +134,8 @@ export const normalizeContractReviewOutput = (raw: string): string => {
     return raw;
   }
 
-  let score = 0;
+  let highScore = 0;
+  let mediumTotal = 0;
   const scoreBasis: string[] = [];
   const clauses = parsed.clause_analysis
     .filter((item): item is Record<string, unknown> => !!item && typeof item === "object")
@@ -133,7 +143,8 @@ export const normalizeContractReviewOutput = (raw: string): string => {
       const levelRaw = typeof item.risk_level === "string" ? item.risk_level.toLowerCase() : "";
       const level = levelRaw === "low" || levelRaw === "medium" || levelRaw === "high" ? levelRaw : "medium";
       const weight = CLAUSE_WEIGHTS[level];
-      score += weight;
+      if (level === "high") highScore += weight;
+      if (level === "medium") mediumTotal += weight;
       const clause = typeof item.clause === "string" ? item.clause : "";
       const issue = typeof item.issue === "string" ? item.issue : "";
       if (weight > 0) {
@@ -146,7 +157,10 @@ export const normalizeContractReviewOutput = (raw: string): string => {
         suggestion: typeof item.suggestion === "string" ? item.suggestion : ""
       };
     });
-  score = Math.min(score, 100);
+  if (mediumTotal > WARN_SCORE_CAP) {
+    scoreBasis.push(`（关注类条款合计 +${mediumTotal}，按上限 +${WARN_SCORE_CAP} 计入总分）`);
+  }
+  const score = Math.min(highScore + Math.min(mediumTotal, WARN_SCORE_CAP), 100);
 
   return JSON.stringify({
     overall_risk: riskLevelForScore(score),

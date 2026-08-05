@@ -9,6 +9,12 @@ import {
   toRiskScoreBandTagType
 } from "@/utils/ai-review";
 import { contractTypeLabel, statusLabel } from "@/utils/enum-labels";
+import { formatBeijingDateTime } from "@/utils/datetime";
+import {
+  getApprovalDetail,
+  type ApprovalDetailResponse,
+  type ApprovalTask
+} from "@/api/approval";
 import {
   createContract,
   getAiReview,
@@ -669,6 +675,100 @@ const syncFormFromDetail = (data: ContractDetail) => {
   };
 };
 
+// ===== 审批信息（驳回后合同状态会退回 draft，审批实例是唯一能看到驳回原因的地方） =====
+const approvalDetail = ref<ApprovalDetailResponse | null>(null);
+
+const approvalInstanceStatusLabelMap: Record<string, string> = {
+  pending: "待处理",
+  in_progress: "审批中",
+  approved: "已通过",
+  rejected: "已驳回",
+  returned: "已退回",
+  cancelled: "已取消",
+  withdrawn: "已撤回",
+  completed: "已完成"
+};
+
+const approvalInstanceStatusTagTypeMap: Record<string, TagType> = {
+  pending: "warning",
+  in_progress: "warning",
+  approved: "success",
+  rejected: "danger",
+  returned: "warning",
+  cancelled: "info",
+  withdrawn: "info",
+  completed: "success"
+};
+
+const toApprovalInstanceStatusLabel = (status: string | null | undefined) => {
+  if (!status) return "-";
+  return approvalInstanceStatusLabelMap[status] ?? status;
+};
+
+const toApprovalInstanceStatusTagType = (
+  status: string | null | undefined
+): TagType =>
+  status ? (approvalInstanceStatusTagTypeMap[status] ?? "info") : "info";
+
+const approvalActionLabelMap: Record<string, string> = {
+  approve: "通过",
+  reject: "驳回",
+  return_initiator: "退回发起人",
+  return_prev: "退回上一步",
+  return_to: "退回指定节点",
+  transfer: "转办"
+};
+
+const toApprovalActionLabel = (action: string | null) => {
+  if (!action) return "待处理";
+  return approvalActionLabelMap[action] ?? action;
+};
+
+const toApprovalUserLabel = (userid: string | null | undefined) => {
+  if (!userid) return "-";
+  if (userid === "AI_GATE") return "AI审查";
+  return wecomUsers.value.find(item => item.userid === userid)?.name ?? userid;
+};
+
+const commentedApprovalTasks = computed<ApprovalTask[]>(() => {
+  const tasks = approvalDetail.value?.tasks ?? [];
+  return tasks
+    .filter(task => task.action !== null && Boolean(task.comment))
+    .sort((a, b) =>
+      (a.acted_at ?? a.created_at).localeCompare(b.acted_at ?? b.created_at)
+    );
+});
+
+const latestRejectAlertText = computed(() => {
+  const rejects = commentedApprovalTasks.value.filter(
+    task => task.action === "reject"
+  );
+  const latest = rejects.length > 0 ? rejects[rejects.length - 1] : null;
+  if (!latest?.comment) return "";
+  return `${toApprovalUserLabel(latest.assignee_userid)}：${latest.comment}`;
+});
+
+const loadApprovalDetail = async (approvalInstanceId: number | null) => {
+  if (!approvalInstanceId) {
+    approvalDetail.value = null;
+    return;
+  }
+  try {
+    const result = await getApprovalDetail(approvalInstanceId);
+    approvalDetail.value = result.data;
+  } catch {
+    // 审批详情拉取失败不阻塞合同页，仅隐藏审批信息段
+    approvalDetail.value = null;
+  }
+};
+
+const goToApprovalDetail = () => {
+  const approvalInstanceId = detail.value?.approval_instance_id;
+  if (!approvalInstanceId) return;
+  router.push(`/approval/detail/${approvalInstanceId}`);
+  emit("nav");
+};
+
 const loadDetail = async () => {
   if (isCreate.value) return;
   loading.value = true;
@@ -679,7 +779,11 @@ const loadDetail = async () => {
     superEditMode.value = false;
     superEditNote.value = "";
     attachmentItems.value = parseAttachments(result.data.attachments_json);
-    await Promise.all([loadAiReview(), loadInboundRecords()]);
+    await Promise.all([
+      loadAiReview(),
+      loadInboundRecords(),
+      loadApprovalDetail(result.data.approval_instance_id)
+    ]);
   } finally {
     loading.value = false;
   }
@@ -1368,6 +1472,68 @@ onMounted(async () => {
     </FinSection>
 
     <template v-if="!isEditing">
+      <FinSection
+        v-if="approvalDetail || detail?.approval_instance_id"
+        title="审批信息"
+      >
+        <template #extra>
+          <el-button
+            v-if="detail?.approval_instance_id"
+            type="info"
+            plain
+            size="small"
+            @click="goToApprovalDetail"
+          >
+            查看审批详情
+          </el-button>
+        </template>
+
+        <el-alert
+          v-if="
+            approvalDetail?.instance.status === 'rejected' &&
+            latestRejectAlertText
+          "
+          type="error"
+          :closable="false"
+          show-icon
+          title="审批已驳回"
+          :description="latestRejectAlertText"
+          style="margin-bottom: 12px"
+        />
+
+        <el-descriptions v-if="approvalDetail" :column="2" border>
+          <el-descriptions-item label="审批单号">
+            {{ approvalDetail.instance.instance_no }}
+          </el-descriptions-item>
+          <el-descriptions-item label="审批状态">
+            <el-tag
+              :type="
+                toApprovalInstanceStatusTagType(approvalDetail.instance.status)
+              "
+            >
+              {{
+                toApprovalInstanceStatusLabel(approvalDetail.instance.status)
+              }}
+            </el-tag>
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div v-if="commentedApprovalTasks.length > 0" style="margin-top: 12px">
+          <div
+            v-for="task in commentedApprovalTasks"
+            :key="task.id"
+            style="margin-bottom: 4px"
+          >
+            {{ toApprovalUserLabel(task.assignee_userid) }}：{{
+              toApprovalActionLabel(task.action)
+            }}（{{ task.comment }}）
+            <span style="color: var(--el-text-color-secondary)">
+              {{ formatBeijingDateTime(task.acted_at ?? task.created_at) }}
+            </span>
+          </div>
+        </div>
+      </FinSection>
+
       <FinSection v-if="aiReviewData" title="AI审查报告">
         <el-descriptions :column="2" border>
           <el-descriptions-item label="风险等级">

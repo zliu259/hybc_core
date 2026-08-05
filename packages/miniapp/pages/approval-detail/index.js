@@ -37,6 +37,7 @@ Page({
     actionComment: "",
     readOnlyView: false,
     flowCollapsed: true,
+    rejectReason: "",
     availableActions: [],
     hasAnyAction: false,
     canApprove: false,
@@ -445,6 +446,23 @@ Page({
       });
   },
 
+  // 节点已按 round+sort_order 升序，最后一条命中即最新驳回意见
+  extractRejectReason(timelineNodes) {
+    const nodes = Array.isArray(timelineNodes) ? timelineNodes : [];
+    let reason = "";
+    nodes.forEach((node) => {
+      const tasks = Array.isArray(node && node.tasks) ? node.tasks : [];
+      tasks.forEach((task) => {
+        if (!task || task.action !== "reject") return;
+        const text = typeof task.commentText === "string" ? task.commentText.trim() : "";
+        if (text && text !== "-") {
+          reason = text;
+        }
+      });
+    });
+    return reason;
+  },
+
   inferAvailableActions(detail) {
     const instanceStatus = detail && detail.instance ? detail.instance.status : "";
     if (instanceStatus !== "pending" && instanceStatus !== "in_progress") {
@@ -838,6 +856,10 @@ Page({
         : false;
       const canEditReturnedBusiness = canEditReturnedApproval(detail.instance, userId);
 
+      const detailTimelineNodes = this.buildTimelineNodes(detail);
+      const instanceRejected = detail.instance.status === "rejected";
+      const rejectReason = instanceRejected ? this.extractRejectReason(detailTimelineNodes) : "";
+
       this.setData({
         detail: {
           ...detail,
@@ -860,13 +882,14 @@ Page({
         detailAttachments: attachments,
         reimbursementItemRows,
         detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
-        detailTimelineNodes: this.buildTimelineNodes(detail),
+        detailTimelineNodes,
+        rejectReason,
         availableActions: this.data.readOnlyView ? [] : availableActions,
         canEditReturnedBusiness,
         userAlreadyActed,
         detailState: "ready",
         detailErrorText: "",
-        flowCollapsed: true,
+        flowCollapsed: !instanceRejected,
         ...finalFlags
       });
       await this.syncPaymentSelectorsFromBizDetail();

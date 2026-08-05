@@ -7,6 +7,17 @@ import type { RouteLocationRaw } from "vue-router";
  * 返回 null 表示该业务类型暂无可直达的编辑页（如 receipt_refund 需要
  * 额外上下文），调用方应退回到审批详情页入口。
  */
+// 开票申请没有独立详情页，biz_summary 形如 "IR-xxxx | 客户名"，
+// 取单号作为列表页检索词定位到具体单据
+const resolveInvoiceListRoute = (
+  bizSummary?: string | null
+): RouteLocationRaw => {
+  const keyword = (bizSummary ?? "").split("|")[0]?.trim() ?? "";
+  return keyword
+    ? { path: "/finance/receipt/invoice", query: { keyword } }
+    : "/finance/receipt/invoice";
+};
+
 export const resolveBizEditRoute = (
   bizType: string,
   bizId: number,
@@ -22,17 +33,40 @@ export const resolveBizEditRoute = (
     return `/finance/reimbursement/batch/${bizId}`;
   }
   if (bizType === "invoice_request") {
-    // biz_summary 形如 "IR-xxxx | 客户名"，取单号作为列表页检索词
-    const keyword = (bizSummary ?? "").split("|")[0]?.trim() ?? "";
-    return keyword
-      ? { path: "/finance/receipt/invoice", query: { keyword } }
-      : "/finance/receipt/invoice";
+    return resolveInvoiceListRoute(bizSummary);
   }
   if (bizType === "stock_order") {
     return "/warehouse/stock-order";
   }
   if (bizType === "warehouse_asset_work_order") {
     return "/warehouse-assets/work-order";
+  }
+  return null;
+};
+
+/**
+ * 根据审批实例携带的业务类型/业务单 ID 解析业务单查看入口路由。
+ *
+ * 与 resolveBizEditRoute 的差异：面向只读查看（如已驳回/审批中的单据回看），
+ * payment_request 走财务侧详情页且不带 edit 参数。返回 null 表示该业务
+ * 类型暂无可直达的查看页，调用方应退回到审批详情页入口。
+ */
+export const resolveBizDetailRoute = (
+  bizType: string,
+  bizId: number,
+  bizSummary?: string | null
+): RouteLocationRaw | null => {
+  if (bizType === "payment_request") {
+    return `/finance/payment/detail/${bizId}`;
+  }
+  if (bizType === "outbound_contract" || bizType === "inbound_contract") {
+    return `/finance/contract/detail/${bizId}`;
+  }
+  if (bizType === "reimbursement_batch") {
+    return `/finance/reimbursement/batch/${bizId}`;
+  }
+  if (bizType === "invoice_request") {
+    return resolveInvoiceListRoute(bizSummary);
   }
   return null;
 };

@@ -64,14 +64,23 @@ _GATE_CHECKS_PAYMENT = (
 )
 
 _GATE_CHECKS_CONTRACT = (
+    "【我方立场】我方签约主体以 payload 中 our_entity（本合同我方主体）与 "
+    "our_entities（集团实体名单）为准，禁止假定「恒越百川」字样；"
+    "direction=outbound 我方为付款方，inbound 我方为收款方；"
+    "remark 是经办人备注，与附件不一致最多 warn，不得作为 fail 依据。\n"
     "【检查维度】（dimension 必须使用下列英文标识）\n"
     "1. clause_completeness 条款完整性：付款节点、验收标准、违约责任、"
     "争议解决等关键条款是否齐备。\n"
-    "2. amount_terms 金额条款：付款比例合计是否等于 100%、"
-    "各节点金额与 total_amount 是否自洽。\n"
+    "2. amount_terms 金额条款：固定总价合同核对付款比例与总额自洽；"
+    "单价/按实结算合同（正文含台班、单价、按实结算、暂估等字样）"
+    "附件未载明总价属正常，录入 total_amount 按预估或上限理解，"
+    "不得据此判 fail，仅当附件金额与录入金额明确矛盾时 fail。\n"
     "3. counterparty_info 对方主体：合同相对方（counterparty）信息是否完整明确。\n"
-    "4. performance_risk 履约风险：工期、结算条件、单方解约条款等"
-    "是否存在对我方明显不利的安排。"
+    "4. subject_match 签约主体：附件中我方签约主体与 our_entity/our_entities "
+    "是否相符，不符才 fail。\n"
+    "5. performance_risk 履约风险：仅在权利义务明显颠倒或可能造成重大损失时 fail；"
+    "对我方不利但可谈判的常规商业安排（费用承担、管辖、送达等）最多 warn，"
+    "无关紧要瑕疵不列。"
 )
 
 _GATE_CHECKS_REIMBURSEMENT = (
@@ -192,8 +201,20 @@ CONTRACT_REVIEW_OUTPUT_SCHEMA = (
     ' "basis": "判断依据", "risk_points": ["风险点，可为空数组"]},\n'
     '  "recommendations": ["可执行建议，最多3条，没有则为空数组"]\n'
     "}\n"
+    "我方立场：our_entity 为本合同我方签约主体，our_entities 为集团实体名单，"
+    "我方主体核对以此为准，禁止假定「恒越百川」字样；direction=outbound 我方为付款方，"
+    "inbound 我方为收款方；对我方有利的安排不是风险，不要列出；"
+    "remark 是经办人备注，与附件不一致按 low 提示。\n"
+    "risk_level 分级（分数由系统确定性计算：high=50/medium=20/low=0，"
+    "medium 合计封顶 40）：high 仅限硬伤——附件我方签约主体与实体名单不符、"
+    "固定总价合同金额与附件明确矛盾、违法或无效条款、双方权利义务明显颠倒、"
+    "付款义务与验收交付完全脱钩且可能造成重大损失；medium 为需人工重点确认的"
+    "实质风险（计价口径不明、验收标准缺失等）；low 为对我方不利但可谈判的"
+    "常规商业安排（费用承担、管辖、送达地址等）及文字瑕疵，仅提示不计分。\n"
+    "单价/按实结算合同（正文含台班、单价、按实结算等字样）：附件未载明总价属正常，"
+    "录入 total_amount 按预估或上限理解，不得因无总价判 high。\n"
     "审查重点：付款节点与验收条件对应关系、违约责任对等性、"
-    "争议解决与送达条款、金额/税率/发票类型一致性、对我方不利的单方条款。\n"
+    "金额/税率/发票类型一致性、签约主体核对。\n"
     "clause_analysis 只列存在问题或需要关注的条款，全部无问题时给空数组。"
 )
 

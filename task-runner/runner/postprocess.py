@@ -20,10 +20,13 @@ APPROVAL_TASK_TYPES = frozenset(
     {"approval_ai_gate", "payment_risk_assessment", "risk_assessment", "contract_review"}
 )
 
-# 风险计分权重与分档（与前端展示口径一致，改动需同步 web 端说明）：
-# 单条 warn=20 → medium；单条 fail=50 → high；满分 100。
+# 风险计分权重与分档（与前端展示口径一致，改动需同步 web 端说明与
+# packages/api risk-score.ts）：单条 warn=20；warn 合计封顶 40——警示项只需
+# 人工关注，无论多少条都不允许把结果推进 fail 档（owner 2026-08-05：
+# 不利条款/琐碎问题堆分导致合同永远通不过）；单条 fail=50 → high；满分 100。
 FINDING_WEIGHTS = {"pass": 0, "warn": 20, "fail": 50}
 CLAUSE_WEIGHTS = {"low": 0, "medium": 20, "high": 50}
+WARN_SCORE_CAP = 40
 RISK_BANDS: tuple[tuple[int, str], ...] = ((50, "high"), (20, "medium"), (0, "low"))
 
 # 维度中文名（与 web utils/ai-review.ts FINDING_DIMENSION_LABELS 同步）
@@ -36,6 +39,7 @@ DIMENSION_LABELS = {
     "clause_completeness": "条款完整性",
     "amount_terms": "金额条款",
     "counterparty_info": "相对方信息",
+    "subject_match": "签约主体",
     "performance_risk": "履约风险",
     "item_precheck": "预审汇总",
     "duplicate_invoice": "重复票据",
@@ -117,8 +121,14 @@ def _normalize_string_list(raw: object, limit: int = 3) -> list[str]:
 
 
 def compute_risk_score(findings: list[dict[str, str]]) -> int:
-    score = sum(FINDING_WEIGHTS.get(f.get("status", ""), 0) for f in findings)
-    return min(score, 100)
+    fail_score = sum(
+        FINDING_WEIGHTS["fail"] for f in findings if f.get("status") == "fail"
+    )
+    warn_score = min(
+        WARN_SCORE_CAP,
+        sum(FINDING_WEIGHTS["warn"] for f in findings if f.get("status") == "warn"),
+    )
+    return min(fail_score + warn_score, 100)
 
 
 def risk_level_for_score(score: int) -> str:
@@ -131,12 +141,17 @@ def risk_level_for_score(score: int) -> str:
 def _score_basis(findings: list[dict[str, str]]) -> list[str]:
     """分数构成说明——让『分数』可解释，而不是模型拍脑袋的数字。"""
     basis: list[str] = []
+    warn_total = 0
     for finding in findings:
         weight = FINDING_WEIGHTS.get(finding["status"], 0)
         if weight > 0:
             label = DIMENSION_LABELS.get(finding["dimension"], finding["dimension"])
             detail = finding["detail"] or label
             basis.append(f"+{weight} {label}：{detail}")
+        if finding["status"] == "warn":
+            warn_total += FINDING_WEIGHTS["warn"]
+    if warn_total > WARN_SCORE_CAP:
+        basis.append(f"（警示项合计 +{warn_total}，按上限 +{WARN_SCORE_CAP} 计入总分）")
     return basis
 
 
@@ -330,7 +345,8 @@ def postprocess_contract_review_result(
         return output, dict(metadata)
 
     clauses: list[dict[str, str]] = []
-    score = 0
+    high_score = 0
+    medium_total = 0
     score_basis: list[str] = []
     for item in clause_raw:
         if not isinstance(item, dict):
@@ -338,7 +354,10 @@ def postprocess_contract_review_result(
         level_raw = _as_str(item.get("risk_level"), 20).lower()
         level = level_raw if level_raw in ("low", "medium", "high") else "medium"
         weight = CLAUSE_WEIGHTS[level]
-        score += weight
+        if level == "high":
+            high_score += weight
+        elif level == "medium":
+            medium_total += weight
         clause_name = _as_str(item.get("clause"), 60)
         issue = _as_str(item.get("issue"), 150)
         if weight > 0:
@@ -351,7 +370,12 @@ def postprocess_contract_review_result(
                 "suggestion": _as_str(item.get("suggestion"), 150),
             }
         )
-    score = min(score, 100)
+    # medium 与 finding-warn 同口径封顶：关注类条款不推进 fail 档
+    if medium_total > WARN_SCORE_CAP:
+        score_basis.append(
+            f"（关注类条款合计 +{medium_total}，按上限 +{WARN_SCORE_CAP} 计入总分）"
+        )
+    score = min(high_score + min(medium_total, WARN_SCORE_CAP), 100)
     overall_risk = risk_level_for_score(score)
     summary = _as_str(parsed.get("summary"), 200)
 

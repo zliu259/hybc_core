@@ -19,7 +19,10 @@ import {
   type InitiatedBucket
 } from "@/api/approval";
 import { toBizTypeLabel, toStatusLabel } from "@/views/approval/labels";
-import { resolveBizEditRoute } from "@/views/approval/biz-edit-routes";
+import {
+  resolveBizDetailRoute,
+  resolveBizEditRoute
+} from "@/views/approval/biz-edit-routes";
 
 defineOptions({ name: "WorkspaceMyApplications" });
 
@@ -128,6 +131,20 @@ const canEditBiz = (item: ApprovalInstance) =>
 
 const goEditBiz = (item: ApprovalInstance) => {
   const route = resolveBizEditRoute(
+    item.biz_type,
+    item.biz_id,
+    item.biz_summary
+  );
+  if (route) {
+    router.push(route);
+  }
+};
+
+const canViewBiz = (item: ApprovalInstance) =>
+  resolveBizDetailRoute(item.biz_type, item.biz_id, item.biz_summary) !== null;
+
+const goViewBiz = (item: ApprovalInstance) => {
+  const route = resolveBizDetailRoute(
     item.biz_type,
     item.biz_id,
     item.biz_summary
@@ -487,7 +504,7 @@ onMounted(loadData);
             label="更新时间"
             width="180"
           />
-          <el-table-column label="操作" width="160" fixed="right">
+          <el-table-column label="操作" width="200" fixed="right">
             <template #default="scope">
               <el-button
                 v-if="
@@ -498,6 +515,13 @@ onMounted(loadData);
                 type="danger"
                 @click="goEditBiz(scope.row)"
                 >去修改</el-button
+              >
+              <el-button
+                v-if="canViewBiz(scope.row)"
+                link
+                type="primary"
+                @click="goViewBiz(scope.row)"
+                >查看业务</el-button
               >
               <el-button
                 link

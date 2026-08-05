@@ -47,6 +47,13 @@
   margin: 4rpx 0 8rpx;
 }
 
+.reject-reason {
+  margin: 4rpx 0 2rpx;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #d54941;
+}
+
 .kv-row {
   display: flex;
   align-items: flex-start;

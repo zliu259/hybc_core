@@ -6,6 +6,7 @@
           <t-tag theme="primary" variant="light">{{detail.instance.bizTypeLabel}}</t-tag>
           <t-tag theme="{{detail.instance.status === 'approved' ? 'success' : detail.instance.status === 'rejected' ? 'danger' : detail.instance.status === 'pending' ? 'warning' : 'default'}}" variant="light">{{detail.instance.statusText}}</t-tag>
         </view>
+        <view class="reject-reason" wx:if="{{detail.instance.status === 'rejected' && rejectReason}}">驳回原因：{{rejectReason}}</view>
         <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">发起人</text><text class="v">{{detail.instance.initiatorLabel}}</text></view>
         <view class="kv-row" wx:if="{{detail.instance.biz_type === 'reimbursement_batch'}}"><text class="dot dot-blue">•</text><text class="k">被报销人</text><text class="v">{{detail.instance.bizApplicantLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">提交时间</text><text class="v">{{detail.instance.submittedAtText}}</text></view>
