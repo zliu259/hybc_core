@@ -816,7 +816,9 @@ def main() -> None:
         "SELECT 'B2 payee 解析失配(期望 0)' AS item, COUNT(*) AS actual FROM payment_request WHERE legacy_data_id IS NOT NULL AND payee_id IS NULL;",
         f"SELECT 'B3 contract 子查询失配(期望 0)' AS item, COUNT(*) AS actual FROM payment_request WHERE legacy_data_id IS NOT NULL AND contract_id IS NULL AND legacy_contract_no IS NOT NULL AND legacy_contract_no<>{sql_str(ORPHAN_CONTRACT_NO)};",
         "SELECT 'C1 合同附件回填数(期望 560)' AS item, COUNT(*) AS actual FROM contract WHERE legacy_data_id IS NOT NULL AND attachments_json LIKE '%legacy/fin/%';",
-        f"SELECT 'C2 paid_amount 受影响合同数(期望 {len(affected_contract_nos)})' AS item, COUNT(*) AS actual FROM contract WHERE contract_no IN ({', '.join(sql_str(n) for n in affected_contract_nos)}) AND paid_amount>0;",
+        # 金额正确性由 C3 逐合同 diff 覆盖；此处只验受影响合同全部存在。
+        # 不加 paid_amount>0：legacy 付款全为 cancelled 或金额为 0 的合同回填后合法为 0（演练实测 16 个）。
+        f"SELECT 'C2 paid_amount 受影响合同数(期望 {len(affected_contract_nos)})' AS item, COUNT(*) AS actual FROM contract WHERE contract_no IN ({', '.join(sql_str(n) for n in affected_contract_nos)});",
         "SELECT 'C3 paid_amount 抽验(逐合同 diff，期望 0 行)' AS item, c.contract_no, c.paid_amount, x.s FROM contract c JOIN (SELECT contract_id, ROUND(COALESCE(SUM(amount),0),2) AS s FROM payment_request WHERE status='paid' GROUP BY contract_id) x ON x.contract_id=c.id WHERE c.legacy_data_id IS NOT NULL AND ROUND(c.paid_amount,2)<>x.s;",
         f"SELECT 'D1 导入留档(期望 1)' AS item, COUNT(*) AS actual FROM legacy_fin_import_job WHERE job_code={sql_str(job_code)};",
     ]
