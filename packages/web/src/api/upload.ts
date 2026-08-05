@@ -39,3 +39,21 @@ export const signDownloadUrl = (key: string) => {
     { data: { key } }
   );
 };
+
+/** 对象直连地址（未签名），仅作为签名失败时的兜底。 */
+export const resolveObjectUrl = (key: string) =>
+  toAbsoluteApiUrl(`/api/v1/upload/object/${encodeURIComponent(key)}`);
+
+/**
+ * 返回可直接放进 <img>/<iframe> 的文件地址：
+ * 优先取带签名的临时地址，签名接口异常时回退到直连地址，
+ * 避免单次签名失败导致整块预览不可用。
+ */
+export const resolveViewableFileUrl = async (key: string): Promise<string> => {
+  try {
+    const result = await signDownloadUrl(key);
+    return toAbsoluteApiUrl(result.data.url);
+  } catch {
+    return resolveObjectUrl(key);
+  }
+};

@@ -15,6 +15,8 @@ import {
   type FuelQuotaApplication,
   type FuelQuotaRuleHit
 } from "@/api/fleet";
+import { resolveViewableFileUrl } from "@/api/upload";
+import { countPhotoKeys, parsePhotoKeys } from "@/utils/photo-keys";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "FleetFuelProcessingWorkbench" });
@@ -26,8 +28,11 @@ const activeQueue = ref<"pending" | "needs_info" | "processed" | "rejected">(
 const rows = ref<FuelQuotaApplication[]>([]);
 const selected = ref<FuelQuotaApplication | null>(null);
 const ruleHits = ref<FuelQuotaRuleHit[]>([]);
+const photoUrls = ref<string[]>([]);
+const photoLoading = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
-let ruleHitRequestSeq = 0;
+// 详情区（规则命中 + 照片）共用一个序号，防止快速切换行时旧请求覆盖新选中项
+let detailRequestSeq = 0;
 
 const processForm = ref({
   latest_card_balance: 0,
@@ -37,6 +42,9 @@ const processForm = ref({
 const queueRows = computed(() =>
   rows.value.filter(item => item.status === activeQueue.value)
 );
+
+const photoCount = (row: FuelQuotaApplication) =>
+  countPhotoKeys(row.photo_keys_json);
 
 const resolveUserName = (userid: string | null | undefined) => {
   if (!userid) return "-";
@@ -66,25 +74,63 @@ const loadData = async (options?: { autoSelect?: boolean }) => {
 
 const refreshData = () => loadData();
 
+const isCurrentDetailRequest = (requestSeq: number, rowId: number) =>
+  requestSeq === detailRequestSeq && selected.value?.id === rowId;
+
+const loadRuleHits = async (row: FuelQuotaApplication, requestSeq: number) => {
+  const hitResult = await listFuelQuotaRuleHits(row.id);
+  if (isCurrentDetailRequest(requestSeq, row.id)) {
+    ruleHits.value = hitResult.data;
+  }
+};
+
+const loadPhotos = async (row: FuelQuotaApplication, requestSeq: number) => {
+  const keys = parsePhotoKeys(row.photo_keys_json);
+  if (keys.length === 0) {
+    if (isCurrentDetailRequest(requestSeq, row.id)) {
+      photoUrls.value = [];
+      photoLoading.value = false;
+    }
+    return;
+  }
+
+  photoLoading.value = true;
+  try {
+    const urls = await Promise.all(
+      keys.map(key => resolveViewableFileUrl(key))
+    );
+    if (isCurrentDetailRequest(requestSeq, row.id)) {
+      photoUrls.value = urls;
+    }
+  } finally {
+    if (isCurrentDetailRequest(requestSeq, row.id)) {
+      photoLoading.value = false;
+    }
+  }
+};
+
 const selectRow = async (row: FuelQuotaApplication) => {
-  const requestSeq = ++ruleHitRequestSeq;
+  const requestSeq = ++detailRequestSeq;
   selected.value = row;
   ruleHits.value = [];
+  photoUrls.value = [];
   processForm.value = {
     latest_card_balance:
       row.card_latest_balance ?? row.latest_card_balance ?? 0,
     office_remark: row.office_remark || ""
   };
-  const hitResult = await listFuelQuotaRuleHits(row.id);
-  if (requestSeq === ruleHitRequestSeq && selected.value?.id === row.id) {
-    ruleHits.value = hitResult.data;
-  }
+  await Promise.all([
+    loadRuleHits(row, requestSeq),
+    loadPhotos(row, requestSeq)
+  ]);
 };
 
 const clearSelected = () => {
-  ruleHitRequestSeq += 1;
+  detailRequestSeq += 1;
   selected.value = null;
   ruleHits.value = [];
+  photoUrls.value = [];
+  photoLoading.value = false;
 };
 
 const approveSelected = async () => {
@@ -154,8 +200,8 @@ onMounted(loadData);
       <div
         style="
           display: flex;
-          justify-content: space-between;
           align-items: center;
+          justify-content: space-between;
         "
       >
         <div>
@@ -190,6 +236,14 @@ onMounted(loadData);
           </el-table-column>
           <el-table-column prop="current_plate_no" label="车辆" width="120" />
           <el-table-column prop="requested_amount" label="额度" width="110" />
+          <el-table-column label="照片" width="90">
+            <template #default="scope">
+              <el-tag v-if="photoCount(scope.row) > 0" size="small" type="info">
+                {{ photoCount(scope.row) }} 张
+              </el-tag>
+              <span v-else class="fuel-photo-empty-text">无</span>
+            </template>
+          </el-table-column>
           <el-table-column label="风险" width="110">
             <template #default="scope">
               <el-tag
@@ -236,6 +290,32 @@ onMounted(loadData);
             }}</el-descriptions-item>
           </el-descriptions>
 
+          <el-divider>申请照片</el-divider>
+          <el-skeleton v-if="photoLoading" :rows="2" animated />
+          <template v-else-if="photoUrls.length > 0">
+            <div class="fuel-photo-grid">
+              <el-image
+                v-for="(url, index) in photoUrls"
+                :key="url"
+                :src="url"
+                :preview-src-list="photoUrls"
+                :initial-index="index"
+                preview-teleported
+                hide-on-click-modal
+                fit="cover"
+                class="fuel-photo-item"
+              >
+                <template #error>
+                  <div class="fuel-photo-error">加载失败</div>
+                </template>
+              </el-image>
+            </div>
+            <div class="fuel-photo-tip">
+              共 {{ photoUrls.length }} 张，点击可全屏查看（支持缩放与旋转）
+            </div>
+          </template>
+          <el-empty v-else description="申请人未上传照片" :image-size="60" />
+
           <el-divider>规则命中</el-divider>
           <el-tag
             v-for="hit in ruleHits"
@@ -279,3 +359,40 @@ onMounted(loadData);
     </el-row>
   </el-card>
 </template>
+
+<style scoped>
+.fuel-photo-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.fuel-photo-item {
+  width: 100%;
+  height: 96px;
+  cursor: zoom-in;
+  background: #f5f7fa;
+  border: 1px solid #ebeef5;
+  border-radius: 4px;
+}
+
+.fuel-photo-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 12px;
+  color: #909399;
+}
+
+.fuel-photo-tip {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #909399;
+}
+
+.fuel-photo-empty-text {
+  color: #c0c4cc;
+}
+</style>

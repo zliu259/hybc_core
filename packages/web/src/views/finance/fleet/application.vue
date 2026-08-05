@@ -8,6 +8,7 @@ import {
   fuelRiskTagType
 } from "@/utils/enum-labels";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import { parsePhotoKeys } from "@/utils/photo-keys";
 import {
   createFuelQuotaApplication,
   listFleetVehicles,
@@ -44,19 +45,6 @@ const resubmitForm = ref({
 const needsInfoApplications = computed(() =>
   myApplications.value.filter(item => item.status === "needs_info")
 );
-
-const parsePhotoKeys = (value: string | null | undefined) => {
-  if (!value) return [];
-  try {
-    const parsed = JSON.parse(value) as unknown;
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (item): item is string => typeof item === "string" && item.trim() !== ""
-    );
-  } catch {
-    return [];
-  }
-};
 
 const fuelStatusTagType = (
   value: FuelQuotaApplication["status"]
