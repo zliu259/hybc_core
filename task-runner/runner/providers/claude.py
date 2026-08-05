@@ -18,7 +18,29 @@ _LONG_OUTPUT_TASKS = frozenset(
 
 
 def _max_tokens_for_task(task_type: str) -> int:
+    # 扫描件整本转写：20 页合同可达 2 万+ 字，需远大于常规审查的输出预算
+    if task_type == "contract_precheck_extract":
+        return 16384
     return 4096 if task_type in _LONG_OUTPUT_TASKS else 2048
+
+
+def _image_part_cap(payload: dict[str, object]) -> int:
+    """provider 默认只带 8 张图；OCR 整本转写通过 payload 提示放开上限。"""
+    raw = payload.get("_image_part_cap")
+    if isinstance(raw, int) and 0 < raw <= 40:
+        return raw
+    return 8
+
+
+# 转写被输出上限截断时的终态错误（半截合同进审计会漏条款，宁失败勿截半）
+TRUNCATED_EXTRACT_OUTPUT = json.dumps(
+    {
+        "text": "",
+        "chars": 0,
+        "error": "扫描件文字量超出单次转写上限，转写不完整；请拆分文件后分别预审",
+    },
+    ensure_ascii=False,
+)
 
 
 class _ClaudeUsage(Protocol):
@@ -80,6 +102,7 @@ class ClaudeProvider(AiProvider):
             "ocr_extract",
             "approval_ai_gate",
             "bidding_dedup_rewrite",
+            "contract_precheck_extract",
         ]
 
     def execute(
@@ -98,14 +121,19 @@ class ClaudeProvider(AiProvider):
             text_blocks = attachment_context.get("text_blocks")
             image_data_urls = attachment_context.get("image_data_urls")
             if isinstance(text_blocks, list) or isinstance(image_data_urls, list):
+                # 转写任务只做逐字誊录，不适用「审查判断/拒绝」样板语
+                attachment_note = (
+                    "以下为需要逐页转写的合同扫描图片。"
+                    if task_type == "contract_precheck_extract"
+                    else (
+                        "以下为系统从附件中提取的正文/图像证据，请必须结合这些证据做审查判断；"
+                        "若业务描述与附件证据不一致，必须拒绝或要求补充材料。"
+                    )
+                )
                 parts: list[dict[str, Any]] = [
                     {
                         "type": "text",
-                        "text": (
-                            f"{user_msg}\n\n"
-                            "以下为系统从附件中提取的正文/图像证据，请必须结合这些证据做审查判断；"
-                            "若业务描述与附件证据不一致，必须拒绝或要求补充材料。"
-                        ),
+                        "text": f"{user_msg}\n\n{attachment_note}",
                     }
                 ]
 
@@ -129,7 +157,7 @@ class ClaudeProvider(AiProvider):
                         )
 
                 if isinstance(image_data_urls, list):
-                    for data_url in image_data_urls[:8]:
+                    for data_url in image_data_urls[: _image_part_cap(payload)]:
                         if not isinstance(data_url, str) or not data_url.startswith("data:image"):
                             continue
                         image_part = self._data_url_to_claude_image_part(data_url)
@@ -151,6 +179,12 @@ class ClaudeProvider(AiProvider):
             latency = int((time.monotonic() - start) * 1000)
 
             output = response.content[0].text if response.content else ""
+            # 转写被输出上限截断：绝不能把半截合同当完整转写返回
+            if (
+                task_type == "contract_precheck_extract"
+                and getattr(response, "stop_reason", None) == "max_tokens"
+            ):
+                output = TRUNCATED_EXTRACT_OUTPUT
             return ProviderResult(
                 output=output,
                 tokens_input=response.usage.input_tokens,

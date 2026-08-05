@@ -70,7 +70,8 @@ const DIRECTION_LABELS = {
   outbound: "付款合同（我方甲方）"
 };
 
-const ALLOWED_EXT = ["docx", "pdf"];
+// 扫描版 PDF 与合同照片由服务端 OCR 识别（上限 20 页）
+const ALLOWED_EXT = ["docx", "pdf", "jpg", "jpeg", "png"];
 
 const extOf = (name) => {
   const source = String(name || "").trim();
@@ -184,7 +185,7 @@ Page({
     try {
       const choose = await wxChooseLocalFile({
         count: 1,
-        extension: [".docx", ".pdf"]
+        extension: [".docx", ".pdf", ".jpg", ".jpeg", ".png"]
       });
       this.acceptPickedFile(pickFirstTempFile(choose));
     } catch (error) {
@@ -203,12 +204,13 @@ Page({
     }
   },
 
-  /** 从微信/企微会话文件选择（对方常直接把合同发到会话里） */
+  /** 从微信/企微会话选择（对方常把合同发到会话里；type:"all" 才能看到
+   * 以图片消息发送的合同照片，扩展名过滤由 acceptPickedFile 兜底） */
   async chooseFromMessage() {
     if (this.data.picking) return;
     this.setData({ picking: true });
     try {
-      const choose = await wxChooseMessageFile({ count: 1, type: "file" });
+      const choose = await wxChooseMessageFile({ count: 1, type: "all" });
       this.acceptPickedFile(pickFirstTempFile(choose));
     } catch (error) {
       wx.showToast({ title: extractErrorMessage(error, "选择文件失败"), icon: "none" });
@@ -221,7 +223,7 @@ Page({
     if (!file || !file.path) return;
     const name = file.name || file.path;
     if (!ALLOWED_EXT.includes(extOf(name))) {
-      wx.showToast({ title: "仅支持 .docx 与电子版 .pdf", icon: "none" });
+      wx.showToast({ title: "支持 docx / pdf / 合同照片(jpg png)", icon: "none" });
       return;
     }
 
@@ -232,7 +234,7 @@ Page({
     };
     const patch = { picked };
     if (!this.data.form.title) {
-      patch["form.title"] = name.replace(/\.(docx|pdf)$/i, "").slice(0, 120);
+      patch["form.title"] = name.replace(/\.(docx|pdf|jpg|jpeg|png)$/i, "").slice(0, 120);
     }
     this.setData(patch);
   },

@@ -116,3 +116,42 @@ describe("applyContractPrecheckExtract — 提取完成后的链式推进", () =
     expect(createReviewTask).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("applyContractPrecheckExtract — 辨认度闸门", () => {
+  it("大面积无法辨认的转写判失败，不送审", async () => {
+    const { env, calls } = fakeEnv();
+    const createReviewTask = vi.fn();
+    const blurry =
+      "设备租赁合同 〔本段无法辨认〕 第二条 〔本段无法辨认〕 第三条 〔本段无法辨认〕 " +
+      "其余内容依据《中华人民共和国民法典》订立，条款细节因扫描模糊无法识别。";
+    await applyContractPrecheckExtract(env, extractTask(), blurry, createReviewTask);
+    expect(createReviewTask).not.toHaveBeenCalled();
+    const failWrite = calls.find(c => c.sql.includes("status = 'review_failed'"));
+    expect(failWrite).toBeDefined();
+    const result = JSON.parse(String(failWrite?.args[0])) as Record<string, unknown>;
+    expect(String(result.summary)).toContain("清晰度不足");
+  });
+
+  it("零星〔？〕占位不拦截（少量存疑字符可送审）", async () => {
+    const { env } = fakeEnv();
+    const createReviewTask = vi.fn().mockResolvedValue({ id: 404 });
+    const mostlyClear = `${LONG_TEXT}其中经办人姓名〔？〕处存疑。`;
+    await applyContractPrecheckExtract(env, extractTask(), mostlyClear, createReviewTask);
+    expect(createReviewTask).toHaveBeenCalledTimes(1);
+  });
+
+  it("providers 截断错误（{text:'',error:含拆分}）落 review_failed 并保留原因", async () => {
+    const { env, calls } = fakeEnv();
+    const createReviewTask = vi.fn();
+    await applyContractPrecheckExtract(
+      env,
+      extractTask(),
+      JSON.stringify({ text: "", chars: 0, error: "扫描件文字量超出单次转写上限，转写不完整；请拆分文件后分别预审" }),
+      createReviewTask
+    );
+    expect(createReviewTask).not.toHaveBeenCalled();
+    const failWrite = calls.find(c => c.sql.includes("status = 'review_failed'"));
+    const result = JSON.parse(String(failWrite?.args[0])) as Record<string, unknown>;
+    expect(String(result.summary)).toContain("拆分");
+  });
+});

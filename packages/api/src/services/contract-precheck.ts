@@ -219,7 +219,7 @@ export const applyContractPrecheckExtract = async (
     payload = {};
   }
 
-  // 提取结果：runner 返回 {text, chars} 或 {text:"", error}
+  // 提取结果：runner 返回 {text, chars} 或 {text:"", error}；OCR 转写为裸文本
   let text = "";
   let extractError = "";
   const parsed = tolerantJsonParse(resultOutput ?? "") as Record<string, unknown>;
@@ -231,15 +231,24 @@ export const applyContractPrecheckExtract = async (
   }
   if (text.length > PRECHECK_MAX_TEXT) text = text.slice(0, PRECHECK_MAX_TEXT);
 
+  // 辨认度闸门：OCR 提示词用〔本段无法辨认〕/〔？〕标注模糊内容，
+  // 大面积无法辨认的转写不能当完整合同送审（漏条款风险），确定性拦截
+  if (!extractError && text.length >= PRECHECK_MIN_TEXT) {
+    const paragraphMarks = (text.match(/〔本段无法辨认〕/g) ?? []).length;
+    const charMarks = (text.match(/〔？〕/g) ?? []).length;
+    if (paragraphMarks >= 3 || charMarks >= 30) {
+      extractError = `扫描件清晰度不足：转写中有 ${paragraphMarks} 段无法辨认、${charMarks} 处字符存疑，无法可靠审计`;
+      text = "";
+    }
+  }
+
   const now = nowIso();
 
-  // 提取失败（扫描件/加密/空文件）：落终态并把原因写进结果供前端展示
+  // 提取/OCR 失败（模糊、加密、超页数等）：落终态并把原因写进结果供前端展示
   if (text.length < PRECHECK_MIN_TEXT) {
-    const reason =
-      extractError ||
-      "未能从文件中提取到足够文字（可能是扫描件、图片型 PDF 或加密文件）";
+    const reason = extractError || "未能从文件中识别出足够文字（文件可能过于模糊、加密或损坏）";
     const failedResult: PrecheckResult = {
-      summary: `${reason}。请改用可复制文字的 docx / 电子版 PDF 后重新预审。`,
+      summary: `${reason}。可上传更清晰的扫描件或电子版文件后重新预审。`,
       overall: "critical",
       issues: [],
       rule_findings: [],

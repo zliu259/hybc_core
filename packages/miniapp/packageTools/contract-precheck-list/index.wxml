@@ -46,7 +46,7 @@
       </block>
       <block wx:else>
         <view class="picker-placeholder">{{picking ? '选择中…' : '点击选择合同文件'}}</view>
-        <view class="picker-hint">支持 .docx 与电子版 .pdf（扫描件不支持）</view>
+        <view class="picker-hint">支持 docx / pdf（含扫描版）/ 合同照片；扫描件由服务端 OCR 识别，上限 20 页</view>
       </block>
     </view>
     <view

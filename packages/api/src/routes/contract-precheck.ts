@@ -109,7 +109,7 @@ const parseReviewInput = (body: Record<string, unknown>): { ok: true; value: Rev
   const fileSize = typeof body.file_size === "number" && Number.isFinite(body.file_size) ? body.file_size : null;
   const contractText = typeof body.contract_text === "string" ? body.contract_text.trim() : "";
   if (!fileKey.startsWith("contract-precheck/") || fileKey.length > 512) {
-    return { ok: false, message: "缺少合同原件（需先上传 docx/pdf）" };
+    return { ok: false, message: "缺少合同原件（需先上传 docx / pdf 或合同照片 jpg/png）" };
   }
   // contract_text 缺省 = 客户端无解析能力（小程序），改由 task-runner 服务端提取
   if (contractText.length > 0 && contractText.length < MIN_TEXT) {
@@ -168,7 +168,9 @@ const enqueueReviewTask = async (
     biz_type: "contract_precheck",
     biz_id: row.id,
     priority: 6,
-    timeout_seconds: 300,
+    // 提取任务含扫描件视觉 OCR（20 页转写需分钟级），300s 会被 checkTimeouts
+    // 中途回收、丢弃已付费的成功结果；900s 覆盖最慢链路（SDK 600s 上限+渲染开销）
+    timeout_seconds: needsExtract ? 900 : 300,
     payload: needsExtract
       ? { ...sharedPayload, file_key: input.fileKey, file_name: input.fileName }
       : { ...sharedPayload, contract_text: input.contractText }

@@ -24,6 +24,10 @@ const emit = defineEmits<{
 }>();
 
 const MAX_TEXT = 150_000;
+const SUPPORTED_EXT_RE = /\.(docx|pdf|jpg|jpeg|png)$/i;
+const IMAGE_EXT_RE = /\.(jpg|jpeg|png)$/i;
+const PDF_EXT_RE = /\.pdf$/i;
+const NO_TEXT_LAYER_RE = /无文字层/;
 
 const form = ref({
   title: "",
@@ -34,6 +38,8 @@ const parsing = ref(false);
 // 覆盖 sign+PUT 上传窗口的本地防重锁：父组件 submitting 只在 emit 之后才生效
 const uploading = ref(false);
 const parsedText = ref("");
+// 扫描件/图片：浏览器无法本地提取文字，上传原件由服务端 OCR 转写后再审计
+const serverExtract = ref(false);
 const pickedFile = ref<File | null>(null);
 const parseError = ref("");
 
@@ -45,17 +51,40 @@ const dialogVisible = computed({
 const resetState = () => {
   form.value = { title: "", direction: "inbound", counterparty: "" };
   parsedText.value = "";
+  serverExtract.value = false;
   pickedFile.value = null;
   parseError.value = "";
 };
 
-/** 选择/拖拽共用：本地解析文本并落到待提交状态 */
+const fillTitleFromFile = (file: File) => {
+  if (!props.reviewOnly && !form.value.title) {
+    form.value.title = file.name
+      .replace(/\.(docx|pdf|jpg|jpeg|png)$/i, "")
+      .slice(0, 120);
+  }
+};
+
+/** 选择/拖拽共用：能本地解析则解析，扫描件/图片降级为服务端 OCR */
 const acceptFile = async (file: File) => {
   parsing.value = true;
   parseError.value = "";
   parsedText.value = "";
+  serverExtract.value = false;
   pickedFile.value = null;
   try {
+    // 前置扩展名校验：共用的 doc-parser 报错文案未覆盖本模块新增的图片支持
+    if (!SUPPORTED_EXT_RE.test(file.name)) {
+      throw new Error(
+        `不支持的文件格式：${file.name}（支持 .docx / .pdf / 合同照片 .jpg .png）`
+      );
+    }
+    // 图片（合同拍照/单页扫描）：直接走服务端 OCR
+    if (IMAGE_EXT_RE.test(file.name)) {
+      serverExtract.value = true;
+      pickedFile.value = file;
+      fillTitleFromFile(file);
+      return;
+    }
     const paragraphs = await parseFile(file);
     const text = paragraphs.join("\n").trim();
     if (text.length > MAX_TEXT) {
@@ -64,15 +93,28 @@ const acceptFile = async (file: File) => {
       );
     }
     if (text.length < 50) {
+      // 文字层过短的 PDF（扫描仪只嵌了页码/日期戳）：与无文字层同路径交服务端 OCR
+      if (PDF_EXT_RE.test(file.name)) {
+        serverExtract.value = true;
+        pickedFile.value = file;
+        fillTitleFromFile(file);
+        return;
+      }
       throw new Error("提取到的文本过短，请确认文件内容完整");
     }
     parsedText.value = text;
     pickedFile.value = file;
-    if (!props.reviewOnly && !form.value.title) {
-      form.value.title = file.name.replace(/\.(docx|pdf)$/i, "").slice(0, 120);
-    }
+    fillTitleFromFile(file);
   } catch (e) {
-    parseError.value = e instanceof Error ? e.message : "文件解析失败";
+    const message = e instanceof Error ? e.message : "文件解析失败";
+    // 无文字层的扫描版 PDF：不拦截，改由服务端 OCR 转写（上限 20 页）
+    if (NO_TEXT_LAYER_RE.test(message)) {
+      serverExtract.value = true;
+      pickedFile.value = file;
+      fillTitleFromFile(file);
+      return;
+    }
+    parseError.value = message;
   } finally {
     parsing.value = false;
   }
@@ -92,14 +134,16 @@ const onExceed: UploadProps["onExceed"] = files => {
 };
 
 const canSubmit = computed(() => {
-  if (!pickedFile.value || !parsedText.value) return false;
+  if (!pickedFile.value) return false;
+  if (!parsedText.value && !serverExtract.value) return false;
   if (props.reviewOnly) return true;
   return form.value.title.trim().length > 0;
 });
 
 const onSubmit = async () => {
   const file = pickedFile.value;
-  if (!file || !parsedText.value || uploading.value) return;
+  if (!file || uploading.value) return;
+  if (!parsedText.value && !serverExtract.value) return;
   uploading.value = true;
   try {
     const signRes = await createUploadSignature({
@@ -120,7 +164,8 @@ const onSubmit = async () => {
       file_key: signRes.data.key,
       file_name: file.name,
       file_size: file.size,
-      contract_text: parsedText.value
+      // 空文本 = 服务端提取路径（扫描件由 runner OCR 转写后再审计）
+      contract_text: serverExtract.value ? "" : parsedText.value
     });
   } catch (e) {
     ElMessage.error(e instanceof Error ? e.message : "上传失败，请重试");
@@ -167,7 +212,7 @@ defineExpose({ resetState });
           <el-upload
             drag
             action="#"
-            :accept="'.docx,.pdf'"
+            :accept="'.docx,.pdf,.jpg,.jpeg,.png'"
             :limit="1"
             :show-file-list="false"
             :disabled="parsing || uploading"
@@ -179,17 +224,25 @@ defineExpose({ resetState });
                 将合同文件拖到此处，或<em>点击选择</em>
               </div>
               <div class="drop-sub">
-                支持 .docx 与电子版 .pdf（扫描件暂不支持）
+                支持 .docx / 电子版 .pdf / 扫描版 .pdf / 合同照片(.jpg .png)
               </div>
             </div>
           </el-upload>
           <div class="upload-hint">
-            文本在浏览器本地提取后随原件一并提交；重新拖入可替换文件
+            电子版在浏览器本地提取文本；扫描件与照片由服务端 OCR 识别（上限 20
+            页，审计前多等 1-2 分钟）；重新拖入可替换文件
           </div>
           <el-alert
             v-if="parseError"
             type="error"
             :title="parseError"
+            :closable="false"
+            style="margin-top: 6px"
+          />
+          <el-alert
+            v-else-if="serverExtract"
+            type="info"
+            :title="`已选择扫描件 ${pickedFile?.name}：提交后由服务端 OCR 识别文字再审计`"
             :closable="false"
             style="margin-top: 6px"
           />

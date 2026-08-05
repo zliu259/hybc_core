@@ -708,15 +708,25 @@ class LocalRulesProvider(AiProvider):
         )
 
     def _contract_precheck_extract(self, payload: dict[str, object]) -> str:
-        """合同预审文本提取（无需 AI）：executor 已下载原件并抽好正文，这里汇总返回。
+        """合同预审文本提取的本地路径：executor 已下载原件并抽好文字层，这里汇总返回。
 
-        小程序端没有 docx/pdf 解析能力，改由本节点服务端提取；扫描件（无文字层）
-        返回空文本 + 原因，由服务端判定为提取失败并提示用户换可复制文字的文件。
+        扫描件（仅图片）由 executor 路由到视觉模型 OCR 转写，不会走到这里——
+        除非本节点没有可用的视觉 provider（如 MOCK_AI_ONLY），此时明确回报原因。
         """
+        extract_error = payload.get("_extract_error")
+        if isinstance(extract_error, str) and extract_error.strip():
+            # 页数超限等 executor 预判的失败，原样透传给服务端
+            return json.dumps(
+                {"text": "", "chars": 0, "error": extract_error.strip()},
+                ensure_ascii=False,
+            )
+
         context_raw = payload.get("_attachment_context")
         context = context_raw if isinstance(context_raw, dict) else {}
         blocks_raw = context.get("text_blocks")
         blocks = blocks_raw if isinstance(blocks_raw, list) else []
+        images_raw = context.get("image_data_urls")
+        has_images = isinstance(images_raw, list) and len(images_raw) > 0
 
         parts: list[str] = []
         for block in blocks:
@@ -728,12 +738,13 @@ class LocalRulesProvider(AiProvider):
 
         text = "\n".join(parts).strip()
         if not text:
+            error = (
+                "当前计算节点未配置视觉模型，暂无法转写扫描件，请稍后重试或改用电子版文件"
+                if has_images
+                else "未能从文件中提取到文字（文件可能已加密、损坏或为空）"
+            )
             return json.dumps(
-                {
-                    "text": "",
-                    "chars": 0,
-                    "error": "未能从文件中提取到文字（可能是扫描件或加密文件）",
-                },
+                {"text": "", "chars": 0, "error": error},
                 ensure_ascii=False,
             )
         return json.dumps({"text": text, "chars": len(text)}, ensure_ascii=False)
