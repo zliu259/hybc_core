@@ -9,7 +9,7 @@ const fakeDb = (options: {
   throwOnQuery?: boolean;
 }) =>
   ({
-    prepare(sql: string) {
+    prepare() {
       if (options.throwOnQuery) throw new Error("d1 down");
       return {
         bind() {
