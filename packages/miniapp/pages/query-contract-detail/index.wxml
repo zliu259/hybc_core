@@ -5,7 +5,10 @@
     <view wx:if="{{detail}}" class="detail-card">
       <view class="row-between">
         <view class="title">{{detail.contractNo}}</view>
-        <hy-status-chip text="{{detail.statusText}}" theme="{{detail.statusTheme}}" variant="light" />
+        <view class="item-chips">
+          <hy-status-chip wx:if="{{detail.isLegacy}}" text="历史数据" theme="default" variant="light" />
+          <hy-status-chip text="{{detail.statusText}}" theme="{{detail.statusTheme}}" variant="light" />
+        </view>
       </view>
       <view class="item">合同方向：{{detail.directionText}}</view>
       <view class="item">所属项目：{{detail.projectName}}</view>

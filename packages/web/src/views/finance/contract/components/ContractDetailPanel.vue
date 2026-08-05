@@ -1029,6 +1029,9 @@ onMounted(async () => {
         <el-tag :type="aiStatusTagType[aiStatus] || 'info'">
           AI审查：{{ toAiStatusLabel(aiStatus) }}
         </el-tag>
+        <el-tag v-if="detail?.legacy_data_id" size="small" type="info">
+          历史数据
+        </el-tag>
       </template>
       <template #meta>
         <span>所属项目：{{ projectName }}</span>

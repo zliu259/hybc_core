@@ -240,6 +240,7 @@ Page({
         content: item.content || "-",
         statusText: statusText(item.status),
         statusTheme: statusTheme(item.status),
+        isLegacy: Boolean(item.legacy_data_id),
         isReturned: item.status === "draft" && RESUBMITTABLE.includes(item.approval_status || ""),
         canGoEdit:
           item.approval_status === "returned" &&

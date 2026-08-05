@@ -20,6 +20,12 @@
   color: #1f2937;
 }
 
+.item-chips {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
 .item {
   margin-top: 6rpx;
   color: #4b5563;

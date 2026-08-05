@@ -20,6 +20,8 @@ export type Contract = {
   approval_instance_id: number | null;
   attachments_json: string | null;
   remark: string | null;
+  /** 旧系统迁移标识：非空表示历史导入数据 */
+  legacy_data_id: string | null;
   created_at: string;
   updated_at: string;
 };

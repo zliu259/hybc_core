@@ -65,6 +65,12 @@
   color: #1f2937;
 }
 
+.item-chips {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
 .item-sub {
   color: #5c667a;
   font-size: 24rpx;

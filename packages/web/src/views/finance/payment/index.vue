@@ -344,6 +344,9 @@ onMounted(async () => {
           >
             {{ toPaymentStatusLabel(scope.row.status) }}
           </el-tag>
+          <el-tag v-if="scope.row.legacy_data_id" size="small" type="info">
+            历史数据
+          </el-tag>
         </template>
       </el-table-column>
       <el-table-column label="AI风险" width="110">

@@ -248,6 +248,7 @@ Page({
         directionText: directionText(item.direction),
         statusText: statusText(item.status),
         statusTheme: statusTheme(item.status),
+        isLegacy: Boolean(item.legacy_data_id),
         projectName: this.formatProjectName(item.project_id),
         applicant: this.formatUserName(item.handler_userid),
         contractDate: item.contract_date || "-",

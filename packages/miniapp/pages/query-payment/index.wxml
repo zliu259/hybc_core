@@ -38,7 +38,10 @@
     <view wx:for="{{list}}" wx:key="id" class="item-card" data-id="{{item.id}}" bindtap="openDetail">
       <view class="item-row">
         <text class="item-no">{{item.serialNo}}</text>
-        <hy-status-chip text="{{item.statusText}}" theme="{{item.statusTheme}}" variant="light" />
+        <view class="item-chips">
+          <hy-status-chip wx:if="{{item.isLegacy}}" text="历史数据" theme="default" variant="light" />
+          <hy-status-chip text="{{item.statusText}}" theme="{{item.statusTheme}}" variant="light" />
+        </view>
       </view>
       <view class="item-sub">申请人：{{item.applicant}}</view>
       <view class="item-sub">项目：{{item.projectName}}</view>

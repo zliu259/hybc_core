@@ -196,7 +196,8 @@ Page({
         applicant: this.formatUserName(item.handler_userid),
         contractDate: item.contract_date || "-",
         statusText: statusText(item.status),
-        statusTheme: statusTheme(item.status)
+        statusTheme: statusTheme(item.status),
+        isLegacy: Boolean(item.legacy_data_id)
       }));
 
       this.setData({

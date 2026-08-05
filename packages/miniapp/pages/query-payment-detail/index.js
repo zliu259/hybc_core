@@ -237,6 +237,7 @@ Page({
         serialNo: item.serial_no || "-",
         statusText: statusText(item.status),
         statusTheme: statusTheme(item.status),
+        isLegacy: Boolean(item.legacy_data_id),
         applicant: this.formatUserName(item.applicant_userid),
         projectName: this.formatProjectName(item.project_id),
         expectDate: item.expected_payment_date || "-",
