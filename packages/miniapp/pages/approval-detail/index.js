@@ -5,6 +5,7 @@ const {
   canEditReturnedApproval,
   getReturnedApprovalEditRoute
 } = require("../../utils/returned-approval");
+const { buildAiReportViewModel } = require("../../utils/ai-review");
 
 Page({
   data: {
@@ -20,6 +21,7 @@ Page({
     detailAiReviews: [],
     detailTimelineNodes: [],
     detailRisk: null,
+    aiBizReport: null,
     detailAudit: null,
     transferUsers: [],
     userNameMap: {},
@@ -763,6 +765,8 @@ Page({
       let reimbursementItemRows = [];
       let risk = null;
       let audit = null;
+      // 业务级 AI 报告（合同审查 / 付款风控），区别于 AI 关卡的放行/拦截结论
+      let aiBizReport = null;
 
       if (bizType === "payment_request") {
          const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/payment/${bizId}` }, 2);
@@ -781,6 +785,12 @@ Page({
         attachments = this.parseAttachments(bizDetail && bizDetail.attachments_json);
         const riskRes = await request({ method: "GET", path: `/api/v1/payment/${bizId}/risk-report` }).catch(() => null);
         risk = riskRes && riskRes.data ? riskRes.data : null;
+        // risk-report 拉取失败时回退付款详情自带的原始字段
+        aiBizReport = buildAiReportViewModel(
+          (risk && risk.result) || (bizDetail && bizDetail.ai_risk_result) || null,
+          "payment",
+          (risk && risk.status) || (bizDetail && bizDetail.ai_risk_status) || ""
+        );
       } else if (bizType === "outbound_contract" || bizType === "inbound_contract") {
          const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/contract/${bizId}` }, 2);
         bizDetail = bizRes && bizRes.data ? bizRes.data : null;
@@ -797,6 +807,11 @@ Page({
           };
         }
         attachments = this.parseAttachments(bizDetail && bizDetail.attachments_json);
+        aiBizReport = buildAiReportViewModel(
+          (bizDetail && bizDetail.ai_review_result) || null,
+          "contract",
+          (bizDetail && bizDetail.ai_review_status) || ""
+        );
       } else if (bizType === "reimbursement_batch") {
          const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}` }, 2);
         bizDetail = bizRes && bizRes.data ? bizRes.data : null;
@@ -878,6 +893,7 @@ Page({
         },
         bizDetail,
         detailRisk: risk,
+        aiBizReport,
         detailAudit: audit,
         detailAttachments: attachments,
         reimbursementItemRows,
@@ -899,7 +915,7 @@ Page({
       const detailErrorText = notFoundLike
         ? "审批详情不存在或无权限"
         : "审批详情加载失败，请稍后重试";
-      this.setData({ detail: null, detailState: "error", detailErrorText });
+      this.setData({ detail: null, aiBizReport: null, detailState: "error", detailErrorText });
       sayToast({ title: message || "加载失败", icon: "none", danger: true });
     } finally {
       this.setData({ loading: false });

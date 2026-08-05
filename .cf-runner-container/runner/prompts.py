@@ -197,7 +197,8 @@ CONTRACT_REVIEW_OUTPUT_SCHEMA = (
     '    {"clause": "条款名", "risk_level": "low" | "medium" | "high",'
     ' "issue": "≤50字问题描述", "suggestion": "≤50字修改建议"}\n'
     "  ],\n"
-    '  "amount_assessment": {"reasonableness": "low" | "medium" | "high",'
+    '  "amount_assessment": {"reasonableness": "low" | "medium" | "high"'
+    '（金额合理程度，方向不得反转：high=依据充分且合理，low=依据不足或明显不合理）,'
     ' "basis": "判断依据", "risk_points": ["风险点，可为空数组"]},\n'
     '  "recommendations": ["可执行建议，最多3条，没有则为空数组"]\n'
     "}\n"

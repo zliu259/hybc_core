@@ -7,14 +7,9 @@ import type { WeComUser } from "@/api/wecom";
 import {
   AI_DECISION_LABELS,
   AI_DECISION_TAGS,
-  normalizeAiFindings,
-  toFindingDimensionLabel,
-  toFindingStatusLabel,
-  toFindingStatusTagType,
-  toReadableAiText,
-  toRiskScoreBandLabel,
-  toRiskScoreBandTagType
+  toReadableAiText
 } from "@/utils/ai-review";
+import AiReviewReport from "@/components/AiReviewReport/index.vue";
 import FinSection from "../../shared/components/FinSection.vue";
 import type { PaymentTagType } from "../payment-labels";
 
@@ -133,23 +128,6 @@ const aiOutcomeLabelMap: Record<string, string> = {
   reject: "驳回"
 };
 
-const riskLevelLabelMap: Record<string, string> = {
-  high: "高风险",
-  medium: "中风险",
-  low: "低风险"
-};
-
-const riskLevelTagTypeMap: Record<string, PaymentTagType> = {
-  high: "danger",
-  medium: "warning",
-  low: "success"
-};
-
-const toRiskLevelLabel = (level: unknown) => {
-  if (typeof level !== "string" || !level) return "-";
-  return riskLevelLabelMap[level] ?? level;
-};
-
 const toRiskStatusLabel = (status: string | null | undefined) => {
   if (!status) return "-";
   return riskStatusLabelMap[status] ?? status;
@@ -179,33 +157,6 @@ const toAiOutcomeLabel = (outcome: string | null | undefined) => {
   if (!outcome) return "-";
   return aiOutcomeLabelMap[outcome] ?? outcome;
 };
-
-const toRiskLevelTagType = (level: unknown): PaymentTagType => {
-  if (typeof level !== "string" || !level) return "info";
-  return riskLevelTagTypeMap[level] ?? "info";
-};
-
-// 新版风控结果：findings 事实判定 + score_basis 分数构成（后端确定性计分）
-const riskFindings = computed(() =>
-  normalizeAiFindings(props.riskReport?.findings)
-);
-
-const riskScoreBasis = computed(() => {
-  const raw = props.riskReport?.score_basis;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((item): item is string => typeof item === "string");
-});
-
-const riskScoreValue = computed(() => {
-  const raw = props.riskReport?.score;
-  return typeof raw === "number" && !Number.isNaN(raw) ? raw : null;
-});
-
-// 只有确定性计分的新结果（带 score_basis 键）才展示分档签——
-// 旧结果的分数是模型自打的，不能套新分档口径
-const riskScoreIsDeterministic = computed(() =>
-  Array.isArray(props.riskReport?.score_basis)
-);
 
 // AI 关卡结论：decision 三态优先，旧数据回退二值 outcome
 const toGateDecisionLabel = (row: AiGateReview): string => {
@@ -277,71 +228,8 @@ const goToApprovalDetail = () => {
         toRiskStatusLabel(riskStatus)
       }}</el-tag>
     </div>
-    <el-descriptions v-if="riskReport" :column="2" border>
-      <el-descriptions-item label="风险等级">
-        <el-tag :type="toRiskLevelTagType(riskReport.overall_risk)">
-          {{ toRiskLevelLabel(riskReport.overall_risk) }}
-        </el-tag>
-      </el-descriptions-item>
-      <el-descriptions-item label="风险分数">
-        <template v-if="riskScoreValue !== null">
-          {{ riskScoreValue }}
-          <el-tag
-            v-if="riskScoreIsDeterministic"
-            size="small"
-            :type="toRiskScoreBandTagType(riskScoreValue)"
-            style="margin-left: 6px"
-          >
-            {{ toRiskScoreBandLabel(riskScoreValue) }}
-          </el-tag>
-        </template>
-        <span v-else>-</span>
-      </el-descriptions-item>
-      <el-descriptions-item label="总结" :span="2">{{
-        riskReport.summary || "-"
-      }}</el-descriptions-item>
-      <el-descriptions-item
-        v-if="riskScoreBasis.length > 0"
-        label="分数构成"
-        :span="2"
-      >
-        <div v-for="(item, index) in riskScoreBasis" :key="index">
-          {{ item }}
-        </div>
-      </el-descriptions-item>
-      <el-descriptions-item label="建议" :span="2">
-        {{
-          Array.isArray(riskReport.recommendations)
-            ? riskReport.recommendations.join("；")
-            : "-"
-        }}
-      </el-descriptions-item>
-    </el-descriptions>
-    <el-table
-      v-if="riskFindings.length > 0"
-      :data="riskFindings"
-      size="small"
-      style="margin-top: 8px"
-    >
-      <el-table-column label="检查维度" width="140">
-        <template #default="scope">{{
-          toFindingDimensionLabel(scope.row.dimension)
-        }}</template>
-      </el-table-column>
-      <el-table-column label="判定" width="90">
-        <template #default="scope">
-          <el-tag size="small" :type="toFindingStatusTagType(scope.row.status)">
-            {{ toFindingStatusLabel(scope.row.status) }}
-          </el-tag>
-        </template>
-      </el-table-column>
-      <el-table-column label="说明" min-width="200">
-        <template #default="scope">{{ scope.row.detail || "-" }}</template>
-      </el-table-column>
-      <el-table-column label="依据" min-width="200">
-        <template #default="scope">{{ scope.row.evidence || "-" }}</template>
-      </el-table-column>
-    </el-table>
+    <!-- 报告为空/评估中的占位由子组件出，此处不再 v-if 判空 -->
+    <AiReviewReport kind="payment" :source="riskReport" :status="riskStatus" />
   </FinSection>
 
   <FinSection

@@ -230,36 +230,68 @@ export interface UpdatePayeeRequest {
 
 // ─── AI Review Report (structured output from contract_review task) ──────────
 
+export type AiRiskLevel = "low" | "medium" | "high";
+
+/**
+ * 存量数据同时存在两代形状：0076 提示词重写前由模型自行编分数的旧结构，
+ * 与重写后「模型只给事实、分数由 postprocess 确定性计算」的新结构；
+ * postprocess 对识别不出 findings/clause_analysis 的旧结果原样透传，
+ * 因此解析侧必须把所有字段当可选处理，不能假定新结构必然存在。
+ */
+
+export interface ContractReviewClause {
+  clause: string;
+  risk_level: AiRiskLevel;
+  issue: string;
+  suggestion: string;
+}
+
 export interface ContractReviewReport {
-  overall_risk: "low" | "medium" | "high";
+  overall_risk: AiRiskLevel;
   score: number;
+  /** 分数构成说明；warn/medium 触发封顶时末尾附「按上限计入」说明行 */
+  score_basis: string[];
   summary: string;
-  clause_analysis: {
-    clause: string;
-    risk_level: "low" | "medium" | "high";
-    comment: string;
-  }[];
+  clause_analysis: ContractReviewClause[];
   amount_assessment: {
-    reasonable: boolean;
-    comment: string;
+    reasonableness: AiRiskLevel;
+    basis: string;
+    risk_points: string[];
   };
   recommendations: string[];
-  reviewed_at: string;
 }
 
 // ─── AI Risk Assessment Report (structured output from payment_risk task) ──────────
 
+export interface AiReviewFinding {
+  /** 维度英文标识，中文名见 approval/risk-score.ts DIMENSION_LABELS */
+  dimension: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  evidence: string;
+}
+
 export interface PaymentRiskReport {
-  overall_risk: "low" | "medium" | "high";
+  overall_risk: AiRiskLevel;
   score: number;
+  score_basis: string[];
   summary: string;
-  frequency_check: {
+  findings: AiReviewFinding[];
+  recommendations: string[];
+}
+
+/** 0076 前的付款风控结构；postprocess 原样透传，存量记录仍是这个形状 */
+export interface LegacyPaymentRiskReport {
+  overall_risk: AiRiskLevel;
+  score?: number;
+  summary: string;
+  frequency_check?: {
     recent_count: number;
     period_days: number;
     is_abnormal: boolean;
     comment: string;
   };
-  amount_check: {
+  amount_check?: {
     contract_total: number;
     already_paid: number;
     this_payment: number;
@@ -267,17 +299,12 @@ export interface PaymentRiskReport {
     is_abnormal: boolean;
     comment: string;
   };
-  duplicate_check: {
+  duplicate_check?: {
     found_duplicates: boolean;
-    similar_payments: {
-      serial_no: string;
-      amount: number;
-      date: string;
-    }[];
+    similar_payments: { serial_no: string; amount: number; date: string }[];
     comment: string;
   };
-  recommendations: string[];
-  assessed_at: string;
+  recommendations?: string[];
 }
 
 // ─── List Query Params ──────────

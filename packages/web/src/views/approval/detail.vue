@@ -51,14 +51,9 @@ import { formatBeijingDateTime } from "@/utils/datetime";
 import {
   AI_DECISION_LABELS,
   AI_DECISION_TAGS,
-  deriveAiDecisionFromComment,
-  normalizeAiFindings,
-  toFindingDimensionLabel,
-  toFindingStatusLabel,
-  toFindingStatusTagType,
-  toRiskScoreBandLabel,
-  toRiskScoreBandTagType
+  deriveAiDecisionFromComment
 } from "@/utils/ai-review";
+import AiReviewReport from "@/components/AiReviewReport/index.vue";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 
 defineOptions({ name: "ApprovalDetail" });
@@ -336,12 +331,6 @@ const riskTagType: Record<string, TagType> = {
   failed: "danger"
 };
 
-const riskLevelLabelMap: Record<string, string> = {
-  high: "高风险",
-  medium: "中风险",
-  low: "低风险"
-};
-
 const riskLevelTagTypeMap: Record<string, TagType> = {
   high: "danger",
   medium: "warning",
@@ -355,36 +344,10 @@ const toInvoiceReviewRiskLabel = (value: unknown) => {
   return "-";
 };
 
-const toRiskLevelLabel = (level: unknown) => {
-  if (typeof level !== "string" || !level) return "-";
-  return riskLevelLabelMap[level] ?? level;
-};
-
 const toRiskLevelTagType = (level: unknown): TagType => {
   if (typeof level !== "string" || !level) return "info";
   return riskLevelTagTypeMap[level] ?? "info";
 };
-
-// 新版付款风控结果：findings 事实判定 + score_basis 分数构成（后端确定性计分）
-const paymentRiskFindings = computed(() =>
-  normalizeAiFindings(paymentRiskReport.value?.findings)
-);
-
-const paymentRiskScoreBasis = computed(() => {
-  const raw = paymentRiskReport.value?.score_basis;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((item): item is string => typeof item === "string");
-});
-
-const paymentRiskScoreValue = computed(() => {
-  const raw = paymentRiskReport.value?.score;
-  return typeof raw === "number" && !Number.isNaN(raw) ? raw : null;
-});
-
-// 只有确定性计分的新结果（带 score_basis 键）才展示分档签
-const paymentRiskScoreIsDeterministic = computed(() =>
-  Array.isArray(paymentRiskReport.value?.score_basis)
-);
 
 const aiGateTagType: Record<string, TagType> = {
   pending: "warning",
@@ -1109,6 +1072,12 @@ const loadDetail = async () => {
     invoiceRequestDetail.value = null;
     invoiceLinkedContract.value = null;
     receiptRefundDetail.value = null;
+    // 报告类状态必须与业务详情同批清空：后续任一接口抛错会跳到 catch，
+    // 残留的上一单报告会被当成当前单据的结论渲染出来
+    paymentRiskStatus.value = "none";
+    paymentRiskReport.value = null;
+    reimbursementAuditStatus.value = "none";
+    reimbursementAuditReport.value = null;
     payoutForm.value = {
       payment_method: "",
       payment_entity_id: undefined,
@@ -1485,89 +1454,12 @@ onMounted(async () => {
             </el-descriptions>
 
             <template v-if="detail.instance.biz_type === 'payment_request'">
-              <el-divider>付款风险评估</el-divider>
-              <div style="margin-bottom: 8px">
-                <el-tag :type="riskTagType[paymentRiskStatus] || 'info'">
-                  {{ toStatusLabel(paymentRiskStatus) }}
-                </el-tag>
-              </div>
-              <el-descriptions v-if="paymentRiskReport" :column="2" border>
-                <el-descriptions-item label="风险等级">
-                  <el-tag
-                    :type="toRiskLevelTagType(paymentRiskReport.overall_risk)"
-                  >
-                    {{ toRiskLevelLabel(paymentRiskReport.overall_risk) }}
-                  </el-tag>
-                </el-descriptions-item>
-                <el-descriptions-item label="风险分数">
-                  <template v-if="paymentRiskScoreValue !== null">
-                    {{ paymentRiskScoreValue }}
-                    <el-tag
-                      v-if="paymentRiskScoreIsDeterministic"
-                      size="small"
-                      :type="toRiskScoreBandTagType(paymentRiskScoreValue)"
-                      style="margin-left: 6px"
-                    >
-                      {{ toRiskScoreBandLabel(paymentRiskScoreValue) }}
-                    </el-tag>
-                  </template>
-                  <span v-else>-</span>
-                </el-descriptions-item>
-                <el-descriptions-item label="总结" :span="2">
-                  {{ paymentRiskReport.summary || "-" }}
-                </el-descriptions-item>
-                <el-descriptions-item
-                  v-if="paymentRiskScoreBasis.length > 0"
-                  label="分数构成"
-                  :span="2"
-                >
-                  <div
-                    v-for="(item, index) in paymentRiskScoreBasis"
-                    :key="index"
-                  >
-                    {{ item }}
-                  </div>
-                </el-descriptions-item>
-                <el-descriptions-item label="建议" :span="2">
-                  {{
-                    Array.isArray(paymentRiskReport.recommendations)
-                      ? paymentRiskReport.recommendations.join("；")
-                      : "-"
-                  }}
-                </el-descriptions-item>
-              </el-descriptions>
-              <el-table
-                v-if="paymentRiskFindings.length > 0"
-                :data="paymentRiskFindings"
-                size="small"
-                style="margin-top: 8px"
-              >
-                <el-table-column label="检查维度" width="140">
-                  <template #default="scope">{{
-                    toFindingDimensionLabel(scope.row.dimension)
-                  }}</template>
-                </el-table-column>
-                <el-table-column label="判定" width="90">
-                  <template #default="scope">
-                    <el-tag
-                      size="small"
-                      :type="toFindingStatusTagType(scope.row.status)"
-                    >
-                      {{ toFindingStatusLabel(scope.row.status) }}
-                    </el-tag>
-                  </template>
-                </el-table-column>
-                <el-table-column label="说明" min-width="180">
-                  <template #default="scope">{{
-                    scope.row.detail || "-"
-                  }}</template>
-                </el-table-column>
-                <el-table-column label="依据" min-width="180">
-                  <template #default="scope">{{
-                    scope.row.evidence || "-"
-                  }}</template>
-                </el-table-column>
-              </el-table>
+              <el-divider>付款AI风控报告</el-divider>
+              <AiReviewReport
+                kind="payment"
+                :source="paymentRiskReport ?? paymentDetail?.ai_risk_result"
+                :status="paymentRiskStatus"
+              />
             </template>
 
             <template v-if="paymentDetail">
@@ -2197,6 +2089,15 @@ onMounted(async () => {
                   </template>
                 </el-table-column>
               </el-table>
+            </template>
+
+            <template v-if="contractDetail">
+              <el-divider>合同AI审查报告</el-divider>
+              <AiReviewReport
+                kind="contract"
+                :source="contractDetail.ai_review_result"
+                :status="contractDetail.ai_review_status"
+              />
             </template>
 
             <template v-if="detail.instance.biz_type === 'reimbursement_batch'">

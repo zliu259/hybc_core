@@ -4,10 +4,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
-import {
-  toRiskScoreBandLabel,
-  toRiskScoreBandTagType
-} from "@/utils/ai-review";
+import AiReviewReport from "@/components/AiReviewReport/index.vue";
 import { contractTypeLabel, statusLabel } from "@/utils/enum-labels";
 import { formatBeijingDateTime } from "@/utils/datetime";
 import {
@@ -143,46 +140,6 @@ const attachmentItems = ref<ContractAttachmentDraft[]>([]);
 const uploadingAttachment = ref(false);
 
 const aiReviewData = ref<Record<string, unknown> | null>(null);
-
-type ContractClauseRow = {
-  clause: string;
-  risk_level: string;
-  issue: string;
-  suggestion: string;
-};
-
-// 新版合同审查结果的条款分析（旧数据无此字段时为空数组，不渲染）
-const aiClauseAnalysis = computed<ContractClauseRow[]>(() => {
-  const raw = aiReviewData.value?.clause_analysis;
-  if (!Array.isArray(raw)) return [];
-  return raw
-    .filter(
-      (item): item is Record<string, unknown> =>
-        !!item && typeof item === "object"
-    )
-    .map(item => ({
-      clause: typeof item.clause === "string" ? item.clause : "-",
-      risk_level: typeof item.risk_level === "string" ? item.risk_level : "-",
-      issue: typeof item.issue === "string" ? item.issue : "",
-      suggestion: typeof item.suggestion === "string" ? item.suggestion : ""
-    }));
-});
-
-const aiReviewScoreValue = computed(() => {
-  const raw = aiReviewData.value?.score;
-  return typeof raw === "number" && !Number.isNaN(raw) ? raw : null;
-});
-
-// 只有确定性计分的新结果（带 score_basis 键）才展示分档签
-const aiReviewScoreIsDeterministic = computed(() =>
-  Array.isArray(aiReviewData.value?.score_basis)
-);
-
-const aiReviewScoreBasis = computed(() => {
-  const raw = aiReviewData.value?.score_basis;
-  if (!Array.isArray(raw)) return [];
-  return raw.filter((item): item is string => typeof item === "string");
-});
 const aiStatus = ref("none");
 const aiStatusTagType: Record<string, TagType> = {
   none: "info",
@@ -245,28 +202,6 @@ const amountChangeStatusTagType = (
 const toAiStatusLabel = (value: string | null | undefined) => {
   if (!value) return "-";
   return aiStatusLabelMap[value] ?? value;
-};
-
-const riskLevelLabelMap: Record<string, string> = {
-  high: "高风险",
-  medium: "中风险",
-  low: "低风险"
-};
-
-const riskLevelTagTypeMap: Record<string, TagType> = {
-  high: "danger",
-  medium: "warning",
-  low: "success"
-};
-
-const toRiskLevelLabel = (level: unknown) => {
-  if (typeof level !== "string" || !level) return "-";
-  return riskLevelLabelMap[level] ?? level;
-};
-
-const toRiskLevelTagType = (level: unknown): TagType => {
-  if (typeof level !== "string" || !level) return "info";
-  return riskLevelTagTypeMap[level] ?? "info";
 };
 
 const isCreate = computed(() => props.contractId === undefined);
@@ -1534,73 +1469,13 @@ onMounted(async () => {
         </div>
       </FinSection>
 
-      <FinSection v-if="aiReviewData" title="AI审查报告">
-        <el-descriptions :column="2" border>
-          <el-descriptions-item label="风险等级">
-            <el-tag :type="toRiskLevelTagType(aiReviewData.overall_risk)">
-              {{ toRiskLevelLabel(aiReviewData.overall_risk) }}
-            </el-tag>
-          </el-descriptions-item>
-          <el-descriptions-item label="风险分数">
-            <template v-if="aiReviewScoreValue !== null">
-              {{ aiReviewScoreValue }}
-              <el-tag
-                v-if="aiReviewScoreIsDeterministic"
-                size="small"
-                :type="toRiskScoreBandTagType(aiReviewScoreValue)"
-                style="margin-left: 6px"
-              >
-                {{ toRiskScoreBandLabel(aiReviewScoreValue) }}
-              </el-tag>
-            </template>
-            <span v-else>-</span>
-          </el-descriptions-item>
-          <el-descriptions-item label="总结" :span="2">
-            {{ aiReviewData.summary || "-" }}
-          </el-descriptions-item>
-          <el-descriptions-item
-            v-if="aiReviewScoreBasis.length > 0"
-            label="分数构成"
-            :span="2"
-          >
-            <div v-for="(item, index) in aiReviewScoreBasis" :key="index">
-              {{ item }}
-            </div>
-          </el-descriptions-item>
-          <el-descriptions-item label="建议" :span="2">
-            {{
-              Array.isArray(aiReviewData.recommendations)
-                ? aiReviewData.recommendations.join("；")
-                : "-"
-            }}
-          </el-descriptions-item>
-        </el-descriptions>
-        <el-table
-          v-if="aiClauseAnalysis.length > 0"
-          :data="aiClauseAnalysis"
-          size="small"
-          style="margin-top: 8px"
-        >
-          <el-table-column prop="clause" label="条款" width="150" />
-          <el-table-column label="风险" width="90">
-            <template #default="scope">
-              <el-tag
-                size="small"
-                :type="toRiskLevelTagType(scope.row.risk_level)"
-              >
-                {{ toRiskLevelLabel(scope.row.risk_level) }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column label="问题" min-width="200">
-            <template #default="scope">{{ scope.row.issue || "-" }}</template>
-          </el-table-column>
-          <el-table-column label="建议" min-width="200">
-            <template #default="scope">{{
-              scope.row.suggestion || "-"
-            }}</template>
-          </el-table-column>
-        </el-table>
+      <!-- v-if 只判"合同已加载"（新建态无报告可言）；报告为空/审查中的占位由子组件出 -->
+      <FinSection v-if="detail" title="AI审查报告">
+        <AiReviewReport
+          kind="contract"
+          :source="aiReviewData"
+          :status="aiStatus"
+        />
       </FinSection>
 
       <FinSection v-if="detail" title="金额变更记录">

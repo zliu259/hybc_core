@@ -147,6 +147,76 @@
       </hy-panel-card>
     </view>
 
+    <view class="section-wrap section-ai-report" wx:if="{{aiBizReport}}">
+      <hy-panel-card title="{{aiBizReport.title}}">
+        <view class="ai-report-hint" wx:if="{{aiBizReport.placeholder}}">{{aiBizReport.placeholder}}</view>
+        <block wx:else>
+          <view class="ai-report-hint" wx:if="{{aiBizReport.pendingHint}}">{{aiBizReport.pendingHint}}</view>
+          <view class="meta-row" wx:if="{{aiBizReport.overallRiskLabel || aiBizReport.scoreText}}">
+            <t-tag wx:if="{{aiBizReport.overallRiskLabel}}" theme="{{aiBizReport.overallRiskTheme}}" variant="light" size="small">整体风险：{{aiBizReport.overallRiskLabel}}</t-tag>
+            <t-tag wx:if="{{aiBizReport.scoreText}}" theme="{{aiBizReport.scoreTheme}}" variant="light" size="small">{{aiBizReport.scoreText}}</t-tag>
+          </view>
+
+          <view class="ai-report-summary" wx:if="{{aiBizReport.summary}}">{{aiBizReport.summary}}</view>
+
+          <block wx:if="{{aiBizReport.scoreBasisRows.length > 0}}">
+            <view class="ai-report-label">分数构成</view>
+            <view class="ai-report-line" wx:for="{{aiBizReport.scoreBasisRows}}" wx:key="key">
+              <text class="dot dot-indigo">•</text><text class="ai-report-line-text">{{item.text}}</text>
+            </view>
+          </block>
+
+          <block wx:if="{{aiBizReport.clauseRows.length > 0}}">
+            <view class="ai-report-label">条款审查</view>
+            <view class="ai-report-row {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}" wx:for="{{aiBizReport.clauseRows}}" wx:key="key" wx:for-index="idx">
+              <view class="ai-report-row-head">
+                <text class="ai-report-row-title">{{item.clause}}</text>
+                <t-tag theme="{{item.riskTheme}}" variant="light" size="small">风险{{item.riskLabel}}</t-tag>
+              </view>
+              <view class="kv-row" wx:if="{{item.issue}}"><text class="dot dot-orange">•</text><text class="k">问题</text><text class="v">{{item.issue}}</text></view>
+              <view class="kv-row" wx:if="{{item.suggestion}}"><text class="dot dot-green">•</text><text class="k">修改建议</text><text class="v">{{item.suggestion}}</text></view>
+            </view>
+          </block>
+
+          <block wx:if="{{aiBizReport.findingRows.length > 0}}">
+            <view class="ai-report-label">检查发现</view>
+            <view class="ai-report-row {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}" wx:for="{{aiBizReport.findingRows}}" wx:key="key" wx:for-index="idx">
+              <view class="ai-report-row-head">
+                <text class="ai-report-row-title">{{item.dimensionLabel}}</text>
+                <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+              </view>
+              <view class="kv-row" wx:if="{{item.detail}}"><text class="dot dot-gray">•</text><text class="k">说明</text><text class="v">{{item.detail}}</text></view>
+              <view class="kv-row" wx:if="{{item.evidence}}"><text class="dot dot-sky">•</text><text class="k">依据</text><text class="v">{{item.evidence}}</text></view>
+            </view>
+          </block>
+
+          <block wx:if="{{aiBizReport.amountAssessment}}">
+            <view class="ai-report-label">
+              <text class="ai-report-label-text">金额合理性</text>
+              <t-tag wx:if="{{aiBizReport.amountAssessment.riskLabel}}" theme="{{aiBizReport.amountAssessment.riskTheme}}" variant="light" size="small">{{aiBizReport.amountAssessment.riskLabel}}</t-tag>
+            </view>
+            <view class="ai-report-text" wx:if="{{aiBizReport.amountAssessment.basis}}">{{aiBizReport.amountAssessment.basis}}</view>
+            <view class="ai-report-line" wx:for="{{aiBizReport.amountAssessment.riskPointRows}}" wx:key="key">
+              <text class="dot dot-orange">•</text><text class="ai-report-line-text">{{item.text}}</text>
+            </view>
+          </block>
+
+          <block wx:if="{{aiBizReport.recommendationRows.length > 0}}">
+            <view class="ai-report-label">处理建议</view>
+            <view class="ai-report-line" wx:for="{{aiBizReport.recommendationRows}}" wx:key="key">
+              <text class="dot dot-green">•</text><text class="ai-report-line-text">{{item.text}}</text>
+            </view>
+          </block>
+
+          <block wx:if="{{aiBizReport.rawFallback}}">
+            <view class="ai-report-label">AI 返回了非标准结构，以下为原始结果</view>
+            <view class="ai-report-raw">{{aiBizReport.rawFallback}}</view>
+          </block>
+          <view class="ai-report-hint" wx:elif="{{aiBizReport.emptyHint}}">{{aiBizReport.emptyHint}}</view>
+        </block>
+      </hy-panel-card>
+    </view>
+
     <view class="section-wrap section-flow" wx:if="{{detailTimelineNodes.length > 0}}">
       <hy-panel-card title="审批流程">
         <view class="flow-toggle-row">
