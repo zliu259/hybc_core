@@ -160,10 +160,12 @@ uploadRoutes.get("/object/:key{.+}", async (c) => {
     );
   }
 
-  // M2：仅对 AI 生成合同文书（contract-draft/ 前缀）强制鉴权；
-  // 其余前缀行为不变（全量收紧记入 M3 待办）。
+  // M2：仅对受保护前缀强制鉴权，其余前缀行为不变（全量收紧记入 M3 待办）：
+  // - contract-draft/：AI 生成合同文书；
+  // - legacy/fin/：历史财务附件（旧系统补迁的发票/凭证/合同扫描件）。
   // 三模式任一放行：HMAC 签名 query / x-api-key（runner）/ Bearer JWT。
-  if (key.startsWith("contract-draft/")) {
+  const PROTECTED_PREFIXES = ["contract-draft/", "legacy/fin/"];
+  if (PROTECTED_PREFIXES.some(prefix => key.startsWith(prefix))) {
     const expires = Number(c.req.query("expires") ?? 0);
     const signature = c.req.query("signature") ?? "";
     let allowed = false;

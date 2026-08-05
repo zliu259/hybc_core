@@ -637,7 +637,8 @@ paymentRoutes.get("/", async (c) => {
     params.push(dateTo);
   }
 
-  sql += " ORDER BY p.id DESC LIMIT ? OFFSET ?";
+  // 按业务时间排序（同刻按 id 兜底）：历史导入行 created_at 为旧系统提交时间，自然沉底
+  sql += " ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?";
 
   const countResult = await c.env.DB.prepare(countSql)
     .bind(...params)
