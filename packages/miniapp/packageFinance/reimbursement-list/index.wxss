@@ -63,19 +63,27 @@
 .item-row {
   display: flex;
   justify-content: space-between;
-  align-items: center;
+  align-items: flex-start;
+  gap: 12rpx;
   margin-bottom: 8rpx;
 }
 
-.item-no {
+.item-title {
+  flex: 1;
+  font-size: 28rpx;
   font-weight: 600;
   color: #1f2937;
+  word-break: break-all;
 }
 
 .item-sub {
   color: #5c667a;
   font-size: 24rpx;
   margin-top: 4rpx;
+}
+
+.item-identifier {
+  word-break: break-all;
 }
 
 .item-amount {

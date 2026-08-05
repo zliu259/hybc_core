@@ -16,7 +16,7 @@
     </view>
 
     <view class="toolbar">
-      <input class="input" value="{{keyword}}" bindinput="onKeywordInput" placeholder="编号/UUID/发票号" />
+      <input class="input" value="{{keyword}}" bindinput="onKeywordInput" placeholder="编号/UUID/发票号/摘要" />
       <picker mode="selector" range="{{statusOptions}}" range-key="label" value="{{statusIndex}}" bindchange="onStatusChange">
         <view class="picker-value">{{statusOptions[statusIndex].label}}</view>
       </picker>
@@ -31,10 +31,11 @@
 
     <view wx:for="{{list}}" wx:key="id" class="item-card">
       <view class="item-row">
-        <text class="item-no">{{item.envelope_no}}</text>
+        <text class="item-title">{{item.summaryText}}</text>
         <hy-status-chip text="{{item.statusLabel}}" theme="warning" variant="light" />
       </view>
-      <view class="item-sub">UUID：{{item.envelope_uuid}}</view>
+      <view class="item-sub item-identifier">识别号：{{item.envelope_no}}</view>
+      <view wx:if="{{item.envelope_uuid}}" class="item-sub item-identifier">UUID：{{item.envelope_uuid}}</view>
       <view class="item-sub">通道：{{item.channelLabel}}</view>
       <view class="item-amount">¥{{item.amountText}}</view>
       <view class="item-sub">更新时间：{{item.updatedAtText}}</view>

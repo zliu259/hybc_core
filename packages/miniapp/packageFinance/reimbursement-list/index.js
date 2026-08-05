@@ -34,6 +34,17 @@ const formatTime = (value) => {
   return String(value).replace("T", " ").slice(0, 16);
 };
 
+// 学习审批卡片：标题优先显示人类可读摘要，而不是 UUID 识别号
+const buildSummaryText = (item) => {
+  const category = String(item.category || "").trim();
+  const description = String(item.description || "").trim();
+  if (category && description) return `${category}｜${description}`;
+  if (category || description) return category || description;
+  const invoiceNo = String(item.invoice_no || "").trim();
+  if (invoiceNo) return `发票 ${invoiceNo}`;
+  return "报销单";
+};
+
 Page({
   data: {
     loading: false,
@@ -102,16 +113,25 @@ Page({
         path: `/api/v1/reimbursement?${query.join("&")}`
       });
       const rows = Array.isArray(res.data) ? res.data : [];
-      const mapped = rows.map((item) => ({
-        id: item.id,
-        envelope_no: item.envelope_no,
-        envelope_uuid: item.envelope_uuid,
-        amountText: formatAmount(item.amount),
-        status: item.status,
-        statusLabel: statusText(item.status),
-        channelLabel: channelText(item.channel),
-        updatedAtText: formatTime(item.updated_at)
-      }));
+      const mapped = rows.map((item) => {
+        const envelopeNo = item.envelope_no || item.envelope_uuid || "-";
+        // 识别号本身就是 UUID 时不再单独显示 UUID 行，避免同一串重复两次
+        const extraUuid =
+          item.envelope_uuid && item.envelope_uuid !== envelopeNo
+            ? item.envelope_uuid
+            : "";
+        return {
+          id: item.id,
+          summaryText: buildSummaryText(item),
+          envelope_no: envelopeNo,
+          envelope_uuid: extraUuid,
+          amountText: formatAmount(item.amount),
+          status: item.status,
+          statusLabel: statusText(item.status),
+          channelLabel: channelText(item.channel),
+          updatedAtText: formatTime(item.updated_at)
+        };
+      });
 
       const summary = mapped.reduce(
         (acc, item) => {
