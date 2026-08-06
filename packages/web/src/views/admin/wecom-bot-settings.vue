@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
-import dayjs from "dayjs";
+import { formatBeijingDateTime } from "@/utils/datetime";
 import { message } from "@/utils/message";
 import {
   getWeComFrontendConfig,
@@ -58,11 +58,6 @@ const chatTypeOptions: Array<{ label: string; value: WeComGroupChatType }> = [
 const chatTypeLabel = (value: string) => {
   return chatTypeOptions.find(item => item.value === value)?.label ?? value;
 };
-
-// 后端写的是 ISO-8601 UTC(new Date().toISOString())。直接剥掉 Z 会把 UTC 墙钟当本地
-// 时间显示,CST 用户看到的每个时间都早 8 小时;交给 dayjs 按本地时区渲染。
-const formatTime = (value: string | null) =>
-  value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "-";
 
 const copyText = async (value: string | undefined) => {
   if (!value) return;
@@ -432,7 +427,7 @@ onMounted(loadData);
         <el-table-column prop="source" label="来源" width="130" />
         <el-table-column label="更新时间" min-width="170">
           <template #default="{ row }">
-            {{ formatTime(row.updated_at) }}
+            {{ formatBeijingDateTime(row.updated_at) }}
           </template>
         </el-table-column>
       </el-table>

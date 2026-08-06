@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref, watch } from "vue";
-import dayjs from "dayjs";
+import { formatBeijingDateTime } from "@/utils/datetime";
 import { message } from "@/utils/message";
 import {
   createProjectWeComBinding,
@@ -71,11 +71,6 @@ const getAllowedTools = (binding: ProjectWeComBinding) => {
     return [];
   }
 };
-
-// 后端写的是 ISO-8601 UTC(new Date().toISOString())。直接剥掉 Z 会把 UTC 墙钟当本地
-// 时间显示,CST 用户看到的每个时间都早 8 小时;交给 dayjs 按本地时区渲染。
-const formatTime = (value: string | null) =>
-  value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "-";
 
 const statusTagType = (status: string) => {
   if (status === "sent" || status === "success" || status === "active") {
@@ -417,7 +412,7 @@ watch(() => props.projectId, loadData);
             </el-table-column>
             <el-table-column label="时间" min-width="170">
               <template #default="{ row }">
-                {{ formatTime(row.created_at) }}
+                {{ formatBeijingDateTime(row.created_at) }}
               </template>
             </el-table-column>
           </el-table>
@@ -459,7 +454,7 @@ watch(() => props.projectId, loadData);
             </el-table-column>
             <el-table-column label="推送时间" min-width="170">
               <template #default="{ row }">
-                {{ formatTime(row.pushed_at || row.created_at) }}
+                {{ formatBeijingDateTime(row.pushed_at || row.created_at) }}
               </template>
             </el-table-column>
           </el-table>
