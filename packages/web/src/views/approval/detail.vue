@@ -45,7 +45,11 @@ import {
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
-import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import {
+  createUploadSignature,
+  resolveUploadUrl,
+  signDownloadUrl
+} from "@/api/upload";
 import { formatToken, getToken } from "@/utils/auth";
 import { formatBeijingDateTime } from "@/utils/datetime";
 import {
@@ -741,6 +745,20 @@ const contractAttachments = computed(() =>
 const fileUrl = (fileKey: string) =>
   resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
 
+// legacy/fin 等受保护前缀需带签名访问；签名失败回退直连，避免整块附件不可用
+const signedFileUrl = async (fileKey: string): Promise<string> => {
+  try {
+    const res = await signDownloadUrl(fileKey);
+    return resolveUploadUrl(res.data.url);
+  } catch {
+    return fileUrl(fileKey);
+  }
+};
+
+const downloadAttachment = async (fileKey: string) => {
+  window.open(await signedFileUrl(fileKey), "_blank");
+};
+
 const projectNameMap = computed(() => {
   const map = new Map<number, string>();
   for (const item of projects.value) {
@@ -923,8 +941,8 @@ const previewInline = computed(() => {
   );
 });
 
-const openAttachmentPreview = (fileKey: string, fileName: string) => {
-  previewFileUrl.value = fileUrl(fileKey);
+const openAttachmentPreview = async (fileKey: string, fileName: string) => {
+  previewFileUrl.value = await signedFileUrl(fileKey);
   previewFileName.value = fileName;
   previewDrawerVisible.value = true;
 };
@@ -1563,9 +1581,8 @@ onMounted(async () => {
                       预览
                     </el-link>
                     <el-link
-                      :href="fileUrl(scope.row.file_key)"
-                      target="_blank"
                       type="primary"
+                      @click="downloadAttachment(scope.row.file_key)"
                     >
                       下载
                     </el-link>
@@ -1669,9 +1686,8 @@ onMounted(async () => {
                       预览
                     </el-link>
                     <el-link
-                      :href="fileUrl(scope.row.file_key)"
-                      target="_blank"
                       type="primary"
+                      @click="downloadAttachment(scope.row.file_key)"
                     >
                       下载
                     </el-link>
@@ -1821,9 +1837,8 @@ onMounted(async () => {
                           预览
                         </el-link>
                         <el-link
-                          :href="fileUrl(attachment.file_key)"
-                          target="_blank"
                           type="primary"
+                          @click="downloadAttachment(attachment.file_key)"
                         >
                           下载
                         </el-link>

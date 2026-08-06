@@ -13,7 +13,11 @@ import {
 import type { Contract, InstanceConfig } from "@/api/contract";
 import type { Entity, EntityBankAccount } from "@/api/entity";
 import type { Project } from "@/api/project";
-import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import {
+  createUploadSignature,
+  resolveUploadUrl,
+  signDownloadUrl
+} from "@/api/upload";
 import type { WeComUser } from "@/api/wecom";
 import { useUserStoreHook } from "@/store/modules/user";
 import {
@@ -316,6 +320,16 @@ const serializeAttachments = (): string => {
 const fileUrl = (fileKey: string) =>
   resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
 
+// legacy/fin 等受保护前缀需带签名访问；签名失败回退直连，避免整块附件不可用
+const signedFileUrl = async (fileKey: string): Promise<string> => {
+  try {
+    const res = await signDownloadUrl(fileKey);
+    return resolveUploadUrl(res.data.url);
+  } catch {
+    return fileUrl(fileKey);
+  }
+};
+
 const previewDrawerVisible = ref(false);
 const previewFileUrl = ref("");
 const previewFileName = ref("");
@@ -332,10 +346,14 @@ const previewInline = computed(() => {
   );
 });
 
-const openAttachmentPreview = (fileKey: string, fileName: string) => {
-  previewFileUrl.value = fileUrl(fileKey);
+const openAttachmentPreview = async (fileKey: string, fileName: string) => {
+  previewFileUrl.value = await signedFileUrl(fileKey);
   previewFileName.value = fileName;
   previewDrawerVisible.value = true;
+};
+
+const downloadAttachment = async (fileKey: string) => {
+  window.open(await signedFileUrl(fileKey), "_blank");
 };
 
 const approvalDialogVisible = ref(false);
@@ -906,12 +924,9 @@ watch(
               预览
             </el-link>
             <el-link
-              :href="fileUrl(scope.row.file_key)"
-              target="_blank"
-              :download="scope.row.file_name || true"
-              rel="noopener noreferrer"
               type="success"
               style="margin-left: 12px"
+              @click="downloadAttachment(scope.row.file_key)"
             >
               下载
             </el-link>

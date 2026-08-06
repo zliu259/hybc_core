@@ -306,7 +306,7 @@ Page({
     wx.navigateTo({ url: `/pages/query-receipt-detail/index?id=${id}` });
   },
 
-  openAttachment(e) {
+  async openAttachment(e) {
     const key = e.currentTarget.dataset.key;
     const fileUrl = e.currentTarget.dataset.url || "";
     const name = e.currentTarget.dataset.name || "附件";
@@ -314,7 +314,23 @@ Page({
       wx.showToast({ title: "附件链接无效", icon: "none" });
       return;
     }
-    const url = resolveAttachmentUrl(fileUrl, key);
+    let url = resolveAttachmentUrl(fileUrl, key);
+    // legacy/fin 等受保护前缀需签名访问；previewImage 无法带请求头，统一先取签名地址，失败回退直连
+    if (key) {
+      try {
+        const signRes = await request({
+          method: "POST",
+          path: "/api/v1/upload/sign-download",
+          data: { key }
+        });
+        const signed = signRes && signRes.data && signRes.data.url;
+        if (signed) {
+          url = /^https?:\/\//i.test(signed) ? signed : buildUrl(signed);
+        }
+      } catch (signErr) {
+        console.warn("[attachment] sign-download failed, fallback to direct url", signErr);
+      }
+    }
     if (!url) {
       wx.showToast({ title: "附件链接无效", icon: "none" });
       return;
