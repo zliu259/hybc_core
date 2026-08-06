@@ -48,3 +48,6 @@ backups/
 .DS_Store
 .idea/
 .vscode/
+
+# 旧系统迁移工作目录（含银行账号等敏感数据，勿入库）
+/mig/
