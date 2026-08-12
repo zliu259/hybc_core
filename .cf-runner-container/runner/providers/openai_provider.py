@@ -240,4 +240,6 @@ class OpenAIProvider(AiProvider):
 
     @staticmethod
     def _requires_default_temperature(model: str) -> bool:
-        return model.strip().lower().startswith("gpt-5")
+        # AI Gateway 目录模型名带 provider 前缀（如 openai/gpt-5.6-terra），剥前缀后再判
+        bare = model.strip().lower().split("/", 1)[-1]
+        return bare.startswith("gpt-5")
