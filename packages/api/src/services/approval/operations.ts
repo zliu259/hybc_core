@@ -8,18 +8,9 @@ import { advanceWorkflow, handleRoundReset, handleResubmit } from "./engine";
 import { executorFactory } from "./executors";
 import { publishEvent } from "../event-bus";
 import { createAiGateHandler } from "../ai-slot";
+import { BIZ_TYPE_TABLE_MAP } from "./biz-table";
 
 const nowIso = () => new Date().toISOString();
-
-const BIZ_TYPE_TABLE_MAP: Record<string, string> = {
-  payment_request: "payment_request",
-  outbound_contract: "contract",
-  inbound_contract: "contract",
-  reimbursement_batch: "reimbursement_batch",
-  invoice_request: "invoice_request",
-  stock_order: "stock_order",
-  warehouse_asset_work_order: "warehouse_asset_work_order"
-};
 
 const WITHDRAW_CANCEL_RESET_BIZ_TYPES = new Set<string>([
   "stock_order",

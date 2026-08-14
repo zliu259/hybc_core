@@ -8,6 +8,7 @@ import type {
   AiGateHandler
 } from "../../types/approval";
 import { parseAiGateTaskResult } from "./ai-gate-result";
+import { applyAiGateDecision } from "./ai-gate-apply";
 import { loadOurEntityContext } from "../our-entities";
 
 // ─── Types ──────────
@@ -16,7 +17,8 @@ const nowIso = () => new Date().toISOString();
 
 export interface NodeCompletionResult {
   complete: boolean;
-  outcome: "approved" | "rejected" | null;
+  /** "returned"：AI 关卡拦截 → 实例退回发起人修改重提（非终态） */
+  outcome: "approved" | "rejected" | "returned" | null;
 }
 
 export interface NodeExecutor {
@@ -524,33 +526,15 @@ class AiGateExecutor implements NodeExecutor {
       }
 
       if (existingTask?.status === "completed") {
-        const now = nowIso();
-        const parsedResult = parseAiGateTaskResult(existingTask.result_json);
-        const comment = parsedResult.comment;
-        const outcome = parsedResult.outcome;
-        await env.DB.prepare(
-          "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+        const instanceRow = await env.DB.prepare(
+          "SELECT biz_type FROM approval_instance WHERE id = ?"
         )
-          .bind(now, now, nodeInstance.id)
-          .run();
-        await env.DB.prepare(
-          `INSERT INTO approval_task
-            (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-        )
-          .bind(
-            nodeInstance.id,
-            instanceId,
-            "AI_GATE",
-            outcome,
-            comment,
-            nodeInstance.round,
-            "completed",
-            now,
-            now,
-            now
-          )
-          .run();
+          .bind(instanceId)
+          .first<{ biz_type: string }>();
+        const parsedResult = parseAiGateTaskResult(existingTask.result_json, {
+          bizType: instanceRow?.biz_type
+        });
+        await applyAiGateDecision(env, nodeInstance, instanceId, parsedResult);
         return;
       }
 
@@ -649,6 +633,11 @@ class AiGateExecutor implements NodeExecutor {
       .first<{ action: string }>();
 
     if (decision?.action === "reject") {
+      // 节点被落地为 returned = AI 自主拦截 → 引擎走退回；
+      // 节点 completed + reject = 超管覆写或存量数据 → 保留终态语义
+      if (node?.status === "returned") {
+        return { complete: true, outcome: "returned" };
+      }
       return { complete: true, outcome: "rejected" };
     }
 

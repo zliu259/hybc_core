@@ -66,7 +66,8 @@ def test_gate_pass_sets_approve_metadata():
     assert json.loads(output)["decision"] == "pass"
 
 
-def test_gate_reject_with_fail_evidence_rejects():
+def test_gate_reject_with_block_capable_fail_rejects():
+    """白名单内维度的 fail → reject 保留（付款域 duplicate_payment）。"""
     output, metadata = postprocess_gate_result(
         _gate_output(
             "reject",
@@ -80,6 +81,7 @@ def test_gate_reject_with_fail_evidence_rejects():
             ],
         ),
         {},
+        biz_type="payment_request",
     )
     assert metadata["outcome"] == "reject"
     assert metadata["comment"].startswith("AI审查不通过")
@@ -95,11 +97,87 @@ def test_gate_reject_without_fail_finding_downgrades_to_warn():
             [{"dimension": "overpayment", "status": "warn", "detail": "存疑", "evidence": "e"}],
         ),
         {},
+        biz_type="payment_request",
     )
     assert metadata["outcome"] == "approve"
     assert metadata["decision"] == "warn"
     assert metadata["needs_human_review"] is True
     assert "降级" in metadata["comment"]
+
+
+def test_gate_reject_out_of_whitelist_fail_downgrades():
+    """fail 落在非白名单维度（越权/串域/编造）→ 降级，理由保留。"""
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "reject",
+            [
+                {
+                    "dimension": "material_consistency",
+                    "status": "fail",
+                    "detail": "付款金额不符合合同约定付款节点",
+                    "evidence": "e",
+                }
+            ],
+        ),
+        {},
+        biz_type="payment_request",
+    )
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "warn"
+    assert metadata["needs_human_review"] is True
+    assert "超出" in metadata["comment"]
+    assert "material_consistency" in metadata["comment"]
+
+
+def test_gate_reject_whitelisted_dim_wrong_domain_downgrades():
+    """subject_match 只在合同域有拦截权，付款域出现 → 降级。"""
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "reject",
+            [{"dimension": "subject_match", "status": "fail", "detail": "d", "evidence": "e"}],
+        ),
+        {},
+        biz_type="payment_request",
+    )
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "warn"
+
+
+def test_gate_reject_without_biz_type_downgrades():
+    """biz_type 未知 → 空白名单，reject 一律降级（fail-open 偏置）。"""
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "reject",
+            [{"dimension": "duplicate_payment", "status": "fail", "detail": "d", "evidence": "e"}],
+        ),
+        {},
+    )
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "warn"
+
+
+def test_gate_contract_domain_whitelist():
+    """合同域白名单：subject_match / amount_terms 可拦，其余降级。"""
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "reject",
+            [{"dimension": "subject_match", "status": "fail", "detail": "主体不符", "evidence": "e"}],
+        ),
+        {},
+        biz_type="outbound_contract",
+    )
+    assert metadata["outcome"] == "reject"
+
+    _, metadata = postprocess_gate_result(
+        _gate_output(
+            "reject",
+            [{"dimension": "data_consistency", "status": "fail", "detail": "编号不一致", "evidence": "e"}],
+        ),
+        {},
+        biz_type="outbound_contract",
+    )
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "warn"
 
 
 def test_gate_warn_approves_with_human_review_flag():
@@ -145,17 +223,18 @@ def test_gate_legacy_outcome_field_maps_to_decision():
     assert metadata["decision"] == "pass"
 
 
-def test_gate_legacy_outcome_reject_is_preserved():
-    """旧契约 {outcome:"reject"} 无 findings 概念，守卫不得降级——
-    否则「新 runner + 旧 DB 模板」窗口内关卡完全丧失拒绝能力。"""
+def test_gate_legacy_outcome_reject_downgrades():
+    """旧契约 {outcome:"reject"} 无 findings → 无证据即无拦截权，降级
+    （2026-08-14 分级拦截：白名单裁决取代旧的「旧契约豁免」；
+    服务端 ai-gate-result.ts 同一规则，两侧同步）。
+    旧契约的推理在 comment 里，仍须保留进 summary。"""
     legacy = json.dumps(
         {"outcome": "reject", "comment": "审查摘要：金额超付；结论依据：超出合同余额"},
         ensure_ascii=False,
     )
-    _, metadata = postprocess_gate_result(legacy, {})
-    assert metadata["outcome"] == "reject"
-    assert metadata["decision"] == "reject"
-    # 旧契约的推理在 comment 里，必须保留进 summary
+    _, metadata = postprocess_gate_result(legacy, {}, biz_type="payment_request")
+    assert metadata["outcome"] == "approve"
+    assert metadata["decision"] == "warn"
     assert "超出合同余额" in metadata["summary"]
 
 

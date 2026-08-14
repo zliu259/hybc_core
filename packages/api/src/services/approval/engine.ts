@@ -17,6 +17,7 @@ import type {
 } from "../../types/approval";
 import { resolveTemplate } from "./router";
 import { parseAiGateTaskResult } from "./ai-gate-result";
+import { applyAiGateReturn } from "./ai-gate-apply";
 import { parseTemplate, getNextNodeKey, type ParsedNode, type ParsedTemplate } from "./template-parser";
 import { executorFactory, setAiGateHandler } from "./executors";
 import { publishEvent } from "../event-bus";
@@ -94,7 +95,8 @@ const emptyAiGateReviewFields = {
 };
 
 const parseAiGateReviewFields = (
-  raw: string | null
+  raw: string | null,
+  bizType?: string
 ): {
   summary: string | null;
   recommendations: string[];
@@ -106,7 +108,7 @@ const parseAiGateReviewFields = (
 } => {
   if (!raw) return { ...emptyAiGateReviewFields };
 
-  const parsed = parseAiGateTaskResult(raw);
+  const parsed = parseAiGateTaskResult(raw, { bizType });
   // 无法解析出明确结论的旧数据保持 outcome=null（前端显示 "-"），不冒充 approve
   if (!parsed.explicitOutcome) {
     return { ...emptyAiGateReviewFields, comment: parsed.comment, summary: parsed.summary };
@@ -326,6 +328,13 @@ export const advanceWorkflow = async (
   const { complete, outcome } = await executor.isNodeComplete(env, currentNodeInst.id);
 
   if (!complete) {
+    return;
+  }
+
+  // AI 关卡拦截 → 退回发起人修改重提（非终态）。必须在下方
+  // 「节点置 completed」之前分支，否则 returned 节点会被覆写。
+  if (outcome === "returned") {
+    await applyAiGateReturn(env, instance, currentNodeInst.id);
     return;
   }
 
@@ -818,7 +827,7 @@ export const getInstanceDetail = async (
       }
     }
 
-    const parsedResult = parseAiGateReviewFields(row.result_json);
+    const parsedResult = parseAiGateReviewFields(row.result_json, instance.biz_type);
     return {
       task_id: row.id,
       node_key: nodeKey,

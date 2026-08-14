@@ -29,6 +29,22 @@ CLAUSE_WEIGHTS = {"low": 0, "medium": 20, "high": 50}
 WARN_SCORE_CAP = 40
 RISK_BANDS: tuple[tuple[int, str], ...] = ((50, "high"), (20, "medium"), (0, "low"))
 
+# 拦截白名单（2026-08-14 分级拦截）：仅这些维度的 fail 有资格触发 reject 执行，
+# 其余一律降级为 warn 放行 + 人工关注。精确匹配——编造/串域维度天然落空。
+# 同步契约：packages/api/src/services/approval/ai-gate-result.ts
+# AI_GATE_BLOCK_DIMENSIONS 保持一致（服务端为权威裁决，本侧保证 metadata
+# 与最终执行一致，避免展示/执行偏斜）。biz_type 未知 → 空白名单（fail-open）。
+BLOCK_CAPABLE_DIMENSIONS: dict[str, frozenset[str]] = {
+    "outbound_contract": frozenset({"subject_match", "amount_terms"}),
+    "inbound_contract": frozenset({"subject_match", "amount_terms"}),
+    "payment_request": frozenset(
+        {"duplicate_payment", "overpayment", "counterparty_consistency"}
+    ),
+}
+
+_NOTE_NO_FAIL_EVIDENCE = "（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）"
+_NOTE_OUT_OF_SCOPE = "（AI拒绝意见超出该业务可拦截维度范围，已降级为放行+人工关注）"
+
 # 维度中文名（与 web utils/ai-review.ts FINDING_DIMENSION_LABELS 同步）
 DIMENSION_LABELS = {
     "duplicate_payment": "重复支付",
@@ -159,12 +175,13 @@ def _score_basis(findings: list[dict[str, str]]) -> list[str]:
 
 
 def postprocess_gate_result(
-    output: str, metadata: dict[str, object]
+    output: str, metadata: dict[str, object], biz_type: str | None = None
 ) -> tuple[str, dict[str, object]]:
     """规范化 AI 关卡结果：返回 (normalized_output, new_metadata)。
 
     服务端（executors.ts / queue-handler.ts / engine.ts）只信任
     metadata.outcome/comment/summary/recommendations —— 这里是唯一的规范化出口。
+    reject 需过 BLOCK_CAPABLE_DIMENSIONS 白名单，否则降级为 warn 放行。
     """
     parsed = tolerant_json_parse(output)
     if parsed is None:
@@ -204,10 +221,8 @@ def postprocess_gate_result(
         }
         return output, new_metadata
 
-    is_new_contract = "decision" in parsed
     decision_raw = _as_str(parsed.get("decision") or parsed.get("outcome"), 20).lower()
-    findings_raw = parsed.get("findings")
-    findings = _normalize_findings(findings_raw)
+    findings = _normalize_findings(parsed.get("findings"))
     # 旧契约 {outcome, comment}：模型的推理在 comment 里，必须保留
     summary = _as_str(parsed.get("summary") or parsed.get("comment"), 200)
     suggestions = _normalize_string_list(
@@ -223,15 +238,18 @@ def postprocess_gate_result(
     else:
         decision = "warn"
 
-    has_fail_evidence = any(f["status"] == "fail" for f in findings)
-    # 守卫只对能验证证据的结果生效（新契约或带 findings 数组的输出）；
-    # 旧契约 {outcome:"reject"} 无 findings 概念，reject 必须保留——
+    # 白名单裁决：reject 必须有白名单内维度的 fail 证据，否则降级——
+    # 旧契约 {outcome:"reject"} 无 findings 亦降级（无证据即无拦截权）。
     # 与服务端 ai-gate-result.ts 同一规则，两侧改动必须同步。
-    guard_applies = is_new_contract or isinstance(findings_raw, list)
+    allowed = BLOCK_CAPABLE_DIMENSIONS.get(biz_type or "", frozenset())
+    has_block_capable_fail = any(
+        f["status"] == "fail" and f["dimension"] in allowed for f in findings
+    )
     guard_note = ""
-    if decision == "reject" and guard_applies and not has_fail_evidence:
+    if decision == "reject" and not has_block_capable_fail:
+        has_any_fail = any(f["status"] == "fail" for f in findings)
         decision = "warn"
-        guard_note = "（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）"
+        guard_note = _NOTE_OUT_OF_SCOPE if has_any_fail else _NOTE_NO_FAIL_EVIDENCE
 
     outcome = "reject" if decision == "reject" else "approve"
     needs_human_review = decision == "warn"
@@ -410,12 +428,15 @@ def postprocess_contract_review_result(
 
 
 def postprocess_result(
-    task_type: str, output: str, metadata: dict[str, object]
+    task_type: str,
+    output: str,
+    metadata: dict[str, object],
+    biz_type: str | None = None,
 ) -> tuple[str, dict[str, object]]:
     """按任务类型分发后处理；异常绝不外抛（回退为原始结果）。"""
     try:
         if task_type == "approval_ai_gate":
-            return postprocess_gate_result(output, metadata)
+            return postprocess_gate_result(output, metadata, biz_type)
         if task_type in ("payment_risk_assessment", "risk_assessment"):
             return postprocess_payment_risk_result(output, metadata)
         if task_type == "contract_review":

@@ -18,6 +18,7 @@ import { generateSerial } from "../services/serial";
 import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
+import { recentPaymentsQuery } from "../services/recent-payments";
 import {
   abandonIdempotentRequest,
   beginIdempotentRequest,
@@ -276,18 +277,10 @@ const enqueuePaymentRiskAssessment = async (env: Env, payment: PaymentRequest) =
 
   const recentPayments =
     payment.contract_id !== null
-      ? await env.DB.prepare(
-          `SELECT serial_no, amount, created_at FROM payment_request
-           WHERE contract_id = ? AND id != ? AND status != 'cancelled'
-           ORDER BY created_at DESC LIMIT 10`
-        )
+      ? await env.DB.prepare(recentPaymentsQuery("contract"))
           .bind(payment.contract_id, payment.id)
           .all()
-      : await env.DB.prepare(
-          `SELECT serial_no, amount, created_at FROM payment_request
-           WHERE payee_id = ? AND id != ? AND status != 'cancelled'
-           ORDER BY created_at DESC LIMIT 10`
-        )
+      : await env.DB.prepare(recentPaymentsQuery("payee"))
           .bind(payment.payee_id, payment.id)
           .all();
 

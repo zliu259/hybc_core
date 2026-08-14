@@ -1,5 +1,5 @@
 /**
- * AI 关卡（approval_ai_gate）任务结果的唯一解析出口。
+ * AI 关卡（approval_ai_gate）任务结果的唯一解析出口 + 拦截权裁决点。
  *
  * 此前 executors.ts / queue-handler.ts / engine.ts / ai-slot.ts 各自维护
  * 只读 metadata.outcome 的解析副本 —— 而真实 provider 从不写该字段，
@@ -9,11 +9,37 @@
  *   3. 全部失败时保持 fail-open（approve），但标记 explicitOutcome=false
  *      并生成提示人工复核的意见，不再静默放行。
  *
- * 守卫：reject 结论若带有 findings 数组却无 fail 级证据，降级为 warn 放行，
- * 防止模型幻觉直接终止审批流（与 runner 侧 postprocess 同一规则）。
+ * 分级拦截（2026-08-14，设计文档 docs/superpowers/specs/2026-08-14-ai-gate-tiered-block-design.md）：
+ * AI 的 reject 只有在【存在 fail 级 finding 且其 dimension 落在该业务域的
+ * 拦截白名单内】时才可执行；否则降级为 warn 放行 + 人工关注，理由保留。
+ * 背景：历史 8 次 reject 中 6 次靠编造维度（contract_identity_consistency）、
+ * 串域维度（合同域的 data_consistency）或合法维度名下的越权检查
+ * （material_consistency 名下做付款节点核对）达成 —— 白名单在代码侧硬裁决，
+ * 不信任模型自律。两条路径都过白名单（此前 fail 证据守卫只在路径2，
+ * 现行 runner 走路径1，守卫实为死代码）。
+ *
+ * 唯一豁免：metadata.manual_override === true（超管人工覆写，是人的决定）。
+ * bizType 未知 → 空白名单（fail-open 偏置：宁可放给人工，不可错拦）。
  */
 
 export type AiGateDecision = "pass" | "warn" | "reject";
+
+/**
+ * 拦截白名单：仅这些维度的 fail 有资格触发 reject 执行。
+ * 精确字符串匹配 —— 编造维度 / 串域维度天然落空。
+ * 依据历史战绩（详见设计文档回溯表）；报销等其余业务域留空 = AI 纯建议。
+ * 同步契约：task-runner/runner/postprocess.py BLOCK_CAPABLE_DIMENSIONS 保持一致。
+ */
+export const AI_GATE_BLOCK_DIMENSIONS: Readonly<Record<string, readonly string[]>> = {
+  outbound_contract: ["subject_match", "amount_terms"],
+  inbound_contract: ["subject_match", "amount_terms"],
+  payment_request: ["duplicate_payment", "overpayment", "counterparty_consistency"]
+};
+
+const NOTE_NO_FAIL_EVIDENCE =
+  "（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）";
+const NOTE_OUT_OF_SCOPE =
+  "（AI拒绝意见超出该业务可拦截维度范围，已降级为放行+人工关注）";
 
 export interface ParsedAiGateResult {
   outcome: "approve" | "reject";
@@ -25,6 +51,20 @@ export interface ParsedAiGateResult {
   comment: string;
   recommendations: string[];
   needsHumanReview: boolean;
+  /** metadata.manual_override === true：超管人工覆写，绕过拦截白名单 */
+  manualOverride: boolean;
+  /** AI 的 reject 结论被白名单裁决降级为 warn 放行 */
+  downgraded: boolean;
+}
+
+export interface ParseAiGateOptions {
+  /**
+   * 审批实例的真实业务类型（approval_instance.biz_type / payload.biz_type）。
+   * 决定拦截白名单；缺失时按空白名单处理（AI 纯建议）。
+   */
+  bizType?: string | null;
+  /** 完全无法解析时的意见文案 */
+  fallbackComment?: string;
 }
 
 interface ResultEnvelope {
@@ -95,6 +135,21 @@ const normalizeFindings = (raw: unknown): NormalizedFinding[] | null => {
   return findings;
 };
 
+/** 白名单裁决：是否存在有拦截资格的 fail 级 finding。 */
+const hasBlockCapableFail = (
+  findings: NormalizedFinding[] | null,
+  bizType: string | null | undefined
+): boolean => {
+  if (!findings || !bizType) return false;
+  const allowed = AI_GATE_BLOCK_DIMENSIONS[bizType] ?? [];
+  if (allowed.length === 0) return false;
+  return findings.some((f) => f.status === "fail" && allowed.includes(f.dimension));
+};
+
+/** 降级附注：区分「无 fail 证据」与「fail 超出可拦截范围」两种情况。 */
+const downgradeNoteFor = (findings: NormalizedFinding[] | null): string =>
+  (findings ?? []).some((f) => f.status === "fail") ? NOTE_OUT_OF_SCOPE : NOTE_NO_FAIL_EVIDENCE;
+
 const normalizeDecision = (value: unknown): AiGateDecision | null => {
   const raw = asString(value)?.toLowerCase() ?? "";
   if (raw === "reject" || raw === "rejected" || raw === "deny") return "reject";
@@ -107,7 +162,7 @@ const buildComment = (
   decision: AiGateDecision,
   summary: string | null,
   findings: NormalizedFinding[] | null,
-  guardDowngraded: boolean
+  downgradeNote: string | null
 ): string => {
   const concerns = (findings ?? [])
     .filter((f) => f.status !== "pass")
@@ -120,11 +175,10 @@ const buildComment = (
     return concerns ? `${base}｜依据：${concerns}` : base;
   }
   if (decision === "warn") {
+    // 前缀是跨端契约：web utils/ai-review.ts 与 miniapp approval-detail 按前缀推断三态
     const base = `AI审查放行（需人工重点关注）：${summary ?? "存在待人工确认的疑点"}`;
     const withConcerns = concerns ? `${base}｜关注点：${concerns}` : base;
-    return guardDowngraded
-      ? `${withConcerns}（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）`
-      : withConcerns;
+    return downgradeNote ? `${withConcerns}${downgradeNote}` : withConcerns;
   }
   return `AI审查通过：${summary ?? "各项检查未见异常"}`;
 };
@@ -137,17 +191,23 @@ const failOpenResult = (comment: string): ParsedAiGateResult => ({
   summary: null,
   comment,
   recommendations: [],
-  needsHumanReview: true
+  needsHumanReview: true,
+  manualOverride: false,
+  downgraded: false
 });
 
 /**
- * 解析 task_queue.result_json（runner 提交的 {output, metadata, ...} 信封）。
- * @param fallbackComment 完全无法解析时的意见文案
+ * 解析 task_queue.result_json（runner 提交的 {output, metadata, ...} 信封）
+ * 并对 reject 结论做拦截白名单裁决。
  */
 export const parseAiGateTaskResult = (
   resultJson: string | null,
-  fallbackComment = "AI关卡已完成（结果无法解析，请人工复核）"
+  options: ParseAiGateOptions = {}
 ): ParsedAiGateResult => {
+  const bizType = options.bizType ?? null;
+  const fallbackComment =
+    options.fallbackComment ?? "AI关卡已完成（结果无法解析，请人工复核）";
+
   if (!resultJson) return failOpenResult(fallbackComment);
 
   let envelope: ResultEnvelope;
@@ -163,20 +223,42 @@ export const parseAiGateTaskResult = (
 
   const metadata =
     envelope.metadata && typeof envelope.metadata === "object" ? envelope.metadata : {};
+  const manualOverride = metadata.manual_override === true;
 
   // 路径 1：新版 runner 已在 metadata 写入规范化结论
   const metadataOutcome = asString(metadata.outcome);
   if (metadataOutcome === "approve" || metadataOutcome === "reject") {
+    const output = tolerantParseObject(envelope.output);
+    const summary = asString(metadata.summary) ?? asString(output?.summary);
+    // 偏斜兜底：旧 runner 不写 metadata.risk_level 时从 output JSON 补
+    const riskLevel = asRiskLevel(metadata.risk_level) ?? asRiskLevel(output?.risk_level);
+    const recommendations = asStringArray(metadata.recommendations);
+
+    // 拦截白名单裁决：AI 自主 reject 必须有白名单内维度的 fail 证据；
+    // 超管覆写（manual_override）是人的决定，完全豁免。
+    if (metadataOutcome === "reject" && !manualOverride) {
+      const findings = normalizeFindings(output?.findings);
+      if (!hasBlockCapableFail(findings, bizType)) {
+        return {
+          outcome: "approve",
+          explicitOutcome: true,
+          decision: "warn",
+          riskLevel,
+          summary,
+          comment: buildComment("warn", summary, findings, downgradeNoteFor(findings)),
+          recommendations,
+          needsHumanReview: true,
+          manualOverride: false,
+          downgraded: true
+        };
+      }
+    }
+
     let decision =
       normalizeDecision(metadata.decision) ?? (metadataOutcome === "reject" ? "reject" : "pass");
     // outcome 是可执行事实（admin 手工覆写只改 outcome），decision 与其矛盾时以 outcome 为准
     if (metadataOutcome === "reject" && decision !== "reject") decision = "reject";
     if (metadataOutcome === "approve" && decision === "reject") decision = "pass";
-    const summary = asString(metadata.summary);
-    // 偏斜兜底：旧 runner 不写 metadata.risk_level 时从 output JSON 补
-    const riskLevel =
-      asRiskLevel(metadata.risk_level) ??
-      asRiskLevel(tolerantParseObject(envelope.output)?.risk_level);
     return {
       outcome: metadataOutcome,
       explicitOutcome: true,
@@ -184,28 +266,25 @@ export const parseAiGateTaskResult = (
       riskLevel,
       summary,
       comment:
-        asString(metadata.comment) ?? summary ?? buildComment(decision, summary, null, false),
-      recommendations: asStringArray(metadata.recommendations),
+        asString(metadata.comment) ?? summary ?? buildComment(decision, summary, null, null),
+      recommendations,
       needsHumanReview: metadata.needs_human_review === true || decision === "warn",
-      };
+      manualOverride,
+      downgraded: false
+    };
   }
 
   // 路径 2：兜底解析模型原始输出（旧版 runner 不写 metadata.outcome）
   const output = tolerantParseObject(envelope.output);
   if (output) {
-    const isNewContract = normalizeDecision(output.decision) !== null;
     const rawDecision =
       normalizeDecision(output.decision) ?? normalizeDecision(output.outcome);
     if (rawDecision) {
       const findings = normalizeFindings(output.findings);
-      // 守卫只对能验证证据的结果生效（新契约或带 findings 数组的输出）；
-      // 旧契约 {outcome:"reject"} 无 findings 概念，reject 必须保留——
-      // 与 runner 侧 postprocess.py 同一规则，两侧改动必须同步。
-      const guardApplies = isNewContract || findings !== null;
-      const guardDowngraded =
-        rawDecision === "reject" &&
-        guardApplies &&
-        !(findings ?? []).some((f) => f.status === "fail");
+      // 与路径 1 同一白名单规则：reject 必须有白名单内 fail 证据，否则降级。
+      // （旧契约 {outcome:"reject"} 无 findings 概念 → 无证据即无拦截权，
+      //   较重构前收紧；runner 侧 postprocess.py 同步同一规则。）
+      const guardDowngraded = rawDecision === "reject" && !hasBlockCapableFail(findings, bizType);
       const decision: AiGateDecision = guardDowngraded ? "warn" : rawDecision;
       const summary = asString(output.summary) ?? asString(output.comment);
       return {
@@ -214,9 +293,16 @@ export const parseAiGateTaskResult = (
         decision,
         riskLevel: asRiskLevel(output.risk_level),
         summary,
-        comment: buildComment(decision, summary, findings, guardDowngraded),
+        comment: buildComment(
+          decision,
+          summary,
+          findings,
+          guardDowngraded ? downgradeNoteFor(findings) : null
+        ),
         recommendations: asStringArray(output.suggestions ?? output.recommendations),
-        needsHumanReview: decision === "warn"
+        needsHumanReview: decision === "warn",
+        manualOverride,
+        downgraded: guardDowngraded
       };
     }
   }

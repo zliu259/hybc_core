@@ -2,6 +2,7 @@ import type { Env } from "./types/env";
 import { logEvent, type DomainEvent } from "./services/event-bus";
 import { advanceWorkflow } from "./services/approval/engine";
 import { parseAiGateTaskResult } from "./services/approval/ai-gate-result";
+import { applyAiGateDecision } from "./services/approval/ai-gate-apply";
 import { createAiGateHandler } from "./services/ai-slot";
 import { executeCfAiTask, isCfAiTaskType } from "./services/cf-ai";
 import {
@@ -238,23 +239,18 @@ const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promise<void
 
   if (!node) return;
 
-  const now = nowIso();
-  const parsedResult = parseAiGateTaskResult(task.result_json, "AI关卡已执行");
-  const comment = parsedResult.comment;
-  const outcome = parsedResult.outcome;
-  await env.DB.prepare(
-    "UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ? WHERE id = ?"
+  // 拦截白名单裁决需要实例的真实业务类型（payload 里的 biz_type 与其一致，
+  // 但以 approval_instance 为权威来源，兼容旧任务 payload 缺字段的情况）
+  const instanceRow = await env.DB.prepare(
+    "SELECT biz_type FROM approval_instance WHERE id = ?"
   )
-    .bind(now, now, node.id)
-    .run();
-
-  await env.DB.prepare(
-    `INSERT INTO approval_task
-      (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  )
-    .bind(node.id, task.biz_id, "AI_GATE", outcome, comment, node.round, "completed", now, now, now)
-    .run();
+    .bind(task.biz_id)
+    .first<{ biz_type: string }>();
+  const parsedResult = parseAiGateTaskResult(task.result_json, {
+    bizType: instanceRow?.biz_type,
+    fallbackComment: "AI关卡已执行"
+  });
+  await applyAiGateDecision(env, node, task.biz_id, parsedResult);
 
   await advanceWorkflow(env, task.biz_id, createAiGateHandler());
 };

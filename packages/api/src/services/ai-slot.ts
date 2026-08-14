@@ -20,6 +20,7 @@ import {
   markContractPrecheckTaskError
 } from "./contract-precheck";
 import { applyExternalLogAuditResult } from "./external-log-audit";
+import { recentPaymentsQuery } from "./recent-payments";
 import { checkClauseText, parseContractSectionOutput } from "./contract-draft-rules";
 import { CF_AI_COMPLETENESS_MODELS, tolerantJsonParse } from "./cf-ai";
 import { publishEvent } from "./event-bus";
@@ -185,22 +186,14 @@ const loadBizContextFromInstance = async (
       const paymentAttachments = parseAttachmentMeta(payment.attachments_json);
       const contractAttachments = parseAttachmentMeta(contract?.attachments_json ?? null);
       const mergedAttachments = mergeAttachments(contractAttachments, paymentAttachments);
-      // 重复支付/频率异常检查的必要输入（与 payment.ts 风控任务同口径：
-      // 有合同按合同聚合，否则按收款方聚合，排除本单与已取消单）
+      // 重复支付/频率异常检查的必要输入（与 payment.ts 风控任务同口径，
+      // 见 recent-payments.ts：排除本单、已取消与已驳回的幽灵记录）
       const recentPayments =
         payment.contract_id !== null
-          ? await env.DB.prepare(
-              `SELECT serial_no, amount, created_at FROM payment_request
-               WHERE contract_id = ? AND id != ? AND status != 'cancelled'
-               ORDER BY created_at DESC LIMIT 10`
-            )
+          ? await env.DB.prepare(recentPaymentsQuery("contract"))
               .bind(payment.contract_id, payment.id)
               .all()
-          : await env.DB.prepare(
-              `SELECT serial_no, amount, created_at FROM payment_request
-               WHERE payee_id = ? AND id != ? AND status != 'cancelled'
-               ORDER BY created_at DESC LIMIT 10`
-            )
+          : await env.DB.prepare(recentPaymentsQuery("payee"))
               .bind(payment.payee_id, payment.id)
               .all();
       context = {
@@ -1098,7 +1091,17 @@ export const createAiGateHandler = (): AiGateHandler => ({
     if (!task) return null;
 
     if (task.status === "completed" && task.result_json) {
-      const parsed = parseAiGateTaskResult(task.result_json);
+      // 拦截白名单需要真实业务类型：关卡任务的 payload.biz_type 即实例 biz_type
+      let bizType: string | undefined;
+      if (task.payload_json) {
+        try {
+          const payload = JSON.parse(task.payload_json) as { biz_type?: unknown };
+          bizType = typeof payload.biz_type === "string" ? payload.biz_type : undefined;
+        } catch {
+          bizType = undefined;
+        }
+      }
+      const parsed = parseAiGateTaskResult(task.result_json, { bizType });
       return {
         completed: true,
         outcome: parsed.outcome,
