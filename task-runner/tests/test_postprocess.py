@@ -441,3 +441,23 @@ def test_dispatch_ignores_unknown_task_types():
 def test_dispatch_routes_gate():
     _, metadata = postprocess_result("approval_ai_gate", _gate_output("pass", []), {})
     assert metadata["outcome"] == "approve"
+
+
+def test_contract_review_score_basis_falls_back_to_chinese_label():
+    """issue 缺失时 score_basis 兜底文案必须是中文，不能把 high/medium 直出给审批人。"""
+    raw = json.dumps(
+        {
+            "summary": "s",
+            "clause_analysis": [
+                {"clause": "违约责任", "risk_level": "high", "issue": "", "suggestion": ""},
+                {"clause": "付款条件", "risk_level": "medium", "issue": "", "suggestion": ""},
+            ],
+        },
+        ensure_ascii=False,
+    )
+    output, _ = postprocess_contract_review_result(raw, {})
+    parsed = json.loads(output)
+    assert parsed["score_basis"] == [
+        "+50 违约责任：高风险条款",
+        "+20 付款条件：需人工关注条款",
+    ]

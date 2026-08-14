@@ -1,4 +1,5 @@
 from runner.prompts import (
+    build_contract_review_prompt,
     build_gate_prompt,
     build_payment_risk_prompt,
     default_prompt_for_task,
@@ -55,3 +56,15 @@ def test_default_prompt_dispatch():
     assert default_prompt_for_task("risk_assessment", {}) is not None
     assert default_prompt_for_task("contract_review", {}) is not None
     assert default_prompt_for_task("log_summary", {}) is None
+
+
+def test_prompts_require_chinese_wording():
+    """展示文字必须中文表述，禁止照抄英文字段名/key=value（owner 2026-08-14）。"""
+    gate = build_gate_prompt({"biz_type": "payment_request"})
+    assert "key=value" in gate["user"]
+    risk = build_payment_risk_prompt({"amount": 100})
+    assert "key=value" in risk["system"]
+    assert "key=value" in risk["user"]
+    assert "中文表述的判断依据" in risk["user"]
+    contract = build_contract_review_prompt({})
+    assert "禁止 key=value 写法" in contract["user"]

@@ -45,6 +45,9 @@ BLOCK_CAPABLE_DIMENSIONS: dict[str, frozenset[str]] = {
 _NOTE_NO_FAIL_EVIDENCE = "（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）"
 _NOTE_OUT_OF_SCOPE = "（AI拒绝意见超出该业务可拦截维度范围，已降级为放行+人工关注）"
 
+# 条款 issue 缺失时 score_basis 的兜底文案（中文，避免 high/medium 直出）
+_CLAUSE_LEVEL_LABELS = {"low": "低风险条款", "medium": "需人工关注条款", "high": "高风险条款"}
+
 # 维度中文名（与 web utils/ai-review.ts FINDING_DIMENSION_LABELS 同步）
 DIMENSION_LABELS = {
     "duplicate_payment": "重复支付",
@@ -379,7 +382,11 @@ def postprocess_contract_review_result(
         clause_name = _as_str(item.get("clause"), 60)
         issue = _as_str(item.get("issue"), 150)
         if weight > 0:
-            score_basis.append(f"+{weight} {clause_name or '未命名条款'}：{issue or level}")
+            # issue 缺失时兜底文案必须是中文，不能把 high/medium 直接亮给审批人
+            level_label = _CLAUSE_LEVEL_LABELS.get(level, level)
+            score_basis.append(
+                f"+{weight} {clause_name or '未命名条款'}：{issue or level_label}"
+            )
         clauses.append(
             {
                 "clause": clause_name,

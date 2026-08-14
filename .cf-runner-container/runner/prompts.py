@@ -22,7 +22,11 @@ GATE_DECISION_RULES = (
     "在 findings 中说明缺少什么，不要臆测。\n"
     "- 所有维度均无异常时用 decision=pass。\n"
     "- 每个检查维度必须输出一条 finding，即使 status=pass。\n"
-    "- evidence 必须引用输入数据中的具体字段或数值，禁止编造。"
+    "- evidence 必须引用输入数据中的具体字段或数值，禁止编造。\n"
+    "- 除 decision/status/risk_level 枚举值与 dimension 标识外，"
+    "summary/detail/evidence/suggestions 全部用中文业务用语表述：禁止照抄输入 JSON "
+    "的英文字段名或 key=value 写法（如 amount=282000），"
+    "应写成「本单金额 282,000 元」这类审批人能直接读懂的中文描述。"
 )
 
 GATE_OUTPUT_SCHEMA = (
@@ -33,7 +37,7 @@ GATE_OUTPUT_SCHEMA = (
     '  "summary": "≤60字：先给结论，再给最关键的一条理由",\n'
     '  "findings": [\n'
     '    {"dimension": "维度名", "status": "pass" | "warn" | "fail",'
-    ' "detail": "≤40字事实描述", "evidence": "引用输入中的具体字段/数值"}\n'
+    ' "detail": "≤40字事实描述", "evidence": "中文表述的判断依据，引用输入中的具体数值"}\n'
     "  ],\n"
     '  "suggestions": ["可执行建议，最多3条，没有则为空数组"]\n'
     "}\n" + GATE_DECISION_RULES
@@ -146,10 +150,12 @@ PAYMENT_RISK_SYSTEM_PROMPT = (
     "你的审查结果会展示给财务审批人作为决策参考。\n"
     "审查原则：\n"
     "1. 只基于输入数据做判断，evidence 必须引用具体字段或数值，禁止编造。\n"
-    "2. 结论优先、表述精简：summary ≤60 字，finding.detail ≤40 字。\n"
-    "3. 风险分数由系统根据你的 findings 确定性计算，"
+    "2. 所有展示给审批人的文字一律用中文业务用语，"
+    "禁止照抄英文字段名或 key=value 写法（如 amount=282000）。\n"
+    "3. 结论优先、表述精简：summary ≤60 字，finding.detail ≤40 字。\n"
+    "4. 风险分数由系统根据你的 findings 确定性计算，"
     "你不需要也不允许输出任何分数字段。\n"
-    "4. 严格按要求输出 JSON，不输出任何解释性文字。"
+    "5. 严格按要求输出 JSON，不输出任何解释性文字。"
 )
 
 PAYMENT_RISK_OUTPUT_SCHEMA = (
@@ -158,14 +164,17 @@ PAYMENT_RISK_OUTPUT_SCHEMA = (
     '  "summary": "≤60字：先给结论，再给最关键的一条理由",\n'
     '  "findings": [\n'
     '    {"dimension": "维度名", "status": "pass" | "warn" | "fail",'
-    ' "detail": "≤40字事实描述", "evidence": "引用输入中的具体字段/数值"}\n'
+    ' "detail": "≤40字事实描述", "evidence": "中文表述的判断依据，引用输入中的具体数值"}\n'
     "  ],\n"
     '  "recommendations": ["可执行建议，最多3条，没有则为空数组"]\n'
     "}\n"
     "判定规则：\n"
     "- status=fail 必须有确凿证据（如两笔金额时间几乎相同的付款记录）。\n"
     "- 数据缺失导致某维度无法核验时该维度用 warn 并说明缺什么，不要臆测。\n"
-    "- 每个检查维度必须输出一条 finding，即使 status=pass。"
+    "- 每个检查维度必须输出一条 finding，即使 status=pass。\n"
+    "- 除 status 枚举与 dimension 标识外，summary/detail/evidence/recommendations "
+    "全部用中文业务用语表述：禁止照抄输入 JSON 的英文字段名或 key=value 写法"
+    "（如 amount=282000），应写成「本单金额 282,000 元」这类中文描述。"
 )
 
 
@@ -216,7 +225,10 @@ CONTRACT_REVIEW_OUTPUT_SCHEMA = (
     "录入 total_amount 按预估或上限理解，不得因无总价判 high。\n"
     "审查重点：付款节点与验收条件对应关系、违约责任对等性、"
     "金额/税率/发票类型一致性、签约主体核对。\n"
-    "clause_analysis 只列存在问题或需要关注的条款，全部无问题时给空数组。"
+    "clause_analysis 只列存在问题或需要关注的条款，全部无问题时给空数组。\n"
+    "除 risk_level/reasonableness 枚举值外，summary/issue/suggestion/basis/"
+    "risk_points/recommendations 全部用中文表述，涉及输入字段时写业务含义"
+    "（如 total_amount 写「合同总额」），禁止 key=value 写法。"
 )
 
 
