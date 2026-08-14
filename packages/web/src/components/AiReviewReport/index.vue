@@ -10,6 +10,7 @@
  */
 import { computed } from "vue";
 import {
+  humanizeAiText,
   normalizeAiFindings,
   toFindingDimensionLabel,
   toFindingStatusLabel,
@@ -126,10 +127,13 @@ const scoreIsDeterministic = computed(() =>
 );
 
 const overallRisk = computed(() => asString(report.value?.overall_risk));
-const summary = computed(() => asString(report.value?.summary));
-const scoreBasis = computed(() => asStringList(report.value?.score_basis));
+// 展示文本统一过 humanizeAiText：存量报告里模型照抄的英文字段名换成中文业务名
+const summary = computed(() => humanizeAiText(asString(report.value?.summary)));
+const scoreBasis = computed(() =>
+  asStringList(report.value?.score_basis).map(humanizeAiText)
+);
 const recommendations = computed(() =>
-  asStringList(report.value?.recommendations)
+  asStringList(report.value?.recommendations).map(humanizeAiText)
 );
 
 /** 合同条款：新结构 issue/suggestion，旧结构只有 comment，一并归一 */
@@ -144,14 +148,22 @@ const clauses = computed<ClauseRow[]>(() => {
     .map(item => ({
       clause: asString(item.clause) || "未命名条款",
       risk_level: asString(item.risk_level) || "medium",
-      issue: asString(item.issue) || asString(item.comment),
-      suggestion: asString(item.suggestion)
+      issue: humanizeAiText(asString(item.issue) || asString(item.comment)),
+      suggestion: humanizeAiText(asString(item.suggestion))
     }));
+});
+
+const humanizeFinding = (finding: AiRiskFinding): AiRiskFinding => ({
+  ...finding,
+  detail: humanizeAiText(finding.detail),
+  evidence: humanizeAiText(finding.evidence)
 });
 
 /** 付款风控发现项；旧结构没有 findings，用三段 *_check 合成等价行 */
 const findings = computed<AiRiskFinding[]>(() => {
-  const normalized = normalizeAiFindings(report.value?.findings);
+  const normalized = normalizeAiFindings(report.value?.findings).map(
+    humanizeFinding
+  );
   if (normalized.length > 0) return normalized;
 
   const legacy: AiRiskFinding[] = [];
@@ -178,7 +190,7 @@ const findings = computed<AiRiskFinding[]>(() => {
     report.value?.duplicate_check,
     "found_duplicates"
   );
-  return legacy;
+  return legacy.map(humanizeFinding);
 });
 
 /** 金额评估：新结构 reasonableness/basis/risk_points，旧结构 reasonable/comment */
@@ -190,8 +202,8 @@ const amountAssessment = computed(() => {
   const reasonableness =
     asString(row.reasonableness) ||
     (row.reasonable === true ? "high" : row.reasonable === false ? "low" : "");
-  const basis = asString(row.basis) || asString(row.comment);
-  const riskPoints = asStringList(row.risk_points);
+  const basis = humanizeAiText(asString(row.basis) || asString(row.comment));
+  const riskPoints = asStringList(row.risk_points).map(humanizeAiText);
   if (!reasonableness && !basis && riskPoints.length === 0) return null;
   return { reasonableness, basis, riskPoints };
 });

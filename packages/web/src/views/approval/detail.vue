@@ -55,7 +55,8 @@ import { formatBeijingDateTime } from "@/utils/datetime";
 import {
   AI_DECISION_LABELS,
   AI_DECISION_TAGS,
-  deriveAiDecisionFromComment
+  deriveAiDecisionFromComment,
+  humanizeAiText
 } from "@/utils/ai-review";
 import AiReviewReport from "@/components/AiReviewReport/index.vue";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
@@ -119,6 +120,52 @@ const rejectionNotice = computed(() => {
     };
   }
   return { by: "", comment: "未留驳回意见", at: null };
+});
+
+/** 退回结论横幅：returned 非终态（人工退回或 AI 拦截退回）。人工 return_* 意见
+ * 优先，缺失或更旧时回退 AI 关卡拦截结论——按时间取更晚的，避免把上一轮旧 AI
+ * 结论错标成本次退回原因（与小程序 extractStopReason 口径一致） */
+const RETURN_TASK_ACTIONS = ["return_initiator", "return_prev", "return_to"];
+
+const returnNotice = computed(() => {
+  if (!detail.value || detail.value.instance.status !== "returned") return null;
+  const returnedTasks = detail.value.tasks
+    .filter(
+      t =>
+        t.assignee_userid !== "AI_GATE" &&
+        RETURN_TASK_ACTIONS.includes(t.action ?? "") &&
+        (t.comment ?? "").trim()
+    )
+    .sort((a, b) => (a.acted_at ?? "").localeCompare(b.acted_at ?? ""));
+  const human = returnedTasks[returnedTasks.length - 1];
+  // ai_gate_reviews 按 created_at 倒序，首个拦截结论即最新
+  const aiReject = (aiGateReviews.value as AiReviewRow[]).find(
+    r =>
+      (r.decision === "reject" ||
+        deriveAiDecisionFromComment(r.comment) === "reject") &&
+      (r.comment ?? "").trim()
+  );
+  let notice: { by: string; comment: string; at: string | null } | null = human
+    ? {
+        by: toUserLabel(human.assignee_userid),
+        comment: (human.comment ?? "").trim(),
+        at: human.acted_at
+      }
+    : null;
+  if (
+    aiReject &&
+    (!notice ||
+      (!!aiReject.completed_at && aiReject.completed_at > (notice.at ?? "")))
+  ) {
+    const comment = (aiReject.comment ?? "").trim();
+    notice = {
+      // 拦截意见自带「AI审查不通过：…」前缀时不再重复标注来源
+      by: comment.startsWith("AI审查") ? "" : "AI审查",
+      comment,
+      at: aiReject.completed_at
+    };
+  }
+  return notice ?? { by: "", comment: "未留退回意见", at: null };
 });
 
 const getNodeTasks = (nodeId: number): ApprovalTask[] => {
@@ -282,9 +329,7 @@ const syncPayoutSelection = async () => {
       payment_entity_bank_account_id: selectedAccountId,
       payment_account: payoutForm.value.payment_account || null,
       admin_edit_mode: isSuperAdmin.value ? true : undefined,
-      edit_note: isSuperAdmin.value
-        ? "approval workbench payout selection update"
-        : undefined
+      edit_note: isSuperAdmin.value ? "审批页更新支付信息" : undefined
     });
     return;
   }
@@ -606,12 +651,14 @@ const normalizeAiReview = (row: AiReviewRow): AiReviewNormalized => {
   const embedded = parseEmbeddedAiSummary(row.summary);
   const outcome = row.outcome ?? embedded?.outcome ?? null;
   const comment = row.comment ?? embedded?.comment ?? embedded?.summary ?? null;
-  const summaryText =
+  // 展示前过 humanizeAiText：存量意见里的英文字段名换成中文业务名
+  const summaryText = humanizeAiText(
     comment ??
-    (row.summary && !parseEmbeddedAiSummary(row.summary)
-      ? row.summary
-      : null) ??
-    "-";
+      (row.summary && !parseEmbeddedAiSummary(row.summary)
+        ? row.summary
+        : null) ??
+      "-"
+  );
   // 新版三态判定优先（后端字段或规范化意见前缀），旧数据回退关键词启发式
   const decision = row.decision ?? deriveAiDecisionFromComment(comment);
   if (decision && AI_DECISION_LABELS[decision]) {
@@ -1430,6 +1477,23 @@ onMounted(async () => {
           {{ formatBeijingDateTime(rejectionNotice.at) }}
         </span>
       </el-alert>
+      <el-alert
+        v-if="returnNotice"
+        type="warning"
+        :closable="false"
+        show-icon
+        title="该审批已被退回，发起人修改后可重新提交"
+        style="margin-bottom: 12px"
+      >
+        <span v-if="returnNotice.by">{{ returnNotice.by }}：</span
+        >{{ returnNotice.comment }}
+        <span
+          v-if="returnNotice.at"
+          style="margin-left: 8px; color: var(--el-text-color-secondary)"
+        >
+          {{ formatBeijingDateTime(returnNotice.at) }}
+        </span>
+      </el-alert>
       <el-row :gutter="16">
         <el-col :md="14" :xs="24">
           <el-card shadow="never" header="业务摘要">
@@ -2228,7 +2292,7 @@ onMounted(async () => {
                       "
                       style="margin-left: 6px; color: #666"
                     >
-                      ：{{ formatAiNodeComment(task) }}
+                      ：{{ humanizeAiText(formatAiNodeComment(task) || "") }}
                     </span>
                     <span
                       v-if="task.acted_at"
