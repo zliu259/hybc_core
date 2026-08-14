@@ -510,7 +510,7 @@ fleetRoutes.post(
       previousBalance: 0,
       newBalance: typeof body.latest_balance === "number" ? body.latest_balance : 0,
       operatorUserid: c.get("auth").sub,
-      remark: "create fuel card"
+      remark: "新建油卡"
     });
 
     return c.json({ success: true, data: { id: result.meta.last_row_id } }, 201);

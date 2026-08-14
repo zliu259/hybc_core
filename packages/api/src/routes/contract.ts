@@ -523,7 +523,7 @@ contractRoutes.put(
     }
 
     const auditRemark = isPrivilegedBypass
-      ? `${(body.remark ?? existing.remark ?? "").trim()}\n[SUPER_ADMIN_EDIT ${now}] ${auth.sub}: ${body.edit_note?.trim()}`.trim()
+      ? `${(body.remark ?? existing.remark ?? "").trim()}\n[超管修改 ${now}] ${auth.sub}：${body.edit_note?.trim()}`.trim()
       : body.remark;
 
     await c.env.DB.prepare(
