@@ -116,7 +116,14 @@ class TaskExecutor:
             raw_metadata = result.metadata if isinstance(result.metadata, dict) else {}
             # 审批域任务（AI关卡/付款风控/合同审查）的规范化出口：
             # 解析模型输出、设置 metadata.outcome、确定性计算风险分。
-            output, metadata = postprocess_result(task_type, result.output, raw_metadata)
+            # biz_type 供关卡拦截白名单裁决（payload.biz_type 即实例业务类型）。
+            payload_biz_type = payload.get("biz_type")
+            output, metadata = postprocess_result(
+                task_type,
+                result.output,
+                raw_metadata,
+                payload_biz_type if isinstance(payload_biz_type, str) else None,
+            )
             if isinstance(attachment_processing, dict):
                 metadata["attachment_processing"] = attachment_processing
             if isinstance(prepared_mode, str) and prepared_mode:
