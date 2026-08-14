@@ -5,7 +5,15 @@ const {
   canEditReturnedApproval,
   getReturnedApprovalEditRoute
 } = require("../../utils/returned-approval");
-const { buildAiReportViewModel } = require("../../utils/ai-review");
+const {
+  buildAiReportViewModel,
+  buildAuditReportView,
+  humanizeAiText,
+  toAiTaskStatusLabel,
+  toAiTaskStatusTheme,
+  toInvoiceRiskLabel,
+  toInvoiceRiskTheme
+} = require("../../utils/ai-review");
 
 Page({
   data: {
@@ -22,7 +30,7 @@ Page({
     detailTimelineNodes: [],
     detailRisk: null,
     aiBizReport: null,
-    detailAudit: null,
+    detailAuditView: null,
     transferUsers: [],
     userNameMap: {},
     projectNameMap: {},
@@ -39,7 +47,7 @@ Page({
     actionComment: "",
     readOnlyView: false,
     flowCollapsed: true,
-    rejectReason: "",
+    stopReasonText: "",
     availableActions: [],
     hasAnyAction: false,
     canApprove: false,
@@ -55,6 +63,8 @@ Page({
     const id = Number((options && options.id) || 0);
     const readOnlyView = Boolean(options && (options.readonly === "1" || options.mode === "readonly"));
     this.setData({ id, readOnlyView });
+    // 首次 onShow 必须加载；之后仅在显式标记时整页刷新
+    this.needsRefreshOnShow = true;
   },
 
   delay(ms) {
@@ -77,6 +87,11 @@ Page({
   },
 
   async onShow() {
+    // 附件预览/文档页（wx.openDocument、previewImage）返回同样触发 onShow：
+    // 详情已就绪且无刷新标记时直接跳过，避免整页打回加载态重新加载；
+    // 上次加载失败（error）则借返回时机自动重试
+    if (!this.needsRefreshOnShow && this.data.detailState === "ready") return;
+    this.needsRefreshOnShow = false;
     this.setData({ detailState: "loading", detailErrorText: "" });
     await Promise.all([this.loadTransferUsers(), this.loadReferenceData()]);
     await this.loadDetail();
@@ -131,9 +146,23 @@ Page({
       reimbursement_batch: "报销审批",
       stock_order: "库房出入库审批",
       warehouse_asset_work_order: "库房工单审批",
-      invoice_request: "开票审批"
+      invoice_request: "开票审批",
+      receipt_refund: "收款退款审批",
+      contract_amount_change: "合同金额变更"
     };
     return map[value] || "未知";
+  },
+
+  nodeTypeLabel(value) {
+    const map = {
+      sequential: "顺序签",
+      countersign: "会签",
+      or_sign: "或签",
+      auto: "自动",
+      cc: "抄送",
+      ai_gate: "AI关卡"
+    };
+    return map[value] || "";
   },
 
   paymentCategoryLabel(value) {
@@ -386,10 +415,14 @@ Page({
         (decision && decisionLabelMap[decision]) || this.aiOutcomeLabel(outcome, comment);
       return {
         ...row,
-        statusLabel: this.statusLabel(row.status),
+        // 状态是任务队列态（failed/timeout 等），不能走审批流转态的 statusLabel
+        statusLabel: toAiTaskStatusLabel(row.status),
+        statusTheme: toAiTaskStatusTheme(row.status),
+        errorText: typeof row.error_message === "string" ? row.error_message.trim() : "",
         outcomeLabel,
         outcomeTheme: this.aiOutcomeTheme(outcomeLabel),
-        commentText: comment,
+        // AI 产出文本过 humanizeAiText：存量意见里的英文字段名换成中文业务名
+        commentText: humanizeAiText(comment) || "-",
         completedAtText: this.formatBeijingTime(row.completed_at)
       };
     });
@@ -431,9 +464,15 @@ Page({
                 : this.actionLabel(task.action);
             return {
               ...task,
-              assigneeLabel: this.userLabel(task.assignee_userid),
+              // AI_GATE 不在通讯录里，走 userLabel 会显示成「未匹配」
+              assigneeLabel:
+                task.assignee_userid === "AI_GATE" ? "AI审查" : this.userLabel(task.assignee_userid),
               actionLabel,
-              commentText: aiComment || "-",
+              // 仅 AI 任务的意见做字段名汉化，人工意见原样保留
+              commentText:
+                task.assignee_userid === "AI_GATE"
+                  ? humanizeAiText(aiComment) || "-"
+                  : aiComment || "-",
               actedAtText: this.formatBeijingTime(task.acted_at)
             };
           });
@@ -441,6 +480,7 @@ Page({
         return {
           ...node,
           statusLabel: this.statusLabel(node.status),
+          nodeTypeLabel: this.nodeTypeLabel(node.node_type),
           tasks: nodeTasks,
           startedAtText: this.formatBeijingTime(node.started_at),
           completedAtText: this.formatBeijingTime(node.completed_at)
@@ -448,21 +488,66 @@ Page({
       });
   },
 
-  // 节点已按 round+sort_order 升序，最后一条命中即最新驳回意见
-  extractRejectReason(timelineNodes) {
-    const nodes = Array.isArray(timelineNodes) ? timelineNodes : [];
-    let reason = "";
-    nodes.forEach((node) => {
-      const tasks = Array.isArray(node && node.tasks) ? node.tasks : [];
-      tasks.forEach((task) => {
-        if (!task || task.action !== "reject") return;
+  /**
+   * 驳回/退回原因：rejected 找人工驳回意见，returned 找人工退回意见；
+   * 两者都命不中时回退 AI 关卡拦截结论（分级拦截后 AI 拦截走 returned，
+   * 任务 action 仍是 reject、理由在 comment）。人工与 AI 都有时取时间更晚的，
+   * 避免把上一轮的旧 AI 结论错标成本次退回原因。
+   */
+  extractStopReason(timelineNodes, detail) {
+    const status = detail && detail.instance ? detail.instance.status : "";
+    if (status !== "rejected" && status !== "returned") return "";
+    const wantActions =
+      status === "rejected" ? ["reject"] : ["return_initiator", "return_prev", "return_to"];
+
+    // 节点已按 round+sort_order 升序，最后一条命中即最新人工意见
+    let humanText = "";
+    let humanAt = "";
+    (Array.isArray(timelineNodes) ? timelineNodes : []).forEach((node) => {
+      (Array.isArray(node && node.tasks) ? node.tasks : []).forEach((task) => {
+        if (!task || task.assignee_userid === "AI_GATE") return;
+        if (wantActions.indexOf(task.action) < 0) return;
         const text = typeof task.commentText === "string" ? task.commentText.trim() : "";
         if (text && text !== "-") {
-          reason = text;
+          humanText = text;
+          humanAt = task.acted_at || "";
         }
       });
     });
-    return reason;
+
+    // ai_gate_reviews 按 created_at 倒序，首个拦截结论即最新
+    let aiText = "";
+    let aiAt = "";
+    const reviews =
+      detail && Array.isArray(detail.ai_gate_reviews) ? detail.ai_gate_reviews : [];
+    for (let i = 0; i < reviews.length; i += 1) {
+      const row = reviews[i];
+      if (!row) continue;
+      const comment = typeof row.comment === "string" ? row.comment.trim() : "";
+      const isReject = row.decision === "reject" || this.aiDecisionFromComment(comment) === "reject";
+      if (isReject && comment) {
+        aiText = comment;
+        aiAt = row.completed_at || "";
+        break;
+      }
+    }
+
+    let text = humanText;
+    let fromAi = false;
+    if (!text && aiText) {
+      text = aiText;
+      fromAi = true;
+    } else if (humanText && aiText && aiAt && humanAt && aiAt > humanAt) {
+      text = aiText;
+      fromAi = true;
+    }
+    if (!text) return "";
+
+    const title = status === "returned" ? "退回原因" : "驳回原因";
+    // AI 结论自带「AI审查不通过：…」前缀时不再重复标注来源
+    const byPrefix = fromAi && text.indexOf("AI审查") !== 0 ? "AI审查：" : "";
+    const displayText = fromAi ? humanizeAiText(text) || text : text;
+    return `${title}：${byPrefix}${displayText}`;
   },
 
   inferAvailableActions(detail) {
@@ -713,7 +798,7 @@ Page({
         data: {
           ...payload,
           admin_edit_mode: isSuperAdmin ? true : undefined,
-          edit_note: isSuperAdmin ? "miniapp approval payout selection update" : undefined
+          edit_note: isSuperAdmin ? "小程序审批页更新支付信息" : undefined
         }
       });
     } else {
@@ -823,7 +908,9 @@ Page({
                 aiReasonabilitySummary:
                   typeof item.ai_reasonability_summary === "string" && item.ai_reasonability_summary.trim()
                     ? item.ai_reasonability_summary.trim()
-                    : "-"
+                    : "-",
+                invoiceRiskLabel: toInvoiceRiskLabel(item.invoice_review_highest_risk),
+                invoiceRiskTheme: toInvoiceRiskTheme(item.invoice_review_highest_risk)
               }))
             : [];
 
@@ -872,8 +959,9 @@ Page({
       const canEditReturnedBusiness = canEditReturnedApproval(detail.instance, userId);
 
       const detailTimelineNodes = this.buildTimelineNodes(detail);
-      const instanceRejected = detail.instance.status === "rejected";
-      const rejectReason = instanceRejected ? this.extractRejectReason(detailTimelineNodes) : "";
+      const instanceStopped =
+        detail.instance.status === "rejected" || detail.instance.status === "returned";
+      const stopReasonText = this.extractStopReason(detailTimelineNodes, detail);
 
       this.setData({
         detail: {
@@ -894,18 +982,20 @@ Page({
         bizDetail,
         detailRisk: risk,
         aiBizReport,
-        detailAudit: audit,
+        // 报销批次固定渲染审计卡（接口失败/未执行时按 none 显示），其余业务不渲染
+        detailAuditView: bizType === "reimbursement_batch" ? buildAuditReportView(audit) : null,
         detailAttachments: attachments,
         reimbursementItemRows,
         detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
         detailTimelineNodes,
-        rejectReason,
+        stopReasonText,
         availableActions: this.data.readOnlyView ? [] : availableActions,
         canEditReturnedBusiness,
         userAlreadyActed,
         detailState: "ready",
         detailErrorText: "",
-        flowCollapsed: !instanceRejected,
+        // 驳回/退回（含 AI 拦截退回）时默认展开流程，拦截理由不能藏在折叠层里
+        flowCollapsed: !instanceStopped,
         ...finalFlags
       });
       await this.syncPaymentSelectorsFromBizDetail();
@@ -915,7 +1005,13 @@ Page({
       const detailErrorText = notFoundLike
         ? "审批详情不存在或无权限"
         : "审批详情加载失败，请稍后重试";
-      this.setData({ detail: null, aiBizReport: null, detailState: "error", detailErrorText });
+      this.setData({
+        detail: null,
+        aiBizReport: null,
+        detailAuditView: null,
+        detailState: "error",
+        detailErrorText
+      });
       sayToast({ title: message || "加载失败", icon: "none", danger: true });
     } finally {
       this.setData({ loading: false });
@@ -934,6 +1030,8 @@ Page({
       wx.showToast({ title: "该业务暂不支持小程序编辑", icon: "none" });
       return;
     }
+    // 编辑重提后返回本页要能看到最新状态，标记下次 onShow 整页刷新
+    this.needsRefreshOnShow = true;
     wx.navigateTo({ url: route });
   },
 
@@ -989,7 +1087,7 @@ Page({
         await request({
           method: "POST",
           path: `/api/v1/approval/${this.data.id}/transfer`,
-          data: { to_userid: selected.userid, reason: comment || "miniapp transfer" }
+          data: { to_userid: selected.userid, reason: comment || "小程序转签" }
         });
       }
       vibrateSuccess();

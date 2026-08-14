@@ -163,6 +163,8 @@ Page({
   },
 
   async onLoad(options) {
+    // 首次 onShow 必须加载；之后仅在显式标记时才重新拉取
+    this.needsRefreshOnShow = true;
     const id = Number((options && options.id) || 0);
     if (!id) {
       wx.showToast({ title: "参数错误", icon: "none" });
@@ -180,6 +182,10 @@ Page({
       setTimeout(() => wx.navigateBack({ delta: 1 }), 300);
       return;
     }
+    // 附件预览（wx.openDocument / previewImage）返回同样触发 onShow：
+    // 详情已在手时跳过整轮重复请求
+    if (!this.needsRefreshOnShow && this.data.detail) return;
+    this.needsRefreshOnShow = false;
     await Promise.all([this.loadUserMap(), this.loadProjectMap()]);
     await this.loadDetail();
   },

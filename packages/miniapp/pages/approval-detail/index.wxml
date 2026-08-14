@@ -6,7 +6,7 @@
           <t-tag theme="primary" variant="light">{{detail.instance.bizTypeLabel}}</t-tag>
           <t-tag theme="{{detail.instance.status === 'approved' ? 'success' : detail.instance.status === 'rejected' ? 'danger' : detail.instance.status === 'pending' ? 'warning' : 'default'}}" variant="light">{{detail.instance.statusText}}</t-tag>
         </view>
-        <view class="reject-reason" wx:if="{{detail.instance.status === 'rejected' && rejectReason}}">驳回原因：{{rejectReason}}</view>
+        <view class="reject-reason {{detail.instance.status === 'returned' ? 'reason-returned' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
         <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">发起人</text><text class="v">{{detail.instance.initiatorLabel}}</text></view>
         <view class="kv-row" wx:if="{{detail.instance.biz_type === 'reimbursement_batch'}}"><text class="dot dot-blue">•</text><text class="k">被报销人</text><text class="v">{{detail.instance.bizApplicantLabel}}</text></view>
         <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">提交时间</text><text class="v">{{detail.instance.submittedAtText}}</text></view>
@@ -98,6 +98,7 @@
           <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">发票号</text><text class="v">{{item.invoice_no || '-'}}</text></view>
           <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">金额</text><text class="v">{{item.amount}}</text></view>
           <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">单项AI结论</text><text class="v">{{item.aiReasonabilitySummary}}</text></view>
+          <view class="kv-row" wx:if="{{item.invoiceRiskLabel}}"><text class="dot dot-orange">•</text><text class="k">票据风险</text><t-tag theme="{{item.invoiceRiskTheme}}" variant="light" size="small">{{item.invoiceRiskLabel}}</t-tag></view>
           <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">抽查附件</text></view>
           <block wx:if="{{item.attachments && item.attachments.length}}">
             <block wx:for="{{item.attachments}}" wx:key="id">
@@ -139,7 +140,8 @@
           <t-tag theme="default" variant="light">{{item.node_key || '-'}}</t-tag>
           <t-tag theme="{{item.outcomeTheme || 'default'}}" variant="light">{{item.outcomeLabel}}</t-tag>
             </view>
-            <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">状态</text><text class="v">{{item.statusLabel}}</text></view>
+            <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">状态</text><t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag></view>
+            <view class="kv-row" wx:if="{{item.errorText}}"><text class="dot dot-orange">•</text><text class="k">失败原因</text><text class="v">{{item.errorText}}</text></view>
             <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">总结</text><text class="v">{{item.commentText}}</text></view>
             <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成时间</text><text class="v">{{item.completedAtText}}</text></view>
           </view>
@@ -217,6 +219,16 @@
       </hy-panel-card>
     </view>
 
+    <view class="section-wrap section-ai-report" wx:if="{{detailAuditView}}">
+      <hy-panel-card title="报销批次AI审计报告">
+        <view class="meta-row">
+          <t-tag theme="{{detailAuditView.statusTheme}}" variant="light" size="small">{{detailAuditView.statusLabel}}</t-tag>
+        </view>
+        <view class="ai-report-raw" wx:if="{{detailAuditView.reportText}}">{{detailAuditView.reportText}}</view>
+        <view class="ai-report-hint" wx:else>暂无审计报告</view>
+      </hy-panel-card>
+    </view>
+
     <view class="section-wrap section-flow" wx:if="{{detailTimelineNodes.length > 0}}">
       <hy-panel-card title="审批流程">
         <view class="flow-toggle-row">
@@ -228,6 +240,7 @@
           <view class="node-item {{nodeIdx % 2 === 0 ? 'alt-even' : 'alt-odd'}}">
         <view class="meta-row">
           <t-tag theme="primary" variant="light">{{item.node_name}}</t-tag>
+          <t-tag theme="default" variant="light" wx:if="{{item.nodeTypeLabel}}">{{item.nodeTypeLabel}}</t-tag>
           <t-tag theme="default" variant="light">{{item.statusLabel}}</t-tag>
         </view>
         <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">开始</text><text class="v">{{item.startedAtText}}</text></view>
@@ -291,7 +304,18 @@
   </view>
 </view>
 
-<view wx:if="{{detailState === 'loading'}}" class="loading-wrap">加载审批详情中...</view>
+<view wx:if="{{detailState === 'loading'}}" class="page skeleton-page">
+  <view class="skeleton-card" wx:for="{{[0, 1, 2]}}" wx:key="*this">
+    <view class="skeleton-line skeleton-title"></view>
+    <view class="skeleton-line"></view>
+    <view class="skeleton-line"></view>
+    <view class="skeleton-line skeleton-short"></view>
+  </view>
+  <view class="skeleton-hint">
+    <t-loading theme="dots" size="40rpx" />
+    <text class="skeleton-hint-text">加载审批详情中…</text>
+  </view>
+</view>
 
 <view wx:if="{{detailState === 'error'}}" class="empty-wrap">
   <t-empty description="{{detailErrorText || '审批详情不存在或无权限'}}" />

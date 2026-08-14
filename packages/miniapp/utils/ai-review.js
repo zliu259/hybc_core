@@ -51,6 +51,51 @@ const RISK_LEVEL_THEMES = {
   high: "danger"
 };
 
+/**
+ * AI 关卡审查行的状态是任务队列态（task_queue.status），不是审批流转态，
+ * 必须单独映射：failed/timeout 落到审批态映射里会显示「未知」，审查失败就被吞了。
+ * 配色与 web 端 aiGateTagType 对齐（进行中=warning，失败/超时=danger）。
+ */
+const AI_TASK_STATUS_LABELS = {
+  pending: "待执行",
+  assigned: "已派发",
+  running: "执行中",
+  completed: "已完成",
+  failed: "失败",
+  timeout: "超时"
+};
+
+const AI_TASK_STATUS_THEMES = {
+  pending: "warning",
+  assigned: "warning",
+  running: "warning",
+  completed: "success",
+  failed: "danger",
+  timeout: "danger"
+};
+
+/** 报销单项票据识别风险（invoice_review_highest_risk），文案与 web 端一致 */
+const INVOICE_RISK_LABELS = {
+  low: "低风险",
+  medium: "中风险",
+  high: "高风险"
+};
+
+/** 报销批次 AI 审计状态（ai_audit_status：none|pending|completed|failed） */
+const AUDIT_STATUS_LABELS = {
+  none: "未执行",
+  pending: "审计中",
+  completed: "已完成",
+  failed: "失败"
+};
+
+const AUDIT_STATUS_THEMES = {
+  none: "default",
+  pending: "warning",
+  completed: "success",
+  failed: "danger"
+};
+
 /** t-tag 没有 info 主题，未知取值一律落到中性色 */
 const NEUTRAL_THEME = "default";
 
@@ -89,6 +134,72 @@ const lookup = (table, key, fallback) => {
   return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : fallback;
 };
 
+/**
+ * 已知英文字段/枚举 token → 中文业务名（与 web utils/ai-review.ts 同步）。
+ * 展示层兜底：存量报告里模型照抄了 payload 的英文字段名（如 amount=282000），
+ * 对审批人有歧义；新报告已由提示词约束用中文表述，这里治历史数据。
+ * 仅整 token 精确匹配，未知 token（流水号、单号等）原样保留。
+ */
+const FIELD_TOKEN_LABELS = {
+  "contract.total_amount": "合同总额",
+  "contract.paid_amount": "合同已付金额",
+  "contract.counterparty": "合同相对方",
+  "contract.contract_no": "合同号",
+  "payment.content": "付款内容",
+  "payment.category": "付款类别",
+  "payee.name": "收款方名称",
+  total_amount: "合同总额",
+  paid_amount: "已付金额",
+  amount_cn: "金额大写",
+  amount: "金额",
+  serial_no: "流水号",
+  contract_no: "合同号",
+  invoice_no: "发票号",
+  envelope_no: "报销单号",
+  counterparty: "合同相对方",
+  our_entity: "我方签约主体",
+  our_entities: "集团实体名单",
+  recent_payments: "近期付款记录",
+  expected_payment_date: "预计付款日",
+  payment_method: "付款方式",
+  bank_name: "开户行",
+  bank_account: "银行账号",
+  payee: "收款方",
+  category: "费用类别",
+  content: "付款内容",
+  remark: "备注",
+  direction: "合同方向",
+  attachments: "附件",
+  risk_level: "风险等级",
+  precheck_status: "预审状态",
+  reimbursement_item_reviews: "报销单项预审",
+  status: "状态",
+  outbound: "对外付款",
+  inbound: "收款",
+  pass: "通过",
+  warn: "关注",
+  fail: "异常",
+  high: "高",
+  medium: "中",
+  low: "低"
+};
+
+/** 把文本中的已知英文字段 token 换成中文业务名；非字符串返回空串 */
+const humanizeAiText = (text) => {
+  if (typeof text !== "string" || !text) return "";
+  return text.replace(/[A-Za-z_][A-Za-z0-9_.]*/g, (token) => {
+    const direct = lookup(FIELD_TOKEN_LABELS, token, null);
+    if (direct) return direct;
+    // 句尾英文点号会被并进 token（如 "amount."），剥掉再查一次
+    const trimmed = token.replace(/\.+$/, "");
+    if (trimmed !== token) {
+      const hit = lookup(FIELD_TOKEN_LABELS, trimmed, null);
+      if (hit) return hit + token.slice(trimmed.length);
+    }
+    return token;
+  });
+};
+
 const toFindingDimensionLabel = (dimension) =>
   typeof dimension === "string" && dimension
     ? lookup(FINDING_DIMENSION_LABELS, dimension, dimension)
@@ -108,6 +219,44 @@ const toRiskLevelLabel = (value) =>
     : "-";
 
 const toRiskLevelTheme = (value) => lookup(RISK_LEVEL_THEMES, value, NEUTRAL_THEME);
+
+const toAiTaskStatusLabel = (status) =>
+  typeof status === "string" && status
+    ? lookup(AI_TASK_STATUS_LABELS, status, status)
+    : "-";
+
+const toAiTaskStatusTheme = (status) => lookup(AI_TASK_STATUS_THEMES, status, NEUTRAL_THEME);
+
+/** 无风险值时返回空串，WXML 端按空串隐藏整行 */
+const toInvoiceRiskLabel = (value) =>
+  typeof value === "string" && value ? lookup(INVOICE_RISK_LABELS, value, value) : "";
+
+const toInvoiceRiskTheme = (value) => lookup(RISK_LEVEL_THEMES, value, NEUTRAL_THEME);
+
+/**
+ * 报销批次 AI 审计报告（/reimbursement/batch/:id/audit-report）的展示口径。
+ * result 可能是服务端解析好的对象，也可能是纯文本；只有 {output: string}
+ * 一个键时说明模型输出本来就不是 JSON，直接展示原文而不是再包一层引号。
+ * audit 为 null（接口失败/未执行）时按 none 渲染，与 web 端一致。
+ */
+const buildAuditReportView = (audit) => {
+  const status = asString(audit && audit.status) || "none";
+  const result = audit ? audit.result : null;
+  let reportText = "";
+  if (typeof result === "string") {
+    reportText = result.trim();
+  } else if (isPlainObject(result)) {
+    reportText =
+      typeof result.output === "string" && Object.keys(result).length === 1
+        ? result.output.trim()
+        : JSON.stringify(result, null, 2);
+  }
+  return {
+    statusLabel: lookup(AUDIT_STATUS_LABELS, status, status),
+    statusTheme: lookup(AUDIT_STATUS_THEMES, status, NEUTRAL_THEME),
+    reportText
+  };
+};
 
 /** 风险分档（与后端 postprocess 一致：0-19 低 / 20-49 中 / ≥50 高） */
 const toRiskScoreBandLabel = (score) => {
@@ -187,8 +336,8 @@ const buildFindingRows = (report) => {
     dimensionLabel: toFindingDimensionLabel(finding.dimension),
     statusLabel: toFindingStatusLabel(finding.status),
     statusTheme: toFindingStatusTheme(finding.status),
-    detail: finding.detail,
-    evidence: finding.evidence
+    detail: humanizeAiText(finding.detail),
+    evidence: humanizeAiText(finding.evidence)
   }));
 };
 
@@ -202,8 +351,8 @@ const buildClauseRows = (raw) => {
       clause: asString(item.clause) || "未命名条款",
       riskLabel: toRiskLevelLabel(riskLevel),
       riskTheme: toRiskLevelTheme(riskLevel),
-      issue: asString(item.issue) || asString(item.comment),
-      suggestion: asString(item.suggestion)
+      issue: humanizeAiText(asString(item.issue) || asString(item.comment)),
+      suggestion: humanizeAiText(asString(item.suggestion))
     };
   });
 };
@@ -225,8 +374,8 @@ const buildAmountAssessment = (node) => {
   let reasonableness = asString(node.reasonableness);
   if (!reasonableness && node.reasonable === true) reasonableness = "high";
   if (!reasonableness && node.reasonable === false) reasonableness = "low";
-  const basis = asString(node.basis) || asString(node.comment);
-  const riskPoints = asStringList(node.risk_points);
+  const basis = humanizeAiText(asString(node.basis) || asString(node.comment));
+  const riskPoints = asStringList(node.risk_points).map(humanizeAiText);
   if (!reasonableness && !basis && riskPoints.length === 0) return null;
   return {
     riskLabel: reasonableness ? toRiskLevelLabel(reasonableness) : "",
@@ -294,12 +443,13 @@ const buildAiReportViewModel = (source, kind, status) => {
   const score =
     typeof report.score === "number" && isFinite(report.score) ? report.score : null;
   const overallRisk = asString(report.overall_risk);
-  const summary = asString(report.summary);
-  const scoreBasis = asStringList(report.score_basis);
+  // 展示文本统一过 humanizeAiText：存量报告的英文字段名换成中文业务名
+  const summary = humanizeAiText(asString(report.summary));
+  const scoreBasis = asStringList(report.score_basis).map(humanizeAiText);
   // 只有确定性计分的结果（带 score_basis 键）才配分档文案与配色：旧结果的
   // 分数是模型自己编的，跨单不可比，打上「高风险（≥50）」会误导审批人
   const scoreIsDeterministic = Array.isArray(report.score_basis);
-  const recommendations = asStringList(report.recommendations);
+  const recommendations = asStringList(report.recommendations).map(humanizeAiText);
   const clauseRows = normalizedKind === "contract" ? buildClauseRows(report.clause_analysis) : [];
   const findingRows = normalizedKind === "payment" ? buildFindingRows(report) : [];
   const amountAssessment = buildAmountAssessment(report.amount_assessment);
@@ -350,6 +500,12 @@ module.exports = {
   toRiskLevelTheme,
   toRiskScoreBandLabel,
   toRiskScoreBandTheme,
+  toAiTaskStatusLabel,
+  toAiTaskStatusTheme,
+  toInvoiceRiskLabel,
+  toInvoiceRiskTheme,
+  humanizeAiText,
+  buildAuditReportView,
   parseAiReportJson,
   normalizeAiFindings,
   buildAiReportViewModel

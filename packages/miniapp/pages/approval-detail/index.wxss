@@ -58,6 +58,11 @@
   color: #d54941;
 }
 
+/* 退回（含 AI 拦截退回）非终态，用警示橙与终态驳回的红区分 */
+.reason-returned {
+  color: #e6a23c;
+}
+
 .kv-row {
   display: flex;
   align-items: flex-start;
@@ -360,9 +365,62 @@
   margin: 6rpx 0 10rpx;
 }
 
-.loading-wrap,
 .empty-wrap {
   padding: 40rpx 0;
+}
+
+/* 加载骨架屏：贴合 section-wrap 卡片外观，流光动画区别于静态文案 */
+.skeleton-card {
+  padding: 24rpx;
+  margin-bottom: 14rpx;
+  background: #ffffff;
+  border: 1rpx solid #e8edf3;
+  border-radius: 18rpx;
+}
+
+.skeleton-line {
+  height: 26rpx;
+  margin-bottom: 18rpx;
+  border-radius: 8rpx;
+  background: linear-gradient(90deg, #eef1f5 25%, #e0e5ec 37%, #eef1f5 63%);
+  background-size: 400% 100%;
+  animation: skeleton-shimmer 1.4s ease infinite;
+}
+
+.skeleton-line:last-child {
+  margin-bottom: 0;
+}
+
+.skeleton-title {
+  width: 46%;
+  height: 32rpx;
+}
+
+.skeleton-short {
+  width: 62%;
+}
+
+.skeleton-hint {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  padding: 20rpx 0;
+}
+
+.skeleton-hint-text {
+  font-size: 24rpx;
+  color: #8a94a6;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 100% 50%;
+  }
+
+  100% {
+    background-position: 0 50%;
+  }
 }
 
 .footer-acted {
