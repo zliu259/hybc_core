@@ -301,15 +301,17 @@ const selectedDirectContract = computed(() => {
   );
 });
 
+const contractSortComparator = (a: Contract, b: Contract): number => {
+  const timeA = new Date(a.created_at || a.contract_date || "").getTime();
+  const timeB = new Date(b.created_at || b.contract_date || "").getTime();
+  if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
+    return timeB - timeA;
+  }
+  return b.id - a.id;
+};
+
 const sortedContracts = computed(() => {
-  return [...contracts.value].sort((a, b) => {
-    const timeA = new Date(a.created_at || a.contract_date || "").getTime();
-    const timeB = new Date(b.created_at || b.contract_date || "").getTime();
-    if (Number.isFinite(timeA) && Number.isFinite(timeB) && timeA !== timeB) {
-      return timeB - timeA;
-    }
-    return b.id - a.id;
-  });
+  return [...contracts.value].sort(contractSortComparator);
 });
 
 const selectedDirectPayee = computed(() => {
@@ -335,6 +337,82 @@ const selectedDirectContractRemaining = computed(() => {
 const userStore = useUserStoreHook();
 const showAllContracts = ref(false);
 const contractEntryOpen = ref(false);
+const allContractsLoaded = ref(false);
+const contractSearchResults = ref<Contract[] | null>(null);
+const contractSearchLoading = ref(false);
+let contractSearchTimer: ReturnType<typeof setTimeout> | null = null;
+let contractSearchSeq = 0;
+
+// 合同池按 id 去重合并：初始本人合同 / 加载全部 / 远程搜索结果共用一个池，
+// 保证已选合同在任何视图切换后都能解析出标签
+const mergeContracts = (incoming: Contract[]) => {
+  const known = new Set(contracts.value.map(item => item.id));
+  const fresh = incoming.filter(item => !known.has(item.id));
+  if (fresh.length) {
+    contracts.value = [...contracts.value, ...fresh];
+  }
+};
+
+// 「加载全部合同」：首次开启时真实拉取全量视图（最新 200 条，不限经办人）
+const toggleShowAllContracts = async () => {
+  showAllContracts.value = !showAllContracts.value;
+  if (!showAllContracts.value || allContractsLoaded.value) return;
+  try {
+    const res = await listContracts({
+      direction: "outbound",
+      page: 1,
+      pageSize: 200
+    });
+    mergeContracts(res.data);
+    allContractsLoaded.value = true;
+  } catch {
+    message("加载全部合同失败，请重试", { type: "error" });
+  }
+};
+
+// 远程搜索：输入即全库检索（合同号/对方单位/备注），与默认视图互不干扰
+const searchContracts = (query: string) => {
+  const keyword = query.trim();
+  if (contractSearchTimer) clearTimeout(contractSearchTimer);
+  if (!keyword) {
+    contractSearchSeq += 1;
+    contractSearchLoading.value = false;
+    contractSearchResults.value = null;
+    return;
+  }
+  contractSearchLoading.value = true;
+  contractSearchTimer = setTimeout(async () => {
+    const seq = ++contractSearchSeq;
+    try {
+      const res = await listContracts({
+        direction: "outbound",
+        keyword,
+        page: 1,
+        pageSize: 50
+      });
+      if (seq !== contractSearchSeq) return;
+      mergeContracts(res.data);
+      contractSearchResults.value = res.data;
+    } catch {
+      if (seq === contractSearchSeq) {
+        message("合同搜索失败，请重试", { type: "error" });
+      }
+    } finally {
+      if (seq === contractSearchSeq) {
+        contractSearchLoading.value = false;
+      }
+    }
+  }, 300);
+};
+
+// 下拉关闭时退出搜索态，回落默认视图（选中项由 visibleContracts 兜底保留）
+const onContractDropdownVisible = (visible: boolean) => {
+  if (visible) return;
+  contractSearchSeq += 1;
+  if (contractSearchTimer) clearTimeout(contractSearchTimer);
+  contractSearchLoading.value = false;
+  contractSearchResults.value = null;
+};
 
 const handlerNameMap = computed(() => {
   const map: Record<string, string> = {};
@@ -362,14 +440,25 @@ const contractSummary = (contract: Contract): string => {
   return `${counterparty}｜${contractType}｜剩余 ${remaining}｜${handler}`;
 };
 
-// 默认仅显示"自己经办 + 剩余额度>0"的合同；加载全部时显示所有剩余>0 的合同
+// 搜索态显示服务端命中结果（不限经办人）；默认态显示"自己经办 + 剩余额度>0"，
+// 加载全部时放开经办人限制。已选合同不在当前视图时置顶保留，避免 remote
+// 模式下拉选项被替换后选中项标签丢失
 const visibleContracts = computed(() => {
   const mine = (userStore.username || "").trim();
-  return sortedContracts.value.filter(item => {
-    if (contractRemaining(item) <= 0) return false;
-    if (showAllContracts.value) return true;
-    return (item.handler_userid || "").trim() === mine;
-  });
+  const base =
+    contractSearchResults.value !== null
+      ? [...contractSearchResults.value].sort(contractSortComparator)
+      : sortedContracts.value.filter(item => {
+          if (showAllContracts.value) return true;
+          return (item.handler_userid || "").trim() === mine;
+        });
+  const withCredit = base.filter(item => contractRemaining(item) > 0);
+  const selectedId = directForm.value.contract_id;
+  if (selectedId && !withCredit.some(item => item.id === selectedId)) {
+    const selected = contracts.value.find(item => item.id === selectedId);
+    if (selected) return [selected, ...withCredit];
+  }
+  return withCredit;
 });
 
 // 合同优先入口：选定合同后带入直付流程（项目预填、尽量匹配收款方）
@@ -529,7 +618,12 @@ const loadMeta = async () => {
       );
       return null;
     }),
-    listContracts({ direction: "outbound", page: 1, pageSize: 200 }),
+    listContracts({
+      direction: "outbound",
+      applicant_userid: (userStore.username || "").trim() || undefined,
+      page: 1,
+      pageSize: 200
+    }),
     listEntities()
   ]);
 
@@ -544,7 +638,7 @@ const loadMeta = async () => {
   }
 
   await loadPayees();
-  contracts.value = contractRes.data;
+  mergeContracts(contractRes.data);
   entities.value = entityRes.data;
   await Promise.all([loadProjects(), loadWecomUsers()]);
 };
@@ -812,20 +906,20 @@ onMounted(async () => {
         </el-form-item>
         <el-form-item v-if="contractEntryOpen" label="选择合同">
           <div class="contract-entry-body">
-            <el-button
-              size="small"
-              plain
-              @click="showAllContracts = !showAllContracts"
-            >
+            <el-button size="small" plain @click="toggleShowAllContracts">
               {{ showAllContracts ? "只看我的合同" : "加载全部合同" }}
             </el-button>
             <el-select
               v-model="directForm.contract_id"
               filterable
               clearable
-              placeholder="默认只显示你经办且有可用额度的合同"
+              remote
+              :remote-method="searchContracts"
+              :loading="contractSearchLoading"
+              placeholder="默认显示你经办的合同，输入合同号/对方单位可搜索全部"
               style="width: 420px; margin-left: 12px"
               @change="pickContractForPayment"
+              @visible-change="onContractDropdownVisible"
             >
               <el-option
                 v-for="item in visibleContracts"
@@ -848,7 +942,7 @@ onMounted(async () => {
             >
               暂无{{
                 showAllContracts ? "" : "你经办的"
-              }}可用合同，可点击“加载全部合同”
+              }}可用合同，可点击“加载全部合同”或输入关键词搜索
             </el-text>
           </div>
         </el-form-item>
@@ -891,8 +985,12 @@ onMounted(async () => {
               v-model="directForm.contract_id"
               filterable
               clearable
-              placeholder="可选：无合同/无需合同，或选择已有关联合同"
+              remote
+              :remote-method="searchContracts"
+              :loading="contractSearchLoading"
+              placeholder="可选：无合同/无需合同，输入关键词可搜索全部合同"
               style="width: 360px"
+              @visible-change="onContractDropdownVisible"
             >
               <el-option label="无合同 / 无需合同" :value="null" />
               <el-option
@@ -906,7 +1004,7 @@ onMounted(async () => {
               size="small"
               plain
               style="margin-left: 12px"
-              @click="showAllContracts = !showAllContracts"
+              @click="toggleShowAllContracts"
             >
               {{ showAllContracts ? "只看我的合同" : "加载全部合同" }}
             </el-button>
@@ -1085,8 +1183,12 @@ onMounted(async () => {
               v-model="directForm.contract_id"
               filterable
               clearable
-              placeholder="若本笔付款属于已审批合同，请先选择合同"
+              remote
+              :remote-method="searchContracts"
+              :loading="contractSearchLoading"
+              placeholder="若本笔付款属于已审批合同，可输入关键词搜索选择"
               style="width: 360px"
+              @visible-change="onContractDropdownVisible"
             >
               <el-option
                 v-for="item in visibleContracts"
@@ -1099,7 +1201,7 @@ onMounted(async () => {
               size="small"
               plain
               style="margin-left: 12px"
-              @click="showAllContracts = !showAllContracts"
+              @click="toggleShowAllContracts"
             >
               {{ showAllContracts ? "只看我的合同" : "加载全部合同" }}
             </el-button>

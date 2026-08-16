@@ -40,7 +40,8 @@
       </view>
     </view>
 
-    <view class="sp-count" wx:if="{{query}}">{{filtered.length}} 条匹配</view>
+    <view class="sp-count" wx:if="{{remote && remoteLoading}}">搜索中…</view>
+    <view class="sp-count" wx:elif="{{query}}">{{filtered.length}} 条匹配</view>
 
     <scroll-view class="sp-list" scroll-y enhanced show-scrollbar="{{false}}">
       <view
@@ -59,7 +60,7 @@
         <t-icon wx:else name="chevron-right" size="36rpx" class="sp-row__chevron" />
       </view>
 
-      <view wx:if="{{filtered.length === 0}}" class="sp-empty">
+      <view wx:if="{{filtered.length === 0 && !(remote && remoteLoading)}}" class="sp-empty">
         <t-icon name="search" size="64rpx" class="sp-empty__icon" />
         <view class="sp-empty__text">{{query ? '没有匹配的结果' : emptyText}}</view>
       </view>

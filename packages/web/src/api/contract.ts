@@ -66,6 +66,7 @@ export const listContracts = (params?: {
   entity_id?: number;
   status?: string;
   keyword?: string;
+  applicant_userid?: string;
   page?: number;
   pageSize?: number;
 }) => {

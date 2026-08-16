@@ -82,6 +82,18 @@ Component({
     autoFocus: {
       type: Boolean,
       value: false
+    },
+    // 远程搜索模式：输入防抖后抛 search 事件（detail.keyword），由调用方请求服务端
+    // 并替换 range；此模式下不做本地拼音过滤——服务端可能按备注等 label 里不存在
+    // 的字段命中，本地再筛会把合法结果滤掉。range/value/change 下标语义不变。
+    remote: {
+      type: Boolean,
+      value: false
+    },
+    // 远程搜索请求进行中（由调用方控制），用于列表内展示"搜索中"占位。
+    remoteLoading: {
+      type: Boolean,
+      value: false
     }
   },
 
@@ -102,6 +114,9 @@ Component({
         this._slots = list.map((item) => buildSlots(item));
       }
       this.updateSelected();
+    },
+    detached() {
+      if (this._remoteTimer) clearTimeout(this._remoteTimer);
     }
   },
 
@@ -129,9 +144,11 @@ Component({
       const slots = this._slots || [];
       const nq = normalizeQuery(query);
       const value = Number(this.data.value || 0);
+      // 远程模式下 range 已由调用方按服务端结果收敛，本地不再二次过滤
+      const skipLocalFilter = Boolean(this.data.remote);
       const filtered = [];
       for (let i = 0; i < range.length; i += 1) {
-        if (!matches(slots[i], nq)) continue;
+        if (!skipLocalFilter && !matches(slots[i], nq)) continue;
         const parts = splitLabel(range[i]);
         filtered.push({
           index: i,
@@ -143,9 +160,23 @@ Component({
       this.setData({ filtered });
     },
 
+    emitRemoteSearch(keyword, immediate) {
+      if (!this.data.remote) return;
+      if (this._remoteTimer) clearTimeout(this._remoteTimer);
+      if (immediate) {
+        this.triggerEvent("search", { keyword });
+        return;
+      }
+      this._remoteTimer = setTimeout(() => {
+        this.triggerEvent("search", { keyword });
+      }, 300);
+    },
+
     open() {
       if (this.data.disabled) return;
       this.setData({ visible: true, query: "" });
+      // 上次搜索态可能仍残留在调用方 range 里，打开时通知其恢复默认列表
+      this.emitRemoteSearch("", true);
       this.rebuild("");
     },
 
@@ -161,11 +192,13 @@ Component({
     onQueryInput(e) {
       const query = (e.detail && e.detail.value) || "";
       this.setData({ query });
+      this.emitRemoteSearch(query.trim(), false);
       this.rebuild(query);
     },
 
     clearQuery() {
       this.setData({ query: "" });
+      this.emitRemoteSearch("", true);
       this.rebuild("");
     },
 
@@ -175,6 +208,9 @@ Component({
       // 与原生 picker 的 bindchange 对齐：detail.value = 选中下标。
       // 这样父页面已有的 onXxxChange(e) { e.detail.value } 无需改动。
       this.triggerEvent("change", { value: index });
+      // 远程模式：选完立即让调用方退出搜索态恢复默认 range（change 先于 search
+      // 触发，调用方先落选中值、再重建视图，选中项由其置顶逻辑保留）
+      this.emitRemoteSearch("", true);
     }
   }
 });

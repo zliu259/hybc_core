@@ -244,6 +244,7 @@ Page({
     handlerNameMap: {},
     myUserid: "",
     showAllContracts: false,
+    contractSearchLoading: false,
     contractEntryOpen: false,
     wecomUsers: [],
     wecomUserLabels: ["请选择经办人"],
@@ -334,11 +335,16 @@ Page({
   async loadMeta() {
     if (this.data.loadingMeta) return;
     this.setData({ loadingMeta: true });
+    // 远程搜索/加载全部的会话内状态：重新拉基础数据时一并复位
+    this._contractSearchResults = null;
+    this._contractSearchSeq = 0;
+    this._allContractsLoaded = false;
+    const myUserid = String((getUserProfile() || {}).username || "").trim();
     try {
       const [thresholdRes, payeeRes, contractRes, entityRes, wecomRes] = await Promise.all([
         request({ method: "GET", path: "/api/v1/admin/thresholds?biz_type=payment_request" }).catch((error) => ({ _error: error })),
         request({ method: "GET", path: "/api/v1/payment/payee/list?type=external" }).catch((error) => ({ _error: error })),
-        request({ method: "GET", path: "/api/v1/contract?direction=outbound&page=1&pageSize=200" }).catch((error) => ({ _error: error })),
+        request({ method: "GET", path: `/api/v1/contract?direction=outbound&applicant_userid=${encodeURIComponent(myUserid)}&page=1&pageSize=200` }).catch((error) => ({ _error: error })),
         request({ method: "GET", path: "/api/v1/entity?page=1&pageSize=200" }).catch((error) => ({ _error: error })),
         request({ method: "GET", path: "/api/v1/auth/wecom/contacts" }).catch((error) => ({ _error: error }))
       ]);
@@ -371,11 +377,6 @@ Page({
           : [];
 
       const handlerNameMap = buildHandlerNameMap(wecomUsers);
-      const myUserid = String((getUserProfile() || {}).username || "").trim();
-      const visibleContracts = filterVisibleContracts(contracts, {
-        myUserid,
-        showAll: this.data.showAllContracts
-      });
 
       this.setData({
         thresholdLimit,
@@ -384,10 +385,6 @@ Page({
         contracts,
         handlerNameMap,
         myUserid,
-        visibleContracts,
-        contractLabels: buildContractLabels(visibleContracts, handlerNameMap, {
-          withNoneOption: true
-        }),
         entities,
         entityLabels: ["请选择我方主体"].concat(
           entities.map((item) => item.entity_name || item.entity_code || `主体${item.id}`)
@@ -397,6 +394,7 @@ Page({
           wecomUsers.map((item) => `${item.name || item.userid} (${item.userid})`)
         )
       });
+      this.rebuildContractView();
       this.checkAmount();
       this.syncSelectedPayeeInfo();
     } finally {
@@ -628,32 +626,104 @@ Page({
     });
   },
 
-  // 切换"只看我的" / "加载全部合同"（纯前端过滤，不重新请求）
-  toggleShowAllContracts() {
-    const showAll = !this.data.showAllContracts;
-    const visibleContracts = filterVisibleContracts(this.data.contracts, {
-      myUserid: this.data.myUserid,
-      showAll
-    });
-    const contractLabels = buildContractLabels(visibleContracts, this.data.handlerNameMap, {
-      withNoneOption: true
-    });
+  // 合同池按 id 去重合并：初始本人合同 / 加载全部 / 远程搜索结果共用一个池，
+  // 保证已选合同在任何视图切换后都能按 id 解析出来
+  mergeContractsIntoPool(incoming) {
+    const pool = Array.isArray(this.data.contracts) ? this.data.contracts : [];
+    const known = new Set(pool.map((item) => Number(item.id)));
+    const fresh = (Array.isArray(incoming) ? incoming : []).filter(
+      (item) => item && !known.has(Number(item.id))
+    );
+    if (!fresh.length) return;
+    this.setData({ contracts: sortContractsNewestFirst(pool.concat(fresh)) });
+  },
+
+  // 统一重建合同可选视图与下标：搜索态显示服务端命中（不限经办人），
+  // 默认态按"我的/全部"过滤；已选合同不在视图内时置顶保留（否则 range 被
+  // 替换后选中项标签会丢失），并按新视图重算选中下标
+  rebuildContractView() {
+    const searchResults = this._contractSearchResults;
+    const base = Array.isArray(searchResults)
+      ? sortContractsNewestFirst(
+          searchResults.filter((item) => resolveContractRemaining(item) > 0)
+        )
+      : filterVisibleContracts(this.data.contracts, {
+          myUserid: this.data.myUserid,
+          showAll: this.data.showAllContracts
+        });
     const currentId = Number(this.data.directForm.contract_id || 0);
+    let visibleContracts = base;
+    if (currentId > 0 && !base.some((item) => Number(item.id) === currentId)) {
+      const selected = (this.data.contracts || []).find(
+        (item) => Number(item.id) === currentId
+      );
+      if (selected) visibleContracts = [selected].concat(base);
+    }
     const foundIndex =
-      currentId > 0 ? visibleContracts.findIndex((item) => Number(item.id) === currentId) : -1;
-    const stillVisible = foundIndex >= 0;
-    const nextContractId = stillVisible ? currentId : null;
-    const exceedsThreshold = Boolean(this.data.exceedsThreshold);
+      currentId > 0
+        ? visibleContracts.findIndex((item) => Number(item.id) === currentId)
+        : -1;
     this.setData({
-      showAllContracts: showAll,
       visibleContracts,
-      contractLabels,
-      directContractIndex: stillVisible ? foundIndex + 1 : 0,
-      "directForm.contract_id": nextContractId,
-      shouldUseContractFlow: this.resolveShouldUseContractFlow(exceedsThreshold, nextContractId),
-      directContractRemaining: this.resolveDirectContractRemaining(nextContractId),
-      directContractRemainingText: this.resolveDirectContractRemainingText(nextContractId)
+      contractLabels: buildContractLabels(visibleContracts, this.data.handlerNameMap, {
+        withNoneOption: true
+      }),
+      directContractIndex: foundIndex >= 0 ? foundIndex + 1 : 0
     });
+  },
+
+  // 合同选择器远程搜索（search-picker remote 模式回调）：空关键词恢复默认视图，
+  // 非空则请求服务端全库检索（合同号/对方单位/备注），请求序号防乱序回写
+  async onContractSearch(e) {
+    const keyword = String((e.detail && e.detail.keyword) || "").trim();
+    this._contractSearchSeq = (this._contractSearchSeq || 0) + 1;
+    const seq = this._contractSearchSeq;
+    if (!keyword) {
+      this._contractSearchResults = null;
+      this.setData({ contractSearchLoading: false });
+      this.rebuildContractView();
+      return;
+    }
+    this.setData({ contractSearchLoading: true });
+    try {
+      const res = await request({
+        method: "GET",
+        path: `/api/v1/contract?direction=outbound&keyword=${encodeURIComponent(keyword)}&page=1&pageSize=50`
+      });
+      if (seq !== this._contractSearchSeq) return;
+      const items = res && Array.isArray(res.data) ? res.data : [];
+      this.mergeContractsIntoPool(items);
+      this._contractSearchResults = items;
+      this.rebuildContractView();
+    } catch (error) {
+      if (seq === this._contractSearchSeq) {
+        wx.showToast({ title: "合同搜索失败，请重试", icon: "none" });
+      }
+    } finally {
+      if (seq === this._contractSearchSeq) {
+        this.setData({ contractSearchLoading: false });
+      }
+    }
+  },
+
+  // 切换"只看我的" / "加载全部合同"：首次开启时真实拉取全量视图（最新 200 条，
+  // 不限经办人）合并入池；已选合同由 rebuildContractView 置顶保留
+  async toggleShowAllContracts() {
+    const showAll = !this.data.showAllContracts;
+    this.setData({ showAllContracts: showAll });
+    if (showAll && !this._allContractsLoaded) {
+      try {
+        const res = await request({
+          method: "GET",
+          path: "/api/v1/contract?direction=outbound&page=1&pageSize=200"
+        });
+        this.mergeContractsIntoPool(res && Array.isArray(res.data) ? res.data : []);
+        this._allContractsLoaded = true;
+      } catch (error) {
+        wx.showToast({ title: "加载全部合同失败，请重试", icon: "none" });
+      }
+    }
+    this.rebuildContractView();
   },
 
   // 第一步："通过已有合同发起付款"入口的展开/收起

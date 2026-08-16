@@ -1204,7 +1204,18 @@
 - 后端新增 `POST /api/v1/payment/:id/void`（仅 `super_admin`），废除时同步取消在途审批任务/实例，已付款场景回退合同 `paid_amount`：`packages/api/src/routes/payment.ts`、`packages/api/src/services/event-bus.ts`
 - Web 智能发单台提交动作补齐防重与反馈统一：提交中 loading、成功提示“提交成功”并返回上一级、失败提示“提交失败，请重试”：`packages/web/src/views/finance/payment/wizard.vue`
 
-### 4.5 小程序审批端与Web审批台信息对齐（2026-03）
+### 3.26 智能发单台合同远程搜索（2026-08）
+
+- 背景：发单台此前一次性只拉最新 200 条 outbound 合同、输入框仅做已加载选项的本地过滤，生产合同量超过 200 后存量/较早合同（如 CP25056）永远搜不到；「加载全部合同」也只是前端过滤开关。
+- Web 端改造：`packages/web/src/views/finance/payment/wizard.vue`
+  - 初始只拉「本人经办」合同全集（`applicant_userid`），默认视图不再受最新 200 条截断影响；
+  - 三处合同下拉启用 el-select `remote` 远程搜索：输入 300ms 防抖调 `GET /api/v1/contract?direction=outbound&keyword=...`（合同号/对方单位/备注模糊），搜索态不限经办人；
+  - 「加载全部合同」改为真实拉取全量视图（最新 200 条）并与合同池按 id 去重合并；
+  - 已选合同不在当前视图时置顶保留，避免 remote 模式选项替换后选中项标签丢失；下拉关闭自动退出搜索态回落默认视图。
+- 小程序端同构：`packages/miniapp/packageFinance/payment-apply/index.js` + `index.wxml`
+  - `hy-search-picker` 组件新增 `remote`/`remoteLoading` 属性与 `search` 事件（输入防抖 300ms 抛关键词；远程态跳过本地拼音过滤，避免服务端按备注命中的结果被本地二次滤掉；`range`/`value`/`change` 下标语义不变，存量非远程用法零影响）：`packages/miniapp/components/business/search-picker/`
+  - 页面三处合同选择器开启远程模式，统一 `rebuildContractView` 重建视图与选中下标（选中项置顶保留）；「加载全部合同」首次点击真实拉取合并；选完/清词/重开弹层自动恢复默认视图。
+- 服务端零改动（keyword/applicant_userid 过滤原已支持）。配套数据修复见迁移 `0086`（存量合同经办人中文名→企微 userid，恢复「只看我的合同」对存量合同的命中）。
 
 - 小程序审批中心从“仅列表+动作”升级为“可展开审批详情”，补齐与 Web 一致的决策关键信息：`packages/miniapp/pages/approval/index.js`、`packages/miniapp/pages/approval/index.wxml`、`packages/miniapp/pages/approval/index.wxss`
 - 详情弹层补齐业务摘要与流程信息：审批编号、业务类型、发起人、状态、提交流转时间、节点意见与动作：`packages/miniapp/pages/approval/index.wxml`

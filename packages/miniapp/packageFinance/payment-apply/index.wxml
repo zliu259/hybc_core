@@ -42,12 +42,15 @@
             value="{{directContractIndex}}"
             title="选择已有合同"
             placeholder="无合同 / 无需合同"
-            searchPlaceholder="按对方单位 / 类型 / 经办人搜索"
+            searchPlaceholder="输入合同号 / 对方单位 / 备注，搜索全部合同"
             emptyText="暂无可用合同"
+            remote="{{true}}"
+            remoteLoading="{{contractSearchLoading}}"
+            bind:search="onContractSearch"
             bindchange="onContractEntryPick"
           />
           <view wx:if="{{directContractRemainingText}}" class="helper-text">当前合同可用额度：{{directContractRemainingText}}</view>
-          <view wx:if="{{visibleContracts.length === 0}}" class="helper-text">暂无{{showAllContracts ? '' : '你经办的'}}可用合同，可点击“加载全部合同”查看他人合同。</view>
+          <view wx:if="{{visibleContracts.length === 0}}" class="helper-text">暂无{{showAllContracts ? '' : '你经办的'}}可用合同，可点击“加载全部合同”或在选择器中输入关键词搜索。</view>
         </view>
       </view>
     </view>
@@ -111,8 +114,11 @@
         value="{{directContractIndex}}"
         title="选择合同"
         placeholder="无合同 / 无需合同"
-        searchPlaceholder="按对方单位 / 类型 / 经办人搜索"
+        searchPlaceholder="输入合同号 / 对方单位 / 备注，搜索全部合同"
         emptyText="暂无可用合同"
+        remote="{{true}}"
+        remoteLoading="{{contractSearchLoading}}"
+        bind:search="onContractSearch"
         bindchange="onDirectContractChange"
       />
       <view class="row contract-entry-toolbar">
@@ -199,8 +205,11 @@
         value="{{directContractIndex}}"
         title="选择合同"
         placeholder="无合同 / 无需合同"
-        searchPlaceholder="按对方单位 / 类型 / 经办人搜索"
+        searchPlaceholder="输入合同号 / 对方单位 / 备注，搜索全部合同"
         emptyText="暂无可用合同"
+        remote="{{true}}"
+        remoteLoading="{{contractSearchLoading}}"
+        bind:search="onContractSearch"
         bindchange="onDirectContractChange"
       />
       <view class="row contract-entry-toolbar">
