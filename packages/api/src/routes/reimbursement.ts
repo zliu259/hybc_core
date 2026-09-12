@@ -1671,6 +1671,27 @@ reimbursementRoutes.get(
       return c.json({ success: false, error: { message: "applicant_userid is required" } }, 400);
     }
 
+    // 发票抬头过滤：正整数 = 该主体；none = 未识别；缺省不过滤
+    const titleFilterRaw = c.req.query("invoice_title_entity_id")?.trim() ?? "";
+    let titleClause = "";
+    const titleParams: number[] = [];
+    if (titleFilterRaw === "none") {
+      titleClause = " AND invoice_title_entity_id IS NULL";
+    } else if (titleFilterRaw) {
+      const titleEntityId = Number(titleFilterRaw);
+      if (!Number.isInteger(titleEntityId) || titleEntityId <= 0) {
+        return c.json(
+          {
+            success: false,
+            error: { message: "invoice_title_entity_id must be a positive integer or 'none'" }
+          },
+          400
+        );
+      }
+      titleClause = " AND invoice_title_entity_id = ?";
+      titleParams.push(titleEntityId);
+    }
+
     const rows = await c.env.DB.prepare(
       `SELECT *
          FROM reimbursement_envelope
@@ -1678,10 +1699,10 @@ reimbursementRoutes.get(
           AND precheck_status = 'approved'
           AND batch_id IS NULL
           AND project_id = ?
-          AND applicant_userid = ?
+          AND applicant_userid = ?${titleClause}
         ORDER BY updated_at DESC, id DESC`
     )
-      .bind(projectId, applicantUserid)
+      .bind(projectId, applicantUserid, ...titleParams)
       .all<ReimbursementEnvelope>();
 
     return c.json({
@@ -1698,7 +1719,7 @@ reimbursementRoutes.get(
     const eligible = await c.env.DB.prepare(
       `SELECT
          e.id, e.envelope_no, e.project_id, e.applicant_userid, e.amount,
-         e.description, e.channel,
+         e.description, e.channel, e.invoice_title_entity_id, e.invoice_title_name,
          (
            SELECT CASE MAX(
              CASE d.risk_level WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END
@@ -1721,6 +1742,8 @@ reimbursementRoutes.get(
       description: string | null;
       channel: string;
       duplicate_risk_level: "high" | "medium" | "low" | null;
+      invoice_title_entity_id: number | null;
+      invoice_title_name: string | null;
     }>();
 
     const rows = eligible.results ?? [];
@@ -1757,6 +1780,11 @@ reimbursementRoutes.get(
       return {
         project_id: group.project_id,
         applicant_userid: group.applicant_userid,
+        invoice_title_entity_id: group.invoice_title_entity_id,
+        invoice_title_name:
+          group.envelope_ids
+            .map((envelopeId) => envelopeById.get(envelopeId)?.invoice_title_name ?? null)
+            .find((name) => Boolean(name)) ?? null,
         item_count: group.item_count,
         total_amount: group.total_amount,
         envelopes: group.envelope_ids.map((envelopeId) => {
@@ -1767,7 +1795,9 @@ reimbursementRoutes.get(
             amount: row?.amount ?? 0,
             description: row?.description ?? null,
             channel: row?.channel ?? "physical",
-            duplicate_risk_level: row?.duplicate_risk_level ?? null
+            duplicate_risk_level: row?.duplicate_risk_level ?? null,
+            invoice_title_entity_id: row?.invoice_title_entity_id ?? null,
+            invoice_title_name: row?.invoice_title_name ?? null
           };
         }),
         matched_payee: matched

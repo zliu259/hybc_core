@@ -176,3 +176,52 @@ describe("PUT /reimbursement/:id invoice_title_entity_id", () => {
     expect(db.executed.some((item) => item.sql.includes("invoice_title_source = ?"))).toBe(false);
   });
 });
+
+describe("GET /reimbursement/batch/candidates invoice_title_entity_id", () => {
+  beforeEach(() => {
+    mockAuthState.payload = { ...mockAuthState.payload, sub: "finance-a", roles: ["finance"] };
+  });
+
+  const candidatesSql = (db: FakeDb) =>
+    db.executed.find(
+      (item) =>
+        item.sql.includes("FROM reimbursement_envelope") && item.sql.includes("batch_id IS NULL")
+    );
+
+  it("none → IS NULL", async () => {
+    const db = new FakeDb();
+    const response = await request(
+      db,
+      "/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing&invoice_title_entity_id=none"
+    );
+    expect(response.status).toBe(200);
+    expect(candidatesSql(db)?.sql).toContain("invoice_title_entity_id IS NULL");
+  });
+
+  it("数字 → = ? 且绑定该 id", async () => {
+    const db = new FakeDb();
+    const response = await request(
+      db,
+      "/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing&invoice_title_entity_id=11"
+    );
+    expect(response.status).toBe(200);
+    const executed = candidatesSql(db);
+    expect(executed?.sql).toContain("invoice_title_entity_id = ?");
+    expect(executed?.params).toEqual([144, "LuShuMing", 11]);
+  });
+
+  it("缺省 → 不加过滤", async () => {
+    const db = new FakeDb();
+    await request(db, "/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing");
+    expect(candidatesSql(db)?.sql).not.toContain("invoice_title_entity_id");
+  });
+
+  it("非法值 → 400", async () => {
+    const db = new FakeDb();
+    const response = await request(
+      db,
+      "/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing&invoice_title_entity_id=abc"
+    );
+    expect(response.status).toBe(400);
+  });
+});
