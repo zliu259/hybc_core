@@ -96,6 +96,15 @@ export const reimbursementVerificationStatusLabel = (
   return m[v] ?? v;
 };
 
+export const invoiceTitleSourceLabel = (v?: string | null): string => {
+  const m: Record<string, string> = {
+    ocr: "OCR识别",
+    manual: "手工指定"
+  };
+  if (!v) return "未识别";
+  return m[v] ?? v;
+};
+
 export const reimbursementTaskStatusLabel = (v?: string | null): string => {
   const m: Record<string, string> = {
     none: "未触发",

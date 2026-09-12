@@ -10,6 +10,7 @@ import {
   type ReimbursementBatchProposal
 } from "@/api/reimbursement";
 import { listPayees, type Payee } from "@/api/payment";
+import { invoiceTitleDisplay } from "../reimbursement-title";
 
 defineOptions({ name: "AiBatchProposalsDrawer" });
 
@@ -52,6 +53,15 @@ const selectedTotal = computed(() =>
 const toProjectLabel = (id: number) => props.projectNameMap[id] || `项目#${id}`;
 const toUserLabel = (userid: string) => props.userNameMap.get(userid) ?? userid;
 
+const titleTagOf = (row: ProposalRow) => {
+  const display = invoiceTitleDisplay(row);
+  if (display.tag === "matched")
+    return { text: display.text, type: "primary" as const };
+  if (display.tag === "unmatched")
+    return { text: `未匹配主体：${display.text}`, type: "warning" as const };
+  return { text: "未识别抬头", type: "warning" as const };
+};
+
 const riskSummary = (row: ProposalRow) => {
   const high = row.envelopes.filter(
     e => e.duplicate_risk_level === "high"
@@ -90,7 +100,7 @@ const load = async () => {
     );
     rows.value = res.data.map(item => ({
       ...item,
-      key: `${item.applicant_userid}-${item.project_id}`,
+      key: `${item.applicant_userid}-${item.project_id}-${item.invoice_title_entity_id ?? "none"}`,
       selected: true,
       payment_method: item.suggested_payment_method || "personal_transfer",
       payee_id: item.matched_payee?.id,
@@ -199,7 +209,7 @@ const confirmAll = async () => {
 <template>
   <el-drawer
     :model-value="props.visible"
-    title="AI 一键成批（同人同项目终审批次）"
+    title="AI 一键成批（同人同项目同抬头）"
     size="60%"
     append-to-body
     @update:model-value="value => emit('update:visible', value)"
@@ -208,7 +218,7 @@ const confirmAll = async () => {
       type="info"
       :closable="false"
       class="mb-3"
-      title="系统已按「同人 + 同项目 + 复核通过 + 未入批」自动分组。确认后逐组创建批次并送审，AI 审计摘要将自动附加到批次供审批人查看。"
+      title="系统已按「同人 + 同项目 + 同发票抬头 + 复核通过 + 未入批」自动分组。确认后逐组创建批次并送审，AI 审计摘要将自动附加到批次供审批人查看。"
     />
 
     <div v-loading="loading">
@@ -233,6 +243,9 @@ const confirmAll = async () => {
               size="small"
             >
               {{ riskSummary(row)!.label }}
+            </el-tag>
+            <el-tag size="small" :type="titleTagOf(row).type" effect="plain">
+              {{ titleTagOf(row).text }}
             </el-tag>
             <span>{{ row.item_count }} 条</span>
             <strong>¥{{ row.total_amount.toFixed(2) }}</strong>

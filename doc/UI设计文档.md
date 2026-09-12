@@ -335,6 +335,7 @@
 - 审批批次“详情”使用右侧批次详情抽屉，创建并送审成功后也在当前页面打开批次详情，避免跳转导致候选区、筛选和历史区重新加载：`packages/web/src/views/finance/reimbursement/batch.vue`、`packages/web/src/views/finance/reimbursement/batch-detail.vue`
 - **「AI 一键成批」入口**（2026-07-10 新增）：候选条目工作区顶部新增按钮，打开 `AiBatchProposalsDrawer.vue` 建议批次确认抽屉——后端按「项目 + 收款人」自动分组给出建议批次列表（`GET /api/v1/reimbursement/batch/proposals`，`exclude_unassigned=true` 排除库存空白信封），抽屉内逐组勾选确认后，前端按组顺序编排调用既有 `POST /batch` → `POST /batch/:id/submit-approval` → `POST /batch/:id/trigger-audit` 创建并送审（无独立“确认批次”后端接口，前端编排、逐组独立成败）；每组结果（成功/失败原因）在抽屉内逐条展示，成功的组同步刷新候选区与历史区。
 - API 指向：`/api/v1/reimbursement/batch`、`/api/v1/reimbursement/batch/proposals`（2026-07-10 新增，只读）
+- **按发票抬头成批**（2026-09-12 新增）：候选筛选栏新增「发票抬头」（各 active 主体 + 未识别），候选表新增「发票抬头」列（主体名 / 原文+「未匹配主体」/「未识别」），汇总区新增「勾选抬头」；创建时所选信封抬头全部一致则自动预填付款实体（不覆盖已手填的账户显示），出现两种以上（含已识别+未识别）弹输入框要求填写 2–200 字混批理由（`POST /batch` 返回 400 `MIXED_INVOICE_TITLE` 时同样补理由重试一次，同一 Idempotency-Key），全部未识别不算混合；提交的信封 id 取勾选快照，创建后核对入批条数。信封抬头由 OCR 购买方名称自动匹配我方主体（只看最新识别轮，全失败轮不清空，已成批后不再改写），办公室可在信封详情「发票抬头（购买方）」卡片指定或清除（`PUT /reimbursement/:id` 的 `invoice_title_entity_id`，手工值不被 OCR 覆盖）；批次详情、审批页支付方案（保存与「通过」都拦）、集中打款台在付款实体 ≠ 批次抬头主体时标红并二次确认，不硬拦。办公室工作台「待成批」列表与 AI 一键成批抽屉显示抬头，建议分组键增加抬头。展示文案统一走 `reimbursement-title.ts`（与 API `reimbursement-batch-title-policy.ts` 规则逐字同步）。
 
 #### F-6. 报销集中审批批次详情 `views/finance/reimbursement/batch-detail.vue`
 

@@ -145,7 +145,7 @@ ALTER TABLE reimbursement_batch ADD COLUMN mixed_title_reason TEXT;             
 
 ## 8. AI 关卡上下文（services/ai-slot.ts）
 `reimbursement_batch` 的 `items` 查询增加 `invoice_title_entity_id`、`invoice_title_name`，
-并在 context 增加 `batch.invoice_title_entity_id`、`batch.mixed_title_reason`。不改提示词，
+冻结的 `route_context.batch` 已带 `invoice_title_entity_id`/`mixed_title_reason`；ai-slot 另以独立键 `reimbursement_batch_title`（含 `invoice_title_entity_name`）实时读取，避免浅合并覆盖 `batch` 键。不改提示词，
 不改评分白名单。
 
 ## 9. Web 页面
@@ -200,7 +200,7 @@ v1 不改。审批页支付方案选择（`pages/approval-detail`）的不一致
 
 ## 13. 上线顺序与回滚
 1. `cd packages/api && npx wrangler d1 migrations apply hybcdg-prod-db --remote`（含回填），
-   用 SQL 核对：带原文信封数、匹配主体数（预期约 110 条匹配）。
+   用 SQL 核对：带原文信封数、匹配主体数（2026-09-12 生产只读预览：约 88 个信封带原文、约 63 个唯一匹配；按最新识别轮口径）。
 2. push main 自动部署 api/web；验证 `/api/v1/system/health`。
 3. 回滚：代码 revert 即可；新增列为附加列，保留无害。
 

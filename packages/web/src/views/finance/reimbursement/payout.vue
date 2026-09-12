@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { UploadRequestOptions } from "element-plus";
+import { ElMessageBox, type UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { useRoute } from "vue-router";
 import { message } from "@/utils/message";
@@ -35,6 +35,7 @@ const activeEnvelopeDetailId = ref<number | null>(null);
 
 const payDialogVisible = ref(false);
 const payTargetIds = ref<number[]>([]);
+const payTargetRows = ref<ReimbursementBatch[]>([]);
 const entities = ref<Entity[]>([]);
 const bankAccounts = ref<EntityBankAccount[]>([]);
 const voucherItems = ref<
@@ -67,6 +68,31 @@ const selectedAmount = computed(() => {
     .reduce((sum, row) => sum + Number(row.total_amount), 0);
 });
 
+const entityNameById = computed(() => {
+  const map = new Map<number, string>();
+  entities.value.forEach(item => map.set(item.id, item.entity_name));
+  return map;
+});
+
+const payTargets = computed(() => payTargetRows.value);
+
+const titleMismatchTargets = computed(() =>
+  payTargets.value.filter(
+    row =>
+      row.invoice_title_entity_id &&
+      payForm.value.payment_entity_id &&
+      row.invoice_title_entity_id !== payForm.value.payment_entity_id
+  )
+);
+
+const titleLabelOf = (row: ReimbursementBatch) =>
+  row.invoice_title_entity_id
+    ? (entityNameById.value.get(row.invoice_title_entity_id) ??
+      `主体#${row.invoice_title_entity_id}`)
+    : row.mixed_title_reason
+      ? "混合抬头"
+      : "未识别";
+
 const loadData = async () => {
   loading.value = true;
   try {
@@ -87,6 +113,7 @@ const openPayDialog = (ids: number[]) => {
     return;
   }
   payTargetIds.value = ids;
+  payTargetRows.value = rows.value.filter(row => ids.includes(row.id));
   payForm.value = {
     paid_at: "",
     payment_reference: "",
@@ -180,6 +207,24 @@ const submitMarkPaid = async () => {
   ) {
     message("请选择支付实体和支付账号", { type: "warning" });
     return;
+  }
+
+  if (titleMismatchTargets.value.length > 0) {
+    try {
+      await ElMessageBox.confirm(
+        `以下批次的发票抬头主体与所选支付实体不一致：${titleMismatchTargets.value
+          .map(row => `${row.batch_no}（${titleLabelOf(row)}）`)
+          .join("、")}。报销款应由发票抬头对应主体支付，确定仍要登记打款？`,
+        "支付实体与发票抬头不一致",
+        {
+          type: "warning",
+          confirmButtonText: "仍要登记",
+          cancelButtonText: "取消"
+        }
+      );
+    } catch {
+      return;
+    }
   }
 
   actionLoading.value = true;
@@ -378,6 +423,20 @@ onMounted(async () => {
             :value="item.id"
           />
         </el-select>
+      </el-form-item>
+      <el-form-item v-if="payTargets.length > 0" label="批次抬头">
+        <div style="line-height: 1.8">
+          <div v-for="row in payTargets" :key="row.id">
+            {{ row.batch_no }}：{{ titleLabelOf(row) }}
+          </div>
+        </div>
+      </el-form-item>
+      <el-form-item v-if="titleMismatchTargets.length > 0">
+        <el-alert
+          type="error"
+          :closable="false"
+          :title="`有 ${titleMismatchTargets.length} 个批次的发票抬头主体与所选支付实体不一致`"
+        />
       </el-form-item>
       <el-form-item label="支付账号" required>
         <el-select

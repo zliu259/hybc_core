@@ -25,6 +25,12 @@ import {
   matchUniqueInternalPayee
 } from "./reimbursement-batch-proposal-policy";
 import {
+  MIXED_TITLE_REASON_MAX_LENGTH,
+  MIXED_TITLE_REASON_MIN_LENGTH,
+  summarizeBatchTitles,
+  validateMixedTitleReason
+} from "./reimbursement-batch-title-policy";
+import {
   decideBulkLifecycle,
   type BulkLifecycleAction
 } from "./reimbursement-bulk-lifecycle-policy";
@@ -42,6 +48,12 @@ import {
   type DuplicateScanResult
 } from "./reimbursement-duplicate-scan";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
+import {
+  parseInvoiceTitleFilter,
+  pickBuyerNameFromReviews,
+  readInvoiceExtractionText
+} from "./reimbursement-invoice-title-policy";
+import { syncEnvelopeInvoiceTitle } from "./reimbursement-invoice-title-sync";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import type { Env } from "../types/env";
 import { reimbursementChannels, reimbursementStatuses } from "../types/reimbursement";
@@ -1125,7 +1137,9 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
           qr_text: row.qr_text,
           source: row.source,
           risk_level: row.risk_level,
-          risk_hint: row.risk_hint
+          risk_hint: row.risk_hint,
+          buyer_name: readInvoiceExtractionText(row.extraction_json, "buyer_name"),
+          seller_name: readInvoiceExtractionText(row.extraction_json, "seller_name")
         })),
         failed_count: failedCount,
         pending_count: pendingCount,
@@ -1197,6 +1211,17 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
         envelopeId
       )
       .run();
+
+    await syncEnvelopeInvoiceTitle(env.DB, {
+      envelopeId,
+      currentStatus: envelope.status,
+      currentEntityId: envelope.invoice_title_entity_id ?? null,
+      currentName: envelope.invoice_title_name ?? null,
+      currentSource: envelope.invoice_title_source ?? null,
+      buyerName: pickBuyerNameFromReviews(completedRows, bestRow ?? null),
+      pendingCount,
+      completedCount: completedRows.length
+    });
   }
 
   if (!hasReviewRows && envelope.ocr_task_id) {
@@ -1229,6 +1254,24 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
         .run();
 
       await applyDuplicateChecks(env, envelopeId, hints);
+
+      const fallbackBuyerName =
+        typeof ocrResult?.buyer_name === "string" && ocrResult.buyer_name.trim()
+          ? ocrResult.buyer_name.trim()
+          : null;
+      // 单任务回退路径只在有抬头时写入，从不清空（该路径每个旧信封最多跑一次）
+      if (fallbackBuyerName) {
+        await syncEnvelopeInvoiceTitle(env.DB, {
+          envelopeId,
+          currentStatus: envelope.status,
+          currentEntityId: envelope.invoice_title_entity_id ?? null,
+          currentName: envelope.invoice_title_name ?? null,
+          currentSource: envelope.invoice_title_source ?? null,
+          buyerName: fallbackBuyerName,
+          pendingCount: 0,
+          completedCount: 1
+        });
+      }
     }
 
     if ((ocrTask?.status === "failed" || ocrTask?.status === "timeout") && envelope.ocr_status !== "failed") {
@@ -1644,6 +1687,25 @@ reimbursementRoutes.get(
       return c.json({ success: false, error: { message: "applicant_userid is required" } }, 400);
     }
 
+    // 发票抬头过滤：只做读过滤，不校验主体是否存在/启用（不存在的 id 自然查不到，避免多一次查询；写路径 PUT /:id 才校验）
+    const titleFilter = parseInvoiceTitleFilter(c.req.query("invoice_title_entity_id"));
+    if (titleFilter.kind === "invalid") {
+      return c.json(
+        {
+          success: false,
+          error: { message: "invoice_title_entity_id must be a positive integer or 'none'" }
+        },
+        400
+      );
+    }
+    const titleClause =
+      titleFilter.kind === "none"
+        ? " AND invoice_title_entity_id IS NULL"
+        : titleFilter.kind === "entity"
+          ? " AND invoice_title_entity_id = ?"
+          : "";
+    const titleParams = titleFilter.kind === "entity" ? [titleFilter.entityId] : [];
+
     const rows = await c.env.DB.prepare(
       `SELECT *
          FROM reimbursement_envelope
@@ -1651,10 +1713,10 @@ reimbursementRoutes.get(
           AND precheck_status = 'approved'
           AND batch_id IS NULL
           AND project_id = ?
-          AND applicant_userid = ?
+          AND applicant_userid = ?${titleClause}
         ORDER BY updated_at DESC, id DESC`
     )
-      .bind(projectId, applicantUserid)
+      .bind(projectId, applicantUserid, ...titleParams)
       .all<ReimbursementEnvelope>();
 
     return c.json({
@@ -1671,7 +1733,7 @@ reimbursementRoutes.get(
     const eligible = await c.env.DB.prepare(
       `SELECT
          e.id, e.envelope_no, e.project_id, e.applicant_userid, e.amount,
-         e.description, e.channel,
+         e.description, e.channel, e.invoice_title_entity_id, e.invoice_title_name,
          (
            SELECT CASE MAX(
              CASE d.risk_level WHEN 'high' THEN 3 WHEN 'medium' THEN 2 WHEN 'low' THEN 1 ELSE 0 END
@@ -1694,6 +1756,8 @@ reimbursementRoutes.get(
       description: string | null;
       channel: string;
       duplicate_risk_level: "high" | "medium" | "low" | null;
+      invoice_title_entity_id: number | null;
+      invoice_title_name: string | null;
     }>();
 
     const rows = eligible.results ?? [];
@@ -1730,6 +1794,8 @@ reimbursementRoutes.get(
       return {
         project_id: group.project_id,
         applicant_userid: group.applicant_userid,
+        invoice_title_entity_id: group.invoice_title_entity_id,
+        invoice_title_name: group.invoice_title_name,
         item_count: group.item_count,
         total_amount: group.total_amount,
         envelopes: group.envelope_ids.map((envelopeId) => {
@@ -1740,7 +1806,9 @@ reimbursementRoutes.get(
             amount: row?.amount ?? 0,
             description: row?.description ?? null,
             channel: row?.channel ?? "physical",
-            duplicate_risk_level: row?.duplicate_risk_level ?? null
+            duplicate_risk_level: row?.duplicate_risk_level ?? null,
+            invoice_title_entity_id: row?.invoice_title_entity_id ?? null,
+            invoice_title_name: row?.invoice_title_name ?? null
           };
         }),
         matched_payee: matched
@@ -1934,6 +2002,16 @@ reimbursementRoutes.get(
           .first<{ id: number; entity_code: string; entity_name: string }>()
       : null;
 
+    const invoiceTitleEntity = batch.invoice_title_entity_id
+      ? batch.invoice_title_entity_id === batch.payment_entity_id && paymentEntity
+        ? paymentEntity
+        : await c.env.DB.prepare(
+            "SELECT id, entity_code, entity_name FROM entity WHERE id = ?"
+          )
+            .bind(batch.invoice_title_entity_id)
+            .first<{ id: number; entity_code: string; entity_name: string }>()
+      : null;
+
     const paymentBankAccount = batch.payment_entity_bank_account_id
       ? await c.env.DB.prepare(
           "SELECT id, entity_id, bank_name, bank_branch_no, account_no, account_name FROM entity_bank_account WHERE id = ?"
@@ -2029,6 +2107,7 @@ reimbursementRoutes.get(
         duplicate_summary: duplicateSummary.results ?? [],
         approval_instance: approvalInstance,
         payment_entity: paymentEntity,
+        invoice_title_entity: invoiceTitleEntity,
         payment_bank_account: paymentBankAccount,
         payee,
         payment_vouchers: paymentVouchers
@@ -2097,6 +2176,25 @@ reimbursementRoutes.post(
         400
       );
     }
+
+    // 发票抬头软约束：混抬头必须带理由；全部未识别不算混合（规则见 reimbursement-batch-title-policy）
+    const titleSummary = summarizeBatchTitles(selected);
+    const mixedTitleReason = validateMixedTitleReason(body.mixed_title_reason);
+    if (titleSummary.kind === "mixed" && !mixedTitleReason) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "MIXED_INVOICE_TITLE",
+            message: `所选报销条目发票抬头不一致，需填写混批理由（${MIXED_TITLE_REASON_MIN_LENGTH}–${MIXED_TITLE_REASON_MAX_LENGTH} 字）`,
+            title_counts: titleSummary.counts
+          }
+        },
+        400
+      );
+    }
+    const batchTitleEntityId = titleSummary.kind === "uniform" ? titleSummary.entityId : null;
+    const batchMixedTitleReason = titleSummary.kind === "mixed" ? mixedTitleReason : null;
 
     if (typeof body.payee_id === "number" && body.payee_id > 0) {
       const payeeRow = await c.env.DB.prepare(
@@ -2241,9 +2339,9 @@ reimbursementRoutes.post(
         `INSERT INTO reimbursement_batch
           (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status,
            payment_method, payment_entity_id, payment_entity_bank_account_id, payment_account,
-           payee_id,
+           payee_id, invoice_title_entity_id, mixed_title_reason,
            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
         .bind(
           batchNo,
@@ -2256,6 +2354,8 @@ reimbursementRoutes.post(
           payoutPlan.value.payment_entity_bank_account_id,
           payoutPlan.value.payment_account,
           body.payee_id ?? null,
+          batchTitleEntityId,
+          batchMixedTitleReason,
           now,
           now
         )
@@ -2315,7 +2415,8 @@ reimbursementRoutes.post(
       total_amount: totalAmount,
       payment_method: payoutPlan.value.payment_method,
       payment_entity_id: payoutPlan.value.payment_entity_id,
-      payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id
+      payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
+      invoice_title_entity_id: batchTitleEntityId
     });
 
     await writeAuditLog(c.env.DB, {
@@ -2332,7 +2433,17 @@ reimbursementRoutes.post(
         total_amount: totalAmount,
         payment_method: payoutPlan.value.payment_method,
         payment_entity_id: payoutPlan.value.payment_entity_id,
-        payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id
+        payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
+        invoice_title: {
+          kind: titleSummary.kind,
+          entity_id: batchTitleEntityId,
+          counts: titleSummary.counts,
+          mixed_title_reason: batchMixedTitleReason,
+          supplied_reason:
+            typeof body.mixed_title_reason === "string"
+              ? body.mixed_title_reason.trim().slice(0, 200) || null
+              : null
+        }
       }
     });
 
@@ -2668,7 +2779,8 @@ reimbursementRoutes.post(
     }
 
     const batchItems = await c.env.DB.prepare(
-      `SELECT e.id, e.envelope_no, e.invoice_no, e.amount, e.category, e.description
+      `SELECT e.id, e.envelope_no, e.invoice_no, e.amount, e.category, e.description,
+              e.invoice_title_entity_id, e.invoice_title_name
        FROM reimbursement_batch_item bi
        JOIN reimbursement_envelope e ON e.id = bi.envelope_id
        WHERE bi.batch_id = ?
@@ -2678,7 +2790,14 @@ reimbursementRoutes.post(
       .all<
         Pick<
           ReimbursementEnvelope,
-          "id" | "envelope_no" | "invoice_no" | "amount" | "category" | "description"
+          | "id"
+          | "envelope_no"
+          | "invoice_no"
+          | "amount"
+          | "category"
+          | "description"
+          | "invoice_title_entity_id"
+          | "invoice_title_name"
         >
       >();
 
@@ -2723,7 +2842,9 @@ reimbursementRoutes.post(
               payment_method: payoutPlan.value.payment_method,
               payment_entity_id: payoutPlan.value.payment_entity_id,
               payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
-              payment_account: payoutPlan.value.payment_account
+              payment_account: payoutPlan.value.payment_account,
+              invoice_title_entity_id: batch.invoice_title_entity_id ?? null,
+              mixed_title_reason: batch.mixed_title_reason ?? null
             },
             payee: payeeSnapshot,
             items: (batchItems.results ?? []).map(item => ({
@@ -2732,7 +2853,9 @@ reimbursementRoutes.post(
               invoice_no: item.invoice_no,
               amount: item.amount,
               category: item.category,
-              description: item.description
+              description: item.description,
+              invoice_title_entity_id: item.invoice_title_entity_id ?? null,
+              invoice_title_name: item.invoice_title_name ?? null
             }))
           },
           instance_config: body.instance_config
@@ -4747,6 +4870,47 @@ reimbursementRoutes.put(
       );
     }
 
+    const hasInvoiceTitleField = Object.prototype.hasOwnProperty.call(
+      body,
+      "invoice_title_entity_id"
+    );
+    let invoiceTitleEntity: { id: number; entity_name: string } | null = null;
+    if (hasInvoiceTitleField) {
+      if (!isPrivileged) {
+        return c.json(
+          { success: false, error: { message: "Only office roles can set invoice title" } },
+          403
+        );
+      }
+      const rawTitleEntityId = body.invoice_title_entity_id;
+      if (rawTitleEntityId !== null) {
+        if (
+          typeof rawTitleEntityId !== "number" ||
+          !Number.isInteger(rawTitleEntityId) ||
+          rawTitleEntityId <= 0
+        ) {
+          return c.json(
+            {
+              success: false,
+              error: { message: "invoice_title_entity_id must be a positive integer or null" }
+            },
+            400
+          );
+        }
+        invoiceTitleEntity = await c.env.DB.prepare(
+          "SELECT id, entity_name FROM entity WHERE id = ? AND status = 'active'"
+        )
+          .bind(rawTitleEntityId)
+          .first<{ id: number; entity_name: string }>();
+        if (!invoiceTitleEntity) {
+          return c.json(
+            { success: false, error: { message: "invoice title entity not found or inactive" } },
+            400
+          );
+        }
+      }
+    }
+
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          project_id = COALESCE(?, project_id),
@@ -4777,6 +4941,41 @@ reimbursementRoutes.put(
         id
       )
       .run();
+
+    if (hasInvoiceTitleField) {
+      const nextTitle = {
+        entity_id: invoiceTitleEntity?.id ?? null,
+        name: invoiceTitleEntity?.entity_name ?? null,
+        source: invoiceTitleEntity ? "manual" : null
+      };
+      await c.env.DB.prepare(
+        `UPDATE reimbursement_envelope
+            SET invoice_title_entity_id = ?, invoice_title_name = ?, invoice_title_source = ?,
+                updated_at = ?
+          WHERE id = ?`
+      )
+        .bind(nextTitle.entity_id, nextTitle.name, nextTitle.source, nowIso(), id)
+        .run();
+      const previousTitle = {
+        entity_id: existing.invoice_title_entity_id ?? null,
+        name: existing.invoice_title_name ?? null,
+        source: existing.invoice_title_source ?? null
+      };
+      if (
+        previousTitle.entity_id !== nextTitle.entity_id ||
+        previousTitle.name !== nextTitle.name ||
+        previousTitle.source !== nextTitle.source
+      ) {
+        await writeAuditLog(c.env.DB, {
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          action: "reimbursement.envelope.set_invoice_title",
+          targetType: "reimbursement_envelope",
+          targetId: id,
+          detail: { before: previousTitle, after: nextTitle }
+        });
+      }
+    }
 
     if (body.attachments && body.attachments.length > 0) {
       await insertAttachments(c.env.DB, id, body.attachments);
@@ -5462,8 +5661,9 @@ reimbursementRoutes.post(
                 expense_date, amount, category, description,
                 status, precheck_status, verification_status, verification_note,
                 split_from_envelope_id, split_reason,
+                invoice_title_entity_id, invoice_title_name, invoice_title_source,
                 submitted_at, received_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?)`
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
             .bind(
               newUuid,
@@ -5480,6 +5680,9 @@ reimbursementRoutes.post(
               envelope.verification_note,
               id,
               body.reason ?? null,
+              envelope.invoice_title_entity_id ?? null,
+              envelope.invoice_title_name ?? null,
+              envelope.invoice_title_source ?? null,
               envelope.submitted_at,
               envelope.received_at,
               now,
