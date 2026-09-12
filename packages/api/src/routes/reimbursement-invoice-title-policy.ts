@@ -1,5 +1,3 @@
-import type { InvoiceTitleSource } from "../types/reimbursement";
-
 export type InvoiceTitleEntityCandidate = {
   id: number;
   entity_name: string;
@@ -24,13 +22,14 @@ export type OcrTitleOutcome = {
 export type OcrTitleUpdate = {
   entityId: number | null;
   name: string | null;
-  source: InvoiceTitleSource | null;
+  source: "ocr" | null;
 };
 
 /** 去首尾及内部空白（含全角空格），半角括号转全角；空串返回 null */
 export const normalizeInvoiceTitle = (raw: unknown): string | null => {
   if (typeof raw !== "string") return null;
   const normalized = raw
+    // 注意：\s 已含 U+3000；比迁移 0087 的 SQL 归一化（仅去 U+0020/U+3000）更宽，只会多匹配不会错匹配
     .replace(/[\s\u3000]+/g, "")
     .replace(/\(/g, "（")
     .replace(/\)/g, "）");
@@ -59,8 +58,9 @@ export const readInvoiceExtractionText = (
 ): string | null => {
   if (!extractionJson) return null;
   try {
-    const parsed = JSON.parse(extractionJson) as Record<string, unknown>;
-    const value = parsed?.[field];
+    const parsed: unknown = JSON.parse(extractionJson);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return null;
+    const value = (parsed as Record<string, unknown>)[field];
     return typeof value === "string" && value.trim() ? value.trim() : null;
   } catch {
     return null;
@@ -72,9 +72,10 @@ export const pickBuyerNameFromReviews = (
   rows: InvoiceReviewTitleRow[],
   preferred: InvoiceReviewTitleRow | null | undefined
 ): string | null => {
-  const preferredName = preferred
-    ? readInvoiceExtractionText(preferred.extraction_json, "buyer_name")
-    : null;
+  const preferredName =
+    preferred?.task_status === "completed"
+      ? readInvoiceExtractionText(preferred.extraction_json, "buyer_name")
+      : null;
   if (preferredName) return preferredName;
   for (const row of rows) {
     if (row.task_status !== "completed") continue;

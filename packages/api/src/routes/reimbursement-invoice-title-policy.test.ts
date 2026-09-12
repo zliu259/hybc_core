@@ -53,6 +53,15 @@ describe("matchInvoiceTitleEntity", () => {
   it("空输入返回全 null", () => {
     expect(matchInvoiceTitleEntity(null, entities)).toEqual({ entityId: null, name: null });
   });
+
+  it("英文抬头不匹配任何主体", () => {
+    const en = "Hengyuebaichuan (Beijing) Construction Technology Co., Ltd.";
+    expect(matchInvoiceTitleEntity(en, entities)).toEqual({ entityId: null, name: en });
+  });
+
+  it("廊坊丰畅精确命中主体 6", () => {
+    expect(matchInvoiceTitleEntity("廊坊市丰畅市政工程有限公司", entities).entityId).toBe(6);
+  });
 });
 
 describe("readInvoiceExtractionText / pickBuyerNameFromReviews", () => {
@@ -75,9 +84,24 @@ describe("readInvoiceExtractionText / pickBuyerNameFromReviews", () => {
     expect(readInvoiceExtractionText(null, "buyer_name")).toBeNull();
   });
 
-  it("优先取指定的 bestRow，其次取第一条有抬头的完成行", () => {
-    expect(pickBuyerNameFromReviews(rows, rows[2])).toBe("北京鑫丰畅建设有限公司");
+  it("优先取指定的 bestRow（仅当其为完成行），其次取第一条有抬头的完成行", () => {
+    const preferredRow = {
+      task_status: "completed",
+      extraction_json: JSON.stringify({ buyer_name: "廊坊市丰畅市政工程有限公司" })
+    };
+    expect(pickBuyerNameFromReviews([...rows, preferredRow], preferredRow)).toBe(
+      "廊坊市丰畅市政工程有限公司"
+    );
+    // preferred 无抬头 → 回退到第一条有抬头的完成行
     expect(pickBuyerNameFromReviews(rows, rows[0])).toBe("北京鑫丰畅建设有限公司");
+    // preferred 不是完成行 → 忽略它
+    const failedPreferred = {
+      task_status: "failed",
+      extraction_json: JSON.stringify({ buyer_name: "失败行不算" })
+    };
+    expect(pickBuyerNameFromReviews([...rows, failedPreferred], failedPreferred)).toBe(
+      "北京鑫丰畅建设有限公司"
+    );
     expect(pickBuyerNameFromReviews(rows, null)).toBe("北京鑫丰畅建设有限公司");
   });
 
@@ -127,5 +151,25 @@ describe("resolveOcrTitleUpdate", () => {
         matched
       )
     ).toEqual({ entityId: 11, name: "北京鑫丰畅建设有限公司", source: "ocr" });
+  });
+
+  it("识别未完成时即使已有抬头也不写", () => {
+    expect(
+      resolveOcrTitleUpdate(
+        { invoice_title_source: null },
+        { buyerName: "北京鑫丰畅建设有限公司", pendingCount: 1 },
+        matched
+      )
+    ).toBeNull();
+  });
+
+  it("识别到个人名/第三方：保留原文、不绑主体，来源仍是 ocr（区别于清空）", () => {
+    expect(
+      resolveOcrTitleUpdate(
+        { invoice_title_source: null },
+        { buyerName: "刘相余", pendingCount: 0 },
+        matchInvoiceTitleEntity("刘相余", entities)
+      )
+    ).toEqual({ entityId: null, name: "刘相余", source: "ocr" });
   });
 });
