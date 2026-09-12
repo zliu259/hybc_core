@@ -616,6 +616,21 @@ onMounted(async () => {
               </el-tag>
             </template>
           </el-table-column>
+          <el-table-column
+            v-if="intakeTab === 'to_batch'"
+            label="发票抬头"
+            min-width="180"
+            show-overflow-tooltip
+          >
+            <template #default="scope">
+              <span v-if="scope.row.invoice_title_name">{{
+                scope.row.invoice_title_name
+              }}</span>
+              <el-tag v-else size="small" type="warning" effect="plain"
+                >未识别</el-tag
+              >
+            </template>
+          </el-table-column>
           <el-table-column prop="amount" label="金额" width="100" />
           <el-table-column
             label="报销内容"
