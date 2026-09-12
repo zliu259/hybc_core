@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const { getUserProfile } = require("../../utils/auth");
 
 const sectionStatusText = {
@@ -105,7 +106,7 @@ Page({
           title: item.title || "未命名日志",
           detailText: stripHtml(item.detail_html),
           risk_note: item.risk_note || "",
-          manager_userid: item.manager_userid || "-",
+          managerName: toUserName(item.manager_userid, this._userNames),
           photos,
           photoUrls: photos.map((photo) => photo.url)
         };
@@ -141,7 +142,8 @@ Page({
     if (!this.data.projectId) return;
     this.setData({ loading: true });
     try {
-      const [projectRes, sectionsRes, summaryRes, managerLogsRes, operatorLogsRes, breakthroughRes] = await Promise.all([
+      const [userNames, projectRes, sectionsRes, summaryRes, managerLogsRes, operatorLogsRes, breakthroughRes] = await Promise.all([
+        loadUserNameMap(),
         request({ method: "GET", path: `/api/v1/project/${this.data.projectId}` }),
         request({ method: "GET", path: `/api/v1/project/${this.data.projectId}/sections` }),
         request({ method: "GET", path: `/api/v1/project/${this.data.projectId}/financial-summary` }),
@@ -154,10 +156,12 @@ Page({
       const operatorLogs = Array.isArray(operatorLogsRes.data) ? operatorLogsRes.data : [];
       const breakthroughs = Array.isArray(breakthroughRes.data) ? breakthroughRes.data : [];
 
+      this._userNames = userNames;
       const project = projectRes.data
         ? {
             ...projectRes.data,
-            statusText: this.toSectionStatus(projectRes.data.status)
+            statusText: this.toSectionStatus(projectRes.data.status),
+            managerName: toUserName(projectRes.data.manager_userid, userNames)
           }
         : null;
       const canReviewExternalLogs = this.canReviewExternalLogs(project);

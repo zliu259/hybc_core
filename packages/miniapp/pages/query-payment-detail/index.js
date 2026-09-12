@@ -1,5 +1,11 @@
 const { request, buildUrl } = require("../../utils/request");
 const { getUserProfile, getToken } = require("../../utils/auth");
+const {
+  paymentMethodLabel,
+  paymentCategoryLabel,
+  statusLabel,
+  approvalActionLabel
+} = require("../../utils/enum-labels");
 
 const canAccessQuery = (roles) => {
   return roles.includes("super_admin") || roles.includes("finance") || roles.includes("manager");
@@ -39,7 +45,7 @@ const approvalTaskStatusText = (status) => {
     skipped: "已跳过",
     cancelled: "已取消"
   };
-  return map[status] || status || "未知";
+  return map[status] || statusLabel(status);
 };
 
 const approvalActionText = (action) => {
@@ -52,7 +58,7 @@ const approvalActionText = (action) => {
     urge: "催办",
     cancel: "取消"
   };
-  return map[action] || action || "-";
+  return map[action] || approvalActionLabel(action);
 };
 
 const isImageFile = (name) => {
@@ -196,7 +202,7 @@ Page({
       const users = res && res.data && Array.isArray(res.data.users) ? res.data.users : [];
       const userNameMap = {};
       users.forEach((item) => {
-        if (item && item.userid) userNameMap[item.userid] = item.name || item.userid;
+        if (item && item.userid && item.name) userNameMap[item.userid] = item.name;
       });
       this.setData({ userNameMap });
     } catch {
@@ -249,9 +255,9 @@ Page({
         expectDate: item.expected_payment_date || "-",
         amountText: formatAmount(item.amount),
         amountCn: item.amount_cn || "-",
-        category: item.category || "-",
+        category: paymentCategoryLabel(item.category, "-"),
         content: item.content || "-",
-        paymentMethod: item.payment_method || "-",
+        paymentMethod: paymentMethodLabel(item.payment_method, "-"),
         paymentAccount: item.payment_account || "-",
         contractNo: (item.contract && item.contract.contract_no) || "-",
         payeeName: (item.payee && item.payee.name) || "-",
@@ -272,14 +278,31 @@ Page({
         }).catch(() => null);
         const approvalDetail = approvalRes && approvalRes.data ? approvalRes.data : null;
         const tasks = approvalDetail && Array.isArray(approvalDetail.tasks) ? approvalDetail.tasks : [];
-        approvalRecords = tasks.map((task) => ({
-          id: task.id,
-          assignee: this.formatUserName(task.assignee_userid),
-          statusText: approvalTaskStatusText(task.status),
-          actionText: approvalActionText(task.action),
-          actedAt: task.acted_at || "-",
-          comment: task.comment || "-"
-        }));
+        approvalRecords = tasks.map((task) => {
+          const isAiGate = task.assignee_userid === "AI_GATE";
+          // AI 关卡任务的 comment 可能是内嵌 JSON（{"outcome","comment"}）或英文
+          // 技术报错，存量意见还带英文字段名，这里比照审批详情页统一汉化。
+          let comment = task.comment || "";
+          if (isAiGate && comment) {
+            try {
+              const parsed = JSON.parse(comment);
+              if (parsed && typeof parsed.comment === "string") comment = parsed.comment;
+            } catch (_e) {
+              // 非 JSON 形态，原样继续
+            }
+            comment = /[一-鿿]/.test(comment)
+              ? humanizeAiText(comment)
+              : localizeErrorMessage(comment, 500);
+          }
+          return {
+            id: task.id,
+            assignee: isAiGate ? "AI审查" : this.formatUserName(task.assignee_userid),
+            statusText: approvalTaskStatusText(task.status),
+            actionText: approvalActionText(task.action),
+            actedAt: task.acted_at || "-",
+            comment: comment || "-"
+          };
+        });
       }
       this.setData({ detail, approvalRecords });
     } catch (error) {

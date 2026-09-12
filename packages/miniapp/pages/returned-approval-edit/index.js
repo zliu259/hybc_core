@@ -1,4 +1,6 @@
 const { request } = require("../../utils/request");
+const { orderTypeLabel, workOrderTypeLabel } = require("../../utils/enum-labels");
+const { loadUserNameMap } = require("../../utils/user-names");
 const { getUserProfile } = require("../../utils/auth");
 const {
   RETURNED_APPROVAL_EDIT_BIZ_TYPES,
@@ -25,9 +27,24 @@ const optionField = (key, label, options) => ({
 });
 
 const textField = (key, label) => ({ key, label, type: "text" });
+// 人员字段：渲染为通讯录中文姓名选择器（options 在 loadDetail 拉到通讯录后注入），
+// 绝不让用户直面/回填企微拼音 id。
+const personField = (key, label) => ({ key, label, type: "select", dynamic: "contacts", options: [] });
 const numberField = (key, label) => ({ key, label, type: "number" });
 const dateField = (key, label) => ({ key, label, type: "date" });
 const textareaField = (key, label, maxlength = 500) => ({ key, label, type: "textarea", maxlength });
+
+// 英文存量合同类型 → 中文（编辑保存时归一）
+const CONTRACT_TYPE_CN = {
+  labor: "人工",
+  machine: "机械",
+  machinery: "机械",
+  general: "总包",
+  material: "材料",
+  service: "服务",
+  lease: "租赁",
+  other: "其他"
+};
 
 const paymentMethodOptions = [
   { label: "对公转账", value: "对公转账" },
@@ -43,9 +60,9 @@ const CONFIGS = {
     updatePath: (id) => `/api/v1/payment/${id}`,
     submitPath: (id) => `/api/v1/payment/${id}/submit-approval`,
     fields: [
-      numberField("contract_id", "关联合同ID"),
-      numberField("project_id", "所属项目ID"),
-      numberField("payee_id", "收款方ID"),
+      numberField("contract_id", "关联合同编号"),
+      numberField("project_id", "所属项目编号"),
+      numberField("payee_id", "收款方编号"),
       dateField("expected_payment_date", "预计付款日"),
       optionField("category", "付款类别", [
         { label: "特殊审批", value: "特殊审批" },
@@ -75,8 +92,8 @@ const CONFIGS = {
         { label: "票据", value: "bill" },
         { label: "其他", value: "other" }
       ]),
-      numberField("payment_entity_id", "付款主体ID"),
-      numberField("payment_entity_bank_account_id", "付款账户ID"),
+      numberField("payment_entity_id", "付款主体编号"),
+      numberField("payment_entity_bank_account_id", "付款账户编号"),
       textField("payment_account", "付款账户说明")
     ],
     summary: (row) => `${row.batch_no || "报销批次"} | ${row.total_amount || ""}`
@@ -92,12 +109,12 @@ const CONFIGS = {
         { label: "出库", value: "outbound" },
         { label: "调拨", value: "transfer" }
       ]),
-      numberField("project_id", "所属项目ID"),
-      numberField("from_warehouse_id", "来源仓库ID"),
-      numberField("to_warehouse_id", "目标仓库ID"),
+      numberField("project_id", "所属项目编号"),
+      numberField("from_warehouse_id", "来源仓库编号"),
+      numberField("to_warehouse_id", "目标仓库编号"),
       textareaField("remark", "备注")
     ],
-    summary: (row) => `${row.order_no || "库房单"} | ${row.order_type || ""}`,
+    summary: (row) => `${row.order_no || "库房单"} | ${orderTypeLabel(row.order_type, "")}`,
     buildItems: (row) =>
       (Array.isArray(row.items) ? row.items : []).map((item) => ({
         id: item.id || `${item.asset_type_id || item.tracked_asset_id}`,
@@ -113,7 +130,7 @@ const CONFIGS = {
     updatePath: (id) => `/api/v1/warehouse/work-order/${id}`,
     submitPath: (id) => `/api/v1/warehouse/work-order/${id}/submit-approval`,
     fields: [
-      textField("assignee_userid", "执行人UserID"),
+      personField("assignee_userid", "执行人"),
       optionField("priority", "优先级", [
         { label: "紧急", value: "urgent" },
         { label: "高", value: "high" },
@@ -124,7 +141,7 @@ const CONFIGS = {
       numberField("required_photo_count", "要求照片数"),
       textareaField("remark", "备注")
     ],
-    summary: (row) => `${row.work_order_no || "库房工单"} | ${row.work_order_type || ""}`
+    summary: (row) => `${row.work_order_no || "库房工单"} | ${workOrderTypeLabel(row.work_order_type, "")}`
   },
   outbound_contract: {
     title: "对外合同",
@@ -132,11 +149,24 @@ const CONFIGS = {
     updatePath: (id) => `/api/v1/contract/${id}`,
     submitPath: (id) => `/api/v1/contract/${id}/submit-approval`,
     fields: [
-      numberField("project_id", "所属项目ID"),
-      numberField("entity_id", "我方主体ID"),
+      numberField("project_id", "所属项目编号"),
+      numberField("entity_id", "我方主体编号"),
       textField("counterparty", "对方单位"),
-      textField("contract_type", "合同类型"),
-      textField("handler_userid", "经办人UserID"),
+      {
+        // 全系统写入口径是中文值（web 面板 / 发单台 / 小程序发单台均写中文），
+        // 这里保持一致；英文存量值在编辑时顺手归一成中文。
+        ...optionField("contract_type", "合同类型", [
+          { label: "人工", value: "人工" },
+          { label: "机械", value: "机械" },
+          { label: "总包", value: "总包" },
+          { label: "材料", value: "材料" },
+          { label: "服务", value: "服务" },
+          { label: "租赁", value: "租赁" },
+          { label: "其他", value: "其他" }
+        ]),
+        normalize: (value) => CONTRACT_TYPE_CN[value] || value
+      },
+      personField("handler_userid", "经办人"),
       dateField("contract_date", "合同日期"),
       numberField("total_amount", "合同金额"),
       textareaField("remark", "备注")
@@ -149,11 +179,24 @@ const CONFIGS = {
     updatePath: (id) => `/api/v1/contract/${id}`,
     submitPath: (id) => `/api/v1/contract/${id}/submit-approval`,
     fields: [
-      numberField("project_id", "所属项目ID"),
-      numberField("entity_id", "我方主体ID"),
+      numberField("project_id", "所属项目编号"),
+      numberField("entity_id", "我方主体编号"),
       textField("counterparty", "对方单位"),
-      textField("contract_type", "合同类型"),
-      textField("handler_userid", "经办人UserID"),
+      {
+        // 全系统写入口径是中文值（web 面板 / 发单台 / 小程序发单台均写中文），
+        // 这里保持一致；英文存量值在编辑时顺手归一成中文。
+        ...optionField("contract_type", "合同类型", [
+          { label: "人工", value: "人工" },
+          { label: "机械", value: "机械" },
+          { label: "总包", value: "总包" },
+          { label: "材料", value: "材料" },
+          { label: "服务", value: "服务" },
+          { label: "租赁", value: "租赁" },
+          { label: "其他", value: "其他" }
+        ]),
+        normalize: (value) => CONTRACT_TYPE_CN[value] || value
+      },
+      personField("handler_userid", "经办人"),
       dateField("contract_date", "合同日期"),
       numberField("total_amount", "合同金额"),
       textareaField("remark", "备注")
@@ -166,20 +209,24 @@ const CONFIGS = {
     updatePath: (id) => `/api/v1/receipt/invoice-request/${id}`,
     submitPath: (id) => `/api/v1/receipt/invoice-request/${id}/submit-approval`,
     fields: [
-      numberField("contract_id", "合同ID"),
-      numberField("project_id", "所属项目ID"),
+      numberField("contract_id", "合同编号"),
+      numberField("project_id", "所属项目编号"),
       textField("customer_name", "客户名称"),
       textField("customer_tax_no", "客户税号"),
-      textField("invoice_type", "发票类型"),
+      optionField("invoice_type", "发票类型", [
+        { label: "增值税专用发票", value: "special" },
+        { label: "增值税普通发票", value: "normal" },
+        { label: "电子发票", value: "electronic" }
+      ]),
       textField("invoice_category", "开票类别"),
       numberField("tax_rate", "税率"),
-      textField("currency", "币种"),
+      optionField("currency", "币种", [{ label: "人民币", value: "CNY" }]),
       numberField("amount_without_tax", "不含税金额"),
       numberField("tax_amount_estimated", "预估税额"),
       numberField("amount_with_tax", "含税金额"),
       textField("business_contract_no", "业务合同号"),
       textField("payment_reference", "收款/结算依据"),
-      textareaField("items_json", "开票明细JSON", 1200),
+      textareaField("items_json", "开票明细（每行一项）", 1200),
       textareaField("remark", "备注")
     ],
     summary: (row) => `${row.request_no || "开票申请"} | ${row.customer_name || ""} | ${row.amount_with_tax || ""}`
@@ -223,7 +270,8 @@ Page({
     const form = {};
     config.fields.forEach((field) => {
       const value = detail[field.key];
-      form[field.key] = value === null || value === undefined ? "" : String(value);
+      const text = value === null || value === undefined ? "" : String(value);
+      form[field.key] = typeof field.normalize === "function" ? field.normalize(text) : text;
     });
     return form;
   },
@@ -232,14 +280,34 @@ Page({
     return config.fields.map((field) => {
       const value = form[field.key] || "";
       if (field.type === "select") {
-        const options = Array.isArray(field.options) ? field.options : [];
-        const optionIndex = Math.max(0, options.findIndex((option) => option.value === value));
-        const selected = options[optionIndex] || null;
+        let options =
+          field.dynamic === "contacts"
+            ? this._contactOptions || []
+            : Array.isArray(field.options)
+              ? field.options
+              : [];
+        let optionIndex = options.findIndex((option) => option.value === value);
+        // 中文原值（存量直接存中文名/中文标签）优先按 label 对齐已有选项，
+        // 避免轮盘里出现两个同名行。
+        if (value && optionIndex === -1 && /[一-鿿]/.test(value)) {
+          optionIndex = options.findIndex((option) => option.label === value);
+        }
+        // 仍不在选项里（离职人员/未收录存量枚举）时补一项，避免误显示第一项。
+        if (value && optionIndex === -1) {
+          const currentLabel = /[一-鿿]/.test(value) ? value : "当前值（未识别）";
+          options = options.concat([{ label: currentLabel, value }]);
+          optionIndex = options.length - 1;
+        }
+        // 空值：不选中任何项（displayValue 留空走「请选择」占位），轮盘停在首位。
+        const hasSelection = Boolean(value) && optionIndex >= 0;
+        const pickerIndex = hasSelection ? optionIndex : 0;
+        const selected = hasSelection ? options[optionIndex] : null;
         return {
           ...field,
+          options,
           value,
           optionLabels: options.map((option) => option.label),
-          optionIndex,
+          optionIndex: pickerIndex,
           displayValue: selected ? selected.label : ""
         };
       }
@@ -274,7 +342,13 @@ Page({
         return;
       }
 
-      const res = await request({ method: "GET", path: config.getPath(this.data.bizId) });
+      const [userNames, res] = await Promise.all([
+        loadUserNameMap(),
+        request({ method: "GET", path: config.getPath(this.data.bizId) })
+      ]);
+      this._contactOptions = Object.keys(userNames)
+        .map((uid) => ({ label: userNames[uid], value: uid }))
+        .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-CN"));
       const detail = (res && res.data) || {};
       const form = this.buildForm(detail, config);
       const itemRows = typeof config.buildItems === "function" ? config.buildItems(detail) : [];
@@ -310,12 +384,14 @@ Page({
 
   onSelectField(e) {
     const key = e.currentTarget.dataset.key;
-    const config = this.getConfig();
-    if (!key || !config) return;
-    const field = config.fields.find((item) => item.key === key);
-    const options = field && Array.isArray(field.options) ? field.options : [];
-    const selected = options[Number(e.detail.value || 0)] || options[0];
-    const form = { ...this.data.form, [key]: selected ? selected.value : "" };
+    if (!key) return;
+    // 必须读渲染行的 options：人员字段的选项是通讯录动态注入的，
+    // 「当前值（未识别）」补项也只存在于渲染行里，读静态配置会把表单值清空。
+    const row = (this.data.fieldRows || []).find((item) => item.key === key);
+    const options = row && Array.isArray(row.options) ? row.options : [];
+    const selected = options[Number(e.detail.value || 0)];
+    if (!selected) return;
+    const form = { ...this.data.form, [key]: selected.value };
     this.setData({ form }, () => this.refreshFieldRows());
   },
 

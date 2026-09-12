@@ -70,7 +70,7 @@ const loginWithWeComCode = (code, options = {}) => {
   const loginByCode = (index = 0) => {
     const endpoint = codeLoginEndpoints[index];
     if (!endpoint) {
-      return Promise.reject(new Error("No available login endpoint"));
+      return Promise.reject(new Error("登录服务暂不可用，请稍后重试"));
     }
 
     return loginRequest({

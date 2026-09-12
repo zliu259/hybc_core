@@ -13,7 +13,7 @@
   />
   <view wx:if="{{hasSelection}}" class="selected-meta">
     <view class="meta-chip">{{selectedProjectCode || "未设置编号"}}</view>
-    <view class="meta-chip meta-status">状态：{{selectedProjectStatus || "unknown"}}</view>
+    <view class="meta-chip meta-status">状态：{{selectedProjectStatus || "未知"}}</view>
   </view>
   <view class="row">
     <t-button class="btn" variant="outline" bindtap="loadProjects" loading="{{loading}}" disabled="{{loading}}">刷新项目</t-button>

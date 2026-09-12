@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { fileSizeLabel, statusLabel } = require("../../utils/enum-labels");
 const { uploadFileToR2 } = require("../../utils/upload");
 const { wxChooseMediaImage } = require("../../utils/wx");
 
@@ -62,10 +63,10 @@ Page({
       const types = typeRes && Array.isArray(typeRes.data) ? typeRes.data : [];
       const myRecords = (myRes && Array.isArray(myRes.data) ? myRes.data : []).map((item) => ({
         ...item,
-        statusLabel: STATUS_LABELS[item.status] || item.status,
+        statusLabel: STATUS_LABELS[item.status] || statusLabel(item.status),
         typeLabel:
           (types.find((t) => t.dict_value === item.maintenance_type) || {}).dict_label ||
-          item.maintenance_type
+          "未知类型"
       }));
 
       this.setData({
@@ -131,7 +132,8 @@ Page({
         uploaded.push({
           file_key: result.key,
           file_name: fileName || result.key,
-          file_size: file.size || file.fileSize || 0
+          file_size: file.size || file.fileSize || 0,
+          file_size_text: fileSizeLabel(file.size || file.fileSize || 0)
         });
       }
 

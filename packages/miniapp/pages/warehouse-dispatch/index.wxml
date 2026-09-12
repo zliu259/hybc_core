@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="待执行单据" icon="chart-bar" subtitle="仅承接 Web 审批通过后的出入库执行">
+  <hy-panel-card title="待执行单据" icon="📤" subtitle="仅承接审批通过后的出入库执行">
     <view class="stats-row">
       <view class="stat-card">
         <view class="stat-value">{{inboundPending.length}}</view>
@@ -20,11 +20,11 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="⏳ 待执行单据" icon="time" subtitle="仅已通过审批的单据可执行">
+  <hy-panel-card title="⏳ 待执行单据" subtitle="仅已通过审批的单据可执行">
     <view wx:if="{{executing.length === 0}}" class="empty-state">暂无待执行单据</view>
     <view wx:for="{{executing}}" wx:key="id" class="dispatch-item">
       <view class="dispatch-title">{{item.order_no}} · {{item.orderTypeText}}</view>
-      <view class="dispatch-sub">来源仓库ID：{{item.from_warehouse_id || '-'}} · 目标仓库ID：{{item.to_warehouse_id || '-'}}</view>
+      <view class="dispatch-sub">来源仓库编号：{{item.from_warehouse_id || '-'}} · 目标仓库编号：{{item.to_warehouse_id || '-'}}</view>
       <view class="dispatch-sub">状态：{{item.statusText}} · 更新时间：{{item.updated_at}}</view>
       <view class="row">
         <t-button size="small" theme="primary" data-id="{{item.id}}" bindtap="executeOrder" loading="{{busy}}" disabled="{{busy}}">执行单据</t-button>

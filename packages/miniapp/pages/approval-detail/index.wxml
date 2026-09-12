@@ -103,12 +103,12 @@
           <block wx:if="{{item.attachments && item.attachments.length}}">
             <block wx:for="{{item.attachments}}" wx:key="id">
               <view class="attach-row">
-                <view class="attach-name">{{item.file_name || item.file_key}}</view>
+                <view class="attach-name">{{item.file_name}}</view>
                 <t-button
                   size="small"
                   variant="outline"
                   data-key="{{item.file_key}}"
-                  data-name="{{item.file_name || item.file_key}}"
+                  data-name="{{item.file_name}}"
                   bindtap="openAttachment"
                 >查看</t-button>
               </view>
@@ -137,7 +137,7 @@
     <block wx:for="{{detailAiReviews}}" wx:key="task_id" wx:for-index="idx">
       <view class="ai-item {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}">
         <view class="meta-row">
-          <t-tag theme="default" variant="light">{{item.node_key || '-'}}</t-tag>
+          <t-tag theme="default" variant="light">{{item.nodeLabel}}</t-tag>
           <t-tag theme="{{item.outcomeTheme || 'default'}}" variant="light">{{item.outcomeLabel}}</t-tag>
             </view>
             <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">状态</text><t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag></view>

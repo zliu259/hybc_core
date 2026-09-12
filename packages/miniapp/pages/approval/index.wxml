@@ -25,10 +25,10 @@
 
   <block wx:if="{{activeTab === 'pending'}}" wx:for="{{pending}}" wx:key="id">
     <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
-      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.bizSummaryText || '-'}}">
         <view class="sub">类型：{{item.bizTypeLabel}}</view>
         <view class="sub">被报销人：{{item.reimbursementApplicantLabel}}</view>
-        <view class="sub">节点：{{item.current_node_name || '-'}}</view>
+        <view class="sub">节点：{{item.currentNodeLabel}}</view>
         <view class="sub">状态：{{item.statusText}}</view>
         <view class="sub">提交时间：{{item.submittedAtText}}</view>
       </hy-panel-card>
@@ -37,7 +37,7 @@
 
   <block wx:if="{{activeTab === 'processed'}}" wx:for="{{processed}}" wx:key="id">
     <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
-      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.bizSummaryText || '-'}}">
         <view class="sub">类型：{{item.bizTypeLabel}}</view>
         <view class="sub">被报销人：{{item.reimbursementApplicantLabel}}</view>
         <view class="sub">状态：{{item.statusText}}</view>
@@ -48,10 +48,10 @@
 
   <block wx:if="{{activeTab === 'cc'}}" wx:for="{{cc}}" wx:key="id">
     <view class="approval-card {{item.cardClass}}" data-id="{{item.id}}" bindtap="openDetail">
-      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.biz_summary}}">
+      <hy-panel-card title="{{item.instance_no}}" subtitle="{{item.bizSummaryText || '-'}}">
         <view class="sub">类型：{{item.bizTypeLabel}}</view>
         <view class="sub">被报销人：{{item.reimbursementApplicantLabel}}</view>
-        <view class="sub">发起人：{{item.initiator_userid}}</view>
+        <view class="sub">发起人：{{item.initiatorName}}</view>
         <view class="sub">状态：{{item.statusText}}</view>
         <view class="sub">提交时间：{{item.submittedAtText}}</view>
       </hy-panel-card>

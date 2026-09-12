@@ -46,7 +46,7 @@
       </block>
       <block wx:else>
         <view class="picker-placeholder">{{picking ? '选择中…' : '点击选择合同文件'}}</view>
-        <view class="picker-hint">支持 docx / pdf（含扫描版）/ 合同照片；扫描件由服务端 OCR 识别，上限 20 页</view>
+        <view class="picker-hint">支持 docx / pdf（含扫描版）/ 合同照片；扫描件由服务端自动识别文字，上限 20 页</view>
       </block>
     </view>
     <view
@@ -62,7 +62,7 @@
       class="input"
       value="{{form.title}}"
       maxlength="120"
-      placeholder="如：顶管机租赁合同（XX项目）"
+      placeholder="如：顶管机租赁合同（某某项目）"
       bindinput="onTitleInput"
     />
   </view>

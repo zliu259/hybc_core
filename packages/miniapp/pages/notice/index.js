@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { bizTypeLabel, humanizeBizSummary } = require("../../utils/enum-labels");
 
 Page({
   data: {
@@ -20,7 +21,7 @@ Page({
       const notices = (pending.data || []).map((item) => ({
         id: item.id,
         title: `审批待办 ${item.instance_no}`,
-        content: item.biz_summary || item.biz_type
+        content: humanizeBizSummary(item.biz_summary) || bizTypeLabel(item.biz_type)
       }));
       this.setData({ notices });
     } catch (error) {

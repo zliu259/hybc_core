@@ -1,8 +1,8 @@
 <view class="page">
   <hy-panel-card title="📦 物资与设备查验" subtitle="扫码后红黄绿状态直观显示">
     <t-notice-bar content="支持扫码识别，也可输入关键字查询设备状态" theme="warning" />
-    <view class="label required">资产ID / 关键字</view>
-    <input class="input" value="{{assetQuery}}" bindinput="onAssetQueryInput" disabled="{{busy}}" placeholder="输入资产ID、编码或名称关键字" />
+    <view class="label required">资产编号 / 关键字</view>
+    <input class="input" value="{{assetQuery}}" bindinput="onAssetQueryInput" disabled="{{busy}}" placeholder="输入资产编号、编码或名称关键字" />
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="scanAsset" disabled="{{busy}}">扫码</t-button>
       <t-button class="btn btn-primary" theme="primary" bindtap="loadAsset" loading="{{busy}}" disabled="{{busy}}">查看状态</t-button>
@@ -45,7 +45,6 @@
     <view wx:for="{{assetDocuments}}" wx:key="id" class="record-item" data-filekey="{{item.file_key}}" bindtap="openDocument">
       <view class="sub">{{item.file_name}}</view>
       <view class="sub">类型：{{item.doc_type}} · 上传时间：{{item.created_at || '-'}}</view>
-      <view class="sub key-text">文件Key：{{item.file_key}}</view>
       <view class="sub action-tip">点击查看或下载</view>
     </view>
   </hy-panel-card>
@@ -53,7 +52,7 @@
   <hy-panel-card title="🛠️ 保养与事件记录" wx:if="{{asset.id}}">
     <view wx:if="{{assetEvents.length === 0}}" class="empty-sub">暂无记录</view>
     <view wx:for="{{assetEvents}}" wx:key="id" class="record-item" data-id="{{item.id}}" bindtap="openEventDetail">
-      <view class="sub">{{item.event_type_text}} · {{item.operator_userid}}</view>
+      <view class="sub">{{item.event_type_text}} · {{item.operatorName}}</view>
       <view class="sub">时间：{{item.event_time || '-'}}</view>
       <view class="sub">说明：{{item.detail_text || '-'}}</view>
       <view wx:if="{{item.photo_urls.length > 0}}" class="event-photo-grid">

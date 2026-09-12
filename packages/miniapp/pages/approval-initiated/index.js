@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { humanizeBizSummary } = require("../../utils/enum-labels");
 const { sayToast } = require("../../utils/interaction");
 
 const INITIATED_BUCKET_OPTIONS = [
@@ -94,7 +95,7 @@ Page({
   },
 
   mapListItem(item) {
-    const bizSummary = item.biz_summary || "-";
+    const bizSummary = humanizeBizSummary(item.biz_summary) || "-";
     const bizDetail = item.biz_detail || "";
     const shouldAppendBizDetail = item.biz_type === "payment_request" || bizSummary.startsWith("智能发单台-");
     const displaySummary = bizDetail && shouldAppendBizDetail

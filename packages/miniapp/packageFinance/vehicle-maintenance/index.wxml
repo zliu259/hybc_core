@@ -36,7 +36,7 @@
     <view wx:if="{{attachmentList.length === 0}}" class="empty-tip">暂无附件</view>
     <view wx:for="{{attachmentList}}" wx:key="file_key" class="photo-item">
       <view class="photo-name">{{item.file_name}}</view>
-      <view class="photo-size">{{item.file_size || 0}} bytes</view>
+      <view class="photo-size">{{item.file_size_text || '未知大小'}}</view>
       <t-button class="mini-btn" size="small" variant="outline" data-index="{{index}}" bindtap="removeAttachment" disabled="{{submitting}}">移除</t-button>
     </view>
   </hy-panel-card>

@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { approvalNodeLabel, humanizeBizSummary, bizTypeLabel } = require("../../utils/enum-labels");
 const { getUserProfile } = require("../../utils/auth");
 
 const canLaunchPayment = (roles) => {
@@ -50,7 +51,7 @@ Page({
       },
       {
         title: "📂 信封扫码核查",
-        desc: "办公室扫码信封UUID，快速打开电子档案",
+        desc: "办公室扫码信封识别号，快速打开电子档案",
         path: "/packageFinance/reimbursement-archive/index",
         tone: "orange",
         disabled: false
@@ -119,6 +120,9 @@ Page({
   mapApprovalItem(item) {
     return {
       ...item,
+      // 节点名来自审批模板 JSON（作者可填英文），summary 存量含英文枚举
+      currentNodeLabel: approvalNodeLabel({ node_name: item.current_node_name }),
+      bizSummaryText: humanizeBizSummary(item.biz_summary) || "-",
       bizTypeLabel: this.bizTypeLabel(item.biz_type),
       statusText: this.statusLabel(item.status),
       submittedAtText: this.formatBeijingTime(item.submitted_at)

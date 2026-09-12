@@ -299,7 +299,7 @@ Page({
     const assetTypeId = assetType ? Number(assetType.id) : 0;
     const customName = String(this.data.addCustomName || "").trim();
     if (!assetTypeId && !customName) {
-      wx.showToast({ title: "请填写资产类型ID或新物品名称", icon: "none" });
+      wx.showToast({ title: "请选择资产类型或填写新物品名称", icon: "none" });
       return;
     }
 

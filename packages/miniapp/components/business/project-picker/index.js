@@ -1,4 +1,5 @@
 const { request } = require("../../../utils/request");
+const { statusLabel } = require("../../../utils/enum-labels");
 const { wxGetLocation } = require("../../../utils/wx");
 
 const getNumber = (value) => {
@@ -129,7 +130,7 @@ Component({
       }
       this.setData({
         hasSelection: true,
-        selectedProjectStatus: String(project.status || "").trim(),
+        selectedProjectStatus: statusLabel(project.status, "未知"),
         selectedProjectCode: String(project.project_code || "").trim()
       });
     },

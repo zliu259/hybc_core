@@ -1,5 +1,6 @@
 const { request, buildUrl } = require("../../utils/request");
 const { getUserProfile, getToken } = require("../../utils/auth");
+const { contractTypeLabel, amountChangeTypeLabel } = require("../../utils/enum-labels");
 
 const canAccessQuery = (roles) => {
   return roles.includes("super_admin") || roles.includes("finance") || roles.includes("manager");
@@ -206,7 +207,7 @@ Page({
       const users = res && res.data && Array.isArray(res.data.users) ? res.data.users : [];
       const userNameMap = {};
       users.forEach((item) => {
-        if (item && item.userid) userNameMap[item.userid] = item.name || item.userid;
+        if (item && item.userid && item.name) userNameMap[item.userid] = item.name;
       });
       this.setData({ userNameMap });
     } catch {
@@ -259,7 +260,7 @@ Page({
         applicant: this.formatUserName(item.handler_userid),
         contractDate: item.contract_date || "-",
         counterparty: item.counterparty || "-",
-        contractType: item.contract_type || "-",
+        contractType: contractTypeLabel(item.contract_type, "-"),
         totalAmountText: formatAmount(item.total_amount),
         paidAmountText: formatAmount(item.paid_amount),
         receivedAmountText: formatAmount(item.received_amount),
@@ -271,6 +272,7 @@ Page({
       detail.amountChanges = detail.amountChanges.map((row) => ({
         ...row,
         applicant_text: this.formatUserName(row.applicant_userid),
+        change_type_text: amountChangeTypeLabel(row.change_type, "-"),
         status_text: amountChangeStatusText(row.status)
       }));
       detail.paymentRequests = detail.paymentRequests.map((row) => ({

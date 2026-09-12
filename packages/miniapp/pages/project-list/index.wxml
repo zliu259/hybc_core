@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="项目列表" icon="list" subtitle="专门项目页，避免工作台列表过长">
+  <hy-panel-card title="项目列表" icon="📋" subtitle="专门项目页，避免工作台列表过长">
     <view class="search-row">
       <input class="search-input" placeholder="按项目编号或名称筛选" value="{{keyword}}" bindinput="onKeywordInput" />
       <t-button class="search-btn" theme="primary" bindtap="searchProjects" loading="{{loading}}" disabled="{{loading}}">查询</t-button>
@@ -22,7 +22,7 @@
         <hy-status-chip text="{{item.participant ? '参与者' : '只读'}}" type="{{item.participant ? 'success' : 'warning'}}" />
       </view>
       <view class="project-sub">{{item.project_code}} · {{item.statusText}}</view>
-      <view class="project-sub">项目经理：{{item.manager_userid}}</view>
+      <view class="project-sub">项目经理：{{item.managerName}}</view>
     </view>
   </hy-panel-card>
 </view>

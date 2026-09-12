@@ -1,12 +1,12 @@
 <view class="page">
-  <hy-panel-card title="🧾 报销提交详情" subtitle="与 Web 个人报销对齐：草稿、附件、提交、状态追踪">
+  <hy-panel-card title="🧾 报销提交详情" subtitle="草稿、附件、提交与状态追踪">
     <view class="top-actions">
       <t-button class="btn" variant="outline" bindtap="goMyList">返回我的提交</t-button>
       <t-button class="btn" variant="outline" bindtap="resetDraft" disabled="{{busy}}">新建草稿</t-button>
     </view>
 
     <view class="status-grid">
-      <hy-status-chip text="报销ID：{{latestEnvelopeId || '-'}}" theme="warning" variant="light" />
+      <hy-status-chip text="报销单编号：{{latestEnvelopeId || '-'}}" theme="warning" variant="light" />
       <hy-status-chip text="识别号：{{latestEnvelopeNo || latestEnvelopeUuid || '-'}}" theme="success" variant="light" />
       <hy-status-chip text="状态：{{latestEnvelopeStatusText}}" theme="warning" variant="light" />
       <hy-status-chip text="核验：{{verificationStatusText}}" theme="success" variant="light" />
@@ -14,18 +14,18 @@
     </view>
 
     <t-notice-bar wx:if="{{editLocked}}" content="当前状态（{{latestEnvelopeStatusText}}）已锁定，内容不可修改，仅供查看。" theme="info" />
-    <t-notice-bar wx:else content="建议流程（与Web一致）：先绑定信封UUID（实物信封必填）并保存，再上传附件后提交；提交后系统会在后台自动核查，无需手动触发处理步骤。" theme="warning" />
+    <t-notice-bar wx:else content="建议流程：先绑定信封识别号（实物信封必填）并保存，再上传附件后提交；提交后系统会在后台自动核查，无需手动触发处理步骤。" theme="warning" />
 
     <view class="label">报销通道</view>
     <picker mode="selector" range="{{channelOptions}}" range-key="label" value="{{channelIndex}}" bindchange="onChannelChange">
       <view class="picker-value">{{channelOptions[channelIndex].label}}</view>
     </picker>
 
-    <view class="label">绑定信封 UUID（实物信封必填）</view>
-    <input class="input standard-input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy || draft.channel === 'electronic'}}" placeholder="{{draft.channel === 'electronic' ? '电子发票通道自动生成UUID' : '可扫码或粘贴 UUID'}}" />
+    <view class="label">绑定信封识别号（实物信封必填）</view>
+    <input class="input standard-input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy || draft.channel === 'electronic'}}" placeholder="{{draft.channel === 'electronic' ? '电子发票通道自动生成识别号' : '可扫码或粘贴信封识别号'}}" />
 
     <view class="row">
-      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy || draft.channel === 'electronic'}}">📷 扫码录入UUID</t-button>
+      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy || draft.channel === 'electronic'}}">📷 扫码录入识别号</t-button>
     </view>
 
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" enableGps="{{false}}" bind:change="onProjectChange" />

@@ -1,17 +1,13 @@
 const { wxLogin } = require("../../utils/wx");
 const { loginWithWeComCode } = require("../../utils/auth");
 const { getBaseUrl, isLocalOnlyBaseUrl } = require("../../utils/config");
+const { localizeLoginErrorMessage } = require("../../utils/error-message");
 
-const formatLoginError = (error) => {
-  const rawMessage = (error && error.message) || "登录失败，请检查企业微信应用配置后重试";
-  if (rawMessage.includes("api forbidden") || rawMessage.includes("e=48002")) {
-    return `${rawMessage}\n请在企业微信管理后台检查：应用 Secret、应用与小程序关联、应用可见范围、企业可信IP。`;
-  }
-  if (rawMessage.includes("invalid code") || rawMessage.includes("e=40029")) {
-    return `${rawMessage}\n请重新发起企业微信登录获取新 code，避免复用过期 code。`;
-  }
-  return rawMessage;
-};
+// 登录失败文案统一走 error-message 中文化：企业微信返回的是英文错误码，
+// 直接贴进页面对现场同事没有任何可操作性。
+const formatLoginError = (error) =>
+  localizeLoginErrorMessage((error && error.message) || "") ||
+  "登录失败，请检查企业微信应用配置后重试";
 
 Page({
   data: {
@@ -32,7 +28,7 @@ Page({
     try {
       const loginRes = await wxLogin();
       if (!loginRes || !loginRes.code) {
-        throw new Error("未获取到企业微信登录凭证 code");
+        throw new Error("未获取到企业微信登录凭证，请重新发起登录");
       }
 
       await loginWithWeComCode(loginRes.code, {

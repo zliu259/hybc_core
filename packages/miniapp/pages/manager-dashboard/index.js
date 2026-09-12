@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const { buildProjectSectionLabel } = require("./log-context");
 
 const statusText = {
@@ -51,7 +52,8 @@ Page({
     if (this.data.loading) return;
     this.setData({ loading: true });
     try {
-      const [projectRes, alertRes] = await Promise.all([
+      const [userNames, projectRes, alertRes] = await Promise.all([
+        loadUserNameMap(),
         request({ method: "GET", path: "/api/v1/project?page=1&pageSize=80&status=active" }),
         request({ method: "GET", path: "/api/v1/log/progress-alert" })
       ]);
@@ -91,7 +93,7 @@ Page({
           project_name: project.project_name || "未命名项目",
           project_code: project.project_code || "-",
           statusText: this.toStatusText(project.status),
-          manager_userid: project.manager_userid || "-",
+          managerName: toUserName(project.manager_userid, userNames),
           operator_count: Number(dashboard.operator_count || 0),
           manager_count: Number(dashboard.manager_count || 0),
           completed_total: normalizeNumber(dashboard.completed_total),

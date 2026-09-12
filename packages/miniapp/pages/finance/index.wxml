@@ -50,10 +50,10 @@
           <view class="approval-no">{{item.instance_no}}</view>
           <view class="status-chip">{{item.statusText}}</view>
         </view>
-        <view class="approval-summary">{{item.biz_summary || '-'}}</view>
+        <view class="approval-summary">{{item.bizSummaryText}}</view>
         <view class="meta-grid">
           <view class="meta-item">类型：{{item.bizTypeLabel}}</view>
-          <view class="meta-item">节点：{{item.current_node_name || '-'}}</view>
+          <view class="meta-item">节点：{{item.currentNodeLabel}}</view>
           <view class="meta-item wide">提交：{{item.submittedAtText}}</view>
         </view>
       </view>

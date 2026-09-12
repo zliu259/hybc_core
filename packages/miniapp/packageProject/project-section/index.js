@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const {
   buildSectionProgressInsight,
 } = require("../../utils/project-section-progress");
@@ -132,12 +133,12 @@ const formatDeviation = (item) => {
     horizontalDirection &&
     horizontalValue !== null &&
     horizontalValue !== undefined
-      ? `${deviationText[horizontalDirection] || horizontalDirection}${horizontalValue}mm`
+      ? `${deviationText[horizontalDirection] || ""}${horizontalValue}mm`
       : "",
     item.vertical_deviation_direction &&
     item.vertical_deviation_mm !== null &&
     item.vertical_deviation_mm !== undefined
-      ? `${deviationText[item.vertical_deviation_direction] || item.vertical_deviation_direction}${item.vertical_deviation_mm}mm`
+      ? `${deviationText[item.vertical_deviation_direction] || ""}${item.vertical_deviation_mm}mm`
       : "",
   ].filter(Boolean);
   return parts.length ? parts.join("，") : "-";
@@ -340,7 +341,8 @@ Page({
     if (!this.data.projectId || !this.data.sectionId) return;
     this.setData({ loading: true });
     try {
-      const [sectionsRes, operatorRes, breakthroughRes] = await Promise.all([
+      const [userNames, sectionsRes, operatorRes, breakthroughRes] = await Promise.all([
+        loadUserNameMap(),
         request({
           method: "GET",
           path: `/api/v1/project/${this.data.projectId}/sections`,
@@ -368,7 +370,8 @@ Page({
         )
         .map((item) => ({
           ...item,
-          shiftText: shiftText[item.shift] || item.shift || "-",
+          shiftText: shiftText[item.shift] || "-",
+          operatorName: toUserName(item.operator_userid, userNames),
           deviationText: formatDeviation(item),
         }));
 
@@ -391,6 +394,7 @@ Page({
           ? {
               ...section,
               statusText: this.toSectionStatus(section.status),
+              managerName: toUserName(section.manager_userid, userNames),
               pipeText:
                 section.pipe_model ||
                 (section.pipe_diameter_mm

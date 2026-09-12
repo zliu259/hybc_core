@@ -1,4 +1,6 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
+const { bizTypeLabel, approvalNodeLabel, humanizeBizSummary } = require("../../utils/enum-labels");
 const { sayToast } = require("../../utils/interaction");
 
 Page({
@@ -41,9 +43,12 @@ Page({
       outbound_contract: "对外合同审批",
       inbound_contract: "收款合同审批",
       payment_request: "付款审批",
-      reimbursement_batch: "报销审批"
+      reimbursement_batch: "报销审批",
+      stock_order: "出入库审批",
+      warehouse_asset_work_order: "库房工单审批",
+      invoice_request: "开票审批"
     };
-    return map[value] || "未知类型";
+    return map[value] || bizTypeLabel(value, "未知类型");
   },
 
   cardClassByType(bizType) {
@@ -71,12 +76,16 @@ Page({
   },
 
   mapListItem(item) {
+    const userNames = this._userNames || {};
     const reimbursementApplicantLabel =
       item && item.biz_type === "reimbursement_batch"
-        ? item.biz_applicant_userid || "-"
+        ? toUserName(item.biz_applicant_userid, userNames)
         : "-";
     return {
       ...item,
+      initiatorName: toUserName(item.initiator_userid, userNames),
+      currentNodeLabel: approvalNodeLabel({ node_name: item.current_node_name }),
+      bizSummaryText: humanizeBizSummary(item.biz_summary) || "",
       bizTypeLabel: this.bizTypeLabel(item.biz_type),
       cardClass: this.cardClassByType(item.biz_type),
       statusText: this.statusLabel(item.status),
@@ -89,12 +98,14 @@ Page({
   async loadAll() {
     this.setData({ loading: true });
     try {
-      const [pendingRes, processedRes, ccRes] = await Promise.all([
+      const [userNames, pendingRes, processedRes, ccRes] = await Promise.all([
+        loadUserNameMap(),
         request({ method: "GET", path: "/api/v1/approval/pending?page=1&pageSize=50" }),
         request({ method: "GET", path: "/api/v1/approval/processed?page=1&pageSize=50" }),
         request({ method: "GET", path: "/api/v1/approval/cc?page=1&pageSize=50" })
       ]);
 
+      this._userNames = userNames;
       const pending = Array.isArray(pendingRes.data) ? pendingRes.data : [];
       const processed = Array.isArray(processedRes.data) ? processedRes.data : [];
       const cc = Array.isArray(ccRes.data) ? ccRes.data : [];

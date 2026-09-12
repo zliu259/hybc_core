@@ -94,7 +94,7 @@ Page({
       localPhotoCount,
       canStart: item.status === "assigned",
       canSubmit: ["assigned", "in_progress", "rejected"].includes(item.status),
-      manualVersionText: item.manual_version_no ? `v${item.manual_version_no}` : "",
+      manualVersionText: item.manual_version_no ? `第${item.manual_version_no}版` : "",
       manualContent: parseJsonObject(item.manual_content_json || item.manual_content)
     };
   },

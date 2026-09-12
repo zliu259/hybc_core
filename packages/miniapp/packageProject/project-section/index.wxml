@@ -1,12 +1,12 @@
 <view class="page">
-  <hy-panel-card title="标段详情" icon="layers" subtitle="标段信息、施工日志与贯通报告">
+  <hy-panel-card title="标段详情" icon="🚧" subtitle="标段信息、施工日志与贯通报告">
     <view wx:if="{{section}}" class="section-box">
       <view class="section-title">{{section.section_name}}</view>
       <view class="section-sub">{{section.section_code}} · {{section.statusText}}</view>
       <view class="section-sub">标段里程：{{section.section_length || '-'}}m</view>
       <view class="section-sub">管径/规格：{{section.pipeText}} · 坡度：{{section.slopeText}}</view>
       <view class="section-sub">顶进方式：{{section.jackingMethodText}}</view>
-      <view class="section-sub">负责人：{{section.manager_userid || '-'}}</view>
+      <view class="section-sub">负责人：{{section.managerName}}</view>
     </view>
   </hy-panel-card>
 
@@ -72,7 +72,7 @@
     </block>
   </hy-panel-card>
 
-  <hy-panel-card title="施工日志" icon="edit-1" subtitle="按日期排序，适合现场快速回看">
+  <hy-panel-card title="施工日志" icon="✏️" subtitle="按日期排序，适合现场快速回看">
     <view class="toolbar">
       <t-button size="small" theme="primary" disabled="{{readonly}}" bindtap="goCreateOperatorLog">新增施工日志</t-button>
     </view>
@@ -83,7 +83,7 @@
       <view class="log-sub">当日顶进 {{item.footage_m || 0}}m · 累计顶进 {{item.cumulative_footage_m || '-'}}m</view>
       <view class="log-sub">刀盘 {{item.cutter_current_text || '-'}} / {{item.cutter_frequency_hz || '-'}}Hz · 泥仓 {{item.chamber_pressure_mpa || '-'}}MPa</view>
       <view class="log-sub">顶力 {{item.main_thrust_text || '-'}} · 偏差 {{item.deviationText}}</view>
-      <view class="log-sub">填报人 {{item.operator_userid || '-'}}</view>
+      <view class="log-sub">填报人 {{item.operatorName}}</view>
       <view wx:if="{{item.issue_summary}}" class="log-sub">问题：{{item.issue_summary}}</view>
       <view class="toolbar">
         <t-button size="small" variant="outline" disabled="{{readonly}}" data-id="{{item.id}}" bindtap="goEditOperatorLog">编辑</t-button>
@@ -91,7 +91,7 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="贯通报告" icon="file-copy" subtitle="标段维度维护">
+  <hy-panel-card title="贯通报告" icon="📑" subtitle="标段维度维护">
     <view class="toolbar">
       <t-button size="small" variant="outline" disabled="{{readonly}}" bindtap="openCreateBreakthrough">新增贯通报告</t-button>
     </view>

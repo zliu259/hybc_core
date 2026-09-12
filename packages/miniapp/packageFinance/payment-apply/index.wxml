@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="💸 资金流出智能发单台" subtitle="与 Web 智能发单台对齐：阈值识别、直付或合同流程、附件与审批联动">
+  <hy-panel-card title="💸 资金流出智能发单台" subtitle="阈值识别、直付或合同流程、附件与审批联动">
     <view class="step-indicator">
       <view class="step-dot on">1 金额</view>
       <view class="step-dot {{currentStep >= 1 ? 'on' : ''}}">2 信息</view>
@@ -191,7 +191,7 @@
       <view wx:if="{{directPaymentAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
       <view wx:for="{{directPaymentAttachments}}" wx:key="file_key" class="attachment-item">
         <view class="attachment-name">{{item.file_name}}</view>
-        <view class="attachment-meta">{{item.file_size || '-'}} bytes</view>
+        <view class="attachment-meta">{{item.file_size_text || '未知大小'}}</view>
         <t-button class="mini-btn" size="small" variant="outline" data-group="direct" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
       </view>
     </view>
@@ -290,7 +290,7 @@
       <view wx:if="{{contractAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
       <view wx:for="{{contractAttachments}}" wx:key="file_key" class="attachment-item">
         <view class="attachment-name">{{item.file_name}}</view>
-        <view class="attachment-meta">{{item.file_size || '-'}} bytes</view>
+        <view class="attachment-meta">{{item.file_size_text || '未知大小'}}</view>
         <t-button class="mini-btn" size="small" variant="outline" data-group="contract" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
       </view>
 
@@ -333,7 +333,7 @@
         <view wx:if="{{firstPaymentAttachments.length === 0}}" class="attachment-empty">暂无附件</view>
         <view wx:for="{{firstPaymentAttachments}}" wx:key="file_key" class="attachment-item">
           <view class="attachment-name">{{item.file_name}}</view>
-          <view class="attachment-meta">{{item.file_size || '-'}} bytes</view>
+          <view class="attachment-meta">{{item.file_size_text || '未知大小'}}</view>
           <t-button class="mini-btn" size="small" variant="outline" data-group="first" data-index="{{index}}" bindtap="removeAttachment">移除</t-button>
         </view>
       </view>
@@ -350,8 +350,8 @@
         <view wx:if="{{directForm.contract_id > 0}}" class="confirm-row">关联合同：{{contractLabels[directContractIndex] || '-'}}</view>
         <view class="confirm-row">收款方：{{selectedDirectPayee.name || '-'}}</view>
         <view class="confirm-row">付款日期：{{directForm.expected_payment_date || '-'}}</view>
-        <view class="confirm-row">付款类别：{{directForm.category || '-'}}</view>
-        <view class="confirm-row">付款方式：{{directForm.payment_method || '-'}}</view>
+        <view class="confirm-row">付款类别：{{directCategoryText}}</view>
+        <view class="confirm-row">付款方式：{{directPaymentMethodText}}</view>
         <view class="confirm-row">付款事由：{{directForm.content || '-'}}</view>
         <view class="confirm-row">附件：{{directPaymentAttachments.length}} 个</view>
       </block>
@@ -359,7 +359,7 @@
         <view class="confirm-row">所属项目：{{contractProjectName || '-'}}</view>
         <view class="confirm-row">我方主体：{{entityLabels[contractEntityIndex] || '-'}}</view>
         <view class="confirm-row">对方单位：{{selectedContractPayee.name || '-'}}</view>
-        <view class="confirm-row">合同类型：{{contractForm.contract_type || '-'}}</view>
+        <view class="confirm-row">合同类型：{{contractTypeText}}</view>
         <view class="confirm-row">合同日期：{{contractForm.contract_date || '-'}}</view>
         <view class="confirm-row">经办人：{{wecomUserLabels[contractHandlerIndex] || '-'}}</view>
         <view class="confirm-row">附件：{{contractAttachments.length}} 个</view>

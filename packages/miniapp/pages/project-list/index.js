@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const { getUserProfile } = require("../../utils/auth");
 
 const statusText = {
@@ -50,10 +51,13 @@ Page({
       const profile = getUserProfile() || {};
       const username = profile.username || "";
       const roles = Array.isArray(profile.roles) ? profile.roles : [];
-      const result = await request({
-        method: "GET",
-        path: `/api/v1/project?page=1&pageSize=200&keyword=${encodeURIComponent(this.data.keyword || "")}&status=${encodeURIComponent(STATUS_OPTIONS[this.data.statusIndex].value || "")}`
-      });
+      const [userNames, result] = await Promise.all([
+        loadUserNameMap(),
+        request({
+          method: "GET",
+          path: `/api/v1/project?page=1&pageSize=200&keyword=${encodeURIComponent(this.data.keyword || "")}&status=${encodeURIComponent(STATUS_OPTIONS[this.data.statusIndex].value || "")}`
+        })
+      ]);
       const list = Array.isArray(result.data) ? result.data : [];
       const mapped = list.map((item) => {
         const isPrivileged =
@@ -66,7 +70,7 @@ Page({
           project_code: item.project_code,
           project_name: item.project_name,
           statusText: this.toStatusText(item.status),
-          manager_userid: item.manager_userid || "-",
+          managerName: toUserName(item.manager_userid, userNames),
           participant: isParticipant
         };
       });

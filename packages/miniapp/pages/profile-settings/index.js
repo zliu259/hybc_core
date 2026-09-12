@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const { clearToken, getUserProfile, setUserProfile } = require("../../utils/auth");
 const { DEFAULT_REMOTE_BASE_URL, getBaseUrl, setBaseUrl } = require("../../utils/config");
 
@@ -18,15 +19,24 @@ const roleText = (roles) => {
 const authMethodText = (value) => {
   const map = {
     wecom_oauth: "企业微信登录",
-    passkey: "Passkey",
+    passkey: "通行密钥",
     wecom: "企业微信登录"
   };
   return map[value] || "未知";
 };
 
+
+// 显示名：nickname 本值含中文直接用；否则经通讯录把拼音 userid 映射成中文姓名
+const toDisplayName = (profile, userNames) => {
+  const nickname = String((profile && profile.nickname) || "");
+  if (/[一-鿿]/.test(nickname)) return nickname;
+  return toUserName((profile && (profile.username || profile.nickname)) || "", userNames, "-");
+};
+
 Page({
   data: {
     profile: {},
+    profileDisplayName: "-",
     profileRoleText: "-",
     profileAuthMethodText: "-",
     apiBaseUrl: "",
@@ -37,9 +47,14 @@ Page({
     const profile = getUserProfile() || {};
     this.setData({
       profile,
+      profileDisplayName: toDisplayName(profile, null),
       profileRoleText: roleText(profile.roles),
       profileAuthMethodText: authMethodText(profile.auth_method),
       apiBaseUrl: getBaseUrl()
+    });
+    // 通讯录到位后补一次映射（首次缓存未热时姓名可能还落在「-」）
+    loadUserNameMap().then((userNames) => {
+      this.setData({ profileDisplayName: toDisplayName(this.data.profile, userNames) });
     });
   },
 
@@ -66,8 +81,10 @@ Page({
       const res = await request({ method: "GET", path: "/api/v1/user/me" });
       const profile = res.data || getUserProfile() || {};
       setUserProfile(profile);
+      const userNames = await loadUserNameMap();
       this.setData({
         profile,
+        profileDisplayName: toDisplayName(profile, userNames),
         profileRoleText: roleText(profile.roles),
         profileAuthMethodText: authMethodText(profile.auth_method)
       });

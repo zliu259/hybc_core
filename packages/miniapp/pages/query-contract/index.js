@@ -82,14 +82,15 @@ Page({
       const userNameMap = {};
       users.forEach((item) => {
         if (item && item.userid) {
-          userNameMap[item.userid] = item.name || item.userid;
+          // 无中文姓名的成员不入表：formatUserName 会回落「-」，绝不显示拼音 id
+          if (item.name) userNameMap[item.userid] = item.name;
         }
       });
       const options = [{ label: "全部申请人", value: "" }].concat(
         users
-          .filter((item) => item && item.userid)
+          .filter((item) => item && item.userid && item.name)
           .map((item) => ({
-            label: item.name || item.userid,
+            label: item.name,
             value: item.userid
           }))
       );

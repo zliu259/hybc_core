@@ -18,10 +18,12 @@ assert.strictEqual(toAiTaskStatusLabel("assigned"), "已派发");
 assert.strictEqual(toAiTaskStatusLabel("completed"), "已完成");
 assert.strictEqual(toAiTaskStatusLabel(""), "-");
 assert.strictEqual(toAiTaskStatusLabel(null), "-");
-// 未知取值原样透传，不冒充已知状态
-assert.strictEqual(toAiTaskStatusLabel("odd_state"), "odd_state");
+// 未收录的英文码不能摆给审批人，统一落中文占位（不冒充某个已知状态）
+assert.strictEqual(toAiTaskStatusLabel("odd_state"), "未知状态");
+// 模型直接给中文时原样保留
+assert.strictEqual(toAiTaskStatusLabel("排队中"), "排队中");
 // 原型键不能命中 Object.prototype 上的函数
-assert.strictEqual(toAiTaskStatusLabel("constructor"), "constructor");
+assert.strictEqual(toAiTaskStatusLabel("constructor"), "未知状态");
 
 assert.strictEqual(toAiTaskStatusTheme("failed"), "danger");
 assert.strictEqual(toAiTaskStatusTheme("timeout"), "danger");
@@ -37,7 +39,9 @@ assert.strictEqual(toInvoiceRiskLabel("low"), "低风险");
 assert.strictEqual(toInvoiceRiskLabel(null), "");
 assert.strictEqual(toInvoiceRiskLabel(undefined), "");
 assert.strictEqual(toInvoiceRiskLabel(""), "");
-assert.strictEqual(toInvoiceRiskLabel("weird"), "weird");
+// 未收录的英文码落中文占位；模型给中文时原样保留
+assert.strictEqual(toInvoiceRiskLabel("weird"), "未知风险");
+assert.strictEqual(toInvoiceRiskLabel("极高风险"), "极高风险");
 
 assert.strictEqual(toInvoiceRiskTheme("high"), "danger");
 assert.strictEqual(toInvoiceRiskTheme("medium"), "warning");
@@ -72,7 +76,9 @@ const structured = buildAuditReportView({
 });
 assert.strictEqual(structured.statusLabel, "已完成");
 assert.ok(structured.reportText.indexOf("整体合规") >= 0);
-assert.ok(structured.reportText.indexOf("score") >= 0);
+// JSON 键名过 humanizeAiText 后应为中文（score → 分数），不再透出英文键
+assert.ok(structured.reportText.indexOf("分数") >= 0);
+assert.ok(structured.reportText.indexOf("score") === -1);
 
 // 失败态：danger 主题、无报告文本
 assert.deepStrictEqual(buildAuditReportView({ status: "failed", result: null }), {
@@ -87,8 +93,8 @@ assert.deepStrictEqual(buildAuditReportView({ status: "pending", result: null })
   reportText: ""
 });
 
-// 未知状态原样透传
-assert.strictEqual(buildAuditReportView({ status: "odd", result: null }).statusLabel, "odd");
+// 未知状态落中文占位，不把英文码摆给审批人
+assert.strictEqual(buildAuditReportView({ status: "odd", result: null }).statusLabel, "未知");
 assert.strictEqual(buildAuditReportView({ status: "odd", result: null }).statusTheme, "default");
 
 // ── 英文字段名汉化（展示层兜底，治存量报告） ──

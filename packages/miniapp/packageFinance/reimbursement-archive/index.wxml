@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="📂 信封扫码核查" subtitle="办公室扫码信封UUID，快速打开对应报销电子档案">
+  <hy-panel-card title="📂 信封扫码核查" subtitle="办公室扫码信封识别号，快速打开对应报销电子档案">
     <view class="toolbar">
       <t-button class="btn btn-primary" theme="primary" loading="{{loading}}" disabled="{{loading}}" bindtap="onScanUuid"
         >扫码打开档案</t-button
@@ -11,7 +11,7 @@
         class="input"
         value="{{envelopeUuidInput}}"
         bindinput="onUuidInput"
-        placeholder="粘贴或输入信封UUID / 扫码链接"
+        placeholder="粘贴或输入信封识别号 / 扫码链接"
       />
     </view>
     <view class="toolbar">
@@ -23,8 +23,8 @@
     <view wx:if="{{latestResolved}}" class="latest-card">
       <view class="row-title">最近一次定位</view>
       <view class="row">编号：{{latestResolved.envelope_no}}</view>
-      <view class="row">UUID：{{latestResolved.envelope_uuid}}</view>
-      <view class="row">申请人：{{latestResolved.applicant_userid}}</view>
+      <view class="row">信封识别号：{{latestResolved.envelope_uuid}}</view>
+      <view class="row">申请人：{{latestResolved.applicantName}}</view>
       <view class="row">金额：¥{{latestResolved.amount}}</view>
       <view class="row">状态：{{latestResolved.statusText}}</view>
       <view class="row">时间：{{latestResolved.opened_at}}</view>
@@ -39,8 +39,8 @@
         <view class="item-no">{{item.envelope_no}}</view>
         <hy-status-chip text="{{item.statusText}}" theme="warning" variant="light" />
       </view>
-      <view class="item-sub">UUID：{{item.envelope_uuid}}</view>
-      <view class="item-sub">申请人：{{item.applicant_userid}} · 金额：¥{{item.amount}}</view>
+      <view class="item-sub">信封识别号：{{item.envelope_uuid}}</view>
+      <view class="item-sub">申请人：{{item.applicantName}} · 金额：¥{{item.amount}}</view>
       <view class="item-sub">最近打开：{{item.opened_at}}</view>
       <view class="actions">
         <t-button class="btn" size="small" variant="outline" data-uuid="{{item.envelope_uuid}}" disabled="{{loading}}" bindtap="onOpenFromHistory"

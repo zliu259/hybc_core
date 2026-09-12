@@ -1,4 +1,5 @@
 const { request, uploadBinary } = require("./request");
+const { localizeErrorMessage } = require("./error-message");
 const { signUpload } = require("./upload");
 const { wxRecordAudioOnce } = require("./wx");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("./interaction");
@@ -57,7 +58,7 @@ const pollTranscript = async (taskId) => {
       return (data.transcript || "").trim();
     }
     if (status === "failed" || status === "timeout") {
-      throw new Error(data.error_message || "语音识别失败");
+      throw new Error(localizeErrorMessage(data.error_message, 500) || "语音识别失败");
     }
     await wait(1200);
   }

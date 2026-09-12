@@ -1,4 +1,6 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
+const { fileSizeLabel, statusLabel } = require("../../utils/enum-labels");
 const { uploadFileToR2 } = require("../../utils/upload");
 const { wxChooseMediaImage } = require("../../utils/wx");
 
@@ -53,7 +55,8 @@ Page({
     if (this.data.loading) return;
     this.setData({ loading: true });
     try {
-      const [vehicleRes, cardRes, myRes] = await Promise.all([
+      const [userNames, vehicleRes, cardRes, myRes] = await Promise.all([
+        loadUserNameMap(),
         request({
           method: "GET",
           path: "/api/v1/fleet/vehicles?status=active"
@@ -76,7 +79,8 @@ Page({
         myRes && Array.isArray(myRes.data) ? myRes.data : []
       ).map((item) => ({
         ...item,
-        statusLabel: STATUS_LABELS[item.status] || item.status
+        statusLabel: STATUS_LABELS[item.status] || statusLabel(item.status),
+        processedByName: toUserName(item.processed_by_userid, userNames, "办公室")
       }));
       const needsInfoCount = myApplications.filter(
         (item) => item.status === "needs_info"
@@ -85,7 +89,7 @@ Page({
         vehicles,
         fuelCards,
         vehicleLabels: ["请选择车辆"].concat(
-          vehicles.map((item) => `${item.current_plate_no || "-"} (${item.vehicle_uuid || item.id})`)
+          vehicles.map((item) => item.current_plate_no || `车辆 ${item.id}`)
         ),
         fuelCardLabels: ["请选择油卡"].concat(
           fuelCards.map(
@@ -150,7 +154,8 @@ Page({
         uploaded.push({
           file_key: result.key,
           file_name: fileName || result.key,
-          file_size: file.size || file.fileSize || 0
+          file_size: file.size || file.fileSize || 0,
+          file_size_text: fileSizeLabel(file.size || file.fileSize || 0)
         });
       }
 
@@ -215,7 +220,7 @@ Page({
   },
 
   statusText(status) {
-    return this.data.statusTextMap[status] || status || "-";
+    return this.data.statusTextMap[status] || statusLabel(status, "-");
   },
 
   async submit() {

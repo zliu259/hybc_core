@@ -64,7 +64,7 @@ Page({
         {
           file_key: signed.key,
           file_url: signed.fileUrl || signed.viewUrl || signed.publicUrl || "",
-          caption: "manager-log"
+          caption: "现场照片"
         }
       ]);
       this.setData({ "form.photos": photos });

@@ -7,7 +7,7 @@ const shiftOrder = (shift) => {
 const shiftLabel = (shift) => {
   if (shift === "day") return "白班";
   if (shift === "night") return "夜班";
-  return shift || "-";
+  return "-";
 };
 
 const toNumberOrNull = (value) => {

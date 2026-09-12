@@ -1,4 +1,6 @@
 const { request, buildUrl } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
+const { bizTypeLabel } = require("../../utils/enum-labels");
 const { clearToken, getUserProfile, setUserProfile } = require("../../utils/auth");
 
 // 合同预审与网页端同角色口径（routes/contract-precheck.ts ROLES）
@@ -92,15 +94,17 @@ Page({
   authMethodText(value) {
     const map = {
       wecom_oauth: "企业微信登录",
-      passkey: "Passkey",
+      passkey: "通行密钥",
       wecom: "企业微信登录"
     };
     return map[value] || "未知";
   },
 
   avatarText(profile) {
-    const source = String((profile && (profile.nickname || profile.username || profile.id)) || "我");
-    return source.slice(0, 1) || "我";
+    // nickname 缺失时后端回落 userid（拼音），头像位会显示拉丁字母，一律兜「我」
+    const source = String((profile && (profile.displayName || profile.nickname)) || "");
+    const first = source.slice(0, 1);
+    return /[一-鿿]/.test(first) ? first : "我";
   },
 
   onShow() {
@@ -110,8 +114,16 @@ Page({
   async reloadProfile() {
     this.setData({ busy: true });
     try {
-      const res = await request({ method: "GET", path: "/api/v1/user/me" });
+      const [userNames, res] = await Promise.all([
+        loadUserNameMap(),
+        request({ method: "GET", path: "/api/v1/user/me" })
+      ]);
       const profile = res.data || getUserProfile() || {};
+      // nickname 缺失时后端回落 userid（拼音）；先本值、再通讯录、最后中文兜底
+      const resolvedName = /[一-鿿]/.test(String(profile.nickname || ""))
+        ? profile.nickname
+        : toUserName(profile.username || profile.nickname, userNames, "我的中心");
+      profile.displayName = /[一-鿿]/.test(resolvedName) ? resolvedName : "我的中心";
       const timeline = this.normalizeTimeline(profile);
       const certificates = this.normalizeCertificates(profile);
       const certificateWarnCount = certificates.filter((item) => item.level === "warn").length;
@@ -127,6 +139,10 @@ Page({
       });
     } catch {
       const profile = getUserProfile() || {};
+      const fallbackName = /[一-鿿]/.test(String(profile.nickname || ""))
+        ? profile.nickname
+        : toUserName(profile.username || profile.nickname, null, "我的中心");
+      profile.displayName = /[一-鿿]/.test(fallbackName) ? fallbackName : "我的中心";
       this.setData({
         profile,
         timeline: this.normalizeTimeline(profile),
@@ -245,9 +261,10 @@ Page({
       payment_request: "付款审批",
       reimbursement_batch: "报销审批",
       stock_order: "出库审批",
-      invoice_request: "发票审批"
+      invoice_request: "开票审批",
+      warehouse_asset_work_order: "库房工单审批"
     };
-    return map[value] || "审批";
+    return map[value] || bizTypeLabel(value);
   },
 
   async urgeApprovalFlow() {
@@ -290,7 +307,10 @@ Page({
         return;
       }
 
-      const assigneeLabels = tasks.map((task) => `${task.assignee_userid}（待审批）`);
+      const urgeUserNames = await loadUserNameMap();
+      const assigneeLabels = tasks.map(
+        (task) => `${toUserName(task.assignee_userid, urgeUserNames)}（待审批）`
+      );
       const taskPick = await new Promise((resolve, reject) => {
         wx.showActionSheet({
           itemList: assigneeLabels,
@@ -304,7 +324,7 @@ Page({
       const confirmed = await new Promise((resolve) => {
         wx.showModal({
           title: "确认催办",
-          content: `将向 ${targetTask.assignee_userid} 发送二次企业微信催办消息，是否继续？`,
+          content: `将向 ${toUserName(targetTask.assignee_userid, urgeUserNames)} 发送二次企业微信催办消息，是否继续？`,
           success: (res) => resolve(Boolean(res.confirm)),
           fail: () => resolve(false)
         });

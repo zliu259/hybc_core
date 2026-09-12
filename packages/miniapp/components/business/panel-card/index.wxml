@@ -1,6 +1,6 @@
 <view class="card panel-card">
   <view wx:if="{{title}}" class="panel-title-row">
-    <view wx:if="{{icon}}" class="panel-icon">{{icon}}</view>
+    <view wx:if="{{iconText}}" class="panel-icon">{{iconText}}</view>
     <view class="panel-title">{{title}}</view>
   </view>
   <view wx:if="{{subtitle}}" class="panel-sub">{{subtitle}}</view>

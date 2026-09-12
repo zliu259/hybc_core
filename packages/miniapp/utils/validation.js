@@ -14,7 +14,7 @@ const positiveNumber = (value, label) => {
 
 const ymdDate = (value, label) => {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(String(value || ""))) {
-    return `${label}格式应为YYYY-MM-DD`;
+    return `${label}格式应为「年-月-日」，如 2026-01-31`;
   }
   return "";
 };

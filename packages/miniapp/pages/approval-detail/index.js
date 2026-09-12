@@ -1,4 +1,5 @@
 const { request, buildUrl } = require("../../utils/request");
+const { localizeErrorMessage } = require("../../utils/error-message");
 const { getToken, getUserProfile } = require("../../utils/auth");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
 const {
@@ -14,6 +15,12 @@ const {
   toInvoiceRiskLabel,
   toInvoiceRiskTheme
 } = require("../../utils/ai-review");
+const {
+  approvalNodeLabel,
+  paymentMethodLabel,
+  approvalActionLabel,
+  humanizeBizSummary
+} = require("../../utils/enum-labels");
 
 Page({
   data: {
@@ -83,7 +90,7 @@ Page({
         }
       }
     }
-    throw lastError || new Error("request failed");
+    throw lastError || new Error("请求失败，请稍后重试");
   },
 
   async onShow() {
@@ -193,7 +200,7 @@ Page({
       other: "其他",
       "其他": "其他"
     };
-    return map[value] || value;
+    return map[value] || paymentMethodLabel(value, "-");
   },
 
   normalizePaymentMethodValue(value) {
@@ -245,7 +252,7 @@ Page({
       cancel: "取消",
       resubmit: "重新提交"
     };
-    return map[action] || action || "-";
+    return map[action] || approvalActionLabel(action);
   },
 
   aiOutcomeLabel(outcome, comment) {
@@ -369,14 +376,15 @@ Page({
       return parsed
         .map((item) => {
           if (typeof item === "string") {
-            return { file_key: item, file_name: item, file_size: null };
+            // 字符串形态的附件只有 R2 key（ASCII 串），不能当文件名上屏
+            return { file_key: item, file_name: "未命名附件", file_size: null };
           }
           if (item && typeof item === "object") {
             const key = item.file_key || item.key;
             if (!key) return null;
             return {
               file_key: key,
-              file_name: item.file_name || item.name || key,
+              file_name: item.file_name || item.name || "未命名附件",
               file_size: item.file_size || item.size || null
             };
           }
@@ -403,8 +411,15 @@ Page({
     }
   },
 
-  normalizeAiReviews(rows) {
+  /**
+   * @param rows AI 关卡审查行
+   * @param nodeNameByKey node_key → 节点中文名。node_key 是流程模板里的英文键
+   *   （ai_gate_contract 之类），不能直接摆到界面上，这里换成节点中文名，
+   *   查不到时统一显示「AI 关卡」。
+   */
+  normalizeAiReviews(rows, nodeNameByKey) {
     const decisionLabelMap = { pass: "建议通过", warn: "放行·需人工关注", reject: "建议拒绝" };
+    const nodeNames = nodeNameByKey || {};
     return (rows || []).map((row) => {
       const embedded = this.parseAiEmbeddedSummary(row.summary);
       const outcome = row.outcome || (embedded && embedded.outcome) || null;
@@ -415,10 +430,20 @@ Page({
         (decision && decisionLabelMap[decision]) || this.aiOutcomeLabel(outcome, comment);
       return {
         ...row,
+        nodeLabel: approvalNodeLabel({
+          node_name: Object.prototype.hasOwnProperty.call(nodeNames, String(row.node_key || ""))
+            ? nodeNames[String(row.node_key)]
+            : "",
+          node_type: "ai_gate"
+        }),
         // 状态是任务队列态（failed/timeout 等），不能走审批流转态的 statusLabel
         statusLabel: toAiTaskStatusLabel(row.status),
         statusTheme: toAiTaskStatusTheme(row.status),
-        errorText: typeof row.error_message === "string" ? row.error_message.trim() : "",
+        // 任务队列的 error_message 是英文技术报错，过一遍统一汉化
+        errorText:
+          typeof row.error_message === "string" && row.error_message.trim()
+            ? localizeErrorMessage(row.error_message.trim(), 500)
+            : "",
         outcomeLabel,
         outcomeTheme: this.aiOutcomeTheme(outcomeLabel),
         // AI 产出文本过 humanizeAiText：存量意见里的英文字段名换成中文业务名
@@ -435,11 +460,26 @@ Page({
     return "default";
   },
 
+  /** node_key → 节点中文名，供 AI 关卡卡片展示（node_key 本身不进界面） */
+  buildNodeNameMap(detail) {
+    const nodes = Array.isArray(detail && detail.nodes) ? detail.nodes : [];
+    return nodes.reduce((acc, node) => {
+      const key = String((node && node.node_key) || "");
+      if (key && node && node.node_name) {
+        return { ...acc, [key]: node.node_name };
+      }
+      return acc;
+    }, {});
+  },
+
   buildTimelineNodes(detail) {
     const nodes = Array.isArray(detail && detail.nodes) ? detail.nodes : [];
     const tasks = Array.isArray(detail && detail.tasks) ? detail.tasks : [];
     const aiMap = new Map();
-    this.normalizeAiReviews(detail && detail.ai_gate_reviews).forEach((item) => {
+    this.normalizeAiReviews(
+      detail && detail.ai_gate_reviews,
+      this.buildNodeNameMap(detail)
+    ).forEach((item) => {
       if (item.node_key) aiMap.set(item.node_key, item);
     });
 
@@ -627,7 +667,7 @@ Page({
       const userNameMap = {};
       users.forEach((item) => {
         if (item && item.userid) {
-          userNameMap[item.userid] = item.name || item.userid;
+          if (item.name) userNameMap[item.userid] = item.name;
         }
       });
       this.setData({ transferUsers: users.slice(0, 50), userNameMap });
@@ -833,7 +873,7 @@ Page({
         loading: false,
         detail: null,
         detailState: "error",
-        detailErrorText: "审批单ID无效，请返回列表重试"
+        detailErrorText: "审批单编号无效，请返回列表重试"
       });
       return;
     }
@@ -907,7 +947,7 @@ Page({
                 attachments: Array.isArray(item.attachments) ? item.attachments : [],
                 aiReasonabilitySummary:
                   typeof item.ai_reasonability_summary === "string" && item.ai_reasonability_summary.trim()
-                    ? item.ai_reasonability_summary.trim()
+                    ? humanizeAiText(item.ai_reasonability_summary.trim())
                     : "-",
                 invoiceRiskLabel: toInvoiceRiskLabel(item.invoice_review_highest_risk),
                 invoiceRiskTheme: toInvoiceRiskTheme(item.invoice_review_highest_risk)
@@ -917,7 +957,7 @@ Page({
           attachments = reimbursementItemRows.flatMap((item) =>
             (item.attachments || []).map((attachment) => ({
               file_key: attachment.file_key,
-              file_name: attachment.file_name || attachment.file_key,
+              file_name: attachment.file_name || "未命名附件",
               file_size: attachment.file_size,
               envelope_no: item.envelope_no
             }))
@@ -975,6 +1015,7 @@ Page({
               detail.instance.biz_type === "reimbursement_batch"
                 ? this.userLabel(detail.instance.biz_applicant_userid)
                 : "-",
+            biz_summary: humanizeBizSummary(detail.instance.biz_summary) || "-",
             submittedAtText: this.formatBeijingTime(detail.instance.submitted_at),
             completedAtText: this.formatBeijingTime(detail.instance.completed_at)
           }
@@ -986,7 +1027,10 @@ Page({
         detailAuditView: bizType === "reimbursement_batch" ? buildAuditReportView(audit) : null,
         detailAttachments: attachments,
         reimbursementItemRows,
-        detailAiReviews: this.normalizeAiReviews(detail.ai_gate_reviews),
+        detailAiReviews: this.normalizeAiReviews(
+          detail.ai_gate_reviews,
+          this.buildNodeNameMap(detail)
+        ),
         detailTimelineNodes,
         stopReasonText,
         availableActions: this.data.readOnlyView ? [] : availableActions,
@@ -1077,7 +1121,7 @@ Page({
         }
         const index = await new Promise((resolve, reject) => {
           wx.showActionSheet({
-            itemList: this.data.transferUsers.map((item) => `${item.name} (${item.userid})`),
+            itemList: this.data.transferUsers.map((item) => item.name || "未知人员"),
             success: (res) => resolve(Number(res.tapIndex)),
             fail: () => reject(new Error("已取消转签"))
           });

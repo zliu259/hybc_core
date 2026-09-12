@@ -32,7 +32,7 @@
     <view wx:if="{{detail}}" class="section-title">金额变更记录（{{detail.amountChanges.length}}）</view>
     <view wx:if="{{detail && !detail.amountChanges.length}}" class="empty">暂无金额变更记录</view>
     <view wx:for="{{detail.amountChanges}}" wx:key="id" class="sub-card">
-      <view class="item">变更类型：{{item.change_type}}</view>
+      <view class="item">变更类型：{{item.change_type_text}}</view>
       <view class="item">变更金额：{{item.old_amount}} → {{item.new_amount}}</view>
       <view class="item">状态：{{item.status_text}}</view>
       <view class="item">发起人：{{item.applicant_text}}</view>

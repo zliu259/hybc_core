@@ -26,7 +26,7 @@
     </view>
   </view>
 
-  <hy-panel-card title="快速操作" icon="tools" subtitle="仅保留执行人员高频动作">
+  <hy-panel-card title="快速操作" icon="🛠️" subtitle="仅保留执行人员高频动作">
     <view class="action-grid">
       <view wx:for="{{actions}}" wx:key="title" class="action-card {{item.tone}}" data-path="{{item.path}}" bindtap="goTo">
         <view class="action-head">
@@ -38,7 +38,7 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="优先处理" icon="time" subtitle="高优先级和退回任务会在这里提醒">
+  <hy-panel-card title="优先处理" icon="⏰" subtitle="高优先级和退回任务会在这里提醒">
     <view wx:if="{{urgentTasks.length === 0}}" class="empty-state">暂无紧急任务</view>
     <view wx:for="{{urgentTasks}}" wx:key="id" class="priority-item" data-path="/pages/warehouse-task/index" bindtap="goTo">
       <view class="priority-main">
@@ -49,7 +49,7 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="辅助入口" icon="view-list" subtitle="低频管理动作保留入口，不进入执行主路径">
+  <hy-panel-card title="辅助入口" icon="📋" subtitle="低频管理动作保留入口，不进入执行主路径">
     <view class="secondary-list">
       <view wx:for="{{secondaryActions}}" wx:key="title" class="secondary-item" data-path="{{item.path}}" bindtap="goTo">
         <view>

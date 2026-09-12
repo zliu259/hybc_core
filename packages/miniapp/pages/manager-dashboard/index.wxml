@@ -35,7 +35,7 @@
         <view class="project-name">{{item.project_name}}</view>
         <view class="status {{item.warning ? 'danger' : 'success'}}">{{item.warning ? '有预警' : item.statusText}}</view>
       </view>
-      <view class="project-code">{{item.project_code}} · 负责人 {{item.manager_userid}}</view>
+      <view class="project-code">{{item.project_code}} · 负责人 {{item.managerName}}</view>
       <view class="project-metrics">
         <view class="metric">
           <view class="metric-value">{{item.footage_total}}</view>

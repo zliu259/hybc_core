@@ -1,4 +1,11 @@
 const { request, buildUrl } = require("../../utils/request");
+const { localizeNetworkErrorMessage, rawErrorText } = require("../../utils/error-message");
+const {
+  statusLabel,
+  riskLevelLabel,
+  attachmentTypeLabel,
+  duplicateMatchTypeLabel
+} = require("../../utils/enum-labels");
 const { uploadFileToR2 } = require("../../utils/upload");
 const {
   wxScanCode,
@@ -59,14 +66,7 @@ const taskStatusText = (status) => {
   return map[status] || "未知";
 };
 
-const riskText = (risk) => {
-  const map = {
-    high: "高风险",
-    medium: "中风险",
-    low: "低风险"
-  };
-  return map[risk] || risk || "未知";
-};
+const riskText = (risk) => riskLevelLabel(risk);
 
 const toDateInputValue = (value) => {
   if (!value) return "";
@@ -130,7 +130,7 @@ const getPickedFilePath = (file) => {
   return String(file.path || file.tempFilePath || file.tempPath || "");
 };
 
-const getPickedFileName = (file, fallbackPrefix = "attachment") => {
+const getPickedFileName = (file, fallbackPrefix = "附件") => {
   if (file && typeof file.name === "string" && file.name.trim()) {
     return file.name.trim();
   }
@@ -159,11 +159,20 @@ const FORCE_SUBMIT_REASON = "申请人在小程序确认非重复并坚持提交
 const UPLOAD_DEBUG_STORAGE_KEY = "reimbursement-upload-debug-trace";
 
 const extractErrorMessage = (error, fallback = "上传失败") => {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    // Error 分支同样收口：英文 message（原生 TypeError、客户端差异报错）不透给 toast
+    return /[一-鿿]/.test(error.message)
+      ? error.message
+      : localizeNetworkErrorMessage(error.message);
+  }
   if (typeof error === "string" && error) return error;
   if (error && typeof error === "object") {
+    // 微信基础库的 errMsg 是英文（request:fail / chooseMedia:fail …），
+    // 直接进 toast 就是一串英文，这里统一中文化。
     const errMsg = error.errMsg || error.message;
-    if (typeof errMsg === "string" && errMsg.trim()) return errMsg.trim();
+    if (typeof errMsg === "string" && errMsg.trim()) {
+      return localizeNetworkErrorMessage(errMsg.trim());
+    }
   }
   return fallback;
 };
@@ -188,11 +197,17 @@ const buildUploadDebugMetaSuffix = (meta = {}) => {
 };
 
 const buildUploadDebugStageError = (stage, errorOrMessage, meta = {}) => {
-  const wrapped = new Error(
-    `[upload-debug:reimbursement:${stage}] ${extractErrorMessage(errorOrMessage)}${buildUploadDebugMetaSuffix(meta)}`
-  );
+  // 同 utils/upload.js：toast 只能看到中文；英文原文透传 __rawErrMsg
+  // （cancel/不支持等能力判定依赖它），调试串带原文进控制台。
+  const message = extractErrorMessage(errorOrMessage);
+  const rawText = rawErrorText(errorOrMessage);
+  const debugText = `[upload-debug:reimbursement:${stage}] ${rawText || message}${buildUploadDebugMetaSuffix(meta)}`;
+  const wrapped = new Error(message);
+  wrapped.__rawErrMsg = rawText;
+  wrapped.__uploadDebugText = debugText;
   wrapped.__uploadDebugStage = stage;
   wrapped.__uploadDebugMeta = meta;
+  console.warn(debugText);
   return wrapped;
 };
 
@@ -222,12 +237,14 @@ const trimDebugContent = (value, maxLength = 980) => {
 };
 
 const isUserCancelError = (error) => {
-  const message = extractErrorMessage(error, "").toLowerCase();
+  const message = rawErrorText(error).toLowerCase();
   return message.includes("cancel") || message.includes("取消");
 };
 
 const isLocalFilePickerUnsupportedError = (error) => {
-  const message = extractErrorMessage(error, "").toLowerCase();
+  const message = rawErrorText(error).toLowerCase();
+  // chooseFile:fail cancel 同样含 "choosefile" 子串，用户取消不能误判成客户端不支持
+  if (message.includes("cancel") || message.includes("取消")) return false;
   return message.includes("不支持本地文件选择") || message.includes("local file") || message.includes("choosefile");
 };
 
@@ -461,11 +478,9 @@ Page({
 
     const message = extractErrorMessage(error, fallbackTitle);
     this.appendUploadDebugTrace("failure", { message }, "error");
-    const lines = (Array.isArray(this.uploadDebugTrace) ? this.uploadDebugTrace : [])
-      .slice(-6)
-      .map((entry) => formatUploadDebugLine(entry));
+    // 英文阶段轨迹只进控制台（appendUploadDebugTrace 已打日志），弹窗只给中文
     const content = trimDebugContent(
-      [`失败信息：${message}`, "", "最近阶段：", ...lines].join("\n")
+      [`失败信息：${message}`, "", "如多次失败，请截图联系管理员，并说明操作步骤。"].join("\n")
     );
 
     sayToast({ title: fallbackTitle, icon: "none", danger: true });
@@ -607,7 +622,7 @@ Page({
       const result = await wxScanCode();
       const scannedUuid = normalizeScannedUuid(result.result || "");
       if (!scannedUuid) {
-        sayToast({ title: "未识别到有效UUID，请重试", icon: "none", danger: true });
+        sayToast({ title: "未识别到有效的信封识别号，请重试", icon: "none", danger: true });
         return;
       }
       this.setData({ "draft.preferred_envelope_uuid": scannedUuid });
@@ -631,7 +646,7 @@ Page({
       return;
     }
     if (draft.channel === "physical" && !isValidUuid(draft.preferred_envelope_uuid)) {
-      sayToast({ title: "实物信封必须先扫描或录入有效UUID", icon: "none", danger: true });
+      sayToast({ title: "实物信封必须先扫描或录入有效的信封识别号", icon: "none", danger: true });
       return;
     }
 
@@ -712,7 +727,7 @@ Page({
       const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
       this.appendUploadDebugTrace("choose-image.result", summarizePickedFile(picked));
       const filePath = getPickedFilePath(picked);
-      const fileName = getPickedFileName(picked, "invoice");
+      const fileName = getPickedFileName(picked, "发票");
       this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
       if (!filePath) {
         throw buildUploadDebugStageError("path-empty", "图片路径为空", summarizePickedFile(picked));
@@ -850,7 +865,7 @@ Page({
       const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
       this.appendUploadDebugTrace("choose-local-file.result", summarizePickedFile(file));
       const filePath = getPickedFilePath(file);
-      const fileName = getPickedFileName(file, "invoice") || `invoice-${Date.now()}.pdf`;
+      const fileName = getPickedFileName(file, "发票") || `发票-${Date.now()}.pdf`;
       this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
       if (!filePath) {
         throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(file));
@@ -896,7 +911,7 @@ Page({
       const file = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
       this.appendUploadDebugTrace("choose-message-file.fallback.result", summarizePickedFile(file));
       const filePath = getPickedFilePath(file);
-      const fileName = getPickedFileName(file, "invoice") || `invoice-${Date.now()}.pdf`;
+      const fileName = getPickedFileName(file, "发票") || `发票-${Date.now()}.pdf`;
       this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
       if (!filePath) {
         throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(file));
@@ -934,7 +949,7 @@ Page({
       const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
       this.appendUploadDebugTrace("choose-image.result", summarizePickedFile(picked));
       const filePath = getPickedFilePath(picked);
-      const fileName = getPickedFileName(picked, "attachment");
+      const fileName = getPickedFileName(picked, "附件");
       this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
       if (!filePath) {
         throw buildUploadDebugStageError("path-empty", "图片路径为空", summarizePickedFile(picked));
@@ -967,7 +982,7 @@ Page({
       const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
       this.appendUploadDebugTrace("choose-local-file.result", summarizePickedFile(picked));
       const filePath = getPickedFilePath(picked);
-      const fileName = getPickedFileName(picked, "attachment");
+      const fileName = getPickedFileName(picked, "附件");
       this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
       if (!filePath) {
         throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(picked));
@@ -1013,7 +1028,7 @@ Page({
       const picked = choose && choose.tempFiles && choose.tempFiles[0] ? choose.tempFiles[0] : null;
       this.appendUploadDebugTrace("choose-message-file.fallback.result", summarizePickedFile(picked));
       const filePath = getPickedFilePath(picked);
-      const fileName = getPickedFileName(picked, "attachment");
+      const fileName = getPickedFileName(picked, "附件");
       this.appendUploadDebugTrace("path-parsed", { filePath, fileName });
       if (!filePath) {
         throw buildUploadDebugStageError("path-empty", "文件路径为空", summarizePickedFile(picked));
@@ -1077,7 +1092,7 @@ Page({
     ).trim();
     if (this.data.draft.channel === "physical" && !isValidUuid(envelopeUuid)) {
       sayToast({
-        title: "实体信封必须先扫码录入有效UUID后再提交",
+        title: "实体信封必须先扫码录入有效的信封识别号后再提交",
         icon: "none",
         danger: true
       });
@@ -1200,12 +1215,12 @@ Page({
       const duplicateChecks = Array.isArray(detail.duplicate_checks)
         ? detail.duplicate_checks.map((item) => ({
             id: item.id,
-            summary: item.summary || item.match_type || "查重结果",
+            summary: item.summary || duplicateMatchTypeLabel(item.match_type),
             risk: riskText(item.risk_level)
           }))
         : [];
       const batchInfoText = detail.batch && detail.batch.batch_no
-        ? `${detail.batch.batch_no}（${detail.batch.status || "处理中"}）`
+        ? `${detail.batch.batch_no}（${statusLabel(detail.batch.status, "处理中")}）`
         : "未入批次";
       const attachmentItems = attachments.map((item) => {
         const fileKey = item.file_key || "";
@@ -1215,7 +1230,7 @@ Page({
           : "";
         return {
           id: item.id || `${fileKey}-${fileName}`,
-          attachment_type: item.attachment_type || "other",
+          attachment_type: attachmentTypeLabel(item.attachment_type),
           file_key: fileKey,
           file_name: fileName,
           file_url: fileUrl,
@@ -1321,7 +1336,7 @@ Page({
   openGlobalHelper() {
     wx.showActionSheet({
       itemList: [
-        "🎤 扫码录入UUID",
+        "🎤 扫码录入识别号",
         "💾 保存草稿",
         "📎 上传文件（统一入口）",
         "📨 提交报销"

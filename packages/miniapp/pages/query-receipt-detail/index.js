@@ -1,5 +1,6 @@
 const { request } = require("../../utils/request");
 const { getUserProfile } = require("../../utils/auth");
+const { refundModeLabel } = require("../../utils/enum-labels");
 
 const canAccessQuery = (roles) => {
   return roles.includes("super_admin") || roles.includes("finance") || roles.includes("manager");
@@ -80,7 +81,7 @@ Page({
       const users = res && res.data && Array.isArray(res.data.users) ? res.data.users : [];
       const userNameMap = {};
       users.forEach((item) => {
-        if (item && item.userid) userNameMap[item.userid] = item.name || item.userid;
+        if (item && item.userid && item.name) userNameMap[item.userid] = item.name;
       });
       this.setData({ userNameMap });
     } catch {
@@ -146,6 +147,7 @@ Page({
         refunds: refunds.map((row) => ({
           ...row,
           applicant_text: this.formatUserName(row.applicant_userid),
+          refund_mode_text: refundModeLabel(row.refund_mode, "-"),
           status_text: refundStatusText(row.status)
         }))
       };

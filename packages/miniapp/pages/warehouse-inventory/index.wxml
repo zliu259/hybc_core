@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="📊 库存概览" icon="chart" subtitle="对齐 Web 库存视图与预警中心">
+  <hy-panel-card title="📊 库存概览" subtitle="库存视图与预警中心">
     <view wx:if="{{alerts.length === 0}}" class="empty-state">当前无库存预警</view>
     <view wx:for="{{alerts}}" wx:key="id" class="alert-item">
       <view class="alert-title">{{item.warehouse_name || ('仓库#' + item.warehouse_id)}} · {{item.type_name || ('资产类型#' + item.asset_type_id)}}</view>
@@ -10,7 +10,7 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="📦 库存条目" icon="view-list" subtitle="按仓库和资产类型聚合展示">
+  <hy-panel-card title="📦 库存条目" subtitle="按仓库和资产类型聚合展示">
     <view wx:if="{{inventory.length === 0}}" class="empty-state">暂无库存数据</view>
     <view wx:for="{{inventory}}" wx:key="id" class="inventory-item">
       <view class="inventory-title">{{item.warehouse_name || ('仓库#' + item.warehouse_id)}}</view>

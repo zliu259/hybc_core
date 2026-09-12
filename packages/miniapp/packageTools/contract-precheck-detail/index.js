@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { statusLabel, contractDirectionLabel, severityLabel } = require("../../utils/enum-labels");
 
 const STATUS_LABELS = {
   draft: "待预审",
@@ -163,9 +164,9 @@ Page({
     const issues = ((result && result.issues) || []).map((issue, index) => ({
       ...issue,
       index,
-      severityLabel: SEVERITY_LABELS[issue.severity] || issue.severity,
+      severityLabel: SEVERITY_LABELS[issue.severity] || severityLabel(issue.severity),
       severityTheme: SEVERITY_THEMES[issue.severity] || "default",
-      dimensionLabel: DIMENSION_LABELS[issue.dimension] || issue.dimension,
+      dimensionLabel: DIMENSION_LABELS[issue.dimension] || "其他维度",
       adopted: adoptedIndexes.indexOf(index) >= 0
     }));
 
@@ -177,9 +178,9 @@ Page({
 
     this.setData({
       detail,
-      statusLabel: STATUS_LABELS[detail.status] || detail.status,
+      statusLabel: STATUS_LABELS[detail.status] || statusLabel(detail.status),
       statusTheme: STATUS_THEMES[detail.status] || "default",
-      directionLabel: DIRECTION_LABELS[detail.direction] || detail.direction,
+      directionLabel: DIRECTION_LABELS[detail.direction] || contractDirectionLabel(detail.direction),
       result,
       overallLabel: (result && OVERALL_LABELS[result.overall]) || "",
       overallTheme: (result && OVERALL_THEMES[result.overall]) || "default",

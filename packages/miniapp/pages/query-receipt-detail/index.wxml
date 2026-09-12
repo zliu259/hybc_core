@@ -24,7 +24,7 @@
     <view wx:if="{{detail && !detail.refunds.length}}" class="empty">暂无退款记录</view>
     <view wx:for="{{detail.refunds}}" wx:key="id" class="sub-card">
       <view class="item">退款单号：{{item.refund_no}}</view>
-      <view class="item">退款模式：{{item.refund_mode}}</view>
+      <view class="item">退款方式：{{item.refund_mode_text}}</view>
       <view class="item">金额：¥{{item.amount}}</view>
       <view class="item">状态：{{item.status_text}}</view>
       <view class="item">申请人：{{item.applicant_text}}</view>

@@ -1,4 +1,6 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
+const { docTypeLabel } = require("../../utils/enum-labels");
 const { wxScanCode, wxChooseMediaImage } = require("../../utils/wx");
 const { uploadFileToR2 } = require("../../utils/upload");
 
@@ -82,12 +84,15 @@ Page({
   },
 
   async fetchAssetById(id) {
-    const res = await request({ method: "GET", path: `/api/v1/asset/${id}` });
+    const [userNames, res] = await Promise.all([
+      loadUserNameMap(),
+      request({ method: "GET", path: `/api/v1/asset/${id}` })
+    ]);
     const detail = res.data || {};
     const documents = Array.isArray(detail.documents)
       ? detail.documents.map((item) => ({
           id: item.id,
-          doc_type: item.doc_type || "-",
+          doc_type: docTypeLabel(item.doc_type, "-"),
           file_name: item.file_name || "未命名附件",
           file_key: item.file_key || "",
           created_at: item.created_at || ""
@@ -102,7 +107,7 @@ Page({
               id: item.id,
               event_type: item.event_type || "-",
               event_time: item.event_time || "",
-              operator_userid: item.operator_userid || "-",
+              operatorName: toUserName(item.operator_userid, userNames),
               event_type_text: this.toEventTypeText(item.event_type),
               detail_parsed: parsed,
               detail_text: parsed.text,
@@ -127,7 +132,7 @@ Page({
     if (type === "stock_in") return "入库";
     if (type === "stock_out") return "出库";
     if (type === "transfer") return "调拨";
-    return type || "其他";
+    return "其他";
   },
 
   onCustomEventTypeChange(e) {
@@ -175,7 +180,7 @@ Page({
   async loadAsset() {
     const query = String(this.data.assetQuery || "").trim();
     if (!query) {
-      wx.showToast({ title: "请输入资产ID或关键字", icon: "none" });
+      wx.showToast({ title: "请输入资产编号或关键字", icon: "none" });
       return;
     }
 
@@ -269,7 +274,7 @@ Page({
           const text = event.detail_text || "-";
           wx.showModal({
             title: `${event.event_type_text}详情`,
-            content: `时间：${event.event_time || '-'}\n操作人：${event.operator_userid || '-'}\n说明：${text}\n图片数：${event.photo_urls.length}`,
+            content: `时间：${event.event_time || '-'}\n操作人：${event.operatorName || '-'}\n说明：${text}\n图片数：${event.photo_urls.length}`,
             showCancel: false
           });
           return;

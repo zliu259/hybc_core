@@ -2,7 +2,7 @@
   <view class="profile-hero">
     <view class="avatar">{{avatarText}}</view>
     <view class="hero-main">
-      <view class="hero-name">{{profile.nickname || profile.username || '我的中心'}}</view>
+      <view class="hero-name">{{profile.displayName || '我的中心'}}</view>
       <view class="hero-role">{{profileRoleText}}</view>
     </view>
     <view class="settings-pill" bindtap="openSettings">账号与配置</view>

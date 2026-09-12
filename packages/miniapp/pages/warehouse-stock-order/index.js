@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { statusLabel, orderTypeLabel } = require("../../utils/enum-labels");
 const { wxScanCode } = require("../../utils/wx");
 
 const ORDER_TYPES = [
@@ -63,7 +64,7 @@ Page({
 
   toOrderTypeLabel(value) {
     const hit = ORDER_TYPES.find((item) => item.value === value);
-    return hit ? hit.label : value;
+    return hit ? hit.label : orderTypeLabel(value, "未知");
   },
 
   toStatusLabel(status) {
@@ -73,7 +74,7 @@ Page({
     if (status === "executed") return "已执行";
     if (status === "rejected") return "已驳回";
     if (status === "cancelled") return "已取消";
-    return status;
+    return statusLabel(status);
   },
 
   refreshFilteredAssetTypes(keyword = this.data.assetKeyword) {

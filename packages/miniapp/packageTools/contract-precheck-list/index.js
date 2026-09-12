@@ -1,4 +1,6 @@
 const { request } = require("../../utils/request");
+const { localizeNetworkErrorMessage, rawErrorText } = require("../../utils/error-message");
+const { statusLabel, contractDirectionLabel } = require("../../utils/enum-labels");
 const { uploadFileToR2 } = require("../../utils/upload");
 const {
   wxChooseMessageFile,
@@ -9,17 +11,28 @@ const {
 // 与 packageFinance/payment-apply 同款错误处理：企微/微信客户端差异较大，
 // 本地文件选择不可用时引导改用会话文件
 const extractErrorMessage = (error, fallback = "操作失败") => {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    // Error 分支同样收口：英文 message（原生 TypeError、客户端差异报错）不透给 toast
+    return /[一-鿿]/.test(error.message)
+      ? error.message
+      : localizeNetworkErrorMessage(error.message);
+  }
   if (typeof error === "string" && error.trim()) return error.trim();
   if (error && typeof error === "object") {
+    // 微信基础库的 errMsg 是英文（request:fail / chooseMedia:fail …），
+    // 直接进 toast 就是一串英文，这里统一中文化。
     const errMsg = error.errMsg || error.message;
-    if (typeof errMsg === "string" && errMsg.trim()) return errMsg.trim();
+    if (typeof errMsg === "string" && errMsg.trim()) {
+      return localizeNetworkErrorMessage(errMsg.trim());
+    }
   }
   return fallback;
 };
 
 const isLocalFilePickerUnsupportedError = (error) => {
-  const message = extractErrorMessage(error, "").toLowerCase();
+  const message = rawErrorText(error).toLowerCase();
+  // chooseFile:fail cancel 同样含 "choosefile" 子串，用户取消不能误判成客户端不支持
+  if (message.includes("cancel") || message.includes("取消")) return false;
   return (
     message.includes("不支持本地文件选择") ||
     message.includes("local file") ||
@@ -130,9 +143,9 @@ Page({
       this.setData({
         list: rows.map((row) => ({
           ...row,
-          statusLabel: STATUS_LABELS[row.status] || row.status,
+          statusLabel: STATUS_LABELS[row.status] || statusLabel(row.status),
           statusTheme: STATUS_THEMES[row.status] || "default",
-          directionLabel: DIRECTION_LABELS[row.direction] || row.direction,
+          directionLabel: DIRECTION_LABELS[row.direction] || contractDirectionLabel(row.direction),
           updatedAtText: formatTime(row.updated_at)
         })),
         total: (res.pagination && res.pagination.total) || rows.length

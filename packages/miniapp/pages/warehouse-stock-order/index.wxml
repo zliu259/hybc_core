@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="🧾 出入库制单" icon="edit-1" subtitle="支持整套设备+耗材多条目，扫码或关键字快速选型">
+  <hy-panel-card title="🧾 出入库制单" subtitle="支持整套设备+耗材多条目，扫码或关键字快速选型">
     <view class="label required">单据类型</view>
     <picker mode="selector" range="{{orderTypeNames}}" value="{{orderTypeIndex}}" bindchange="onOrderTypeChange" disabled="{{busy}}">
       <view class="input">{{orderTypeNames[orderTypeIndex]}}</view>
@@ -45,7 +45,7 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="🛒 制单清单" icon="view-list" subtitle="可逐项调整数量后统一提交审批">
+  <hy-panel-card title="🛒 制单清单" subtitle="可逐项调整数量后统一提交审批">
     <view wx:if="{{cartItems.length === 0}}" class="empty-state">请从上方加入设备/耗材</view>
     <view wx:for="{{cartItems}}" wx:key="asset_type_id" class="cart-row">
       <view>
@@ -63,12 +63,12 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="📋 最近单据" icon="file-copy" subtitle="草稿/待审批/已通过/已执行">
+  <hy-panel-card title="📋 最近单据" subtitle="草稿/待审批/已通过/已执行">
     <view wx:if="{{orders.length === 0}}" class="empty-state">暂无单据</view>
     <view wx:for="{{orders}}" wx:key="id" class="order-item">
       <view class="order-title">{{item.order_no}} · {{item.orderTypeText}}</view>
       <view class="order-sub">状态：{{item.statusText}} · 更新时间：{{item.updated_at}}</view>
-      <view class="order-sub">来源仓库ID：{{item.from_warehouse_id || '-'}} · 目标仓库ID：{{item.to_warehouse_id || '-'}}</view>
+      <view class="order-sub">来源仓库编号：{{item.from_warehouse_id || '-'}} · 目标仓库编号：{{item.to_warehouse_id || '-'}}</view>
     </view>
   </hy-panel-card>
 </view>

@@ -5,6 +5,7 @@ const {
   DEFAULT_RELAY_STATUS_PATH,
 } = require("./config");
 const { getToken, setToken, clearToken } = require("./auth");
+const { localizeErrorMessage, localizeNetworkErrorMessage } = require("./error-message");
 
 const DEFAULT_TIMEOUT_MS = 20000;
 const LOGIN_TIMEOUT_MS = 30000;
@@ -65,35 +66,38 @@ const buildMutationDedupKey = ({ method, path, data, dedupeKey, idempotencyKey }
   return `${method}|${path}|data:${stableSerialize(data)}`;
 };
 
+// message 现在一律是中文化后的文案，重试判定必须看原始 errMsg（__rawErrMsg），
+// 否则改文案就会悄悄改掉降级/重试行为。
+const rawErrMsgOf = (error) =>
+  String(
+    (error && error.__rawErrMsg) ||
+      (error && error.__rawMessage) ||
+      (error && error.message) ||
+      ""
+  );
+
 const isRetryableNetworkError = (error) => {
-  const msg = (error && error.message) || "";
-  return msg.includes("请求超时") || msg.includes("无法连接服务器") || msg.includes("timeout");
+  const msg = rawErrMsgOf(error);
+  return (
+    msg.includes("timeout") ||
+    msg.includes("timed out") ||
+    msg.includes("请求超时") ||
+    msg.includes("无法连接服务器")
+  );
 };
 
 const isConnectionRefusedError = (error) => {
-  const msg = (error && error.message) || "";
+  const msg = rawErrMsgOf(error);
   return msg.includes("ERR_CONNECTION_REFUSED") || msg.includes("无法连接服务器");
 };
 
 const isNetworkLayerFailure = (error) => {
   if (error && error.__networkFail) return true;
-  const msg = (error && error.message) || "";
-  return msg.includes("request:fail");
+  return rawErrMsgOf(error).includes("request:fail");
 };
 
-const normalizeMiniappNetworkErrorMessage = (rawMessage) => {
-  const msg = rawMessage || "";
-  if (msg.includes("url not in domain list")) {
-    return "请求域名未加入小程序合法域名，请在企业微信后台补充 request 合法域名（如 https://bridge.hybcdg.com）";
-  }
-  if (msg.includes("SSL") || msg.includes("certificate") || msg.includes("cert")) {
-    return "HTTPS 证书校验失败，请检查服务端证书链、证书有效期与域名匹配";
-  }
-  if (msg.includes("TLS") || msg.includes("tls")) {
-    return "TLS 握手失败，请确认服务端 TLS 版本符合企业微信小程序要求";
-  }
-  return msg;
-};
+const normalizeMiniappNetworkErrorMessage = (rawMessage) =>
+  localizeNetworkErrorMessage(rawMessage);
 
 const buildUrlWithBase = (baseUrl, path) => {
   if (!path) return baseUrl;
@@ -235,21 +239,24 @@ const executeRequest = ({
         if (res.statusCode === 401) {
           clearToken();
         }
-        const requestError = new Error(
-          (body && body.error && body.error.message) ||
-            `Request failed (${res.statusCode}) (${url})`
-        );
+        // toast 直接吃 error.message，所以这里必须已经是中文；英文原文挂在
+        // __rawMessage 上，出问题时看控制台/日志即可。url 同理不进文案。
+        const rawMessage = (body && body.error && body.error.message) || "";
+        const requestError = new Error(localizeErrorMessage(rawMessage, res.statusCode));
         requestError.__statusCode = res.statusCode;
         requestError.__responseBody = body;
+        requestError.__rawMessage = rawMessage;
+        requestError.__url = url;
         reject(
           requestError
         );
       },
       fail(err) {
         const rawMessage = (err && err.errMsg) || (err && err.message) || "request:fail";
-        const error = new Error(`${normalizeMiniappNetworkErrorMessage(rawMessage)} (${url})`);
+        const error = new Error(normalizeMiniappNetworkErrorMessage(rawMessage));
         error.__networkFail = true;
         error.__rawErrMsg = rawMessage;
+        error.__url = url;
         reject(error);
       }
     });
@@ -265,13 +272,16 @@ const canAutoFallback = (method, header = {}) => {
 const isUnauthorizedError = (error) => {
   if (!error) return false;
   if (Number(error.__statusCode) === 401) return true;
-  const message = String(error.message || "");
+  // message 已中文化，只能拿后端原文（__rawMessage）判定
+  const message = String((error && error.__rawMessage) || (error && error.message) || "");
   return (
     message.includes("Request failed (401)") ||
     message.includes("Missing authorization header") ||
     message.includes("Invalid bearer token") ||
     message.includes("Session expired") ||
-    message.includes("Unauthorized")
+    message.includes("Unauthorized") ||
+    message.includes("登录已过期") ||
+    message.includes("登录状态")
   );
 };
 
@@ -294,7 +304,7 @@ const requestWithFallback = ({ method, path, data, header = {}, timeout, authTok
 
   const doRequest = (index = 0) => {
     if (index >= candidates.length) {
-      return Promise.reject(new Error("No available API endpoint"));
+      return Promise.reject(new Error("暂时无法连接服务器，请检查网络后重试"));
     }
     const candidate = candidates[index];
     if (!candidate || !candidate.baseUrl) {
@@ -472,9 +482,7 @@ const loginRequest = ({
         }).then(({ body }) => {
           const responseBody = body && body.data ? body.data : body;
           if (!responseBody || typeof responseBody !== "object") {
-            throw new Error(
-              `登录响应格式异常，请检查服务端是否返回 UTF-8 JSON (${url})`
-            );
+            throw new Error("登录响应格式异常，请稍后重试或联系管理员");
           }
           if (responseBody && responseBody.accessToken) {
             setToken(responseBody.accessToken);
@@ -501,7 +509,7 @@ const loginRequest = ({
           isRetryableNetworkError(error))
       ) {
         throw new Error(
-          `${(error && error.message) || "登录请求失败"}\n企业微信 code 为一次性凭证，请重新发起登录获取新 code。`
+          `${(error && error.message) || "登录请求失败"}\n企业微信登录凭证为一次性且有效期很短，请重新发起登录。`
         );
       }
       throw error;

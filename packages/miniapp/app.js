@@ -6,6 +6,7 @@ const {
   DEFAULT_REMOTE_BASE_URL
 } = require("./utils/config");
 const { setupForceUpdate } = require("./utils/update");
+const { localizeLoginErrorMessage } = require("./utils/error-message");
 
 App({
   globalData: {
@@ -40,7 +41,7 @@ App({
     const sessionPromise = wxLogin()
       .then((loginRes) => {
         if (!loginRes || !loginRes.code) {
-          throw new Error("wx.login failed");
+          throw new Error("未获取到企业微信登录凭证，请重新发起登录");
         }
         const currentBaseUrl = getBaseUrl();
         return loginWithWeComCode(loginRes.code, {
@@ -57,8 +58,9 @@ App({
         clearToken();
         setUserProfile(null);
         this.globalData.sessionReady = false;
-        this.globalData.authError =
-          (error && error.message) || "企业微信登录失败，请稍后重试";
+        this.globalData.authError = localizeLoginErrorMessage(
+          (error && error.message) || ""
+        );
         wx.showToast({
           title: "登录失败",
           icon: "none"

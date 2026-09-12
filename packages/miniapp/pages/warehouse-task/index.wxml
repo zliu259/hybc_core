@@ -3,7 +3,7 @@
     <view>
       <view class="hero-kicker">移动库房任务</view>
       <view class="hero-title">我的库房任务</view>
-      <view class="hero-desc">按 Web 端派工结果执行，只保留开始、拍照、提交</view>
+      <view class="hero-desc">按电脑端派工结果执行，只保留开始、拍照、提交</view>
     </view>
     <view class="hero-count">
       <view class="count-value">{{totalCount}}</view>

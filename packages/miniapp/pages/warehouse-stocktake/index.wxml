@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="🧮 公司资产盘库" icon="view-list" subtitle="与 Web 对齐：创建盘点任务、盘中新增物品、录入数量与状态">
+  <hy-panel-card title="🧮 公司资产盘库" subtitle="创建盘点任务、盘中新增物品、录入数量与状态">
     <view class="form-row">
       <input class="input" placeholder="盘点任务名称（例如 2026Q1 全公司盘点）" value="{{createTitle}}" bindinput="onCreateTitleInput" />
     </view>
@@ -22,7 +22,7 @@
     <t-button theme="primary" block loading="{{busy}}" disabled="{{busy}}" bindtap="createTask">创建盘点任务</t-button>
   </hy-panel-card>
 
-  <hy-panel-card title="📋 盘点任务" icon="time" subtitle="点击任务查看并执行盘点">
+  <hy-panel-card title="📋 盘点任务" subtitle="点击任务查看并执行盘点">
     <view wx:if="{{tasks.length===0}}" class="empty-state">暂无盘点任务</view>
     <view wx:for="{{tasks}}" wx:key="id" class="task-item" data-id="{{item.id}}" bindtap="onTapTask">
       <view class="task-title">{{item.task_no}} · {{item.task_title}}</view>
@@ -31,7 +31,7 @@
     </view>
   </hy-panel-card>
 
-  <hy-panel-card title="📝 盘中新增发现物品" icon="add" subtitle="无需跳页，可直接加入当前盘库任务" wx:if="{{activeTask}}">
+  <hy-panel-card title="📝 盘中新增发现物品" subtitle="无需跳页，可直接加入当前盘库任务" wx:if="{{activeTask}}">
     <view class="form-row">
       <radio-group bindchange="onAddKindChange">
         <label class="radio-item"><radio value="consumable" checked="{{addKind==='consumable'}}" />消耗品</label>
@@ -66,7 +66,7 @@
     <t-button theme="primary" block loading="{{addBusy}}" disabled="{{addBusy}}" bindtap="addNewLine">加入当前盘库</t-button>
   </hy-panel-card>
 
-  <hy-panel-card title="🧾 盘点执行明细" icon="chart" subtitle="逐条录入实盘数量并保存" wx:if="{{activeTask}}">
+  <hy-panel-card title="🧾 盘点执行明细" subtitle="逐条录入实盘数量并保存" wx:if="{{activeTask}}">
     <view class="task-title">{{activeTask.task_no}} · {{activeTask.task_title}}</view>
     <view class="task-sub">状态：{{activeTask.statusText}} · 日期：{{activeTask.planned_date}}</view>
     <view wx:if="{{!activeTask.lines || activeTask.lines.length===0}}" class="empty-state">暂无盘点明细</view>

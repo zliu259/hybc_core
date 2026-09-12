@@ -134,6 +134,19 @@ const lookup = (table, key, fallback) => {
   return Object.prototype.hasOwnProperty.call(table, key) ? table[key] : fallback;
 };
 
+const CJK_RE = /[一-鿿]/;
+
+/**
+ * 枚举查表的中文兜底：命中表 → 中文；模型直接给了中文 → 原样；
+ * 其余（未收录的英文码）→ 中文占位。绝不把英文枚举码摆给审批人。
+ */
+const lookupCn = (table, key, fallback) => {
+  if (typeof key !== "string" || !key.trim()) return fallback;
+  const raw = key.trim();
+  if (Object.prototype.hasOwnProperty.call(table, raw)) return table[raw];
+  return CJK_RE.test(raw) ? raw : fallback;
+};
+
 /**
  * 已知英文字段/枚举 token → 中文业务名（与 web utils/ai-review.ts 同步）。
  * 展示层兜底：存量报告里模型照抄了 payload 的英文字段名（如 amount=282000），
@@ -181,7 +194,69 @@ const FIELD_TOKEN_LABELS = {
   fail: "异常",
   high: "高",
   medium: "中",
-  low: "低"
+  low: "低",
+  // 维度标识：存量报告里模型会照抄提示词里的英文维度名
+  duplicate_payment: "重复支付",
+  overpayment: "超付核验",
+  frequency_anomaly: "频率异常",
+  counterparty_consistency: "收款方一致性",
+  material_consistency: "材料一致性",
+  clause_completeness: "条款完整性",
+  amount_terms: "金额条款",
+  counterparty_info: "相对方信息",
+  subject_match: "签约主体",
+  performance_risk: "履约风险",
+  item_precheck: "预审汇总",
+  duplicate_invoice: "重复票据",
+  amount_reasonableness: "金额合理性",
+  data_consistency: "数据一致性",
+  completeness: "材料完整性",
+  compliance: "合规性",
+  // 报告 schema 键名（rawFallback 渲染原始 JSON 时可见）
+  summary: "摘要",
+  findings: "检查项",
+  finding: "检查项",
+  dimension: "维度",
+  decision: "结论",
+  evidence: "证据",
+  suggestion: "建议",
+  suggestions: "建议",
+  detail: "详情",
+  details: "详情",
+  comment: "意见",
+  score: "分数",
+  score_basis: "计分依据",
+  output: "输出",
+  clauses: "条款",
+  clause: "条款",
+  title: "标题",
+  risks: "风险",
+  risk_points: "风险点",
+  recommendations: "建议",
+  overall_risk: "整体风险",
+  level: "等级",
+  label: "标签",
+  name: "名称",
+  type: "类型",
+  text: "内容",
+  value: "值",
+  checks: "检查",
+  check: "检查",
+  result: "结果",
+  results: "结果",
+  message: "说明",
+  reason: "原因",
+  reasons: "原因",
+  verdict: "判定",
+  basis: "依据",
+  note: "备注",
+  notes: "备注",
+  // 任务队列态
+  pending: "待执行",
+  running: "执行中",
+  completed: "已完成",
+  failed: "失败",
+  timeout: "超时"
 };
 
 /** 把文本中的已知英文字段 token 换成中文业务名；非字符串返回空串 */
@@ -202,12 +277,12 @@ const humanizeAiText = (text) => {
 
 const toFindingDimensionLabel = (dimension) =>
   typeof dimension === "string" && dimension
-    ? lookup(FINDING_DIMENSION_LABELS, dimension, dimension)
+    ? lookupCn(FINDING_DIMENSION_LABELS, dimension, "其他维度")
     : "-";
 
 const toFindingStatusLabel = (status) =>
   typeof status === "string" && status
-    ? lookup(FINDING_STATUS_LABELS, status, status)
+    ? lookupCn(FINDING_STATUS_LABELS, status, "未知")
     : "-";
 
 const toFindingStatusTheme = (status) =>
@@ -215,21 +290,21 @@ const toFindingStatusTheme = (status) =>
 
 const toRiskLevelLabel = (value) =>
   typeof value === "string" && value
-    ? lookup(RISK_LEVEL_LABELS, value, value)
+    ? lookupCn(RISK_LEVEL_LABELS, value, "未知")
     : "-";
 
 const toRiskLevelTheme = (value) => lookup(RISK_LEVEL_THEMES, value, NEUTRAL_THEME);
 
 const toAiTaskStatusLabel = (status) =>
   typeof status === "string" && status
-    ? lookup(AI_TASK_STATUS_LABELS, status, status)
+    ? lookupCn(AI_TASK_STATUS_LABELS, status, "未知状态")
     : "-";
 
 const toAiTaskStatusTheme = (status) => lookup(AI_TASK_STATUS_THEMES, status, NEUTRAL_THEME);
 
 /** 无风险值时返回空串，WXML 端按空串隐藏整行 */
 const toInvoiceRiskLabel = (value) =>
-  typeof value === "string" && value ? lookup(INVOICE_RISK_LABELS, value, value) : "";
+  typeof value === "string" && value ? lookupCn(INVOICE_RISK_LABELS, value, "未知风险") : "";
 
 const toInvoiceRiskTheme = (value) => lookup(RISK_LEVEL_THEMES, value, NEUTRAL_THEME);
 
@@ -249,10 +324,10 @@ const buildAuditReportView = (audit) => {
     reportText =
       typeof result.output === "string" && Object.keys(result).length === 1
         ? result.output.trim()
-        : JSON.stringify(result, null, 2);
+        : humanizeAiText(JSON.stringify(result, null, 2));
   }
   return {
-    statusLabel: lookup(AUDIT_STATUS_LABELS, status, status),
+    statusLabel: lookupCn(AUDIT_STATUS_LABELS, status, "未知"),
     statusTheme: lookup(AUDIT_STATUS_THEMES, status, NEUTRAL_THEME),
     reportText
   };
@@ -433,7 +508,7 @@ const buildAiReportViewModel = (source, kind, status) => {
     if (rawText) {
       return {
         ...base,
-        rawFallback: rawText.slice(0, 1000),
+        rawFallback: humanizeAiText(rawText.slice(0, 1000)),
         pendingHint: statusText === "pending" ? PENDING_HINT : ""
       };
     }
@@ -484,7 +559,7 @@ const buildAiReportViewModel = (source, kind, status) => {
     recommendationRows: toKeyedTextRows(recommendations, "recommendation"),
     // 解析成功但没有任何可渲染字段（模型未按 schema 输出）时，原样保留内容，
     // 否则结论会被静默吞掉——服务端对这类结果是原样透传的，这里是最后一道防线
-    rawFallback: hasBody ? "" : JSON.stringify(report, null, 2).slice(0, 1000),
+    rawFallback: hasBody ? "" : humanizeAiText(JSON.stringify(report, null, 2).slice(0, 1000)),
     pendingHint: statusText === "pending" ? PENDING_HINT : "",
     emptyHint: ""
   };

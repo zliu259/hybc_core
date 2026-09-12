@@ -1,4 +1,11 @@
 const { request } = require("../../utils/request");
+const { localizeNetworkErrorMessage, rawErrorText } = require("../../utils/error-message");
+const {
+  fileSizeLabel,
+  paymentMethodLabel,
+  paymentCategoryLabel,
+  contractTypeLabel
+} = require("../../utils/enum-labels");
 const { uploadFileToR2 } = require("../../utils/upload");
 const {
   wxChooseMediaImage,
@@ -12,17 +19,28 @@ const { getUserProfile } = require("../../utils/auth");
 const today = () => new Date().toISOString().slice(0, 10);
 
 const extractErrorMessage = (error, fallback = "上传失败") => {
-  if (error instanceof Error && error.message) return error.message;
+  if (error instanceof Error && error.message) {
+    // Error 分支同样收口：英文 message（原生 TypeError、客户端差异报错）不透给 toast
+    return /[一-鿿]/.test(error.message)
+      ? error.message
+      : localizeNetworkErrorMessage(error.message);
+  }
   if (typeof error === "string" && error.trim()) return error.trim();
   if (error && typeof error === "object") {
+    // 微信基础库的 errMsg 是英文（request:fail / chooseMedia:fail …），
+    // 直接进 toast 就是一串英文，这里统一中文化。
     const errMsg = error.errMsg || error.message;
-    if (typeof errMsg === "string" && errMsg.trim()) return errMsg.trim();
+    if (typeof errMsg === "string" && errMsg.trim()) {
+      return localizeNetworkErrorMessage(errMsg.trim());
+    }
   }
   return fallback;
 };
 
 const isLocalFilePickerUnsupportedError = (error) => {
-  const message = extractErrorMessage(error, "").toLowerCase();
+  const message = rawErrorText(error).toLowerCase();
+  // chooseFile:fail cancel 同样含 "choosefile" 子串，用户取消不能误判成客户端不支持
+  if (message.includes("cancel") || message.includes("取消")) return false;
   return message.includes("不支持本地文件选择") || message.includes("local file") || message.includes("choosefile");
 };
 
@@ -133,7 +151,9 @@ const normalizeAttachment = (item) => {
   return {
     file_key: item.file_key,
     file_name: item.file_name || item.file_key,
-    file_size: item.file_size || undefined
+    file_size: item.file_size || undefined,
+    // 界面只展示中文可读大小，字节数留给提交用
+    file_size_text: fileSizeLabel(item.file_size)
   };
 };
 
@@ -162,8 +182,8 @@ const resolveContractRemaining = (contract) => {
 const buildHandlerNameMap = (wecomUsers) => {
   const map = {};
   (Array.isArray(wecomUsers) ? wecomUsers : []).forEach((item) => {
-    if (item && item.userid) {
-      map[item.userid] = item.name || item.userid;
+    if (item && item.userid && item.name) {
+      map[item.userid] = item.name;
     }
   });
   return map;
@@ -172,13 +192,15 @@ const buildHandlerNameMap = (wecomUsers) => {
 const resolveHandlerName = (contract, handlerNameMap) => {
   const userid = String((contract && contract.handler_userid) || "").trim();
   if (!userid) return "未知提交人";
-  return (handlerNameMap && handlerNameMap[userid]) || userid;
+  // 存量数据 handler_userid 可能直接存中文名；拼音 id 未命中通讯录时不透传
+  if (/[一-鿿]/.test(userid)) return userid;
+  return (handlerNameMap && handlerNameMap[userid]) || "未知提交人";
 };
 
 // 合同摘要：对方单位｜合同类型｜剩余额度｜提交人（经办人近似）
 const buildContractSummary = (contract, handlerNameMap) => {
   const counterparty = String((contract && contract.counterparty) || "").trim() || "未填对方单位";
-  const contractType = String((contract && contract.contract_type) || "").trim() || "其他";
+  const contractType = contractTypeLabel(contract && contract.contract_type, "其他");
   const remainingText = formatAmountNumber(resolveContractRemaining(contract));
   const handlerName = resolveHandlerName(contract, handlerNameMap);
   return `${counterparty}｜${contractType}｜剩余 ${remainingText}｜${handlerName}`;
@@ -225,6 +247,10 @@ Page({
   data: {
     loadingMeta: false,
     currentStep: 0,
+    // 确认页展示文案（进入第 3 步时由 goNextStep 统一算好）
+    directPaymentMethodText: "-",
+    directCategoryText: "-",
+    contractTypeText: "-",
     busy: false,
     checking: false,
     submitting: false,
@@ -391,7 +417,7 @@ Page({
         ),
         wecomUsers,
         wecomUserLabels: ["请选择经办人"].concat(
-          wecomUsers.map((item) => `${item.name || item.userid} (${item.userid})`)
+          wecomUsers.map((item) => item.name || "未知人员")
         )
       });
       this.rebuildContractView();
@@ -900,7 +926,7 @@ Page({
     };
     const key = groupMap[group];
     if (!key) return;
-    const list = [item].concat(this.data[key] || []);
+    const list = [normalizeAttachment(item)].concat(this.data[key] || []);
     this.setData({ [key]: list });
   },
 
@@ -1014,7 +1040,14 @@ Page({
       }
     }
     if (this.data.currentStep === 1 && !this.validateFlowFields()) return;
-    this.setData({ currentStep: Math.min(this.data.currentStep + 1, 2) });
+    const nextStep = Math.min(this.data.currentStep + 1, 2);
+    // 确认页文案在这里算完：WXML 不能调函数，直接绑原值会在草稿回填英文码时漏英文
+    this.setData({
+      currentStep: nextStep,
+      directPaymentMethodText: paymentMethodLabel(this.data.directForm.payment_method, "-"),
+      directCategoryText: paymentCategoryLabel(this.data.directForm.category, "-"),
+      contractTypeText: contractTypeLabel(this.data.contractForm.contract_type, "-")
+    });
   },
 
   goPrevStep() {

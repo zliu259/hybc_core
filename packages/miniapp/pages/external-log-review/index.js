@@ -1,4 +1,5 @@
 const { request } = require("../../utils/request");
+const { severityLabel, riskLevelLabel, statusLabel } = require("../../utils/enum-labels");
 
 const shiftText = {
   day: "白班",
@@ -70,10 +71,10 @@ Page({
     const issues = Array.isArray(aiReview.issues)
       ? aiReview.issues
           .map((issue) => {
-            if (typeof issue === "string") return { severity: "info", message: issue };
+            if (typeof issue === "string") return { severity: severityLabel("info"), message: issue };
             if (!issue || typeof issue !== "object") return null;
             return {
-              severity: issue.severity || "info",
+              severity: severityLabel(issue.severity),
               message: issue.message || issue.summary || issue.reason || ""
             };
           })
@@ -88,10 +89,10 @@ Page({
       submitterPhone: item.submitter_phone || "-",
       sectionText: `${item.section_code || "-"} ${item.section_name || ""}`.trim(),
       logDate: item.log_date || "-",
-      shiftText: shiftText[item.shift] || item.shift || "-",
-      statusText: statusText[item.review_status] || item.review_status || "-",
+      shiftText: shiftText[item.shift] || "-",
+      statusText: statusText[item.review_status] || statusLabel(item.review_status, "-"),
       scoreText: item.ai_review_score === null || item.ai_review_score === undefined ? "-" : String(item.ai_review_score),
-      riskText: riskText[item.ai_review_risk_level] || item.ai_review_risk_level || "-",
+      riskText: riskText[item.ai_review_risk_level] || riskLevelLabel(item.ai_review_risk_level, "-"),
       aiSummary: item.ai_review_summary || "AI未返回摘要",
       issues,
       operatorSummary:
@@ -107,8 +108,8 @@ Page({
               operatorPayload.cutter_frequency_hz ? `刀盘频率：${operatorPayload.cutter_frequency_hz}Hz` : "",
               operatorPayload.chamber_pressure_mpa ? `泥仓压力：${operatorPayload.chamber_pressure_mpa}MPa` : "",
               operatorPayload.main_thrust_text ? `顶力：${operatorPayload.main_thrust_text}` : "",
-              operatorPayload.horizontal_deviation_mm ? `水平偏差：${deviationText[operatorPayload.horizontal_deviation_direction] || operatorPayload.horizontal_deviation_direction || ""}${operatorPayload.horizontal_deviation_mm}mm` : "",
-              operatorPayload.vertical_deviation_mm ? `高程偏差：${deviationText[operatorPayload.vertical_deviation_direction] || operatorPayload.vertical_deviation_direction || ""}${operatorPayload.vertical_deviation_mm}mm` : "",
+              operatorPayload.horizontal_deviation_mm ? `水平偏差：${deviationText[operatorPayload.horizontal_deviation_direction] || ""}${operatorPayload.horizontal_deviation_mm}mm` : "",
+              operatorPayload.vertical_deviation_mm ? `高程偏差：${deviationText[operatorPayload.vertical_deviation_direction] || ""}${operatorPayload.vertical_deviation_mm}mm` : "",
               operatorPayload.issue_summary ? `问题：${operatorPayload.issue_summary}` : "",
               operatorPayload.remark ? `备注：${operatorPayload.remark}` : ""
             ]

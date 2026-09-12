@@ -1,4 +1,6 @@
 const { request } = require("../../utils/request");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
+const { statusLabel } = require("../../utils/enum-labels");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
 
 const HISTORY_KEY = "reimbursement_archive_scan_history";
@@ -16,7 +18,7 @@ const statusText = (status) => {
     paid: "已打款",
     rejected: "已拒绝"
   };
-  return map[status] || status || "未知";
+  return map[status] || statusLabel(status);
 };
 
 const extractEnvelopeUuid = (raw) => {
@@ -59,17 +61,40 @@ Page({
     this.loadHistory();
   },
 
+  normalizeHistoryRow(row) {
+    if (!row || typeof row !== "object") return row;
+    if (row.applicantName) return row;
+    return { ...row, applicantName: toUserName(row.applicant_userid, null) };
+  },
+
   loadHistory() {
     const rows = wx.getStorageSync(HISTORY_KEY);
-    this.setData({ history: Array.isArray(rows) ? rows : [] });
+    this.setData({
+      history: (Array.isArray(rows) ? rows : []).map((row) => this.normalizeHistoryRow(row))
+    });
+    // 旧缓存条目里 applicant 是拼音 id：通讯录到位后，仅对还没算出姓名的条目补一遍
+    loadUserNameMap().then(() => {
+      this.setData({
+        history: this.data.history.map((row) =>
+          row &&
+          row.applicant_userid &&
+          row.applicant_userid !== "-" &&
+          (!row.applicantName || row.applicantName === "未知人员")
+            ? { ...row, applicantName: toUserName(row.applicant_userid, null) }
+            : row
+        )
+      });
+    });
   },
 
   saveHistory(item) {
+    // 列表里可能混着旧格式行（无 applicantName），一并归一
+
     const rows = Array.isArray(wx.getStorageSync(HISTORY_KEY)) ? wx.getStorageSync(HISTORY_KEY) : [];
     const deduped = rows.filter((row) => row && row.envelope_uuid !== item.envelope_uuid);
     const next = [item].concat(deduped).slice(0, HISTORY_LIMIT);
     wx.setStorageSync(HISTORY_KEY, next);
-    this.setData({ history: next });
+    this.setData({ history: next.map((row) => this.normalizeHistoryRow(row)) });
   },
 
   onUuidInput(e) {
@@ -109,7 +134,7 @@ Page({
   async resolveAndOpen(raw, { fromScan }) {
     const envelopeUuid = extractEnvelopeUuid(raw);
     if (!envelopeUuid) {
-      sayToast({ title: "未识别到有效信封UUID", icon: "none", danger: true });
+      sayToast({ title: "未识别到有效的信封识别号", icon: "none", danger: true });
       return;
     }
 
@@ -130,13 +155,18 @@ Page({
         path: `/api/v1/reimbursement/${envelopeId}`
       });
       const detail = detailRes && detailRes.data ? detailRes.data : {};
+      const userNames = await loadUserNameMap();
       const historyItem = {
         envelope_uuid: envelopeUuid,
         envelope_no: detail.envelope_no || resolveRes.data.envelope_no || "-",
         envelope_id: envelopeId,
         status: detail.status || resolveRes.data.status || "unknown",
         statusText: statusText(detail.status || resolveRes.data.status),
-        applicant_userid: detail.applicant_userid || resolveRes.data.applicant_userid || "-",
+        applicant_userid: detail.applicant_userid || resolveRes.data.applicant_userid || "",
+        applicantName: toUserName(
+          detail.applicant_userid || resolveRes.data.applicant_userid,
+          userNames
+        ),
         amount: Number(detail.amount || 0).toLocaleString("zh-CN", {
           minimumFractionDigits: 2,
           maximumFractionDigits: 2

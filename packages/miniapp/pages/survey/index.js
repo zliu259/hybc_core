@@ -70,7 +70,7 @@ Page({
   async submitSurvey() {
     const form = this.data.form;
     const errorText = firstError([
-      positiveNumber(form.project_id, "项目ID"),
+      positiveNumber(form.project_id, "项目编号"),
       ymdDate(form.survey_date, "勘查日期"),
       required(form.location, "位置")
     ]);
@@ -91,11 +91,11 @@ Page({
           survey_date: form.survey_date,
           location: form.location,
           weather: form.weather,
-          summary: photoText ? `${form.summary}\nphotos:${photoText}` : form.summary,
+          summary: form.summary,
           status: "submitted",
           items: [
             {
-              item_name: "miniapp_photos",
+              item_name: "现场照片",
               item_value: photoText
             }
           ]

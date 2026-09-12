@@ -1,4 +1,5 @@
 const { request, uploadBinary } = require("./request");
+const { localizeNetworkErrorMessage } = require("./error-message");
 
 const sanitizeDebugValue = (value) => {
   if (value === null || value === undefined) return "";
@@ -19,23 +20,49 @@ const buildDebugMetaSuffix = (meta = {}) => {
   return entries.length ? ` | ${entries.join(" | ")}` : "";
 };
 
+const toChineseUploadMessage = (error) => {
+  // wx 各 fail 回调 reject 的是 {errMsg} 普通对象，String() 会得 "[object Object]"；
+  // Error 的 message 也可能是英文，一律收口成中文（原文挂 __raw* 供排查）。
+  if (error instanceof Error) {
+    const msg = String(error.message || "");
+    return /[一-鿿]/.test(msg) ? msg : localizeNetworkErrorMessage(msg || "上传失败");
+  }
+  if (typeof error === "string") {
+    return /[一-鿿]/.test(error) ? error : localizeNetworkErrorMessage(error);
+  }
+  if (error && typeof error === "object" && typeof error.errMsg === "string") {
+    return localizeNetworkErrorMessage(error.errMsg);
+  }
+  return "上传失败";
+};
+
+// 原文提取：包装链上可能已有内层 __raw*（request.js 抛出的错误），一并透传
+const rawUploadErrorText = (error) => {
+  if (!error) return "";
+  if (typeof error === "string") return error;
+  return String(
+    error.__rawErrMsg || error.__rawMessage || error.errMsg || error.message || ""
+  );
+};
+
 const buildUploadDebugError = (debugContext, stage, error, meta = {}) => {
   if (!debugContext) {
-    if (error instanceof Error) return error;
-    return new Error(String(error || "上传失败"));
+    const wrapped = new Error(toChineseUploadMessage(error));
+    wrapped.__rawErrMsg = rawUploadErrorText(error);
+    return wrapped;
   }
-  const message =
-    error instanceof Error
-      ? error.message || "上传失败"
-      : typeof error === "string"
-        ? error
-        : "上传失败";
-  const wrapped = new Error(
-    `[upload-debug:${debugContext}:${stage}] ${message}${buildDebugMetaSuffix(meta)}`
-  );
+  const message = toChineseUploadMessage(error);
+  const rawText = rawUploadErrorText(error);
+  // message 会被各页 `error.message || "中文兜底"` 直接塞进 toast，
+  // 所以只能放中文；排查用的英文原文挂 __rawErrMsg / 调试串并打控制台。
+  const debugText = `[upload-debug:${debugContext}:${stage}] ${rawText || message}${buildDebugMetaSuffix(meta)}`;
+  const wrapped = new Error(message);
+  wrapped.__rawErrMsg = rawText;
+  wrapped.__uploadDebugText = debugText;
   wrapped.__uploadDebugContext = debugContext;
   wrapped.__uploadDebugStage = stage;
   wrapped.__uploadDebugMeta = meta;
+  console.warn(debugText);
   return wrapped;
 };
 
@@ -109,7 +136,7 @@ const uploadFileToR2 = async (filePath, options = {}) => {
   const ext = getFileExtension(options.fileName) || getFileExtension(filePath) || "bin";
   const contentType = options.contentType || detectContentType(options.fileName || filePath);
   const category = options.category || "miniapp";
-  const uploadName = options.fileName || `miniapp-${Date.now()}.${ext}`;
+  const uploadName = options.fileName || `文件-${Date.now()}.${ext}`;
   let sign;
   try {
     sign = await signUpload(uploadName, contentType, category);

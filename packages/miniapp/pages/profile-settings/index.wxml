@@ -11,12 +11,8 @@
   <hy-panel-card title="账号信息" icon="👤" subtitle="当前企业微信账号身份">
     <view class="info-list">
       <view class="info-row">
-        <view class="info-label">用户ID</view>
-        <view class="info-value">{{profile.id || profile.username || '-'}}</view>
-      </view>
-      <view class="info-row">
-        <view class="info-label">昵称</view>
-        <view class="info-value">{{profile.nickname || '-'}}</view>
+        <view class="info-label">姓名</view>
+        <view class="info-value">{{profileDisplayName}}</view>
       </view>
       <view class="info-row">
         <view class="info-label">角色</view>
@@ -39,7 +35,7 @@
   </hy-panel-card>
 
   <hy-panel-card title="联调配置" icon="🔗" subtitle="仅用于本机调试和故障切换">
-    <view class="label">API 地址</view>
+    <view class="label">接口地址</view>
     <input class="input" value="{{apiBaseUrl}}" bindinput="onApiBaseInput" placeholder="https://bridge.hybcdg.com" />
     <view class="config-hint">生产环境默认使用香港桥接地址；保存后会写入本机缓存。</view>
     <view class="row">

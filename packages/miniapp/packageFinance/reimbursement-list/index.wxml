@@ -1,5 +1,5 @@
 <view class="page">
-  <hy-panel-card title="我的报销提交" subtitle="与 Web 个人报销对齐：列表筛选、继续编辑、状态追踪">
+  <hy-panel-card title="我的报销提交" subtitle="列表筛选、继续编辑、状态追踪">
     <view class="summary-row">
       <view class="summary-card">
         <view class="summary-value">{{summary.draft}}</view>
@@ -16,7 +16,7 @@
     </view>
 
     <view class="toolbar">
-      <input class="input" value="{{keyword}}" bindinput="onKeywordInput" placeholder="编号/UUID/发票号/摘要" />
+      <input class="input" value="{{keyword}}" bindinput="onKeywordInput" placeholder="编号/信封识别号/发票号/摘要" />
       <picker mode="selector" range="{{statusOptions}}" range-key="label" value="{{statusIndex}}" bindchange="onStatusChange">
         <view class="picker-value">{{statusOptions[statusIndex].label}}</view>
       </picker>
@@ -35,7 +35,7 @@
         <hy-status-chip text="{{item.statusLabel}}" theme="warning" variant="light" />
       </view>
       <view class="item-sub item-identifier">识别号：{{item.envelope_no}}</view>
-      <view wx:if="{{item.envelope_uuid}}" class="item-sub item-identifier">UUID：{{item.envelope_uuid}}</view>
+      <view wx:if="{{item.envelope_uuid}}" class="item-sub item-identifier">信封识别号：{{item.envelope_uuid}}</view>
       <view class="item-sub">通道：{{item.channelLabel}}</view>
       <view class="item-amount">¥{{item.amountText}}</view>
       <view class="item-sub">更新时间：{{item.updatedAtText}}</view>
