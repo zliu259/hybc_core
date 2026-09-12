@@ -49,7 +49,12 @@ class FakeStatement {
   }
   async run() {
     this.db.executed.push({ sql: this.sql, params: this.params });
-    return { meta: { changes: 1, last_row_id: 1 } };
+    // 成批认领 UPDATE（SET batch_id = ?, status = 'batched'）绑定 [batchId, now, ...envelopeIds]，
+    // 路由要求 changes === selected.length 才继续；其余语句维持默认单行 changes。
+    const changes = this.sql.includes("SET batch_id = ?, status = 'batched'")
+      ? this.params.length - 2
+      : 1;
+    return { meta: { changes, last_row_id: 1 } };
   }
 }
 
@@ -446,6 +451,7 @@ describe("POST /reimbursement/batch 混抬头软约束", () => {
     expect(db.executed.some((item) => item.sql.includes("INSERT INTO reimbursement_batch"))).toBe(
       false
     );
+    expect(db.executed.some((item) => item.sql.includes("api_idempotency_request"))).toBe(false);
   });
 
   it("理由过短同样 400", async () => {
@@ -463,20 +469,88 @@ describe("POST /reimbursement/batch 混抬头软约束", () => {
     expect(response.status).toBe(400);
   });
 
-  it("全部未识别不算混合：不因抬头返回 400", async () => {
+  it("全部未识别不算混合：单条信封可创建，批次抬头与理由都为 null", async () => {
+    const db = new FakeDb();
+    db.allHandler = (sql) =>
+      sql.includes("FROM reimbursement_envelope") ? [envelopeRow({ id: 1, amount: 10 })] : [];
+    const response = await request(db, "/reimbursement/batch", {
+      method: "POST",
+      body: JSON.stringify({ project_id: 144, applicant_userid: "LuShuMing", envelope_ids: [1] })
+    });
+    expect(response.status).toBe(201);
+    const insert = db.executed.find((item) => item.sql.includes("INSERT INTO reimbursement_batch"));
+    const columns =
+      insert?.sql
+        .match(/\(([^)]*)\)\s*VALUES/)?.[1]
+        .split(",")
+        .map((s) => s.trim()) ?? [];
+    const literalsBefore = (index: number) =>
+      ["status", "ai_audit_status"].filter((col) => columns.indexOf(col) < index).length;
+    const titleIndex = columns.indexOf("invoice_title_entity_id");
+    const bindIndex = titleIndex - literalsBefore(titleIndex);
+    expect(insert?.params.slice(bindIndex, bindIndex + 2)).toEqual([null, null]);
+  });
+
+  it("抬头一致：批次落库该主体 id，混合理由为 null", async () => {
     const db = new FakeDb();
     db.allHandler = (sql) =>
       sql.includes("FROM reimbursement_envelope")
-        ? [envelopeRow({ id: 1, amount: 10 }), envelopeRow({ id: 2, amount: 20 })]
+        ? [
+            envelopeRow({
+              id: 1,
+              amount: 10,
+              invoice_title_entity_id: 11,
+              invoice_title_name: "北京鑫丰畅建设有限公司"
+            }),
+            envelopeRow({
+              id: 2,
+              amount: 20,
+              invoice_title_entity_id: 11,
+              invoice_title_name: "北京鑫丰畅建设有限公司"
+            })
+          ]
         : [];
     const response = await request(db, "/reimbursement/batch", {
       method: "POST",
       body: JSON.stringify({ project_id: 144, applicant_userid: "LuShuMing", envelope_ids: [1, 2] })
     });
-    // 后续会走幂等/建批逻辑，假 D1 未必能跑通；只断言不是抬头导致的 400
-    if (response.status === 400) {
-      const payload = (await response.json()) as { error: { code?: string } };
-      expect(payload.error.code).not.toBe("MIXED_INVOICE_TITLE");
-    }
+    expect(response.status).toBe(201);
+    const insert = db.executed.find((item) => item.sql.includes("INSERT INTO reimbursement_batch"));
+    const columns =
+      insert?.sql
+        .match(/\(([^)]*)\)\s*VALUES/)?.[1]
+        .split(",")
+        .map((s) => s.trim()) ?? [];
+    const literalsBefore = (index: number) =>
+      ["status", "ai_audit_status"].filter((col) => columns.indexOf(col) < index).length;
+    const titleIndex = columns.indexOf("invoice_title_entity_id");
+    const bindIndex = titleIndex - literalsBefore(titleIndex);
+    expect(insert?.params.slice(bindIndex, bindIndex + 2)).toEqual([11, null]);
+  });
+
+  it("混抬头带理由：批次抬头为 null，理由落库", async () => {
+    const db = new FakeDb();
+    db.allHandler = (sql) => (sql.includes("FROM reimbursement_envelope") ? mixedEnvelopes : []);
+    const response = await request(db, "/reimbursement/batch", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: 144,
+        applicant_userid: "LuShuMing",
+        envelope_ids: [237, 241],
+        mixed_title_reason: "两家公司合并报销测试"
+      })
+    });
+    expect(response.status).toBe(201);
+    const insert = db.executed.find((item) => item.sql.includes("INSERT INTO reimbursement_batch"));
+    const columns =
+      insert?.sql
+        .match(/\(([^)]*)\)\s*VALUES/)?.[1]
+        .split(",")
+        .map((s) => s.trim()) ?? [];
+    const literalsBefore = (index: number) =>
+      ["status", "ai_audit_status"].filter((col) => columns.indexOf(col) < index).length;
+    const titleIndex = columns.indexOf("invoice_title_entity_id");
+    const bindIndex = titleIndex - literalsBefore(titleIndex);
+    expect(insert?.params.slice(bindIndex, bindIndex + 2)).toEqual([null, "两家公司合并报销测试"]);
   });
 });

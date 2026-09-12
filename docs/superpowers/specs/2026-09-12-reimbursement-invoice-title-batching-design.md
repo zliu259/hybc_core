@@ -145,7 +145,7 @@ ALTER TABLE reimbursement_batch ADD COLUMN mixed_title_reason TEXT;             
 
 ## 8. AI 关卡上下文（services/ai-slot.ts）
 `reimbursement_batch` 的 `items` 查询增加 `invoice_title_entity_id`、`invoice_title_name`，
-并在 context 增加 `batch.invoice_title_entity_id`、`batch.mixed_title_reason`。不改提示词，
+冻结的 `route_context.batch` 已带 `invoice_title_entity_id`/`mixed_title_reason`；ai-slot 另以独立键 `reimbursement_batch_title`（含 `invoice_title_entity_name`）实时读取，避免浅合并覆盖 `batch` 键。不改提示词，
 不改评分白名单。
 
 ## 9. Web 页面

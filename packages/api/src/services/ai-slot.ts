@@ -293,11 +293,21 @@ const loadBizContextFromInstance = async (
       };
     }
 
+    // 冻结的 route_context.batch 已带 invoice_title_entity_id / mixed_title_reason（提审时快照）；
+    // 这里用独立键提供实时读取并附主体名（AI 无法从 id 说出公司名）。不能放进 batch 键：
+    // enrichAiGatePayload 是浅合并，route_context 的 batch 会整体覆盖这里的 batch。
     const batchTitleRow = await env.DB.prepare(
-      "SELECT invoice_title_entity_id, mixed_title_reason FROM reimbursement_batch WHERE id = ?"
+      `SELECT b.invoice_title_entity_id, b.mixed_title_reason, e.entity_name AS invoice_title_entity_name
+         FROM reimbursement_batch b
+         LEFT JOIN entity e ON e.id = b.invoice_title_entity_id
+        WHERE b.id = ?`
     )
       .bind(instance.biz_id)
-      .first<{ invoice_title_entity_id: number | null; mixed_title_reason: string | null }>();
+      .first<{
+        invoice_title_entity_id: number | null;
+        mixed_title_reason: string | null;
+        invoice_title_entity_name: string | null;
+      }>();
 
     const itemReviewSummary = (itemRows.results ?? []).map((row) => {
       let silentReviewSummary: string | null = null;
@@ -337,6 +347,7 @@ const loadBizContextFromInstance = async (
       reimbursement_item_reviews: itemReviewSummary,
       reimbursement_batch_title: {
         invoice_title_entity_id: batchTitleRow?.invoice_title_entity_id ?? null,
+        invoice_title_entity_name: batchTitleRow?.invoice_title_entity_name ?? null,
         mixed_title_reason: batchTitleRow?.mixed_title_reason ?? null
       },
       review_focus: "reasonability_summary"

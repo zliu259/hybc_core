@@ -2003,11 +2003,13 @@ reimbursementRoutes.get(
       : null;
 
     const invoiceTitleEntity = batch.invoice_title_entity_id
-      ? await c.env.DB.prepare(
-          "SELECT id, entity_code, entity_name FROM entity WHERE id = ?"
-        )
-          .bind(batch.invoice_title_entity_id)
-          .first<{ id: number; entity_code: string; entity_name: string }>()
+      ? batch.invoice_title_entity_id === batch.payment_entity_id && paymentEntity
+        ? paymentEntity
+        : await c.env.DB.prepare(
+            "SELECT id, entity_code, entity_name FROM entity WHERE id = ?"
+          )
+            .bind(batch.invoice_title_entity_id)
+            .first<{ id: number; entity_code: string; entity_name: string }>()
       : null;
 
     const paymentBankAccount = batch.payment_entity_bank_account_id
@@ -2436,7 +2438,11 @@ reimbursementRoutes.post(
           kind: titleSummary.kind,
           entity_id: batchTitleEntityId,
           counts: titleSummary.counts,
-          mixed_title_reason: batchMixedTitleReason
+          mixed_title_reason: batchMixedTitleReason,
+          supplied_reason:
+            typeof body.mixed_title_reason === "string"
+              ? body.mixed_title_reason.trim().slice(0, 200) || null
+              : null
         }
       }
     });
