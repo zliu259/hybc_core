@@ -27,6 +27,9 @@ export type VerificationStatus = (typeof verificationStatuses)[number];
 export const taskStatuses = ["none", "pending", "completed", "failed"] as const;
 export type TaskStatus = (typeof taskStatuses)[number];
 
+export const invoiceTitleSources = ["ocr", "manual"] as const;
+export type InvoiceTitleSource = (typeof invoiceTitleSources)[number];
+
 export interface ReimbursementEnvelope {
   id: number;
   envelope_no: string;
@@ -62,6 +65,9 @@ export interface ReimbursementEnvelope {
   duplicate_override_reason: string | null;
   split_from_envelope_id: number | null;
   split_reason: string | null;
+  invoice_title_entity_id: number | null;
+  invoice_title_name: string | null;
+  invoice_title_source: InvoiceTitleSource | null;
   submitted_at: string | null;
   received_at: string | null;
   created_at: string;
@@ -114,6 +120,8 @@ export interface ReimbursementBatch {
   payment_entity_bank_account_id: number | null;
   payment_vouchers_json: string | null;
   payee_id: number | null;
+  invoice_title_entity_id: number | null;
+  mixed_title_reason: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -167,6 +175,8 @@ export interface UpdateEnvelopeRequest {
   description?: string;
   status?: ReimbursementStatus;
   attachments?: AttachmentInput[];
+  /** 办公室指定发票抬头主体；null 表示清除、回到自动识别 */
+  invoice_title_entity_id?: number | null;
 }
 
 export interface BatchGenerateEnvelopeRequest {
@@ -254,6 +264,8 @@ export interface CreateReimbursementBatchRequest {
   payment_entity_bank_account_id?: number;
   payment_account?: string;
   payee_id?: number;
+  /** 所选信封发票抬头不一致时必填（2–200 字） */
+  mixed_title_reason?: string;
 }
 
 export interface SubmitReimbursementBatchApprovalRequest {
