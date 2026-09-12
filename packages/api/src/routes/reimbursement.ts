@@ -4827,7 +4827,11 @@ reimbursementRoutes.put(
       }
       const rawTitleEntityId = body.invoice_title_entity_id;
       if (rawTitleEntityId !== null) {
-        if (!Number.isInteger(rawTitleEntityId) || (rawTitleEntityId as number) <= 0) {
+        if (
+          typeof rawTitleEntityId !== "number" ||
+          !Number.isInteger(rawTitleEntityId) ||
+          rawTitleEntityId <= 0
+        ) {
           return c.json(
             {
               success: false,
@@ -4902,6 +4906,7 @@ reimbursementRoutes.put(
       };
       if (
         previousTitle.entity_id !== nextTitle.entity_id ||
+        previousTitle.name !== nextTitle.name ||
         previousTitle.source !== nextTitle.source
       ) {
         await writeAuditLog(c.env.DB, {

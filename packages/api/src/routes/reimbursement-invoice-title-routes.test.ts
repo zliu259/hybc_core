@@ -63,6 +63,9 @@ export class FakeDb {
   async batch(statements: FakeStatement[]) {
     return statements.map(() => ({ meta: { changes: 1, last_row_id: 1 } }));
   }
+  async exec() {
+    return { count: 0, duration: 0 };
+  }
 }
 
 const createEnv = (db: FakeDb) =>
@@ -152,13 +155,48 @@ describe("PUT /reimbursement/:id invoice_title_entity_id", () => {
 
   it("非 active 主体 → 400", async () => {
     const db = new FakeDb();
-    db.firstHandler = (sql) =>
-      sql.includes("FROM reimbursement_envelope WHERE id = ?") ? envelopeRow() : null;
+    db.firstHandler = (sql) => {
+      if (sql.includes("FROM reimbursement_envelope WHERE id = ?")) return envelopeRow();
+      if (sql.includes("FROM entity WHERE id = ?")) {
+        // 只有带 status = 'active' 过滤的查询才会查不到停用主体
+        return sql.includes("status = 'active'") ? null : { id: 999, entity_name: "已停用主体" };
+      }
+      return null;
+    };
     const response = await request(db, "/reimbursement/5", {
       method: "PUT",
       body: JSON.stringify({ invoice_title_entity_id: 999 })
     });
     expect(response.status).toBe(400);
+  });
+
+  it("请求体不带该字段：不写抬头、不记审计", async () => {
+    const db = new FakeDb();
+    db.firstHandler = (sql) =>
+      sql.includes("FROM reimbursement_envelope WHERE id = ?")
+        ? envelopeRow({ invoice_title_entity_id: 11, invoice_title_source: "manual" })
+        : null;
+    const response = await request(db, "/reimbursement/5", {
+      method: "PUT",
+      body: JSON.stringify({ category: "办公费用" })
+    });
+    expect(response.status).toBe(200);
+    expect(db.executed.some((item) => item.sql.includes("invoice_title_source = ?"))).toBe(false);
+    expect(db.executed.some((item) => item.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
+  });
+
+  it("非正整数（1.5 / 字符串 / true）→ 400，且不查主体", async () => {
+    for (const value of [1.5, "11", true, 0, -3]) {
+      const db = new FakeDb();
+      db.firstHandler = (sql) =>
+        sql.includes("FROM reimbursement_envelope WHERE id = ?") ? envelopeRow() : null;
+      const response = await request(db, "/reimbursement/5", {
+        method: "PUT",
+        body: JSON.stringify({ invoice_title_entity_id: value })
+      });
+      expect(response.status).toBe(400);
+      expect(db.executed.some((item) => item.sql.includes("FROM entity WHERE id = ?"))).toBe(false);
+    }
   });
 
   it("申请人本人（operator）不能指定抬头 → 403", async () => {
@@ -223,5 +261,61 @@ describe("GET /reimbursement/batch/candidates invoice_title_entity_id", () => {
       "/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing&invoice_title_entity_id=abc"
     );
     expect(response.status).toBe(400);
+  });
+});
+
+describe("POST /reimbursement/:id/split 抬头继承", () => {
+  beforeEach(() => {
+    mockAuthState.payload = { ...mockAuthState.payload, sub: "finance-a", roles: ["finance"] };
+  });
+
+  it("子信封 INSERT 携带父信封的三列抬头", async () => {
+    const db = new FakeDb();
+    db.firstHandler = (sql) => {
+      if (sql.includes("FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'")) {
+        return envelopeRow({
+          amount: 1348,
+          status: "received",
+          precheck_status: "approved",
+          batch_id: null,
+          approval_instance_id: null,
+          channel: "electronic",
+          envelope_uuid: "e-5",
+          invoice_title_entity_id: 11,
+          invoice_title_name: "北京鑫丰畅建设有限公司",
+          invoice_title_source: "manual"
+        });
+      }
+      // enqueueEnvelopeAiAudit / applyDuplicateChecks 发出的裸 SELECT（不带 AND status 过滤）。
+      // 返回 null 使其在 `if (!envelope) return;` 处提前退出，从而不必伪造查重与
+      // AI 审核任务队列（applyDuplicateChecks / createTask）的整条链路。
+      return null;
+    };
+    const response = await request(db, "/reimbursement/5/split", {
+      method: "POST",
+      body: JSON.stringify({
+        new_envelope: { project_id: 144, amount: 100 },
+        original_amount: 1248,
+        reason: "拆单测试"
+      })
+    });
+    expect(response.status).toBe(201);
+    const insert = db.executed.find((item) =>
+      item.sql.includes("INSERT INTO reimbursement_envelope")
+    );
+    expect(insert?.sql).toContain(
+      "invoice_title_entity_id, invoice_title_name, invoice_title_source"
+    );
+    const columns =
+      insert?.sql
+        .match(/\(([^)]*)\)\s*VALUES/)?.[1]
+        .split(",")
+        .map((s) => s.trim()) ?? [];
+    const titleIndex = columns.indexOf("invoice_title_entity_id");
+    // 'none' 字面量位于 precheck_status 位置，绑定下标要减 1
+    const literalOffset = columns.indexOf("precheck_status") < titleIndex ? 1 : 0;
+    expect(
+      insert?.params.slice(titleIndex - literalOffset, titleIndex - literalOffset + 3)
+    ).toEqual([11, "北京鑫丰畅建设有限公司", "manual"]);
   });
 });
