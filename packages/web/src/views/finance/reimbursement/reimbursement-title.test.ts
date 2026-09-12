@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   describeTitleCounts,
+  distinctUnknownTitleNames,
   invoiceTitleDisplay,
   summarizeTitles
 } from "./reimbursement-title";
@@ -107,5 +108,40 @@ describe("describeTitleCounts", () => {
     expect(text).toBe(
       "北京鑫丰畅建设有限公司 × 2；刘相余（未匹配）× 1；未识别 × 1"
     );
+  });
+});
+
+describe("distinctUnknownTitleNames", () => {
+  it("全部未识别且原文不同 → 返回去重原文", () => {
+    expect(
+      distinctUnknownTitleNames([
+        { invoice_title_entity_id: null, invoice_title_name: "刘相余" },
+        { invoice_title_entity_id: null, invoice_title_name: "张三" },
+        { invoice_title_entity_id: null, invoice_title_name: "刘 相余" }
+      ])
+    ).toEqual(["刘相余", "张三"]);
+  });
+
+  it("有任一已匹配主体、或原文只有一种/全空 → 空数组", () => {
+    expect(
+      distinctUnknownTitleNames([
+        {
+          invoice_title_entity_id: 11,
+          invoice_title_name: "北京鑫丰畅建设有限公司"
+        },
+        { invoice_title_entity_id: null, invoice_title_name: "张三" }
+      ])
+    ).toEqual([]);
+    expect(
+      distinctUnknownTitleNames([
+        { invoice_title_entity_id: null, invoice_title_name: "刘相余" },
+        { invoice_title_entity_id: null, invoice_title_name: "刘相余" }
+      ])
+    ).toEqual([]);
+    expect(
+      distinctUnknownTitleNames([
+        { invoice_title_entity_id: null, invoice_title_name: null }
+      ])
+    ).toEqual([]);
   });
 });

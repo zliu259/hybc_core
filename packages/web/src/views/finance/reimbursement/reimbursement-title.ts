@@ -87,3 +87,13 @@ export const describeTitleCounts = (
       return `未识别 × ${item.count}`;
     })
     .join("；");
+
+/** 全部未识别但原文（去空白后）不止一种时返回这些原文，供页面给出非阻断提示；否则空数组 */
+export const distinctUnknownTitleNames = (rows: TitleFields[]): string[] => {
+  if (rows.some(row => row.invoice_title_entity_id)) return [];
+  const names = rows
+    .map(row => (row.invoice_title_name ?? "").replace(/\s+/g, ""))
+    .filter(name => name.length > 0);
+  const distinct = [...new Set(names)];
+  return distinct.length > 1 ? distinct : [];
+};

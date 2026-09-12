@@ -25,6 +25,7 @@ import {
 } from "./reimbursement-labels";
 import {
   describeTitleCounts,
+  distinctUnknownTitleNames,
   invoiceTitleDisplay,
   summarizeTitles,
   type TitleCount
@@ -406,6 +407,15 @@ const submitCreateAndApproval = async () => {
     const reason = await promptMixedTitleReason(titleSummary.counts);
     if (!reason) return;
     mixedTitleReason = reason;
+  }
+  if (titleSummary.kind === "unknown") {
+    const differing = distinctUnknownTitleNames(selectedRows);
+    if (differing.length > 1) {
+      message(
+        `所选条目均未匹配我方主体，但识别到的抬头原文不一致：${differing.join("、")}。请先在信封详情核对并指定抬头，或确认确需合并。`,
+        { type: "warning", duration: 6000 }
+      );
+    }
   }
   if (
     titleSummary.kind === "uniform" &&
