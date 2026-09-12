@@ -29,7 +29,7 @@
 
 ```bash
 cd /Users/zihaoliu/Documents/Code/hybc_core
-git worktree add .claude/worktrees/reimbursement-invoice-title -b feat/reimbursement-invoice-title main
+git worktree add .worktrees/reimbursement-invoice-title -b feat/reimbursement-invoice-title main
 ```
 
 Expected: `Preparing worktree (new branch 'feat/reimbursement-invoice-title')`。
@@ -37,7 +37,7 @@ Expected: `Preparing worktree (new branch 'feat/reimbursement-invoice-title')`�
 - [ ] **Step 2: 复用主工作区依赖与本地密钥（worktree 没有 node_modules）**
 
 ```bash
-cd /Users/zihaoliu/Documents/Code/hybc_core/.claude/worktrees/reimbursement-invoice-title
+cd /Users/zihaoliu/Documents/Code/hybc_core/.worktrees/reimbursement-invoice-title
 ln -s /Users/zihaoliu/Documents/Code/hybc_core/node_modules node_modules
 ln -s /Users/zihaoliu/Documents/Code/hybc_core/packages/api/node_modules packages/api/node_modules
 ln -s /Users/zihaoliu/Documents/Code/hybc_core/packages/web/node_modules packages/web/node_modules
@@ -52,7 +52,7 @@ cd /Users/zihaoliu/Documents/Code/hybc_core/.claude/worktrees/reimbursement-invo
 
 Expected: typecheck 无输出（成功）；`Test Files 1 passed`。
 
-后续所有任务的 `cd` 均指向该 worktree：`W=/Users/zihaoliu/Documents/Code/hybc_core/.claude/worktrees/reimbursement-invoice-title`。
+后续所有任务的 `cd` 均指向该 worktree：`W=/Users/zihaoliu/Documents/Code/hybc_core/.worktrees/reimbursement-invoice-title`。
 
 ---
 
@@ -3034,7 +3034,7 @@ cd /Users/zihaoliu/Documents/Code/hybc_core/packages/api && npx wrangler d1 migr
 npx wrangler d1 execute hybcdg-prod-db --remote --command "SELECT COUNT(*) AS with_name FROM reimbursement_envelope WHERE invoice_title_name IS NOT NULL; SELECT COUNT(*) AS matched FROM reimbursement_envelope WHERE invoice_title_entity_id IS NOT NULL; SELECT invoice_title_entity_id, COUNT(*) AS n FROM reimbursement_envelope WHERE invoice_title_entity_id IS NOT NULL GROUP BY invoice_title_entity_id"
 ```
 
-Expected: `with_name` 约 140、`matched` 约 110（以实际为准）；分组只出现 6/11/12 等 active 主体 id；信封 237 → 11、241 → 6：
+Expected: `with_name` 约 88、`matched` 约 63（2026-09-12 生产只读预览，按「最新识别轮」口径；以实际为准）；分组只出现 6/11/12 等 active 主体 id；信封 237 → 11、241 → 6。注意运行时优先取 bestRow（发票号提示同源行），同轮多张发票抬头不同的约 9 个信封在首次打开详情后可能与回填值不同，属设计内收敛，可在上线后抽查：
 
 ```bash
 npx wrangler d1 execute hybcdg-prod-db --remote --command "SELECT id, invoice_title_entity_id, invoice_title_name, invoice_title_source FROM reimbursement_envelope WHERE id IN (237,241)"
@@ -3057,5 +3057,5 @@ Expected: 响应含 `"ok":true`。随后在生产成批页按验收标准（规�
 - [ ] **Step 4: 清理 worktree**
 
 ```bash
-cd /Users/zihaoliu/Documents/Code/hybc_core && git worktree remove .claude/worktrees/reimbursement-invoice-title && git branch -d feat/reimbursement-invoice-title
+cd /Users/zihaoliu/Documents/Code/hybc_core && git worktree remove .worktrees/reimbursement-invoice-title && git branch -d feat/reimbursement-invoice-title
 ```
