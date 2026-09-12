@@ -200,7 +200,7 @@ Page({
     const sectionId = Number(e.currentTarget.dataset.id || 0);
     if (!sectionId) return;
     wx.navigateTo({
-      url: `/pages/project-section/index?projectId=${this.data.projectId}&sectionId=${sectionId}&readonly=${this.data.readonly ? "1" : "0"}`
+      url: `/packageProject/project-section/index?projectId=${this.data.projectId}&sectionId=${sectionId}&readonly=${this.data.readonly ? "1" : "0"}`
     });
   },
 
