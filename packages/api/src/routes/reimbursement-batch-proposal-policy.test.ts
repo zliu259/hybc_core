@@ -102,6 +102,47 @@ describe("groupBatchProposals", () => {
         .invoice_title_name
     ).toBeNull();
   });
+
+  it("同组内多条不同原文时取输入顺序的第一条", () => {
+    const groups = groupBatchProposals([
+      {
+        id: 1,
+        project_id: 1,
+        applicant_userid: "a",
+        amount: 1,
+        invoice_title_entity_id: 11,
+        invoice_title_name: "北京鑫丰畅建设有限公司"
+      },
+      {
+        id: 2,
+        project_id: 1,
+        applicant_userid: "a",
+        amount: 1,
+        invoice_title_entity_id: 11,
+        invoice_title_name: "北京鑫丰畅建设有限公司（变体）"
+      },
+      {
+        id: 3,
+        project_id: 1,
+        applicant_userid: "a",
+        amount: 1,
+        invoice_title_entity_id: null,
+        invoice_title_name: "刘相余"
+      },
+      {
+        id: 4,
+        project_id: 1,
+        applicant_userid: "a",
+        amount: 1,
+        invoice_title_entity_id: null,
+        invoice_title_name: "张三"
+      }
+    ]);
+    expect(groups.map((g) => [g.invoice_title_entity_id, g.invoice_title_name])).toEqual([
+      [11, "北京鑫丰畅建设有限公司"],
+      [null, "刘相余"]
+    ]);
+  });
 });
 
 describe("matchUniqueInternalPayee", () => {
