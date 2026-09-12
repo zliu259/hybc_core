@@ -54,9 +54,12 @@ describe("syncEnvelopeInvoiceTitle", () => {
     expect(write?.sql).toContain("invoice_title_entity_id = ?");
     expect(write?.sql).toContain("!= 'manual'");
     expect(write?.sql).toContain("WHERE id = ?");
-    expect(write?.params).toEqual([11, "北京鑫丰畅建设有限公司", "ocr", 237]);
+    expect(write?.params).toEqual([11, "北京鑫丰畅建设有限公司", "ocr", expect.any(String), 237]);
     const entityQuery = db.executed.find((item) => item.sql.includes("FROM entity"));
     expect(entityQuery?.sql).toContain("status = 'active'");
+    const auditInsert = db.executed.find((item) => item.sql.includes("INSERT INTO api_audit_log"));
+    expect(auditInsert?.params).toContain("OCR_SYNC");
+    expect(auditInsert?.params).toContain("reimbursement.envelope.ocr_invoice_title");
   });
 
   it("手工指定过：不查主体、不写库", async () => {
@@ -73,6 +76,7 @@ describe("syncEnvelopeInvoiceTitle", () => {
     });
     expect(update).toBeNull();
     expect(db.executed).toHaveLength(0);
+    expect(db.executed.some((item) => item.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
   });
 
   it("识别仍在进行：不写库", async () => {
@@ -88,6 +92,7 @@ describe("syncEnvelopeInvoiceTitle", () => {
       completedCount: 0
     });
     expect(db.executed).toHaveLength(0);
+    expect(db.executed.some((item) => item.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
   });
 
   it("全部完成且无抬头：清空三列（不查主体）", async () => {
@@ -103,8 +108,11 @@ describe("syncEnvelopeInvoiceTitle", () => {
       completedCount: 1
     });
     expect(update).toEqual({ entityId: null, name: null, source: null });
-    expect(db.executed).toHaveLength(1);
-    expect(db.executed[0].params).toEqual([null, null, null, 237]);
+    expect(db.executed).toHaveLength(2);
+    expect(db.executed[0].params).toEqual([null, null, null, expect.any(String), 237]);
+    const auditInsert = db.executed.find((item) => item.sql.includes("INSERT INTO api_audit_log"));
+    expect(auditInsert?.params).toContain("OCR_SYNC");
+    expect(auditInsert?.params).toContain("reimbursement.envelope.ocr_invoice_title");
   });
 
   it("已成批/审批中/已付款的信封：不查主体、不写库", async () => {
@@ -122,6 +130,9 @@ describe("syncEnvelopeInvoiceTitle", () => {
       });
       expect(update).toBeNull();
       expect(db.executed).toHaveLength(0);
+      expect(db.executed.some((item) => item.sql.includes("INSERT INTO api_audit_log"))).toBe(
+        false
+      );
     }
   });
 
@@ -139,6 +150,7 @@ describe("syncEnvelopeInvoiceTitle", () => {
     });
     expect(update).toBeNull();
     expect(db.executed).toHaveLength(0);
+    expect(db.executed.some((item) => item.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
   });
 
   it("识别结果与已存值相同：只查主体、不写库", async () => {
@@ -155,6 +167,7 @@ describe("syncEnvelopeInvoiceTitle", () => {
     });
     expect(update).toBeNull();
     expect(db.executed.some((item) => item.sql.includes("UPDATE"))).toBe(false);
+    expect(db.executed.some((item) => item.sql.includes("INSERT INTO api_audit_log"))).toBe(false);
   });
 
   it("识别结果变化：覆盖旧的 ocr 值", async () => {
@@ -171,6 +184,9 @@ describe("syncEnvelopeInvoiceTitle", () => {
     });
     expect(update).toEqual({ entityId: 11, name: "北京鑫丰畅建设有限公司", source: "ocr" });
     const write = db.executed.find((item) => item.sql.includes("UPDATE reimbursement_envelope"));
-    expect(write?.params).toEqual([11, "北京鑫丰畅建设有限公司", "ocr", 237]);
+    expect(write?.params).toEqual([11, "北京鑫丰畅建设有限公司", "ocr", expect.any(String), 237]);
+    const auditInsert = db.executed.find((item) => item.sql.includes("INSERT INTO api_audit_log"));
+    expect(auditInsert?.params).toContain("OCR_SYNC");
+    expect(auditInsert?.params).toContain("reimbursement.envelope.ocr_invoice_title");
   });
 });
