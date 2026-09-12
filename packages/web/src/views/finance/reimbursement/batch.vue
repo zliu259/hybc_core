@@ -26,7 +26,8 @@ import {
 import {
   describeTitleCounts,
   invoiceTitleDisplay,
-  summarizeTitles
+  summarizeTitles,
+  type TitleCount
 } from "./reimbursement-title";
 import { listPayees, createPayee, type Payee } from "@/api/payment";
 import ReimbursementBatchDetail from "./batch-detail.vue";
@@ -342,22 +343,14 @@ type CreateBatchErrorShape = {
     data?: {
       error?: {
         code?: string;
-        title_counts?: Array<{
-          entity_id: number | null;
-          name: string | null;
-          count: number;
-        }>;
+        title_counts?: TitleCount[];
       };
     };
   };
 };
 
 const promptMixedTitleReason = async (
-  counts: Array<{
-    entity_id: number | null;
-    name: string | null;
-    count: number;
-  }>
+  counts: TitleCount[]
 ): Promise<string | null> => {
   try {
     // ElMessageBox.prompt 声明返回类型为 MessageBoxInputData | Action，其中
@@ -405,6 +398,7 @@ const submitCreateAndApproval = async () => {
   const selectedRows = candidates.value.filter(item =>
     candidateSelectedIds.value.includes(item.id)
   );
+  const selectedEnvelopeIds = selectedRows.map(item => item.id);
 
   const titleSummary = summarizeTitles(selectedRows);
   let mixedTitleReason: string | undefined;
@@ -418,8 +412,12 @@ const submitCreateAndApproval = async () => {
     titleSummary.entityId &&
     !filters.value.payment_entity_id
   ) {
+    const typedPaymentAccount = filters.value.payment_account;
     filters.value.payment_entity_id = titleSummary.entityId;
     await onPaymentEntityChange();
+    if (typedPaymentAccount.trim()) {
+      filters.value.payment_account = typedPaymentAccount;
+    }
     message(
       `已按发票抬头预填付款实体：${entityNameMap.value.get(titleSummary.entityId) ?? titleSummary.entityId}`,
       { type: "info" }
@@ -470,18 +468,16 @@ const submitCreateAndApproval = async () => {
         filters.value.payment_entity_bank_account_id,
       payment_account: filters.value.payment_account.trim(),
       payee_id: filters.value.payee_id,
-      envelope_ids:
-        candidateSelectedIds.value.length > 0
-          ? candidateSelectedIds.value
-          : undefined,
+      envelope_ids: selectedEnvelopeIds,
       mixed_title_reason: reason
     });
 
+    const createKey = `reimbursement-batch-create-${crypto.randomUUID()}`;
     let result: Awaited<ReturnType<typeof createReimbursementBatch>>;
     try {
       result = await createReimbursementBatch(
         buildCreatePayload(mixedTitleReason),
-        { idempotencyKey: `reimbursement-batch-create-${crypto.randomUUID()}` }
+        { idempotencyKey: createKey }
       );
     } catch (error) {
       // 并发下候选抬头已变化：服务端二次判定为混合，补一次理由后重试一次
@@ -493,8 +489,15 @@ const submitCreateAndApproval = async () => {
       );
       if (!reason) return;
       result = await createReimbursementBatch(buildCreatePayload(reason), {
-        idempotencyKey: `reimbursement-batch-create-${crypto.randomUUID()}`
+        idempotencyKey: createKey
       });
+    }
+
+    if (result.data.item_count !== selectedRows.length) {
+      message(
+        `实际入批 ${result.data.item_count} 条，与勾选的 ${selectedRows.length} 条不一致，请在批次详情核对后再审批`,
+        { type: "warning" }
+      );
     }
 
     await submitBatchApproval(
@@ -632,7 +635,7 @@ watch(
       </div>
       <div class="summary-tile">
         <span>勾选抬头</span>
-        <strong>{{ selectedTitleLabel }}</strong>
+        <strong :title="selectedTitleLabel">{{ selectedTitleLabel }}</strong>
       </div>
       <div class="summary-tile">
         <span>进行中批次</span>

@@ -1737,8 +1737,7 @@ watch(
               </el-space>
             </el-descriptions-item>
             <el-descriptions-item label="说明">
-              报销款须由发票抬头对应的我方主体支付；OCR
-              自动识别，办公室可修正，手工指定后不再被识别结果覆盖
+              报销款须由发票抬头对应的我方主体支付；OCR自动识别，办公室可修正，手工指定后不再被识别结果覆盖
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
