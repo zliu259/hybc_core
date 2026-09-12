@@ -8,6 +8,7 @@ import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
+import { listEntities, type Entity } from "@/api/entity";
 import { createUploadSignature } from "@/api/upload";
 import { resolveUploadUrl } from "@/api/upload";
 import {
@@ -33,6 +34,7 @@ import SplitEnvelopeDialog from "./components/SplitEnvelopeDialog.vue";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice";
 import {
   attachmentTypeLabel,
+  invoiceTitleSourceLabel,
   precheckActionLabel,
   reimbursementPrecheckStatusLabel as toPrecheckStatusLabel,
   reimbursementStatusLabel as toStatusLabel,
@@ -178,6 +180,84 @@ const canSeeOfficeReview = computed(
 );
 
 const isSuperAdmin = computed(() => roleSet.value.has("super_admin"));
+
+const entities = ref<Entity[]>([]);
+const activeEntities = computed(() =>
+  entities.value.filter(item => item.status === "active")
+);
+const entityNameById = computed(() => {
+  const map = new Map<number, string>();
+  entities.value.forEach(item => map.set(item.id, item.entity_name));
+  return map;
+});
+
+const titleEntityId = ref<number | undefined>(undefined);
+const savingInvoiceTitle = ref(false);
+
+const titleLockedStatuses = new Set([
+  "batched",
+  "pending_approval",
+  "approved",
+  "paid",
+  "cancelled",
+  "deleted"
+]);
+
+const canEditInvoiceTitle = computed(
+  () =>
+    !isCreate.value &&
+    canOfficeAudit.value &&
+    !!detail.value &&
+    !titleLockedStatuses.has(detail.value.status)
+);
+
+const invoiceTitleText = computed(() => {
+  const current = detail.value;
+  if (!current) return "-";
+  if (current.invoice_title_entity_id) {
+    return (
+      entityNameById.value.get(current.invoice_title_entity_id) ||
+      current.invoice_title_name ||
+      `主体#${current.invoice_title_entity_id}`
+    );
+  }
+  return current.invoice_title_name
+    ? `${current.invoice_title_name}（未匹配主体）`
+    : "未识别";
+});
+
+const invoiceTitleDirty = computed(
+  () =>
+    (titleEntityId.value ?? null) !==
+    (detail.value?.invoice_title_entity_id ?? null)
+);
+
+const invoiceTitleSourceTagType = computed(() => {
+  const source = detail.value?.invoice_title_source;
+  if (source === "manual") return "success";
+  if (source === "ocr") return "primary";
+  return "info";
+});
+
+const saveInvoiceTitle = async () => {
+  if (!detail.value || !canEditInvoiceTitle.value) return;
+  savingInvoiceTitle.value = true;
+  try {
+    await updateReimbursementEnvelope(detail.value.id, {
+      invoice_title_entity_id: titleEntityId.value ?? null
+    });
+    message(
+      titleEntityId.value ? "发票抬头已指定" : "发票抬头已清除，回到自动识别",
+      { type: "success" }
+    );
+    await loadDetail();
+    notifyChanged();
+  } catch {
+    message("保存发票抬头失败", { type: "error" });
+  } finally {
+    savingInvoiceTitle.value = false;
+  }
+};
 
 const hasDuplicateRisks = computed(() => {
   const checks = detail.value?.duplicate_checks ?? [];
@@ -657,6 +737,7 @@ const loadDetail = async (options?: { showLoading?: boolean }) => {
   try {
     const result = await getReimbursementEnvelope(resolvedEnvelopeId.value);
     detail.value = result.data;
+    titleEntityId.value = result.data.invoice_title_entity_id ?? undefined;
     form.value = {
       project_id: result.data.project_id,
       applicant_userid: result.data.applicant_userid,
@@ -1281,7 +1362,17 @@ const submitPrecheck = async (
 onMounted(async () => {
   baseDataLoading.value = true;
   try {
-    await Promise.all([loadProjects(), loadWecomUsers()]);
+    await Promise.all([
+      loadProjects(),
+      loadWecomUsers(),
+      listEntities()
+        .then(result => {
+          entities.value = result.data;
+        })
+        .catch(() => {
+          entities.value = [];
+        })
+    ]);
     await loadDetail();
   } finally {
     baseDataLoading.value = false;
@@ -1593,6 +1684,61 @@ watch(
             </el-descriptions-item>
             <el-descriptions-item label="说明">
               报销识别号与信封UUID统一；可直接使用预打印离线UUID作为报销识别号
+            </el-descriptions-item>
+          </el-descriptions>
+        </el-card>
+
+        <el-card
+          v-if="!isCreate"
+          shadow="never"
+          header="发票抬头（购买方）"
+          class="mt-3"
+        >
+          <el-descriptions :column="1" border>
+            <el-descriptions-item label="抬头主体">{{
+              invoiceTitleText
+            }}</el-descriptions-item>
+            <el-descriptions-item label="识别原文">{{
+              detail?.invoice_title_name || "-"
+            }}</el-descriptions-item>
+            <el-descriptions-item label="来源">
+              <el-tag size="small" :type="invoiceTitleSourceTagType">{{
+                invoiceTitleSourceLabel(detail?.invoice_title_source)
+              }}</el-tag>
+            </el-descriptions-item>
+            <el-descriptions-item v-if="canEditInvoiceTitle" label="办公室指定">
+              <el-space
+                direction="vertical"
+                alignment="stretch"
+                style="width: 100%"
+              >
+                <el-select
+                  v-model="titleEntityId"
+                  filterable
+                  clearable
+                  placeholder="选择我方主体；清除=回到自动识别"
+                  style="width: 100%"
+                >
+                  <el-option
+                    v-for="item in activeEntities"
+                    :key="item.id"
+                    :label="item.entity_name"
+                    :value="item.id"
+                  />
+                </el-select>
+                <el-button
+                  type="primary"
+                  plain
+                  :loading="savingInvoiceTitle"
+                  :disabled="!invoiceTitleDirty"
+                  @click="saveInvoiceTitle"
+                  >保存抬头</el-button
+                >
+              </el-space>
+            </el-descriptions-item>
+            <el-descriptions-item label="说明">
+              报销款须由发票抬头对应的我方主体支付；OCR
+              自动识别，办公室可修正，手工指定后不再被识别结果覆盖
             </el-descriptions-item>
           </el-descriptions>
         </el-card>
