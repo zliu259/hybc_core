@@ -25,6 +25,12 @@ import {
   matchUniqueInternalPayee
 } from "./reimbursement-batch-proposal-policy";
 import {
+  MIXED_TITLE_REASON_MAX_LENGTH,
+  MIXED_TITLE_REASON_MIN_LENGTH,
+  summarizeBatchTitles,
+  validateMixedTitleReason
+} from "./reimbursement-batch-title-policy";
+import {
   decideBulkLifecycle,
   type BulkLifecycleAction
 } from "./reimbursement-bulk-lifecycle-policy";
@@ -1996,6 +2002,14 @@ reimbursementRoutes.get(
           .first<{ id: number; entity_code: string; entity_name: string }>()
       : null;
 
+    const invoiceTitleEntity = batch.invoice_title_entity_id
+      ? await c.env.DB.prepare(
+          "SELECT id, entity_code, entity_name FROM entity WHERE id = ?"
+        )
+          .bind(batch.invoice_title_entity_id)
+          .first<{ id: number; entity_code: string; entity_name: string }>()
+      : null;
+
     const paymentBankAccount = batch.payment_entity_bank_account_id
       ? await c.env.DB.prepare(
           "SELECT id, entity_id, bank_name, bank_branch_no, account_no, account_name FROM entity_bank_account WHERE id = ?"
@@ -2091,6 +2105,7 @@ reimbursementRoutes.get(
         duplicate_summary: duplicateSummary.results ?? [],
         approval_instance: approvalInstance,
         payment_entity: paymentEntity,
+        invoice_title_entity: invoiceTitleEntity,
         payment_bank_account: paymentBankAccount,
         payee,
         payment_vouchers: paymentVouchers
@@ -2159,6 +2174,25 @@ reimbursementRoutes.post(
         400
       );
     }
+
+    // 发票抬头软约束：混抬头必须带理由；全部未识别不算混合（规则见 reimbursement-batch-title-policy）
+    const titleSummary = summarizeBatchTitles(selected);
+    const mixedTitleReason = validateMixedTitleReason(body.mixed_title_reason);
+    if (titleSummary.kind === "mixed" && !mixedTitleReason) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            code: "MIXED_INVOICE_TITLE",
+            message: `所选报销条目发票抬头不一致，需填写混批理由（${MIXED_TITLE_REASON_MIN_LENGTH}–${MIXED_TITLE_REASON_MAX_LENGTH} 字）`,
+            title_counts: titleSummary.counts
+          }
+        },
+        400
+      );
+    }
+    const batchTitleEntityId = titleSummary.kind === "uniform" ? titleSummary.entityId : null;
+    const batchMixedTitleReason = titleSummary.kind === "mixed" ? mixedTitleReason : null;
 
     if (typeof body.payee_id === "number" && body.payee_id > 0) {
       const payeeRow = await c.env.DB.prepare(
@@ -2303,9 +2337,9 @@ reimbursementRoutes.post(
         `INSERT INTO reimbursement_batch
           (batch_no, project_id, applicant_userid, total_amount, item_count, status, ai_audit_status,
            payment_method, payment_entity_id, payment_entity_bank_account_id, payment_account,
-           payee_id,
+           payee_id, invoice_title_entity_id, mixed_title_reason,
            created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?, ?)`
+         VALUES (?, ?, ?, ?, ?, 'draft', 'none', ?, ?, ?, ?, ?, ?, ?, ?, ?)`
       )
         .bind(
           batchNo,
@@ -2318,6 +2352,8 @@ reimbursementRoutes.post(
           payoutPlan.value.payment_entity_bank_account_id,
           payoutPlan.value.payment_account,
           body.payee_id ?? null,
+          batchTitleEntityId,
+          batchMixedTitleReason,
           now,
           now
         )
@@ -2377,7 +2413,8 @@ reimbursementRoutes.post(
       total_amount: totalAmount,
       payment_method: payoutPlan.value.payment_method,
       payment_entity_id: payoutPlan.value.payment_entity_id,
-      payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id
+      payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
+      invoice_title_entity_id: batchTitleEntityId
     });
 
     await writeAuditLog(c.env.DB, {
@@ -2394,7 +2431,13 @@ reimbursementRoutes.post(
         total_amount: totalAmount,
         payment_method: payoutPlan.value.payment_method,
         payment_entity_id: payoutPlan.value.payment_entity_id,
-        payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id
+        payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
+        invoice_title: {
+          kind: titleSummary.kind,
+          entity_id: batchTitleEntityId,
+          counts: titleSummary.counts,
+          mixed_title_reason: batchMixedTitleReason
+        }
       }
     });
 
@@ -2730,7 +2773,8 @@ reimbursementRoutes.post(
     }
 
     const batchItems = await c.env.DB.prepare(
-      `SELECT e.id, e.envelope_no, e.invoice_no, e.amount, e.category, e.description
+      `SELECT e.id, e.envelope_no, e.invoice_no, e.amount, e.category, e.description,
+              e.invoice_title_entity_id, e.invoice_title_name
        FROM reimbursement_batch_item bi
        JOIN reimbursement_envelope e ON e.id = bi.envelope_id
        WHERE bi.batch_id = ?
@@ -2740,7 +2784,14 @@ reimbursementRoutes.post(
       .all<
         Pick<
           ReimbursementEnvelope,
-          "id" | "envelope_no" | "invoice_no" | "amount" | "category" | "description"
+          | "id"
+          | "envelope_no"
+          | "invoice_no"
+          | "amount"
+          | "category"
+          | "description"
+          | "invoice_title_entity_id"
+          | "invoice_title_name"
         >
       >();
 
@@ -2785,7 +2836,9 @@ reimbursementRoutes.post(
               payment_method: payoutPlan.value.payment_method,
               payment_entity_id: payoutPlan.value.payment_entity_id,
               payment_entity_bank_account_id: payoutPlan.value.payment_entity_bank_account_id,
-              payment_account: payoutPlan.value.payment_account
+              payment_account: payoutPlan.value.payment_account,
+              invoice_title_entity_id: batch.invoice_title_entity_id ?? null,
+              mixed_title_reason: batch.mixed_title_reason ?? null
             },
             payee: payeeSnapshot,
             items: (batchItems.results ?? []).map(item => ({
@@ -2794,7 +2847,9 @@ reimbursementRoutes.post(
               invoice_no: item.invoice_no,
               amount: item.amount,
               category: item.category,
-              description: item.description
+              description: item.description,
+              invoice_title_entity_id: item.invoice_title_entity_id ?? null,
+              invoice_title_name: item.invoice_title_name ?? null
             }))
           },
           instance_config: body.instance_config

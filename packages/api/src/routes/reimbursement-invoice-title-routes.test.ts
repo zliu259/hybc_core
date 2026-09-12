@@ -400,3 +400,83 @@ describe("POST /reimbursement/:id/split 抬头继承", () => {
     ).toEqual([11, "北京鑫丰畅建设有限公司", "manual"]);
   });
 });
+
+describe("POST /reimbursement/batch 混抬头软约束", () => {
+  beforeEach(() => {
+    mockAuthState.payload = { ...mockAuthState.payload, sub: "finance-a", roles: ["finance"] };
+  });
+
+  const mixedEnvelopes = [
+    envelopeRow({
+      id: 237,
+      amount: 1348,
+      invoice_title_entity_id: 11,
+      invoice_title_name: "北京鑫丰畅建设有限公司"
+    }),
+    envelopeRow({
+      id: 241,
+      amount: 18,
+      invoice_title_entity_id: 6,
+      invoice_title_name: "廊坊市丰畅市政工程有限公司"
+    })
+  ];
+
+  it("抬头不一致且无理由 → 400 MIXED_INVOICE_TITLE，附各抬头计数，且未写库", async () => {
+    const db = new FakeDb();
+    db.allHandler = (sql) => (sql.includes("FROM reimbursement_envelope") ? mixedEnvelopes : []);
+    const response = await request(db, "/reimbursement/batch", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: 144,
+        applicant_userid: "LuShuMing",
+        envelope_ids: [237, 241]
+      })
+    });
+    expect(response.status).toBe(400);
+    const payload = (await response.json()) as {
+      error: {
+        code: string;
+        message: string;
+        title_counts: Array<{ entity_id: number | null; count: number }>;
+      };
+    };
+    expect(payload.error.code).toBe("MIXED_INVOICE_TITLE");
+    expect(payload.error.message).toContain("2–200");
+    expect(payload.error.title_counts).toHaveLength(2);
+    expect(db.executed.some((item) => item.sql.includes("INSERT INTO reimbursement_batch"))).toBe(
+      false
+    );
+  });
+
+  it("理由过短同样 400", async () => {
+    const db = new FakeDb();
+    db.allHandler = (sql) => (sql.includes("FROM reimbursement_envelope") ? mixedEnvelopes : []);
+    const response = await request(db, "/reimbursement/batch", {
+      method: "POST",
+      body: JSON.stringify({
+        project_id: 144,
+        applicant_userid: "LuShuMing",
+        envelope_ids: [237, 241],
+        mixed_title_reason: "急"
+      })
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("全部未识别不算混合：不因抬头返回 400", async () => {
+    const db = new FakeDb();
+    db.allHandler = (sql) =>
+      sql.includes("FROM reimbursement_envelope")
+        ? [envelopeRow({ id: 1, amount: 10 }), envelopeRow({ id: 2, amount: 20 })]
+        : [];
+    const response = await request(db, "/reimbursement/batch", {
+      method: "POST",
+      body: JSON.stringify({ project_id: 144, applicant_userid: "LuShuMing", envelope_ids: [1, 2] })
+    });
+    // 后续会走幂等/建批逻辑，假 D1 未必能跑通；只断言不是抬头导致的 400
+    if (response.status === 400) {
+      const payload = (await response.json()) as { error: { code?: string } };
+      expect(payload.error.code).not.toBe("MIXED_INVOICE_TITLE");
+    }
+  });
+});
