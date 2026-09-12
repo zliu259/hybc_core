@@ -231,7 +231,8 @@ const loadBizContextFromInstance = async (
   if (instance.biz_type === "reimbursement_batch") {
     const itemRows = await env.DB.prepare(
       `SELECT e.id, e.envelope_no, e.invoice_no, e.amount, e.category, e.description,
-              e.precheck_status, e.precheck_comment, e.silent_review_result, e.ocr_status
+              e.precheck_status, e.precheck_comment, e.silent_review_result, e.ocr_status,
+              e.invoice_title_entity_id, e.invoice_title_name
          FROM reimbursement_batch_item bi
          JOIN reimbursement_envelope e ON e.id = bi.envelope_id
         WHERE bi.batch_id = ?
@@ -250,6 +251,8 @@ const loadBizContextFromInstance = async (
         precheck_comment: string | null;
         silent_review_result: string | null;
         ocr_status: string;
+        invoice_title_entity_id: number | null;
+        invoice_title_name: string | null;
       }>();
 
     const attachmentRows = await env.DB.prepare(
@@ -290,6 +293,12 @@ const loadBizContextFromInstance = async (
       };
     }
 
+    const batchTitleRow = await env.DB.prepare(
+      "SELECT invoice_title_entity_id, mixed_title_reason FROM reimbursement_batch WHERE id = ?"
+    )
+      .bind(instance.biz_id)
+      .first<{ invoice_title_entity_id: number | null; mixed_title_reason: string | null }>();
+
     const itemReviewSummary = (itemRows.results ?? []).map((row) => {
       let silentReviewSummary: string | null = null;
       if (row.silent_review_result) {
@@ -317,13 +326,19 @@ const loadBizContextFromInstance = async (
         precheck_status: row.precheck_status,
         precheck_comment: row.precheck_comment,
         ocr_status: row.ocr_status,
-        ai_reasonability_summary: silentReviewSummary
+        ai_reasonability_summary: silentReviewSummary,
+        invoice_title_entity_id: row.invoice_title_entity_id ?? null,
+        invoice_title_name: row.invoice_title_name ?? null
       };
     });
 
     context = {
       ...context,
       reimbursement_item_reviews: itemReviewSummary,
+      reimbursement_batch_title: {
+        invoice_title_entity_id: batchTitleRow?.invoice_title_entity_id ?? null,
+        mixed_title_reason: batchTitleRow?.mixed_title_reason ?? null
+      },
       review_focus: "reasonability_summary"
     };
   }
