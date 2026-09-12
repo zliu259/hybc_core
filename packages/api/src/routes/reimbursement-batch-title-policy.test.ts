@@ -49,6 +49,24 @@ describe("summarizeBatchTitles", () => {
       ]).kind
     ).toBe("mixed");
   });
+
+  it("两个不同的未识别原文仍算 unknown，名称取第一条", () => {
+    const summary = summarizeBatchTitles([
+      { invoice_title_entity_id: null, invoice_title_name: "刘相余" },
+      { invoice_title_entity_id: null, invoice_title_name: "张三" }
+    ]);
+    expect(summary.kind).toBe("unknown");
+    expect(summary.counts).toEqual([{ entity_id: null, name: "刘相余", count: 2 }]);
+  });
+
+  it("同主体不同原文仍算 uniform", () => {
+    const summary = summarizeBatchTitles([
+      { invoice_title_entity_id: 11, invoice_title_name: "北京鑫丰畅建设有限公司" },
+      { invoice_title_entity_id: 11, invoice_title_name: "北京鑫丰畅建设有限公司（变体）" }
+    ]);
+    expect(summary.kind).toBe("uniform");
+    expect(summary.counts).toEqual([{ entity_id: 11, name: "北京鑫丰畅建设有限公司", count: 2 }]);
+  });
 });
 
 describe("validateMixedTitleReason", () => {
@@ -61,5 +79,14 @@ describe("validateMixedTitleReason", () => {
     expect(validateMixedTitleReason("长".repeat(201))).toBeNull();
     expect(validateMixedTitleReason(undefined)).toBeNull();
     expect(validateMixedTitleReason(12)).toBeNull();
+  });
+
+  it("理由边界：恰好 2 字 / 恰好 200 字有效，长度按去空白后计算", () => {
+    expect(validateMixedTitleReason("两家")).toBe("两家");
+    expect(validateMixedTitleReason("长".repeat(200))).toBe("长".repeat(200));
+    expect(validateMixedTitleReason("  短  ")).toBeNull();
+    expect(validateMixedTitleReason(`  ${"长".repeat(200)}  `)).toBe("长".repeat(200));
+    expect(validateMixedTitleReason("    ")).toBeNull();
+    expect(validateMixedTitleReason(null)).toBeNull();
   });
 });

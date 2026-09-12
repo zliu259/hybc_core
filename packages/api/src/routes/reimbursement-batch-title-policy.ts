@@ -1,6 +1,8 @@
+// 规则与 packages/web/src/views/finance/reimbursement/reimbursement-title.ts 的 summarizeTitles 逐字同步：
+// 改一处必须改另一处（web 用同一算法做成批前的预判/提示，api 是最终裁决）。
 export type BatchTitleEnvelope = {
-  invoice_title_entity_id: number | null;
-  invoice_title_name: string | null;
+  invoice_title_entity_id?: number | null;
+  invoice_title_name?: string | null;
 };
 
 export type BatchTitleKind = "uniform" | "mixed" | "unknown" | "empty";
@@ -27,6 +29,7 @@ export const MIXED_TITLE_REASON_MAX_LENGTH = 200;
  * - unknown：全部未识别（不算混合）
  * - mixed：其余（含「已识别 + 未识别」）
  * counts 按数量降序；未识别桶的 name 取第一条有原文的信封。
+ * counts 在计数相同时保持输入顺序（稳定排序），web 与 api 的输入顺序可能不同，勿跨端断言 counts 顺序。
  */
 export const summarizeBatchTitles = (envelopes: BatchTitleEnvelope[]): BatchTitleSummary => {
   if (envelopes.length === 0) return { kind: "empty", entityId: null, counts: [] };
