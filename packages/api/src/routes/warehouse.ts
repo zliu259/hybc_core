@@ -34,6 +34,13 @@ import type {
   Warehouse
 } from "../types/warehouse";
 
+// 审批摘要用中文单据类型（英文枚举码不能出现在用户可见摘要里）
+const ORDER_TYPE_SUMMARY_LABELS: Record<string, string> = {
+  inbound: "入库",
+  outbound: "出库",
+  transfer: "调拨"
+};
+
 const nowIso = () => new Date().toISOString();
 
 const parseTaskResult = (resultJson: string | null): Record<string, unknown> | null => {
@@ -934,7 +941,9 @@ warehouseRoutes.post(
       {
         biz_type: "stock_order",
         biz_id: id,
-        biz_summary: body.biz_summary?.trim() || `${order.order_no} | ${order.order_type}`,
+        biz_summary:
+          body.biz_summary?.trim() ||
+          `${order.order_no}｜${ORDER_TYPE_SUMMARY_LABELS[order.order_type] ?? "出入库"}`,
         context: {
           biz_type: "stock_order",
           biz_id: id,

@@ -41,6 +41,15 @@ import type {
   WarehouseTaskPackage
 } from "../types/work-order";
 
+// 审批摘要用中文工单类型（英文枚举码不能出现在用户可见摘要里）
+const WORK_ORDER_TYPE_SUMMARY_LABELS: Record<string, string> = {
+  inspection: "检查",
+  maintenance: "维护",
+  servicing: "保养",
+  modification: "改装",
+  scrapping: "报废"
+};
+
 const nowIso = () => new Date().toISOString();
 
 const getUploadBaseUrl = (env: Env, requestUrl: string): string => {
@@ -1230,7 +1239,9 @@ warehouseAssetWorkOrderRoutes.post(
       {
         biz_type: "warehouse_asset_work_order",
         biz_id: id,
-        biz_summary: body.biz_summary?.trim() || `${row.work_order_no} | ${row.work_order_type}`,
+        biz_summary:
+          body.biz_summary?.trim() ||
+          `${row.work_order_no}｜${WORK_ORDER_TYPE_SUMMARY_LABELS[row.work_order_type] ?? "库房工单"}`,
         context: {
           biz_type: "warehouse_asset_work_order",
           biz_id: id,
