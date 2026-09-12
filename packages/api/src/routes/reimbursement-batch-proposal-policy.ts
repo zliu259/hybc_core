@@ -4,17 +4,20 @@ export type ProposalEnvelopeInput = {
   applicant_userid: string;
   amount: number;
   invoice_title_entity_id?: number | null;
+  invoice_title_name?: string | null;
 };
 
 export type BatchProposalGroup = {
   project_id: number;
   applicant_userid: string;
   invoice_title_entity_id: number | null;
+  invoice_title_name: string | null;
   envelope_ids: number[];
   item_count: number;
   total_amount: number;
 };
 
+// 组内抬头名取第一条有原文的信封，与 reimbursement-batch-title-policy.summarizeBatchTitles 的桶名规则一致
 export const groupBatchProposals = (envelopes: ProposalEnvelopeInput[]): BatchProposalGroup[] => {
   const groups = new Map<string, BatchProposalGroup>();
   for (const envelope of envelopes) {
@@ -24,6 +27,7 @@ export const groupBatchProposals = (envelopes: ProposalEnvelopeInput[]): BatchPr
     if (existing) {
       groups.set(key, {
         ...existing,
+        invoice_title_name: existing.invoice_title_name ?? envelope.invoice_title_name ?? null,
         envelope_ids: [...existing.envelope_ids, envelope.id],
         item_count: existing.item_count + 1,
         total_amount: existing.total_amount + (envelope.amount || 0)
@@ -33,6 +37,7 @@ export const groupBatchProposals = (envelopes: ProposalEnvelopeInput[]): BatchPr
         project_id: envelope.project_id,
         applicant_userid: envelope.applicant_userid,
         invoice_title_entity_id: titleEntityId,
+        invoice_title_name: envelope.invoice_title_name ?? null,
         envelope_ids: [envelope.id],
         item_count: 1,
         total_amount: envelope.amount || 0

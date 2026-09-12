@@ -234,6 +234,7 @@ describe("GET /reimbursement/batch/candidates invoice_title_entity_id", () => {
     );
     expect(response.status).toBe(200);
     expect(candidatesSql(db)?.sql).toContain("invoice_title_entity_id IS NULL");
+    expect(candidatesSql(db)?.params).toEqual([144, "LuShuMing"]);
   });
 
   it("数字 → = ? 且绑定该 id", async () => {
@@ -261,6 +262,86 @@ describe("GET /reimbursement/batch/candidates invoice_title_entity_id", () => {
       "/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing&invoice_title_entity_id=abc"
     );
     expect(response.status).toBe(400);
+  });
+
+  it("0 / -1 / 1.5 → 400", async () => {
+    for (const raw of ["0", "-1", "1.5"]) {
+      const db = new FakeDb();
+      const response = await request(
+        db,
+        `/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing&invoice_title_entity_id=${raw}`
+      );
+      expect(response.status).toBe(400);
+    }
+  });
+
+  it("首尾空白被裁剪", async () => {
+    const db = new FakeDb();
+    const response = await request(
+      db,
+      "/reimbursement/batch/candidates?project_id=144&applicant_userid=LuShuMing&invoice_title_entity_id=%2011%20"
+    );
+    expect(response.status).toBe(200);
+    expect(candidatesSql(db)?.params).toEqual([144, "LuShuMing", 11]);
+  });
+});
+
+describe("GET /reimbursement/batch/proposals 按抬头分组", () => {
+  beforeEach(() => {
+    mockAuthState.payload = { ...mockAuthState.payload, sub: "finance-a", roles: ["finance"] };
+  });
+
+  it("同人同项目不同抬头拆成两组，组带抬头字段", async () => {
+    const db = new FakeDb();
+    db.allHandler = (sql) =>
+      sql.includes("FROM reimbursement_envelope e")
+        ? [
+            {
+              id: 237,
+              envelope_no: "e-237",
+              project_id: 144,
+              applicant_userid: "LuShuMing",
+              amount: 1348,
+              description: null,
+              channel: "electronic",
+              duplicate_risk_level: null,
+              invoice_title_entity_id: 11,
+              invoice_title_name: "北京鑫丰畅建设有限公司"
+            },
+            {
+              id: 241,
+              envelope_no: "e-241",
+              project_id: 144,
+              applicant_userid: "LuShuMing",
+              amount: 18,
+              description: null,
+              channel: "electronic",
+              duplicate_risk_level: null,
+              invoice_title_entity_id: 6,
+              invoice_title_name: "廊坊市丰畅市政工程有限公司"
+            }
+          ]
+        : [];
+    const response = await request(db, "/reimbursement/batch/proposals");
+    expect(response.status).toBe(200);
+    const payload = (await response.json()) as {
+      data: Array<{
+        invoice_title_entity_id: number | null;
+        invoice_title_name: string | null;
+        envelopes: Array<{ id: number; invoice_title_entity_id: number | null }>;
+      }>;
+    };
+    expect(
+      payload.data.map((g) => [
+        g.invoice_title_entity_id,
+        g.invoice_title_name,
+        g.envelopes.map((e) => e.id)
+      ])
+    ).toEqual([
+      [6, "廊坊市丰畅市政工程有限公司", [241]],
+      [11, "北京鑫丰畅建设有限公司", [237]]
+    ]);
+    expect(payload.data[0].envelopes[0].invoice_title_entity_id).toBe(6);
   });
 });
 

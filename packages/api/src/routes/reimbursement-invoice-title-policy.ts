@@ -113,3 +113,20 @@ export const resolveOcrTitleUpdate = (
   }
   return { entityId: match.entityId, name: match.name, source: "ocr" };
 };
+
+export type InvoiceTitleFilter =
+  | { kind: "all" }
+  | { kind: "none" }
+  | { kind: "entity"; entityId: number }
+  | { kind: "invalid" };
+
+/** 候选查询参数 invoice_title_entity_id：空=不过滤；none=未识别；纯数字正整数=该主体；其余无效 */
+export const parseInvoiceTitleFilter = (raw: string | null | undefined): InvoiceTitleFilter => {
+  const value = (raw ?? "").trim();
+  if (!value) return { kind: "all" };
+  if (value === "none") return { kind: "none" };
+  if (!/^\d+$/.test(value)) return { kind: "invalid" };
+  const entityId = Number(value);
+  if (!Number.isSafeInteger(entityId) || entityId <= 0) return { kind: "invalid" };
+  return { kind: "entity", entityId };
+};

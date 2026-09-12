@@ -43,6 +43,7 @@ import {
 } from "./reimbursement-duplicate-scan";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import {
+  parseInvoiceTitleFilter,
   pickBuyerNameFromReviews,
   readInvoiceExtractionText
 } from "./reimbursement-invoice-title-policy";
@@ -1680,26 +1681,24 @@ reimbursementRoutes.get(
       return c.json({ success: false, error: { message: "applicant_userid is required" } }, 400);
     }
 
-    // 发票抬头过滤：正整数 = 该主体；none = 未识别；缺省不过滤
-    const titleFilterRaw = c.req.query("invoice_title_entity_id")?.trim() ?? "";
-    let titleClause = "";
-    const titleParams: number[] = [];
-    if (titleFilterRaw === "none") {
-      titleClause = " AND invoice_title_entity_id IS NULL";
-    } else if (titleFilterRaw) {
-      const titleEntityId = Number(titleFilterRaw);
-      if (!Number.isInteger(titleEntityId) || titleEntityId <= 0) {
-        return c.json(
-          {
-            success: false,
-            error: { message: "invoice_title_entity_id must be a positive integer or 'none'" }
-          },
-          400
-        );
-      }
-      titleClause = " AND invoice_title_entity_id = ?";
-      titleParams.push(titleEntityId);
+    // 发票抬头过滤：只做读过滤，不校验主体是否存在/启用（不存在的 id 自然查不到，避免多一次查询；写路径 PUT /:id 才校验）
+    const titleFilter = parseInvoiceTitleFilter(c.req.query("invoice_title_entity_id"));
+    if (titleFilter.kind === "invalid") {
+      return c.json(
+        {
+          success: false,
+          error: { message: "invoice_title_entity_id must be a positive integer or 'none'" }
+        },
+        400
+      );
     }
+    const titleClause =
+      titleFilter.kind === "none"
+        ? " AND invoice_title_entity_id IS NULL"
+        : titleFilter.kind === "entity"
+          ? " AND invoice_title_entity_id = ?"
+          : "";
+    const titleParams = titleFilter.kind === "entity" ? [titleFilter.entityId] : [];
 
     const rows = await c.env.DB.prepare(
       `SELECT *
@@ -1790,10 +1789,7 @@ reimbursementRoutes.get(
         project_id: group.project_id,
         applicant_userid: group.applicant_userid,
         invoice_title_entity_id: group.invoice_title_entity_id,
-        invoice_title_name:
-          group.envelope_ids
-            .map((envelopeId) => envelopeById.get(envelopeId)?.invoice_title_name ?? null)
-            .find((name) => Boolean(name)) ?? null,
+        invoice_title_name: group.invoice_title_name,
         item_count: group.item_count,
         total_amount: group.total_amount,
         envelopes: group.envelope_ids.map((envelopeId) => {

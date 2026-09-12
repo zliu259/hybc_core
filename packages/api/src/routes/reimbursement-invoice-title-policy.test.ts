@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   matchInvoiceTitleEntity,
   normalizeInvoiceTitle,
+  parseInvoiceTitleFilter,
   pickBuyerNameFromReviews,
   readInvoiceExtractionText,
   resolveOcrTitleUpdate
@@ -186,5 +187,21 @@ describe("resolveOcrTitleUpdate", () => {
         matchInvoiceTitleEntity("刘相余", entities)
       )
     ).toEqual({ entityId: null, name: "刘相余", source: "ocr" });
+  });
+});
+
+describe("parseInvoiceTitleFilter", () => {
+  it("空/空白 → all；none → none；数字 → entity", () => {
+    expect(parseInvoiceTitleFilter(undefined)).toEqual({ kind: "all" });
+    expect(parseInvoiceTitleFilter("   ")).toEqual({ kind: "all" });
+    expect(parseInvoiceTitleFilter("none")).toEqual({ kind: "none" });
+    expect(parseInvoiceTitleFilter("11")).toEqual({ kind: "entity", entityId: 11 });
+    expect(parseInvoiceTitleFilter(" 11 ")).toEqual({ kind: "entity", entityId: 11 });
+  });
+
+  it("0 / 负数 / 小数 / 科学计数 / 字母 / 超大整数 → invalid", () => {
+    for (const raw of ["0", "-1", "1.5", "1e3", "abc", "0x10", "+11", "9007199254740993"]) {
+      expect(parseInvoiceTitleFilter(raw)).toEqual({ kind: "invalid" });
+    }
   });
 });
