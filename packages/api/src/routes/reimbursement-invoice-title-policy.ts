@@ -17,6 +17,7 @@ export type InvoiceReviewTitleRow = {
 export type OcrTitleOutcome = {
   buyerName: string | null;
   pendingCount: number;
+  completedCount: number;
 };
 
 export type OcrTitleUpdate = {
@@ -36,12 +37,18 @@ export const normalizeInvoiceTitle = (raw: unknown): string | null => {
   return normalized || null;
 };
 
-/** 只在 active 主体中按归一化名精确比对；唯一命中才给 entityId，原文始终保留 */
+/** 发票抬头原文入库前的最大长度，超出截断 */
+export const INVOICE_TITLE_NAME_MAX_LENGTH = 200;
+
+/** 只在 active 主体中按归一化名精确比对；唯一命中才给 entityId，原文始终保留（超长截断） */
 export const matchInvoiceTitleEntity = (
   raw: unknown,
   entities: InvoiceTitleEntityCandidate[]
 ): InvoiceTitleMatch => {
-  const name = typeof raw === "string" && raw.trim() ? raw.trim() : null;
+  const name =
+    typeof raw === "string" && raw.trim()
+      ? raw.trim().slice(0, INVOICE_TITLE_NAME_MAX_LENGTH)
+      : null;
   const normalized = normalizeInvoiceTitle(raw);
   if (!normalized) return { entityId: null, name };
   const hits = entities.filter(
@@ -89,6 +96,7 @@ export const pickBuyerNameFromReviews = (
  * OCR 同步是否/如何写抬头：
  * - 手工指定过 → null（不写）
  * - 仍有识别任务进行中 → null（不动）
+ * - 本轮无任何完成行（全失败）→ null（保留原值）
  * - 全部完成但无抬头 → 三列清空
  * - 有抬头 → 写匹配结果，来源 ocr
  */
@@ -99,6 +107,9 @@ export const resolveOcrTitleUpdate = (
 ): OcrTitleUpdate | null => {
   if (envelope.invoice_title_source === "manual") return null;
   if (outcome.pendingCount > 0) return null;
-  if (!outcome.buyerName) return { entityId: null, name: null, source: null };
+  if (!outcome.buyerName) {
+    // 本轮没有任何完成行（全部失败）→ 保留原值；有完成行但都没抬头 → 清空
+    return outcome.completedCount > 0 ? { entityId: null, name: null, source: null } : null;
+  }
   return { entityId: match.entityId, name: match.name, source: "ocr" };
 };

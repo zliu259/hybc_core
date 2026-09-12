@@ -62,6 +62,11 @@ describe("matchInvoiceTitleEntity", () => {
   it("廊坊丰畅精确命中主体 6", () => {
     expect(matchInvoiceTitleEntity("廊坊市丰畅市政工程有限公司", entities).entityId).toBe(6);
   });
+
+  it("原文超过 200 字时截断保存", () => {
+    const long = "甲".repeat(250);
+    expect(matchInvoiceTitleEntity(long, entities).name).toBe("甲".repeat(200));
+  });
 });
 
 describe("readInvoiceExtractionText / pickBuyerNameFromReviews", () => {
@@ -117,7 +122,7 @@ describe("resolveOcrTitleUpdate", () => {
     expect(
       resolveOcrTitleUpdate(
         { invoice_title_source: "manual" },
-        { buyerName: "x", pendingCount: 0 },
+        { buyerName: "x", pendingCount: 0, completedCount: 1 },
         matched
       )
     ).toBeNull();
@@ -127,7 +132,7 @@ describe("resolveOcrTitleUpdate", () => {
     expect(
       resolveOcrTitleUpdate(
         { invoice_title_source: null },
-        { buyerName: null, pendingCount: 2 },
+        { buyerName: null, pendingCount: 2, completedCount: 0 },
         matched
       )
     ).toBeNull();
@@ -137,17 +142,27 @@ describe("resolveOcrTitleUpdate", () => {
     expect(
       resolveOcrTitleUpdate(
         { invoice_title_source: "ocr" },
-        { buyerName: null, pendingCount: 0 },
+        { buyerName: null, pendingCount: 0, completedCount: 1 },
         { entityId: null, name: null }
       )
     ).toEqual({ entityId: null, name: null, source: null });
+  });
+
+  it("本轮全部失败（无完成行）→ 不清空、不写", () => {
+    expect(
+      resolveOcrTitleUpdate(
+        { invoice_title_source: "ocr" },
+        { buyerName: null, pendingCount: 0, completedCount: 0 },
+        { entityId: null, name: null }
+      )
+    ).toBeNull();
   });
 
   it("有抬头 → 写入匹配结果，来源 ocr", () => {
     expect(
       resolveOcrTitleUpdate(
         { invoice_title_source: null },
-        { buyerName: "北京鑫丰畅建设有限公司", pendingCount: 0 },
+        { buyerName: "北京鑫丰畅建设有限公司", pendingCount: 0, completedCount: 1 },
         matched
       )
     ).toEqual({ entityId: 11, name: "北京鑫丰畅建设有限公司", source: "ocr" });
@@ -157,7 +172,7 @@ describe("resolveOcrTitleUpdate", () => {
     expect(
       resolveOcrTitleUpdate(
         { invoice_title_source: null },
-        { buyerName: "北京鑫丰畅建设有限公司", pendingCount: 1 },
+        { buyerName: "北京鑫丰畅建设有限公司", pendingCount: 1, completedCount: 0 },
         matched
       )
     ).toBeNull();
@@ -167,7 +182,7 @@ describe("resolveOcrTitleUpdate", () => {
     expect(
       resolveOcrTitleUpdate(
         { invoice_title_source: null },
-        { buyerName: "刘相余", pendingCount: 0 },
+        { buyerName: "刘相余", pendingCount: 0, completedCount: 1 },
         matchInvoiceTitleEntity("刘相余", entities)
       )
     ).toEqual({ entityId: null, name: "刘相余", source: "ocr" });

@@ -1207,9 +1207,13 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
 
     await syncEnvelopeInvoiceTitle(env.DB, {
       envelopeId,
+      currentStatus: envelope.status,
+      currentEntityId: envelope.invoice_title_entity_id ?? null,
+      currentName: envelope.invoice_title_name ?? null,
       currentSource: envelope.invoice_title_source ?? null,
       buyerName: pickBuyerNameFromReviews(completedRows, bestRow ?? null),
-      pendingCount
+      pendingCount,
+      completedCount: completedRows.length
     });
   }
 
@@ -1248,12 +1252,17 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
         typeof ocrResult?.buyer_name === "string" && ocrResult.buyer_name.trim()
           ? ocrResult.buyer_name.trim()
           : null;
+      // 单任务回退路径只在有抬头时写入，从不清空（该路径每个旧信封最多跑一次）
       if (fallbackBuyerName) {
         await syncEnvelopeInvoiceTitle(env.DB, {
           envelopeId,
+          currentStatus: envelope.status,
+          currentEntityId: envelope.invoice_title_entity_id ?? null,
+          currentName: envelope.invoice_title_name ?? null,
           currentSource: envelope.invoice_title_source ?? null,
           buyerName: fallbackBuyerName,
-          pendingCount: 0
+          pendingCount: 0,
+          completedCount: 1
         });
       }
     }

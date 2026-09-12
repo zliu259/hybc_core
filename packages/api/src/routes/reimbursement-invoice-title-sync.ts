@@ -7,10 +7,17 @@ import {
 
 export type SyncEnvelopeInvoiceTitleInput = {
   envelopeId: number;
+  currentStatus: string;
+  currentEntityId: number | null;
+  currentName: string | null;
   currentSource: string | null;
   buyerName: string | null;
   pendingCount: number;
+  completedCount: number;
 };
+
+// 与 PUT /:id 手工指定的锁定状态一致：离开办公室阶段后 OCR 不再改写抬头
+const TITLE_LOCKED_STATUSES = new Set(["batched", "pending_approval", "approved", "paid"]);
 
 const loadActiveEntities = async (db: D1Database): Promise<InvoiceTitleEntityCandidate[]> => {
   const rows = await db
@@ -28,6 +35,7 @@ export const syncEnvelopeInvoiceTitle = async (
   db: D1Database,
   input: SyncEnvelopeInvoiceTitleInput
 ): Promise<OcrTitleUpdate | null> => {
+  if (TITLE_LOCKED_STATUSES.has(input.currentStatus)) return null;
   if (input.currentSource === "manual") return null;
   if (input.pendingCount > 0) return null;
 
@@ -36,10 +44,20 @@ export const syncEnvelopeInvoiceTitle = async (
     : { entityId: null, name: null };
   const update = resolveOcrTitleUpdate(
     { invoice_title_source: input.currentSource },
-    { buyerName: input.buyerName, pendingCount: input.pendingCount },
+    {
+      buyerName: input.buyerName,
+      pendingCount: input.pendingCount,
+      completedCount: input.completedCount
+    },
     match
   );
   if (!update) return null;
+
+  const unchanged =
+    update.entityId === input.currentEntityId &&
+    update.name === input.currentName &&
+    update.source === input.currentSource;
+  if (unchanged) return null;
 
   await db
     .prepare(

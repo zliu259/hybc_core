@@ -13,13 +13,18 @@ CREATE INDEX IF NOT EXISTS idx_reimbursement_envelope_invoice_title_entity_id
 ALTER TABLE reimbursement_batch ADD COLUMN invoice_title_entity_id INTEGER;
 ALTER TABLE reimbursement_batch ADD COLUMN mixed_title_reason TEXT;
 
--- 回填 1：抬头原文（每个信封取最新一轮里 id 最小的非空 buyer_name 完成行，与运行时 pickBuyerNameFromReviews 的回退顺序一致）
+-- 回填 1：抬头原文（只看每个信封的最新识别轮，取该轮 id 最小的非空 buyer_name 完成行；与运行时 pickBuyerNameFromReviews 的范围和回退顺序一致）
 UPDATE reimbursement_envelope
    SET invoice_title_name = (
          SELECT trim(json_extract(r.extraction_json, '$.buyer_name'))
            FROM reimbursement_invoice_review r
           WHERE r.envelope_id = reimbursement_envelope.id
             AND r.task_status = 'completed'
+            AND r.review_round = (
+                  SELECT MAX(r2.review_round)
+                    FROM reimbursement_invoice_review r2
+                   WHERE r2.envelope_id = reimbursement_envelope.id
+                )
             AND json_valid(r.extraction_json)
             AND json_type(r.extraction_json, '$.buyer_name') = 'text'
             AND trim(json_extract(r.extraction_json, '$.buyer_name')) != ''
@@ -34,6 +39,11 @@ UPDATE reimbursement_envelope
            FROM reimbursement_invoice_review r
           WHERE r.envelope_id = reimbursement_envelope.id
             AND r.task_status = 'completed'
+            AND r.review_round = (
+                  SELECT MAX(r2.review_round)
+                    FROM reimbursement_invoice_review r2
+                   WHERE r2.envelope_id = reimbursement_envelope.id
+                )
             AND json_valid(r.extraction_json)
             AND json_type(r.extraction_json, '$.buyer_name') = 'text'
             AND trim(json_extract(r.extraction_json, '$.buyer_name')) != ''
