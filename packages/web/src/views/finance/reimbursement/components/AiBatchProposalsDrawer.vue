@@ -10,6 +10,7 @@ import {
   type ReimbursementBatchProposal
 } from "@/api/reimbursement";
 import { listPayees, type Payee } from "@/api/payment";
+import { invoiceTitleDisplay } from "../reimbursement-title";
 
 defineOptions({ name: "AiBatchProposalsDrawer" });
 
@@ -53,18 +54,11 @@ const toProjectLabel = (id: number) => props.projectNameMap[id] || `项目#${id}
 const toUserLabel = (userid: string) => props.userNameMap.get(userid) ?? userid;
 
 const titleTagOf = (row: ProposalRow) => {
-  if (row.invoice_title_entity_id) {
-    return {
-      text: row.invoice_title_name || `主体#${row.invoice_title_entity_id}`,
-      type: "primary" as const
-    };
-  }
-  if (row.invoice_title_name) {
-    return {
-      text: `未匹配主体：${row.invoice_title_name}`,
-      type: "warning" as const
-    };
-  }
+  const display = invoiceTitleDisplay(row);
+  if (display.tag === "matched")
+    return { text: display.text, type: "primary" as const };
+  if (display.tag === "unmatched")
+    return { text: `未匹配主体：${display.text}`, type: "warning" as const };
   return { text: "未识别抬头", type: "warning" as const };
 };
 

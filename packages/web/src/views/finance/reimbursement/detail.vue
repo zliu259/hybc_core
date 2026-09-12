@@ -41,6 +41,7 @@ import {
   reimbursementTaskStatusLabel as toTaskStatusLabel,
   reimbursementVerificationStatusLabel as toVerificationStatusLabel
 } from "./reimbursement-labels";
+import { invoiceTitleDisplay } from "./reimbursement-title";
 
 defineOptions({ name: "ReimbursementDetail" });
 
@@ -214,16 +215,15 @@ const canEditInvoiceTitle = computed(
 const invoiceTitleText = computed(() => {
   const current = detail.value;
   if (!current) return "-";
-  if (current.invoice_title_entity_id) {
-    return (
-      entityNameById.value.get(current.invoice_title_entity_id) ||
-      current.invoice_title_name ||
-      `主体#${current.invoice_title_entity_id}`
-    );
-  }
-  return current.invoice_title_name
-    ? `${current.invoice_title_name}（未匹配主体）`
-    : "未识别";
+  const display = invoiceTitleDisplay(
+    current,
+    current.invoice_title_entity_id
+      ? entityNameById.value.get(current.invoice_title_entity_id)
+      : null
+  );
+  return display.tag === "unmatched"
+    ? `${display.text}（未匹配主体）`
+    : display.text;
 });
 
 const invoiceTitleDirty = computed(
@@ -239,6 +239,15 @@ const invoiceTitleSourceTagType = computed(() => {
   return "info";
 });
 
+const titleEntityOptions = computed(() => {
+  const current = detail.value?.invoice_title_entity_id;
+  if (!current || activeEntities.value.some(item => item.id === current)) {
+    return activeEntities.value;
+  }
+  const inactive = entities.value.find(item => item.id === current);
+  return inactive ? [...activeEntities.value, inactive] : activeEntities.value;
+});
+
 const saveInvoiceTitle = async () => {
   if (!detail.value || !canEditInvoiceTitle.value) return;
   savingInvoiceTitle.value = true;
@@ -250,10 +259,23 @@ const saveInvoiceTitle = async () => {
       titleEntityId.value ? "发票抬头已指定" : "发票抬头已清除，回到自动识别",
       { type: "success" }
     );
-    await loadDetail();
+    const nextEntityId = titleEntityId.value ?? null;
+    detail.value = {
+      ...detail.value,
+      invoice_title_entity_id: nextEntityId,
+      invoice_title_name: nextEntityId
+        ? (entityNameById.value.get(nextEntityId) ?? null)
+        : null,
+      invoice_title_source: nextEntityId ? "manual" : null
+    };
     notifyChanged();
-  } catch {
-    message("保存发票抬头失败", { type: "error" });
+  } catch (error) {
+    const shape = error as {
+      response?: { data?: { error?: { message?: string } } };
+    };
+    message(shape.response?.data?.error?.message || "保存发票抬头失败", {
+      type: "error"
+    });
   } finally {
     savingInvoiceTitle.value = false;
   }
@@ -1720,7 +1742,7 @@ watch(
                   style="width: 100%"
                 >
                   <el-option
-                    v-for="item in activeEntities"
+                    v-for="item in titleEntityOptions"
                     :key="item.id"
                     :label="item.entity_name"
                     :value="item.id"

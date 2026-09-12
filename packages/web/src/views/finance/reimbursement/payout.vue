@@ -35,6 +35,7 @@ const activeEnvelopeDetailId = ref<number | null>(null);
 
 const payDialogVisible = ref(false);
 const payTargetIds = ref<number[]>([]);
+const payTargetRows = ref<ReimbursementBatch[]>([]);
 const entities = ref<Entity[]>([]);
 const bankAccounts = ref<EntityBankAccount[]>([]);
 const voucherItems = ref<
@@ -73,9 +74,7 @@ const entityNameById = computed(() => {
   return map;
 });
 
-const payTargets = computed(() =>
-  rows.value.filter(row => payTargetIds.value.includes(row.id))
-);
+const payTargets = computed(() => payTargetRows.value);
 
 const titleMismatchTargets = computed(() =>
   payTargets.value.filter(
@@ -114,6 +113,7 @@ const openPayDialog = (ids: number[]) => {
     return;
   }
   payTargetIds.value = ids;
+  payTargetRows.value = rows.value.filter(row => ids.includes(row.id));
   payForm.value = {
     paid_at: "",
     payment_reference: "",
@@ -424,20 +424,20 @@ onMounted(async () => {
           />
         </el-select>
       </el-form-item>
-      <el-form-item label="批次抬头">
+      <el-form-item v-if="payTargets.length > 0" label="批次抬头">
         <div style="line-height: 1.8">
           <div v-for="row in payTargets" :key="row.id">
             {{ row.batch_no }}：{{ titleLabelOf(row) }}
           </div>
         </div>
       </el-form-item>
-      <el-alert
-        v-if="titleMismatchTargets.length > 0"
-        type="error"
-        :closable="false"
-        style="margin-bottom: 12px"
-        :title="`有 ${titleMismatchTargets.length} 个批次的发票抬头主体与所选支付实体不一致`"
-      />
+      <el-form-item v-if="titleMismatchTargets.length > 0">
+        <el-alert
+          type="error"
+          :closable="false"
+          :title="`有 ${titleMismatchTargets.length} 个批次的发票抬头主体与所选支付实体不一致`"
+        />
+      </el-form-item>
       <el-form-item label="支付账号" required>
         <el-select
           v-model="payForm.payment_entity_bank_account_id"

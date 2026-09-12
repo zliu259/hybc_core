@@ -26,6 +26,7 @@ import {
   rowAnomalyTags,
   tableRowClassName
 } from "./reimbursement-labels";
+import { invoiceTitleDisplay } from "./reimbursement-title";
 import ReimbursementBatchCenter from "./batch.vue";
 import ReimbursementPayoutCenter from "./payout.vue";
 import ReimbursementDetail from "./detail.vue";
@@ -623,12 +624,24 @@ onMounted(async () => {
             show-overflow-tooltip
           >
             <template #default="scope">
-              <span v-if="scope.row.invoice_title_name">{{
-                scope.row.invoice_title_name
-              }}</span>
-              <el-tag v-else size="small" type="warning" effect="plain"
+              <el-tag
+                v-if="invoiceTitleDisplay(scope.row).tag === 'unknown'"
+                size="small"
+                type="warning"
+                effect="plain"
                 >未识别</el-tag
               >
+              <template v-else>
+                <span>{{ invoiceTitleDisplay(scope.row).text }}</span>
+                <el-tag
+                  v-if="invoiceTitleDisplay(scope.row).tag === 'unmatched'"
+                  size="small"
+                  type="info"
+                  effect="plain"
+                  style="margin-left: 6px"
+                  >未匹配主体</el-tag
+                >
+              </template>
             </template>
           </el-table-column>
           <el-table-column prop="amount" label="金额" width="100" />

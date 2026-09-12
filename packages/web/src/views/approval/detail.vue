@@ -347,36 +347,8 @@ const syncPayoutSelection = async () => {
   }
 };
 
-const reimbursementTitleEntityName = computed(
-  () =>
-    reimbursementBatchDetail.value?.invoice_title_entity?.entity_name ?? null
-);
-
-const reimbursementTitleMismatch = computed(() => {
-  const batch = reimbursementBatchDetail.value;
-  return Boolean(
-    batch?.invoice_title_entity_id &&
-    payoutForm.value.payment_entity_id &&
-    payoutForm.value.payment_entity_id !== batch.invoice_title_entity_id
-  );
-});
-
 const savePayoutSelection = async () => {
-  if (reimbursementTitleMismatch.value) {
-    try {
-      await ElMessageBox.confirm(
-        `所选付款主体与批次发票抬头主体（${reimbursementTitleEntityName.value ?? "-"}）不一致。报销款应由发票抬头对应主体支付，确定仍要保存？`,
-        "付款主体与发票抬头不一致",
-        {
-          type: "warning",
-          confirmButtonText: "仍要保存",
-          cancelButtonText: "取消"
-        }
-      );
-    } catch {
-      return;
-    }
-  }
+  if (!(await confirmTitleMismatch())) return;
 
   actionLoading.value = true;
   try {
@@ -400,6 +372,39 @@ const reimbursementAuditReport = ref<Record<string, unknown> | string | null>(
 const paymentDetail = ref<PaymentRequestDetail | null>(null);
 const contractDetail = ref<ContractDetail | null>(null);
 const reimbursementBatchDetail = ref<ReimbursementBatchDetail | null>(null);
+
+const reimbursementTitleEntityName = computed(
+  () =>
+    reimbursementBatchDetail.value?.invoice_title_entity?.entity_name ?? null
+);
+
+const reimbursementTitleMismatch = computed(() => {
+  const batch = reimbursementBatchDetail.value;
+  return Boolean(
+    batch?.invoice_title_entity_id &&
+    payoutForm.value.payment_entity_id &&
+    payoutForm.value.payment_entity_id !== batch.invoice_title_entity_id
+  );
+});
+
+const confirmTitleMismatch = async (): Promise<boolean> => {
+  if (!reimbursementTitleMismatch.value) return true;
+  try {
+    await ElMessageBox.confirm(
+      `所选付款主体与批次发票抬头主体（${reimbursementTitleEntityName.value ?? "-"}）不一致。报销款应由发票抬头对应主体支付，确定仍要继续？`,
+      "付款主体与发票抬头不一致",
+      {
+        type: "warning",
+        confirmButtonText: "仍要继续",
+        cancelButtonText: "取消"
+      }
+    );
+    return true;
+  } catch {
+    return false;
+  }
+};
+
 const invoiceRequestDetail = ref<InvoiceRequest | null>(null);
 const invoiceLinkedContract = ref<ContractDetail | null>(null);
 const receiptRefundDetail = ref<ReceiptRefundDetail | null>(null);
@@ -1293,6 +1298,7 @@ const handleApprove = async () => {
     message("请输入审批意见", { type: "warning" });
     return;
   }
+  if (!(await confirmTitleMismatch())) return;
   actionLoading.value = true;
   try {
     await syncPayoutSelection();
