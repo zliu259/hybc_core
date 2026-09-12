@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { ElMessageBox } from "element-plus";
+import { ElMessageBox, type MessageBoxInputData } from "element-plus";
 import { message } from "@/utils/message";
 import { aiAuditStatusLabel, channelLabel } from "@/utils/enum-labels";
 import { listProjects, type Project } from "@/api/project";
@@ -23,6 +23,11 @@ import {
   reimbursementPrecheckStatusLabel,
   reimbursementStatusLabel
 } from "./reimbursement-labels";
+import {
+  describeTitleCounts,
+  invoiceTitleDisplay,
+  summarizeTitles
+} from "./reimbursement-title";
 import { listPayees, createPayee, type Payee } from "@/api/payment";
 import ReimbursementBatchDetail from "./batch-detail.vue";
 import ReimbursementDetail from "./detail.vue";
@@ -58,7 +63,8 @@ const filters = ref({
   payment_entity_id: undefined as number | undefined,
   payment_entity_bank_account_id: undefined as number | undefined,
   payment_account: "",
-  payee_id: undefined as number | undefined
+  payee_id: undefined as number | undefined,
+  invoice_title_entity_id: undefined as number | "none" | undefined
 });
 
 const internalPayees = ref<Payee[]>([]);
@@ -186,6 +192,34 @@ const selectedCandidateTotal = computed(() => {
     .reduce((sum, item) => sum + Number(item.amount || 0), 0);
 });
 
+const selectedCandidateRows = computed(() =>
+  candidates.value.filter(item => candidateSelectedIds.value.includes(item.id))
+);
+
+const selectedTitleSummary = computed(() =>
+  summarizeTitles(selectedCandidateRows.value)
+);
+
+const selectedTitleLabel = computed(() => {
+  const summary = selectedTitleSummary.value;
+  if (summary.kind === "uniform" && summary.entityId) {
+    return (
+      entityNameMap.value.get(summary.entityId) ?? `主体#${summary.entityId}`
+    );
+  }
+  if (summary.kind === "mixed") return "混合抬头";
+  if (summary.kind === "unknown") return "未识别";
+  return "-";
+});
+
+const titleCellFor = (row: ReimbursementEnvelope) =>
+  invoiceTitleDisplay(
+    row,
+    row.invoice_title_entity_id
+      ? entityNameMap.value.get(row.invoice_title_entity_id)
+      : null
+  );
+
 const loadProjects = async () => {
   const result = await listProjects({ page: 1, pageSize: 300 });
   projects.value = result.data;
@@ -234,7 +268,8 @@ const loadCandidates = async () => {
   try {
     const result = await listReimbursementBatchCandidates({
       project_id: filters.value.project_id,
-      applicant_userid: filters.value.applicant_userid.trim()
+      applicant_userid: filters.value.applicant_userid.trim(),
+      invoice_title_entity_id: filters.value.invoice_title_entity_id
     });
     candidates.value = result.data;
     candidateSelectedIds.value = [];
@@ -275,19 +310,85 @@ const onPaymentBankAccountChange = () => {
   filters.value.payment_account = target ? toBankAccountLabel(target) : "";
 };
 
+const matchesTitleFilter = (item: ReimbursementEnvelope) => {
+  const titleFilter = filters.value.invoice_title_entity_id;
+  if (titleFilter === undefined) return true;
+  if (titleFilter === "none") return !item.invoice_title_entity_id;
+  return item.invoice_title_entity_id === titleFilter;
+};
+
 const autoSelectSubmittable = () => {
   candidateSelectedIds.value = candidates.value
     .filter(
       item =>
         item.status === "received" &&
         item.precheck_status === "approved" &&
-        !item.batch_id
+        !item.batch_id &&
+        matchesTitleFilter(item)
     )
     .map(item => item.id);
+  if (
+    filters.value.invoice_title_entity_id === undefined &&
+    selectedTitleSummary.value.kind === "mixed"
+  ) {
+    message("已勾选条目发票抬头不一致，建议先按抬头筛选后再成批", {
+      type: "warning"
+    });
+  }
+};
+
+type CreateBatchErrorShape = {
+  response?: {
+    data?: {
+      error?: {
+        code?: string;
+        title_counts?: Array<{
+          entity_id: number | null;
+          name: string | null;
+          count: number;
+        }>;
+      };
+    };
+  };
+};
+
+const promptMixedTitleReason = async (
+  counts: Array<{
+    entity_id: number | null;
+    name: string | null;
+    count: number;
+  }>
+): Promise<string | null> => {
+  try {
+    // ElMessageBox.prompt 声明返回类型为 MessageBoxInputData | Action，其中
+    // Action 没有 value；实际运行时 prompt 只会以 MessageBoxInputData resolve
+    // （取消时走 reject），故此处窄化断言安全，做法与 precheck.vue /
+    // detail.vue 一致。
+    const { value } = (await ElMessageBox.prompt(
+      `所选条目发票抬头不一致：${describeTitleCounts(counts, id => entityNameMap.value.get(id))}。\n按规定应按抬头分批（付款主体须与发票抬头一致）。如确需混批，请填写理由（2–200 字）。`,
+      "发票抬头不一致",
+      {
+        type: "warning",
+        confirmButtonText: "仍要混批",
+        cancelButtonText: "取消",
+        inputPlaceholder: "混批理由",
+        inputValidator: (value: string) => {
+          const trimmed = value.trim();
+          return trimmed.length >= 2 && trimmed.length <= 200
+            ? true
+            : "理由需 2–200 字";
+        }
+      }
+    )) as MessageBoxInputData;
+    return value.trim();
+  } catch {
+    return null;
+  }
 };
 
 const submitCreateAndApproval = async () => {
-  if (!filters.value.project_id || !filters.value.applicant_userid.trim()) {
+  const projectId = filters.value.project_id;
+  if (!projectId || !filters.value.applicant_userid.trim()) {
     message("请填写项目和申报人", { type: "warning" });
     return;
   }
@@ -304,6 +405,27 @@ const submitCreateAndApproval = async () => {
   const selectedRows = candidates.value.filter(item =>
     candidateSelectedIds.value.includes(item.id)
   );
+
+  const titleSummary = summarizeTitles(selectedRows);
+  let mixedTitleReason: string | undefined;
+  if (titleSummary.kind === "mixed") {
+    const reason = await promptMixedTitleReason(titleSummary.counts);
+    if (!reason) return;
+    mixedTitleReason = reason;
+  }
+  if (
+    titleSummary.kind === "uniform" &&
+    titleSummary.entityId &&
+    !filters.value.payment_entity_id
+  ) {
+    filters.value.payment_entity_id = titleSummary.entityId;
+    await onPaymentEntityChange();
+    message(
+      `已按发票抬头预填付款实体：${entityNameMap.value.get(titleSummary.entityId) ?? titleSummary.entityId}`,
+      { type: "info" }
+    );
+  }
+
   const selectedTotalAmount = selectedRows.reduce(
     (sum, item) => sum + Number(item.amount || 0),
     0
@@ -339,24 +461,41 @@ const submitCreateAndApproval = async () => {
 
   creatingAndSubmitting.value = true;
   try {
-    const createKey = `reimbursement-batch-create-${crypto.randomUUID()}`;
-    const result = await createReimbursementBatch(
-      {
-        project_id: filters.value.project_id,
-        applicant_userid: filters.value.applicant_userid.trim(),
-        payment_method: filters.value.payment_method || undefined,
-        payment_entity_id: filters.value.payment_entity_id,
-        payment_entity_bank_account_id:
-          filters.value.payment_entity_bank_account_id,
-        payment_account: filters.value.payment_account.trim(),
-        payee_id: filters.value.payee_id,
-        envelope_ids:
-          candidateSelectedIds.value.length > 0
-            ? candidateSelectedIds.value
-            : undefined
-      },
-      { idempotencyKey: createKey }
-    );
+    const buildCreatePayload = (reason?: string) => ({
+      project_id: projectId,
+      applicant_userid: filters.value.applicant_userid.trim(),
+      payment_method: filters.value.payment_method || undefined,
+      payment_entity_id: filters.value.payment_entity_id,
+      payment_entity_bank_account_id:
+        filters.value.payment_entity_bank_account_id,
+      payment_account: filters.value.payment_account.trim(),
+      payee_id: filters.value.payee_id,
+      envelope_ids:
+        candidateSelectedIds.value.length > 0
+          ? candidateSelectedIds.value
+          : undefined,
+      mixed_title_reason: reason
+    });
+
+    let result: Awaited<ReturnType<typeof createReimbursementBatch>>;
+    try {
+      result = await createReimbursementBatch(
+        buildCreatePayload(mixedTitleReason),
+        { idempotencyKey: `reimbursement-batch-create-${crypto.randomUUID()}` }
+      );
+    } catch (error) {
+      // 并发下候选抬头已变化：服务端二次判定为混合，补一次理由后重试一次
+      const shape = error as CreateBatchErrorShape;
+      if (shape.response?.data?.error?.code !== "MIXED_INVOICE_TITLE")
+        throw error;
+      const reason = await promptMixedTitleReason(
+        shape.response?.data?.error?.title_counts ?? []
+      );
+      if (!reason) return;
+      result = await createReimbursementBatch(buildCreatePayload(reason), {
+        idempotencyKey: `reimbursement-batch-create-${crypto.randomUUID()}`
+      });
+    }
 
     await submitBatchApproval(
       result.data.id,
@@ -445,6 +584,13 @@ watch(
     loadInternalPayees();
   }
 );
+
+watch(
+  () => filters.value.invoice_title_entity_id,
+  () => {
+    loadCandidates();
+  }
+);
 </script>
 
 <template>
@@ -453,7 +599,7 @@ watch(
       <div>
         <div class="page-title">报销集中审批与历史中心</div>
         <div class="page-subtitle">
-          按项目和被报销人汇总候选报销，确认后创建批次并送审。
+          按项目、被报销人和发票抬头汇总候选报销，确认后创建批次并送审；抬头不一致需填写混批理由。
         </div>
       </div>
       <el-space wrap>
@@ -483,6 +629,10 @@ watch(
       <div class="summary-tile">
         <span>勾选合计</span>
         <strong>¥{{ selectedCandidateTotal.toFixed(2) }}</strong>
+      </div>
+      <div class="summary-tile">
+        <span>勾选抬头</span>
+        <strong>{{ selectedTitleLabel }}</strong>
       </div>
       <div class="summary-tile">
         <span>进行中批次</span>
@@ -530,6 +680,22 @@ watch(
                 :key="item.userid"
                 :label="`${item.name} (${item.userid})`"
                 :value="item.userid"
+              />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="发票抬头">
+            <el-select
+              v-model="filters.invoice_title_entity_id"
+              clearable
+              filterable
+              placeholder="全部抬头"
+            >
+              <el-option label="未识别抬头" value="none" />
+              <el-option
+                v-for="item in activeEntities"
+                :key="item.id"
+                :label="item.entity_name"
+                :value="item.id"
               />
             </el-select>
           </el-form-item>
@@ -655,6 +821,28 @@ watch(
           <template #default="scope">{{
             channelLabel(scope.row.channel)
           }}</template>
+        </el-table-column>
+        <el-table-column label="发票抬头" min-width="200">
+          <template #default="scope">
+            <el-tag
+              v-if="titleCellFor(scope.row).tag === 'unknown'"
+              size="small"
+              type="warning"
+              effect="plain"
+              >未识别</el-tag
+            >
+            <template v-else>
+              <span>{{ titleCellFor(scope.row).text }}</span>
+              <el-tag
+                v-if="titleCellFor(scope.row).tag === 'unmatched'"
+                size="small"
+                type="info"
+                effect="plain"
+                style="margin-left: 6px"
+                >未匹配主体</el-tag
+              >
+            </template>
+          </template>
         </el-table-column>
         <el-table-column prop="invoice_no" label="发票号" min-width="180" />
         <el-table-column prop="amount" label="金额" width="120" />
@@ -918,7 +1106,7 @@ watch(
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
 }
 
