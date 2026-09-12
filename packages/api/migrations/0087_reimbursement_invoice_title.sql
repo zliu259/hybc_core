@@ -7,13 +7,13 @@
 ALTER TABLE reimbursement_envelope ADD COLUMN invoice_title_entity_id INTEGER;
 ALTER TABLE reimbursement_envelope ADD COLUMN invoice_title_name TEXT;
 ALTER TABLE reimbursement_envelope ADD COLUMN invoice_title_source TEXT;
-CREATE INDEX idx_reimbursement_envelope_invoice_title_entity_id
+CREATE INDEX IF NOT EXISTS idx_reimbursement_envelope_invoice_title_entity_id
   ON reimbursement_envelope(invoice_title_entity_id);
 
 ALTER TABLE reimbursement_batch ADD COLUMN invoice_title_entity_id INTEGER;
 ALTER TABLE reimbursement_batch ADD COLUMN mixed_title_reason TEXT;
 
--- 回填 1：抬头原文（每个信封取最新一轮、非空 buyer_name 的完成行）
+-- 回填 1：抬头原文（每个信封取最新一轮里 id 最小的非空 buyer_name 完成行，与运行时 pickBuyerNameFromReviews 的回退顺序一致）
 UPDATE reimbursement_envelope
    SET invoice_title_name = (
          SELECT trim(json_extract(r.extraction_json, '$.buyer_name'))
@@ -23,7 +23,7 @@ UPDATE reimbursement_envelope
             AND json_valid(r.extraction_json)
             AND json_type(r.extraction_json, '$.buyer_name') = 'text'
             AND trim(json_extract(r.extraction_json, '$.buyer_name')) != ''
-          ORDER BY r.review_round DESC, r.id DESC
+          ORDER BY r.review_round DESC, r.id ASC
           LIMIT 1
        ),
        invoice_title_source = 'ocr'
