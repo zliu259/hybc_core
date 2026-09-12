@@ -4774,6 +4774,43 @@ reimbursementRoutes.put(
       );
     }
 
+    const hasInvoiceTitleField = Object.prototype.hasOwnProperty.call(
+      body,
+      "invoice_title_entity_id"
+    );
+    let invoiceTitleEntity: { id: number; entity_name: string } | null = null;
+    if (hasInvoiceTitleField) {
+      if (!isPrivileged) {
+        return c.json(
+          { success: false, error: { message: "Only office roles can set invoice title" } },
+          403
+        );
+      }
+      const rawTitleEntityId = body.invoice_title_entity_id;
+      if (rawTitleEntityId !== null) {
+        if (!Number.isInteger(rawTitleEntityId) || (rawTitleEntityId as number) <= 0) {
+          return c.json(
+            {
+              success: false,
+              error: { message: "invoice_title_entity_id must be a positive integer or null" }
+            },
+            400
+          );
+        }
+        invoiceTitleEntity = await c.env.DB.prepare(
+          "SELECT id, entity_name FROM entity WHERE id = ? AND status = 'active'"
+        )
+          .bind(rawTitleEntityId)
+          .first<{ id: number; entity_name: string }>();
+        if (!invoiceTitleEntity) {
+          return c.json(
+            { success: false, error: { message: "invoice title entity not found or inactive" } },
+            400
+          );
+        }
+      }
+    }
+
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          project_id = COALESCE(?, project_id),
@@ -4804,6 +4841,40 @@ reimbursementRoutes.put(
         id
       )
       .run();
+
+    if (hasInvoiceTitleField) {
+      const nextTitle = {
+        entity_id: invoiceTitleEntity?.id ?? null,
+        name: invoiceTitleEntity?.entity_name ?? null,
+        source: invoiceTitleEntity ? "manual" : null
+      };
+      await c.env.DB.prepare(
+        `UPDATE reimbursement_envelope
+            SET invoice_title_entity_id = ?, invoice_title_name = ?, invoice_title_source = ?,
+                updated_at = ?
+          WHERE id = ?`
+      )
+        .bind(nextTitle.entity_id, nextTitle.name, nextTitle.source, nowIso(), id)
+        .run();
+      const previousTitle = {
+        entity_id: existing.invoice_title_entity_id ?? null,
+        name: existing.invoice_title_name ?? null,
+        source: existing.invoice_title_source ?? null
+      };
+      if (
+        previousTitle.entity_id !== nextTitle.entity_id ||
+        previousTitle.source !== nextTitle.source
+      ) {
+        await writeAuditLog(c.env.DB, {
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          action: "reimbursement.envelope.set_invoice_title",
+          targetType: "reimbursement_envelope",
+          targetId: id,
+          detail: { before: previousTitle, after: nextTitle }
+        });
+      }
+    }
 
     if (body.attachments && body.attachments.length > 0) {
       await insertAttachments(c.env.DB, id, body.attachments);
@@ -5489,8 +5560,9 @@ reimbursementRoutes.post(
                 expense_date, amount, category, description,
                 status, precheck_status, verification_status, verification_note,
                 split_from_envelope_id, split_reason,
+                invoice_title_entity_id, invoice_title_name, invoice_title_source,
                 submitted_at, received_at, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?)`
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'none', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           )
             .bind(
               newUuid,
@@ -5507,6 +5579,9 @@ reimbursementRoutes.post(
               envelope.verification_note,
               id,
               body.reason ?? null,
+              envelope.invoice_title_entity_id ?? null,
+              envelope.invoice_title_name ?? null,
+              envelope.invoice_title_source ?? null,
               envelope.submitted_at,
               envelope.received_at,
               now,

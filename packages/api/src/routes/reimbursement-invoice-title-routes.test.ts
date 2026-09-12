@@ -1,0 +1,178 @@
+import { Hono } from "hono";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { AuthTokenPayload } from "../types/auth";
+import type { Env } from "../types/env";
+import { reimbursementRoutes } from "./reimbursement";
+
+const mockAuthState = vi.hoisted(() => ({
+  payload: {
+    sub: "finance-a",
+    username: "finance-a",
+    nickname: "Finance A",
+    avatar: "",
+    roles: ["finance"],
+    permissions: [],
+    tokenId: "token-a",
+    type: "access",
+    auth_method: "wecom_oauth",
+    wecom_verified_at: "2026-07-01T00:00:00.000Z",
+    exp: 4102444800,
+    iat: 1770000000
+  } as AuthTokenPayload
+}));
+
+vi.mock("../services/auth", () => ({
+  verifyToken: async (): Promise<AuthTokenPayload> => mockAuthState.payload
+}));
+
+type Row = Record<string, unknown>;
+type Executed = { sql: string; params: unknown[] };
+
+class FakeStatement {
+  private params: unknown[] = [];
+  constructor(
+    private readonly db: FakeDb,
+    private readonly sql: string
+  ) {}
+  bind(...params: unknown[]) {
+    this.params = params;
+    return this;
+  }
+  async first<T>(): Promise<T | null> {
+    this.db.executed.push({ sql: this.sql, params: this.params });
+    return (this.db.firstHandler(this.sql, this.params) as T | null) ?? null;
+  }
+  async all<T>(): Promise<{ results: T[] }> {
+    this.db.executed.push({ sql: this.sql, params: this.params });
+    return { results: this.db.allHandler(this.sql, this.params) as T[] };
+  }
+  async run() {
+    this.db.executed.push({ sql: this.sql, params: this.params });
+    return { meta: { changes: 1, last_row_id: 1 } };
+  }
+}
+
+export class FakeDb {
+  executed: Executed[] = [];
+  firstHandler: (sql: string, params: unknown[]) => Row | null = () => null;
+  allHandler: (sql: string, params: unknown[]) => Row[] = () => [];
+  prepare(sql: string) {
+    return new FakeStatement(this, sql);
+  }
+  async batch(statements: FakeStatement[]) {
+    return statements.map(() => ({ meta: { changes: 1, last_row_id: 1 } }));
+  }
+}
+
+const createEnv = (db: FakeDb) =>
+  ({
+    DB: db,
+    KV: {
+      async get() {
+        return "session";
+      }
+    }
+  }) as unknown as Env;
+
+const request = (db: FakeDb, path: string, init?: { method?: string; body?: string }) => {
+  const app = new Hono<{ Bindings: Env }>();
+  app.route("/reimbursement", reimbursementRoutes);
+  return app.request(
+    path,
+    {
+      method: init?.method ?? "GET",
+      body: init?.body,
+      headers: {
+        authorization: "Bearer test-token",
+        "content-type": "application/json"
+      }
+    },
+    createEnv(db)
+  );
+};
+
+const envelopeRow = (overrides: Row = {}): Row => ({
+  id: 5,
+  envelope_no: "e-5",
+  envelope_uuid: "e-5",
+  project_id: 144,
+  applicant_userid: "LuShuMing",
+  channel: "electronic",
+  status: "received",
+  precheck_status: "approved",
+  batch_id: null,
+  approval_instance_id: null,
+  invoice_title_entity_id: null,
+  invoice_title_name: null,
+  invoice_title_source: null,
+  ...overrides
+});
+
+describe("PUT /reimbursement/:id invoice_title_entity_id", () => {
+  beforeEach(() => {
+    mockAuthState.payload = { ...mockAuthState.payload, sub: "finance-a", roles: ["finance"] };
+  });
+
+  it("办公室角色指定主体：写三列（来源 manual）并记审计", async () => {
+    const db = new FakeDb();
+    db.firstHandler = (sql) => {
+      if (sql.includes("FROM reimbursement_envelope WHERE id = ?")) return envelopeRow();
+      if (sql.includes("FROM entity WHERE id = ?")) {
+        return { id: 11, entity_name: "北京鑫丰畅建设有限公司" };
+      }
+      return null;
+    };
+    const response = await request(db, "/reimbursement/5", {
+      method: "PUT",
+      body: JSON.stringify({ invoice_title_entity_id: 11 })
+    });
+    expect(response.status).toBe(200);
+    const titleWrite = db.executed.find((item) => item.sql.includes("invoice_title_source = ?"));
+    expect(titleWrite?.params.slice(0, 3)).toEqual([11, "北京鑫丰畅建设有限公司", "manual"]);
+    expect(titleWrite?.params[4]).toBe(5);
+    const audit = db.executed.find((item) => item.sql.includes("INSERT INTO api_audit_log"));
+    expect(audit?.params).toContain("reimbursement.envelope.set_invoice_title");
+  });
+
+  it("传 null 清除三列", async () => {
+    const db = new FakeDb();
+    db.firstHandler = (sql) =>
+      sql.includes("FROM reimbursement_envelope WHERE id = ?")
+        ? envelopeRow({ invoice_title_entity_id: 11, invoice_title_source: "manual" })
+        : null;
+    const response = await request(db, "/reimbursement/5", {
+      method: "PUT",
+      body: JSON.stringify({ invoice_title_entity_id: null })
+    });
+    expect(response.status).toBe(200);
+    const titleWrite = db.executed.find((item) => item.sql.includes("invoice_title_source = ?"));
+    expect(titleWrite?.params.slice(0, 3)).toEqual([null, null, null]);
+  });
+
+  it("非 active 主体 → 400", async () => {
+    const db = new FakeDb();
+    db.firstHandler = (sql) =>
+      sql.includes("FROM reimbursement_envelope WHERE id = ?") ? envelopeRow() : null;
+    const response = await request(db, "/reimbursement/5", {
+      method: "PUT",
+      body: JSON.stringify({ invoice_title_entity_id: 999 })
+    });
+    expect(response.status).toBe(400);
+  });
+
+  it("申请人本人（operator）不能指定抬头 → 403", async () => {
+    mockAuthState.payload = { ...mockAuthState.payload, sub: "LuShuMing", roles: ["operator"] };
+    const db = new FakeDb();
+    db.firstHandler = (sql) =>
+      sql.includes("FROM reimbursement_envelope WHERE id = ?")
+        ? envelopeRow({ status: "submitted" })
+        : null;
+    const response = await request(db, "/reimbursement/5", {
+      method: "PUT",
+      body: JSON.stringify({ invoice_title_entity_id: 11 })
+    });
+    expect(response.status).toBe(403);
+    expect(db.executed.some((item) => item.sql.includes("invoice_title_source = ?"))).toBe(false);
+  });
+});
