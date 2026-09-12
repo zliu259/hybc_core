@@ -42,6 +42,11 @@ import {
   type DuplicateScanResult
 } from "./reimbursement-duplicate-scan";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
+import {
+  pickBuyerNameFromReviews,
+  readInvoiceExtractionText
+} from "./reimbursement-invoice-title-policy";
+import { syncEnvelopeInvoiceTitle } from "./reimbursement-invoice-title-sync";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import type { Env } from "../types/env";
 import { reimbursementChannels, reimbursementStatuses } from "../types/reimbursement";
@@ -1125,7 +1130,9 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
           qr_text: row.qr_text,
           source: row.source,
           risk_level: row.risk_level,
-          risk_hint: row.risk_hint
+          risk_hint: row.risk_hint,
+          buyer_name: readInvoiceExtractionText(row.extraction_json, "buyer_name"),
+          seller_name: readInvoiceExtractionText(row.extraction_json, "seller_name")
         })),
         failed_count: failedCount,
         pending_count: pendingCount,
@@ -1197,6 +1204,13 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
         envelopeId
       )
       .run();
+
+    await syncEnvelopeInvoiceTitle(env.DB, {
+      envelopeId,
+      currentSource: envelope.invoice_title_source ?? null,
+      buyerName: pickBuyerNameFromReviews(completedRows, bestRow ?? null),
+      pendingCount
+    });
   }
 
   if (!hasReviewRows && envelope.ocr_task_id) {
@@ -1229,6 +1243,19 @@ const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<voi
         .run();
 
       await applyDuplicateChecks(env, envelopeId, hints);
+
+      const fallbackBuyerName =
+        typeof ocrResult?.buyer_name === "string" && ocrResult.buyer_name.trim()
+          ? ocrResult.buyer_name.trim()
+          : null;
+      if (fallbackBuyerName) {
+        await syncEnvelopeInvoiceTitle(env.DB, {
+          envelopeId,
+          currentSource: envelope.invoice_title_source ?? null,
+          buyerName: fallbackBuyerName,
+          pendingCount: 0
+        });
+      }
     }
 
     if ((ocrTask?.status === "failed" || ocrTask?.status === "timeout") && envelope.ocr_status !== "failed") {
