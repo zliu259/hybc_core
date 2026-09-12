@@ -36,6 +36,9 @@ export type ReimbursementEnvelope = {
   duplicate_risk_level?: "high" | "medium" | "low" | null;
   split_from_envelope_id?: number | null;
   split_reason?: string | null;
+  invoice_title_entity_id?: number | null;
+  invoice_title_name?: string | null;
+  invoice_title_source?: "ocr" | "manual" | null;
 };
 
 export type EnvelopeAttachment = {
@@ -202,6 +205,8 @@ export const updateReimbursementEnvelope = (
     category?: string;
     description?: string;
     status?: string;
+    /** null = 清除、回到自动识别 */
+    invoice_title_entity_id?: number | null;
     attachments?: {
       attachment_type?: string;
       file_key: string;
@@ -437,6 +442,8 @@ export type ReimbursementBatch = {
   payment_entity_bank_account_id: number | null;
   payment_vouchers_json: string | null;
   payee_id: number | null;
+  invoice_title_entity_id?: number | null;
+  mixed_title_reason?: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -471,6 +478,11 @@ export type ReimbursementBatchDetail = ReimbursementBatch & {
     current_node_name: string | null;
   } | null;
   payment_entity?: {
+    id: number;
+    entity_code: string;
+    entity_name: string;
+  } | null;
+  invoice_title_entity?: {
     id: number;
     entity_code: string;
     entity_name: string;
@@ -524,6 +536,7 @@ export const getReimbursementBatch = (id: number) => {
 export const listReimbursementBatchCandidates = (params: {
   project_id: number;
   applicant_userid: string;
+  invoice_title_entity_id?: number | "none";
 }) => {
   return http.request<{
     success: boolean;
@@ -541,6 +554,7 @@ export const createReimbursementBatch = (
     payment_entity_bank_account_id?: number;
     payment_account?: string;
     payee_id?: number;
+    mixed_title_reason?: string;
   },
   options?: { idempotencyKey?: string }
 ) => {
@@ -744,6 +758,8 @@ export const splitReimbursementEnvelope = (
 export type ReimbursementBatchProposal = {
   project_id: number;
   applicant_userid: string;
+  invoice_title_entity_id: number | null;
+  invoice_title_name: string | null;
   item_count: number;
   total_amount: number;
   envelopes: {
@@ -753,6 +769,8 @@ export type ReimbursementBatchProposal = {
     description: string | null;
     channel: string;
     duplicate_risk_level: "high" | "medium" | "low" | null;
+    invoice_title_entity_id: number | null;
+    invoice_title_name: string | null;
   }[];
   matched_payee: {
     id: number;
