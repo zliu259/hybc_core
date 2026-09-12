@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { UploadRequestOptions } from "element-plus";
+import { ElMessageBox, type UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { message } from "@/utils/message";
@@ -80,6 +80,33 @@ const payoutEdit = ref({
   payment_entity_bank_account_id: undefined as number | undefined,
   payment_account: "",
   payee_id: undefined as number | undefined
+});
+
+const titleEntityName = computed(() => {
+  const current = detail.value;
+  if (!current) return "-";
+  if (current.invoice_title_entity)
+    return current.invoice_title_entity.entity_name;
+  if (current.mixed_title_reason) return "混合抬头";
+  return "未识别";
+});
+
+const savedTitleMismatch = computed(() => {
+  const current = detail.value;
+  return Boolean(
+    current?.invoice_title_entity_id &&
+    current.payment_entity_id &&
+    current.payment_entity_id !== current.invoice_title_entity_id
+  );
+});
+
+const editTitleMismatch = computed(() => {
+  const current = detail.value;
+  return Boolean(
+    current?.invoice_title_entity_id &&
+    payoutEdit.value.payment_entity_id &&
+    payoutEdit.value.payment_entity_id !== current.invoice_title_entity_id
+  );
 });
 
 const voucherEditorRows = ref<
@@ -506,6 +533,22 @@ const saveSecondaryEdit = async () => {
     return;
   }
 
+  if (editTitleMismatch.value) {
+    try {
+      await ElMessageBox.confirm(
+        `所选付款实体与批次发票抬头主体（${titleEntityName.value}）不一致。报销款应由发票抬头对应主体支付，确定仍要保存？`,
+        "付款实体与发票抬头不一致",
+        {
+          type: "warning",
+          confirmButtonText: "仍要保存",
+          cancelButtonText: "取消"
+        }
+      );
+    } catch {
+      return;
+    }
+  }
+
   savingPayout.value = true;
   try {
     await updateBatchPayoutPlan(detail.value.id, payload);
@@ -705,6 +748,21 @@ watch(
                 ? `${detail.payee.name} · ${detail.payee.bank_name} · ${detail.payee.bank_account}`
                 : "-"
             }}</el-descriptions-item>
+            <el-descriptions-item label="发票抬头主体">
+              {{ titleEntityName }}
+              <el-tag
+                v-if="savedTitleMismatch"
+                type="danger"
+                size="small"
+                style="margin-left: 8px"
+                >与付款实体不一致</el-tag
+              >
+            </el-descriptions-item>
+            <el-descriptions-item
+              v-if="detail.mixed_title_reason"
+              label="混批理由"
+              >{{ detail.mixed_title_reason }}</el-descriptions-item
+            >
             <el-descriptions-item label="付款实体">{{
               detail.payment_entity
                 ? `${detail.payment_entity.entity_name} (${detail.payment_entity.entity_code})`
@@ -779,6 +837,13 @@ watch(
                   :value="item.id"
                 />
               </el-select>
+              <el-tag
+                v-if="editTitleMismatch"
+                type="danger"
+                size="small"
+                style="margin-left: 8px"
+                >与发票抬头主体（{{ titleEntityName }}）不一致</el-tag
+              >
             </el-form-item>
             <el-form-item label="付款账户">
               <el-select

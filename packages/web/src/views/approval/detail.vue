@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
-import { type UploadRequestOptions } from "element-plus";
+import { ElMessageBox, type UploadRequestOptions } from "element-plus";
 import { useRoute, useRouter, type RouteLocationRaw } from "vue-router";
 import { message } from "@/utils/message";
 import {
@@ -347,7 +347,37 @@ const syncPayoutSelection = async () => {
   }
 };
 
+const reimbursementTitleEntityName = computed(
+  () =>
+    reimbursementBatchDetail.value?.invoice_title_entity?.entity_name ?? null
+);
+
+const reimbursementTitleMismatch = computed(() => {
+  const batch = reimbursementBatchDetail.value;
+  return Boolean(
+    batch?.invoice_title_entity_id &&
+    payoutForm.value.payment_entity_id &&
+    payoutForm.value.payment_entity_id !== batch.invoice_title_entity_id
+  );
+});
+
 const savePayoutSelection = async () => {
+  if (reimbursementTitleMismatch.value) {
+    try {
+      await ElMessageBox.confirm(
+        `所选付款主体与批次发票抬头主体（${reimbursementTitleEntityName.value ?? "-"}）不一致。报销款应由发票抬头对应主体支付，确定仍要保存？`,
+        "付款主体与发票抬头不一致",
+        {
+          type: "warning",
+          confirmButtonText: "仍要保存",
+          cancelButtonText: "取消"
+        }
+      );
+    } catch {
+      return;
+    }
+  }
+
   actionLoading.value = true;
   try {
     await syncPayoutSelection();
@@ -2345,6 +2375,19 @@ onMounted(async () => {
                   :value="item.value"
                 />
               </el-select>
+            </el-form-item>
+            <el-form-item
+              v-if="reimbursementTitleEntityName"
+              label="发票抬头主体"
+            >
+              <span>{{ reimbursementTitleEntityName }}</span>
+              <el-tag
+                v-if="reimbursementTitleMismatch"
+                type="danger"
+                size="small"
+                style="margin-left: 8px"
+                >与所选付款主体不一致</el-tag
+              >
             </el-form-item>
             <el-form-item label="付款主体">
               <el-select
