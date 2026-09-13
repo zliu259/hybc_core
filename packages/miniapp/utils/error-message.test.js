@@ -104,3 +104,10 @@ assert.strictEqual(rawErrorText(localizedErr), "request:fail timeout");
 assert.strictEqual(rawErrorText(null), "");
 
 console.log("error-message.test.js (extended) passed");
+
+// 付款已作废却仍走到重提入口（2026-09-13 SP-20260913-0007）
+assert.strictEqual(
+  localizeErrorMessage("Payment request has been cancelled and cannot be submitted", 400),
+  "该付款申请已作废，无法重新提交"
+);
+console.log("error-message.test.js (cancelled-submit) passed");

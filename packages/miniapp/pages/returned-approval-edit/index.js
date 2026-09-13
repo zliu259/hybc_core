@@ -4,7 +4,8 @@ const { loadUserNameMap } = require("../../utils/user-names");
 const { getUserProfile } = require("../../utils/auth");
 const {
   RETURNED_APPROVAL_EDIT_BIZ_TYPES,
-  canEditReturnedApproval
+  canEditReturnedApproval,
+  isBizRecordCancelled
 } = require("../../utils/returned-approval");
 
 const numberOrUndefined = (value) => {
@@ -350,6 +351,11 @@ Page({
         .map((uid) => ({ label: userNames[uid], value: uid }))
         .sort((a, b) => a.label.localeCompare(b.label, "zh-Hans-CN"));
       const detail = (res && res.data) || {};
+      // 单据已作废时实例可能仍停在 returned（存量僵尸），后端提交会直接拒绝，这里提前说明原因
+      if (isBizRecordCancelled(detail)) {
+        this.setData({ loading: false, loadError: "该单据已作废，无法编辑重提" });
+        return;
+      }
       const form = this.buildForm(detail, config);
       const itemRows = typeof config.buildItems === "function" ? config.buildItems(detail) : [];
       this.setData({

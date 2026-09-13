@@ -272,6 +272,7 @@ const EXACT_MESSAGES = {
   "only approved requests can be marked as paid": "只有审批通过的申请才能标记付款",
   "only cancelled payment requests can be reactivated": "只有已作废的付款申请才能重新启用",
   "payment request is already cancelled": "该付款申请已作废",
+  "payment request has been cancelled and cannot be submitted": "该付款申请已作废，无法重新提交",
   "payment request is no longer approved": "该付款申请已不是审批通过状态",
   "payment_method is required before approval submission": "提交审批前请先选择付款方式",
   "payment bank account does not belong to payment entity": "所选付款账户不属于该付款主体",

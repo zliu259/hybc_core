@@ -22,6 +22,16 @@ const canEditReturnedApproval = (instance, currentUserId) => {
   return Boolean(initiator && userId && initiator === userId);
 };
 
+/**
+ * 业务单据已作废（status = cancelled）时，即便审批实例仍停在 returned，也不能再编辑重提：
+ * 后端 submit-approval 会因单据非草稿直接拒绝。审批详情与退回编辑页据此收起入口、给出明确提示
+ * （2026-09-13 SP-20260913-0007：付款被作废后实例仍是 returned，入口照常出现，提交却失败）。
+ */
+const isBizRecordCancelled = (bizDetail) => {
+  if (!bizDetail || typeof bizDetail !== "object") return false;
+  return String(bizDetail.status || "").trim().toLowerCase() === "cancelled";
+};
+
 const getReturnedApprovalEditRoute = ({ approvalId, bizType, bizId }) => {
   const normalizedBizType = String(bizType || "").trim();
   if (!editableBizTypeSet.has(normalizedBizType)) return "";
@@ -36,5 +46,6 @@ const getReturnedApprovalEditRoute = ({ approvalId, bizType, bizId }) => {
 module.exports = {
   RETURNED_APPROVAL_EDIT_BIZ_TYPES,
   canEditReturnedApproval,
+  isBizRecordCancelled,
   getReturnedApprovalEditRoute
 };

@@ -4,6 +4,7 @@ const { getToken, getUserProfile } = require("../../utils/auth");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
 const {
   canEditReturnedApproval,
+  isBizRecordCancelled,
   getReturnedApprovalEditRoute
 } = require("../../utils/returned-approval");
 const {
@@ -996,7 +997,9 @@ Page({
       const userAlreadyActed = userId
         ? allTasks.some((t) => t.assignee_userid === userId && t.status === "completed")
         : false;
-      const canEditReturnedBusiness = canEditReturnedApproval(detail.instance, userId);
+      // 业务单已作废（如超管作废付款）时不再给「编辑并重新提交」入口，即便实例仍是 returned
+      const canEditReturnedBusiness =
+        canEditReturnedApproval(detail.instance, userId) && !isBizRecordCancelled(bizDetail);
 
       const detailTimelineNodes = this.buildTimelineNodes(detail);
       const instanceStopped =

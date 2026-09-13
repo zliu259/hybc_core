@@ -86,6 +86,10 @@ const submitAction = async () => {
   }
 };
 
+// 放行/驳回只对审批中的实例有意义：AI 拦截已退回发起人、或实例已终态时，后端会 409 拒绝
+const canPushFlow = (row: ApprovalAiGateTaskItem) =>
+  !row.instance || row.instance.status === "in_progress";
+
 const goApprovalDetail = (row: ApprovalAiGateTaskItem) => {
   if (!row.instance?.id) return;
   router.push(`/approval/detail/${row.instance.id}`);
@@ -202,12 +206,14 @@ onMounted(loadRows);
             <el-button
               link
               type="success"
+              :disabled="!canPushFlow(scope.row)"
               @click="openActionDialog(scope.row, 'approve')"
               >放行</el-button
             >
             <el-button
               link
               type="danger"
+              :disabled="!canPushFlow(scope.row)"
               @click="openActionDialog(scope.row, 'reject')"
               >驳回</el-button
             >

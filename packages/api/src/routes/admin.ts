@@ -22,6 +22,7 @@ import { validateTemplate } from "../services/approval/template-parser";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import { CF_AI_REVIEW_MODEL } from "../services/cf-ai";
 import { advanceWorkflow } from "../services/approval/engine";
+import { isResubmittable } from "../services/approval/status";
 import {
   resolveApplicantDisplayName,
   resolveApprovalPushMeta,
@@ -1746,6 +1747,33 @@ adminRoutes.post(
 
     if (!task) {
       return c.json({ success: false, error: { message: "AI关卡任务不存在" } }, 404);
+    }
+
+    // 放行/驳回是要推动流程的动作，只对 in_progress 的实例有意义。AI 关卡自主拦截后实例已经
+    // returned（业务单回到发起人手里）、或实例已到终态时，若继续写节点/任务，advanceWorkflow
+    // 会因实例非 in_progress 静默返回：流程纹丝不动，节点状态却被覆写成 completed，操作者还
+    // 以为放行成功（2026-09-13 SP-20260913-0007）。补充意见只追加记录、不推流程，不受限。
+    if (action !== "comment") {
+      const instanceRow = await c.env.DB.prepare(
+        "SELECT status FROM approval_instance WHERE id = ?"
+      )
+        .bind(task.biz_id)
+        .first<{ status: string }>();
+      if (instanceRow && instanceRow.status !== "in_progress") {
+        const verb = action === "approve" ? "放行" : "驳回";
+        const hint = isResubmittable(instanceRow.status)
+          ? "；该单已退回发起人，请由发起人修改后重新提交"
+          : "";
+        return c.json(
+          {
+            success: false,
+            error: {
+              message: `审批实例当前状态为 ${instanceRow.status}，AI 关卡不能再人工${verb}${hint}`
+            }
+          },
+          409
+        );
+      }
     }
 
     let nodeKey: string | null = null;

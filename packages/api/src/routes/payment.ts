@@ -201,6 +201,12 @@ const mergeAttachments = (...groups: AttachmentMeta[][]): AttachmentMeta[] => {
 
 const RESUBMITTABLE_SQL_LIST = RESUBMITTABLE_STATUSES.map((s) => `'${s}'`).join(", ");
 
+// 作废付款时要连带收口的审批实例状态：审批中(in_progress) + 退回/撤回待发起人重提。
+// 只收 pending/in_progress 会把 AI 关卡或人工退回后的 returned 实例留成「退回待处理」僵尸
+// （2026-09-13 SP-20260913-0007：小程序据此继续给「编辑并重新提交」入口，提交却因付款已作废失败）。
+const OPEN_APPROVAL_STATUSES = Array.from(new Set(["in_progress", ...RESUBMITTABLE_STATUSES]));
+const OPEN_APPROVAL_SQL_LIST = OPEN_APPROVAL_STATUSES.map((s) => `'${s}'`).join(", ");
+
 const DEFAULT_NO_CONTRACT_THRESHOLD = 10000;
 
 const getNoContractThreshold = async (env: Env): Promise<number> => {
@@ -1155,6 +1161,19 @@ paymentRoutes.post(
         });
       }
 
+      // 已作废的付款不可能再提交。作废现在会连带收口 returned/withdrawn 实例，但存量僵尸实例
+      // （实例 returned、付款 cancelled）仍可能把发起人引到重提入口，这里给出明确原因，
+      // 而不是笼统的「只有草稿可提交」（2026-09-13 SP-20260913-0007）。
+      if (request.status === "cancelled") {
+        return c.json(
+          {
+            success: false,
+            error: { message: "Payment request has been cancelled and cannot be submitted" }
+          },
+          400
+        );
+      }
+
       return c.json(
         { success: false, error: { message: "Only draft requests can be submitted" } },
         400
@@ -1617,13 +1636,14 @@ paymentRoutes.post(
         .bind(now, pr.approval_instance_id)
         .run();
 
+      // 退回/撤回中的实例同样随付款一起收口，否则会留成「退回待处理」僵尸（见 OPEN_APPROVAL_STATUSES）
       await c.env.DB.prepare(
         `UPDATE approval_instance
             SET status = 'cancelled',
                 completed_at = COALESCE(completed_at, ?),
                 updated_at = ?
           WHERE id = ?
-            AND status IN ('pending', 'in_progress')`
+            AND status IN (${OPEN_APPROVAL_SQL_LIST})`
       )
         .bind(now, now, pr.approval_instance_id)
         .run();

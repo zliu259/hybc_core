@@ -57,3 +57,18 @@ assert.strictEqual(
   ),
   false
 );
+
+// ── 业务单据已作废时，即便实例仍是 returned 也不能再编辑重提 ──
+// （2026-09-13 SP-20260913-0007：付款被超管作废后审批实例仍留在 returned，
+//   审批详情继续给出「编辑并重新提交」入口，提交时后端报付款已作废。）
+const { isBizRecordCancelled } = require("./returned-approval");
+
+assert.strictEqual(isBizRecordCancelled(null), false, "无业务详情时不应判定为已作废");
+assert.strictEqual(isBizRecordCancelled(undefined), false);
+assert.strictEqual(isBizRecordCancelled({}), false);
+assert.strictEqual(isBizRecordCancelled({ status: "draft" }), false);
+assert.strictEqual(isBizRecordCancelled({ status: "pending_approval" }), false);
+assert.strictEqual(isBizRecordCancelled({ status: "cancelled" }), true);
+assert.strictEqual(isBizRecordCancelled({ status: " CANCELLED " }), true, "状态比较应忽略大小写与首尾空白");
+
+console.log("returned-approval.test.js passed");
