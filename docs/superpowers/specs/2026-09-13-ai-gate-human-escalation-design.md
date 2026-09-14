@@ -32,7 +32,7 @@ AI 关卡任务完成 → parser 裁决（不变）→ `outcome=reject && !manua
 2. 写 AI_GATE 决策任务 `action=reject`，comment 保留「AI审查不通过：…」原文（审计 + 前端拦截理由）。
 3. 读系统配置 `approval.ai_gate.fallback_reviewer_userid`，在同一关卡节点给审核人建一条 `status=pending` 的 approval_task。
 4. 发事件 `APPROVAL_AI_ESCALATED`：审核人收企微待办卡（复用节点进入推卡），发起人收结果卡
-   「AI 审查未通过，已转人工复核，等待 {审核人姓名} 处理」。
+   「AI 审查未通过，等待 {审核人姓名} 人工复核」。
 
 审核人动作全部复用现有操作：
 
@@ -69,6 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_system_config_key ON system_config(config_key);
 ### 2. `services/system-config.ts`
 
 - `getSystemConfig(env, key): Promise<string | null>`（trim 后空串视为 null）
+- `getSystemConfigEntry` 行存在即返回（value 可为空串，保留 updated_by/updated_at 供设置页显示谁清空的）
 - `setSystemConfig(env, key, value, updatedBy): Promise<void>`（INSERT … ON CONFLICT(config_key) DO UPDATE）
 - 直连 D1，不做 KV 缓存（每次 AI 拦截读一次，频率极低）。
 
@@ -109,12 +110,12 @@ queue-handler 实时路径与 executors 重入路径都不改调用方式，仍�
 
 新增 `case "APPROVAL_AI_ESCALATED"`：
 - `handleApprovalSubmitted(env, instanceId)` → 给所有 pending 任务受理人（即审核人）推待办卡，节点名显示「AI关卡」。
-- `pushApprovalResultToInitiator(env, instanceId, "escalated", "AI 审查未通过，已转人工复核，等待 {审核人姓名} 处理")`，
+- `pushApprovalResultToInitiator(env, instanceId, "escalated", "AI 审查未通过，等待 {审核人姓名} 人工复核")`，
   姓名用 `resolveApplicantDisplayName(env, reviewer_userid)`。
 - 两路各自 try/catch 写 isolation_guard 事件，与既有 case 一致。
 
 `ApprovalResultType` 目前在 `queue-handler.ts` 与 `services/wecom-approval-push.ts` 各有一份同名定义：改为由
-wecom-approval-push.ts 导出、queue-handler.ts 引用，并增加 `"escalated"`；结果卡标题「AI 审查转人工复核」，样式沿用 returned 的中性色。
+wecom-approval-push.ts 导出、queue-handler.ts 引用，并增加 `"escalated"`；结果卡标签「已转人工复核」（与其余五个 已+动词 标签一致；卡片句式为「…已更新为「已转人工复核」。说明：…」，标题与颜色沿用现有模板）。
 
 ### 8. `routes/admin.ts`
 
@@ -151,12 +152,19 @@ wecom-approval-push.ts 导出、queue-handler.ts 引用，并增加 `"escalated"
 - 审核人失去超管标签：已建任务不受影响；下次拦截仍派给他；管理页展示当前解析角色并提示不符，由超管改配置。
 - 审核人是发起人：允许，等同自审。
 - 转交/催办：复用现有逻辑。
-- 超时：关卡节点无 timeout_hours，人工任务不超时。
+- 超时：checkApprovalTimeouts 对 timeout_hours 为空的节点按 24 小时计，超时后每小时发 APPROVAL_TIMEOUT 事件（队列无对应处理，仅日志噪音）；人工任务不会被自动关闭。
 - 撤回/取消实例：现有逻辑把 pending 任务置 cancelled，人工任务随之关闭。
 - D1 无事务：写入顺序固定、失败重试、按「已有 pending 人工任务」幂等跳过。
 - 重提新一轮：关卡重跑；再拦截再转人工；人工放行过的轮次不重跑。
 - 存量 returned 实例不受影响，仍走编辑重提。
 - 已知限制：审批详情对 pending 任务统一给出「退回上一节点」，关卡是首节点时该动作会报错「无上一节点」，本期不改。
+- 人工任务只认最近一次 AI 决策之后的记录：退回到关卡重跑时同一 node_instance 会保留旧的人工放行记录，不能让它绕过新的拦截；写 AI 决策记录前必须先收掉节点上 pending 的人工任务（控制台、settleAiGateBlock 跳过、handleRoundReset 均遵守）。
+- 节点 in_progress 且仅有 AI 驳回记录 = 转人工写到一半，非终态，等队列重试（消费者对抛错 msg.retry）；节点 completed + AI 驳回 = 超管覆写终态。
+- 两条落地路径都先写 AI 记录再改节点状态；未配置路径若先置 returned 再写记录，部分写入会让队列重入查不到节点而卡死。
+- 事件重投时若节点已无 pending 人工任务则不再推卡，记 ai_gate_escalation_push_skipped。
+- 配置读取异常（如迁移未应用）退化为旧退回，告警日志行带 error 并 console.error。
+- 设置接口：PUT 必须带字符串字段、长度 ≤ 64，空串清除；上游错误脱敏后返回；通讯录不可用时 GET 返 contact_check_error、PUT 返 400。
+- 已作废（含撤回/取消实例）的人工复核任务两端统一显示「人工复核任务已作废」，转签显示「人工复核 · 已转签」。
 
 ## 测试
 
@@ -165,7 +173,7 @@ wecom-approval-push.ts 导出、queue-handler.ts 引用，并增加 `"escalated"
 - `queue-handler`：`APPROVAL_AI_ESCALATED` 两路推卡与 isolation guard。
 - `admin`：settings 四种情况（空值清除、非通讯录、非超管、成功 + 审计）；handle 路由取消悬空人工任务。
 - `system-config`：读写与空串规范化。
-- `wecom-role`：抽出后 auth.ts 行为不变（现有 auth 测试通过）。
+- `wecom-role`：抽出后 auth.ts 行为不变（auth.ts 无路由测试；靠搬迁块逐字比对 + tsc 保证，上线前人工冒烟企微登录与通讯录）。
 - web vitest：设置卡过滤 super_admin、未配置提示；时间线标签。
 - 现有断言「AI 拦截 → returned」的用例改为「未配置审核人」前提，不删用例。
 

@@ -20,6 +20,21 @@
 
 ---
 
+## 执行记录（2026-09-14）
+
+按子代理驱动流程逐任务实现，每任务经规格审查与质量审查；以下调整已按评审落地，任务正文里的代码块保持原样，以提交为准：
+
+- Task 1：`getSystemConfigEntry` 行存在即返回（清空后保留更新人）；`updatedBy` 收窄为 string（0c15b5d）。
+- Task 2：wecom-role 测试补优先级、异常路径，mock 只替换 HTTP 边界（ccc1db2）。
+- Task 3：`resolveAiGateFallbackReviewer` 直接委托 getSystemConfig；`hasAiDecisionTaskOnNode` 从 executors 搬入（368fc67）。
+- Task 4：escalated 标签改为「已转人工复核」（aa61d33）。
+- Task 5：未配置路径改为先写 AI 记录再置 returned；配置读取异常降级并 console.error；顺序测试的正则修正（389ef48、5e191fd）。
+- Task 6：in_progress + 仅 AI 驳回不判终态；人工任务只认最近一次 AI 决策之后；补人工驳回分支与窗口守卫（b6fdffb、4ee8abd、b8d3e18）。
+- Task 7：结果卡说明改为「AI 审查未通过，等待 X 人工复核」；重投守卫 ai_gate_escalation_push_skipped（c86d69c、c938606）。
+- Task 8：PUT 字段校验与长度上限、上游错误脱敏、contact_check_error、审计带 resolved_role（909591f、9ac4abc）。
+- Task 9：contact_check_error 提示、类型统一为 Pick、清空二次确认、下拉空态、作废文案中性（33b6c1a、c5395b3）。
+- Task 10：作废/转签文案（c0effc7）。
+
 ## 文件结构
 
 **新增**
