@@ -648,12 +648,16 @@ class AiGateExecutor implements NodeExecutor {
       .first<{ action: string }>();
 
     if (decision?.action === "reject") {
-      // 节点被落地为 returned = AI 自主拦截 → 引擎走退回；
-      // 节点 completed + reject = 超管覆写或存量数据 → 保留终态语义
+      // 节点被落地为 returned = AI 自主拦截且未配置审核人 → 引擎走退回；
+      // 节点 completed + reject = 超管覆写或存量数据 → 保留终态语义；
+      // 节点仍 in_progress + reject = settleAiGateBlock 写到一半（人工任务未落），等队列重试收口
       if (node?.status === "returned") {
         return { complete: true, outcome: "returned" };
       }
-      return { complete: true, outcome: "rejected" };
+      if (node?.status === "completed") {
+        return { complete: true, outcome: "rejected" };
+      }
+      return { complete: false, outcome: null };
     }
 
     if (node && node.status === "completed") {

@@ -81,6 +81,23 @@ describe("AiGateExecutor.isNodeComplete — 人工兜底任务优先", () => {
     });
   });
 
+  it("AI reject + 节点 completed → rejected（超管覆写终态）", async () => {
+    const { env } = createFakeEnv("completed", [
+      { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" }
+    ]);
+    expect(await executor().isNodeComplete(env, 5)).toEqual({
+      complete: true,
+      outcome: "rejected"
+    });
+  });
+
+  it("AI reject + 节点 in_progress + 无人工任务 → 未完成（转人工写到一半等待重试）", async () => {
+    const { env } = createFakeEnv("in_progress", [
+      { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" }
+    ]);
+    expect(await executor().isNodeComplete(env, 5)).toEqual({ complete: false, outcome: null });
+  });
+
   it("AI reject + 人工 pending → 未完成，且不得判 returned/rejected", async () => {
     const { env } = createFakeEnv("in_progress", [
       { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" },
