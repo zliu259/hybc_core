@@ -210,5 +210,15 @@ describe("manual AI-gate handling on an instance that is no longer in progress",
     expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO approval_task"))).toBe(true);
     expect(engineMock.advanceWorkflow).toHaveBeenCalledTimes(1);
     expect(engineMock.advanceWorkflow.mock.calls[0][1]).toBe(362);
+
+    // 转人工兜底后，节点上可能还挂着兜底审核人的 pending 任务；超管在控制台直接放行时
+    // 必须把它一并收掉，否则会作为悬空待办留在审核人列表里（2026-09-13）。
+    const cancelHuman = env.DB.runs.find(
+      (call) =>
+        /UPDATE\s+approval_task\s+SET\s+status\s*=\s*'cancelled'/i.test(call.sql) &&
+        /assignee_userid\s*<>\s*'AI_GATE'/i.test(call.sql)
+    );
+    expect(cancelHuman).toBeDefined();
+    expect(cancelHuman?.params[1]).toBe(1931);
   });
 });

@@ -34,6 +34,11 @@ import {
   refreshRunnerRuntimeKvFromDb
 } from "../services/runner-runtime";
 import { listAllGrants, revokeGrant, getGrantById } from "../services/agent-grant";
+import { writeAuditLog } from "../services/audit-log";
+import { getSystemConfigEntry, setSystemConfig } from "../services/system-config";
+import { getWeComContactBook } from "../services/wecom-contact-book";
+import { resolveSystemRoleForUser } from "../services/wecom-role";
+import { AI_GATE_FALLBACK_REVIEWER_KEY } from "../services/approval/ai-gate-fallback";
 
 const nowIso = () => new Date().toISOString();
 
@@ -1712,6 +1717,97 @@ adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async 
   });
 });
 
+// ─── AI 关卡兜底审核人（系统级配置，转人工设计 2026-09-13）──────────
+
+adminRoutes.get("/approval-ai-gate/settings", requireRoles(["super_admin"]), async (c) => {
+  const entry = await getSystemConfigEntry(c.env, AI_GATE_FALLBACK_REVIEWER_KEY);
+  const userid = entry?.value ?? "";
+
+  let name: string | null = null;
+  let role: string | null = null;
+  // 「核对不了角色」与「核对出来不是超管」必须能区分：企微不可用时角色留空，
+  // 但要把原因如实带出去，否则页面上看起来就像这个人被降权了。
+  let roleCheckError: string | null = null;
+  if (userid) {
+    try {
+      const book = await getWeComContactBook(c.env);
+      name = book.users.find((user) => user.userid === userid)?.name ?? null;
+    } catch {
+      name = null;
+    }
+    try {
+      role = await resolveSystemRoleForUser(c.env, userid);
+    } catch (error) {
+      role = null;
+      roleCheckError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
+  return c.json({
+    success: true,
+    data: {
+      fallback_reviewer_userid: userid,
+      fallback_reviewer_name: name,
+      fallback_reviewer_role: role,
+      role_check_error: roleCheckError,
+      updated_by: entry?.updated_by ?? null,
+      updated_at: entry?.updated_at ?? null
+    }
+  });
+});
+
+adminRoutes.put("/approval-ai-gate/settings", requireRoles(["super_admin"]), async (c) => {
+  const auth = c.get("auth");
+  const body = (await c.req.json().catch(() => ({}))) as { fallback_reviewer_userid?: unknown };
+  const next =
+    typeof body.fallback_reviewer_userid === "string" ? body.fallback_reviewer_userid.trim() : "";
+  const previous = (await getSystemConfigEntry(c.env, AI_GATE_FALLBACK_REVIEWER_KEY))?.value ?? "";
+
+  if (next) {
+    const book = await getWeComContactBook(c.env);
+    if (!book.users.some((user) => user.userid === next)) {
+      return c.json({ success: false, error: { message: "兜底审核人不在企业微信通讯录中" } }, 400);
+    }
+    let role: string | null = null;
+    try {
+      role = await resolveSystemRoleForUser(c.env, next);
+    } catch (error) {
+      // 企微不可用时宁可拒绝保存，也不能把「没核对上」当成「核对通过」或「不是超管」
+      const message = error instanceof Error ? error.message : String(error);
+      return c.json(
+        {
+          success: false,
+          error: { message: `无法核对该用户的角色（企业微信接口不可用：${message}），请稍后再试` }
+        },
+        400
+      );
+    }
+    if (role !== "super_admin") {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: `兜底审核人必须是超级管理员（当前解析角色：${role ?? "未命中任何角色标签"}）`
+          }
+        },
+        400
+      );
+    }
+  }
+
+  await setSystemConfig(c.env, AI_GATE_FALLBACK_REVIEWER_KEY, next, auth.sub);
+  await writeAuditLog(c.env.DB, {
+    actorUserId: auth.sub,
+    actorRoles: auth.roles,
+    action: "admin.ai_gate_fallback_reviewer.update",
+    targetType: "system_config",
+    targetId: AI_GATE_FALLBACK_REVIEWER_KEY,
+    detail: { previous, next }
+  });
+
+  return c.json({ success: true, data: { fallback_reviewer_userid: next } });
+});
+
 adminRoutes.post(
   "/approval-ai-gate/tasks/:taskId/handle",
   requireRoles(["super_admin"]),
@@ -1898,6 +1994,20 @@ adminRoutes.post(
         .run();
 
       return c.json({ success: true, data: { task_id: task.id, handled: "comment" } });
+    }
+
+    // 超管在控制台直接放行/驳回时，节点上若挂着兜底审核人的 pending 任务必须一并收掉，
+    // 否则它会作为悬空待办留在审核人列表里（转人工设计 2026-09-13）。
+    if (node) {
+      await c.env.DB.prepare(
+        `UPDATE approval_task
+            SET status = 'cancelled', updated_at = ?
+          WHERE node_instance_id = ?
+            AND status = 'pending'
+            AND assignee_userid <> 'AI_GATE'`
+      )
+        .bind(now, node.id)
+        .run();
     }
 
     let resultPayload: Record<string, unknown> = {};
