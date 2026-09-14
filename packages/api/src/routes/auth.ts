@@ -14,17 +14,24 @@ import {
 import type { UserRole } from "../types/auth";
 import { getWeComContactBook, syncWeComContactBook } from "../services/wecom-contact-book";
 import type { Env } from "../types/env";
+import {
+  fetchWeComAccessToken,
+  fetchWeComJson,
+  getCachedString,
+  putCachedString,
+  weComErrorMessage
+} from "../services/wecom-api";
+import {
+  fetchWeComTags,
+  listUsersInTag,
+  parseRoleTagMapping,
+  resolveRoleByWeComTags,
+  rolePriority
+} from "../services/wecom-role";
 
 type LoginBody = {
   code?: string;
   username?: string;
-};
-
-type WeComTokenResponse = {
-  errcode?: number;
-  errmsg?: string;
-  access_token?: string;
-  expires_in?: number;
 };
 
 type WeComTicketResponse = {
@@ -32,18 +39,6 @@ type WeComTicketResponse = {
   errmsg?: string;
   ticket?: string;
   expires_in?: number;
-};
-
-type WeComTagListResponse = {
-  errcode?: number;
-  errmsg?: string;
-  taglist?: Array<{ tagid: number; tagname: string }>;
-};
-
-type WeComTagGetResponse = {
-  errcode?: number;
-  errmsg?: string;
-  userlist?: Array<{ userid?: string }>;
 };
 
 type WeComContactUserWithPermission = {
@@ -68,77 +63,6 @@ type WeComMiniProgramSessionResponse = {
   session_key?: string;
 };
 
-const defaultRoleTagMapping: Record<UserRole, string[]> = {
-  super_admin: ["HY_ROLE_SUPER_ADMIN"],
-  finance: ["HY_ROLE_FINANCE"],
-  manager: ["HY_ROLE_MANAGER"],
-  site_manager: ["HY_ROLE_SITE_MANAGER"],
-  operator: ["HY_ROLE_OPERATOR"]
-};
-
-const rolePriority: UserRole[] = [
-  "super_admin",
-  "finance",
-  "manager",
-  "site_manager",
-  "operator"
-];
-
-const parseRoleTagMapping = (
-  raw: string | undefined
-): Record<UserRole, string[]> => {
-  if (!raw?.trim()) return defaultRoleTagMapping;
-
-  const parsed: Record<UserRole, string[]> = {
-    super_admin: [],
-    finance: [],
-    manager: [],
-    site_manager: [],
-    operator: []
-  };
-
-  raw
-    .split(";")
-    .map((part) => part.trim())
-    .filter(Boolean)
-    .forEach((item) => {
-      const [roleRaw, tagsRaw] = item.split(":");
-      const role = (roleRaw || "").trim() as UserRole;
-      if (!rolePriority.includes(role)) return;
-      const tags = (tagsRaw || "")
-        .split("|")
-        .map((tag) => tag.trim())
-        .filter(Boolean);
-      if (tags.length > 0) {
-        parsed[role] = tags;
-      }
-    });
-
-  return {
-    super_admin:
-      parsed.super_admin.length > 0
-        ? parsed.super_admin
-        : defaultRoleTagMapping.super_admin,
-    finance:
-      parsed.finance.length > 0 ? parsed.finance : defaultRoleTagMapping.finance,
-    manager:
-      parsed.manager.length > 0 ? parsed.manager : defaultRoleTagMapping.manager,
-    site_manager:
-      parsed.site_manager.length > 0
-        ? parsed.site_manager
-        : defaultRoleTagMapping.site_manager,
-    operator:
-      parsed.operator.length > 0
-        ? parsed.operator
-        : defaultRoleTagMapping.operator
-  };
-};
-
-const weComErrorMessage = (errmsg: string | undefined, fallback: string): string => {
-  if (!errmsg || errmsg === "ok") return fallback;
-  return errmsg;
-};
-
 const isInvalidWeComCodeError = (message: string): boolean => {
   const normalized = message.toLowerCase();
   return (
@@ -148,85 +72,8 @@ const isInvalidWeComCodeError = (message: string): boolean => {
   );
 };
 
-const normalizeBridgeProxyUrl = (env: Env): string | null => {
-  const explicit = env.WECHAT_BRIDGE_PROXY_URL?.trim();
-  if (explicit) {
-    return explicit.replace(/\/$/, "");
-  }
-
-  const base = env.WECHAT_BRIDGE_BASE_URL?.trim();
-  if (!base) return null;
-  const normalized = base.replace(/\/$/, "");
-  if (normalized.endsWith("/wecom/proxy")) return normalized;
-  return `${normalized}/wecom/proxy`;
-};
-
-const fetchViaBridge = async <T>(
-  proxyUrl: string,
-  targetUrl: string,
-  headers: Record<string, string>
-): Promise<T> => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 4000);
-  const requestUrl = `${proxyUrl}${proxyUrl.includes("?") ? "&" : "?"}bridge=1`;
-  const resp = await fetch(requestUrl, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ url: targetUrl }),
-    redirect: "manual",
-    signal: controller.signal
-  }).finally(() => clearTimeout(timeout));
-
-  if (resp.status >= 300 && resp.status < 400) {
-    const location = resp.headers.get("location") ?? "";
-    throw new Error(`bridge redirected ${resp.status}${location ? ` to ${location}` : ""}`);
-  }
-
-  if (!resp.ok) {
-    const bodyText = await resp.text();
-    throw new Error(`bridge response ${resp.status}: ${bodyText.slice(0, 300)}`);
-  }
-  return (await resp.json()) as T;
-};
-
-const fetchDirectWeComJson = async <T>(url: string): Promise<T> => {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000);
-  const resp = await fetch(url, { signal: controller.signal }).finally(() => clearTimeout(timeout));
-  if (!resp.ok) {
-    const bodyText = await resp.text();
-    throw new Error(`wecom response ${resp.status}: ${bodyText.slice(0, 300)}`);
-  }
-  return (await resp.json()) as T;
-};
-
-const fetchWeComJson = async <T>(env: Env, url: string): Promise<T> => {
-  const proxyUrl = normalizeBridgeProxyUrl(env);
-  if (proxyUrl) {
-    const headers: Record<string, string> = {
-      "content-type": "application/json",
-    };
-    if (env.WECHAT_BRIDGE_TOKEN) {
-      headers["x-bridge-token"] = env.WECHAT_BRIDGE_TOKEN;
-    }
-    try {
-      return await fetchViaBridge<T>(proxyUrl, url, headers);
-    } catch (error) {
-      const reason = error instanceof Error ? error.message : "bridge fetch failed";
-      if (reason.includes("redirect") || reason.includes("abort") || reason.includes("Too many redirects")) {
-        return fetchDirectWeComJson<T>(url);
-      }
-      throw error;
-    }
-  }
-
-  return fetchDirectWeComJson<T>(url);
-};
-
-const ACCESS_TOKEN_KV_KEY = "wecom:access-token:v1";
 const CORP_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:corp:v1";
 const AGENT_JSAPI_TICKET_KV_KEY = "wecom:jsapi-ticket:agent:v1";
-const TOKEN_DEFAULT_TTL_SECONDS = 60 * 60;
 
 const randomNonce = () => {
   return crypto.randomUUID().replace(/-/g, "");
@@ -247,51 +94,6 @@ const sha1Hex = async (value: string): Promise<string> => {
   return Array.from(new Uint8Array(digest))
     .map((byte) => byte.toString(16).padStart(2, "0"))
     .join("");
-};
-
-const getCachedString = async (env: Env, key: string): Promise<string | null> => {
-  return env.KV.get(key);
-};
-
-const putCachedString = async (
-  env: Env,
-  key: string,
-  value: string,
-  expiresInSeconds?: number
-) => {
-  const ttl = Math.max(
-    60,
-    (expiresInSeconds ?? TOKEN_DEFAULT_TTL_SECONDS) - 300
-  );
-  await env.KV.put(key, value, { expirationTtl: ttl });
-};
-
-const fetchWeComAccessToken = async (env: Env): Promise<string> => {
-  const cached = await getCachedString(env, ACCESS_TOKEN_KV_KEY);
-  if (cached) return cached;
-
-  if (!env.WECHAT_CORPID || !env.WECHAT_SECRET) {
-    throw new Error("WECHAT_CORPID/WECHAT_SECRET is not configured");
-  }
-
-  const tokenJson = await fetchWeComJson<WeComTokenResponse>(
-    env,
-    `https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=${encodeURIComponent(env.WECHAT_CORPID)}&corpsecret=${encodeURIComponent(env.WECHAT_SECRET)}`
-  );
-  if (tokenJson.errcode !== 0 || !tokenJson.access_token) {
-    throw new Error(
-      weComErrorMessage(tokenJson.errmsg, "Failed to get WeCom access_token")
-    );
-  }
-
-  await putCachedString(
-    env,
-    ACCESS_TOKEN_KV_KEY,
-    tokenJson.access_token,
-    tokenJson.expires_in
-  );
-
-  return tokenJson.access_token;
 };
 
 const fetchCorpJsApiTicket = async (env: Env): Promise<string> => {
@@ -496,59 +298,6 @@ const fetchWeComProfile = async (env: Env, accessToken: string, userId: string) 
   };
 };
 
-const fetchWeComTags = async (
-  env: Env,
-  accessToken: string
-): Promise<Array<{ tagid: number; tagname: string }>> => {
-  const json = await fetchWeComJson<WeComTagListResponse>(
-    env,
-    `https://qyapi.weixin.qq.com/cgi-bin/tag/list?access_token=${encodeURIComponent(accessToken)}`
-  );
-  if (json.errcode !== 0) {
-    throw new Error(weComErrorMessage(json.errmsg, "Failed to fetch WeCom tags"));
-  }
-  return json.taglist ?? [];
-};
-
-const isUserInTag = async (
-  env: Env,
-  accessToken: string,
-  tagId: number,
-  userId: string
-): Promise<boolean> => {
-  const json = await fetchWeComJson<WeComTagGetResponse>(
-    env,
-    `https://qyapi.weixin.qq.com/cgi-bin/tag/get?access_token=${encodeURIComponent(accessToken)}&tagid=${tagId}`
-  );
-  if (json.errcode !== 0) {
-    throw new Error(
-      weComErrorMessage(json.errmsg, `Failed to get members by WeCom tag ${tagId}`)
-    );
-  }
-  return (json.userlist ?? []).some((user) => user.userid === userId);
-};
-
-const listUsersInTag = async (
-  env: Env,
-  accessToken: string,
-  tagId: number
-): Promise<Set<string>> => {
-  const json = await fetchWeComJson<WeComTagGetResponse>(
-    env,
-    `https://qyapi.weixin.qq.com/cgi-bin/tag/get?access_token=${encodeURIComponent(accessToken)}&tagid=${tagId}`
-  );
-  if (json.errcode !== 0) {
-    throw new Error(
-      weComErrorMessage(json.errmsg, `Failed to get members by WeCom tag ${tagId}`)
-    );
-  }
-  const members = new Set<string>();
-  (json.userlist ?? []).forEach((item) => {
-    if (item.userid) members.add(item.userid);
-  });
-  return members;
-};
-
 const enrichPermissionStatusByWeComTags = async (
   env: Env,
   users: Array<{
@@ -606,33 +355,6 @@ const enrichPermissionStatusByWeComTags = async (
       permission_status: "configured"
     };
   });
-};
-
-const resolveRoleByWeComTags = async (
-  env: Env,
-  accessToken: string,
-  userId: string
-): Promise<UserRole | undefined> => {
-  const mapping = parseRoleTagMapping(env.WECHAT_ROLE_TAG_MAPPING);
-  const tagList = await fetchWeComTags(env, accessToken);
-  const tagIdByName = new Map<string, number>();
-  tagList.forEach((item) => {
-    tagIdByName.set(item.tagname, item.tagid);
-  });
-
-  for (const role of rolePriority) {
-    const tagNames = mapping[role] || [];
-    for (const tagName of tagNames) {
-      const tagId = tagIdByName.get(tagName);
-      if (!tagId) continue;
-      const matched = await isUserInTag(env, accessToken, tagId, userId);
-      if (matched) {
-        return role;
-      }
-    }
-  }
-
-  return undefined;
 };
 
 const buildWeComScanUrl = (
