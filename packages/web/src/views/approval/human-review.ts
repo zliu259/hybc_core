@@ -6,5 +6,13 @@ export const isAiGateHumanReviewTask = (
   task: ApprovalTask
 ): boolean => nodeType === "ai_gate" && task.assignee_userid !== "AI_GATE";
 
-export const humanReviewStatusText = (task: ApprovalTask): string =>
-  task.status === "pending" ? "AI 拦截，等待人工复核" : "";
+export const humanReviewStatusText = (
+  nodeType: string,
+  task: ApprovalTask
+): string => {
+  if (!isAiGateHumanReviewTask(nodeType, task)) return "";
+  if (task.status === "pending") return "AI 拦截，等待人工复核";
+  // 超管在控制台直接放行/驳回时，后端会把审核人的待办置为 cancelled
+  if (task.status === "cancelled") return "已由超管在控制台代为处理";
+  return "";
+};

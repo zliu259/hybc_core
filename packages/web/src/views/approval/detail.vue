@@ -2310,12 +2310,9 @@ onMounted(async () => {
                       >人工复核</el-tag
                     >
                     <span
-                      v-if="
-                        isAiGateHumanReviewTask(node.node_type, task) &&
-                        humanReviewStatusText(task)
-                      "
+                      v-if="humanReviewStatusText(node.node_type, task)"
                       style="margin-left: 6px; color: #e6a23c"
-                      >{{ humanReviewStatusText(task) }}</span
+                      >{{ humanReviewStatusText(node.node_type, task) }}</span
                     >
                     <el-button
                       v-if="

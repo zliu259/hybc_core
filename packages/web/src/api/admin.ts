@@ -504,6 +504,7 @@ export type ApprovalAiGateSettings = {
   fallback_reviewer_name: string | null;
   fallback_reviewer_role: string | null;
   role_check_error: string | null;
+  contact_check_error: string | null;
   updated_by: string | null;
   updated_at: string | null;
 };

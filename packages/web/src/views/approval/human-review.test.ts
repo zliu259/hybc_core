@@ -38,11 +38,29 @@ describe("isAiGateHumanReviewTask", () => {
 
 describe("humanReviewStatusText", () => {
   it("pending 提示等待人工复核", () => {
-    expect(humanReviewStatusText(task({}))).toBe("AI 拦截，等待人工复核");
+    expect(humanReviewStatusText("ai_gate", task({}))).toBe(
+      "AI 拦截，等待人工复核"
+    );
+  });
+  it("被超管在控制台代办后任务作废，标注已代为处理", () => {
+    expect(
+      humanReviewStatusText("ai_gate", task({ status: "cancelled" }))
+    ).toBe("已由超管在控制台代为处理");
   });
   it("已处理不再提示", () => {
     expect(
-      humanReviewStatusText(task({ status: "completed", action: "approve" }))
+      humanReviewStatusText(
+        "ai_gate",
+        task({ status: "completed", action: "approve" })
+      )
+    ).toBe("");
+  });
+  it("非关卡节点不提示", () => {
+    expect(humanReviewStatusText("sequential", task({}))).toBe("");
+  });
+  it("AI_GATE 自身任务不提示", () => {
+    expect(
+      humanReviewStatusText("ai_gate", task({ assignee_userid: "AI_GATE" }))
     ).toBe("");
   });
 });

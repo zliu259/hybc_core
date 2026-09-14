@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { WeComUser } from "@/api/wecom";
 import {
   buildFallbackReviewerNotice,
   filterSuperAdminContacts
@@ -14,6 +15,16 @@ describe("filterSuperAdminContacts", () => {
     ]);
     expect(result.map(u => u.userid)).toEqual(["a", "b"]);
   });
+
+  it("不改动传入的数组", () => {
+    const users: WeComUser[] = [
+      { userid: "b", name: "王", department: [1], system_role: "super_admin" },
+      { userid: "m", name: "李", department: [1], system_role: "manager" },
+      { userid: "a", name: "刘", department: [1], system_role: "super_admin" }
+    ];
+    filterSuperAdminContacts(users);
+    expect(users.map(u => u.userid)).toEqual(["b", "m", "a"]);
+  });
 });
 
 describe("buildFallbackReviewerNotice", () => {
@@ -23,7 +34,8 @@ describe("buildFallbackReviewerNotice", () => {
         fallback_reviewer_userid: "",
         fallback_reviewer_name: null,
         fallback_reviewer_role: null,
-        role_check_error: null
+        role_check_error: null,
+        contact_check_error: null
       })
     ).toEqual({
       type: "warning",
@@ -37,7 +49,8 @@ describe("buildFallbackReviewerNotice", () => {
         fallback_reviewer_userid: "Boss",
         fallback_reviewer_name: "刘老板",
         fallback_reviewer_role: "manager",
-        role_check_error: null
+        role_check_error: null,
+        contact_check_error: null
       })
     ).toEqual({
       type: "warning",
@@ -51,11 +64,27 @@ describe("buildFallbackReviewerNotice", () => {
         fallback_reviewer_userid: "Boss",
         fallback_reviewer_name: "刘老板",
         fallback_reviewer_role: null,
-        role_check_error: "wecom timeout"
+        role_check_error: "wecom timeout",
+        contact_check_error: null
       })
     ).toEqual({
       type: "warning",
       text: "暂时无法核对 刘老板 的角色（企业微信接口不可用），当前配置仍然生效"
+    });
+  });
+
+  it("通讯录读不到但角色核对通过时只说读不到姓名", () => {
+    expect(
+      buildFallbackReviewerNotice({
+        fallback_reviewer_userid: "Boss",
+        fallback_reviewer_name: null,
+        fallback_reviewer_role: "super_admin",
+        role_check_error: null,
+        contact_check_error: "wecom 500"
+      })
+    ).toEqual({
+      type: "warning",
+      text: "暂时无法读取通讯录（企业微信接口不可用），只能显示兜底审核人工号 Boss，当前配置仍然生效"
     });
   });
 
@@ -65,11 +94,27 @@ describe("buildFallbackReviewerNotice", () => {
         fallback_reviewer_userid: "Boss",
         fallback_reviewer_name: "刘老板",
         fallback_reviewer_role: "super_admin",
-        role_check_error: null
+        role_check_error: null,
+        contact_check_error: null
       })
     ).toEqual({
       type: "success",
-      text: "AI 拦截将转给 刘老板 人工复核"
+      text: "AI 拦截将转给 刘老板（超级管理员）人工复核"
+    });
+  });
+
+  it("通讯录里查不到姓名但没报错时回落到工号", () => {
+    expect(
+      buildFallbackReviewerNotice({
+        fallback_reviewer_userid: "Boss",
+        fallback_reviewer_name: null,
+        fallback_reviewer_role: "super_admin",
+        role_check_error: null,
+        contact_check_error: null
+      })
+    ).toEqual({
+      type: "success",
+      text: "AI 拦截将转给 Boss（超级管理员）人工复核"
     });
   });
 });

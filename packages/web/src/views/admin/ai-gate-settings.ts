@@ -1,13 +1,15 @@
+import type { ApprovalAiGateSettings } from "@/api/admin";
 import type { WeComUser } from "@/api/wecom";
 
-export type AiGateFallbackReviewerSettings = {
-  fallback_reviewer_userid: string;
-  fallback_reviewer_name: string | null;
-  fallback_reviewer_role: string | null;
-  role_check_error: string | null;
-  updated_by?: string | null;
-  updated_at?: string | null;
-};
+/** 提示文案只依赖设置接口这几个字段，直接从 API 类型取，避免两处定义漂移。 */
+export type FallbackReviewerNoticeInput = Pick<
+  ApprovalAiGateSettings,
+  | "fallback_reviewer_userid"
+  | "fallback_reviewer_name"
+  | "fallback_reviewer_role"
+  | "role_check_error"
+  | "contact_check_error"
+>;
 
 /** 设置卡下拉人选：只列超管，按姓名排序。 */
 export const filterSuperAdminContacts = (users: WeComUser[]): WeComUser[] =>
@@ -18,7 +20,7 @@ export const filterSuperAdminContacts = (users: WeComUser[]): WeComUser[] =>
     );
 
 export const buildFallbackReviewerNotice = (
-  settings: AiGateFallbackReviewerSettings
+  settings: FallbackReviewerNoticeInput
 ): { type: "warning" | "success"; text: string } => {
   if (!settings.fallback_reviewer_userid) {
     return {
@@ -28,10 +30,17 @@ export const buildFallbackReviewerNotice = (
   }
   const name =
     settings.fallback_reviewer_name || settings.fallback_reviewer_userid;
+  // 「核对不了」优先于「核对出来不合格」：企微不可用时角色为空，不能当成被降权。
   if (settings.role_check_error) {
     return {
       type: "warning",
       text: `暂时无法核对 ${name} 的角色（企业微信接口不可用），当前配置仍然生效`
+    };
+  }
+  if (settings.contact_check_error && !settings.fallback_reviewer_name) {
+    return {
+      type: "warning",
+      text: `暂时无法读取通讯录（企业微信接口不可用），只能显示兜底审核人工号 ${settings.fallback_reviewer_userid}，当前配置仍然生效`
     };
   }
   if (settings.fallback_reviewer_role !== "super_admin") {
@@ -40,5 +49,8 @@ export const buildFallbackReviewerNotice = (
       text: `当前兜底审核人 ${name} 的角色已不是超级管理员（${settings.fallback_reviewer_role ?? "未命中角色标签"}），请重新指定`
     };
   }
-  return { type: "success", text: `AI 拦截将转给 ${name} 人工复核` };
+  return {
+    type: "success",
+    text: `AI 拦截将转给 ${name}（超级管理员）人工复核`
+  };
 };

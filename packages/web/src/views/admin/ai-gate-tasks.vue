@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import { ElMessageBox } from "element-plus";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
@@ -108,6 +109,7 @@ const settings = ref<ApprovalAiGateSettings | null>(null);
 const settingsLoading = ref(false);
 const settingsSaving = ref(false);
 const reviewerDraft = ref("");
+const contactsLoading = ref(false);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const superAdminOptions = computed(() =>
   filterSuperAdminContacts(wecomUsers.value)
@@ -115,6 +117,10 @@ const superAdminOptions = computed(() =>
 const reviewerNotice = computed(() =>
   settings.value ? buildFallbackReviewerNotice(settings.value) : null
 );
+
+// 审计行里的 updated_by 是企微 userid，通讯录在手时换成姓名更可读
+const toContactName = (userid: string) =>
+  wecomUsers.value.find(user => user.userid === userid)?.name || userid;
 
 const loadSettings = async () => {
   settingsLoading.value = true;
@@ -134,6 +140,19 @@ const loadSettings = async () => {
 const saveSettings = async () => {
   // el-select 的 clearable 会把值清成 undefined，这里统一收敛成空串再送后端
   const nextReviewer = (reviewerDraft.value || "").trim();
+  // 清空等于把兜底关掉，后果（拦截直接退回发起人）必须让超管确认一次
+  if (!nextReviewer && settings.value?.fallback_reviewer_userid) {
+    try {
+      await ElMessageBox.confirm(
+        "清除后 AI 拦截将直接退回发起人修改重提，确认清除兜底审核人？",
+        "确认清除",
+        { type: "warning" }
+      );
+    } catch {
+      // 取消即放弃保存，不打扰用户
+      return;
+    }
+  }
   settingsSaving.value = true;
   try {
     await updateApprovalAiGateSettings({
@@ -150,16 +169,22 @@ const saveSettings = async () => {
   }
 };
 
+const loadContacts = async () => {
+  contactsLoading.value = true;
+  try {
+    await loadWecomUsers();
+  } catch {
+    // 通讯录拿不到时仍可用本地缓存人选，只提示不阻断设置卡
+    message("企业微信通讯录加载失败，下拉人选可能不完整", {
+      type: "warning"
+    });
+  } finally {
+    contactsLoading.value = false;
+  }
+};
+
 onMounted(async () => {
-  await Promise.all([
-    loadSettings(),
-    loadWecomUsers().catch(() => {
-      // 通讯录拿不到时仍可用本地缓存人选，只提示不阻断设置卡
-      message("企业微信通讯录加载失败，下拉人选可能不完整", {
-        type: "warning"
-      });
-    })
-  ]);
+  await Promise.all([loadSettings(), loadContacts()]);
 });
 
 onMounted(loadRows);
@@ -189,7 +214,8 @@ onMounted(loadRows);
         filterable
         placeholder="选择超级管理员"
         style="width: 280px"
-        :loading="settingsLoading"
+        :loading="contactsLoading"
+        :disabled="settingsSaving"
       >
         <el-option
           v-for="user in superAdminOptions"
@@ -197,12 +223,20 @@ onMounted(loadRows);
           :label="`${user.name}（${user.userid}）`"
           :value="user.userid"
         />
+        <template #empty>
+          <div style="padding: 8px; font-size: 12px; color: #999">
+            未解析到超级管理员，可能是企业微信标签同步异常，请稍后重试
+          </div>
+        </template>
       </el-select>
       <el-button type="primary" :loading="settingsSaving" @click="saveSettings">
         保存
       </el-button>
       <span v-if="settings?.updated_at" style="font-size: 12px; color: #999">
-        最近更新：{{ settings.updated_by || "-" }} ·
+        最近更新：{{
+          settings.updated_by ? toContactName(settings.updated_by) : "-"
+        }}
+        ·
         {{ formatBeijingDateTime(settings.updated_at) }}
       </span>
     </div>
