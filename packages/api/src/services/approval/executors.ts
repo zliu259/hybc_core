@@ -617,14 +617,23 @@ class AiGateExecutor implements NodeExecutor {
       .first<ApprovalNodeInstance>();
 
     // 人工兜底任务优先（AI 拦截转人工，2026-09-13）：pending 即未完成；
-    // 审核人 approve 即通过。驳回/退回发起人由通用操作直接落状态，不经此处。
+    // 审核人 approve 即通过、reject 即驳回（通用驳回操作已直接落实例状态，此分支仅为自洽兜底）。
+    // 人工任务只看最近一次 AI 决策之后的（退回到关卡重跑时同一 node_instance 会保留旧的人工
+    // 放行记录，不能让它绕过新的拦截；补充意见的 AI_GATE 行 action 为 NULL，不作为边界）。
     const humanRows = await env.DB.prepare(
       `SELECT * FROM approval_task
         WHERE node_instance_id = ?
           AND assignee_userid <> 'AI_GATE'
+          AND id > COALESCE((
+            SELECT MAX(id) FROM approval_task
+             WHERE node_instance_id = ?
+               AND assignee_userid = 'AI_GATE'
+               AND status = 'completed'
+               AND action IN ('approve', 'reject')
+          ), 0)
         ORDER BY id ASC`
     )
-      .bind(nodeInstanceId)
+      .bind(nodeInstanceId, nodeInstanceId)
       .all<ApprovalTask>();
     const humanTasks = getActiveTasks(humanRows.results ?? []);
     if (humanTasks.some((t) => t.status === "pending")) {
@@ -632,6 +641,9 @@ class AiGateExecutor implements NodeExecutor {
     }
     if (humanTasks.some((t) => t.status === "completed" && t.action === "approve")) {
       return { complete: true, outcome: "approved" };
+    }
+    if (humanTasks.some((t) => t.status === "completed" && t.action === "reject")) {
+      return { complete: true, outcome: "rejected" };
     }
 
     const decision = await env.DB.prepare(

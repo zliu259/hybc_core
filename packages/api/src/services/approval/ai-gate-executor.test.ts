@@ -40,8 +40,19 @@ const createFakeEnv = (nodeStatus: string, tasks: FakeTask[]) => {
             },
             async all<T>() {
               if (/FROM\s+approval_task[\s\S]*assignee_userid\s*<>\s*'AI_GATE'/i.test(sql)) {
+                // 与实现一致：只返回「最近一次 AI 决策之后」的人工任务
+                const lastAiDecisionId = tasks
+                  .filter(
+                    (t) =>
+                      t.assignee_userid === "AI_GATE" &&
+                      t.status === "completed" &&
+                      (t.action === "approve" || t.action === "reject")
+                  )
+                  .reduce((max, t) => (t.id > max ? t.id : max), 0);
                 return {
-                  results: tasks.filter((t) => t.assignee_userid !== "AI_GATE") as unknown as T[]
+                  results: tasks.filter(
+                    (t) => t.assignee_userid !== "AI_GATE" && t.id > lastAiDecisionId
+                  ) as unknown as T[]
                 };
               }
               return { results: [] as T[] };
@@ -98,6 +109,46 @@ describe("AiGateExecutor.isNodeComplete — 人工兜底任务优先", () => {
     expect(await executor().isNodeComplete(env, 5)).toEqual({ complete: false, outcome: null });
   });
 
+  it("陈旧人工 approve 早于新一轮 AI 决策 → 不计入，仍按 AI 判定（节点 returned）", async () => {
+    const { env } = createFakeEnv("returned", [
+      { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" },
+      { id: 2, assignee_userid: "Boss", action: "approve", status: "completed" },
+      { id: 3, assignee_userid: "AI_GATE", action: "reject", status: "completed" }
+    ]);
+    expect(await executor().isNodeComplete(env, 5)).toEqual({
+      complete: true,
+      outcome: "returned"
+    });
+  });
+
+  it("人工 pending 晚于 AI 决策 → 落在窗口内，未完成（上例镜像）", async () => {
+    const { env } = createFakeEnv("in_progress", [
+      { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" },
+      { id: 2, assignee_userid: "Boss", action: null, status: "pending" }
+    ]);
+    expect(await executor().isNodeComplete(env, 5)).toEqual({ complete: false, outcome: null });
+  });
+
+  it("人工 approve 与另一条 pending 并存 → 仍未完成（重复建任务的竞态不得提前放行）", async () => {
+    const { env } = createFakeEnv("in_progress", [
+      { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" },
+      { id: 2, assignee_userid: "Boss", action: "approve", status: "completed" },
+      { id: 3, assignee_userid: "Boss", action: null, status: "pending" }
+    ]);
+    expect(await executor().isNodeComplete(env, 5)).toEqual({ complete: false, outcome: null });
+  });
+
+  it("AI reject + 人工 reject → rejected", async () => {
+    const { env } = createFakeEnv("in_progress", [
+      { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" },
+      { id: 2, assignee_userid: "Boss", action: "reject", status: "completed" }
+    ]);
+    expect(await executor().isNodeComplete(env, 5)).toEqual({
+      complete: true,
+      outcome: "rejected"
+    });
+  });
+
   it("AI reject + 人工 pending → 未完成，且不得判 returned/rejected", async () => {
     const { env } = createFakeEnv("in_progress", [
       { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" },
@@ -117,7 +168,7 @@ describe("AiGateExecutor.isNodeComplete — 人工兜底任务优先", () => {
     });
   });
 
-  it("人工任务被取消/转签后不计入，回落 AI 判定", async () => {
+  it("取消的人工任务不计入，回落 AI 判定", async () => {
     const { env } = createFakeEnv("in_progress", [
       { id: 1, assignee_userid: "AI_GATE", action: "reject", status: "completed" },
       { id: 2, assignee_userid: "Boss", action: null, status: "cancelled" },
