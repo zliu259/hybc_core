@@ -2,9 +2,17 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { Env } from "../types/env";
 
+/** 企微 JSON 应答信封：正常分支只用其中一部分字段，异常分支只带 errcode/errmsg。 */
+type WeComJsonStub = {
+  errcode: number;
+  errmsg?: string;
+  taglist?: Array<{ tagid: number; tagname: string }>;
+  userlist?: Array<{ userid: string }>;
+};
+
 const apiMock = vi.hoisted(() => ({
   fetchWeComAccessToken: vi.fn(async () => "token-1"),
-  fetchWeComJson: vi.fn(async (_env: unknown, url: string) => {
+  fetchWeComJson: vi.fn(async (_env: unknown, url: string): Promise<WeComJsonStub> => {
     if (url.includes("/tag/list")) {
       return {
         errcode: 0,
@@ -14,17 +22,20 @@ const apiMock = vi.hoisted(() => ({
         ]
       };
     }
-    if (url.includes("tagid=11")) return { errcode: 0, userlist: [{ userid: "Boss" }] };
-    if (url.includes("tagid=12")) return { errcode: 0, userlist: [{ userid: "Mgr" }] };
+    if (url.includes("tagid=11")) {
+      return { errcode: 0, userlist: [{ userid: "Boss" }, { userid: "Both" }] };
+    }
+    if (url.includes("tagid=12")) {
+      return { errcode: 0, userlist: [{ userid: "Mgr" }, { userid: "Both" }] };
+    }
     return { errcode: 0, userlist: [] };
   })
 }));
 
-vi.mock("./wecom-api", () => ({
+vi.mock("./wecom-api", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./wecom-api")>()),
   fetchWeComAccessToken: apiMock.fetchWeComAccessToken,
-  fetchWeComJson: apiMock.fetchWeComJson,
-  weComErrorMessage: (errmsg: string | undefined, fallback: string) =>
-    !errmsg || errmsg === "ok" ? fallback : errmsg
+  fetchWeComJson: apiMock.fetchWeComJson
 }));
 
 import { parseRoleTagMapping, resolveSystemRoleForUser } from "./wecom-role";
@@ -53,7 +64,19 @@ describe("resolveSystemRoleForUser", () => {
     expect(await resolveSystemRoleForUser(env, "Mgr")).toBe("manager");
   });
 
+  it("同时命中多个标签时按 rolePriority 取高优先级", async () => {
+    expect(await resolveSystemRoleForUser(env, "Both")).toBe("super_admin");
+  });
+
   it("任何标签都不命中返回 null", async () => {
     expect(await resolveSystemRoleForUser(env, "Nobody")).toBeNull();
+  });
+
+  it("企微接口报错时抛出而不是返回 null", async () => {
+    apiMock.fetchWeComJson.mockResolvedValueOnce({
+      errcode: 40014,
+      errmsg: "invalid access_token"
+    });
+    await expect(resolveSystemRoleForUser(env, "Boss")).rejects.toThrow("invalid access_token");
   });
 });
