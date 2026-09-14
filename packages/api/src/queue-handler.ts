@@ -496,6 +496,55 @@ const pushApprovalResultToInitiator = async (
   }
 };
 
+/**
+ * AI 关卡拦截转人工（APPROVAL_AI_ESCALATED）：
+ * 1. 审核人的待办卡：复用节点进入的推卡逻辑（推给实例上所有 pending 任务受理人，此时只有审核人）；
+ * 2. 发起人的结果卡：类型 escalated，点名审核人。
+ * 两路各自隔离，失败只记日志行，不互相影响。
+ */
+export const handleApprovalAiEscalated = async (
+  env: Env,
+  payload: Record<string, unknown>
+): Promise<void> => {
+  const instanceId = Number(payload.instance_id ?? 0);
+  if (Number.isNaN(instanceId) || instanceId <= 0) return;
+
+  try {
+    await handleApprovalSubmitted(env, instanceId);
+  } catch (error) {
+    await env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "wecom_template_card_isolation_guard",
+        "queue-handler",
+        JSON.stringify({
+          instance_id: instanceId,
+          event_type: "APPROVAL_AI_ESCALATED",
+          error: error instanceof Error ? error.message : "unknown error"
+        }),
+        nowIso()
+      )
+      .run();
+  }
+
+  const reviewerUserId = String(payload.reviewer_userid ?? "").trim();
+  const reviewerName = reviewerUserId ? await resolveApplicantDisplayName(env, reviewerUserId) : "";
+  const reason = reviewerName
+    ? `AI 审查未通过，等待 ${reviewerName} 人工复核`
+    : "AI 审查未通过，等待人工复核";
+
+  try {
+    await pushApprovalResultToInitiator(env, instanceId, "escalated", reason);
+  } catch (error) {
+    await logResultPushIsolationGuard(env, {
+      instance_id: instanceId,
+      event_type: "APPROVAL_AI_ESCALATED",
+      error: error instanceof Error ? error.message : "unknown error"
+    });
+  }
+};
+
 const REJECT_REASON_MAX_LENGTH = 200;
 
 const resolveRejectPushReason = async (env: Env, instanceId: number): Promise<string> => {
@@ -611,6 +660,10 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
                 .run();
             }
           }
+          break;
+        }
+        case "APPROVAL_AI_ESCALATED": {
+          await handleApprovalAiEscalated(env, event.payload ?? {});
           break;
         }
         case "APPROVAL_RETURNED": {
