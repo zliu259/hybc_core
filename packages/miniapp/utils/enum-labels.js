@@ -405,6 +405,9 @@ const fileSizeLabel = (bytes) => {
 const aiGateHumanReviewActionLabel = (nodeType, task, baseActionLabel) => {
   if (nodeType !== "ai_gate" || !task || task.assignee_userid === "AI_GATE") return baseActionLabel;
   if (task.status === "pending") return "AI 拦截，等待人工复核";
+  // 作废（超管控制台代办、撤回/取消实例）与转签都没写 action，拼成「人工复核 · -」等于谎称有人复核过
+  if (task.status === "cancelled") return "人工复核任务已作废";
+  if (task.status === "transferred") return "人工复核 · 已转签";
   return `人工复核 · ${baseActionLabel}`;
 };
 

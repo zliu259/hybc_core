@@ -95,8 +95,6 @@ assert.strictEqual(bizTypeLabel("warehouse_asset_work_order"), "库房工单审�
 assertChinese(bizTypeLabel("brand_new_biz"), "未收录业务类型");
 assert.strictEqual(bizTypeLabel(""), "审批事项");
 
-console.log("enum-labels.test.js passed");
-
 // AI 拦截转人工：关卡节点上真人任务的动作文案（2026-09-13 设计）
 assert.strictEqual(
   aiGateHumanReviewActionLabel("ai_gate", { assignee_userid: "Boss", status: "pending" }, "-"),
@@ -114,4 +112,24 @@ assert.strictEqual(
   aiGateHumanReviewActionLabel("sequential", { assignee_userid: "Boss", status: "pending" }, "-"),
   "-"
 );
+// 作废/转签：不能拼成「人工复核 · -」，需要明确文案区分
+assert.strictEqual(
+  aiGateHumanReviewActionLabel("ai_gate", { assignee_userid: "Boss", status: "cancelled" }, "-"),
+  "人工复核任务已作废"
+);
+assert.strictEqual(
+  aiGateHumanReviewActionLabel("ai_gate", { assignee_userid: "Boss", status: "transferred" }, "-"),
+  "人工复核 · 已转签"
+);
+assert.strictEqual(aiGateHumanReviewActionLabel("ai_gate", null, "-"), "-");
+assert.strictEqual(
+  aiGateHumanReviewActionLabel(
+    "ai_gate",
+    { assignee_userid: "Boss", status: "completed", action: "return_initiator" },
+    "退回发起人"
+  ),
+  "人工复核 · 退回发起人"
+);
 console.log("enum-labels.test.js (ai-gate human review) passed");
+
+console.log("enum-labels.test.js passed");
