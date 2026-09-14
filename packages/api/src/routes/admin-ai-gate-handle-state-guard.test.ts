@@ -48,6 +48,10 @@ type FakeDbOptions = {
   /** null = 实例行不存在 */
   instanceStatus?: string | null;
   nodeStatus?: string;
+  /** 关卡节点所在轮次；与任务 payload 的轮次不一致时路由必须拒绝 */
+  nodeRound?: number;
+  /** 任务 payload 的轮次；null = 存量任务没有该字段（按第 1 轮处理） */
+  payloadRound?: number | null;
 };
 
 class GateStatement {
@@ -88,11 +92,16 @@ class GateDb {
   async first<T>(sql: string, _params: unknown[]): Promise<T | null> {
     void _params;
     if (sql.includes("FROM task_queue WHERE id = ?")) {
+      const payloadRound = this.options.payloadRound === undefined ? 1 : this.options.payloadRound;
       return {
         id: 1583,
         status: "completed",
         biz_id: 362,
-        payload_json: JSON.stringify({ node_key: "ai_gate_1", instance_id: 362 }),
+        payload_json: JSON.stringify({
+          node_key: "ai_gate_1",
+          instance_id: 362,
+          ...(payloadRound === null ? {} : { round: payloadRound })
+        }),
         result_json: JSON.stringify({
           output: '{"decision":"reject","summary":"附件费用对象与收款方不一致"}',
           metadata: { outcome: "reject", decision: "reject" }
@@ -101,12 +110,13 @@ class GateDb {
     }
     if (sql.includes("FROM approval_node_instance")) {
       const nodeStatus = this.options.nodeStatus ?? "returned";
+      const nodeRound = this.options.nodeRound ?? 1;
       if (sql.includes("status = 'in_progress'")) {
         return nodeStatus === "in_progress"
-          ? ({ id: 1931, round: 1, status: nodeStatus } as T)
+          ? ({ id: 1931, round: nodeRound, status: nodeStatus } as T)
           : null;
       }
-      return { id: 1931, round: 1, status: nodeStatus } as T;
+      return { id: 1931, round: nodeRound, status: nodeStatus } as T;
     }
     if (sql.includes("FROM approval_instance WHERE id = ?")) {
       const status =
@@ -197,6 +207,64 @@ describe("manual AI-gate handling on an instance that is no longer in progress",
     expect(engineMock.advanceWorkflow).not.toHaveBeenCalled();
     // 补充意见只是追加记录，绝不能顺手把兜底审核人的待办收掉
     expect(env.DB.runs.some((call) => /status\s*=\s*'cancelled'/i.test(call.sql))).toBe(false);
+  });
+
+  it.each(["approve", "reject"])(
+    "refuses to %s from an older round's task row, writing nothing",
+    async (action) => {
+      // 重提交后同一 node_key 每轮各有一条任务行；在第 1 轮那条上点放行，
+      // 节点查找取到的是当前（第 2）轮节点——旧轮结论绝不能写进新一轮（2026-09-14）
+      const env = createEnv(
+        new GateDb({
+          instanceStatus: "in_progress",
+          nodeStatus: "in_progress",
+          nodeRound: 2,
+          payloadRound: 1
+        })
+      );
+
+      const response = await handleTask(env, { action, comment: "手动处理" });
+
+      expect(response.status).toBe(409);
+      const payload = (await response.json()) as { success: boolean; error: { message: string } };
+      expect(payload.success).toBe(false);
+      expect(payload.error.message).toContain("第 1 轮");
+      expect(payload.error.message).toContain("第 2 轮");
+      expect(env.DB.runs).toHaveLength(0);
+      expect(engineMock.advanceWorkflow).not.toHaveBeenCalled();
+    }
+  );
+
+  it("still accepts a comment on an older round's task row", async () => {
+    const env = createEnv(
+      new GateDb({
+        instanceStatus: "in_progress",
+        nodeStatus: "in_progress",
+        nodeRound: 2,
+        payloadRound: 1
+      })
+    );
+
+    const response = await handleTask(env, { action: "comment", comment: "补充说明" });
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO approval_task"))).toBe(true);
+  });
+
+  it("treats a legacy payload without round as round 1", async () => {
+    const env = createEnv(
+      new GateDb({
+        instanceStatus: "in_progress",
+        nodeStatus: "in_progress",
+        nodeRound: 1,
+        payloadRound: null
+      })
+    );
+
+    const response = await handleTask(env, { action: "approve", comment: "放行" });
+
+    expect(response.status).toBe(200);
+    expect(engineMock.advanceWorkflow).toHaveBeenCalledTimes(1);
   });
 
   it.each(["approve", "reject"])(

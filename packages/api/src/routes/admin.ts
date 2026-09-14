@@ -1615,6 +1615,9 @@ adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async 
     .bind(...params)
     .first<{ total: number }>();
 
+  // 节点按【任务自己的轮次】join（2026-09-14）：重提交后同一 node_key 每轮各有一条任务行，
+  // 若按实例当前轮 join，旧轮任务行会顶着当前轮节点的状态显示。task_round 一并返回，
+  // 便于前端标出该任务属于第几轮。
   const rows = await c.env.DB.prepare(
     `SELECT
          tq.id as task_id,
@@ -1624,6 +1627,7 @@ adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async 
          tq.created_at as task_created_at,
          tq.completed_at as task_completed_at,
          tq.payload_json,
+         COALESCE(json_extract(tq.payload_json, '$.round'), 1) as task_round,
          ai.id as instance_id,
          ai.instance_no,
          ai.status as instance_status,
@@ -1638,7 +1642,7 @@ adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async 
        LEFT JOIN approval_node_instance ani
          ON ani.instance_id = ai.id
          AND ani.node_type = 'ai_gate'
-         AND ani.round = ai.current_round
+         AND ani.round = COALESCE(json_extract(tq.payload_json, '$.round'), 1)
          AND ani.node_key = json_extract(tq.payload_json, '$.node_key')
        ${whereSql}
        ORDER BY tq.created_at DESC
@@ -1653,6 +1657,7 @@ adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async 
       task_created_at: string;
       task_completed_at: string | null;
       payload_json: string | null;
+      task_round: number | null;
       instance_id: number | null;
       instance_no: string | null;
       instance_status: string | null;
@@ -1688,6 +1693,7 @@ adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async 
       error_message: row.error_message,
       task_created_at: row.task_created_at,
       task_completed_at: row.task_completed_at,
+      task_round: row.task_round,
       node_key: nodeKey,
       ai_slot_id: aiSlotId,
       node_status: row.node_status,
@@ -1926,12 +1932,16 @@ adminRoutes.post(
     }
 
     let nodeKey: string | null = null;
+    let taskRound = 1;
     if (task.payload_json) {
       try {
-        const payload = JSON.parse(task.payload_json) as { node_key?: unknown };
+        const payload = JSON.parse(task.payload_json) as { node_key?: unknown; round?: unknown };
         nodeKey = typeof payload.node_key === "string" ? payload.node_key : null;
+        const parsedRound = Number(payload.round ?? 1);
+        taskRound = Number.isFinite(parsedRound) && parsedRound > 0 ? parsedRound : 1;
       } catch {
         nodeKey = null;
+        taskRound = 1;
       }
     }
 
@@ -2003,6 +2013,22 @@ adminRoutes.post(
           .bind(aiTaskRow.node_instance_id)
           .first<{ id: number; round: number; status: string }>();
       }
+    }
+
+    // 轮次校验（2026-09-14）：上面按 node_key/in_progress/round DESC 取的是最新一轮节点，
+    // 重提交后同一 node_key 每轮各有一条任务行。在旧轮任务上点放行/驳回，会把上一轮的结论
+    // 写进当前轮节点（并顺手收掉当前轮的兜底人工任务），这里直接拒绝、不做任何写入。
+    // 补充意见只追加记录、不推流程，不受限。
+    if (action !== "comment" && node && node.round !== taskRound) {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: `该 AI 任务属于第 ${taskRound} 轮，当前关卡节点已是第 ${node.round} 轮，请在当前轮的任务上操作`
+          }
+        },
+        409
+      );
     }
 
     const now = nowIso();

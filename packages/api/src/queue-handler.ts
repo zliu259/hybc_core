@@ -193,7 +193,15 @@ const handleApprovalRejected = async (env: Env, instanceId: number): Promise<voi
   }
 };
 
-const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promise<void> => {
+/**
+ * AI 关卡任务完成的实时路径。
+ *
+ * 节点查找必须连轮次一起匹配（2026-09-14）：退回/撤回后重提交会为新一轮建全新的
+ * node_instance，而上一轮那条仍在 running 的任务可能晚到才完成——只按 node_key +
+ * in_progress 取最新节点，会把旧轮的结论写到新一轮节点上（新一轮自己的任务还没回来）。
+ * 轮次取 payload_json.round，存量任务缺该字段时按第 1 轮处理。
+ */
+export const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promise<void> => {
   const task = await env.DB.prepare("SELECT * FROM task_queue WHERE id = ?").bind(taskId).first<{
     id: number;
     task_type: string;
@@ -205,12 +213,16 @@ const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promise<void
   if (!task || task.task_type !== "approval_ai_gate") return;
 
   let nodeKey: string | null = null;
+  let round = 1;
   if (task.payload_json) {
     try {
-      const payload = JSON.parse(task.payload_json) as { node_key?: string };
+      const payload = JSON.parse(task.payload_json) as { node_key?: string; round?: unknown };
       nodeKey = payload.node_key ?? null;
+      const parsedRound = Number(payload.round ?? 1);
+      round = Number.isFinite(parsedRound) && parsedRound > 0 ? parsedRound : 1;
     } catch {
       nodeKey = null;
+      round = 1;
     }
   }
 
@@ -220,21 +232,23 @@ const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promise<void
          WHERE instance_id = ?
            AND node_type = 'ai_gate'
            AND node_key = ?
+           AND round = ?
            AND status = 'in_progress'
          ORDER BY id DESC
          LIMIT 1`
       )
-        .bind(task.biz_id, nodeKey)
+        .bind(task.biz_id, nodeKey, round)
         .first<{ id: number; round: number }>()
     : await env.DB.prepare(
         `SELECT * FROM approval_node_instance
          WHERE instance_id = ?
            AND node_type = 'ai_gate'
+           AND round = ?
            AND status = 'in_progress'
          ORDER BY id DESC
          LIMIT 1`
       )
-        .bind(task.biz_id)
+        .bind(task.biz_id, round)
         .first<{ id: number; round: number }>();
 
   if (!node) return;
