@@ -36,8 +36,11 @@ const deps = vi.hoisted(() => ({
     ["Boss", "super_admin"],
     ["Mgr", "manager"]
   ]),
-  /** 角色解析直接抛错的用户（模拟企微接口不可用），值即错误信息 */
-  roleErrorByUser: new Map<string, string>([["Flaky", "wecom timeout"]]),
+  /** 角色解析直接抛错的用户（模拟企微接口不可用），值即错误信息；每个用例可覆写 */
+  roleErrorByUser: new Map<string, string>(),
+  /** 通讯录整体拉取失败开关 */
+  contactBookThrows: false,
+  contactBookError: "wecom contact book unavailable",
   contacts: [
     { userid: "Boss", name: "刘老板", department: [1] },
     { userid: "Mgr", name: "王经理", department: [1] },
@@ -54,12 +57,20 @@ vi.mock("../services/wecom-role", () => ({
 }));
 
 vi.mock("../services/wecom-contact-book", () => ({
-  getWeComContactBook: async () => ({
-    syncedAt: "2026-09-14T00:00:00.000Z",
-    departments: [],
-    users: deps.contacts
-  })
+  getWeComContactBook: async () => {
+    if (deps.contactBookThrows) throw new Error(deps.contactBookError);
+    return {
+      syncedAt: "2026-09-14T00:00:00.000Z",
+      departments: [],
+      users: deps.contacts
+    };
+  }
 }));
+
+// 上游异常都会 console.error 全文（只进服务端日志），测试里静音并借它断言「确实记了」
+const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+const CONFIG_KEY = "approval.ai_gate.fallback_reviewer_userid";
 
 class SettingsStatement {
   private params: unknown[] = [];
@@ -135,6 +146,10 @@ const call = (env: Env, method: "GET" | "PUT", body?: Record<string, unknown>) =
 describe("AI 关卡兜底审核人设置", () => {
   beforeEach(() => {
     mockAuthState.payload = { ...mockAuthState.payload, roles: ["super_admin"] };
+    deps.roleErrorByUser.clear();
+    deps.roleErrorByUser.set("Flaky", "wecom timeout");
+    deps.contactBookThrows = false;
+    consoleErrorSpy.mockClear();
   });
 
   it("非超管 403", async () => {
@@ -155,12 +170,12 @@ describe("AI 关卡兜底审核人设置", () => {
   });
 
   it("PUT 非通讯录成员 400", async () => {
-    const res = await call(createEnv(new SettingsDb()), "PUT", {
-      fallback_reviewer_userid: "Ghost"
-    });
+    const env = createEnv(new SettingsDb());
+    const res = await call(env, "PUT", { fallback_reviewer_userid: "Ghost" });
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toContain("通讯录");
+    expect(env.DB.runs.some((r) => /INSERT\s+INTO\s+system_config/i.test(r.sql))).toBe(false);
   });
 
   it("PUT 非超管成员 400 并带当前角色", async () => {
@@ -185,20 +200,21 @@ describe("AI 关卡兜底审核人设置", () => {
       fallback_reviewer_name: "刘老板",
       fallback_reviewer_role: "super_admin",
       role_check_error: null,
+      contact_check_error: null,
       updated_by: "boss-a"
     });
   });
 
   it("PUT 空串清除配置并审计", async () => {
     const env = createEnv(new SettingsDb());
-    env.DB.config.set("approval.ai_gate.fallback_reviewer_userid", {
+    env.DB.config.set(CONFIG_KEY, {
       config_value: "Boss",
       updated_by: "boss-a",
       updated_at: "2026-09-14T00:00:00.000Z"
     });
     const res = await call(env, "PUT", { fallback_reviewer_userid: "" });
     expect(res.status).toBe(200);
-    expect(env.DB.config.get("approval.ai_gate.fallback_reviewer_userid")?.config_value).toBe("");
+    expect(env.DB.config.get(CONFIG_KEY)?.config_value).toBe("");
     const audit = env.DB.runs.find((r) => /INSERT\s+INTO\s+api_audit_log/i.test(r.sql));
     expect(String(audit?.params[6])).toContain('"previous":"Boss"');
 
@@ -213,7 +229,7 @@ describe("AI 关卡兜底审核人设置", () => {
 
   it("GET 角色核对失败：角色留空但报出原因，姓名照常解析", async () => {
     const env = createEnv(new SettingsDb());
-    env.DB.config.set("approval.ai_gate.fallback_reviewer_userid", {
+    env.DB.config.set(CONFIG_KEY, {
       config_value: "Flaky",
       updated_by: "boss-a",
       updated_at: "2026-09-14T00:00:00.000Z"
@@ -236,5 +252,78 @@ describe("AI 关卡兜底审核人设置", () => {
     const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toContain("无法核对");
     expect(env.DB.runs.some((r) => /INSERT\s+INTO\s+system_config/i.test(r.sql))).toBe(false);
+  });
+
+  it("PUT 请求体缺字段/不是字符串一律 400，且绝不当成清除", async () => {
+    const env = createEnv(new SettingsDb());
+    const res = await call(env, "PUT", {});
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("必须是字符串");
+    expect(env.DB.runs.some((r) => /INSERT\s+INTO\s+system_config/i.test(r.sql))).toBe(false);
+  });
+
+  it("PUT 超长 userid 400", async () => {
+    const env = createEnv(new SettingsDb());
+    const res = await call(env, "PUT", { fallback_reviewer_userid: "x".repeat(65) });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("长度超限");
+    expect(env.DB.runs.some((r) => /INSERT\s+INTO\s+system_config/i.test(r.sql))).toBe(false);
+  });
+
+  it("GET 上游报错脱敏：URL 上的 corpsecret 不得回给前端", async () => {
+    const env = createEnv(new SettingsDb());
+    env.DB.config.set(CONFIG_KEY, {
+      config_value: "Flaky",
+      updated_by: "boss-a",
+      updated_at: "2026-09-14T00:00:00.000Z"
+    });
+    deps.roleErrorByUser.set(
+      "Flaky",
+      "bridge response 500: https://qyapi.weixin.qq.com/cgi-bin/gettoken?corpid=ww1&corpsecret=SECRET123"
+    );
+
+    const res = await call(env, "GET");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Record<string, unknown> };
+    const message = String(body.data.role_check_error);
+    expect(message).toContain("corpsecret=***");
+    expect(message).not.toContain("SECRET123");
+    // 全文只进服务端日志
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it("GET 通讯录拉取失败：姓名留空但报出原因，不静默吞掉", async () => {
+    const env = createEnv(new SettingsDb());
+    env.DB.config.set(CONFIG_KEY, {
+      config_value: "Boss",
+      updated_by: "boss-a",
+      updated_at: "2026-09-14T00:00:00.000Z"
+    });
+    deps.contactBookThrows = true;
+
+    const res = await call(env, "GET");
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { data: Record<string, unknown> };
+    expect(body.data).toMatchObject({
+      fallback_reviewer_userid: "Boss",
+      fallback_reviewer_name: null,
+      fallback_reviewer_role: "super_admin",
+      contact_check_error: "wecom contact book unavailable"
+    });
+    expect(consoleErrorSpy).toHaveBeenCalled();
+  });
+
+  it("PUT 通讯录拉取失败 400：核对不了就不落库", async () => {
+    const env = createEnv(new SettingsDb());
+    deps.contactBookThrows = true;
+
+    const res = await call(env, "PUT", { fallback_reviewer_userid: "Boss" });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toContain("无法核对通讯录");
+    expect(env.DB.runs.some((r) => /INSERT\s+INTO\s+system_config/i.test(r.sql))).toBe(false);
+    expect(consoleErrorSpy).toHaveBeenCalled();
   });
 });

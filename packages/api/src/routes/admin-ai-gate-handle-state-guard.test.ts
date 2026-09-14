@@ -195,30 +195,37 @@ describe("manual AI-gate handling on an instance that is no longer in progress",
     expect(response.status).toBe(200);
     expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO approval_task"))).toBe(true);
     expect(engineMock.advanceWorkflow).not.toHaveBeenCalled();
+    // 补充意见只是追加记录，绝不能顺手把兜底审核人的待办收掉
+    expect(env.DB.runs.some((call) => /status\s*=\s*'cancelled'/i.test(call.sql))).toBe(false);
   });
 
-  it("still lets a super admin pass an in_progress gate and advances the workflow", async () => {
-    const env = createEnv(new GateDb({ instanceStatus: "in_progress", nodeStatus: "in_progress" }));
+  it.each(["approve", "reject"])(
+    "still lets a super admin %s an in_progress gate and advances the workflow",
+    async (action) => {
+      const env = createEnv(
+        new GateDb({ instanceStatus: "in_progress", nodeStatus: "in_progress" })
+      );
 
-    const response = await handleTask(env, { action: "approve", comment: "手动放行" });
+      const response = await handleTask(env, { action, comment: "手动处理" });
 
-    expect(response.status).toBe(200);
-    expect(env.DB.runs.some((call) => call.sql.includes("UPDATE task_queue"))).toBe(true);
-    expect(env.DB.runs.some((call) => call.sql.includes("UPDATE approval_node_instance"))).toBe(
-      true
-    );
-    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO approval_task"))).toBe(true);
-    expect(engineMock.advanceWorkflow).toHaveBeenCalledTimes(1);
-    expect(engineMock.advanceWorkflow.mock.calls[0][1]).toBe(362);
+      expect(response.status).toBe(200);
+      expect(env.DB.runs.some((call) => call.sql.includes("UPDATE task_queue"))).toBe(true);
+      expect(env.DB.runs.some((call) => call.sql.includes("UPDATE approval_node_instance"))).toBe(
+        true
+      );
+      expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO approval_task"))).toBe(true);
+      expect(engineMock.advanceWorkflow).toHaveBeenCalledTimes(1);
+      expect(engineMock.advanceWorkflow.mock.calls[0][1]).toBe(362);
 
-    // 转人工兜底后，节点上可能还挂着兜底审核人的 pending 任务；超管在控制台直接放行时
-    // 必须把它一并收掉，否则会作为悬空待办留在审核人列表里（2026-09-13）。
-    const cancelHuman = env.DB.runs.find(
-      (call) =>
-        /UPDATE\s+approval_task\s+SET\s+status\s*=\s*'cancelled'/i.test(call.sql) &&
-        /assignee_userid\s*<>\s*'AI_GATE'/i.test(call.sql)
-    );
-    expect(cancelHuman).toBeDefined();
-    expect(cancelHuman?.params[1]).toBe(1931);
-  });
+      // 转人工兜底后，节点上可能还挂着兜底审核人的 pending 任务；超管在控制台直接放行/驳回时
+      // 必须把它一并收掉，否则会作为悬空待办留在审核人列表里（2026-09-13）。
+      const cancelHuman = env.DB.runs.find(
+        (call) =>
+          /UPDATE\s+approval_task\s+SET\s+status\s*=\s*'cancelled'/i.test(call.sql) &&
+          /assignee_userid\s*<>\s*'AI_GATE'/i.test(call.sql)
+      );
+      expect(cancelHuman).toBeDefined();
+      expect(cancelHuman?.params[1]).toBe(1931);
+    }
+  );
 });

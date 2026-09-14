@@ -36,7 +36,7 @@ import {
 import { listAllGrants, revokeGrant, getGrantById } from "../services/agent-grant";
 import { writeAuditLog } from "../services/audit-log";
 import { getSystemConfigEntry, setSystemConfig } from "../services/system-config";
-import { getWeComContactBook } from "../services/wecom-contact-book";
+import { getWeComContactBook, type WeComContactBook } from "../services/wecom-contact-book";
 import { resolveSystemRoleForUser } from "../services/wecom-role";
 import { AI_GATE_FALLBACK_REVIEWER_KEY } from "../services/approval/ai-gate-fallback";
 
@@ -1719,27 +1719,44 @@ adminRoutes.get("/approval-ai-gate/tasks", requireRoles(["super_admin"]), async 
 
 // ─── AI 关卡兜底审核人（系统级配置，转人工设计 2026-09-13）──────────
 
+/** 企业微信配置键上限（userid 最长 64），同时给请求体兜一层长度闸门。 */
+const FALLBACK_REVIEWER_MAX_LENGTH = 64;
+
+/**
+ * 上游（企微 / bridge）报错文案脱敏后才允许回给前端：
+ * 这些消息可能原样带着请求 URL，而 URL 上挂着 corpsecret / access_token。
+ * 完整原文只写服务端日志（console.error），响应里只留截断后的脱敏版。
+ */
+const redactUpstreamError = (error: unknown): string =>
+  (error instanceof Error ? error.message : String(error))
+    .replace(/(access_token|corpsecret|corpid|secret|token)=[^&\s"')]+/gi, "$1=***")
+    .slice(0, 120);
+
 adminRoutes.get("/approval-ai-gate/settings", requireRoles(["super_admin"]), async (c) => {
   const entry = await getSystemConfigEntry(c.env, AI_GATE_FALLBACK_REVIEWER_KEY);
   const userid = entry?.value ?? "";
 
   let name: string | null = null;
   let role: string | null = null;
-  // 「核对不了角色」与「核对出来不是超管」必须能区分：企微不可用时角色留空，
-  // 但要把原因如实带出去，否则页面上看起来就像这个人被降权了。
+  // 「核对不了」与「核对出来不合格」必须能区分：企微不可用时角色/姓名留空，
+  // 但要把原因带出去，否则页面上看起来就像这个人被降权或从通讯录消失了。
   let roleCheckError: string | null = null;
+  let contactCheckError: string | null = null;
   if (userid) {
     try {
       const book = await getWeComContactBook(c.env);
       name = book.users.find((user) => user.userid === userid)?.name ?? null;
-    } catch {
+    } catch (error) {
+      console.error("[ai-gate-settings] contact book lookup failed", error);
       name = null;
+      contactCheckError = redactUpstreamError(error);
     }
     try {
       role = await resolveSystemRoleForUser(c.env, userid);
     } catch (error) {
+      console.error("[ai-gate-settings] role check failed", error);
       role = null;
-      roleCheckError = error instanceof Error ? error.message : String(error);
+      roleCheckError = redactUpstreamError(error);
     }
   }
 
@@ -1750,6 +1767,7 @@ adminRoutes.get("/approval-ai-gate/settings", requireRoles(["super_admin"]), asy
       fallback_reviewer_name: name,
       fallback_reviewer_role: role,
       role_check_error: roleCheckError,
+      contact_check_error: contactCheckError,
       updated_by: entry?.updated_by ?? null,
       updated_at: entry?.updated_at ?? null
     }
@@ -1758,36 +1776,62 @@ adminRoutes.get("/approval-ai-gate/settings", requireRoles(["super_admin"]), asy
 
 adminRoutes.put("/approval-ai-gate/settings", requireRoles(["super_admin"]), async (c) => {
   const auth = c.get("auth");
-  const body = (await c.req.json().catch(() => ({}))) as { fallback_reviewer_userid?: unknown };
-  const next =
-    typeof body.fallback_reviewer_userid === "string" ? body.fallback_reviewer_userid.trim() : "";
+  // 字段缺失 / 非字符串 / 请求体不是合法 JSON 一律拒绝：否则这些情况会退化成空串，
+  // 把「请求写坏了」静默变成「清除兜底审核人」，AI 拦截时就没人接单了。清除必须显式传空串。
+  const raw = (await c.req.json().catch(() => null)) as Record<string, unknown> | null;
+  const value = raw?.fallback_reviewer_userid;
+  if (typeof value !== "string") {
+    return c.json(
+      {
+        success: false,
+        error: { message: "fallback_reviewer_userid 必须是字符串（清除请传空串）" }
+      },
+      400
+    );
+  }
+  const next = value.trim();
+  if (next.length > FALLBACK_REVIEWER_MAX_LENGTH) {
+    return c.json({ success: false, error: { message: "fallback_reviewer_userid 长度超限" } }, 400);
+  }
+
   const previous = (await getSystemConfigEntry(c.env, AI_GATE_FALLBACK_REVIEWER_KEY))?.value ?? "";
+  let resolvedRole: string | null = null;
 
   if (next) {
-    const book = await getWeComContactBook(c.env);
-    if (!book.users.some((user) => user.userid === next)) {
-      return c.json({ success: false, error: { message: "兜底审核人不在企业微信通讯录中" } }, 400);
-    }
-    let role: string | null = null;
+    let book: WeComContactBook;
     try {
-      role = await resolveSystemRoleForUser(c.env, next);
+      book = await getWeComContactBook(c.env);
     } catch (error) {
-      // 企微不可用时宁可拒绝保存，也不能把「没核对上」当成「核对通过」或「不是超管」
-      const message = error instanceof Error ? error.message : String(error);
+      console.error("[ai-gate-settings] contact book lookup failed", error);
       return c.json(
-        {
-          success: false,
-          error: { message: `无法核对该用户的角色（企业微信接口不可用：${message}），请稍后再试` }
-        },
+        { success: false, error: { message: "无法核对通讯录（企业微信接口不可用），请稍后再试" } },
         400
       );
     }
-    if (role !== "super_admin") {
+    if (!book.users.some((user) => user.userid === next)) {
+      return c.json({ success: false, error: { message: "兜底审核人不在企业微信通讯录中" } }, 400);
+    }
+    try {
+      resolvedRole = await resolveSystemRoleForUser(c.env, next);
+    } catch (error) {
+      // 企微不可用时宁可拒绝保存，也不能把「没核对上」当成「核对通过」或「不是超管」
+      console.error("[ai-gate-settings] role check failed", error);
       return c.json(
         {
           success: false,
           error: {
-            message: `兜底审核人必须是超级管理员（当前解析角色：${role ?? "未命中任何角色标签"}）`
+            message: `无法核对该用户的角色（企业微信接口不可用：${redactUpstreamError(error)}），请稍后再试`
+          }
+        },
+        400
+      );
+    }
+    if (resolvedRole !== "super_admin") {
+      return c.json(
+        {
+          success: false,
+          error: {
+            message: `兜底审核人必须是超级管理员（当前解析角色：${resolvedRole ?? "未命中任何角色标签"}）`
           }
         },
         400
@@ -1796,14 +1840,19 @@ adminRoutes.put("/approval-ai-gate/settings", requireRoles(["super_admin"]), asy
   }
 
   await setSystemConfig(c.env, AI_GATE_FALLBACK_REVIEWER_KEY, next, auth.sub);
-  await writeAuditLog(c.env.DB, {
-    actorUserId: auth.sub,
-    actorRoles: auth.roles,
-    action: "admin.ai_gate_fallback_reviewer.update",
-    targetType: "system_config",
-    targetId: AI_GATE_FALLBACK_REVIEWER_KEY,
-    detail: { previous, next }
-  });
+  try {
+    await writeAuditLog(c.env.DB, {
+      actorUserId: auth.sub,
+      actorRoles: auth.roles,
+      action: "admin.ai_gate_fallback_reviewer.update",
+      targetType: "system_config",
+      targetId: AI_GATE_FALLBACK_REVIEWER_KEY,
+      detail: { previous, next, resolved_role: resolvedRole }
+    });
+  } catch (error) {
+    // 配置已经落库，审计补不上也不能把成功报成失败——只留服务端日志，损失止于这一行审计
+    console.error("[ai-gate-settings] audit log write failed", error);
+  }
 
   return c.json({ success: true, data: { fallback_reviewer_userid: next } });
 });
@@ -1998,6 +2047,8 @@ adminRoutes.post(
 
     // 超管在控制台直接放行/驳回时，节点上若挂着兜底审核人的 pending 任务必须一并收掉，
     // 否则它会作为悬空待办留在审核人列表里（转人工设计 2026-09-13）。
+    // 先取消人工任务再写 AI 记录；若后续写入失败，关卡仍 in_progress，队列重投会重新建任务并推卡
+    // （hasPendingHumanTaskOnNode 为 false），不会丢单。
     if (node) {
       await c.env.DB.prepare(
         `UPDATE approval_task
