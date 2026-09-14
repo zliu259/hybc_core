@@ -42,10 +42,10 @@ describe("humanReviewStatusText", () => {
       "AI 拦截，等待人工复核"
     );
   });
-  it("被超管在控制台代办后任务作废，标注已代为处理", () => {
+  it("任务作废时给中性文案（超管代办/撤回/实例作废都会走到）", () => {
     expect(
       humanReviewStatusText("ai_gate", task({ status: "cancelled" }))
-    ).toBe("已由超管在控制台代为处理");
+    ).toBe("人工复核任务已作废");
   });
   it("已处理不再提示", () => {
     expect(

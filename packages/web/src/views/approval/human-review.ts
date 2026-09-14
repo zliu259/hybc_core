@@ -12,7 +12,7 @@ export const humanReviewStatusText = (
 ): string => {
   if (!isAiGateHumanReviewTask(nodeType, task)) return "";
   if (task.status === "pending") return "AI 拦截，等待人工复核";
-  // 超管在控制台直接放行/驳回时，后端会把审核人的待办置为 cancelled
-  if (task.status === "cancelled") return "已由超管在控制台代为处理";
+  // cancelled 有多个来源（超管控制台代办、发起人撤回、实例作废），文案必须中性
+  if (task.status === "cancelled") return "人工复核任务已作废";
   return "";
 };
