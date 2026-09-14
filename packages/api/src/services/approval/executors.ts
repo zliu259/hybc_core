@@ -9,6 +9,7 @@ import type {
 } from "../../types/approval";
 import { parseAiGateTaskResult } from "./ai-gate-result";
 import { applyAiGateDecision } from "./ai-gate-apply";
+import { hasAiDecisionTaskOnNode } from "./ai-gate-fallback";
 import { loadOurEntityContext } from "../our-entities";
 
 // ─── Types ──────────
@@ -138,22 +139,6 @@ const findAiGateTask = async (
       result_json: string | null;
       error_message: string | null;
     }>();
-};
-
-const hasAiDecisionTask = async (
-  env: Env,
-  nodeInstanceId: number
-): Promise<boolean> => {
-  const row = await env.DB.prepare(
-    `SELECT id
-     FROM approval_task
-     WHERE node_instance_id = ? AND assignee_userid = 'AI_GATE' AND status = 'completed'
-     ORDER BY id DESC
-     LIMIT 1`
-  )
-    .bind(nodeInstanceId)
-    .first<{ id: number }>();
-  return Boolean(row);
 };
 
 const loadAiGateContextFromInstance = async (
@@ -501,7 +486,7 @@ class AiGateExecutor implements NodeExecutor {
   ): Promise<void> {
     if (_aiGateHandler) {
       const existingTask = await findAiGateTask(env, instanceId, nodeInstance.node_key);
-      const hasHistoricalDecision = await hasAiDecisionTask(env, nodeInstance.id);
+      const hasHistoricalDecision = await hasAiDecisionTaskOnNode(env, nodeInstance.id);
 
       if (hasHistoricalDecision) {
         const aiSlotRoute =
