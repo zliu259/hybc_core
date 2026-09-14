@@ -17,6 +17,7 @@ const {
   workOrderTypeLabel,
   priorityLabel,
   approvalActionLabel,
+  aiGateHumanReviewActionLabel,
   approvalNodeLabel,
   roleLabel,
   bizTypeLabel,
@@ -95,3 +96,22 @@ assertChinese(bizTypeLabel("brand_new_biz"), "未收录业务类型");
 assert.strictEqual(bizTypeLabel(""), "审批事项");
 
 console.log("enum-labels.test.js passed");
+
+// AI 拦截转人工：关卡节点上真人任务的动作文案（2026-09-13 设计）
+assert.strictEqual(
+  aiGateHumanReviewActionLabel("ai_gate", { assignee_userid: "Boss", status: "pending" }, "-"),
+  "AI 拦截，等待人工复核"
+);
+assert.strictEqual(
+  aiGateHumanReviewActionLabel("ai_gate", { assignee_userid: "Boss", status: "completed", action: "approve" }, "通过"),
+  "人工复核 · 通过"
+);
+assert.strictEqual(
+  aiGateHumanReviewActionLabel("ai_gate", { assignee_userid: "AI_GATE", status: "completed" }, "AI通过"),
+  "AI通过"
+);
+assert.strictEqual(
+  aiGateHumanReviewActionLabel("sequential", { assignee_userid: "Boss", status: "pending" }, "-"),
+  "-"
+);
+console.log("enum-labels.test.js (ai-gate human review) passed");

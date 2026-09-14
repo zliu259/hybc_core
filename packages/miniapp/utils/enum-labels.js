@@ -398,6 +398,16 @@ const fileSizeLabel = (bytes) => {
   return `${(size / 1024 / 1024).toFixed(1)} MB`;
 };
 
+/**
+ * AI 关卡节点上受理人是真人的任务 = AI 拦截转人工的兜底复核任务：
+ * pending 提示等待人工复核，已处理时在原动作前加「人工复核 ·」。
+ */
+const aiGateHumanReviewActionLabel = (nodeType, task, baseActionLabel) => {
+  if (nodeType !== "ai_gate" || !task || task.assignee_userid === "AI_GATE") return baseActionLabel;
+  if (task.status === "pending") return "AI 拦截，等待人工复核";
+  return `人工复核 · ${baseActionLabel}`;
+};
+
 module.exports = {
   toLabel,
   statusLabel,
@@ -422,6 +432,7 @@ module.exports = {
   bizTypeLabel,
   humanizeBizSummary,
   approvalActionLabel,
+  aiGateHumanReviewActionLabel,
   approvalNodeTypeLabel,
   approvalNodeLabel,
   roleLabel,

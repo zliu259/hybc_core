@@ -20,6 +20,7 @@ const {
   approvalNodeLabel,
   paymentMethodLabel,
   approvalActionLabel,
+  aiGateHumanReviewActionLabel,
   humanizeBizSummary
 } = require("../../utils/enum-labels");
 
@@ -499,10 +500,11 @@ Page({
             const aiOutcome = (embedded && embedded.outcome) || task.action;
             const aiComment =
               (embedded && embedded.comment) || task.comment || (aiFallback && aiFallback.commentText) || "";
-            const actionLabel =
+            const baseActionLabel =
               task.assignee_userid === "AI_GATE"
                 ? this.aiOutcomeLabel(aiOutcome, aiComment)
                 : this.actionLabel(task.action);
+            const actionLabel = aiGateHumanReviewActionLabel(node.node_type, task, baseActionLabel);
             return {
               ...task,
               // AI_GATE 不在通讯录里，走 userLabel 会显示成「未匹配」
