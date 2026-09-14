@@ -242,7 +242,7 @@ const APPROVAL_RESULT_LABELS: Record<ApprovalResultType, string> = {
   rejected: "已驳回",
   cancelled: "已取消",
   withdrawn: "已撤回",
-  escalated: "转人工复核"
+  escalated: "已转人工复核"
 };
 
 const bizTypeLabel = (bizType: string): string => BIZ_TYPE_LABELS[bizType] ?? bizType;
