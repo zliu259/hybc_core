@@ -17,6 +17,8 @@ import {
   buildFallbackReviewerNotice,
   filterSuperAdminContacts
 } from "./ai-gate-settings";
+// 放行/驳回的可用性判定抽到纯模块：后端对旧轮任务与非审批中实例会 409 拒绝
+import { canPushAiGateFlow, taskRoundLabel } from "./ai-gate-actions";
 import { toStatusLabel } from "@/views/approval/labels";
 import { formatBeijingDateTime } from "@/utils/datetime";
 
@@ -95,10 +97,6 @@ const submitAction = async () => {
     submitting.value = false;
   }
 };
-
-// 放行/驳回只对审批中的实例有意义：AI 拦截已退回发起人、或实例已终态时，后端会 409 拒绝
-const canPushFlow = (row: ApprovalAiGateTaskItem) =>
-  !row.instance || row.instance.status === "in_progress";
 
 const goApprovalDetail = (row: ApprovalAiGateTaskItem) => {
   if (!row.instance?.id) return;
@@ -298,7 +296,12 @@ onMounted(loadRows);
         </template>
       </el-table-column>
       <el-table-column label="节点" width="130">
-        <template #default="scope">{{ scope.row.node_key || "-" }}</template>
+        <template #default="scope">
+          {{ scope.row.node_key || "-" }}
+          <el-tag type="info" size="small">{{
+            taskRoundLabel(scope.row)
+          }}</el-tag>
+        </template>
       </el-table-column>
       <el-table-column label="AI Slot" min-width="160">
         <template #default="scope">{{
@@ -349,14 +352,14 @@ onMounted(loadRows);
             <el-button
               link
               type="success"
-              :disabled="!canPushFlow(scope.row)"
+              :disabled="!canPushAiGateFlow(scope.row)"
               @click="openActionDialog(scope.row, 'approve')"
               >放行</el-button
             >
             <el-button
               link
               type="danger"
-              :disabled="!canPushFlow(scope.row)"
+              :disabled="!canPushAiGateFlow(scope.row)"
               @click="openActionDialog(scope.row, 'reject')"
               >驳回</el-button
             >

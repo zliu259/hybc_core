@@ -92,6 +92,7 @@ export type ApprovalAiGateTaskItem = {
   error_message: string | null;
   task_created_at: string;
   task_completed_at: string | null;
+  task_round: number;
   node_key: string | null;
   ai_slot_id: string | null;
   node_status: string | null;
