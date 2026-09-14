@@ -113,10 +113,22 @@ const createTasksForAssignees = async (
   }
 };
 
+/**
+ * 取本轮的 AI 关卡任务。
+ *
+ * 必须按轮次限定（2026-09-14）：重提交会为新一轮建全新的 node_instance，
+ * hasAiDecisionTaskOnNode 因此为 false；若查任务时不带轮次，就会取到上一轮
+ * 那条 completed 任务并把旧结论原样重放——改过的单据根本没被 AI 重新审查，
+ * 未配置兜底审核人时更会形成「拦截→退回→重提→按旧结论再拦截」的死循环。
+ *
+ * 轮次来源是 payload_json.round：initializeNode 的新建与重跑两条路径都写；
+ * 提交时在 engine.ts 直接建的那条旧数据可能没有该字段，COALESCE 兜底当作第 1 轮。
+ */
 const findAiGateTask = async (
   env: Env,
   instanceId: number,
-  nodeKey: string
+  nodeKey: string,
+  round: number
 ): Promise<{
   id: number;
   status: string;
@@ -129,10 +141,11 @@ const findAiGateTask = async (
      WHERE task_type = 'approval_ai_gate'
        AND biz_id = ?
        AND json_extract(payload_json, '$.node_key') = ?
+       AND COALESCE(json_extract(payload_json, '$.round'), 1) = ?
      ORDER BY id DESC
      LIMIT 1`
   )
-    .bind(instanceId, nodeKey)
+    .bind(instanceId, nodeKey, round)
     .first<{
       id: number;
       status: string;
@@ -485,7 +498,12 @@ class AiGateExecutor implements NodeExecutor {
     instanceId: number
   ): Promise<void> {
     if (_aiGateHandler) {
-      const existingTask = await findAiGateTask(env, instanceId, nodeInstance.node_key);
+      const existingTask = await findAiGateTask(
+        env,
+        instanceId,
+        nodeInstance.node_key,
+        nodeInstance.round
+      );
       const hasHistoricalDecision = await hasAiDecisionTaskOnNode(env, nodeInstance.id);
 
       if (hasHistoricalDecision) {

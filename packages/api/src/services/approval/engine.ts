@@ -227,6 +227,9 @@ export const submitForApproval = async (
           node_key: nodeKey,
           ai_slot_id: node.config.ai_slot_id,
           instance_id: instanceId,
+          // 轮次是执行器查任务的过滤键（executors.ts findAiGateTask）：提交必为第 1 轮，
+          // 显式写出，重提交后新一轮才不会误取到这条旧任务的结论
+          round: 1,
           biz_type: request.biz_type,
           biz_id: request.biz_id,
           biz_summary: request.biz_summary,
