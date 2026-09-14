@@ -2051,8 +2051,10 @@ adminRoutes.post(
 
     // 超管在控制台直接放行/驳回时，节点上若挂着兜底审核人的 pending 任务必须一并收掉，
     // 否则它会作为悬空待办留在审核人列表里（转人工设计 2026-09-13）。
-    // 先取消人工任务再写 AI 记录；若后续写入失败，关卡仍 in_progress，队列重投会重新建任务并推卡
-    // （hasPendingHumanTaskOnNode 为 false），不会丢单。
+    // 先取消人工任务再写 AI 记录；若后续写入失败，关卡仍 in_progress。
+    // 仅当该关卡由队列 TASK_COMPLETED 路径进入时才有重投可依赖（重投会重新建任务并推卡，
+    // hasPendingHumanTaskOnNode 为 false）；若关卡是经上一节点审批的 HTTP 请求重入进来的，
+    // 队列里没有对应消息、不会自动重试，需再次在本页处理该任务收口。
     if (node) {
       await c.env.DB.prepare(
         `UPDATE approval_task

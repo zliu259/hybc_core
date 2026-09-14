@@ -685,7 +685,10 @@ class AiGateExecutor implements NodeExecutor {
     if (decision?.action === "reject") {
       // 节点被落地为 returned = AI 自主拦截且未配置审核人 → 引擎走退回；
       // 节点 completed + reject = 超管覆写或存量数据 → 保留终态语义；
-      // 节点仍 in_progress + reject = settleAiGateBlock 写到一半（人工任务未落），等队列重试收口
+      // 节点仍 in_progress + reject = settleAiGateBlock 写到一半（人工任务未落）：
+      // 等队列重试（TASK_COMPLETED 路径）或超管在 AI关卡任务页处理收口；
+      // 经上一节点审批请求进入关卡时没有自动重试（那条路径上关卡由 advanceWorkflow
+      // → initializeNode 在人的 HTTP 请求里直接重入，队列中没有可重投的消息）
       if (node?.status === "returned") {
         return { complete: true, outcome: "returned" };
       }

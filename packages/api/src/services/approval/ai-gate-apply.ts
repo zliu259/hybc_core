@@ -74,7 +74,12 @@ export type AiGateBlockSettlement = "escalated" | "returned" | "skipped";
  * 两条路径都先写 AI 记录：转人工 = AI 记录 → 人工任务 → 事件；退回 = AI 记录 →
  * 节点 returned → 告警日志。先落节点 returned 会让 isolate 中途死亡时队列重入的
  * `status = 'in_progress'` 查询再也找不到该节点，实例卡死且没有 AI 记录。
- * 人工任务写失败即抛错交队列重试。
+ * 人工任务写失败即抛错交队列重试——但「交队列重试」只在实时路径（queue-handler 的
+ * TASK_COMPLETED）成立。关卡更常见的入口是上一位审批人的 HTTP 请求：advanceWorkflow →
+ * initializeNode 发现 AI 任务早已完成而直接重入，此时队列里没有对应消息，中途失败没有任何
+ * 自动重试，只剩「关卡 in_progress + AI 驳回记录 + 无人工任务」的半成品。恢复手段是超管在
+ * 「AI关卡任务」页对该任务放行/驳回（routes/admin.ts 的 ai-gate handle 路由）；后续计划补一个
+ * 巡检任务扫出这种半成品自动收口。
  *
  * 已知窗口（D1 无事务，均为有意接受）：
  * 1. 检查后写入存在竞态：队列实时路径与执行器重入路径若同时进入，可能各建一条人工任务、
