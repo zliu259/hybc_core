@@ -48,12 +48,28 @@ describe("system-config", () => {
     expect(await getSystemConfigEntry(env, "approval.ai_gate.fallback_reviewer_userid")).toBeNull();
   });
 
-  it("空白值视为未配置", async () => {
+  it("空白值视为未配置，但 entry 仍返回该行与更新人", async () => {
     const rows = new Map<string, Row>([
       ["k", { config_value: "   ", updated_by: "boss", updated_at: "2026-09-14T00:00:00.000Z" }]
     ]);
     const { env } = createFakeEnv(rows);
     expect(await getSystemConfig(env, "k")).toBeNull();
+    const entry = await getSystemConfigEntry(env, "k");
+    expect(entry?.value).toBe("");
+    expect(entry?.updated_by).toBe("boss");
+  });
+
+  it("存量值前后带空白，两个读取函数都返回 trim 后的结果", async () => {
+    const rows = new Map<string, Row>([
+      [
+        "k",
+        { config_value: "  UserB  ", updated_by: "boss", updated_at: "2026-09-14T00:00:00.000Z" }
+      ]
+    ]);
+    const { env } = createFakeEnv(rows);
+    expect(await getSystemConfig(env, "k")).toBe("UserB");
+    const entry = await getSystemConfigEntry(env, "k");
+    expect(entry?.value).toBe("UserB");
   });
 
   it("setSystemConfig 走 upsert，回读得到 trim 后的值与更新人", async () => {
@@ -64,6 +80,15 @@ describe("system-config", () => {
     expect(rows.get("k")?.config_value).toBe("UserA");
     expect(await getSystemConfig(env, "k")).toBe("UserA");
     const entry = await getSystemConfigEntry(env, "k");
+    expect(entry?.updated_by).toBe("boss");
+  });
+
+  it("清空值走 upsert 空串：getSystemConfig 判未配置，getSystemConfigEntry 仍见更新人", async () => {
+    const { env } = createFakeEnv(new Map());
+    await setSystemConfig(env, "k", "", "boss");
+    expect(await getSystemConfig(env, "k")).toBeNull();
+    const entry = await getSystemConfigEntry(env, "k");
+    expect(entry?.value).toBe("");
     expect(entry?.updated_by).toBe("boss");
   });
 });

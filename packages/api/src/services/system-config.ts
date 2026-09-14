@@ -12,7 +12,7 @@ export type SystemConfigEntry = {
   updated_at: string;
 };
 
-/** 读取一项配置；不存在或值为空白时返回 null。 */
+/** 读取一项配置的完整记录；行不存在才 null，值可能为空串表示已清除。 */
 export const getSystemConfigEntry = async (
   env: Env,
   key: string
@@ -23,14 +23,17 @@ export const getSystemConfigEntry = async (
     .bind(key)
     .first<{ config_value: string; updated_by: string | null; updated_at: string }>();
   if (!row) return null;
-  const value = String(row.config_value ?? "").trim();
-  if (!value) return null;
-  return { value, updated_by: row.updated_by ?? null, updated_at: row.updated_at };
+  return {
+    value: String(row.config_value ?? "").trim(),
+    updated_by: row.updated_by ?? null,
+    updated_at: row.updated_at
+  };
 };
 
+/** 读取配置值；空白视为未配置，返回 null。 */
 export const getSystemConfig = async (env: Env, key: string): Promise<string | null> => {
   const entry = await getSystemConfigEntry(env, key);
-  return entry ? entry.value : null;
+  return entry?.value ? entry.value : null;
 };
 
 /** upsert；value 先 trim，空串也允许写入（表示清除）。 */
@@ -38,7 +41,7 @@ export const setSystemConfig = async (
   env: Env,
   key: string,
   value: string,
-  updatedBy: string | null
+  updatedBy: string
 ): Promise<void> => {
   const now = nowIso();
   await env.DB.prepare(
