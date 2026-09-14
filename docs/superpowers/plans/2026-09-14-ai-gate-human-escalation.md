@@ -34,6 +34,7 @@
 - Task 8：PUT 字段校验与长度上限、上游错误脱敏、contact_check_error、审计带 resolved_role（909591f、9ac4abc）。
 - Task 9：contact_check_error 提示、类型统一为 Pick、清空二次确认、下拉空态、作废文案中性（33b6c1a、c5395b3）。
 - Task 10：作废/转签文案（c0effc7）。
+- 终审：findAiGateTask 按轮次查任务并补集成测试；修正三处「等队列重试」注释；文档同步（提交见分支日志）。
 
 ## 文件结构
 

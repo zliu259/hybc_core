@@ -109,7 +109,7 @@ queue-handler 实时路径与 executors 重入路径都不改调用方式，仍�
 ### 7. `queue-handler.ts`
 
 新增 `case "APPROVAL_AI_ESCALATED"`：
-- `handleApprovalSubmitted(env, instanceId)` → 给所有 pending 任务受理人（即审核人）推待办卡，节点名显示「AI关卡」。
+- `handleApprovalSubmitted(env, instanceId)` → 给所有 pending 任务受理人（即审核人）推待办卡，节点名取模板关卡节点名。
 - `pushApprovalResultToInitiator(env, instanceId, "escalated", "AI 审查未通过，等待 {审核人姓名} 人工复核")`，
   姓名用 `resolveApplicantDisplayName(env, reviewer_userid)`。
 - 两路各自 try/catch 写 isolation_guard 事件，与既有 case 一致。
@@ -159,12 +159,16 @@ wecom-approval-push.ts 导出、queue-handler.ts 引用，并增加 `"escalated"
 - 存量 returned 实例不受影响，仍走编辑重提。
 - 已知限制：审批详情对 pending 任务统一给出「退回上一节点」，关卡是首节点时该动作会报错「无上一节点」，本期不改。
 - 人工任务只认最近一次 AI 决策之后的记录：退回到关卡重跑时同一 node_instance 会保留旧的人工放行记录，不能让它绕过新的拦截；写 AI 决策记录前必须先收掉节点上 pending 的人工任务（控制台、settleAiGateBlock 跳过、handleRoundReset 均遵守）。
-- 节点 in_progress 且仅有 AI 驳回记录 = 转人工写到一半，非终态，等队列重试（消费者对抛错 msg.retry）；节点 completed + AI 驳回 = 超管覆写终态。
+- 节点 in_progress 且仅有 AI 驳回记录 = 转人工写到一半，非终态，等队列重试（仅关卡经 TASK_COMPLETED 队列路径进入时；经上一节点审批请求进入时无自动重试，由超管在 AI关卡任务页处理，后续加巡检）；节点 completed + AI 驳回 = 超管覆写终态。
 - 两条落地路径都先写 AI 记录再改节点状态；未配置路径若先置 returned 再写记录，部分写入会让队列重入查不到节点而卡死。
 - 事件重投时若节点已无 pending 人工任务则不再推卡，记 ai_gate_escalation_push_skipped。
 - 配置读取异常（如迁移未应用）退化为旧退回，告警日志行带 error 并 console.error。
 - 设置接口：PUT 必须带字符串字段、长度 ≤ 64，空串清除；上游错误脱敏后返回；通讯录不可用时 GET 返 contact_check_error、PUT 返 400。
 - 已作废（含撤回/取消实例）的人工复核任务两端统一显示「人工复核任务已作废」，转签显示「人工复核 · 已转签」。
+- 重提新一轮：AI 关卡按轮次查 task_queue（payload.round，缺省视为 1），新一轮必重新创建 AI 任务重新审查；此前查询不分轮次会复用上一轮结果，导致 AI 退回后无法通过重提脱困。
+- 关卡经上一节点审批请求进入时，APPROVAL_AI_ESCALATED 与随后的 APPROVAL_NODE_ENTERED 都会给审核人推待办卡，靠企微 600 秒重复消息抑制去重，event_log 会记两次 wecom_template_card_sent。
+- 审核人待办卡的节点名取模板里的关卡节点名（如「AI风险关卡」），不一定是「AI关卡」。
+- 转交人工复核任务沿用现有 transfer，无角色限制，审核人可把决策转给任何人（owner 接受）。
 
 ## 测试
 

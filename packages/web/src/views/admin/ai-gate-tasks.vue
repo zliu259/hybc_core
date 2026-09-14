@@ -207,7 +207,7 @@ onMounted(loadRows);
       show-icon
       style="margin-bottom: 12px"
     />
-    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+    <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center">
       <el-select
         v-model="reviewerDraft"
         clearable
