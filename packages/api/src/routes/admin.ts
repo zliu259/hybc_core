@@ -1724,12 +1724,16 @@ const FALLBACK_REVIEWER_MAX_LENGTH = 64;
 
 /**
  * 上游（企微 / bridge）报错文案脱敏后才允许回给前端：
- * 这些消息可能原样带着请求 URL，而 URL 上挂着 corpsecret / access_token。
+ * 这些消息可能原样带着请求 URL、响应头或 JSON 片段，而它们挂着 corpsecret / access_token。
+ * 因此 key 与值之间的 = : 引号空格都要容忍，别只认 URL 的 key=value 形态。
  * 完整原文只写服务端日志（console.error），响应里只留截断后的脱敏版。
  */
 const redactUpstreamError = (error: unknown): string =>
   (error instanceof Error ? error.message : String(error))
-    .replace(/(access_token|corpsecret|corpid|secret|token)=[^&\s"')]+/gi, "$1=***")
+    .replace(
+      /(access_token|corpsecret|corpid|secret|token)["']?\s*[=:]\s*["']?[^&\s"')]+/gi,
+      "$1=***"
+    )
     .slice(0, 120);
 
 adminRoutes.get("/approval-ai-gate/settings", requireRoles(["super_admin"]), async (c) => {

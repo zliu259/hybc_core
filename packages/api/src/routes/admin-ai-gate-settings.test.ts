@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { AuthTokenPayload } from "../types/auth";
 import type { Env } from "../types/env";
@@ -69,6 +69,9 @@ vi.mock("../services/wecom-contact-book", () => ({
 
 // 上游异常都会 console.error 全文（只进服务端日志），测试里静音并借它断言「确实记了」
 const consoleErrorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+afterAll(() => {
+  consoleErrorSpy.mockRestore();
+});
 
 const CONFIG_KEY = "approval.ai_gate.fallback_reviewer_userid";
 
@@ -254,9 +257,13 @@ describe("AI 关卡兜底审核人设置", () => {
     expect(env.DB.runs.some((r) => /INSERT\s+INTO\s+system_config/i.test(r.sql))).toBe(false);
   });
 
-  it("PUT 请求体缺字段/不是字符串一律 400，且绝不当成清除", async () => {
+  it.each<Record<string, unknown>>([
+    {},
+    { fallback_reviewer_userid: 123 },
+    { fallback_reviewer_userid: null }
+  ])("PUT 坏请求体 %j 一律 400，且绝不当成清除", async (payload) => {
     const env = createEnv(new SettingsDb());
-    const res = await call(env, "PUT", {});
+    const res = await call(env, "PUT", payload);
     expect(res.status).toBe(400);
     const body = (await res.json()) as { error: { message: string } };
     expect(body.error.message).toContain("必须是字符串");
@@ -272,7 +279,7 @@ describe("AI 关卡兜底审核人设置", () => {
     expect(env.DB.runs.some((r) => /INSERT\s+INTO\s+system_config/i.test(r.sql))).toBe(false);
   });
 
-  it("GET 上游报错脱敏：URL 上的 corpsecret 不得回给前端", async () => {
+  it("GET 上游报错脱敏：URL 与头部回显里的密钥都不得回给前端", async () => {
     const env = createEnv(new SettingsDb());
     env.DB.config.set(CONFIG_KEY, {
       config_value: "Flaky",
@@ -292,6 +299,12 @@ describe("AI 关卡兜底审核人设置", () => {
     expect(message).not.toContain("SECRET123");
     // 全文只进服务端日志
     expect(consoleErrorSpy).toHaveBeenCalled();
+
+    // URL 之外，响应头/JSON 形态的回显（key: value）同样要盖掉
+    deps.roleErrorByUser.set("Flaky", "x-bridge-token: BRIDGE123");
+    const headerRes = await call(env, "GET");
+    const headerBody = (await headerRes.json()) as { data: Record<string, unknown> };
+    expect(String(headerBody.data.role_check_error)).not.toContain("BRIDGE123");
   });
 
   it("GET 通讯录拉取失败：姓名留空但报出原因，不静默吞掉", async () => {
