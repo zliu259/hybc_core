@@ -499,6 +499,31 @@ export const handleApprovalAiGateTask = (
   }>("post", `/api/v1/admin/approval-ai-gate/tasks/${taskId}/handle`, { data });
 };
 
+export type ApprovalAiGateSettings = {
+  fallback_reviewer_userid: string;
+  fallback_reviewer_name: string | null;
+  fallback_reviewer_role: string | null;
+  role_check_error: string | null;
+  updated_by: string | null;
+  updated_at: string | null;
+};
+
+export const getApprovalAiGateSettings = () => {
+  return http.request<{ success: boolean; data: ApprovalAiGateSettings }>(
+    "get",
+    "/api/v1/admin/approval-ai-gate/settings"
+  );
+};
+
+export const updateApprovalAiGateSettings = (data: {
+  fallback_reviewer_userid: string;
+}) => {
+  return http.request<{
+    success: boolean;
+    data: { fallback_reviewer_userid: string };
+  }>("put", "/api/v1/admin/approval-ai-gate/settings", { data });
+};
+
 export const getWeComPushMonitor = (params?: {
   hours?: number;
   limit?: number;

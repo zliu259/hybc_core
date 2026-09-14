@@ -1,12 +1,21 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { message } from "@/utils/message";
 import {
+  getApprovalAiGateSettings,
   handleApprovalAiGateTask,
   listApprovalAiGateTasks,
+  updateApprovalAiGateSettings,
+  type ApprovalAiGateSettings,
   type ApprovalAiGateTaskItem
 } from "@/api/admin";
+import { resolveApiErrorMessage } from "@/utils/api-error";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+import {
+  buildFallbackReviewerNotice,
+  filterSuperAdminContacts
+} from "./ai-gate-settings";
 import { toStatusLabel } from "@/views/approval/labels";
 import { formatBeijingDateTime } from "@/utils/datetime";
 
@@ -95,10 +104,110 @@ const goApprovalDetail = (row: ApprovalAiGateTaskItem) => {
   router.push(`/approval/detail/${row.instance.id}`);
 };
 
+const settings = ref<ApprovalAiGateSettings | null>(null);
+const settingsLoading = ref(false);
+const settingsSaving = ref(false);
+const reviewerDraft = ref("");
+const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const superAdminOptions = computed(() =>
+  filterSuperAdminContacts(wecomUsers.value)
+);
+const reviewerNotice = computed(() =>
+  settings.value ? buildFallbackReviewerNotice(settings.value) : null
+);
+
+const loadSettings = async () => {
+  settingsLoading.value = true;
+  try {
+    const result = await getApprovalAiGateSettings();
+    settings.value = result.data;
+    reviewerDraft.value = result.data.fallback_reviewer_userid;
+  } catch (error) {
+    message(resolveApiErrorMessage(error, "兜底审核人配置加载失败"), {
+      type: "error"
+    });
+  } finally {
+    settingsLoading.value = false;
+  }
+};
+
+const saveSettings = async () => {
+  // el-select 的 clearable 会把值清成 undefined，这里统一收敛成空串再送后端
+  const nextReviewer = (reviewerDraft.value || "").trim();
+  settingsSaving.value = true;
+  try {
+    await updateApprovalAiGateSettings({
+      fallback_reviewer_userid: nextReviewer
+    });
+    message("兜底审核人已保存", { type: "success" });
+    await loadSettings();
+  } catch (error) {
+    message(resolveApiErrorMessage(error, "兜底审核人保存失败"), {
+      type: "error"
+    });
+  } finally {
+    settingsSaving.value = false;
+  }
+};
+
+onMounted(async () => {
+  await Promise.all([
+    loadSettings(),
+    loadWecomUsers().catch(() => {
+      // 通讯录拿不到时仍可用本地缓存人选，只提示不阻断设置卡
+      message("企业微信通讯录加载失败，下拉人选可能不完整", {
+        type: "warning"
+      });
+    })
+  ]);
+});
+
 onMounted(loadRows);
 </script>
 
 <template>
+  <el-card shadow="never" style="margin-bottom: 12px">
+    <template #header>
+      <div style="font-size: 16px; font-weight: 700">AI 关卡兜底审核人</div>
+      <div style="margin-top: 4px; font-size: 13px; color: #6e6458">
+        AI 判定拦截时不再自动退回，转给此人以普通审批任务处理（放行 / 退回发起人
+        / 驳回）
+      </div>
+    </template>
+    <el-alert
+      v-if="reviewerNotice"
+      :type="reviewerNotice.type"
+      :title="reviewerNotice.text"
+      :closable="false"
+      show-icon
+      style="margin-bottom: 12px"
+    />
+    <div style="display: flex; gap: 8px; align-items: center; flex-wrap: wrap">
+      <el-select
+        v-model="reviewerDraft"
+        clearable
+        filterable
+        placeholder="选择超级管理员"
+        style="width: 280px"
+        :loading="settingsLoading"
+      >
+        <el-option
+          v-for="user in superAdminOptions"
+          :key="user.userid"
+          :label="`${user.name}（${user.userid}）`"
+          :value="user.userid"
+        />
+      </el-select>
+      <el-button type="primary" :loading="settingsSaving" @click="saveSettings">
+        保存
+      </el-button>
+      <span v-if="settings?.updated_at" style="font-size: 12px; color: #999">
+        最近更新：{{ settings.updated_by || "-" }} ·
+        {{ formatBeijingDateTime(settings.updated_at) }}
+      </span>
+    </div>
+  </el-card>
+
   <el-card shadow="never" style="background: #fffaf2">
     <template #header>
       <div

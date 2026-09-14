@@ -60,6 +60,7 @@ import {
 } from "@/utils/ai-review";
 import AiReviewReport from "@/components/AiReviewReport/index.vue";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
+import { humanReviewStatusText, isAiGateHumanReviewTask } from "./human-review";
 
 defineOptions({ name: "ApprovalDetail" });
 
@@ -2301,6 +2302,21 @@ onMounted(async () => {
                     style="font-size: 13px; color: #666; margin-top: 4px"
                   >
                     <span>{{ toUserLabel(task.assignee_userid) }}</span>
+                    <el-tag
+                      v-if="isAiGateHumanReviewTask(node.node_type, task)"
+                      type="warning"
+                      size="small"
+                      style="margin-left: 6px"
+                      >人工复核</el-tag
+                    >
+                    <span
+                      v-if="
+                        isAiGateHumanReviewTask(node.node_type, task) &&
+                        humanReviewStatusText(task)
+                      "
+                      style="margin-left: 6px; color: #e6a23c"
+                      >{{ humanReviewStatusText(task) }}</span
+                    >
                     <el-button
                       v-if="
                         isSuperAdmin &&
