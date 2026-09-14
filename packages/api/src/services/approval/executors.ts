@@ -591,7 +591,19 @@ class AiGateExecutor implements NodeExecutor {
     }
   }
 
-  async processAction(): Promise<void> {
+  /** 人工兜底任务（AI 拦截转人工）的处理：与顺序节点相同写法。 */
+  async processAction(
+    env: Env,
+    task: ApprovalTask,
+    action: string,
+    comment?: string
+  ): Promise<void> {
+    const now = nowIso();
+    await env.DB.prepare(
+      "UPDATE approval_task SET action = ?, comment = ?, status = 'completed', acted_at = ?, updated_at = ? WHERE id = ?"
+    )
+      .bind(action, comment ?? null, now, now, task.id)
+      .run();
   }
 
   async isNodeComplete(
@@ -603,6 +615,24 @@ class AiGateExecutor implements NodeExecutor {
     )
       .bind(nodeInstanceId)
       .first<ApprovalNodeInstance>();
+
+    // 人工兜底任务优先（AI 拦截转人工，2026-09-13）：pending 即未完成；
+    // 审核人 approve 即通过。驳回/退回发起人由通用操作直接落状态，不经此处。
+    const humanRows = await env.DB.prepare(
+      `SELECT * FROM approval_task
+        WHERE node_instance_id = ?
+          AND assignee_userid <> 'AI_GATE'
+        ORDER BY id ASC`
+    )
+      .bind(nodeInstanceId)
+      .all<ApprovalTask>();
+    const humanTasks = getActiveTasks(humanRows.results ?? []);
+    if (humanTasks.some((t) => t.status === "pending")) {
+      return { complete: false, outcome: null };
+    }
+    if (humanTasks.some((t) => t.status === "completed" && t.action === "approve")) {
+      return { complete: true, outcome: "approved" };
+    }
 
     const decision = await env.DB.prepare(
       `SELECT action
