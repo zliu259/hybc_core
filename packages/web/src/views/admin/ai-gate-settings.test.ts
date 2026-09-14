@@ -73,6 +73,21 @@ describe("buildFallbackReviewerNotice", () => {
     });
   });
 
+  it("角色核对出不合格时，通讯录不可用不掩盖角色问题", () => {
+    expect(
+      buildFallbackReviewerNotice({
+        fallback_reviewer_userid: "Boss",
+        fallback_reviewer_name: null,
+        fallback_reviewer_role: "manager",
+        role_check_error: null,
+        contact_check_error: "kv down"
+      })
+    ).toEqual({
+      type: "warning",
+      text: "当前兜底审核人 Boss 的角色已不是超级管理员（manager），请重新指定"
+    });
+  });
+
   it("通讯录读不到但角色核对通过时只说读不到姓名", () => {
     expect(
       buildFallbackReviewerNotice({

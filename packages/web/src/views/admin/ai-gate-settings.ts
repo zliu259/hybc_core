@@ -30,23 +30,24 @@ export const buildFallbackReviewerNotice = (
   }
   const name =
     settings.fallback_reviewer_name || settings.fallback_reviewer_userid;
-  // 「核对不了」优先于「核对出来不合格」：企微不可用时角色为空，不能当成被降权。
+  // 角色「核对不了」(role_check_error) 优先于一切：企微不可用时角色为空，不能当成被降权；
+  // 但角色一旦核对出来不合格，就要先报角色，不能被通讯录读不到姓名掩盖过去。
   if (settings.role_check_error) {
     return {
       type: "warning",
       text: `暂时无法核对 ${name} 的角色（企业微信接口不可用），当前配置仍然生效`
     };
   }
-  if (settings.contact_check_error && !settings.fallback_reviewer_name) {
-    return {
-      type: "warning",
-      text: `暂时无法读取通讯录（企业微信接口不可用），只能显示兜底审核人工号 ${settings.fallback_reviewer_userid}，当前配置仍然生效`
-    };
-  }
   if (settings.fallback_reviewer_role !== "super_admin") {
     return {
       type: "warning",
       text: `当前兜底审核人 ${name} 的角色已不是超级管理员（${settings.fallback_reviewer_role ?? "未命中角色标签"}），请重新指定`
+    };
+  }
+  if (settings.contact_check_error && !settings.fallback_reviewer_name) {
+    return {
+      type: "warning",
+      text: `暂时无法读取通讯录（企业微信接口不可用），只能显示兜底审核人工号 ${settings.fallback_reviewer_userid}，当前配置仍然生效`
     };
   }
   return {
