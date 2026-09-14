@@ -71,14 +71,17 @@ export type AiGateBlockSettlement = "escalated" | "returned" | "skipped";
  * - 未配置（或配置读取抛错，如 Worker 先于迁移 0088 上线）→ 旧行为：节点 returned
  *   （引擎随后 applyAiGateReturn 退回发起人），并写告警日志行（抛错时附 error）
  * - 节点已有 pending 人工任务 → 整段跳过（队列重试幂等）
- * 写入顺序固定：AI 记录 → 人工任务 → 事件；人工任务写失败即抛错交队列重试。
+ * 两条路径都先写 AI 记录：转人工 = AI 记录 → 人工任务 → 事件；退回 = AI 记录 →
+ * 节点 returned → 告警日志。先落节点 returned 会让 isolate 中途死亡时队列重入的
+ * `status = 'in_progress'` 查询再也找不到该节点，实例卡死且没有 AI 记录。
+ * 人工任务写失败即抛错交队列重试。
  *
  * 已知窗口（D1 无事务，均为有意接受）：
  * 1. 检查后写入存在竞态：队列实时路径与执行器重入路径若同时进入，可能各建一条人工任务、
  *    各推一张卡；不能用唯一索引兜底（会签/或签节点合法地持有多条 pending 人工任务），
  *    由控制台放行/驳回时的悬空任务清理兜底。
- * 2. 人工任务已写、事件未发出（publishEvent 抛错）时，重试会因已有 pending 人工任务而跳过，
- *    审核人只能在待办列表看到任务、收不到卡片；接受该缺口。
+ * 2. 事件已记 event_log 但队列投递失败（publishEvent 只 warn 不抛）时不会重试，审核人
+ *    只能在待办列表看到任务、收不到卡片；接受该缺口，后续可加待办兜底巡检。
  * 3. 部分写入后重试可能重复一条 AI 驳回记录（不对 AI 记录做幂等守卫，否则同轮合法重跑会
  *    丢掉新理由），引擎与前端均取最新一条。
  */
@@ -99,17 +102,18 @@ export const settleAiGateBlock = async (
   try {
     reviewer = await resolveAiGateFallbackReviewer(env);
   } catch (error) {
+    console.error("[ai-gate] fallback reviewer lookup failed, degrading to auto-return:", error);
     reviewerError = error instanceof Error ? error.message : String(error);
   }
 
   if (!reviewer) {
+    await insertAiGateDecisionTask(env, node, instanceId, parsed, now);
     await env.DB.prepare(
       `UPDATE approval_node_instance SET status = 'returned', completed_at = ?, updated_at = ?
        WHERE id = ?`
     )
       .bind(now, now, node.id)
       .run();
-    await insertAiGateDecisionTask(env, node, instanceId, parsed, now);
     await env.DB.prepare(
       "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
     )
@@ -163,7 +167,6 @@ export const applyAiGateDecision = async (
   instanceId: number,
   parsed: ParsedAiGateResult
 ): Promise<void> => {
-  const now = nowIso();
   const aiBlocks = parsed.outcome === "reject" && !parsed.manualOverride;
 
   if (aiBlocks) {
@@ -171,6 +174,7 @@ export const applyAiGateDecision = async (
     return;
   }
 
+  const now = nowIso();
   await env.DB.prepare(
     `UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ?
      WHERE id = ?`

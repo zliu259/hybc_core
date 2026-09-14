@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { applyAiGateDecision, applyAiGateReturn } from "./ai-gate-apply";
+import { applyAiGateDecision, applyAiGateReturn, settleAiGateBlock } from "./ai-gate-apply";
 import { executorFactory } from "./executors";
 import { advanceWorkflow } from "./engine";
 import type { ParsedAiGateResult } from "./ai-gate-result";
@@ -67,6 +67,8 @@ const STATUS_LITERAL = /SET\s+status\s*=\s*'([a-z_]+)'/i;
 const TASK_INSERT = /INSERT\s+INTO\s+approval_task/i;
 const HUMAN_TASK_COLUMNS =
   /\(node_instance_id,\s*instance_id,\s*assignee_userid,\s*round,\s*status/i;
+const NODE_RETURNED_UPDATE = /UPDATE\s+approval_node_instance[\s\S]*status\s*=\s*'returned'/i;
+const EVENT_LOG_INSERT = /INSERT\s+INTO\s+event_log/i;
 const CLEARS_CURRENT_NODE = /current_node_key\s*=\s*NULL/i;
 const BIZ_DRAFT = /UPDATE\s+(contract|payment_request|reimbursement_batch|invoice_request|stock_order|warehouse_asset_work_order)\s+SET\s+status\s*=\s*'draft'/i;
 
@@ -171,7 +173,8 @@ const baseState = (): FakeState => ({
     instance_id: 1,
     node_key: "ai_gate_x",
     node_type: "ai_gate",
-    round: 1,
+    // 故意 != instance_id，绑定顺序写反时断言能抓到
+    round: 3,
     status: "in_progress"
   },
   instance: {
@@ -277,7 +280,7 @@ describe("settleAiGateBlock — AI 拦截转人工", () => {
     expect(state.insertedTasks[0].action).toBe("reject");
     expect(state.insertedTasks[0].comment).toBe("AI审查不通过：附件费用对象与收款方不一致");
     expect(state.insertedHumanTasks).toEqual([
-      { node_instance_id: 5, instance_id: 1, assignee_userid: "Boss", round: 1 }
+      { node_instance_id: 5, instance_id: 1, assignee_userid: "Boss", round: 3 }
     ]);
     const escalated = state.events.find((e) => e.type === "APPROVAL_AI_ESCALATED");
     expect(escalated).toBeDefined();
@@ -344,6 +347,51 @@ describe("settleAiGateBlock — AI 拦截转人工", () => {
     const warn = state.eventLogRows.find((r) => r.type === "ai_gate_fallback_reviewer_missing");
     expect(warn).toBeDefined();
     expect(warn?.payload).toContain('"error":"no such table: system_config"');
+  });
+
+  it("写入顺序（未配置审核人）：AI 驳回记录先于节点 returned，再写告警日志", async () => {
+    const state = baseState();
+    const order: string[] = [];
+    const base = createFakeEnv(state);
+    const env = {
+      ...base,
+      DB: {
+        prepare: (sql: string) => {
+          if (TASK_INSERT.test(sql)) {
+            order.push(HUMAN_TASK_COLUMNS.test(sql) ? "human" : "ai");
+          } else if (NODE_RETURNED_UPDATE.test(sql)) {
+            order.push("node_returned");
+          } else if (EVENT_LOG_INSERT.test(sql)) {
+            order.push("log");
+          }
+          return base.DB.prepare(sql);
+        }
+      } as unknown as D1Database
+    } as unknown as Env;
+
+    await applyAiGateDecision(env, state.node, 1, blocked());
+
+    expect(order).toEqual(["ai", "node_returned", "log"]);
+  });
+
+  it("返回值标明落地分支：escalated / skipped / returned", async () => {
+    const escalatedState = baseState();
+    escalatedState.systemConfig["approval.ai_gate.fallback_reviewer_userid"] = "Boss";
+    await expect(
+      settleAiGateBlock(createFakeEnv(escalatedState), escalatedState.node, 1, blocked())
+    ).resolves.toBe("escalated");
+
+    const skippedState = baseState();
+    skippedState.systemConfig["approval.ai_gate.fallback_reviewer_userid"] = "Boss";
+    skippedState.pendingHumanTaskId = 77;
+    await expect(
+      settleAiGateBlock(createFakeEnv(skippedState), skippedState.node, 1, blocked())
+    ).resolves.toBe("skipped");
+
+    const returnedState = baseState();
+    await expect(
+      settleAiGateBlock(createFakeEnv(returnedState), returnedState.node, 1, blocked())
+    ).resolves.toBe("returned");
   });
 
   it("超管覆写 reject 不走转人工：节点 completed，无人工任务", async () => {
