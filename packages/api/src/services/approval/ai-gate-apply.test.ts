@@ -40,16 +40,33 @@ interface InsertedTask {
   comment: string;
 }
 
+interface InsertedHumanTask {
+  node_instance_id: number;
+  instance_id: number;
+  assignee_userid: string;
+  round: number;
+}
+
 interface FakeState {
   node: FakeNode;
   instance: FakeInstance;
   decisionTask: { action: string } | null;
   insertedTasks: InsertedTask[];
+  insertedHumanTasks: InsertedHumanTask[];
+  pendingHumanTaskId: number | null;
+  systemConfig: Record<string, string>;
+  /** true 时 system_config 查询抛错，模拟迁移 0088 未跑的 Worker */
+  systemConfigThrows: boolean;
+  eventLogTypes: string[];
+  eventLogRows: Array<{ type: string; payload: string }>;
   bizDraftTables: string[];
   events: Array<{ type: string; payload: Record<string, unknown> }>;
 }
 
 const STATUS_LITERAL = /SET\s+status\s*=\s*'([a-z_]+)'/i;
+const TASK_INSERT = /INSERT\s+INTO\s+approval_task/i;
+const HUMAN_TASK_COLUMNS =
+  /\(node_instance_id,\s*instance_id,\s*assignee_userid,\s*round,\s*status/i;
 const CLEARS_CURRENT_NODE = /current_node_key\s*=\s*NULL/i;
 const BIZ_DRAFT = /UPDATE\s+(contract|payment_request|reimbursement_batch|invoice_request|stock_order|warehouse_asset_work_order)\s+SET\s+status\s*=\s*'draft'/i;
 
@@ -76,7 +93,16 @@ const createFakeEnv = (state: FakeState): Env => {
                 if (CLEARS_CURRENT_NODE.test(sql)) state.instance.current_node_key = null;
                 return { success: true, meta: {} };
               }
-              if (/INSERT\s+INTO\s+approval_task/i.test(sql)) {
+              if (TASK_INSERT.test(sql)) {
+                if (HUMAN_TASK_COLUMNS.test(sql)) {
+                  state.insertedHumanTasks.push({
+                    node_instance_id: args[0] as number,
+                    instance_id: args[1] as number,
+                    assignee_userid: args[2] as string,
+                    round: args[3] as number
+                  });
+                  return { success: true, meta: {} };
+                }
                 state.insertedTasks.push({
                   node_instance_id: args[0] as number,
                   instance_id: args[1] as number,
@@ -86,10 +112,29 @@ const createFakeEnv = (state: FakeState): Env => {
                 });
                 return { success: true, meta: {} };
               }
-              // event_log 等其余写入直接吞掉
+              if (/INSERT\s+INTO\s+event_log/i.test(sql)) {
+                state.eventLogTypes.push(String(args[0]));
+                state.eventLogRows.push({ type: String(args[0]), payload: String(args[2]) });
+                return { success: true, meta: {} };
+              }
+              // 其余写入直接吞掉
               return { success: true, meta: {} };
             },
             async first<T>() {
+              if (/FROM\s+system_config/i.test(sql)) {
+                if (state.systemConfigThrows) {
+                  throw new Error("no such table: system_config");
+                }
+                const value = state.systemConfig[String(args[0])];
+                return (value === undefined
+                  ? null
+                  : { config_value: value, updated_by: null, updated_at: "" }) as unknown as T;
+              }
+              if (/SELECT\s+id\s+FROM\s+approval_task[\s\S]*status\s*=\s*'pending'/i.test(sql)) {
+                return (state.pendingHumanTaskId
+                  ? { id: state.pendingHumanTaskId }
+                  : null) as unknown as T;
+              }
               if (/FROM\s+approval_instance/i.test(sql)) {
                 return { ...state.instance } as unknown as T;
               }
@@ -142,6 +187,12 @@ const baseState = (): FakeState => ({
   },
   decisionTask: null,
   insertedTasks: [],
+  insertedHumanTasks: [],
+  pendingHumanTaskId: null,
+  systemConfig: {},
+  systemConfigThrows: false,
+  eventLogTypes: [],
+  eventLogRows: [],
   bizDraftTables: [],
   events: []
 });
@@ -171,7 +222,7 @@ describe("applyAiGateDecision — 三种落地分支", () => {
     expect(state.insertedTasks[0].action).toBe("approve");
   });
 
-  it("AI 自主 reject → 节点 returned + 任务 action=reject，comment 保留原文", async () => {
+  it("AI 自主 reject 且未配置兜底审核人 → 节点 returned + 任务 action=reject + 告警日志", async () => {
     const state = baseState();
     const env = createFakeEnv(state);
     await applyAiGateDecision(
@@ -187,6 +238,8 @@ describe("applyAiGateDecision — 三种落地分支", () => {
     expect(state.node.status).toBe("returned");
     expect(state.insertedTasks[0].action).toBe("reject");
     expect(state.insertedTasks[0].comment).toBe("AI审查不通过：附件甲方非我方主体");
+    expect(state.eventLogTypes).toContain("ai_gate_fallback_reviewer_missing");
+    expect(state.insertedHumanTasks).toHaveLength(0);
   });
 
   it("超管覆写 reject → 节点 completed（保留终态刹车路径）", async () => {
@@ -200,6 +253,118 @@ describe("applyAiGateDecision — 三种落地分支", () => {
     );
     expect(state.node.status).toBe("completed");
     expect(state.insertedTasks[0].action).toBe("reject");
+  });
+});
+
+describe("settleAiGateBlock — AI 拦截转人工", () => {
+  const blocked = () =>
+    parsedResult({
+      outcome: "reject",
+      decision: "reject",
+      comment: "AI审查不通过：附件费用对象与收款方不一致"
+    });
+
+  it("已配置审核人：节点保持 in_progress，写 AI 驳回记录 + 审核人 pending 任务，发 APPROVAL_AI_ESCALATED", async () => {
+    const state = baseState();
+    state.systemConfig["approval.ai_gate.fallback_reviewer_userid"] = "Boss";
+    const env = createFakeEnv(state);
+
+    await applyAiGateDecision(env, state.node, 1, blocked());
+
+    expect(state.node.status).toBe("in_progress");
+    expect(state.insertedTasks).toHaveLength(1);
+    expect(state.insertedTasks[0].assignee_userid).toBe("AI_GATE");
+    expect(state.insertedTasks[0].action).toBe("reject");
+    expect(state.insertedTasks[0].comment).toBe("AI审查不通过：附件费用对象与收款方不一致");
+    expect(state.insertedHumanTasks).toEqual([
+      { node_instance_id: 5, instance_id: 1, assignee_userid: "Boss", round: 1 }
+    ]);
+    const escalated = state.events.find((e) => e.type === "APPROVAL_AI_ESCALATED");
+    expect(escalated).toBeDefined();
+    expect(escalated?.payload).toMatchObject({
+      instance_id: 1,
+      instance_no: "SP-20260814-0001",
+      node_instance_id: 5,
+      reviewer_userid: "Boss",
+      reason: "AI审查不通过：附件费用对象与收款方不一致"
+    });
+    expect(state.eventLogTypes).not.toContain("ai_gate_fallback_reviewer_missing");
+  });
+
+  it("写入顺序：AI 驳回记录先于人工任务", async () => {
+    const state = baseState();
+    state.systemConfig["approval.ai_gate.fallback_reviewer_userid"] = "Boss";
+    const order: string[] = [];
+    const base = createFakeEnv(state);
+    // 只探针 prepare，不改写假件本身：人工任务的 INSERT 列表里没有 action 列
+    const env = {
+      ...base,
+      DB: {
+        prepare: (sql: string) => {
+          if (TASK_INSERT.test(sql)) {
+            order.push(HUMAN_TASK_COLUMNS.test(sql) ? "human" : "ai");
+          }
+          return base.DB.prepare(sql);
+        }
+      } as unknown as D1Database
+    } as unknown as Env;
+
+    await applyAiGateDecision(env, state.node, 1, blocked());
+
+    expect(order).toEqual(["ai", "human"]);
+  });
+
+  it("节点已有 pending 人工任务：整段跳过（队列重试幂等）", async () => {
+    const state = baseState();
+    state.systemConfig["approval.ai_gate.fallback_reviewer_userid"] = "Boss";
+    state.pendingHumanTaskId = 77;
+    const env = createFakeEnv(state);
+
+    await applyAiGateDecision(env, state.node, 1, blocked());
+
+    expect(state.node.status).toBe("in_progress");
+    expect(state.insertedTasks).toHaveLength(0);
+    expect(state.insertedHumanTasks).toHaveLength(0);
+    expect(state.events).toHaveLength(0);
+  });
+
+  it("配置读取抛错（迁移未跑）：退化为 returned，告警日志带 error", async () => {
+    const state = baseState();
+    state.systemConfigThrows = true;
+    const env = createFakeEnv(state);
+
+    await applyAiGateDecision(env, state.node, 1, blocked());
+
+    expect(state.node.status).toBe("returned");
+    expect(state.insertedTasks).toHaveLength(1);
+    expect(state.insertedTasks[0].assignee_userid).toBe("AI_GATE");
+    expect(state.insertedTasks[0].action).toBe("reject");
+    expect(state.insertedHumanTasks).toHaveLength(0);
+    expect(state.events).toHaveLength(0);
+    const warn = state.eventLogRows.find((r) => r.type === "ai_gate_fallback_reviewer_missing");
+    expect(warn).toBeDefined();
+    expect(warn?.payload).toContain('"error":"no such table: system_config"');
+  });
+
+  it("超管覆写 reject 不走转人工：节点 completed，无人工任务", async () => {
+    const state = baseState();
+    state.systemConfig["approval.ai_gate.fallback_reviewer_userid"] = "Boss";
+    const env = createFakeEnv(state);
+
+    await applyAiGateDecision(
+      env,
+      state.node,
+      1,
+      parsedResult({
+        outcome: "reject",
+        decision: "reject",
+        manualOverride: true,
+        comment: "管理员驳回"
+      })
+    );
+
+    expect(state.node.status).toBe("completed");
+    expect(state.insertedHumanTasks).toHaveLength(0);
   });
 });
 

@@ -11,11 +11,14 @@
  *   → 引擎终态（超管刹车保留）
  * - reject（AI 自主，已过白名单）→ 节点 returned → isNodeComplete 判
  *   "returned" → 引擎走退回：发起人修改后原单重提，不再烧流水号/产生孤儿草稿
+ * - reject（AI 自主）且已配置兜底审核人（2026-09-13 转人工设计）→ 节点保持
+ *   in_progress，转人工裁决，不再自动退回；详见 settleAiGateBlock
  */
 
 import type { Env } from "../../types/env";
 import type { ParsedAiGateResult } from "./ai-gate-result";
 import { BIZ_TYPE_TABLE_MAP } from "./biz-table";
+import { hasPendingHumanTaskOnNode, resolveAiGateFallbackReviewer } from "./ai-gate-fallback";
 import { publishEvent } from "../event-bus";
 
 const nowIso = () => new Date().toISOString();
@@ -32,35 +35,13 @@ interface GateInstanceRef {
   biz_id: number;
 }
 
-/**
- * 落地 AI 关卡决策：更新节点状态 + 写 AI_GATE 决策任务（审计与前端展示）。
- * comment 原文保留（reject 时为「AI审查不通过：…」，退回后发起人可见确切理由）。
- */
-export const applyAiGateDecision = async (
+const insertAiGateDecisionTask = async (
   env: Env,
   node: GateNodeRef,
   instanceId: number,
-  parsed: ParsedAiGateResult
+  parsed: ParsedAiGateResult,
+  now: string
 ): Promise<void> => {
-  const now = nowIso();
-  const aiBlocks = parsed.outcome === "reject" && !parsed.manualOverride;
-
-  if (aiBlocks) {
-    await env.DB.prepare(
-      `UPDATE approval_node_instance SET status = 'returned', completed_at = ?, updated_at = ?
-       WHERE id = ?`
-    )
-      .bind(now, now, node.id)
-      .run();
-  } else {
-    await env.DB.prepare(
-      `UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ?
-       WHERE id = ?`
-    )
-      .bind(now, now, node.id)
-      .run();
-  }
-
   await env.DB.prepare(
     `INSERT INTO approval_task
       (node_instance_id, instance_id, assignee_userid, action, comment, round, status, acted_at, created_at, updated_at)
@@ -79,6 +60,125 @@ export const applyAiGateDecision = async (
       now
     )
     .run();
+};
+
+export type AiGateBlockSettlement = "escalated" | "returned" | "skipped";
+
+/**
+ * AI 自主拦截的落地（2026-09-13 转人工设计）：
+ * - 已配置兜底审核人 → 节点保持 in_progress，写 AI 驳回记录，给审核人建 pending 任务，
+ *   发 APPROVAL_AI_ESCALATED（审核人待办卡 + 发起人结果卡）
+ * - 未配置（或配置读取抛错，如 Worker 先于迁移 0088 上线）→ 旧行为：节点 returned
+ *   （引擎随后 applyAiGateReturn 退回发起人），并写告警日志行（抛错时附 error）
+ * - 节点已有 pending 人工任务 → 整段跳过（队列重试幂等）
+ * 写入顺序固定：AI 记录 → 人工任务 → 事件；人工任务写失败即抛错交队列重试。
+ *
+ * 已知窗口（D1 无事务，均为有意接受）：
+ * 1. 检查后写入存在竞态：队列实时路径与执行器重入路径若同时进入，可能各建一条人工任务、
+ *    各推一张卡；不能用唯一索引兜底（会签/或签节点合法地持有多条 pending 人工任务），
+ *    由控制台放行/驳回时的悬空任务清理兜底。
+ * 2. 人工任务已写、事件未发出（publishEvent 抛错）时，重试会因已有 pending 人工任务而跳过，
+ *    审核人只能在待办列表看到任务、收不到卡片；接受该缺口。
+ * 3. 部分写入后重试可能重复一条 AI 驳回记录（不对 AI 记录做幂等守卫，否则同轮合法重跑会
+ *    丢掉新理由），引擎与前端均取最新一条。
+ */
+export const settleAiGateBlock = async (
+  env: Env,
+  node: GateNodeRef,
+  instanceId: number,
+  parsed: ParsedAiGateResult
+): Promise<AiGateBlockSettlement> => {
+  const now = nowIso();
+
+  if (await hasPendingHumanTaskOnNode(env, node.id)) {
+    return "skipped";
+  }
+
+  let reviewer: string | null = null;
+  let reviewerError: string | null = null;
+  try {
+    reviewer = await resolveAiGateFallbackReviewer(env);
+  } catch (error) {
+    reviewerError = error instanceof Error ? error.message : String(error);
+  }
+
+  if (!reviewer) {
+    await env.DB.prepare(
+      `UPDATE approval_node_instance SET status = 'returned', completed_at = ?, updated_at = ?
+       WHERE id = ?`
+    )
+      .bind(now, now, node.id)
+      .run();
+    await insertAiGateDecisionTask(env, node, instanceId, parsed, now);
+    await env.DB.prepare(
+      "INSERT INTO event_log (event_type, event_source, event_payload, created_at) VALUES (?, ?, ?, ?)"
+    )
+      .bind(
+        "ai_gate_fallback_reviewer_missing",
+        "approval-engine",
+        JSON.stringify({
+          instance_id: instanceId,
+          node_instance_id: node.id,
+          ...(reviewerError ? { error: reviewerError } : {})
+        }),
+        now
+      )
+      .run();
+    return "returned";
+  }
+
+  await insertAiGateDecisionTask(env, node, instanceId, parsed, now);
+  await env.DB.prepare(
+    `INSERT INTO approval_task
+      (node_instance_id, instance_id, assignee_userid, round, status, created_at, updated_at)
+      VALUES (?, ?, ?, ?, 'pending', ?, ?)`
+  )
+    .bind(node.id, instanceId, reviewer, node.round, now, now)
+    .run();
+
+  const instance = await env.DB.prepare(
+    "SELECT id, instance_no FROM approval_instance WHERE id = ?"
+  )
+    .bind(instanceId)
+    .first<{ id: number; instance_no: string }>();
+
+  await publishEvent(env, "APPROVAL_AI_ESCALATED", "approval-engine", {
+    instance_id: instanceId,
+    instance_no: instance?.instance_no ?? "",
+    node_instance_id: node.id,
+    reviewer_userid: reviewer,
+    reason: parsed.comment
+  });
+  return "escalated";
+};
+
+/**
+ * 落地 AI 关卡决策：更新节点状态 + 写 AI_GATE 决策任务（审计与前端展示）。
+ * comment 原文保留（reject 时为「AI审查不通过：…」，退回/转人工后审核人与发起人
+ * 均可见确切理由）。AI 自主拦截整段交给 settleAiGateBlock。
+ */
+export const applyAiGateDecision = async (
+  env: Env,
+  node: GateNodeRef,
+  instanceId: number,
+  parsed: ParsedAiGateResult
+): Promise<void> => {
+  const now = nowIso();
+  const aiBlocks = parsed.outcome === "reject" && !parsed.manualOverride;
+
+  if (aiBlocks) {
+    await settleAiGateBlock(env, node, instanceId, parsed);
+    return;
+  }
+
+  await env.DB.prepare(
+    `UPDATE approval_node_instance SET status = 'completed', completed_at = ?, updated_at = ?
+     WHERE id = ?`
+  )
+    .bind(now, now, node.id)
+    .run();
+
+  await insertAiGateDecisionTask(env, node, instanceId, parsed, now);
 };
 
 /**
