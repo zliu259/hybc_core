@@ -40,15 +40,20 @@ const createFakeEnv = (nodeStatus: string, tasks: FakeTask[]) => {
             },
             async all<T>() {
               if (/FROM\s+approval_task[\s\S]*assignee_userid\s*<>\s*'AI_GATE'/i.test(sql)) {
-                // 与实现一致：只返回「最近一次 AI 决策之后」的人工任务
-                const lastAiDecisionId = tasks
-                  .filter(
-                    (t) =>
-                      t.assignee_userid === "AI_GATE" &&
-                      t.status === "completed" &&
-                      (t.action === "approve" || t.action === "reject")
-                  )
-                  .reduce((max, t) => (t.id > max ? t.id : max), 0);
+                // 与实现一致：只返回「最近一次 AI 决策之后」的人工任务。
+                // 窗口以实现的 SQL 为准：实现若丢掉 id > COALESCE(...)，
+                // 假件也不再过滤，陈旧放行用例随之失败
+                const windowed = /id\s*>\s*COALESCE\(/i.test(sql);
+                const lastAiDecisionId = windowed
+                  ? tasks
+                      .filter(
+                        (t) =>
+                          t.assignee_userid === "AI_GATE" &&
+                          t.status === "completed" &&
+                          (t.action === "approve" || t.action === "reject")
+                      )
+                      .reduce((max, t) => (t.id > max ? t.id : max), 0)
+                  : 0;
                 return {
                   results: tasks.filter(
                     (t) => t.assignee_userid !== "AI_GATE" && t.id > lastAiDecisionId

@@ -617,9 +617,14 @@ class AiGateExecutor implements NodeExecutor {
       .first<ApprovalNodeInstance>();
 
     // 人工兜底任务优先（AI 拦截转人工，2026-09-13）：pending 即未完成；
-    // 审核人 approve 即通过、reject 即驳回（通用驳回操作已直接落实例状态，此分支仅为自洽兜底）。
-    // 人工任务只看最近一次 AI 决策之后的（退回到关卡重跑时同一 node_instance 会保留旧的人工
-    // 放行记录，不能让它绕过新的拦截；补充意见的 AI_GATE 行 action 为 NULL，不作为边界）。
+    // 审核人 approve 即通过、reject 即驳回（通用驳回操作已直接落
+    // 实例状态，此分支仅为自洽兜底）。
+    // 人工任务只看最近一次 AI 决策之后的：退回到关卡重跑时同一
+    // node_instance 会保留旧的人工放行记录，不能让它绕过新的拦截；
+    // 补充意见的 AI_GATE 行 action 为 NULL，不作为边界。
+    // 不变量：写 AI 决策记录前必须先收掉本节点 pending 人工任务
+    //（控制台放行/驳回、settleAiGateBlock 的跳过、handleRoundReset
+    // 均遵守），否则新的 AI 记录会把仍在等待的人工任务排到窗口之外。
     const humanRows = await env.DB.prepare(
       `SELECT * FROM approval_task
         WHERE node_instance_id = ?
