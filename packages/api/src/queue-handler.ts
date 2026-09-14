@@ -9,13 +9,12 @@ import {
   resolveApplicantDisplayName,
   resolveApprovalPushMeta,
   sendApprovalResultTemplateCard,
-  sendApprovalTodoTemplateCard
+  sendApprovalTodoTemplateCard,
+  type ApprovalResultType
 } from "./services/wecom-approval-push";
 import { pushProjectLogEventToWeComGroups } from "./services/wecom-message-push";
 
 const nowIso = () => new Date().toISOString();
-
-type ApprovalResultType = "returned" | "approved" | "rejected" | "cancelled" | "withdrawn";
 
 const getApprovalBizContext = async (
   env: Env,

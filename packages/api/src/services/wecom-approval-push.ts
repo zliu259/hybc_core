@@ -40,7 +40,13 @@ type ApprovalPushOptions = {
   disableDuplicateCheck?: boolean;
 };
 
-type ApprovalResultType = "returned" | "approved" | "rejected" | "cancelled" | "withdrawn";
+export type ApprovalResultType =
+  | "returned"
+  | "approved"
+  | "rejected"
+  | "cancelled"
+  | "withdrawn"
+  | "escalated";
 
 type ApprovalResultPushPayload = {
   instanceId: number;
@@ -235,7 +241,8 @@ const APPROVAL_RESULT_LABELS: Record<ApprovalResultType, string> = {
   approved: "已通过",
   rejected: "已驳回",
   cancelled: "已取消",
-  withdrawn: "已撤回"
+  withdrawn: "已撤回",
+  escalated: "转人工复核"
 };
 
 const bizTypeLabel = (bizType: string): string => BIZ_TYPE_LABELS[bizType] ?? bizType;
