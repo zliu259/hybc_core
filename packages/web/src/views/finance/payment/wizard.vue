@@ -24,6 +24,10 @@ import { listEntities, type Entity } from "@/api/entity";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
+import {
+  buildSubmitAttemptKeys,
+  createWizardRunId
+} from "./wizard-submit-keys";
 
 defineOptions({ name: "SmartPaymentWizard" });
 
@@ -64,7 +68,7 @@ const prioritizedProjects = computed(() => {
 const amountInput = ref<number | undefined>(undefined);
 const withFirstPayment = ref(false);
 
-const directForm = ref({
+const createDirectForm = () => ({
   contract_id: null as number | null,
   project_id: undefined as number | undefined,
   payee_id: undefined as number | undefined,
@@ -75,7 +79,7 @@ const directForm = ref({
   remark: ""
 });
 
-const contractForm = ref({
+const createContractForm = () => ({
   project_id: undefined as number | undefined,
   entity_id: undefined as number | undefined,
   payee_id: undefined as number | undefined,
@@ -85,7 +89,7 @@ const contractForm = ref({
   remark: ""
 });
 
-const firstPaymentForm = ref({
+const createFirstPaymentForm = () => ({
   amount: undefined as number | undefined,
   category: "prepayment",
   content: "首笔预付款",
@@ -93,6 +97,10 @@ const firstPaymentForm = ref({
   expected_payment_date: "",
   remark: ""
 });
+
+const directForm = ref(createDirectForm());
+const contractForm = ref(createContractForm());
+const firstPaymentForm = ref(createFirstPaymentForm());
 
 type AttachmentDraft = {
   file_key: string;
@@ -115,38 +123,8 @@ const quickPayeeForm = ref({
 
 let checkTimer: ReturnType<typeof setTimeout> | null = null;
 
-type SubmitAttemptKeys = {
-  fingerprint: string;
-  createKey: string;
-  submitKey: string;
-};
-
-const directSubmitAttempt = ref<SubmitAttemptKeys | null>(null);
-const contractFirstPaymentAttempt = ref<SubmitAttemptKeys | null>(null);
-
-const createIdempotencyKey = (scope: string) => {
-  const fallback = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  const randomPart =
-    typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
-      ? crypto.randomUUID()
-      : fallback;
-  return `${scope}-${randomPart}`;
-};
-
-const resolveSubmitAttemptKeys = (
-  current: SubmitAttemptKeys | null,
-  fingerprint: string,
-  scope: string
-): SubmitAttemptKeys => {
-  if (current && current.fingerprint === fingerprint) {
-    return current;
-  }
-  return {
-    fingerprint,
-    createKey: createIdempotencyKey(`${scope}-create`),
-    submitKey: createIdempotencyKey(`${scope}-submit`)
-  };
-};
+// 一轮发单共用一个 run id，所有幂等 key 都由它派生；提交成功后轮换。
+const wizardRunId = ref(createWizardRunId());
 
 const buildDirectSubmitFingerprint = () => {
   return JSON.stringify({
@@ -160,6 +138,20 @@ const buildDirectSubmitFingerprint = () => {
     payment_method: directForm.value.payment_method,
     attachments_json: serializeAttachments(directPaymentAttachments.value),
     remark: directForm.value.remark?.trim() ?? ""
+  });
+};
+
+const buildContractFingerprint = () => {
+  return JSON.stringify({
+    project_id: contractForm.value.project_id,
+    entity_id: contractForm.value.entity_id,
+    counterparty: selectedContractCounterparty.value,
+    contract_type: contractForm.value.contract_type,
+    handler_userid: contractForm.value.handler_userid,
+    contract_date: contractForm.value.contract_date,
+    total_amount: Number(amountInput.value ?? 0),
+    attachments_json: serializeAttachments(contractAttachments.value),
+    remark: contractForm.value.remark?.trim() ?? ""
   });
 };
 
@@ -199,13 +191,32 @@ watch(
 
 const inWorkspaceRoute = computed(() => route.path.startsWith("/workspace/"));
 
-const goBackAfterSubmit = () => {
-  if (typeof window !== "undefined" && window.history.state?.back) {
-    router.back();
-    return;
+// 提交成功后先清空整张表单并轮换 run id，再离开页面：不再依赖路由跳转丢弃状态，
+// 也不再 push 自身路由（没有历史记录时那是空操作，表单会原样留在页面上被再次提交）。
+const resetWizardState = () => {
+  if (checkTimer) {
+    clearTimeout(checkTimer);
+    checkTimer = null;
   }
-  router.push(
-    inWorkspaceRoute.value ? "/workspace/payment/wizard" : "/finance/payment"
+  amountInput.value = undefined;
+  withFirstPayment.value = false;
+  exceedsThreshold.value = false;
+  checking.value = false;
+  step.value = 0;
+  directForm.value = createDirectForm();
+  contractForm.value = createContractForm();
+  firstPaymentForm.value = createFirstPaymentForm();
+  contractAttachments.value = [];
+  directPaymentAttachments.value = [];
+  firstPaymentAttachments.value = [];
+  wizardRunId.value = createWizardRunId();
+};
+
+const finishSubmit = () => {
+  resetWizardState();
+  message("提交成功", { type: "success" });
+  router.replace(
+    inWorkspaceRoute.value ? "/workspace/my-applications" : "/finance/payment"
   );
 };
 
@@ -703,10 +714,10 @@ const submitDirectPayment = async () => {
 
   submitting.value = true;
   try {
-    directSubmitAttempt.value = resolveSubmitAttemptKeys(
-      directSubmitAttempt.value,
-      buildDirectSubmitFingerprint(),
-      "payment-wizard-direct"
+    const directKeys = buildSubmitAttemptKeys(
+      "payment-wizard-direct",
+      wizardRunId.value,
+      buildDirectSubmitFingerprint()
     );
 
     const created = await createPaymentRequest(
@@ -723,7 +734,7 @@ const submitDirectPayment = async () => {
         remark: directForm.value.remark
       },
       {
-        idempotencyKey: directSubmitAttempt.value.createKey
+        idempotencyKey: directKeys.createKey
       }
     );
     await submitPaymentApproval(
@@ -733,12 +744,10 @@ const submitDirectPayment = async () => {
         instance_config: { note: "阈值内直接付款" }
       },
       {
-        idempotencyKey: directSubmitAttempt.value.submitKey
+        idempotencyKey: directKeys.submitKey
       }
     );
-    directSubmitAttempt.value = null;
-    message("提交成功", { type: "success" });
-    goBackAfterSubmit();
+    finishSubmit();
   } catch {
     message("提交失败，请重试", { type: "error" });
   } finally {
@@ -789,31 +798,37 @@ const submitContractFlow = async () => {
 
   submitting.value = true;
   try {
-    if (!withFirstPayment.value) {
-      contractFirstPaymentAttempt.value = null;
-    }
+    const contractKeys = buildSubmitAttemptKeys(
+      "payment-wizard-contract",
+      wizardRunId.value,
+      buildContractFingerprint()
+    );
+    const firstPaymentKeys = withFirstPayment.value
+      ? buildSubmitAttemptKeys(
+          "payment-wizard-contract-first-payment",
+          wizardRunId.value,
+          buildContractFirstPaymentFingerprint()
+        )
+      : null;
 
-    const contract = await createContract({
-      direction: "outbound",
-      project_id: contractForm.value.project_id,
-      entity_id: contractForm.value.entity_id,
-      counterparty: selectedContractCounterparty.value,
-      contract_type: contractForm.value.contract_type,
-      handler_userid: contractForm.value.handler_userid,
-      contract_date: contractForm.value.contract_date,
-      total_amount: amountInput.value,
-      attachments_json: serializeAttachments(contractAttachments.value),
-      remark: contractForm.value.remark
-    });
+    const contract = await createContract(
+      {
+        direction: "outbound",
+        project_id: contractForm.value.project_id,
+        entity_id: contractForm.value.entity_id,
+        counterparty: selectedContractCounterparty.value,
+        contract_type: contractForm.value.contract_type,
+        handler_userid: contractForm.value.handler_userid,
+        contract_date: contractForm.value.contract_date,
+        total_amount: amountInput.value,
+        attachments_json: serializeAttachments(contractAttachments.value),
+        remark: contractForm.value.remark
+      },
+      { idempotencyKey: contractKeys.createKey }
+    );
 
     let paymentId: number | null = null;
-    if (withFirstPayment.value) {
-      contractFirstPaymentAttempt.value = resolveSubmitAttemptKeys(
-        contractFirstPaymentAttempt.value,
-        buildContractFirstPaymentFingerprint(),
-        "payment-wizard-contract-first-payment"
-      );
-
+    if (firstPaymentKeys) {
       const payment = await createPaymentRequest(
         {
           contract_id: contract.data.id,
@@ -828,18 +843,22 @@ const submitContractFlow = async () => {
           remark: firstPaymentForm.value.remark
         },
         {
-          idempotencyKey: contractFirstPaymentAttempt.value.createKey
+          idempotencyKey: firstPaymentKeys.createKey
         }
       );
       paymentId = payment.data.id;
     }
 
-    await submitContractApproval(contract.data.id, {
-      biz_summary: "智能发单台-超阈值合同创建",
-      instance_config: { note: "超阈值付款自动走合同审批" }
-    });
+    await submitContractApproval(
+      contract.data.id,
+      {
+        biz_summary: "智能发单台-超阈值合同创建",
+        instance_config: { note: "超阈值付款自动走合同审批" }
+      },
+      { idempotencyKey: contractKeys.submitKey }
+    );
 
-    if (paymentId) {
+    if (paymentId && firstPaymentKeys) {
       await submitPaymentApproval(
         paymentId,
         {
@@ -847,14 +866,12 @@ const submitContractFlow = async () => {
           instance_config: { note: "合同创建后同步发起首笔付款" }
         },
         {
-          idempotencyKey: contractFirstPaymentAttempt.value?.submitKey
+          idempotencyKey: firstPaymentKeys.submitKey
         }
       );
     }
 
-    contractFirstPaymentAttempt.value = null;
-    message("提交成功", { type: "success" });
-    goBackAfterSubmit();
+    finishSubmit();
   } catch {
     message("提交失败，请重试", { type: "error" });
   } finally {

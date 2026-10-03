@@ -18,7 +18,9 @@ import { createAiGateHandler, createTask } from "../services/ai-slot";
 import {
   abandonIdempotentRequest,
   beginIdempotentRequest,
-  completeIdempotentRequest
+  completeIdempotentRequest,
+  idempotencyTimeBucket,
+  normalizeIdempotencyText
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { loadOurEntityContext } from "../services/our-entities";
@@ -28,6 +30,34 @@ import { invoiceContractAmountSql } from "./receipt-invoice-amount";
 import { amountChangeFloor } from "./contract-amount-change-floor";
 
 const nowIso = () => new Date().toISOString();
+
+const CONTRACT_CREATE_IDEMPOTENCY_SCOPE = "contract:create";
+
+/**
+ * Fallback key for clients that send no Idempotency-Key: the same actor posting
+ * the same contract content within one time bucket replays the first result
+ * instead of inserting a second contract (mirrors payment_request creation).
+ */
+const getAutoCreateContractIdempotencyKey = (
+  authSub: string,
+  body: CreateContractRequest
+): string => {
+  return [
+    "contract-create-v1",
+    authSub,
+    idempotencyTimeBucket(),
+    normalizeIdempotencyText(body.direction),
+    String(body.project_id),
+    String(body.entity_id),
+    normalizeIdempotencyText(body.counterparty),
+    normalizeIdempotencyText(body.contract_type),
+    normalizeIdempotencyText(body.handler_userid),
+    normalizeIdempotencyText(body.contract_date),
+    String(body.total_amount),
+    normalizeIdempotencyText(body.remark),
+    normalizeIdempotencyText(body.attachments_json)
+  ].join("|");
+};
 
 type SubmitApprovalOptions = {
   biz_summary?: string;
@@ -354,83 +384,126 @@ contractRoutes.post(
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreateContractRequest;
     const now = nowIso();
-    const contractNo = await generateSerial(c.env.DB, "CT", "contract", "contract_no");
 
-    const result = await c.env.DB.prepare(
-      `INSERT INTO contract
-        (contract_no, direction, project_id, entity_id, counterparty, contract_type,
-         handler_userid, contract_date, total_amount, paid_amount, invoiced_amount,
-         received_amount, status, ai_review_status, attachments_json, remark,
-         created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'draft', 'none', ?, ?, ?, ?)`
-    )
-      .bind(
-        contractNo,
-        body.direction,
-        body.project_id,
-        body.entity_id,
-        body.counterparty,
-        body.contract_type,
-        body.handler_userid,
-        body.contract_date,
-        body.total_amount,
-        body.attachments_json ?? null,
-        body.remark ?? null,
-        now,
-        now
-      )
-      .run();
+    // 显式 Idempotency-Key 优先；没有时按内容指纹在时间窗内自动去重（与付款申请创建一致）。
+    const explicitIdempotencyKey = String(c.req.header("Idempotency-Key") ?? "").trim();
+    const createIdempotencyKey =
+      explicitIdempotencyKey || getAutoCreateContractIdempotencyKey(auth.sub, body);
+    const createIdempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { id: number; contract_no: string };
+    }>(c.env.DB, CONTRACT_CREATE_IDEMPOTENCY_SCOPE, auth.sub, createIdempotencyKey);
 
-    const contractId = result.meta.last_row_id;
-
-    await publishEvent(c.env, "CONTRACT_CREATED", "contract", {
-      contract_id: contractId,
-      contract_no: contractNo,
-      direction: body.direction,
-      total_amount: body.total_amount,
-      created_by: auth.sub
-    });
-
-    if (body.attachments_json) {
-      try {
-        const attachments = JSON.parse(body.attachments_json);
-        if (Array.isArray(attachments) && attachments.length > 0) {
-          await c.env.DB.prepare(
-            "UPDATE contract SET ai_review_status = 'pending', updated_at = ? WHERE id = ?"
-          )
-            .bind(now, contractId)
-            .run();
-
-          // 我方实体实时调取：AI 需据此核对签约主体，禁止假定「恒越百川」
-          const entityContext = await loadOurEntityContext(c.env.DB, body.entity_id);
-          await createTask(c.env, {
-            task_type: "contract_review",
-            biz_type: "contract",
-            biz_id: contractId as number,
-            priority: 3,
-            payload: {
-              contract_id: contractId,
-              contract_no: contractNo,
-              direction: body.direction,
-              counterparty: body.counterparty,
-              contract_type: body.contract_type,
-              total_amount: body.total_amount,
-              remark: body.remark ?? null,
-              ...entityContext,
-              attachments: attachments
-            },
-            timeout_seconds: 600
-          });
-        }
-      } catch {
-        // attachment parsing failed — skip AI review
-      }
+    if (createIdempotency.kind === "replay") {
+      return c.json(createIdempotency.payload, {
+        status: createIdempotency.statusCode as 200 | 201
+      });
     }
 
-    return c.json(
-      { success: true, data: { id: contractId, contract_no: contractNo } },
-      201
-    );
+    if (createIdempotency.kind === "pending") {
+      return c.json(
+        { success: false, error: { message: "Contract creation already in progress" } },
+        409
+      );
+    }
+
+    try {
+      const contractNo = await generateSerial(c.env.DB, "CT", "contract", "contract_no");
+
+      const result = await c.env.DB.prepare(
+        `INSERT INTO contract
+          (contract_no, direction, project_id, entity_id, counterparty, contract_type,
+           handler_userid, contract_date, total_amount, paid_amount, invoiced_amount,
+           received_amount, status, ai_review_status, attachments_json, remark,
+           created_at, updated_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 0, 'draft', 'none', ?, ?, ?, ?)`
+      )
+        .bind(
+          contractNo,
+          body.direction,
+          body.project_id,
+          body.entity_id,
+          body.counterparty,
+          body.contract_type,
+          body.handler_userid,
+          body.contract_date,
+          body.total_amount,
+          body.attachments_json ?? null,
+          body.remark ?? null,
+          now,
+          now
+        )
+        .run();
+
+      const contractId = result.meta.last_row_id;
+
+      await publishEvent(c.env, "CONTRACT_CREATED", "contract", {
+        contract_id: contractId,
+        contract_no: contractNo,
+        direction: body.direction,
+        total_amount: body.total_amount,
+        created_by: auth.sub
+      });
+
+      if (body.attachments_json) {
+        try {
+          const attachments = JSON.parse(body.attachments_json);
+          if (Array.isArray(attachments) && attachments.length > 0) {
+            await c.env.DB.prepare(
+              "UPDATE contract SET ai_review_status = 'pending', updated_at = ? WHERE id = ?"
+            )
+              .bind(now, contractId)
+              .run();
+
+            // 我方实体实时调取：AI 需据此核对签约主体，禁止假定「恒越百川」
+            const entityContext = await loadOurEntityContext(c.env.DB, body.entity_id);
+            await createTask(c.env, {
+              task_type: "contract_review",
+              biz_type: "contract",
+              biz_id: contractId as number,
+              priority: 3,
+              payload: {
+                contract_id: contractId,
+                contract_no: contractNo,
+                direction: body.direction,
+                counterparty: body.counterparty,
+                contract_type: body.contract_type,
+                total_amount: body.total_amount,
+                remark: body.remark ?? null,
+                ...entityContext,
+                attachments: attachments
+              },
+              timeout_seconds: 600
+            });
+          }
+        } catch {
+          // attachment parsing failed — skip AI review
+        }
+      }
+
+      const payload = {
+        success: true,
+        data: { id: contractId, contract_no: contractNo }
+      };
+      await completeIdempotentRequest(
+        c.env.DB,
+        CONTRACT_CREATE_IDEMPOTENCY_SCOPE,
+        auth.sub,
+        createIdempotencyKey,
+        201,
+        payload
+      );
+
+      return c.json(payload, 201);
+    } catch (error) {
+      await abandonIdempotentRequest(
+        c.env.DB,
+        CONTRACT_CREATE_IDEMPOTENCY_SCOPE,
+        auth.sub,
+        createIdempotencyKey
+      );
+      throw error;
+    }
   }
 );
 

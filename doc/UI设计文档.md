@@ -1649,6 +1649,12 @@
 - 编辑态通道下拉始终禁用（仅创建态可选），修复此前“看似可改、保存必被后端 400”的陷阱；不可切换时显示「通道创建后不可修改」灰色提示：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 新增后端切换通道接口 `POST /api/v1/reimbursement/:id/switch-channel`（乐观锁 UPDATE 防并发漂移；切换成功且有活跃附件时自动补触发 AI 核验；同通道重复请求幂等返回 `changed: false` 并带自愈补偿）：`packages/api/src/routes/reimbursement.ts`、`packages/api/src/routes/reimbursement-channel-switch-policy.ts`
 
+### 8.21 智能发单台提交后重置与合同创建幂等（2026-09-28）
+
+- 智能发单台提交成功后：清空直付/合同/首笔预付款三张表单、附件与金额，关闭首笔开关并轮换 run id，然后 `router.replace` 到「我的申请」（工作台路由 `/workspace/my-applications`）或付款列表（`/finance/payment`），不再 `router.back()` 或 push 自身路由：`packages/web/src/views/finance/payment/wizard.vue`
+- 一轮发单共用一个 run id，合同创建 / 合同送审 / 付款创建 / 付款送审的 `Idempotency-Key` 均由「scope + run id + 步骤内容指纹」派生，失败重试同 key、改内容换 key：`packages/web/src/views/finance/payment/wizard-submit-keys.ts`、`packages/web/src/api/contract.ts`
+- 后端 `POST /api/v1/contract` 支持 `Idempotency-Key`，缺省按内容指纹在 5 分钟窗内自动去重，与付款申请创建一致：`packages/api/src/routes/contract.ts`
+
 ## 9. 智能体接入（2026-07）
 
 ### 9.1 页面与路由映射

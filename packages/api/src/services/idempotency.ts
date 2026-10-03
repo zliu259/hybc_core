@@ -99,3 +99,19 @@ export const abandonIdempotentRequest = async (
     .bind(scope, actorKey, normalizedKey)
     .run();
 };
+
+/** Collapse whitespace so equivalent text yields the same content fingerprint. */
+export const normalizeIdempotencyText = (value: string | null | undefined): string => {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, " ");
+};
+
+/**
+ * Coarse time bucket that scopes auto-generated content-fingerprint keys: an
+ * identical payload re-sent within the window replays the first result instead
+ * of creating a second record, while a genuine repeat later on is still allowed.
+ */
+export const idempotencyTimeBucket = (windowMs = 5 * 60 * 1000): string => {
+  return String(Math.floor(Date.now() / windowMs));
+};

@@ -84,22 +84,30 @@ export const getContract = (id: number) => {
   );
 };
 
-export const createContract = (data: {
-  direction: string;
-  project_id: number;
-  entity_id: number;
-  counterparty: string;
-  contract_type: string;
-  handler_userid: string;
-  contract_date: string;
-  total_amount: number;
-  attachments_json?: string;
-  remark?: string;
-}) => {
+export const createContract = (
+  data: {
+    direction: string;
+    project_id: number;
+    entity_id: number;
+    counterparty: string;
+    contract_type: string;
+    handler_userid: string;
+    contract_date: string;
+    total_amount: number;
+    attachments_json?: string;
+    remark?: string;
+  },
+  options?: { idempotencyKey?: string }
+) => {
   return http.request<{
     success: boolean;
     data: { id: number; contract_no: string };
-  }>("post", "/api/v1/contract", { data });
+  }>("post", "/api/v1/contract", {
+    data,
+    headers: options?.idempotencyKey
+      ? { "Idempotency-Key": options.idempotencyKey }
+      : undefined
+  });
 };
 
 export const updateContract = (
