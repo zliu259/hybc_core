@@ -26,21 +26,22 @@
 
 ### 小程序
 - **Platform**: 企业微信小程序
-- **Framework**: uni-app 或原生
+- **Framework**: 原生（JavaScript）+ TDesign 组件库
 
 ### 计算节点 (Python分布式)
 - **Language**: Python 3.11+
 - **Deploy**: Docker
-  - PRIMARY: AWS Lightsail SG (AI调用、OCR、文件生成)
-  - SECONDARY: 树莓派 (通知、轻量计算)
-  - STANDBY: AU NAS (备用，故障转移)
-- **通信**: IPv6直连 + mTLS + API Key，Pull模式轮询(3-5秒)
+  - 生产：Cloudflare Containers（`.cf-runner-container/`，`runner.hybcdg.com`），API Cron 按任务积压唤醒
+  - 备选：VM + Docker + systemd（`scripts/deploy/runner-azure-vm.sh`）
+  - 本地：Docker 主 / 备 / 冷备多节点模拟（`scripts/phase8/start-local.sh`）
+- **通信**: HTTPS + API Key（可选 mTLS），Pull 模式轮询（默认 3 秒）
 
 ### 自动化编排
-- **Platform**: n8n (Docker)
-- **Deploy**: Lightsail SG (主) / AU NAS (冷备)
+- **n8n 已下线**：自动化统一由 Cloudflare Cron Triggers + task-runner 承担，`n8n/` 目录仅留档
 
 ## 项目结构
+
+> 以下为项目初期规划结构，现行目录结构以根目录 `README.md` 的「目录结构」为准。
 
 ```
 hengyue-system/
@@ -210,7 +211,7 @@ hengyue-system/
 1. **审批流引擎**: 动态路由 + 多种签署方式 + 退回/转签
 2. **AI决策引擎**: AI Slot抽象层，可切换Provider，事前(审查/评估) + 事中(辅助) + 事后(审计)
 3. **事件总线**: Cloudflare Queue，连接所有引擎
-4. **自动化编排**: n8n，通知/报表/同步
+4. **自动化编排**: Cloudflare Cron Triggers + task-runner（n8n 已下线），通知/报表/同步
 
 ## AI介入范围 (一期)
 
@@ -230,6 +231,7 @@ hengyue-system/
 | 角色 | 说明 |
 |------|------|
 | 超级管理员 | 全部权限，系统配置，高风险决策 |
+| 财务 | 报销、付款、收款、发票与对账 |
 | 经理 | 项目管理，审批，合同，跨项目查看 |
 | 现场管理员 | 管理员日志，付款申请，设备管理，所属项目范围 |
 | 现场操作员 | 操作员日志，报销提交，设备扫码，仅自己的数据 |
@@ -294,33 +296,34 @@ hengyue-system/
 
 **push 到 `main` 即部署**：仓库已接入 Cloudflare Git 集成，push 到 `main` 后自动构建并部署 `packages/api`（Workers Builds）与 `packages/web`（Pages），无需手动执行 deploy 命令。提交合并到 main 就是发布动作。
 
-- 唯一需要手动执行的生产步骤是 D1 数据库迁移：`cd packages/api && npx wrangler d1 migrations apply hybcdg-prod-db --remote`（在推送依赖该迁移的代码前后执行）。
+- 唯一需要手动执行的生产步骤是 D1 数据库迁移：`cd packages/api && npx wrangler d1 migrations apply hybcdg-prod-db --remote --env prod`（在推送依赖该迁移的代码前后执行；远程 D1 命令不带 `--env prod` 会报 7403）。
 - 部署后健康检查：`https://api.hybcdg.com/api/v1/system/health` 返回 `ok=true`。
 - `npm run deploy` 仅作为紧急旁路保留，日常禁用；历史记录中「仅 push 不会自动部署」的说法作废。
 
 ## 常用命令
 
 ```bash
+# 安装依赖（仓库根目录，必须使用 pnpm）
+pnpm install
+
 # 后端开发
 cd packages/api
-npm run dev                    # 本地开发 (wrangler dev)
+npm run dev                    # 本地开发 (wrangler dev，需先 cp .dev.vars.example .dev.vars)
 npm run deploy                 # 手动部署CF Workers（日常不用：push main 自动部署）
-npx wrangler d1 migrations apply hybcdg-prod-db  # 执行数据库迁移（远程加 --remote）
+npm run db:migrate:local       # 本地数据库迁移
+npx wrangler d1 migrations apply hybcdg-prod-db --remote --env prod  # 生产数据库迁移
 
 # 前端开发
 cd packages/web
 npm run dev                    # 本地开发
-npm run build                  # 构建
-npm run deploy                 # 手动部署CF Pages（日常不用：push main 自动部署）
+npm run build                  # 构建（Pages 由 push main 自动部署，无手动 deploy 脚本）
 
 # 计算节点
 cd task-runner
 docker-compose up -d           # 启动
 docker-compose logs -f         # 查看日志
 
-# n8n
-cd n8n
-docker-compose up -d
+# n8n 已下线，自动化由 Worker Cron + task-runner 承担
 ```
 
 ## 注意事项

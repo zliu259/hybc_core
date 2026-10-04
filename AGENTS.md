@@ -1,8 +1,9 @@
 # AGENTS.md
 
 ## Repository Reality Check
-- Current workspace now has a runnable scaffold: `packages/api`, `packages/web`, `packages/miniapp`, `task-runner`, `n8n`.
+- The workspace is a pnpm monorepo running in production: `packages/api`, `packages/web` (package name `pure-admin-thin`), `packages/miniapp`, `packages/mcp`, `task-runner`, `bridge`. `n8n/` is retired and kept for reference only.
 - Source-of-truth files found:
+  - `README.md` (overview, quick start, deployment)
   - `doc/CLAUDE.md`
   - `doc/开发计划.md`
   - `doc/background_inv.md`
@@ -20,7 +21,7 @@
 ## Documentation Layout (three areas)
 - `doc/` — long-lived, still-authoritative docs: `CLAUDE.md`, `开发计划.md`, `开发记录.md`, `UI设计文档.md`, `background_inv.md`, `local-dev-setup.md`, plus `guide/` and `legacy_data/`. This is where active work is tracked.
 - `docs/archive/` — **implemented / shipped** one-off design docs, implementation plans, and phase notes. Historical reference only; do NOT treat as current instructions. Index: `docs/archive/README.md`.
-- `docs/planned/` — **not-yet-implemented** design/plan docs (e.g. `docs/planned/2026-07-01-approval-return-resubmit-design.md`). Index: `docs/planned/README.md`.
+- `docs/planned/` — **not-yet-implemented** design/plan docs. Index: `docs/planned/README.md`.
 - When a planned doc is implemented, move it from `docs/planned/` to `docs/archive/`, update both indexes and `doc/README.md`, and append an implementation record to `doc/开发记录.md`.
 
 ## How To Use This File
@@ -33,20 +34,22 @@
   - `packages/api` (Hono + TypeScript on Cloudflare Workers)
   - `packages/web` (PureAdmin Vue 3 + Element Plus + TypeScript)
   - `task-runner` (Python 3.11+ distributed compute nodes)
-  - `n8n` (workflow automation)
+  - `n8n` (workflow automation — retired; automation now runs on Worker Cron Triggers + task-runner)
 - Core infra: Cloudflare D1, KV, R2, Queue, Cron.
 
 ## Build, Lint, Test, Typecheck Commands
 
 ### Important Status
-- Commands below are now runnable for scaffolded modules.
-- Cloudflare Queue remote creation is currently blocked by account-side settings; local queue binding is available.
+- Install dependencies once at the repo root with `pnpm install` (pnpm is required; `packages/web` rejects npm installs).
+- Pushing to `main` auto-deploys the API (Workers Builds) and Web (Cloudflare Pages). Manual deploy scripts are an emergency bypass only.
+- The production queue `hybcdg-prod-events` exists; local dev uses the simulated queue from `wrangler dev --local`.
 
 ### Backend (`packages/api`) - documented
-- Dev: `npm run dev`
-- Deploy: `npm run deploy`
-- DB migration apply: `npx wrangler d1 migrations apply hybcdg-prod-db --remote`
+- Dev: `npm run dev` (requires `cp .dev.vars.example .dev.vars`)
+- Deploy: push to `main`; `npm run deploy` is an emergency bypass only
+- DB migration apply (production): `npx wrangler d1 migrations apply hybcdg-prod-db --remote --env prod` (remote D1 commands fail with 7403 without `--env prod`)
 - Local migration apply: `npm run db:migrate:local`
+- Test: `npm test` (Vitest)
 - Lint: `npm run lint`
 - Format check: `npm run format`
 - Typecheck: `npm run typecheck`
@@ -54,28 +57,34 @@
 ### Web (`packages/web`) - documented
 - Dev: `npm run dev`
 - Build: `npm run build`
-- Deploy: `npm run deploy`
+- Test: `npm test` (Vitest)
+- Typecheck: `npm run typecheck`
+- Lint (check only): `npm run lint:check`
+- Deploy: push to `main` (Cloudflare Pages); there is no deploy script
 
 ### Task runner (`task-runner`) - documented
 - Start services: `docker-compose up -d`
 - Tail logs: `docker-compose logs -f`
 
-### n8n (`n8n`) - documented
-- Start services: `docker-compose up -d`
+### n8n (`n8n`)
+- Retired; kept for reference only. Do not add new workflows here.
 
 ### Lint/Test/Typecheck
-- API lint/format/typecheck scripts are available in `packages/api/package.json`.
-- Web project contains its own lint/typecheck scripts in `packages/web/package.json`.
-- Unified test framework wiring is still pending for API/Web in current scaffold.
+- API lint/format/typecheck/test scripts are available in `packages/api/package.json`.
+- Web project contains its own lint/typecheck/test scripts in `packages/web/package.json`.
+- Vitest is wired for api, web and mcp; miniapp has plain node assert scripts; task-runner uses pytest.
+- CI (`.github/workflows/ci.yml`) runs typecheck/test/lint for api, web and mcp on push/PR to `main` (web lint is advisory). It does not block the Cloudflare deploy.
 
-### Single-test execution guidance (when project is scaffolded)
-- API (Node/TS, common pattern):
+### Single-test execution guidance
+- API (Vitest):
   - `cd packages/api && npm test -- path/to/file.test.ts`
-- Web (Vue/TS, common pattern):
-  - `cd packages/web && npm test -- path/to/file.spec.ts`
+- Web (Vitest, matches `src/**/*.{test,spec}.ts`):
+  - `cd packages/web && npm test -- src/path/to/file.test.ts`
+- Mini-app (node assert scripts):
+  - `cd packages/miniapp && node utils/<name>.test.js`
 - Python task runner:
   - `cd task-runner && pytest tests/test_file.py::test_case_name`
-- Note: confirm actual test runner and script names from `package.json`/`pyproject.toml` once they exist.
+- Note: pytest is not listed in `task-runner/requirements.txt`; install it separately.
 
 ## Coding Standards (Extracted + Safe Agent Defaults)
 
@@ -125,8 +134,8 @@
 - Amount-in-Chinese-uppercase is generated by backend.
 
 ### Error Handling
-- Custom error middleware is planned and should be preserved.
-- Request logging middleware is planned and should be preserved.
+- Custom error middleware (`packages/api/src/middleware/error.ts`) must be preserved.
+- Request logging middleware (`packages/api/src/middleware/logger.ts`) must be preserved.
 - Agent default:
   - Never use empty catch blocks.
   - Return structured, actionable error responses.
@@ -149,6 +158,7 @@
 - End-to-end business flow tests are required before release.
 - Role-based verification required for:
   - super_admin
+  - finance
   - manager
   - site_manager
   - operator
