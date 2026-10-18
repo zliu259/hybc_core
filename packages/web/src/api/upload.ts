@@ -1,4 +1,5 @@
 import { http } from "@/utils/http";
+import { formatToken, getToken } from "@/utils/auth";
 
 const toAbsoluteApiUrl = (url: string): string => {
   if (!url) return url;
@@ -56,4 +57,41 @@ export const resolveViewableFileUrl = async (key: string): Promise<string> => {
   } catch {
     return resolveObjectUrl(key);
   }
+};
+
+export type UploadedAttachment = {
+  file_key: string;
+  file_name: string;
+  file_size: number;
+};
+
+/**
+ * 签名 + 直传一个文件到对象存储，返回可写进业务单据的附件元信息。
+ * 上传接口非 2xx 时抛错，调用方负责提示。
+ */
+export const uploadAttachmentFile = async (
+  file: File,
+  category: string
+): Promise<UploadedAttachment> => {
+  const signRes = await createUploadSignature({
+    fileName: file.name,
+    contentType: file.type,
+    category
+  });
+  const uploadResp = await fetch(resolveUploadUrl(signRes.data.uploadUrl), {
+    method: "PUT",
+    headers: {
+      "content-type": file.type || "application/octet-stream",
+      Authorization: formatToken(getToken().accessToken)
+    },
+    body: file
+  });
+  if (!uploadResp.ok) {
+    throw new Error(`upload_failed_${uploadResp.status}`);
+  }
+  return {
+    file_key: signRes.data.key,
+    file_name: file.name,
+    file_size: file.size
+  };
 };

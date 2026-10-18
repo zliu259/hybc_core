@@ -1,4 +1,5 @@
 const { request, buildUrl } = require("../../utils/request");
+const { amountChangeDeltaLabel, amountChangeAttachments } = require("../../utils/amount-change-view");
 const { localizeErrorMessage } = require("../../utils/error-message");
 const { getToken, getUserProfile } = require("../../utils/auth");
 const { sayToast, vibrateSuccess, vibrateWarning } = require("../../utils/interaction");
@@ -940,6 +941,33 @@ Page({
           "contract",
           (bizDetail && bizDetail.ai_review_status) || ""
         );
+      } else if (bizType === "contract_amount_change") {
+        const bizRes = await this.requestWithRetry(
+          { method: "GET", path: `/api/v1/contract/amount-change/${bizId}` },
+          2
+        );
+        const change = bizRes && bizRes.data ? bizRes.data : null;
+        if (change) {
+          const contract = change.contract || null;
+          const isInbound = Boolean(contract && contract.direction === "inbound");
+          bizDetail = {
+            ...change,
+            contractNoLabel: (contract && contract.contract_no) || this.unknownLabel(),
+            directionLabel: contract ? this.contractDirectionLabel(contract.direction) : this.unknownLabel(),
+            projectLabel: contract ? this.projectLabel(contract.project_id) : this.unknownLabel(),
+            counterpartyLabel: (contract && contract.counterparty) || "-",
+            oldAmountDisplay: this.amountDisplay(change.old_amount, null),
+            newAmountDisplay: this.amountDisplay(change.new_amount, null),
+            deltaLabel: amountChangeDeltaLabel(change.old_amount, change.new_amount),
+            settledLabel: isInbound ? "已收金额" : "已付金额",
+            settledDisplay: contract
+              ? this.formatAmount(isInbound ? contract.received_amount : contract.paid_amount)
+              : "-",
+            applicantLabel: this.userLabel(change.applicant_userid),
+            reasonText: change.reason || "-"
+          };
+        }
+        attachments = amountChangeAttachments(change);
       } else if (bizType === "reimbursement_batch") {
          const bizRes = await this.requestWithRetry({ method: "GET", path: `/api/v1/reimbursement/batch/${bizId}` }, 2);
         bizDetail = bizRes && bizRes.data ? bizRes.data : null;

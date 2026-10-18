@@ -35,7 +35,12 @@ import {
   type InvoiceRequest,
   type ReceiptRefundDetail
 } from "@/api/receipt";
-import { getContract, type ContractDetail } from "@/api/contract";
+import {
+  getAmountChange,
+  getContract,
+  type AmountChangeDetail,
+  type ContractDetail
+} from "@/api/contract";
 import {
   listEntities,
   listEntityBankAccounts,
@@ -61,6 +66,7 @@ import {
 import AiReviewReport from "@/components/AiReviewReport/index.vue";
 import { toActionLabel, toBizTypeLabel, toStatusLabel } from "./labels";
 import { humanReviewStatusText, isAiGateHumanReviewTask } from "./human-review";
+import { describeAmountChangeDelta } from "./amount-change-view";
 
 defineOptions({ name: "ApprovalDetail" });
 
@@ -372,6 +378,7 @@ const reimbursementAuditReport = ref<Record<string, unknown> | string | null>(
 );
 const paymentDetail = ref<PaymentRequestDetail | null>(null);
 const contractDetail = ref<ContractDetail | null>(null);
+const amountChangeDetail = ref<AmountChangeDetail | null>(null);
 const reimbursementBatchDetail = ref<ReimbursementBatchDetail | null>(null);
 
 const reimbursementTitleEntityName = computed(
@@ -978,6 +985,29 @@ const contractAmountDisplay = computed(() =>
   formatAmountWithUpper(contractDetail.value?.total_amount)
 );
 
+const amountChangeOldDisplay = computed(() =>
+  formatAmountWithUpper(amountChangeDetail.value?.old_amount)
+);
+
+const amountChangeNewDisplay = computed(() =>
+  formatAmountWithUpper(amountChangeDetail.value?.new_amount)
+);
+
+const amountChangeDelta = computed(() => {
+  const change = amountChangeDetail.value;
+  if (!change) return null;
+  return describeAmountChangeDelta(change.old_amount, change.new_amount);
+});
+
+/** 付款合同看已付，收款合同看已收：与后端金额下限口径一致 */
+const amountChangeSettled = computed(() => {
+  const contract = amountChangeDetail.value?.contract;
+  if (!contract) return null;
+  return contract.direction === "inbound"
+    ? { label: "已收金额", amount: contract.received_amount }
+    : { label: "已付金额", amount: contract.paid_amount };
+});
+
 const reimbursementAmountDisplay = computed(() =>
   formatAmountWithUpper(reimbursementBatchDetail.value?.total_amount)
 );
@@ -1095,6 +1125,12 @@ const bizNoLabel = computed(() => {
       contractDetail.value?.contract_no ?? String(detail.value.instance.biz_id)
     );
   }
+  if (bizType === "contract_amount_change") {
+    return (
+      amountChangeDetail.value?.contract?.contract_no ??
+      String(detail.value.instance.biz_id)
+    );
+  }
   if (bizType === "reimbursement_batch") {
     return (
       reimbursementBatchDetail.value?.batch_no ??
@@ -1127,6 +1163,9 @@ const bizDetailRoute = computed<RouteLocationRaw | null>(() => {
     contractDetail.value
   ) {
     return `/finance/contract/detail/${contractDetail.value.id}`;
+  }
+  if (bizType === "contract_amount_change" && amountChangeDetail.value) {
+    return `/finance/contract/detail/${amountChangeDetail.value.contract_id}`;
   }
   if (bizType === "reimbursement_batch" && reimbursementBatchDetail.value) {
     return `/finance/reimbursement/batch/${reimbursementBatchDetail.value.id}`;
@@ -1169,6 +1208,7 @@ const loadDetail = async () => {
     selectedRound.value = result.data.instance.current_round;
     paymentDetail.value = null;
     contractDetail.value = null;
+    amountChangeDetail.value = null;
     reimbursementBatchDetail.value = null;
     invoiceRequestDetail.value = null;
     invoiceLinkedContract.value = null;
@@ -1220,6 +1260,9 @@ const loadDetail = async () => {
     ) {
       const contractRes = await getContract(bizId);
       contractDetail.value = contractRes.data;
+    } else if (bizType === "contract_amount_change") {
+      const changeRes = await getAmountChange(bizId);
+      amountChangeDetail.value = changeRes.data;
     } else if (bizType === "reimbursement_batch") {
       const reimbursementRes = await getReimbursementBatch(bizId);
       reimbursementBatchDetail.value = reimbursementRes.data;
@@ -1788,6 +1831,133 @@ onMounted(async () => {
                     </el-link>
                     <el-link
                       type="primary"
+                      @click="downloadAttachment(scope.row.file_key)"
+                    >
+                      下载
+                    </el-link>
+                  </template>
+                </el-table-column>
+              </el-table>
+            </template>
+
+            <template v-if="amountChangeDetail">
+              <el-divider>申请明细（合同金额变更）</el-divider>
+              <el-descriptions :column="2" border>
+                <el-descriptions-item label="合同号">
+                  <el-link
+                    v-if="canGoToBizDetail && amountChangeDetail.contract"
+                    type="primary"
+                    @click="goToBizDetail"
+                  >
+                    {{ amountChangeDetail.contract.contract_no }}
+                  </el-link>
+                  <template v-else>{{
+                    amountChangeDetail.contract?.contract_no ?? "-"
+                  }}</template>
+                </el-descriptions-item>
+                <el-descriptions-item label="方向">
+                  <el-tag
+                    v-if="amountChangeDetail.contract"
+                    :type="
+                      toContractDirectionTagType(
+                        amountChangeDetail.contract.direction
+                      )
+                    "
+                    size="small"
+                  >
+                    <strong>{{
+                      toContractDirectionLabel(
+                        amountChangeDetail.contract.direction
+                      )
+                    }}</strong>
+                  </el-tag>
+                  <template v-else>-</template>
+                </el-descriptions-item>
+                <el-descriptions-item label="所属项目">{{
+                  amountChangeDetail.contract
+                    ? toProjectLabel(amountChangeDetail.contract.project_id)
+                    : "-"
+                }}</el-descriptions-item>
+                <el-descriptions-item label="对方单位">{{
+                  amountChangeDetail.contract?.counterparty ?? "-"
+                }}</el-descriptions-item>
+                <el-descriptions-item label="原合同金额">
+                  {{ amountChangeOldDisplay.lower }}（{{
+                    amountChangeOldDisplay.upper
+                  }}）
+                </el-descriptions-item>
+                <el-descriptions-item label="新合同金额">
+                  {{ amountChangeNewDisplay.lower }}（<strong>{{
+                    amountChangeNewDisplay.upper
+                  }}</strong
+                  >）
+                </el-descriptions-item>
+                <el-descriptions-item label="变更差额">
+                  <el-tag
+                    v-if="amountChangeDelta"
+                    :type="
+                      amountChangeDelta.kind === 'increase'
+                        ? 'danger'
+                        : amountChangeDelta.kind === 'decrease'
+                          ? 'success'
+                          : 'info'
+                    "
+                    size="small"
+                  >
+                    {{ amountChangeDelta.label }}
+                  </el-tag>
+                </el-descriptions-item>
+                <el-descriptions-item
+                  :label="amountChangeSettled?.label ?? '已付金额'"
+                  >{{
+                    formatAmount(amountChangeSettled?.amount)
+                  }}</el-descriptions-item
+                >
+                <el-descriptions-item label="申请人">{{
+                  toUserLabel(amountChangeDetail.applicant_userid)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="申请时间">{{
+                  formatBeijingDateTime(amountChangeDetail.created_at)
+                }}</el-descriptions-item>
+                <el-descriptions-item label="变更缘由" :span="2">
+                  <span style="word-break: break-word; white-space: pre-wrap">{{
+                    amountChangeDetail.reason || "-"
+                  }}</span>
+                </el-descriptions-item>
+              </el-descriptions>
+              <el-table
+                :data="amountChangeDetail.attachments"
+                size="small"
+                border
+                empty-text="申请人未上传附件"
+                style="margin-top: 12px"
+              >
+                <el-table-column label="附件名" min-width="240">
+                  <template #default="scope">{{
+                    scope.row.file_name
+                  }}</template>
+                </el-table-column>
+                <el-table-column label="大小" width="120">
+                  <template #default="scope">{{
+                    scope.row.file_size ?? "-"
+                  }}</template>
+                </el-table-column>
+                <el-table-column label="操作" width="190">
+                  <template #default="scope">
+                    <el-link
+                      type="primary"
+                      @click="
+                        openAttachmentPreview(
+                          scope.row.file_key,
+                          scope.row.file_name
+                        )
+                      "
+                    >
+                      预览
+                    </el-link>
+                    <el-link
+                      type="primary"
+                      style="margin-left: 12px"
                       @click="downloadAttachment(scope.row.file_key)"
                     >
                       下载

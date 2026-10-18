@@ -7,8 +7,7 @@ import type {
   Contract,
   CreateContractRequest,
   UpdateContractRequest,
-  ContractAmountChange,
-  CreateAmountChangeRequest
+  ContractAmountChange
 } from "../types/contract";
 import type { InstanceConfig } from "../types/approval";
 import { writeAuditLog } from "../services/audit-log";
@@ -28,6 +27,11 @@ import { resubmit as resubmitOp } from "../services/approval/operations";
 import { isApprovalActive, isOwnerReworkState, isResubmittable } from "../services/approval/status";
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
 import { amountChangeFloor } from "./contract-amount-change-floor";
+import {
+  parseAmountChangeRequest,
+  presentAmountChange,
+  serializeAmountChangeAttachments
+} from "./contract-amount-change-request";
 
 const nowIso = () => new Date().toISOString();
 
@@ -371,7 +375,7 @@ contractRoutes.get("/:id", async (c) => {
     success: true,
     data: {
       ...contractWithInvoiceTotal,
-      amount_changes: changes.results ?? [],
+      amount_changes: (changes.results ?? []).map(presentAmountChange),
       payment_requests: payments.results ?? []
     }
   });
@@ -1018,7 +1022,11 @@ contractRoutes.post(
   async (c) => {
     const contractId = Number(c.req.param("id"));
     const auth = c.get("auth");
-    const body = (await c.req.json()) as CreateAmountChangeRequest;
+    const parsed = parseAmountChangeRequest(await c.req.json().catch(() => null));
+    if (!parsed.ok) {
+      return c.json({ success: false, error: { message: parsed.message } }, 400);
+    }
+    const body = parsed.value;
     const now = nowIso();
 
     const contract = await c.env.DB.prepare(
@@ -1033,7 +1041,7 @@ contractRoutes.post(
 
     if (contract.status !== "active") {
       return c.json(
-        { success: false, error: { message: "Amount change only allowed on active contracts" } },
+        { success: false, error: { message: "只有生效中的合同才能发起金额变更" } },
         400
       );
     }
@@ -1043,7 +1051,7 @@ contractRoutes.post(
       return c.json(
         {
           success: false,
-          error: { message: `New amount (${body.new_amount}) cannot be less than ${floor.label} (${floor.floor})` }
+          error: { message: `新合同金额（${body.new_amount}）不能低于${floor.label}金额（${floor.floor}）` }
         },
         400
       );
@@ -1052,8 +1060,8 @@ contractRoutes.post(
     const result = await c.env.DB.prepare(
       `INSERT INTO contract_amount_change
         (contract_id, change_type, old_amount, new_amount, reason, status,
-         applicant_userid, created_at, updated_at)
-        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)`
+         applicant_userid, attachments_json, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?, ?)`
     )
       .bind(
         contractId,
@@ -1062,6 +1070,7 @@ contractRoutes.post(
         body.new_amount,
         body.reason,
         auth.sub,
+        serializeAmountChangeAttachments(body.attachments),
         now,
         now
       )
@@ -1073,6 +1082,50 @@ contractRoutes.post(
     );
   }
 );
+
+// 审批详情页按变更单号（审批实例的 biz_id）取申请明细：缘由、附件与合同摘要。
+// 与 GET /:id 同级可见（该接口已随合同返回全部变更记录），不额外收紧角色。
+contractRoutes.get("/amount-change/:changeId", async (c) => {
+  const changeId = Number(c.req.param("changeId"));
+  if (!Number.isInteger(changeId) || changeId <= 0) {
+    return c.json({ success: false, error: { message: "变更单号无效" } }, 400);
+  }
+
+  const change = await c.env.DB.prepare("SELECT * FROM contract_amount_change WHERE id = ?")
+    .bind(changeId)
+    .first<ContractAmountChange>();
+  if (!change) {
+    return c.json({ success: false, error: { message: "金额变更记录不存在" } }, 404);
+  }
+
+  const contract = await c.env.DB.prepare(
+    `SELECT id, contract_no, direction, project_id, entity_id, counterparty, contract_type,
+            total_amount, paid_amount, received_amount, status
+       FROM contract WHERE id = ?`
+  )
+    .bind(change.contract_id)
+    .first<
+      Pick<
+        Contract,
+        | "id"
+        | "contract_no"
+        | "direction"
+        | "project_id"
+        | "entity_id"
+        | "counterparty"
+        | "contract_type"
+        | "total_amount"
+        | "paid_amount"
+        | "received_amount"
+        | "status"
+      >
+    >();
+
+  return c.json({
+    success: true,
+    data: { ...presentAmountChange(change), contract: contract ?? null }
+  });
+});
 
 contractRoutes.post(
   "/:id/amount-change/:changeId/submit-approval",

@@ -26,6 +26,16 @@ export type Contract = {
   updated_at: string;
 };
 
+export type AmountChangeAttachment = {
+  file_key: string;
+  file_name: string;
+  file_size: number | null;
+};
+
+export type AmountChangeAttachmentView = AmountChangeAttachment & {
+  file_url: string;
+};
+
 export type ContractAmountChange = {
   id: number;
   contract_id: number;
@@ -34,8 +44,28 @@ export type ContractAmountChange = {
   new_amount: number;
   reason: string;
   status: string;
+  approval_instance_id: number | null;
   applicant_userid: string;
+  attachments: AmountChangeAttachmentView[];
   created_at: string;
+};
+
+/** 审批详情页用：单条金额变更申请 + 所属合同摘要 */
+export type AmountChangeDetail = ContractAmountChange & {
+  contract: Pick<
+    Contract,
+    | "id"
+    | "contract_no"
+    | "direction"
+    | "project_id"
+    | "entity_id"
+    | "counterparty"
+    | "contract_type"
+    | "total_amount"
+    | "paid_amount"
+    | "received_amount"
+    | "status"
+  > | null;
 };
 
 export type ContractDetail = Contract & {
@@ -140,12 +170,20 @@ export const createAmountChange = (
     change_type: string;
     new_amount: number;
     reason: string;
+    attachments?: AmountChangeAttachment[];
   }
 ) => {
   return http.request<{ success: boolean; data: { id: number } }>(
     "post",
     `/api/v1/contract/${contractId}/amount-change`,
     { data }
+  );
+};
+
+export const getAmountChange = (changeId: number) => {
+  return http.request<{ success: boolean; data: AmountChangeDetail }>(
+    "get",
+    `/api/v1/contract/amount-change/${changeId}`
   );
 };
 

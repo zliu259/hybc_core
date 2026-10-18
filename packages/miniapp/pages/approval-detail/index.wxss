@@ -119,6 +119,12 @@
   color: #b45309;
 }
 
+/* 变更缘由等长文本：保留换行，长串可断行 */
+.v-multiline {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
 .attach-row {
   display: flex;
   align-items: center;

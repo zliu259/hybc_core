@@ -122,15 +122,9 @@ export interface ContractAmountChange {
   status: ChangeStatus;
   approval_instance_id: number | null;
   applicant_userid: string;
+  attachments_json: string | null;
   created_at: string;
   updated_at: string;
-}
-
-export interface CreateAmountChangeRequest {
-  contract_id: number;
-  change_type: ChangeType;
-  new_amount: number;
-  reason: string;
 }
 
 // ─── Payment Request ──────────

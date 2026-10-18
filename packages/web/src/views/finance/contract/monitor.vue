@@ -1,12 +1,15 @@
 <script setup lang="ts">
+import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref } from "vue";
 import { message } from "@/utils/message";
 import {
   listContracts,
   createAmountChange,
   submitAmountChangeApproval,
+  type AmountChangeAttachment,
   type Contract
 } from "@/api/contract";
+import { uploadAttachmentFile } from "@/api/upload";
 
 defineOptions({ name: "ContractMonitor" });
 
@@ -17,7 +20,30 @@ const filters = ref({ keyword: "", status: "" });
 const drawerVisible = ref(false);
 const submitting = ref(false);
 const activeRow = ref<Contract | null>(null);
-const amountForm = ref({ new_amount: 0, reason: "" });
+// 多选上传会并发进行，用计数而不是布尔值，避免第一个完成就把「上传中」清掉
+const pendingUploads = ref(0);
+const uploadingAttachment = computed(() => pendingUploads.value > 0);
+const amountForm = ref<{
+  new_amount: number;
+  reason: string;
+  attachments: AmountChangeAttachment[];
+}>({ new_amount: 0, reason: "", attachments: [] });
+
+/** 与后端 MAX_AMOUNT_CHANGE_ATTACHMENTS 保持一致 */
+const MAX_ATTACHMENTS = 20;
+
+const apiErrorMessage = (error: unknown, fallback: string): string => {
+  const shape = error as {
+    response?: { data?: { error?: { message?: string } } };
+  } | null;
+  return shape?.response?.data?.error?.message || fallback;
+};
+
+const formatFileSize = (size: number | null): string => {
+  if (!size) return "";
+  if (size < 1024 * 1024) return `${Math.max(1, Math.round(size / 1024))} KB`;
+  return `${(size / 1024 / 1024).toFixed(1)} MB`;
+};
 
 type TagType = "primary" | "success" | "warning" | "danger" | "info";
 
@@ -67,9 +93,44 @@ const openAmountDrawer = (row: Contract) => {
   activeRow.value = row;
   amountForm.value = {
     new_amount: Number(row.total_amount),
-    reason: ""
+    reason: "",
+    attachments: []
   };
   drawerVisible.value = true;
+};
+
+const uploadAmountChangeAttachment = async (options: UploadRequestOptions) => {
+  if (
+    amountForm.value.attachments.length + pendingUploads.value >=
+    MAX_ATTACHMENTS
+  ) {
+    message(`附件最多 ${MAX_ATTACHMENTS} 个`, { type: "warning" });
+    options.onError?.(new Error("too_many_attachments") as never);
+    return;
+  }
+  pendingUploads.value += 1;
+  try {
+    const attachment = await uploadAttachmentFile(options.file, "contract");
+    amountForm.value = {
+      ...amountForm.value,
+      attachments: [...amountForm.value.attachments, attachment]
+    };
+    options.onSuccess?.({});
+  } catch {
+    message("附件上传失败，请重试", { type: "error" });
+    options.onError?.(new Error("upload_failed") as never);
+  } finally {
+    pendingUploads.value -= 1;
+  }
+};
+
+const removeAmountChangeAttachment = (fileKey: string) => {
+  amountForm.value = {
+    ...amountForm.value,
+    attachments: amountForm.value.attachments.filter(
+      item => item.file_key !== fileKey
+    )
+  };
 };
 
 const submitAmountChange = async () => {
@@ -78,19 +139,46 @@ const submitAmountChange = async () => {
     return;
   }
 
+  if (uploadingAttachment.value) {
+    message("附件还在上传，请稍候", { type: "warning" });
+    return;
+  }
+
+  const contractId = activeRow.value.id;
   submitting.value = true;
   try {
-    const change = await createAmountChange(activeRow.value.id, {
-      change_type: "adjust",
-      new_amount: amountForm.value.new_amount,
-      reason: amountForm.value.reason.trim()
-    });
+    let changeId: number;
+    try {
+      const change = await createAmountChange(contractId, {
+        change_type: "adjust",
+        new_amount: amountForm.value.new_amount,
+        reason: amountForm.value.reason.trim(),
+        attachments: amountForm.value.attachments
+      });
+      changeId = change.data.id;
+    } catch (error) {
+      message(apiErrorMessage(error, "发起金额变更失败，请重试"), {
+        type: "error"
+      });
+      return;
+    }
 
-    await submitAmountChangeApproval(activeRow.value.id, change.data.id, {
-      instance_config: {
-        note: "合同金额变更发起自合同执行监控大屏"
-      }
-    });
+    try {
+      await submitAmountChangeApproval(contractId, changeId, {
+        instance_config: {
+          note: "合同金额变更发起自合同执行监控大屏"
+        }
+      });
+    } catch (error) {
+      // 变更单已落库为待提交，避免用户重复发起；引导去合同详情补提交
+      drawerVisible.value = false;
+      message(
+        `${apiErrorMessage(error, "提交审批失败")}。变更申请已保存，可在合同详情的「金额变更记录」里重新提交审批`,
+        { type: "warning", duration: 8000 }
+      );
+      await loadData();
+      return;
+    }
 
     message("已提交变更审批", { type: "success" });
     drawerVisible.value = false;
@@ -210,7 +298,59 @@ onMounted(loadData);
         />
       </el-form-item>
       <el-form-item label="变更缘由" required>
-        <el-input v-model="amountForm.reason" type="textarea" :rows="4" />
+        <el-input
+          v-model="amountForm.reason"
+          type="textarea"
+          :rows="4"
+          maxlength="1000"
+          show-word-limit
+          placeholder="说明为什么要调整合同金额，审批人会在审批页看到"
+        />
+      </el-form-item>
+      <el-form-item label="附件">
+        <div class="attachment-field">
+          <el-upload
+            action="#"
+            multiple
+            :show-file-list="false"
+            :disabled="submitting"
+            :http-request="uploadAmountChangeAttachment"
+            accept=".pdf,.jpg,.jpeg,.png,.webp,.doc,.docx,.xls,.xlsx"
+          >
+            <el-button :loading="uploadingAttachment" :disabled="submitting">
+              上传文件
+            </el-button>
+          </el-upload>
+          <div class="attachment-field__tip">
+            选填，可传补充协议、签证单等依据（最多 {{ MAX_ATTACHMENTS }}
+            个），审批人可在审批页查看
+          </div>
+          <ul
+            v-if="amountForm.attachments.length"
+            class="attachment-field__list"
+          >
+            <li
+              v-for="item in amountForm.attachments"
+              :key="item.file_key"
+              class="attachment-field__item"
+            >
+              <span class="attachment-field__name" :title="item.file_name">
+                {{ item.file_name }}
+              </span>
+              <span class="attachment-field__size">
+                {{ formatFileSize(item.file_size) }}
+              </span>
+              <el-button
+                link
+                type="danger"
+                :disabled="submitting"
+                @click="removeAmountChangeAttachment(item.file_key)"
+              >
+                移除
+              </el-button>
+            </li>
+          </ul>
+        </div>
       </el-form-item>
     </el-form>
 
@@ -219,6 +359,7 @@ onMounted(loadData);
       <el-button
         type="primary"
         :loading="submitting"
+        :disabled="uploadingAttachment"
         @click="submitAmountChange"
       >
         提交审批
@@ -252,5 +393,44 @@ onMounted(loadData);
 
 :deep(.danger-row > td) {
   background: #fff1f1 !important;
+}
+
+.attachment-field {
+  width: 100%;
+}
+
+.attachment-field__tip {
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #6e6458;
+}
+
+.attachment-field__list {
+  padding: 0;
+  margin: 8px 0 0;
+  list-style: none;
+}
+
+.attachment-field__item {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 13px;
+  border-bottom: 1px dashed #e8dfd2;
+}
+
+.attachment-field__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment-field__size {
+  flex: none;
+  color: #8a7f72;
 }
 </style>

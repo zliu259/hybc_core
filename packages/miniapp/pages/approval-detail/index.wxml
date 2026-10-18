@@ -49,7 +49,23 @@
       </hy-panel-card>
     </view>
 
-    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type !== 'payment_request' && detail.instance.biz_type !== 'reimbursement_batch' && bizDetail}}">
+    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type === 'contract_amount_change' && bizDetail}}">
+      <hy-panel-card title="申请明细（合同金额变更）">
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">合同号</text><text class="v">{{bizDetail.contractNoLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">方向</text><text class="v">{{bizDetail.directionLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">对方单位</text><text class="v">{{bizDetail.counterpartyLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">原合同金额</text><text class="v">{{bizDetail.oldAmountDisplay}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">新合同金额</text><text class="v v-strong">{{bizDetail.newAmountDisplay}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">变更差额</text><text class="v">{{bizDetail.deltaLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">{{bizDetail.settledLabel}}</text><text class="v">{{bizDetail.settledDisplay}}</text></view>
+        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">申请人</text><text class="v">{{bizDetail.applicantLabel}}</text></view>
+        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">变更缘由</text><text class="v v-multiline">{{bizDetail.reasonText}}</text></view>
+        <view class="kv-row" wx:if="{{detailAttachments.length === 0}}"><text class="dot dot-gray">•</text><text class="k">附件</text><text class="v">申请人未上传附件</text></view>
+      </hy-panel-card>
+    </view>
+
+    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type !== 'payment_request' && detail.instance.biz_type !== 'reimbursement_batch' && detail.instance.biz_type !== 'contract_amount_change' && bizDetail}}">
       <hy-panel-card title="申请明细（合同）">
         <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">合同号</text><text class="v">{{bizDetail.contract_no}}</text></view>
           <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">方向</text><text class="v">{{bizDetail.directionLabel}}</text></view>

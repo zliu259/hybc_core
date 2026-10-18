@@ -1503,6 +1503,22 @@ onMounted(async () => {
             </template>
           </el-table-column>
           <el-table-column prop="reason" label="原因" min-width="220" />
+          <el-table-column label="附件" min-width="180">
+            <template #default="scope">
+              <template v-if="scope.row.attachments?.length">
+                <div v-for="item in scope.row.attachments" :key="item.file_key">
+                  <el-link
+                    type="primary"
+                    :title="item.file_name"
+                    @click="openAttachment(item.file_key)"
+                  >
+                    {{ item.file_name }}
+                  </el-link>
+                </div>
+              </template>
+              <span v-else>-</span>
+            </template>
+          </el-table-column>
           <el-table-column label="操作" width="150" fixed="right">
             <template #default="scope">
               <el-button
