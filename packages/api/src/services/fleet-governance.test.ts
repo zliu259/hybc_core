@@ -1059,3 +1059,146 @@ describe("fleet route numeric validation", () => {
     expect(env.DB.runs).toEqual([]);
   });
 });
+
+describe("fleet route fuel card follows vehicle", () => {
+  const applyBody = {
+    vehicle_id: 8,
+    fuel_card_id: 9,
+    requested_amount: 500,
+    vehicle_mileage_km: 35000,
+    photo_keys_json: JSON.stringify(["a.jpg"])
+  };
+
+  const applicationInserted = (db: FleetRouteDb) =>
+    db.runs.some((call) => call.sql.includes("INSERT INTO fuel_quota_application"));
+
+  it("submits when the card is bound to the chosen vehicle", async () => {
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicleBinding: { vehicle_id: 8 } }));
+
+    const response = await postFleet("/fleet/fuel-applications", applyBody, env);
+
+    expect(response.status).toBe(201);
+    expect(applicationInserted(env.DB)).toBe(true);
+  });
+
+  it("submits for an applicant who has no personal binding", async () => {
+    setRouteAuth({ sub: "someone-else", roles: ["operator"] });
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicleBinding: { vehicle_id: 8 } }));
+
+    const response = await postFleet("/fleet/fuel-applications", applyBody, env);
+
+    expect(response.status).toBe(201);
+    const insert = env.DB.runs.find((call) => call.sql.includes("INSERT INTO fuel_quota_application"));
+    expect(insert?.params.slice(1, 4)).toEqual(["someone-else", 8, 9]);
+  });
+
+  it("rejects a card bound to another vehicle", async () => {
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicleBinding: { vehicle_id: 5 } }));
+
+    const response = await postFleet("/fleet/fuel-applications", applyBody, env);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: "该油卡不属于所选车辆" } });
+    expect(env.DB.runs).toEqual([]);
+  });
+
+  it("rejects an unbound card", async () => {
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicleBinding: null }));
+
+    const response = await postFleet("/fleet/fuel-applications", applyBody, env);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: "该油卡不属于所选车辆" } });
+    expect(env.DB.runs).toEqual([]);
+  });
+
+  it("rejects inactive vehicle", async () => {
+    const env = createFleetRouteEnv(
+      new FleetRouteDb({ vehicle: { status: "inactive" }, vehicleBinding: { vehicle_id: 8 } })
+    );
+
+    const response = await postFleet("/fleet/fuel-applications", applyBody, env);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: "所选车辆无效或已停用" } });
+    expect(env.DB.runs).toEqual([]);
+  });
+
+  it("rejects inactive card", async () => {
+    const env = createFleetRouteEnv(
+      new FleetRouteDb({ fuelCard: { status: "inactive" }, vehicleBinding: { vehicle_id: 8 } })
+    );
+
+    const response = await postFleet("/fleet/fuel-applications", applyBody, env);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: "所选油卡无效或已停用" } });
+    expect(env.DB.runs).toEqual([]);
+  });
+
+  it("processes legacy application when fuel_card_id equals the current card", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv(
+      new FleetRouteDb({
+        application: { status: "pending", vehicle_id: 8, fuel_card_id: 9 },
+        vehicleBinding: null
+      })
+    );
+
+    const response = await postFleet(
+      "/fleet/fuel-applications/17/process",
+      { status: "processed", fuel_card_id: 9, latest_card_balance: 800 },
+      env
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("rejects switching to a card of another vehicle", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv(
+      new FleetRouteDb({
+        application: { status: "pending", vehicle_id: 8, fuel_card_id: 9 },
+        vehicleBinding: { vehicle_id: 5 }
+      })
+    );
+
+    const response = await postFleet(
+      "/fleet/fuel-applications/17/process",
+      { status: "processed", fuel_card_id: 10, latest_card_balance: 800 },
+      env
+    );
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: "该油卡不属于该申请的车辆" } });
+    expect(env.DB.runs.some((call) => call.sql.includes("UPDATE fuel_quota_application SET"))).toBe(
+      false
+    );
+  });
+
+  it("allows switching to another card of the same vehicle", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv(
+      new FleetRouteDb({
+        application: { status: "pending", vehicle_id: 8, fuel_card_id: 9 },
+        vehicleBinding: { vehicle_id: 8 }
+      })
+    );
+
+    const response = await postFleet(
+      "/fleet/fuel-applications/17/process",
+      { status: "processed", fuel_card_id: 10, latest_card_balance: 800 },
+      env
+    );
+
+    expect(response.status).toBe(200);
+  });
+
+  it("resubmits legacy application whose card is not bound to its vehicle", async () => {
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicleBinding: null }));
+
+    const response = await postFleet("/fleet/fuel-applications/17/resubmit", {}, env);
+
+    expect(response.status).toBe(200);
+  });
+});

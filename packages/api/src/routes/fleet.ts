@@ -16,6 +16,7 @@ import {
 } from "../services/fleet-governance";
 import {
   bindFuelCardToVehicle,
+  isFuelCardBoundToVehicle,
   listFuelCardVehicleBindings,
   unbindFuelCardFromVehicle
 } from "../services/fleet-card-binding";
@@ -770,20 +771,23 @@ fleetRoutes.post(
       );
     }
 
+    // 油卡跟车走：任何人可为任何启用车辆申请，但卡必须当前挂在这辆车上
+    const vehicle = await c.env.DB.prepare("SELECT id, status FROM company_vehicle WHERE id = ?")
+      .bind(body.vehicle_id)
+      .first<{ id: number; status: string }>();
+    if (!vehicle || vehicle.status !== "active") {
+      return c.json({ success: false, error: { message: "所选车辆无效或已停用" } }, 400);
+    }
+
     const fuelCard = await c.env.DB.prepare("SELECT id, status FROM fuel_card WHERE id = ?")
       .bind(body.fuel_card_id)
       .first<{ id: number; status: string }>();
     if (!fuelCard || fuelCard.status !== "active") {
-      return c.json({ success: false, error: { message: "fuel_card_id is invalid or inactive" } }, 400);
+      return c.json({ success: false, error: { message: "所选油卡无效或已停用" } }, 400);
     }
 
-    const cardBinding = await c.env.DB.prepare(
-      "SELECT id FROM fuel_card_user_binding WHERE fuel_card_id = ? AND bind_userid = ? AND status = 'active'"
-    )
-      .bind(body.fuel_card_id, auth.sub)
-      .first<{ id: number }>();
-    if (!cardBinding) {
-      return c.json({ success: false, error: { message: "fuel card is not bound to current user" } }, 400);
+    if (!(await isFuelCardBoundToVehicle(c.env, body.fuel_card_id, body.vehicle_id))) {
+      return c.json({ success: false, error: { message: "该油卡不属于所选车辆" } }, 400);
     }
 
     const ts = nowIso();
@@ -1174,13 +1178,14 @@ fleetRoutes.post(
     }
 
     const currentApplication = await c.env.DB.prepare(
-      "SELECT id, application_no, applicant_userid, fuel_card_id, status FROM fuel_quota_application WHERE id = ?"
+      "SELECT id, application_no, applicant_userid, vehicle_id, fuel_card_id, status FROM fuel_quota_application WHERE id = ?"
     )
       .bind(id)
       .first<{
         id: number;
         application_no: string;
         applicant_userid: string;
+        vehicle_id: number;
         fuel_card_id: number | null;
         status: FuelApplicationStatus;
       }>();
@@ -1215,6 +1220,15 @@ fleetRoutes.post(
         return c.json({ success: false, error: { message: "fuel_card_id is invalid or inactive" } }, 400);
       }
       previousBalance = typeof targetCard.latest_balance === "number" ? targetCard.latest_balance : 0;
+    }
+
+    // 只有换卡时才要求新卡挂在申请单的车上；原样回传原卡（含历史单）不校验绑定
+    if (
+      typeof body.fuel_card_id === "number" &&
+      body.fuel_card_id !== currentApplication.fuel_card_id &&
+      !(await isFuelCardBoundToVehicle(c.env, body.fuel_card_id, currentApplication.vehicle_id))
+    ) {
+      return c.json({ success: false, error: { message: "该油卡不属于该申请的车辆" } }, 400);
     }
 
     const ts = nowIso();
