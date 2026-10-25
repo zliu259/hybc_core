@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import type { UploadRequestOptions } from "element-plus";
 import { message } from "@/utils/message";
+import { resolveApiErrorMessage } from "@/utils/api-error";
 import {
   fuelApplicationStatusLabel,
   fuelRiskLabel,
@@ -15,21 +16,16 @@ import {
   listFuelCards,
   listFuelQuotaApplications,
   resubmitFuelQuotaApplication,
-  type FuelCard,
   type FleetVehicle,
   type FuelQuotaApplication
 } from "@/api/fleet";
-import {
-  fuelCardOptionLabel,
-  resolveFuelCardSelection,
-  vehicleOptionLabel
-} from "./fuel-card-selection";
+import { fuelCardOptionLabel, vehicleOptionLabel } from "./fuel-card-selection";
+import { useVehicleFuelCards } from "./useVehicleFuelCards";
 
 defineOptions({ name: "FuelQuotaApplicationPage" });
 
 const loading = ref(false);
 const vehicles = ref<FleetVehicle[]>([]);
-const fuelCards = ref<FuelCard[]>([]);
 const myApplications = ref<FuelQuotaApplication[]>([]);
 const photoKeys = ref<string[]>([]);
 
@@ -52,33 +48,28 @@ const needsInfoApplications = computed(() =>
 );
 
 // 油卡跟车走：选车后只列出该车名下的启用卡
-const fuelCardsLoading = ref(false);
-let fuelCardRequestSeq = 0;
-const selectedVehicleHasNoCard = computed(
-  () =>
-    Boolean(form.value.vehicle_id) &&
-    !fuelCardsLoading.value &&
-    fuelCards.value.length === 0
-);
+const {
+  cards: fuelCards,
+  loading: fuelCardsLoading,
+  noCard: selectedVehicleHasNoCard,
+  selectVehicle
+} = useVehicleFuelCards(async vehicleId => {
+  const result = await listFuelCards({
+    status: "active",
+    vehicle_id: vehicleId
+  });
+  return result.data;
+});
 
 const onVehicleChange = async (vehicleId: number | undefined) => {
-  const requestSeq = ++fuelCardRequestSeq;
   form.value.fuel_card_id = undefined;
-  fuelCards.value = [];
-  if (!vehicleId) return;
-
-  fuelCardsLoading.value = true;
-  try {
-    const result = await listFuelCards({
-      status: "active",
-      vehicle_id: vehicleId
+  const selection = await selectVehicle(vehicleId);
+  if (!selection.applied) return;
+  form.value.fuel_card_id = selection.cardId;
+  if (selection.error) {
+    message(resolveApiErrorMessage(selection.error, "油卡加载失败，请重试"), {
+      type: "error"
     });
-    // 快速换车时丢弃上一辆车晚到的结果
-    if (requestSeq !== fuelCardRequestSeq) return;
-    fuelCards.value = result.data;
-    form.value.fuel_card_id = resolveFuelCardSelection(result.data);
-  } finally {
-    if (requestSeq === fuelCardRequestSeq) fuelCardsLoading.value = false;
   }
 };
 
@@ -171,8 +162,7 @@ const submitApplication = async () => {
     requested_amount: 0,
     vehicle_mileage_km: 0
   };
-  fuelCardRequestSeq += 1;
-  fuelCards.value = [];
+  await selectVehicle(undefined);
   photoKeys.value = [];
   await loadData();
   message("油卡额度申请已提交", { type: "success" });
