@@ -14,6 +14,11 @@ import {
   type FuelApplicationRuleContext,
   type FuelApplicationStatus
 } from "../services/fleet-governance";
+import {
+  bindFuelCardToVehicle,
+  listFuelCardVehicleBindings,
+  unbindFuelCardFromVehicle
+} from "../services/fleet-card-binding";
 import { deliverPendingFleetNotifications } from "../services/fleet-notification";
 import { generateSerial } from "../services/serial";
 import type { UserRole } from "../types/auth";
@@ -251,24 +256,34 @@ fleetRoutes.get("/vehicles", async (c) => {
   const entityId = c.req.query("entity_id");
   const keyword = c.req.query("keyword");
 
-  let sql = "SELECT * FROM company_vehicle WHERE 1=1";
+  // 附带该车当前挂着的启用油卡（油卡跟车走）
+  let sql = `SELECT
+    v.*,
+    COUNT(card.id) AS fuel_card_count,
+    IFNULL(GROUP_CONCAT(card.card_no), '') AS fuel_card_nos
+   FROM company_vehicle v
+   LEFT JOIN fuel_card_vehicle_binding vb ON vb.vehicle_id = v.id AND vb.status = 'active'
+   LEFT JOIN fuel_card card ON card.id = vb.fuel_card_id AND card.status = 'active'
+   WHERE 1=1`;
   const params: Array<string | number> = [];
 
   if (status) {
-    sql += " AND status = ?";
+    sql += " AND v.status = ?";
     params.push(status);
   }
   if (entityId) {
-    sql += " AND entity_id = ?";
+    sql += " AND v.entity_id = ?";
     params.push(Number(entityId));
   }
   if (keyword) {
-    sql += " AND (current_plate_no LIKE ? OR vehicle_uuid LIKE ? OR owner_name LIKE ?)";
+    sql += " AND (v.current_plate_no LIKE ? OR v.vehicle_uuid LIKE ? OR v.owner_name LIKE ?)";
     params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
   }
-  sql += " ORDER BY id DESC";
+  sql += " GROUP BY v.id ORDER BY v.id DESC";
 
-  const rows = await c.env.DB.prepare(sql).bind(...params).all<CompanyVehicle>();
+  const rows = await c.env.DB.prepare(sql)
+    .bind(...params)
+    .all<CompanyVehicle & { fuel_card_count: number; fuel_card_nos: string }>();
   return c.json({ success: true, data: rows.results ?? [] });
 });
 
@@ -446,30 +461,35 @@ fleetRoutes.post(
   }
 );
 
+// 油卡跟车走：所有角色都可看全部油卡与余额（申请时按车选卡）。
+// 旧版小程序仍会带 mine=true，这里有意忽略它。
 fleetRoutes.get("/fuel-cards", async (c) => {
-  const auth = c.get("auth");
   const status = c.req.query("status");
-  const mine = c.req.query("mine") === "true";
-  const shouldScopeToMine = mine || !canViewFleetWide(auth.roles);
+  const vehicleIdValue = c.req.query("vehicle_id");
+  const vehicleId = vehicleIdValue === undefined ? null : parsePositiveInteger(vehicleIdValue);
+  if (vehicleIdValue !== undefined && !vehicleId) {
+    return c.json({ success: false, error: { message: "vehicle_id must be a positive integer" } }, 400);
+  }
+
   let sql = `SELECT
     card.*,
-    IFNULL(GROUP_CONCAT(DISTINCT bind.bind_userid), '') AS bind_userids,
-    COUNT(DISTINCT CASE WHEN bind.status = 'active' THEN bind.bind_userid END) AS bind_user_count
-   FROM fuel_card card`;
-  const params: string[] = [];
+    vb.vehicle_id,
+    v.current_plate_no AS vehicle_plate_no
+   FROM fuel_card card
+   LEFT JOIN fuel_card_vehicle_binding vb ON vb.fuel_card_id = card.id AND vb.status = 'active'
+   LEFT JOIN company_vehicle v ON v.id = vb.vehicle_id
+   WHERE 1=1`;
+  const params: Array<string | number> = [];
 
-  sql += " LEFT JOIN fuel_card_user_binding bind ON bind.fuel_card_id = card.id";
-
-  sql += " WHERE 1=1";
-  if (shouldScopeToMine) {
-    sql += " AND bind.status = 'active' AND bind.bind_userid = ?";
-    params.push(auth.sub);
-  }
   if (status) {
     sql += " AND card.status = ?";
     params.push(status);
   }
-  sql += " GROUP BY card.id ORDER BY card.id DESC";
+  if (vehicleId) {
+    sql += " AND vb.vehicle_id = ?";
+    params.push(vehicleId);
+  }
+  sql += " ORDER BY card.id DESC";
   const rows = await c.env.DB.prepare(sql).bind(...params).all();
   return c.json({ success: true, data: rows.results ?? [] });
 });
@@ -519,9 +539,8 @@ fleetRoutes.post(
 
 fleetRoutes.get(
   "/fuel-cards/:id/balance-logs",
-  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
+  requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
-    const auth = c.get("auth");
     const fuelCardId = Number(c.req.param("id"));
     const page = Number(c.req.query("page") ?? "1");
     const pageSize = Number(c.req.query("pageSize") ?? "20");
@@ -529,17 +548,6 @@ fleetRoutes.get(
 
     if (!Number.isSafeInteger(fuelCardId) || fuelCardId <= 0) {
       return c.json({ success: false, error: { message: "fuel card id must be a positive integer" } }, 400);
-    }
-
-    if (!canViewFleetWide(auth.roles)) {
-      const binding = await c.env.DB.prepare(
-        "SELECT id FROM fuel_card_user_binding WHERE fuel_card_id = ? AND bind_userid = ? AND status = 'active'"
-      )
-        .bind(fuelCardId, auth.sub)
-        .first<{ id: number }>();
-      if (!binding) {
-        return c.json({ success: false, error: { message: "fuel card not found" } }, 404);
-      }
     }
 
     const countRow = await c.env.DB.prepare(
@@ -576,49 +584,103 @@ fleetRoutes.get(
   }
 );
 
-fleetRoutes.post(
-  "/fuel-cards/:id/bind-user",
-  requireRoles(["super_admin", "manager", "finance"]),
-  async (c) => {
-    const fuelCardId = Number(c.req.param("id"));
-    const body = (await c.req.json()) as { bind_userid: string };
-    if (!body.bind_userid?.trim()) {
-      return c.json({ success: false, error: { message: "bind_userid is required" } }, 400);
-    }
+const bindConflictMessage = "油卡绑定已被他人修改，请刷新后重试";
 
-    const ts = nowIso();
-    await c.env.DB.prepare(
-      `INSERT INTO fuel_card_user_binding (fuel_card_id, bind_userid, status, created_at, updated_at)
-       VALUES (?, ?, 'active', ?, ?)
-       ON CONFLICT(fuel_card_id, bind_userid)
-       DO UPDATE SET status = 'active', updated_at = excluded.updated_at`
-    )
-      .bind(fuelCardId, body.bind_userid.trim(), ts, ts)
-      .run();
-
-    return c.json({ success: true }, 201);
-  }
-);
-
+// 绑定油卡到车辆；卡已在别的车上时即为转移。同车重复绑定幂等，不写审计。
 fleetRoutes.post(
   "/fuel-cards/:id/bind-vehicle",
   requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
-    const fuelCardId = Number(c.req.param("id"));
-    const body = (await c.req.json()) as { vehicle_id: number };
-    if (typeof body.vehicle_id !== "number") {
-      return c.json({ success: false, error: { message: "vehicle_id is required" } }, 400);
+    const auth = c.get("auth");
+    const fuelCardId = parsePositiveInteger(c.req.param("id"));
+    if (!fuelCardId) {
+      return c.json({ success: false, error: { message: "fuel card id must be a positive integer" } }, 400);
+    }
+    const body = (await c.req.json()) as { vehicle_id?: unknown };
+    const vehicleId =
+      typeof body.vehicle_id === "number" && Number.isSafeInteger(body.vehicle_id) && body.vehicle_id > 0
+        ? body.vehicle_id
+        : null;
+    if (!vehicleId) {
+      return c.json({ success: false, error: { message: "vehicle_id must be a positive integer" } }, 400);
     }
 
-    const ts = nowIso();
-    await c.env.DB.prepare(
-      `INSERT INTO fuel_card_vehicle_binding (fuel_card_id, vehicle_id, status, created_at, updated_at)
-       VALUES (?, ?, 'active', ?, ?)`
-    )
-      .bind(fuelCardId, body.vehicle_id, ts, ts)
-      .run();
+    const result = await bindFuelCardToVehicle(c.env, {
+      fuelCardId,
+      vehicleId,
+      operatorUserid: auth.sub
+    });
+    if (!result.ok) {
+      if (result.reason === "conflict") {
+        return c.json({ success: false, error: { message: bindConflictMessage } }, 409);
+      }
+      const message = result.reason === "card_invalid" ? "所选油卡无效或已停用" : "所选车辆无效或已停用";
+      return c.json({ success: false, error: { message } }, 400);
+    }
 
-    return c.json({ success: true }, 201);
+    if (result.outcome !== "unchanged") {
+      await appendApiAuditLog(c.env, {
+        actor_userid: auth.sub,
+        actor_roles_json: getActorRolesJson(auth.roles),
+        action: "fuel_card_bind_vehicle",
+        target_type: "fuel_card",
+        target_id: String(fuelCardId),
+        detail_json: JSON.stringify({
+          outcome: result.outcome,
+          from_vehicle_id: result.previousVehicleId,
+          to_vehicle_id: vehicleId
+        })
+      });
+    }
+
+    return c.json({
+      success: true,
+      data: { outcome: result.outcome, previous_vehicle_id: result.previousVehicleId }
+    });
+  }
+);
+
+fleetRoutes.post(
+  "/fuel-cards/:id/unbind-vehicle",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const auth = c.get("auth");
+    const fuelCardId = parsePositiveInteger(c.req.param("id"));
+    if (!fuelCardId) {
+      return c.json({ success: false, error: { message: "fuel card id must be a positive integer" } }, 400);
+    }
+
+    const result = await unbindFuelCardFromVehicle(c.env, { fuelCardId, operatorUserid: auth.sub });
+    if (!result.ok) {
+      return result.reason === "conflict"
+        ? c.json({ success: false, error: { message: bindConflictMessage } }, 409)
+        : c.json({ success: false, error: { message: "该油卡当前未绑定车辆" } }, 400);
+    }
+
+    await appendApiAuditLog(c.env, {
+      actor_userid: auth.sub,
+      actor_roles_json: getActorRolesJson(auth.roles),
+      action: "fuel_card_unbind_vehicle",
+      target_type: "fuel_card",
+      target_id: String(fuelCardId),
+      detail_json: JSON.stringify({ from_vehicle_id: result.previousVehicleId })
+    });
+
+    return c.json({ success: true, data: { previous_vehicle_id: result.previousVehicleId } });
+  }
+);
+
+fleetRoutes.get(
+  "/fuel-cards/:id/vehicle-bindings",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const fuelCardId = parsePositiveInteger(c.req.param("id"));
+    if (!fuelCardId) {
+      return c.json({ success: false, error: { message: "fuel card id must be a positive integer" } }, 400);
+    }
+
+    const rows = await listFuelCardVehicleBindings(c.env, fuelCardId);
+    return c.json({ success: true, data: rows });
   }
 );
 

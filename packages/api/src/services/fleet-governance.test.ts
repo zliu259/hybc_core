@@ -441,8 +441,10 @@ class FleetRouteDb {
     private readonly options: {
       application?: Partial<FleetRouteApplicationRow> | null;
       applicationUpdateChanges?: number;
-      fuelCard?: { latest_balance: number; status: string } | null;
-      cardBinding?: boolean;
+      fuelCard?: { latest_balance?: number; status: string } | null;
+      vehicle?: { status: string } | null;
+      // 该卡当前有效挂在哪辆车上；默认未绑定
+      vehicleBinding?: { vehicle_id: number } | null;
     } = {}
   ) {}
 
@@ -451,8 +453,6 @@ class FleetRouteDb {
   }
 
   async first<T>(sql: string, params: unknown[]): Promise<T | null> {
-    void params;
-
     if (this.options.application === null && sql.includes("FROM fuel_quota_application")) {
       return null;
     }
@@ -481,8 +481,16 @@ class FleetRouteDb {
       return { vehicle_mileage_km: 34000 } as T;
     }
 
-    if (sql.includes("FROM fuel_card_user_binding")) {
-      return this.options.cardBinding === false ? null : ({ id: 1 } as T);
+    if (sql.includes("FROM fuel_card_vehicle_binding")) {
+      const binding = this.options.vehicleBinding ?? null;
+      if (!binding) return null;
+      if (sql.includes("vehicle_id = ?") && params[1] !== binding.vehicle_id) return null;
+      return { id: 1, vehicle_id: binding.vehicle_id } as T;
+    }
+
+    if (sql.includes("FROM company_vehicle WHERE id = ?")) {
+      if (this.options.vehicle === null) return null;
+      return { id: params[0], status: "active", ...this.options.vehicle } as T;
     }
 
     if (sql.includes("FROM fuel_card WHERE id = ?")) {
@@ -700,23 +708,84 @@ describe("fleet route process", () => {
   );
 });
 
+const getFleet = (path: string, env: Env) =>
+  createFleetRouteApp().request(
+    path,
+    { method: "GET", headers: { authorization: "Bearer test-token" } },
+    env
+  );
+
+const postFleet = (path: string, body: unknown, env: Env) =>
+  createFleetRouteApp().request(
+    path,
+    {
+      method: "POST",
+      headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+      body: JSON.stringify(body)
+    },
+    env
+  );
+
+const findAuditInsert = (db: FleetRouteDb) =>
+  db.runs.find((call) => call.sql.includes("INSERT INTO api_audit_log"));
+
 describe("fleet route access scoping", () => {
-  it("forces operators to list only their own fuel cards", async () => {
+  it("lets operators list all fuel cards with their bound vehicle", async () => {
     setRouteAuth({ sub: "operator-a", roles: ["operator"] });
     const env = createFleetRouteEnv();
 
-    const response = await createFleetRouteApp().request(
-      "/fleet/fuel-cards?status=active",
-      {
-        method: "GET",
-        headers: { authorization: "Bearer test-token" }
-      },
-      env
-    );
+    const response = await getFleet("/fleet/fuel-cards?status=active", env);
 
     expect(response.status).toBe(200);
-    expect(env.DB.alls[0]?.sql).toContain("bind.bind_userid = ?");
-    expect(env.DB.alls[0]?.params).toContain("operator-a");
+    expect(env.DB.alls[0]?.sql).toContain("fuel_card_vehicle_binding");
+    expect(env.DB.alls[0]?.sql).not.toContain("bind_userid");
+    expect(env.DB.alls[0]?.params).not.toContain("operator-a");
+    expect(env.DB.alls[0]?.params).toEqual(["active"]);
+  });
+
+  it("ignores legacy mine=true and lists all cards", async () => {
+    // finance 账号：旧逻辑下 mine=true 会改成只看本人，两次 SQL 不同
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const plainEnv = createFleetRouteEnv();
+    const legacyEnv = createFleetRouteEnv();
+
+    await getFleet("/fleet/fuel-cards?status=active", plainEnv);
+    const response = await getFleet("/fleet/fuel-cards?mine=true&status=active", legacyEnv);
+
+    expect(response.status).toBe(200);
+    expect(legacyEnv.DB.alls[0]?.sql).toBe(plainEnv.DB.alls[0]?.sql);
+    expect(legacyEnv.DB.alls[0]?.params).toEqual(plainEnv.DB.alls[0]?.params);
+  });
+
+  it("filters fuel cards by vehicle_id", async () => {
+    const env = createFleetRouteEnv();
+
+    const response = await getFleet("/fleet/fuel-cards?status=active&vehicle_id=8", env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.alls[0]?.sql).toContain("vb.vehicle_id = ?");
+    expect(env.DB.alls[0]?.params).toEqual(["active", 8]);
+  });
+
+  it.each(["abc", "0", "-1"])("rejects invalid vehicle_id filter %s", async (value) => {
+    const env = createFleetRouteEnv();
+
+    const response = await getFleet(`/fleet/fuel-cards?vehicle_id=${value}`, env);
+
+    expect(response.status).toBe(400);
+    expect(env.DB.alls).toEqual([]);
+  });
+
+  it("lists vehicles with their bound fuel card count and numbers", async () => {
+    const env = createFleetRouteEnv();
+
+    const response = await getFleet("/fleet/vehicles?status=active", env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.alls[0]?.sql).toContain("fuel_card_count");
+    expect(env.DB.alls[0]?.sql).toContain("fuel_card_nos");
+    expect(env.DB.alls[0]?.sql).toContain("v.status = ?");
+    expect(env.DB.alls[0]?.params).toEqual(["active"]);
   });
 
   it("forces operators to list only their own fuel applications", async () => {
@@ -737,21 +806,126 @@ describe("fleet route access scoping", () => {
     expect(env.DB.alls[0]?.params).toContain("operator-a");
   });
 
-  it("rejects operator balance log access for unbound cards", async () => {
+  it("rejects operator balance log access", async () => {
     setRouteAuth({ sub: "operator-a", roles: ["operator"] });
-    const env = createFleetRouteEnv(new FleetRouteDb({ cardBinding: false }));
+    const env = createFleetRouteEnv();
 
-    const response = await createFleetRouteApp().request(
-      "/fleet/fuel-cards/9/balance-logs",
-      {
-        method: "GET",
-        headers: { authorization: "Bearer test-token" }
-      },
-      env
+    const response = await getFleet("/fleet/fuel-cards/9/balance-logs", env);
+
+    expect(response.status).toBe(403);
+    expect(env.DB.alls).toEqual([]);
+  });
+});
+
+describe("fleet route fuel card vehicle binding", () => {
+  it("binds a card to a vehicle and audits", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv();
+
+    const response = await postFleet("/fleet/fuel-cards/9/bind-vehicle", { vehicle_id: 8 }, env);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      success: true,
+      data: { outcome: "bound", previous_vehicle_id: null }
+    });
+    const audit = findAuditInsert(env.DB);
+    expect(audit?.params.slice(2, 5)).toEqual(["fuel_card_bind_vehicle", "fuel_card", "9"]);
+    expect(JSON.parse(String(audit?.params[6]))).toEqual({
+      outcome: "bound",
+      from_vehicle_id: null,
+      to_vehicle_id: 8
+    });
+  });
+
+  it("does not audit unchanged bind", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicleBinding: { vehicle_id: 8 } }));
+
+    const response = await postFleet("/fleet/fuel-cards/9/bind-vehicle", { vehicle_id: 8 }, env);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { outcome: "unchanged" } });
+    expect(findAuditInsert(env.DB)).toBeUndefined();
+    expect(env.DB.runs.some((call) => call.sql.includes("INSERT INTO fuel_card_vehicle_binding"))).toBe(
+      false
     );
+  });
+
+  it("rejects bind for operator", async () => {
+    setRouteAuth({ sub: "operator-a", roles: ["operator"] });
+    const env = createFleetRouteEnv();
+
+    const response = await postFleet("/fleet/fuel-cards/9/bind-vehicle", { vehicle_id: 8 }, env);
+
+    expect(response.status).toBe(403);
+    expect(env.DB.runs).toEqual([]);
+  });
+
+  it("rejects bind to inactive vehicle", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicle: { status: "inactive" } }));
+
+    const response = await postFleet("/fleet/fuel-cards/9/bind-vehicle", { vehicle_id: 8 }, env);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: "所选车辆无效或已停用" } });
+    expect(env.DB.runs).toEqual([]);
+  });
+
+  it("rejects bind without a positive integer vehicle_id", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv();
+
+    const response = await postFleet("/fleet/fuel-cards/9/bind-vehicle", { vehicle_id: "8" }, env);
+
+    expect(response.status).toBe(400);
+    expect(env.DB.runs).toEqual([]);
+  });
+
+  it("unbinds a bound card and audits", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv(new FleetRouteDb({ vehicleBinding: { vehicle_id: 8 } }));
+
+    const response = await postFleet("/fleet/fuel-cards/9/unbind-vehicle", {}, env);
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({ data: { previous_vehicle_id: 8 } });
+    const audit = findAuditInsert(env.DB);
+    expect(audit?.params.slice(2, 5)).toEqual(["fuel_card_unbind_vehicle", "fuel_card", "9"]);
+    expect(JSON.parse(String(audit?.params[6]))).toEqual({ from_vehicle_id: 8 });
+  });
+
+  it("unbind returns 400 when card is not bound", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv();
+
+    const response = await postFleet("/fleet/fuel-cards/9/unbind-vehicle", {}, env);
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: { message: "该油卡当前未绑定车辆" } });
+    expect(findAuditInsert(env.DB)).toBeUndefined();
+  });
+
+  it("lists a card's vehicle binding history for finance", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv();
+
+    const response = await getFleet("/fleet/fuel-cards/9/vehicle-bindings", env);
+
+    expect(response.status).toBe(200);
+    expect(env.DB.alls[0]?.sql).toContain("FROM fuel_card_vehicle_binding b");
+    expect(env.DB.alls[0]?.params).toEqual([9]);
+  });
+
+  it("bind-user route is gone", async () => {
+    setRouteAuth({ sub: "finance-a", roles: ["finance"] });
+    const env = createFleetRouteEnv();
+
+    const response = await postFleet("/fleet/fuel-cards/9/bind-user", { bind_userid: "someone" }, env);
 
     expect(response.status).toBe(404);
-    expect(env.DB.alls).toEqual([]);
+    expect(env.DB.runs).toEqual([]);
   });
 });
 
