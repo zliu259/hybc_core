@@ -454,13 +454,15 @@ export const listFuelCardVehicleBindings: (env: Env, fuelCardId: number) => Prom
 
 ---
 
-### Task 9: 上线（闸门：owner 确认车卡对应关系）
+### Task 9: 上线
 
 **不能由子代理执行。每个对外动作都要先征得 owner 同意。**
 
-- [ ] **Step 1: 拿到对应关系**
+owner 2026-10-25 决定：上线不写初始绑定，所有卡保持未绑定，办公室 2026-10-26（周一）在档案页手动绑卡。原计划的"拿到对应关系""写入初始绑定""对照核对"三步取消。
 
-  向 owner 确认 spec 第 6 节全部 10 张卡的归属，3、5、6、10 号卡必须确认。同时确认写入审计用的 owner 本人企微 userid。**没有拿到就停在这里。**
+- [ ] **Step 1: 确认上线时间**
+
+  上线后到办公室绑完卡之前，所有车都申请不了。向 owner 确认推送时间，并提醒办公室周一要先绑卡。
 
 - [ ] **Step 2: 合并前全量检查**
 
@@ -483,23 +485,13 @@ export const listFuelCardVehicleBindings: (env: Env, fuelCardId: number) => Prom
 
   征得 owner 同意后，合并到 main 并 push。约 90 秒后访问 `https://api.hybcdg.com/api/v1/system/health`，Expected：`ok=true`。
 
-- [ ] **Step 6: 写入初始绑定**
+- [ ] **Step 6: 上线后只读核对**
 
-  每张卡一条 INSERT 到 `fuel_card_vehicle_binding`：
-  - `status = 'active'`；
-  - `bound_at`、`created_at`、`updated_at` 都用当前 ISO 时间；
-  - `bound_by_userid` 为 owner 的 userid。
+  执行 `SELECT COUNT(*) AS n FROM fuel_card_vehicle_binding`，Expected：`n = 0`（等办公室绑卡）。确认 `GET /api/v1/fleet/fuel-cards` 能返回 10 张卡，且 `vehicle_plate_no` 都为 null。
 
-  每张卡再对应一条 `api_audit_log`：
-  - `action = 'fuel_card_bind_vehicle'`，`target_type = 'fuel_card'`；
-  - `actor_userid` 为 owner 的 userid；
-  - detail 为 `{"outcome":"bound","from_vehicle_id":null,"to_vehicle_id":X,"note":"上线初始化"}`。
+- [ ] **Step 7: 办公室绑卡后复核（2026-10-26 之后）**
 
-  写之前先读一遍 `appendApiAuditLog` 的列，保证和接口写入一致。远程 D1 的复合语句项数限制很低，每张卡分批执行。
-
-- [ ] **Step 7: 核对**
-
-  执行 `SELECT card.id, card.card_no, v.current_plate_no FROM fuel_card card LEFT JOIN fuel_card_vehicle_binding vb ON vb.fuel_card_id = card.id AND vb.status='active' LEFT JOIN company_vehicle v ON v.id = vb.vehicle_id ORDER BY card.id`，逐行对照 owner 确认的表。
+  owner 告知办公室绑完后，只读查询每张卡的当前车辆，并列出仍未绑定的卡和没有卡的车，交给 owner 核对。
 
 - [ ] **Step 8: 小程序上传与提审**
 
