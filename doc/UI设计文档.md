@@ -1488,6 +1488,7 @@
 - 公司实体管理（增强版）：`/admin/system-base/entity` → `packages/web/src/views/entity/index.vue`
 - 财务中心实体资料管理：`/finance/entity/profile` → `packages/web/src/views/entity/index.vue`
 - 油卡额度申请（员工入口）：`/finance/fleet/application` → `packages/web/src/views/finance/fleet/application.vue`
+  - 2026-10 起油卡跟车走：先选车（可搜索，显示车牌 · 车型，无卡车辆标"未配卡"），油卡下拉只列该车名下的启用卡（卡号 + 余额），只有一张时自动选中；所选车辆未配卡时提示"该车辆尚未配置油卡，请联系办公室"并禁用提交。任何员工可为任何启用车辆申请，不再要求本人绑卡。
 - 油卡处理工作台：`/finance/fleet/processing` → `packages/web/src/views/finance/fleet/processing-workbench.vue`
   - 财务/办公室使用，按待处理、待补充、已通过、已拒绝队列处理油卡申请；详情侧栏展示风险摘要、规则命中、车辆与油卡信息，并支持通过、退回补充、拒绝。
 - 油卡申请全量记录：`/finance/fleet/applications-all` → `packages/web/src/views/finance/fleet/applications-list.vue`
@@ -1495,6 +1496,8 @@
 - 车辆油卡档案：`/finance/fleet/vehicles` → `packages/web/src/views/finance/fleet/vehicles.vue`
   - 车辆档案支持按状态筛选（全部/启用中/已停用），可查看停用车辆。
   - 车辆档案操作支持“编辑”与“启用/停用”双向切换；编辑弹窗支持修改车牌号、车型、归属、所属实体、权属人、状态。
+  - 车辆档案新增“油卡”列，显示该车当前挂着的卡号，无卡显示“未配卡”。
+  - 油卡管理（2026-10 起）：下线“绑定员工”；新增“所属车辆”列与“绑定车辆 / 转移 / 解绑”操作。一张卡同一时刻只挂一辆车，卡已在别的车上时转移前二次确认；“查看记录”弹窗在余额流水下方展示车辆绑定记录（车牌、状态、绑定/解绑时间与操作人）。
 - 用油健康总览：`/finance/fleet/dashboard` → `packages/web/src/views/finance/fleet/dashboard.vue`
   - 该总览固定按全公司口径统计，不提供“公司实体”筛选控件，避免统计范围误解与空数据误判。
 - 规则与审计中心：`/finance/fleet/rules-audit` → `packages/web/src/views/finance/fleet/rules-audit.vue`
@@ -1504,7 +1507,8 @@
 
 - 公司实体增强：`/api/v1/entity`、`/api/v1/entity/:id/attachments`、`/api/v1/entity/:id/storage-summary`
 - 车辆与油卡：`/api/v1/fleet/vehicles`、`/api/v1/fleet/fuel-cards`、`/api/v1/fleet/fuel-applications`
-- 油卡绑定与余额变动记录：`/api/v1/fleet/fuel-cards`（含绑定用户聚合字段）、`/api/v1/fleet/fuel-cards/:id/balance-logs`
+- 油卡与车辆绑定：`/api/v1/fleet/fuel-cards?vehicle_id=`（返回当前所属车辆 `vehicle_id` / `vehicle_plate_no`）、`/api/v1/fleet/vehicles`（返回 `fuel_card_count` / `fuel_card_nos`）、`POST /api/v1/fleet/fuel-cards/:id/bind-vehicle`（绑定或转移）、`POST /api/v1/fleet/fuel-cards/:id/unbind-vehicle`、`GET /api/v1/fleet/fuel-cards/:id/vehicle-bindings`（绑定历史）；原 `bind-user` 已下线
+- 余额变动记录：`/api/v1/fleet/fuel-cards/:id/balance-logs`（仅超管/经理/财务）
 - 办公室处理申请：`/api/v1/fleet/fuel-applications/:id/process`
 - 办公室待办数字汇总：`/api/v1/fleet/fuel-applications/pending-summary`
 - 领导总览：`/api/v1/dashboard/vehicle-fuel-overview`
