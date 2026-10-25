@@ -3,6 +3,20 @@ const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const { fileSizeLabel, statusLabel } = require("../../utils/enum-labels");
 const { uploadFileToR2 } = require("../../utils/upload");
 const { wxChooseMediaImage } = require("../../utils/wx");
+const {
+  fuelCardLabel,
+  resolveFuelCardIndex,
+  vehicleLabel
+} = require("../../utils/fuel-card-selection");
+
+// 油卡跟车走：卡列表随所选车辆加载，换车/重置时清空
+const EMPTY_CARD_STATE = {
+  fuelCards: [],
+  fuelCardLabels: ["请选择油卡"],
+  fuelCardIndex: 0,
+  "form.fuel_card_id": "",
+  noCardForVehicle: false
+};
 
 const STATUS_LABELS = {
   pending: "待办公室处理",
@@ -34,6 +48,8 @@ Page({
     fuelCards: [],
     fuelCardLabels: ["请选择油卡"],
     fuelCardIndex: 0,
+    fuelCardsLoading: false,
+    noCardForVehicle: false,
     resubmitApplicationId: "",
     needsInfoCount: 0,
     statusTextMap: STATUS_LABELS,
@@ -55,15 +71,11 @@ Page({
     if (this.data.loading) return;
     this.setData({ loading: true });
     try {
-      const [userNames, vehicleRes, cardRes, myRes] = await Promise.all([
+      const [userNames, vehicleRes, myRes] = await Promise.all([
         loadUserNameMap(),
         request({
           method: "GET",
           path: "/api/v1/fleet/vehicles?status=active"
-        }).catch(() => null),
-        request({
-          method: "GET",
-          path: "/api/v1/fleet/fuel-cards?mine=true&status=active"
         }).catch(() => null),
         request({
           method: "GET",
@@ -73,8 +85,6 @@ Page({
 
       const vehicles =
         vehicleRes && Array.isArray(vehicleRes.data) ? vehicleRes.data : [];
-      const fuelCards =
-        cardRes && Array.isArray(cardRes.data) ? cardRes.data : [];
       const myApplications = (
         myRes && Array.isArray(myRes.data) ? myRes.data : []
       ).map((item) => ({
@@ -87,15 +97,7 @@ Page({
       ).length;
       this.setData({
         vehicles,
-        fuelCards,
-        vehicleLabels: ["请选择车辆"].concat(
-          vehicles.map((item) => item.current_plate_no || `车辆 ${item.id}`)
-        ),
-        fuelCardLabels: ["请选择油卡"].concat(
-          fuelCards.map(
-            (item) => `${item.card_no || item.id} (余额: ${item.latest_balance || 0})`
-          )
-        ),
+        vehicleLabels: ["请选择车辆"].concat(vehicles.map(vehicleLabel)),
         needsInfoCount,
         myApplications
       });
@@ -104,13 +106,49 @@ Page({
     }
   },
 
-  onVehicleChange(e) {
+  // 让在途的按车拉卡请求作废（换车、补充、重置时调用）
+  nextFuelCardSeq() {
+    this._fuelCardSeq = (this._fuelCardSeq || 0) + 1;
+    return this._fuelCardSeq;
+  },
+
+  async onVehicleChange(e) {
     const index = Number(e.detail.value || 0);
     const vehicle = this.data.vehicles[index - 1] || null;
+    const seq = this.nextFuelCardSeq();
     this.setData({
+      ...EMPTY_CARD_STATE,
       vehicleIndex: index,
       "form.vehicle_id": vehicle ? vehicle.id : ""
     });
+    if (!vehicle) return;
+
+    this.setData({ fuelCardsLoading: true });
+    try {
+      const res = await request({
+        method: "GET",
+        path: `/api/v1/fleet/fuel-cards?status=active&vehicle_id=${vehicle.id}`
+      });
+      // 快速换车时丢弃上一辆车晚到的结果
+      if (seq !== this._fuelCardSeq) return;
+      const cards = res && Array.isArray(res.data) ? res.data : [];
+      const cardIndex = resolveFuelCardIndex(cards);
+      this.setData({
+        fuelCards: cards,
+        fuelCardLabels: ["请选择油卡"].concat(cards.map(fuelCardLabel)),
+        fuelCardIndex: cardIndex,
+        "form.fuel_card_id": cardIndex > 0 ? cards[cardIndex - 1].id : "",
+        noCardForVehicle: cards.length === 0
+      });
+    } catch (error) {
+      if (seq !== this._fuelCardSeq) return;
+      wx.showToast({
+        title: (error && error.message) || "油卡加载失败",
+        icon: "none"
+      });
+    } finally {
+      if (seq === this._fuelCardSeq) this.setData({ fuelCardsLoading: false });
+    }
   },
 
   onFuelCardChange(e) {
@@ -189,13 +227,21 @@ Page({
     const vehicleIndex = this.data.vehicles.findIndex(
       (item) => Number(item.id) === Number(target.vehicle_id)
     );
-    const fuelCardIndex = this.data.fuelCards.findIndex(
-      (item) => Number(item.id) === Number(target.fuel_card_id)
-    );
+    // 补充资料时车和卡都锁定为申请单上记录的那张，不按车重新拉卡、不做无卡拦截
+    const recordedCard = {
+      id: target.fuel_card_id,
+      card_no: target.card_no || `油卡 ${target.fuel_card_id}`,
+      latest_balance: target.card_latest_balance
+    };
+    this.nextFuelCardSeq();
     this.setData({
       resubmitApplicationId: String(id),
       vehicleIndex: vehicleIndex >= 0 ? vehicleIndex + 1 : 0,
-      fuelCardIndex: fuelCardIndex >= 0 ? fuelCardIndex + 1 : 0,
+      fuelCards: [recordedCard],
+      fuelCardLabels: ["请选择油卡", fuelCardLabel(recordedCard)],
+      fuelCardIndex: 1,
+      fuelCardsLoading: false,
+      noCardForVehicle: false,
       photoList: [],
       "form.vehicle_id": target.vehicle_id || "",
       "form.fuel_card_id": target.fuel_card_id || "",
@@ -205,10 +251,12 @@ Page({
   },
 
   cancelResubmit() {
+    this.nextFuelCardSeq();
     this.setData({
+      ...EMPTY_CARD_STATE,
+      fuelCardsLoading: false,
       resubmitApplicationId: "",
       vehicleIndex: 0,
-      fuelCardIndex: 0,
       photoList: [],
       form: {
         vehicle_id: "",
@@ -232,6 +280,10 @@ Page({
 
     if (!vehicleId) {
       wx.showToast({ title: "请选择车辆", icon: "none" });
+      return;
+    }
+    if (this.data.noCardForVehicle) {
+      wx.showToast({ title: "该车辆尚未配置油卡，请联系办公室", icon: "none" });
       return;
     }
     if (!fuelCardId) {
@@ -285,10 +337,12 @@ Page({
         title: isResubmit ? "补充已提交" : "申请已提交",
         icon: "success"
       });
+      this.nextFuelCardSeq();
       this.setData({
+        ...EMPTY_CARD_STATE,
+        fuelCardsLoading: false,
         resubmitApplicationId: "",
         vehicleIndex: 0,
-        fuelCardIndex: 0,
         form: {
           vehicle_id: "",
           fuel_card_id: "",

@@ -5,15 +5,16 @@
     </view>
 
     <view class="label required">所用车辆</view>
-    <picker
-      mode="selector"
+    <hy-search-picker
       range="{{vehicleLabels}}"
       value="{{vehicleIndex}}"
-      bindchange="onVehicleChange"
+      title="选择车辆"
+      placeholder="请选择车辆"
+      searchPlaceholder="输入车牌号 / 车型搜索"
+      emptyText="暂无可用车辆"
       disabled="{{!!resubmitApplicationId}}"
-    >
-      <view class="picker-value">{{vehicleLabels[vehicleIndex]}}</view>
-    </picker>
+      bindchange="onVehicleChange"
+    />
 
     <view class="label required">油卡卡号</view>
     <picker
@@ -21,10 +22,11 @@
       range="{{fuelCardLabels}}"
       value="{{fuelCardIndex}}"
       bindchange="onFuelCardChange"
-      disabled="{{!!resubmitApplicationId}}"
+      disabled="{{!!resubmitApplicationId || !form.vehicle_id || noCardForVehicle || fuelCardsLoading}}"
     >
-      <view class="picker-value">{{fuelCardLabels[fuelCardIndex]}}</view>
+      <view class="picker-value">{{fuelCardsLoading ? '油卡加载中...' : (form.vehicle_id ? fuelCardLabels[fuelCardIndex] : '请先选择车辆')}}</view>
     </picker>
+    <view wx:if="{{noCardForVehicle}}" class="notice-warning">该车辆尚未配置油卡，请联系办公室</view>
 
     <view class="label required">申请额度</view>
     <input
@@ -51,7 +53,7 @@
     <view class="label required">现场照片</view>
     <view class="row">
       <t-button class="btn" variant="outline" bindtap="choosePhotos" disabled="{{submitting}}">上传照片</t-button>
-      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{submitting}}" disabled="{{submitting}}">
+      <t-button class="btn btn-primary" theme="primary" bindtap="submit" loading="{{submitting}}" disabled="{{submitting || noCardForVehicle || fuelCardsLoading}}">
         {{resubmitApplicationId ? '提交补充资料' : '提交申请'}}
       </t-button>
     </view>
