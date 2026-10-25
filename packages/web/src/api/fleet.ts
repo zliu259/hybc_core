@@ -25,8 +25,6 @@ export type FuelCard = {
   status: string;
   created_at: string;
   updated_at: string;
-  bind_userids?: string;
-  bind_user_count?: number;
   /** 当前绑定的车辆，未绑定为 null（油卡跟车走） */
   vehicle_id: number | null;
   vehicle_plate_no: string | null;
@@ -277,17 +275,6 @@ export const createFuelCard = (data: {
   return http.request<{ success: boolean; data: { id: number } }>(
     "post",
     "/api/v1/fleet/fuel-cards",
-    { data }
-  );
-};
-
-export const bindFuelCardUser = (
-  fuelCardId: number,
-  data: { bind_userid: string }
-) => {
-  return http.request<{ success: boolean }>(
-    "post",
-    `/api/v1/fleet/fuel-cards/${fuelCardId}/bind-user`,
     { data }
   );
 };
