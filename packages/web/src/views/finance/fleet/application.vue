@@ -12,13 +12,18 @@ import { parsePhotoKeys } from "@/utils/photo-keys";
 import {
   createFuelQuotaApplication,
   listFleetVehicles,
-  listMyFuelCards,
+  listFuelCards,
   listFuelQuotaApplications,
   resubmitFuelQuotaApplication,
   type FuelCard,
   type FleetVehicle,
   type FuelQuotaApplication
 } from "@/api/fleet";
+import {
+  fuelCardOptionLabel,
+  resolveFuelCardSelection,
+  vehicleOptionLabel
+} from "./fuel-card-selection";
 
 defineOptions({ name: "FuelQuotaApplicationPage" });
 
@@ -46,6 +51,37 @@ const needsInfoApplications = computed(() =>
   myApplications.value.filter(item => item.status === "needs_info")
 );
 
+// 油卡跟车走：选车后只列出该车名下的启用卡
+const fuelCardsLoading = ref(false);
+let fuelCardRequestSeq = 0;
+const selectedVehicleHasNoCard = computed(
+  () =>
+    Boolean(form.value.vehicle_id) &&
+    !fuelCardsLoading.value &&
+    fuelCards.value.length === 0
+);
+
+const onVehicleChange = async (vehicleId: number | undefined) => {
+  const requestSeq = ++fuelCardRequestSeq;
+  form.value.fuel_card_id = undefined;
+  fuelCards.value = [];
+  if (!vehicleId) return;
+
+  fuelCardsLoading.value = true;
+  try {
+    const result = await listFuelCards({
+      status: "active",
+      vehicle_id: vehicleId
+    });
+    // 快速换车时丢弃上一辆车晚到的结果
+    if (requestSeq !== fuelCardRequestSeq) return;
+    fuelCards.value = result.data;
+    form.value.fuel_card_id = resolveFuelCardSelection(result.data);
+  } finally {
+    if (requestSeq === fuelCardRequestSeq) fuelCardsLoading.value = false;
+  }
+};
+
 const fuelStatusTagType = (
   value: FuelQuotaApplication["status"]
 ): "success" | "warning" | "danger" | "info" => {
@@ -58,13 +94,11 @@ const fuelStatusTagType = (
 const loadData = async () => {
   loading.value = true;
   try {
-    const [vehicleResult, cardResult, appResult] = await Promise.all([
+    const [vehicleResult, appResult] = await Promise.all([
       listFleetVehicles({ status: "active" }),
-      listMyFuelCards(),
       listFuelQuotaApplications({ mine: true })
     ]);
     vehicles.value = vehicleResult.data;
-    fuelCards.value = cardResult.data;
     myApplications.value = appResult.data;
   } finally {
     loading.value = false;
@@ -137,6 +171,8 @@ const submitApplication = async () => {
     requested_amount: 0,
     vehicle_mileage_km: 0
   };
+  fuelCardRequestSeq += 1;
+  fuelCards.value = [];
   photoKeys.value = [];
   await loadData();
   message("油卡额度申请已提交", { type: "success" });
@@ -214,25 +250,46 @@ onMounted(loadData);
 
     <el-form label-width="110px" style="max-width: 720px">
       <el-form-item label="所用车辆">
-        <el-select v-model="form.vehicle_id" filterable style="width: 100%">
+        <el-select
+          v-model="form.vehicle_id"
+          filterable
+          clearable
+          placeholder="请选择车辆"
+          style="width: 100%"
+          @change="onVehicleChange"
+        >
           <el-option
             v-for="item in vehicles"
             :key="item.id"
-            :label="`${item.current_plate_no} (${item.vehicle_uuid})`"
+            :label="vehicleOptionLabel(item)"
             :value="item.id"
           />
         </el-select>
       </el-form-item>
       <el-form-item label="油卡卡号">
-        <el-select v-model="form.fuel_card_id" filterable style="width: 100%">
+        <el-select
+          v-model="form.fuel_card_id"
+          :disabled="!form.vehicle_id || selectedVehicleHasNoCard"
+          :loading="fuelCardsLoading"
+          :placeholder="form.vehicle_id ? '请选择油卡' : '请先选择车辆'"
+          style="width: 100%"
+        >
           <el-option
             v-for="item in fuelCards"
             :key="item.id"
-            :label="`${item.card_no}（余额: ${item.latest_balance}）`"
+            :label="fuelCardOptionLabel(item)"
             :value="item.id"
           />
         </el-select>
       </el-form-item>
+      <el-alert
+        v-if="selectedVehicleHasNoCard"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin: 0 0 18px 110px; width: auto"
+        title="该车辆尚未配置油卡，请联系办公室"
+      />
       <el-form-item label="申请额度">
         <el-input-number v-model="form.requested_amount" :min="0" :step="100" />
       </el-form-item>
@@ -249,7 +306,12 @@ onMounted(loadData);
           <div class="el-upload__text">上传加油申请照片</div>
         </el-upload>
       </el-form-item>
-      <el-button type="primary" @click="submitApplication">提交申请</el-button>
+      <el-button
+        type="primary"
+        :disabled="selectedVehicleHasNoCard || fuelCardsLoading"
+        @click="submitApplication"
+        >提交申请</el-button
+      >
     </el-form>
 
     <el-divider />

@@ -11,6 +11,10 @@ export type FleetVehicle = {
   status: string;
   created_at: string;
   updated_at: string;
+  /** 该车当前挂着的启用油卡数量 */
+  fuel_card_count?: number;
+  /** 该车当前挂着的启用油卡卡号，逗号分隔；无卡为空串 */
+  fuel_card_nos?: string;
 };
 
 export type FuelCard = {
@@ -23,6 +27,20 @@ export type FuelCard = {
   updated_at: string;
   bind_userids?: string;
   bind_user_count?: number;
+  /** 当前绑定的车辆，未绑定为 null（油卡跟车走） */
+  vehicle_id: number | null;
+  vehicle_plate_no: string | null;
+};
+
+export type FuelCardVehicleBinding = {
+  id: number;
+  vehicle_id: number;
+  vehicle_plate_no: string | null;
+  status: "active" | "inactive";
+  bound_at: string;
+  bound_by_userid: string;
+  unbound_at: string | null;
+  unbound_by_userid: string | null;
 };
 
 export type FuelCardBalanceLog = {
@@ -195,7 +213,10 @@ export const createVehicleMileageLog = (
   );
 };
 
-export const listFuelCards = (params?: { status?: string }) => {
+export const listFuelCards = (params?: {
+  status?: string;
+  vehicle_id?: number;
+}) => {
   return http.request<{ success: boolean; data: FuelCard[] }>(
     "get",
     "/api/v1/fleet/fuel-cards",
@@ -218,14 +239,33 @@ export const listFuelCardBalanceLogs = (
   });
 };
 
-export const listMyFuelCards = () => {
-  return http.request<{ success: boolean; data: FuelCard[] }>(
+export const listFuelCardVehicleBindings = (fuelCardId: number) => {
+  return http.request<{ success: boolean; data: FuelCardVehicleBinding[] }>(
     "get",
-    "/api/v1/fleet/fuel-cards",
-    {
-      params: { mine: true, status: "active" }
-    }
+    `/api/v1/fleet/fuel-cards/${fuelCardId}/vehicle-bindings`
   );
+};
+
+export const bindFuelCardVehicle = (
+  fuelCardId: number,
+  data: { vehicle_id: number }
+) => {
+  return http.request<{
+    success: boolean;
+    data: {
+      outcome: "unchanged" | "bound" | "transferred";
+      previous_vehicle_id: number | null;
+    };
+  }>("post", `/api/v1/fleet/fuel-cards/${fuelCardId}/bind-vehicle`, { data });
+};
+
+export const unbindFuelCardVehicle = (fuelCardId: number) => {
+  return http.request<{
+    success: boolean;
+    data: { previous_vehicle_id: number };
+  }>("post", `/api/v1/fleet/fuel-cards/${fuelCardId}/unbind-vehicle`, {
+    data: {}
+  });
 };
 
 export const createFuelCard = (data: {
