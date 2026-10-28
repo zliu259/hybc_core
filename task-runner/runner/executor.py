@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 from io import BytesIO
 import json
 import logging
@@ -24,6 +25,9 @@ logger = logging.getLogger(__name__)
 OCR_PAGE_CAP = 20
 # 单张图片字节上限：Anthropic 硬限 5MB/图，留余量；超限用 PyMuPDF 重编码压缩
 IMAGE_BYTE_CAP = 4 * 1024 * 1024
+# PDF 页渲染输出长边上限（px）：2026-10-27 一页 1837×2716pt 的扫描件按 2.0x 渲染成
+# 3674×5432 PNG（pixmap ≈57 MiB）把 256 MiB 的 lite 容器 OOM；A4@2.0x 长边 1684 不受影响
+RENDER_MAX_EDGE_PX = 2000
 
 
 class TaskExecutor:
@@ -279,9 +283,14 @@ class TaskExecutor:
                     if merged:
                         attachments = merged
 
-        normalized = self._normalize_attachments(attachments)
-        if not normalized:
+        received = self._normalize_attachments(attachments)
+        if not received:
             return payload
+
+        # 同一文件挂在合同与付款两侧时 file_key 不同（各自上传），服务端按 file_key 合并
+        # 去不掉；按 file_name+file_size 先去重，下载后再按 sha256 兜底，只处理一次
+        normalized, duplicates_skipped = self._dedupe_attachments_by_meta(received)
+        seen_digests: set[str] = set()
 
         enriched = dict(payload)
         text_blocks: list[dict[str, str]] = []
@@ -299,6 +308,12 @@ class TaskExecutor:
             data = self._download_attachment(source)
             if not data:
                 continue
+
+            digest = hashlib.sha256(data).hexdigest()
+            if digest in seen_digests:
+                duplicates_skipped += 1
+                continue
+            seen_digests.add(digest)
 
             if self._is_docx(source, content_type):
                 text = self._extract_docx_text(data)
@@ -335,6 +350,7 @@ class TaskExecutor:
                             )
                         )
                 else:
+                    # 审查/关卡/OCR 的 3 页预览：JPEG + 像素上限（见 RENDER_MAX_EDGE_PX）
                     image_data_urls.extend(self._render_pdf_pages_to_data_urls(data, max_pages=3))
                 continue
 
@@ -373,6 +389,8 @@ class TaskExecutor:
             enriched["_attachment_processing"] = {
                 "text_blocks": len(text_blocks),
                 "image_pages": len(image_data_urls),
+                "attachments_received": len(received),
+                "duplicates_skipped": duplicates_skipped,
             }
             if is_full_text_task and image_data_urls:
                 # 提取转写要吃全部页面：放开 provider 默认 8 张的图片截断
@@ -398,14 +416,49 @@ class TaskExecutor:
                 if not source:
                     continue
                 content_type = item.get("contentType") or item.get("content_type")
+                file_name = item.get("file_name") or item.get("name")
+                file_size = item.get("file_size") or item.get("size")
                 normalized.append(
                     {
                         "source": source,
                         "content_type": content_type.strip() if isinstance(content_type, str) else "",
+                        "file_name": file_name.strip() if isinstance(file_name, str) else "",
+                        "file_size": self._size_key(file_size),
                     }
                 )
 
         return normalized
+
+    @staticmethod
+    def _size_key(value: object) -> str:
+        """file_size 规整为正整数字符串；缺失/非法返回空串（不参与去重）。"""
+        if isinstance(value, bool):
+            return ""
+        if isinstance(value, (int, float)) and value > 0:
+            return str(int(value))
+        if isinstance(value, str) and value.strip().isdigit() and int(value) > 0:
+            return str(int(value))
+        return ""
+
+    @staticmethod
+    def _dedupe_attachments_by_meta(attachments: list[dict[str, str]]) -> tuple[list[dict[str, str]], int]:
+        """按 file_name+file_size 去重（两者都有才算同一文件），返回去重后列表与跳过数。"""
+        kept: list[dict[str, str]] = []
+        seen: set[tuple[str, str]] = set()
+        skipped = 0
+        for attachment in attachments:
+            file_name = attachment.get("file_name", "")
+            file_size = attachment.get("file_size", "")
+            if not file_name or not file_size:
+                kept.append(attachment)
+                continue
+            key = (file_name, file_size)
+            if key in seen:
+                skipped += 1
+                continue
+            seen.add(key)
+            kept.append(attachment)
+        return kept, skipped
 
     def _default_prompt_for_task(
         self, task_type: str, payload: dict[str, object]
@@ -579,19 +632,23 @@ class TaskExecutor:
         data: bytes,
         max_pages: int,
         matrix_scale: float = 2.0,
-        fmt: str = "png",
+        fmt: str = "jpeg",
+        max_edge_px: int = RENDER_MAX_EDGE_PX,
     ) -> list[str]:
+        """按页渲染成 data URL；缩放取 matrix_scale 与"长边 ≤ max_edge_px"中较小者。"""
         try:
             fitz = __import__("fitz")
             document = fitz.open(stream=data, filetype="pdf")
             rendered: list[str] = []
             for page_index in range(min(max_pages, len(document))):
                 page = document[page_index]
-                pixmap = page.get_pixmap(
-                    matrix=fitz.Matrix(matrix_scale, matrix_scale), alpha=False
-                )
+                long_edge_pt = max(page.rect.width, page.rect.height)
+                scale = matrix_scale
+                if long_edge_pt > 0:
+                    scale = min(matrix_scale, max_edge_px / long_edge_pt)
+                pixmap = page.get_pixmap(matrix=fitz.Matrix(scale, scale), alpha=False)
                 if fmt == "jpeg":
-                    # OCR 整本转写场景：JPEG 体积约为 PNG 的 1/4，防请求超限
+                    # JPEG 体积约为 PNG 的 1/4，防请求超限
                     try:
                         image_bytes = pixmap.tobytes("jpeg", jpg_quality=80)
                         mime = "image/jpeg"
