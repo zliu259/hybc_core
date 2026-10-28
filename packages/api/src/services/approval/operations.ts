@@ -8,9 +8,31 @@ import { advanceWorkflow, handleRoundReset, handleResubmit } from "./engine";
 import { executorFactory } from "./executors";
 import { publishEvent } from "../event-bus";
 import { createAiGateHandler } from "../ai-slot";
+import { cancelPendingAiGateTasksForInstance } from "../task-queue";
 import { BIZ_TYPE_TABLE_MAP } from "./biz-table";
 
 const nowIso = () => new Date().toISOString();
+
+/**
+ * 撤回/取消实例时顺带撤回尚未执行的 AI 关卡任务（2026-10-28：撤销审批后关卡任务仍被
+ * runner 执行，结果写回已作废单据）。撤回失败不阻断主流程——实例已经收口，
+ * 任务最差也只是像从前那样多跑一次且结果落空。
+ */
+const withdrawAiGateTasks = async (
+  env: Env,
+  instance: ApprovalInstance,
+  verb: "撤回" | "取消"
+): Promise<void> => {
+  try {
+    await cancelPendingAiGateTasksForInstance(env, {
+      instance_id: instance.id,
+      reason: `审批 ${instance.instance_no} 已${verb}，任务撤回`,
+      source: "approval-operations"
+    });
+  } catch (err) {
+    console.error(`Failed to withdraw AI gate tasks for instance ${instance.id}`, err);
+  }
+};
 
 const WITHDRAW_CANCEL_RESET_BIZ_TYPES = new Set<string>([
   "stock_order",
@@ -507,6 +529,9 @@ export const withdraw = async (
     .bind(now, instanceId)
     .run();
 
+  // 重提交会为新一轮另建关卡任务（handleResubmit），本轮没跑完的直接撤回
+  await withdrawAiGateTasks(env, instance, "撤回");
+
   await resetBizRecordToDraftIfNeeded(env, instance, now);
 
   // Record action
@@ -559,6 +584,8 @@ export const cancel = async (
   )
     .bind(now, now, instanceId)
     .run();
+
+  await withdrawAiGateTasks(env, instance, "取消");
 
   await resetBizRecordToDraftIfNeeded(env, instance, now);
 

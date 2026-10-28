@@ -447,7 +447,9 @@ const aiGateTagType: Record<string, TagType> = {
   running: "warning",
   completed: "success",
   failed: "danger",
-  timeout: "danger"
+  timeout: "danger",
+  // 业务作废/取消时撤回的任务：终态但不是异常
+  cancelled: "info"
 };
 
 type AiReviewRow = {
