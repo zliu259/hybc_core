@@ -274,6 +274,7 @@ onMounted(loadRows);
             <el-option label="completed" value="completed" />
             <el-option label="failed" value="failed" />
             <el-option label="timeout" value="timeout" />
+            <el-option label="cancelled" value="cancelled" />
           </el-select>
           <el-input
             v-model="keyword"

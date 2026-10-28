@@ -18,6 +18,10 @@ import { generateSerial } from "../services/serial";
 import { toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
+import {
+  cancelPendingAiGateTasksForInstance,
+  cancelPendingTasksForBiz
+} from "../services/task-queue";
 import { recentPaymentsQuery } from "../services/recent-payments";
 import {
   abandonIdempotentRequest,
@@ -1647,6 +1651,29 @@ paymentRoutes.post(
       )
         .bind(now, now, pr.approval_instance_id)
         .run();
+    }
+
+    // 作废顺带撤回尚未执行的 AI 任务：付款自身的风控任务 + 其审批实例的 AI 关卡任务
+    // （2026-10-27 事故：作废付款的两类任务仍被节点反复认领，毒丸附件把 runner 打死）。
+    // 撤回失败不阻断作废——此时付款已置 cancelled，回 500 只会让操作者误以为作废没成功；
+    // 任务最差也只是像从前那样多跑一次。
+    try {
+      const reason = `付款申请 ${pr.serial_no} 已作废，任务撤回`;
+      await cancelPendingTasksForBiz(c.env, {
+        biz_type: "payment_request",
+        biz_id: id,
+        reason,
+        source: "payment_request"
+      });
+      if (pr.approval_instance_id) {
+        await cancelPendingAiGateTasksForInstance(c.env, {
+          instance_id: pr.approval_instance_id,
+          reason,
+          source: "payment_request"
+        });
+      }
+    } catch (err) {
+      console.error(`Failed to withdraw AI tasks for voided payment ${id}`, err);
     }
 
     await publishEvent(c.env, "PAYMENT_CANCELLED", "payment_request", {

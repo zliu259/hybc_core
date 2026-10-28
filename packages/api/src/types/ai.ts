@@ -38,7 +38,9 @@ export const taskQueueStatuses = [
   "running",
   "completed",
   "failed",
-  "timeout"
+  "timeout",
+  // 终态：业务作废/取消时撤回尚未执行的任务（services/task-queue.ts cancelPendingTasksForBiz）
+  "cancelled"
 ] as const;
 export type TaskQueueStatus = (typeof taskQueueStatuses)[number];
 

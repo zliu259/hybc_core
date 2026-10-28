@@ -62,7 +62,9 @@ const AI_TASK_STATUS_LABELS = {
   running: "执行中",
   completed: "已完成",
   failed: "失败",
-  timeout: "超时"
+  timeout: "超时",
+  // 业务作废/取消时由服务端撤回，终态但不是异常
+  cancelled: "已撤回"
 };
 
 const AI_TASK_STATUS_THEMES = {
@@ -71,7 +73,8 @@ const AI_TASK_STATUS_THEMES = {
   running: "warning",
   completed: "success",
   failed: "danger",
-  timeout: "danger"
+  timeout: "danger",
+  cancelled: "default"
 };
 
 /** 报销单项票据识别风险（invoice_review_highest_risk），文案与 web 端一致 */
