@@ -825,6 +825,13 @@ export const failTask = async (
     throw new Error(`Task ${taskId} not found`);
   }
 
+  // 只有节点手里的活任务（assigned/running）才进入重试。已被业务作废撤回（cancelled）
+  // 或已被超时扫描收口（timeout→pending 重排）的任务，节点迟到的失败报告不能再改状态——
+  // 否则刚撤回的毒丸任务会被改回 pending 复活（2026-10-27 事故里 1898 正是靠重试一再复活）。
+  if (task.status !== "assigned" && task.status !== "running") {
+    return;
+  }
+
   const newRetryCount = task.retry_count + 1;
   const newStatus = newRetryCount < task.max_retries ? "pending" : "failed";
 

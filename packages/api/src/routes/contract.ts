@@ -14,6 +14,7 @@ import { writeAuditLog } from "../services/audit-log";
 import { generateSerial } from "../services/serial";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
+import { cancelPendingTasksForBiz } from "../services/task-queue";
 import {
   abandonIdempotentRequest,
   beginIdempotentRequest,
@@ -660,6 +661,19 @@ contractRoutes.delete(
     )
       .bind(nowIso(), id)
       .run();
+
+    // 合同没有终止/作废路由，软删即作废：撤回挂在合同上尚未执行的审查任务，别再占 runner。
+    // 本路由不级联审批实例（历史行为），其 AI 关卡任务随实例走，这里不碰。
+    try {
+      await cancelPendingTasksForBiz(c.env, {
+        biz_type: "contract",
+        biz_id: id,
+        reason: "合同已删除，任务撤回",
+        source: "contract"
+      });
+    } catch (err) {
+      console.error(`Failed to withdraw AI tasks for deleted contract ${id}`, err);
+    }
 
     return c.json({ success: true });
   }

@@ -8,7 +8,9 @@ pattern = "runner.hybcdg.com"
 custom_domain = true
 
 [[containers]]
-max_instances = 1
+# 2 而非 1：2026-10-28 ENAM 排程卡在 starting 时，单名额让 DO 永远拿不到容器；
+# 留一个空位可让新 rollout 在别处落地。正常只跑 singleton 一个实例。
+max_instances = 2
 class_name = "RunnerContainer"
 image = "./Dockerfile"
 instance_type = "lite"

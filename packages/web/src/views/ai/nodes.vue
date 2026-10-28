@@ -60,7 +60,8 @@ const taskStatusOptions = [
   "running",
   "completed",
   "failed",
-  "timeout"
+  "timeout",
+  "cancelled"
 ];
 const taskTypeOptions = [
   "contract_review",
