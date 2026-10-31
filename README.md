@@ -507,6 +507,19 @@ python -m runner.main
 
 </details>
 
+<details>
+<summary>大陆同事反馈网页慢 / 想知道流量走的是哪条链路</summary>
+
+自 2026-10-31 起，网页端整站（`web.hybcdg.com`）与网页端 API（`api-relay.hybcdg.com`）都由东京 VM 的 Caddy 直出，分别反代 Pages 源站与 Worker；小程序经同机 `bridge.hybcdg.com` 中继；`api.hybcdg.com` 保持 Cloudflare 直出，作为网页端读请求的自动回退与其它调用方的入口。排障顺序：
+
+1. 让同事打开 `https://web.hybcdg.com/diag`，点「开始测试」后复制结果——三行分别是直连 Cloudflare、api-relay、bridge 的耗时与 `relay_trusted`。
+2. `GET /api/v1/system/health` 的 `relay_trusted` 为 `true` 说明请求经可信中转到达 Worker；监控中心（系统设置 → 服务监控）的 `api_relay_entry` / `web_entry` / `relay_1` 显示三条入口的可达性。
+3. 需要回退：网页镜像 `python3 -I scripts/deploy/cf-dns.py rollback web.hybcdg.com hybc-core.pages.dev`（把 DNS 改回橙云 CNAME，Pages 自定义域名几分钟内重新激活）；API 入口 revert `packages/web/.env.production` 的 `VITE_API_BASE_URL` 并 push `main`；Caddy 站点可用 GitHub var `AZURE_BRIDGE_WEB_DOMAIN=none` / `AZURE_BRIDGE_API_RELAY_DOMAIN=none` 后重跑「Deploy Azure Bridge」关闭。
+
+细节见 `scripts/deploy/README.md` 与 `docs/archive/2026-10-31-*` 两份设计。
+
+</details>
+
 ## 文档导航
 
 | 文档 | 内容 |

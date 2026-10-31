@@ -21,7 +21,7 @@
 
 ### Web前端
 - **Framework**: PureAdmin (Vue 3 + Element Plus + TypeScript)
-- **Deploy**: Cloudflare Pages
+- **Deploy**: Cloudflare Pages 构建；线上域名 web.hybcdg.com 由东京 VM 的 Caddy 同域名镜像直出（反代 Pages 源站，见「注意事项」）
 - **Build**: Vite
 
 ### 小程序

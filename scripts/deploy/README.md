@@ -59,6 +59,16 @@ Web mirror (same public domain, `scripts/deploy/bridge-caddy.sh`):
   `curl --resolve web.hybcdg.com:443:<VM IP> https://web.hybcdg.com/`, then change the `web` DNS record to a
   **DNS-only** A/AAAA pointing at the VM. Roll back by restoring the proxied CNAME to `hybc-core.pages.dev`.
 
+DNS cut-over / rollback helper (`scripts/deploy/cf-dns.py`, stdlib only; reads the Cloudflare API token from
+`~/.hybc/cf-dns-token` — Zone:Read + DNS:Edit on `hybcdg.com`, same value as the GitHub secret — and never prints it):
+
+```bash
+python3 -I scripts/deploy/cf-dns.py verify
+python3 -I scripts/deploy/cf-dns.py show web.hybcdg.com
+python3 -I scripts/deploy/cf-dns.py cutover web.hybcdg.com 13.114.172.128 2406:da14:33e:c700:7141:8509:bd15:77bc
+python3 -I scripts/deploy/cf-dns.py rollback web.hybcdg.com hybc-core.pages.dev
+```
+
 Auto update script on VM:
 
 ```bash
