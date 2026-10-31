@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeApiUrl } from "@/utils/api-url";
 import dayjs from "dayjs";
 import type { UploadFile } from "element-plus";
 import { computed, onMounted, ref } from "vue";
@@ -99,7 +100,7 @@ const openCertFile = (cert: PersonalCertificate) => {
     message("该证书暂无附件可查看", { type: "warning" });
     return;
   }
-  window.open(cert.fileUrl, "_blank", "noopener,noreferrer");
+  window.open(normalizeApiUrl(cert.fileUrl), "_blank", "noopener,noreferrer");
 };
 
 const downloadCertFile = (cert: PersonalCertificate) => {
@@ -108,7 +109,7 @@ const downloadCertFile = (cert: PersonalCertificate) => {
     return;
   }
   const link = document.createElement("a");
-  link.href = cert.fileUrl;
+  link.href = normalizeApiUrl(cert.fileUrl);
   link.download = cert.fileName || `${cert.name}.pdf`;
   document.body.appendChild(link);
   link.click();

@@ -1,17 +1,9 @@
 import { http } from "@/utils/http";
 import { formatToken, getToken } from "@/utils/auth";
+import { normalizeApiUrl } from "@/utils/api-url";
 
-const toAbsoluteApiUrl = (url: string): string => {
-  if (!url) return url;
-  if (/^https?:\/\//i.test(url)) return url;
-
-  const base = import.meta.env.VITE_API_BASE_URL || "";
-  if (!base) return url;
-
-  const normalizedBase = base.replace(/\/$/, "");
-  const normalizedPath = url.startsWith("/") ? url : `/${url}`;
-  return `${normalizedBase}${normalizedPath}`;
-};
+// 相对路径拼基址；后端签发的 https://api.hybcdg.com 绝对地址也归一到当前基址（见 utils/api-url.ts）。
+const toAbsoluteApiUrl = (url: string): string => normalizeApiUrl(url);
 
 export const createUploadSignature = (data: {
   fileName: string;

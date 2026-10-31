@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeApiUrl } from "@/utils/api-url";
 import type { UploadRequestOptions } from "element-plus";
 import QRCode from "qrcode";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
@@ -2410,7 +2411,7 @@ onUnmounted(() => {
               :key="item.file_key"
               class="photo-item"
             >
-              <el-link :href="item.file_url" target="_blank">{{
+              <el-link :href="normalizeApiUrl(item.file_url)" target="_blank">{{
                 item.file_name
               }}</el-link>
               <el-button
