@@ -29,7 +29,19 @@ Default TLS endpoint:
 
 - `BRIDGE_PUBLIC_DOMAIN` (default: `bridge.hybcdg.com`)
 - `BRIDGE_EXTRA_DOMAINS` (optional, comma-separated, e.g. `bridge-hk-2.hybcdg.com,bridge-sg-1.hybcdg.com`)
-- Caddy reverse-proxies `:443` to `127.0.0.1:9001`
+- Caddy reverse-proxies `:443` to `127.0.0.1:9001` (uvicorn relay, miniapp primary entry)
+
+Web API entry (`scripts/deploy/bridge-caddy.sh`, shared by both scripts so the Caddyfile never drifts):
+
+- `API_RELAY_PUBLIC_DOMAIN` (default: `api-relay.hybcdg.com`; set `none` to disable the site) — https only,
+  streamed straight to the Worker, bypassing uvicorn
+- `API_RELAY_UPSTREAM` (default: `api.hybcdg.com`)
+- `RELAY_TRUST_TOKEN` — written to `bridge/.env` (uvicorn relay) and copied into `/etc/caddy/hybc.env`
+  (loaded via systemd drop-in `/etc/systemd/system/caddy.service.d/hybc-env.conf`); Caddy injects it as
+  `X-Relay-Auth` so the Worker trusts the first `X-Forwarded-For` hop as the client IP. Same value as the
+  Worker secret `RELAY_TRUST_TOKEN` (`wrangler secret put RELAY_TRUST_TOKEN --env prod`).
+- `BRIDGE_HOST` defaults to `127.0.0.1` (uvicorn is only reached through Caddy on the same host)
+- Template regression test: `bash scripts/deploy/bridge-caddy.test.sh`
 
 Auto update script on VM:
 
@@ -45,6 +57,10 @@ CI auto deploy workflow:
   - `AZURE_BRIDGE_HOST`
   - `AZURE_BRIDGE_USER`
   - `AZURE_BRIDGE_SSH_KEY`
+  - `AZURE_BRIDGE_PROXY_TOKEN`
+  - `AZURE_BRIDGE_RELAY_TRUST_TOKEN` (trusted-relay token, see above)
+- Optional GitHub variables: `AZURE_BRIDGE_WORKER_API_BASE_URL`, `AZURE_BRIDGE_RELAY_API_TIMEOUT_SECONDS`,
+  `AZURE_BRIDGE_API_RELAY_DOMAIN` (defaults to `api-relay.hybcdg.com`)
 
 ## 1) Azure VM
 

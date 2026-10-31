@@ -27,6 +27,10 @@ upsert_env() {
   fi
 }
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=bridge-caddy.sh
+source "$SCRIPT_DIR/bridge-caddy.sh"
+
 GIT_REPO_URL="${GIT_REPO_URL:-}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/hybc_core}"
@@ -111,6 +115,18 @@ fi
 if [[ -n "${BRIDGE_EXTRA_DOMAINS:-}" ]]; then
   as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_EXTRA_DOMAINS' '${BRIDGE_EXTRA_DOMAINS}'"
 fi
+if [[ -n "${API_RELAY_PUBLIC_DOMAIN:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'API_RELAY_PUBLIC_DOMAIN' '${API_RELAY_PUBLIC_DOMAIN}'"
+fi
+if [[ -n "${API_RELAY_UPSTREAM:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'API_RELAY_UPSTREAM' '${API_RELAY_UPSTREAM}'"
+fi
+if [[ -n "${RELAY_TRUST_TOKEN:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'RELAY_TRUST_TOKEN' '${RELAY_TRUST_TOKEN}'"
+fi
+# uvicorn 只服务同机的 Caddy：默认收到回环地址，显式传 BRIDGE_HOST 可覆盖。
+BRIDGE_HOST_VALUE="${BRIDGE_HOST:-127.0.0.1}"
+as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_HOST' '${BRIDGE_HOST_VALUE}'"
 
 WORKER_API_BASE_URL_VALUE="${WORKER_API_BASE_URL:-https://api.hybcdg.com}"
 RELAY_API_TIMEOUT_SECONDS_VALUE="${RELAY_API_TIMEOUT_SECONDS:-30}"
@@ -127,50 +143,7 @@ as_root systemctl daemon-reload
 as_root systemctl enable "${BRIDGE_SERVICE_NAME}.service"
 as_root systemctl restart "${BRIDGE_SERVICE_NAME}.service"
 
-DOMAIN_VALUE="${BRIDGE_PUBLIC_DOMAIN:-}"
-if [[ -z "$DOMAIN_VALUE" ]]; then
-  DOMAIN_VALUE="$(grep -E '^BRIDGE_PUBLIC_DOMAIN=' "$BRIDGE_ENV_FILE" | tail -n 1 | cut -d '=' -f2-)"
-fi
-
-EXTRA_DOMAINS_VALUE="${BRIDGE_EXTRA_DOMAINS:-}"
-if [[ -z "$EXTRA_DOMAINS_VALUE" ]]; then
-  EXTRA_DOMAINS_VALUE="$(grep -E '^BRIDGE_EXTRA_DOMAINS=' "$BRIDGE_ENV_FILE" | tail -n 1 | cut -d '=' -f2-)"
-fi
-
-DOMAIN_LIST=""
-if [[ -n "$DOMAIN_VALUE" ]]; then
-  DOMAIN_LIST="$DOMAIN_VALUE"
-fi
-if [[ -n "$EXTRA_DOMAINS_VALUE" ]]; then
-  CLEAN_EXTRA="$(printf '%s' "$EXTRA_DOMAINS_VALUE" | tr -d ' ' | tr ';' ',')"
-  if [[ -n "$CLEAN_EXTRA" ]]; then
-    if [[ -n "$DOMAIN_LIST" ]]; then
-      DOMAIN_LIST="$DOMAIN_LIST,$CLEAN_EXTRA"
-    else
-      DOMAIN_LIST="$CLEAN_EXTRA"
-    fi
-  fi
-fi
-
-if command -v caddy >/dev/null 2>&1 && [[ -n "$DOMAIN_LIST" ]]; then
-  as_root tee /etc/caddy/Caddyfile >/dev/null <<EOF
-http://${DOMAIN_LIST} {
-  encode gzip
-  reverse_proxy 127.0.0.1:9001 {
-    header_up X-Forwarded-Proto {scheme}
-  }
-}
-
-https://${DOMAIN_LIST} {
-  encode gzip
-  reverse_proxy 127.0.0.1:9001 {
-    header_up X-Forwarded-Proto {scheme}
-  }
-}
-EOF
-  as_root systemctl enable caddy
-  as_root systemctl restart caddy
-fi
+apply_caddy "$BRIDGE_ENV_FILE"
 
 echo "[bridge-azure] Deployment completed"
 echo "- Service: sudo systemctl status ${BRIDGE_SERVICE_NAME}.service"

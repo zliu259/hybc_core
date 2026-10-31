@@ -8,6 +8,7 @@ on:
       - "bridge/**"
       - "scripts/deploy/bridge-azure-vm.sh"
       - "scripts/deploy/bridge-azure-update.sh"
+      - "scripts/deploy/bridge-caddy.sh"
       - ".github/workflows/deploy-bridge-azure.yml"
 
 jobs:
@@ -23,7 +24,7 @@ jobs:
           host: ${{ secrets.AZURE_BRIDGE_HOST }}
           username: ${{ secrets.AZURE_BRIDGE_USER }}
           key: ${{ secrets.AZURE_BRIDGE_SSH_KEY }}
-          source: "bridge,scripts/deploy/bridge-azure-vm.sh,scripts/deploy/bridge-azure-update.sh"
+          source: "bridge,scripts/deploy/bridge-azure-vm.sh,scripts/deploy/bridge-azure-update.sh,scripts/deploy/bridge-caddy.sh"
           target: "~/hybc_core_ci"
 
       - name: Deploy bridge on Azure VM over SSH
@@ -63,6 +64,7 @@ jobs:
             cp -a "$SOURCE_BRIDGE_DIR" "$DEPLOY_ROOT/bridge"
             cp "$SOURCE_DEPLOY_DIR/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/"
             cp "$SOURCE_DEPLOY_DIR/bridge-azure-update.sh" "$DEPLOY_ROOT/scripts/deploy/"
+            cp "$SOURCE_DEPLOY_DIR/bridge-caddy.sh" "$DEPLOY_ROOT/scripts/deploy/"
             chmod +x "$DEPLOY_ROOT/scripts/deploy/bridge-azure-vm.sh" "$DEPLOY_ROOT/scripts/deploy/bridge-azure-update.sh"
 
             if [ -n "$ENV_BACKUP" ]; then
@@ -71,6 +73,8 @@ jobs:
             fi
 
             export BRIDGE_PROXY_TOKEN="${{ secrets.AZURE_BRIDGE_PROXY_TOKEN }}"
+            export RELAY_TRUST_TOKEN="${{ secrets.AZURE_BRIDGE_RELAY_TRUST_TOKEN }}"
+            export API_RELAY_PUBLIC_DOMAIN="${{ vars.AZURE_BRIDGE_API_RELAY_DOMAIN }}"
             export WORKER_API_BASE_URL="${{ vars.AZURE_BRIDGE_WORKER_API_BASE_URL }}"
             export RELAY_API_TIMEOUT_SECONDS="${{ vars.AZURE_BRIDGE_RELAY_API_TIMEOUT_SECONDS }}"
             : "${WORKER_API_BASE_URL:=https://api.hybcdg.com}"
@@ -91,4 +95,9 @@ jobs:
             sudo journalctl -u hybc-bridge -n 80 --no-pager || true
             if command -v caddy >/dev/null 2>&1; then
               sudo systemctl status caddy --no-pager
+            fi
+            API_RELAY_CHECK_DOMAIN="${API_RELAY_PUBLIC_DOMAIN:-api-relay.hybcdg.com}"
+            if [ "$API_RELAY_CHECK_DOMAIN" != "none" ]; then
+              curl -fsS --max-time 8 "https://${API_RELAY_CHECK_DOMAIN}/api/v1/system/health" \
+                || echo "api-relay not reachable yet (DNS record or certificate pending): https://${API_RELAY_CHECK_DOMAIN}"
             fi
