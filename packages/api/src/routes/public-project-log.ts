@@ -1,3 +1,4 @@
+import { resolveClientIp } from "../utils/client-ip";
 import { Hono } from "hono";
 
 import { enqueueTask } from "../services/task-queue";
@@ -464,11 +465,7 @@ publicProjectLogRoutes.post("/:token/submissions", async (c) => {
   }
 
   const now = nowIso();
-  const clientIp =
-    c.req.header("cf-connecting-ip") ??
-    c.req.header("x-forwarded-for") ??
-    c.req.header("x-real-ip") ??
-    "";
+  const clientIp = resolveClientIp(c.req.raw.headers, c.env) ?? "";
   const ipHash = await hashText(clientIp);
   const result = await c.env.DB.prepare(
     `INSERT INTO external_log_submission
