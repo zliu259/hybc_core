@@ -43,6 +43,22 @@ Web API entry (`scripts/deploy/bridge-caddy.sh`, shared by both scripts so the C
 - `BRIDGE_HOST` defaults to `127.0.0.1` (uvicorn is only reached through Caddy on the same host)
 - Template regression test: `bash scripts/deploy/bridge-caddy.test.sh`
 
+Web mirror (same public domain, `scripts/deploy/bridge-caddy.sh`):
+
+- `WEB_PUBLIC_DOMAIN` (empty or `none` = off; production: `web.hybcdg.com`) — https only; `/api/*` is proxied to the
+  Worker like `api-relay`, everything else to the Pages origin `WEB_STATIC_UPSTREAM` (default `hybc-core.pages.dev`)
+  with `Host` rewritten and `Location` rewritten back to the public domain (Pages issues 308 extension-stripping redirects).
+- Certificates use Cloudflare DNS-01 so they can be issued **before** the DNS record is moved to the VM:
+  `CF_DNS_API_TOKEN` = Cloudflare API token with `Zone:Zone:Read` + `Zone:DNS:Edit` on the zone (GitHub secret
+  `AZURE_BRIDGE_CF_DNS_API_TOKEN`). Without the token the web site is skipped with a warning.
+- The web site needs a Caddy build with `caddy-dns/cloudflare`; `ensure_caddy_cloudflare_dns` downloads it from the
+  official download API and installs it the way the Caddy docs recommend for apt installs (`dpkg-divert` the packaged
+  binary to `/usr/bin/caddy.default`, custom build at `/usr/bin/caddy.custom`, `update-alternatives` → custom), so apt
+  upgrades never swap it back. Runs only when the web site is enabled.
+- Cut-over: enable with GitHub var `AZURE_BRIDGE_WEB_DOMAIN=web.hybcdg.com`, run the workflow, verify with
+  `curl --resolve web.hybcdg.com:443:<VM IP> https://web.hybcdg.com/`, then change the `web` DNS record to a
+  **DNS-only** A/AAAA pointing at the VM. Roll back by restoring the proxied CNAME to `hybc-core.pages.dev`.
+
 Auto update script on VM:
 
 ```bash
@@ -59,8 +75,10 @@ CI auto deploy workflow:
   - `AZURE_BRIDGE_SSH_KEY`
   - `AZURE_BRIDGE_PROXY_TOKEN`
   - `AZURE_BRIDGE_RELAY_TRUST_TOKEN` (trusted-relay token, see above)
+  - `AZURE_BRIDGE_CF_DNS_API_TOKEN` (Cloudflare DNS-01 token for the web mirror, see above)
 - Optional GitHub variables: `AZURE_BRIDGE_WORKER_API_BASE_URL`, `AZURE_BRIDGE_RELAY_API_TIMEOUT_SECONDS`,
-  `AZURE_BRIDGE_API_RELAY_DOMAIN` (defaults to `api-relay.hybcdg.com`)
+  `AZURE_BRIDGE_API_RELAY_DOMAIN` (defaults to `api-relay.hybcdg.com`),
+  `AZURE_BRIDGE_WEB_DOMAIN` (web mirror domain; unset = off), `AZURE_BRIDGE_WEB_UPSTREAM` (defaults to `hybc-core.pages.dev`)
 
 ## 1) Azure VM
 

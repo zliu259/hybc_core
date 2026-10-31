@@ -124,6 +124,15 @@ fi
 if [[ -n "${RELAY_TRUST_TOKEN:-}" ]]; then
   as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'RELAY_TRUST_TOKEN' '${RELAY_TRUST_TOKEN}'"
 fi
+if [[ -n "${WEB_PUBLIC_DOMAIN:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'WEB_PUBLIC_DOMAIN' '${WEB_PUBLIC_DOMAIN}'"
+fi
+if [[ -n "${WEB_STATIC_UPSTREAM:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'WEB_STATIC_UPSTREAM' '${WEB_STATIC_UPSTREAM}'"
+fi
+if [[ -n "${CF_DNS_API_TOKEN:-}" ]]; then
+  as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'CF_DNS_API_TOKEN' '${CF_DNS_API_TOKEN}'"
+fi
 # uvicorn 只服务同机的 Caddy：默认收到回环地址，显式传 BRIDGE_HOST 可覆盖。
 BRIDGE_HOST_VALUE="${BRIDGE_HOST:-127.0.0.1}"
 as_root bash -lc "$(declare -f upsert_env); upsert_env '$BRIDGE_ENV_FILE' 'BRIDGE_HOST' '${BRIDGE_HOST_VALUE}'"
