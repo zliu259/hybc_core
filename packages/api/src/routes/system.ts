@@ -1,3 +1,4 @@
+import { isTrustedRelay } from "../utils/client-ip";
 import { Hono } from "hono";
 
 import { apiKeyMiddleware } from "../middleware/api-key";
@@ -146,7 +147,9 @@ systemRoutes.get("/health", (c) => {
     ok: true,
     service: "api",
     env: c.env.APP_ENV,
-    now: new Date().toISOString()
+    now: new Date().toISOString(),
+    // 请求是否经可信中转（api-relay Caddy / bridge relay）到达：运维核对入口链路用，不含敏感信息。
+    relay_trusted: isTrustedRelay(c.req.raw.headers, c.env)
   });
 });
 
@@ -252,9 +255,13 @@ systemRoutes.get("/ops/status-center", async (c) => {
     return checkRelayStatus(key, url);
   });
 
+  const apiRelayUrl =
+    c.env.API_RELAY_HEALTH_URL || "https://api-relay.hybcdg.com/api/v1/system/health";
   const externalChecks = await Promise.all([
     checkExternalHealth("bridge_service", bridgeUrl),
     checkExternalHealth("runner_service", runnerUrl),
+    // 网页端 API 入口整条链路（DNS → 东京 Caddy → Worker）
+    checkExternalHealth("api_relay_entry", apiRelayUrl),
     ...relayChecks,
   ]);
   items.push(...externalChecks);

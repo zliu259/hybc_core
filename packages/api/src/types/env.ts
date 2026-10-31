@@ -23,6 +23,8 @@ export interface Env {
   BRIDGE_HMAC_SECRET?: string;
   BRIDGE_HEALTH_URL?: string;
   RELAY_STATUS_URLS?: string;
+  /** 网页端 API 入口（api-relay）健康探测地址，监控中心用。 */
+  API_RELAY_HEALTH_URL?: string;
   RUNNER_HEALTH_URL?: string;
   WECHAT_CORPID?: string;
   WECHAT_SECRET?: string;
