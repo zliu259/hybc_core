@@ -32,7 +32,7 @@ HYBC Core 是恒越百川建设集团（顶管施工与技术研发）的业务�
 - **自研审批引擎** —— 顺序签、会签、或签、抄送、自动、AI 关卡六类节点，支持金额阈值路由、退回（发起人 / 上一节点 / 指定节点）、转签、撤回、重新提交，配有可视化流程设计器。
 - **AI 异步辅助、全程留痕** —— 合同审查、付款风险评估、报销查重、日志智能填写、设备推荐等经 AI Slot 抽象层异步执行，不阻塞用户提交，结果统一写入 `ai_audit_log`。AI 关卡只在白名单维度上有拦截权，拦截即退回改单，误判可转人工裁决。
 - **Serverless 全栈** —— API 运行于 Cloudflare Workers，数据落在 D1 / KV / R2，事件经 Queue 解耦，定时任务由 Cron Triggers 驱动；重计算下沉到拉取式 Python 计算节点（节点不开放入站端口）。
-- **面向大陆网络** —— 部署在海外固定出口 IP 上的 bridge 中继，承担企微回调接入、企微 API 出口代理与小程序 API 中继；网页端 API 经同机 Caddy 的 `api-relay.hybcdg.com` 直通 Worker，绕开大陆到 Cloudflare 边缘的慢链路，Worker 凭可信中转头取回真实客户端 IP。
+- **面向大陆网络** —— 部署在海外固定出口 IP 上的 bridge 中继，承担企微回调接入、企微 API 出口代理与小程序 API 中继；网页端 API 经同机 Caddy 的 `api-relay.hybcdg.com` 直通 Worker，网页本身也以同域名 `web.hybcdg.com` 从这台 VM 直出（Caddy 反代 Pages 源站，证书走 Cloudflare DNS-01），整站绕开大陆到 Cloudflare 边缘的慢链路；Worker 凭可信中转头取回真实客户端 IP。
 - **AI 智能体接入** —— `hybc-mcp` 让 Claude 等 MCP 客户端以员工身份查询业务数据；审批类写操作必须由本人在企业微信确认后才真正执行。
 - **推送即发布** —— push 到 `main` 即自动部署 API 与 Web，CI 对每次推送执行类型检查、测试与 lint。
 
@@ -59,7 +59,7 @@ HYBC Core 是恒越百川建设集团（顶管施工与技术研发）的业务�
 
 ```mermaid
 flowchart TB
-    web["Web 管理端<br/>Vue 3 · PureAdmin<br/>Cloudflare Pages"]
+    web["Web 管理端<br/>Vue 3 · PureAdmin<br/>Pages 构建 · 东京 VM 同域名镜像直出"]
     mini["企业微信小程序<br/>原生 · TDesign"]
     agent["AI 智能体<br/>hybc-mcp"]
     wecom["企业微信<br/>OAuth · 消息 · 机器人"]
@@ -424,7 +424,7 @@ python -m runner.main
 | 组件 | 线上地址 | 发布方式 |
 | --- | --- | --- |
 | API（`packages/api`） | `api.hybcdg.com`（Worker `hybc-api-prod`） | push `main` → Workers Builds 自动部署 |
-| Web（`packages/web`） | `web.hybcdg.com`（Pages 项目 `hybc-core`） | push `main` → Pages 自动部署 |
+| Web（`packages/web`） | `web.hybcdg.com`（Pages 项目 `hybc-core` 构建；域名为灰云 A/AAAA 直出东京 VM，Caddy 反代源站 `hybc-core.pages.dev`，证书 Cloudflare DNS-01） | push `main` → Pages 自动部署（VM 镜像实时反代，无需另发）；镜像站点配置随「Deploy Azure Bridge」 |
 | D1 迁移 | `hybcdg-prod-db` | **手动执行**，见下方 |
 | bridge（小程序 API 中继 · 企微回调） | `bridge.hybcdg.com` | `bridge/**` 或 `scripts/deploy/**` 变更 push 到 `main` 后，由 GitHub Actions「Deploy Azure Bridge」经 SSH 部署到东京 VM |
 | api-relay（网页端 API 入口） | `api-relay.hybcdg.com` | 同一台 VM 的 Caddy 站点，流式直通 `api.hybcdg.com`（模板见 `scripts/deploy/bridge-caddy.sh`），随「Deploy Azure Bridge」一起部署；DNS 须为灰云 A/AAAA |

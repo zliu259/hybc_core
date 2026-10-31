@@ -336,3 +336,4 @@ docker-compose logs -f         # 查看日志
 - 有状态资产的properties字段是JSON，按asset_type的property_schema验证
 - 报销信封UUID同时作为二维码内容和识别码
 - 网页端 API 基址是 api-relay.hybcdg.com（东京 VM 的 Caddy 流式直通 api.hybcdg.com），api.hybcdg.com 留作 relay pool 回退节点；Worker 只在请求带 X-Relay-Auth 且等于 secret RELAY_TRUST_TOKEN 时采信 X-Forwarded-For 首跳为客户端 IP，否则用 cf-connecting-ip（utils/client-ip.ts）
+- web.hybcdg.com 的 DNS 是灰云 A/AAAA 直出东京 VM，Caddy 反代 Pages 源站 hybc-core.pages.dev（Pages 仍随 push main 自动构建，自定义域名绑定保留以便回滚）；证书走 Cloudflare DNS-01（GitHub secret AZURE_BRIDGE_CF_DNS_API_TOKEN），站点由 GitHub var AZURE_BRIDGE_WEB_DOMAIN 开关；回滚=把记录改回橙云 CNAME

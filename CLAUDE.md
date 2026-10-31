@@ -169,6 +169,7 @@ Production runs as a Cloudflare Container (`.cf-runner-container/`, `runner.hybc
 - Local: `packages/api/.dev.vars` only. Production: `npx wrangler secret put <NAME> --env prod` only.
 - Never put `JWT_SECRET`, `UPLOAD_SIGNING_SECRET`, `TASK_API_KEY`, `WECHAT_SECRET`, `WECHAT_BRIDGE_TOKEN`, `AGENT_REPLAY_SECRET` or `RELAY_TRUST_TOKEN` in any `vars` section of wrangler.toml (guarded by `packages/api/test/wrangler-prod-env.test.ts`).
 - `RELAY_TRUST_TOKEN` is shared by the Worker secret, `bridge/.env` and the Caddy env file on the Tokyo VM (set via GitHub secret `AZURE_BRIDGE_RELAY_TRUST_TOKEN`); the web front-end's API base is `api-relay.hybcdg.com` (Caddy → `api.hybcdg.com`), with `api.hybcdg.com` kept as the relay-pool fallback.
+- `web.hybcdg.com` is a DNS-only A/AAAA record pointing at the same Tokyo VM: Caddy proxies it to the Pages origin `hybc-core.pages.dev` (Pages still builds on every push to `main`; the Pages custom-domain binding must stay in place for rollback). Its certificate uses Cloudflare DNS-01 with GitHub secret `AZURE_BRIDGE_CF_DNS_API_TOKEN` (Zone:Read + DNS:Edit on `hybcdg.com`); the site is switched on by GitHub var `AZURE_BRIDGE_WEB_DOMAIN`. Rollback = restore the proxied CNAME to `hybc-core.pages.dev`. Template: `scripts/deploy/bridge-caddy.sh`.
 
 ## Documentation
 
