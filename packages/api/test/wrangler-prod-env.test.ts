@@ -180,7 +180,8 @@ const SECRET_ONLY_KEYS = [
   "TASK_API_KEY",
   "WECHAT_SECRET",
   "WECHAT_BRIDGE_TOKEN",
-  "AGENT_REPLAY_SECRET"
+  "AGENT_REPLAY_SECRET",
+  "RELAY_TRUST_TOKEN"
 ] as const;
 
 /** 在任意 vars 段落里以 `KEY = ...` 形式赋值的密钥键(注释行不算)。 */
