@@ -87,4 +87,11 @@ as_root() { "$@"; }
 ( PATH="$fake_bin:$PATH" ensure_caddy_cloudflare_dns ) || fail "ensure_caddy_cloudflare_dns must be a no-op when the module is present"
 rm -rf "$fake_bin"
 
+# apply_caddy 的 validate 必须带环境文件：dns cloudflare 在 provision 时就校验令牌，sudo 下没有 systemd 的
+# EnvironmentFile，{env.CF_DNS_API_TOKEN} 为空会让 validate 失败（2026-10-31 部署实测）。并且先校验临时文件再落盘。
+apply_src="$(declare -f apply_caddy)"
+grep -q -- "--envfile" <<<"$apply_src" || fail "apply_caddy must validate with --envfile so {env.*} placeholders resolve"
+grep -q 'validate' <<<"$apply_src" || fail "apply_caddy must still validate"
+grep -q 'mktemp' <<<"$apply_src" || fail "apply_caddy must validate a temp file before installing it as the live Caddyfile"
+
 echo "bridge-caddy.test.sh: ok"
