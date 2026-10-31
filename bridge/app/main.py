@@ -321,6 +321,8 @@ def _filter_request_headers(headers: Any) -> dict[str, str]:
         "trailer",
         "transfer-encoding",
         "upgrade",
+        # 客户端自带的可信中转令牌一律丢弃，只允许本中继自己注入（见下）。
+        "x-relay-auth",
     }
     safe_headers: dict[str, str] = {}
     for k, v in headers.items():
@@ -333,7 +335,16 @@ def _filter_request_headers(headers: Any) -> dict[str, str]:
     # responds with brotli-compressed payloads.
     safe_headers["Accept-Encoding"] = "identity"
     safe_headers["X-Relay-Source"] = settings.bridge_source
+    # 可信中转令牌：Worker 见到与 RELAY_TRUST_TOKEN 相等的值才采信 X-Forwarded-For 首跳作
+    # 客户端 IP，否则全体经 bridge 的用户会共用 bridge 一个 IP 的限流额度。
+    if _is_usable_relay_token(settings.relay_trust_token):
+        safe_headers["X-Relay-Auth"] = settings.relay_trust_token
     return safe_headers
+
+
+def _is_usable_relay_token(token: str) -> bool:
+    """与 Worker 侧 utils/client-ip.ts 同口径：短于 16 字符或占位值视为未配置。"""
+    return len(token) >= 16 and token != "replace-me"
 
 
 def _append_forwarded_for(existing: str, client_host: str) -> str:
