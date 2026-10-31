@@ -21,7 +21,8 @@ read_env_value() {
   local file="$1"
   local key="$2"
   [[ -f "$file" ]] || return 0
-  grep -E "^${key}=" "$file" | tail -n 1 | cut -d '=' -f2-
+  # grep 对缺键退出 1；调用方都在 set -euo pipefail 下，必须吞掉这个状态码，否则整个部署脚本会在这里中止。
+  { grep -E "^${key}=" "$file" || true; } | tail -n 1 | cut -d '=' -f2-
 }
 
 # 把主域名与逗号/分号分隔的附加域名合成 Caddy 站点头用的逗号列表。
@@ -93,10 +94,27 @@ install_caddy_env() {
   token="$(read_env_value "$env_file" RELAY_TRUST_TOKEN)"
   as_root mkdir -p "$CADDY_DROPIN_DIR"
   printf 'RELAY_TRUST_TOKEN=%s\n' "$token" | as_root tee "$CADDY_ENV_FILE" >/dev/null
-  as_root chown root:caddy "$CADDY_ENV_FILE" 2>/dev/null || true
+  if ! as_root chown root:caddy "$CADDY_ENV_FILE" 2>/dev/null; then
+    echo "[bridge-caddy] warning: chown root:caddy $CADDY_ENV_FILE failed (caddy user missing?)" >&2
+  fi
   as_root chmod 0640 "$CADDY_ENV_FILE"
-  printf '[Service]\nEnvironmentFile=%s\n' "$CADDY_ENV_FILE" | as_root tee "$CADDY_DROPIN_FILE" >/dev/null
+  local caddy_bin
+  caddy_bin="$(command -v caddy)"
+  render_caddy_dropin "$caddy_bin" | as_root tee "$CADDY_DROPIN_FILE" >/dev/null
   as_root systemctl daemon-reload
+}
+
+# render_caddy_dropin CADDY_BIN → stdout：caddy.service 的 drop-in。
+# apt 版单元的 ExecStart 带 --environ，会在每次启动时把完整环境（含 RELAY_TRUST_TOKEN）打进 journal，
+# 并经 workflow 的 systemctl status 进入 CI 日志；这里重置 ExecStart 去掉它。环境文件缺失不致命（- 前缀）。
+render_caddy_dropin() {
+  local caddy_bin="$1"
+  cat <<EOF
+[Service]
+EnvironmentFile=-${CADDY_ENV_FILE}
+ExecStart=
+ExecStart=${caddy_bin} run --config ${CADDYFILE_PATH}
+EOF
 }
 
 # apply_caddy BRIDGE_ENV_FILE：解析域名 → 写环境文件与 drop-in → 渲染并校验 Caddyfile → 重启 caddy。

@@ -204,12 +204,9 @@ class PureHttp {
         if ($error.isCancelRequest) {
           return Promise.reject($error);
         }
-        return PureHttp.retryWithRelay($error)
-          .then((resp: unknown) => {
-            const response = resp as PureHttpResponse;
-            return response.data;
-          })
-          .catch((fallbackError: unknown) => Promise.reject(fallbackError));
+        // 回退重试走的是同一个实例、同一组拦截器，成功分支已经返回 response.data，
+        // 这里不能再取一次 .data，否则调用方拿到的是 body.data 而不是 {success, data}。
+        return PureHttp.retryWithRelay($error);
       }
     );
   }

@@ -37,4 +37,22 @@ grep -q '^https://bridge.hybcdg.com,bridge-hk-2.hybcdg.com {' <<<"$out_multi" ||
 out2="$(render_caddyfile "bridge.hybcdg.com" "" "api.hybcdg.com")"
 grep -q 'api-relay' <<<"$out2" && fail "api-relay site rendered without a domain"
 
+# read_env_value：缺键在 set -euo pipefail 下必须存活并输出空（grep 退出 1 不能传染给调用方）
+tmp_env="$(mktemp)"
+printf 'BRIDGE_PUBLIC_DOMAIN=bridge.hybcdg.com\nBRIDGE_EXTRA_DOMAINS=\n' >"$tmp_env"
+missing_out="$( (set -euo pipefail; v="$(read_env_value "$tmp_env" API_RELAY_PUBLIC_DOMAIN)"; printf '[%s]' "$v") )" \
+  || fail "read_env_value must survive a missing key under set -euo pipefail"
+[[ "$missing_out" == "[]" ]] || fail "missing key must yield an empty value, got $missing_out"
+[[ "$(read_env_value "$tmp_env" BRIDGE_PUBLIC_DOMAIN)" == "bridge.hybcdg.com" ]] || fail "present key must be read"
+[[ -z "$(read_env_value "$tmp_env" BRIDGE_EXTRA_DOMAINS)" ]] || fail "present-but-empty key must yield empty"
+rm -f "$tmp_env"
+
+# systemd drop-in：加载环境文件（缺失不致命），并去掉 apt 版单元 ExecStart 里会把环境打进 journal 的 --environ
+dropin="$(render_caddy_dropin "/usr/bin/caddy")"
+grep -q '^\[Service\]$' <<<"$dropin" || fail "drop-in must start a [Service] section"
+grep -q '^EnvironmentFile=-/etc/caddy/hybc.env$' <<<"$dropin" || fail "drop-in must load the env file non-fatally"
+grep -q '^ExecStart=$' <<<"$dropin" || fail "drop-in must reset ExecStart before overriding it"
+grep -q '^ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile$' <<<"$dropin" || fail "drop-in must override ExecStart"
+grep -q -- '--environ' <<<"$dropin" && fail "drop-in must not keep --environ (prints RELAY_TRUST_TOKEN into journal)"
+
 echo "bridge-caddy.test.sh: ok"

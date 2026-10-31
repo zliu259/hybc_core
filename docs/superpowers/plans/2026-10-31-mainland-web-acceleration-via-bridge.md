@@ -372,8 +372,8 @@ git commit -m "feat(deploy): Caddy 新增 api-relay 站点直通 Worker，令牌
 - [ ] 生成令牌：`openssl rand -hex 32`（64 字符）。
 - [ ] Worker：`cd packages/api && npx wrangler secret put RELAY_TRUST_TOKEN --env prod`。
 - [ ] GitHub：仓库 secret `AZURE_BRIDGE_RELAY_TRUST_TOKEN` 同值。
-- [ ] Cloudflare DNS：`api-relay` A `13.114.172.128`、AAAA 取 `dig +short AAAA bridge.hybcdg.com`，**灰云**。
-- [ ] 手动触发 `Deploy Azure Bridge` workflow（或合并即触发）。远端：`sudo systemctl status caddy`，`sudo caddy validate --config /etc/caddy/Caddyfile`，Caddy 日志出现 `api-relay.hybcdg.com` 证书签发成功。
+- [ ] **先建 DNS 再跑 workflow**（否则 Caddy 会对 `api-relay` 反复做 ACME 验证失败、刷错误日志并消耗 Let's Encrypt 失败配额）：Cloudflare DNS `api-relay` A `13.114.172.128`、AAAA `2406:da14:33e:c700:7141:8509:bd15:77bc`（可用 `dig +short AAAA bridge.hybcdg.com` 复核），**灰云**。若 DNS 暂时建不了，先把 GitHub var `AZURE_BRIDGE_API_RELAY_DOMAIN` 设为 `none` 再跑。
+- [ ] 手动触发 `Deploy Azure Bridge` workflow（或合并即触发）。远端：`sudo systemctl status caddy --lines=0`，`sudo caddy validate --config /etc/caddy/Caddyfile`，Caddy 日志出现 `api-relay.hybcdg.com` 证书签发成功；`sudo journalctl -u caddy -b | grep -c RELAY_TRUST_TOKEN` 期望为 `0`（drop-in 已去掉 `--environ`，令牌不得出现在 journal）。
 - [ ] Lightsail 防火墙：放行 UDP 443；确认 9001 不再对外（`BRIDGE_HOST=127.0.0.1` 已生效：`ss -ltnp | grep 9001`）。
 - [ ] Cloudflare zone：核对 WAF 托管规则 / Bot Fight Mode / zone 级 Rate Limiting 现状；若开启，为 `13.114.172.128` 加放行规则。
 - [ ] 验证：
@@ -381,8 +381,12 @@ git commit -m "feat(deploy): Caddy 新增 api-relay 站点直通 Worker，令牌
   curl -s https://api-relay.hybcdg.com/api/v1/system/health            # ok=true, relay_trusted=true
   curl -s -H 'X-Relay-Auth: bogus' https://api.hybcdg.com/api/v1/system/health   # relay_trusted=false
   curl -s https://bridge.hybcdg.com/api/v1/system/health                # relay_trusted=true（uvicorn 路径）
+  # 两条外部假设的实证：
+  curl -s -H 'X-Relay-Auth: bogus' https://api-relay.hybcdg.com/api/v1/system/health   # 仍 relay_trusted=true（Caddy Set 语义覆盖了客户端自带值）
+  curl -s -H 'X-Forwarded-For: 1.2.3.4' https://api-relay.hybcdg.com/api/v1/system/health   # 之后 Worker 限流 actor_key / 日志里应是真实来源 IP 而非 1.2.3.4（Caddy 对非 trusted_proxies 的 XFF 整体替换）
   ```
   再从 VM 上用 `ab`/`hey` 对 `https://api.hybcdg.com/api/v1/system/health` 并发 50、总量 2000 压一次，确认无 403/429/HTML challenge。
+  上线后到 DNS 建好之前，监控中心的 `api_relay_entry` 会持续 `down`、`relay_1` 新出现，属预期噪音。
 
 ---
 
@@ -587,3 +591,10 @@ git commit -m "docs: 网页端 API 经 api-relay 东京入口上线记录与文�
 - Spec 5.1 → Task 5 + 运维门 A；5.2 → Task 6/7/8；5.3 → Task 1/2/4；5.4 → Task 5；5.5 → 运维门 A；5.6 → Task 3；5.7 → 本地端到端验证节；5.8 → Task 5（Set 替换客户端头）与 Task 4（blocked 集合）；6 影响面各行均有归属；7 分期与「任务顺序与上线门」一致；8 回滚 = revert Task 8 的提交。
 - 类型一致性：`resolveClientIp(headers: Headers, env: Pick<Env,"RELAY_TRUST_TOKEN">)` 在 Task 1/2/3 一致；`normalizeApiUrl(url, base?)` 在 Task 6/8 一致；`shouldFallbackToRelay` 只在 Task 7。
 - Review Focus 五条分别落在 Task 1（1、2）、Task 7（3）、Task 6（4）、Task 3（5）的测试里。
+
+### 终审补记（2026-10-31，独立审阅者发现、已随 Task 1–7 的 PR 修复）
+
+- Task 5 的 Interfaces 没规定 `read_env_value` 对缺键的行为：`grep` 退出 1 在 `set -euo pipefail` 下会把整个部署脚本打死（Critical，修法 `{ grep … || true; }`，已加回归用例）。
+- Task 5 没考虑 apt 版 `caddy.service` 的 `ExecStart` 带 `--environ`：会把 `RELAY_TRUST_TOKEN` 打进 journal 乃至 CI 日志（Important，drop-in 重置 `ExecStart` 去掉它，环境文件改 `EnvironmentFile=-`）。
+- Task 7 的测试矩阵只到 `getRelayCandidates` 与策略函数，没覆盖 `retryWithRelay` 的真实往返：回退重试带的 `X-Relay-Fallback`/`X-Relay-Id` 不在 Worker CORS 允许列表里（预检必拒），且回退成功时响应被双重解包（Important ×2，已加 axios adapter 级集成测试 `utils/http/index.test.ts` 与 `middleware/cors.test.ts`）。
+- Task 6 漏了 `components/PhaseUpload/index.vue` 自己的「查看」链接渲染处（Important，已加组件测试）。

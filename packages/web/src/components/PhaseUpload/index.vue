@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { message } from "@/utils/message";
 import { formatToken, getToken } from "@/utils/auth";
 import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
+import { normalizeApiUrl } from "@/utils/api-url";
 
 type UploadedItem = {
   name: string;
@@ -88,7 +89,10 @@ const removeFile = (key: string) => {
       <el-table-column prop="name" label="文件名" />
       <el-table-column label="访问" width="120">
         <template #default="scope">
-          <el-link :href="scope.row.url" target="_blank" type="primary"
+          <el-link
+            :href="normalizeApiUrl(scope.row.url)"
+            target="_blank"
+            type="primary"
             >查看</el-link
           >
         </template>
