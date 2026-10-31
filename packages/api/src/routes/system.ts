@@ -257,11 +257,14 @@ systemRoutes.get("/ops/status-center", async (c) => {
 
   const apiRelayUrl =
     c.env.API_RELAY_HEALTH_URL || "https://api-relay.hybcdg.com/api/v1/system/health";
+  const webEntryUrl = c.env.WEB_ENTRY_HEALTH_URL || "https://web.hybcdg.com/platform-config.json";
   const externalChecks = await Promise.all([
     checkExternalHealth("bridge_service", bridgeUrl),
     checkExternalHealth("runner_service", runnerUrl),
     // 网页端 API 入口整条链路（DNS → 东京 Caddy → Worker）
     checkExternalHealth("api_relay_entry", apiRelayUrl),
+    // 网页端整站入口（DNS → 东京 Caddy → Pages 源站）
+    checkExternalHealth("web_entry", webEntryUrl),
     ...relayChecks,
   ]);
   items.push(...externalChecks);

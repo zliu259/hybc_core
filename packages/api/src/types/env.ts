@@ -25,6 +25,8 @@ export interface Env {
   RELAY_STATUS_URLS?: string;
   /** 网页端 API 入口（api-relay）健康探测地址，监控中心用。 */
   API_RELAY_HEALTH_URL?: string;
+  /** 网页端整站入口（web.hybcdg.com 经东京 Caddy 反代 Pages）健康探测地址。 */
+  WEB_ENTRY_HEALTH_URL?: string;
   RUNNER_HEALTH_URL?: string;
   WECHAT_CORPID?: string;
   WECHAT_SECRET?: string;
