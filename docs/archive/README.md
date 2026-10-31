@@ -19,6 +19,7 @@
 - 库房与资产系统：`库房系统升级架构设计.md`、`库房与资产任务队列重构方案.md`、`库房与资产任务队列重构实施计划.md`、`库房小程序任务执行接口规划.md`
 - 企业微信智能机器人（工具优先架构）：`企业微信智能机器人工具优先架构设计.md`、`企业微信智能机器人工具优先架构开发计划.md`
 - 大陆访问优化（Worker 主入口 + Azure HK Bridge 兜底）：`大陆访问优化-Worker主入口与AzureHKBridge兜底方案.md`
+- 大陆网页端加速（Web 的 API 经东京 `api-relay.hybcdg.com` Caddy 直通 Worker + Worker 可信中转取真实 IP，2026-10-31 上线）：`2026-10-31-mainland-web-acceleration-via-bridge-design.md`、`2026-10-31-mainland-web-acceleration-via-bridge.md`
 - 部署：`Phase8本地部署与正式部署.md`
 - UI 重设计（早期，已并入 `doc/UI设计文档.md`）：`Re-design UI.md`、`Re-design Miniapp UI.md`
 
