@@ -24,17 +24,17 @@
   "ResponsiveStorageNameSpace": "responsive-",
   "MenuSearchHistory": 6,
   "ApiRelayPool": {
-    "enabled": false,
-    "maxAttempts": 2,
+    "enabled": true,
+    "maxAttempts": 1,
     "nodes": [
       {
-        "id": "relay-hk-1",
-        "baseUrl": "https://bridge.hybcdg.com",
+        "id": "direct-worker",
+        "baseUrl": "https://api.hybcdg.com",
         "priority": 10,
         "enabled": true,
-        "statusPath": "/relay/status",
+        "statusPath": "/api/v1/system/health",
         "supportsWriteFallback": false,
-        "probeTimeoutMs": 1200
+        "probeTimeoutMs": 3000
       }
     ]
   }

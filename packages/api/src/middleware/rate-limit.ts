@@ -1,16 +1,14 @@
 import type { MiddlewareHandler } from "hono";
 
 import type { Env } from "../types/env";
+import { resolveClientIp } from "../utils/client-ip";
 
 const nowIso = () => new Date().toISOString();
 
-const resolveActorKey = (headers: Headers): string => {
-  const forwarded = headers.get("cf-connecting-ip") || headers.get("x-forwarded-for");
-  if (forwarded?.trim()) {
-    return forwarded.split(",")[0]?.trim() || "anonymous";
-  }
-  return headers.get("x-real-ip")?.trim() || "anonymous";
-};
+// 经可信中转（api-relay Caddy / bridge relay）时取 XFF 首跳，否则 cf-connecting-ip：
+// 否则全体经中转的用户会共用中转机一个 IP 的额度（见 utils/client-ip.ts）。
+const resolveActorKey = (headers: Headers, env: Pick<Env, "RELAY_TRUST_TOKEN">): string =>
+  resolveClientIp(headers, env) ?? "anonymous";
 
 export const createRateLimitMiddleware = (options: {
   scope: string;
@@ -18,7 +16,7 @@ export const createRateLimitMiddleware = (options: {
   windowSeconds: number;
 }): MiddlewareHandler<{ Bindings: Env }> => {
   return async (c, next) => {
-    const actorKey = resolveActorKey(c.req.raw.headers);
+    const actorKey = resolveActorKey(c.req.raw.headers, c.env);
     const windowKey = String(Math.floor(Date.now() / 1000 / options.windowSeconds));
     const now = nowIso();
 

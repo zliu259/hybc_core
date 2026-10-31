@@ -1,0 +1,366 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>HYBC 网络诊断</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --fg: #1f2329;
+        --muted: #6b7280;
+        --bg: #ffffff;
+        --card: #f6f7f9;
+        --line: #e5e7eb;
+        --ok: #1a7f37;
+        --bad: #b42318;
+        --accent: #409eff;
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --fg: #e6e6e6;
+          --muted: #9ca3af;
+          --bg: #121417;
+          --card: #1b1f24;
+          --line: #2d333b;
+          --ok: #4ade80;
+          --bad: #f87171;
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 24px 16px 48px;
+        font:
+          15px/1.6 -apple-system,
+          "PingFang SC",
+          "Microsoft YaHei",
+          system-ui,
+          sans-serif;
+        color: var(--fg);
+        background: var(--bg);
+      }
+      main {
+        max-width: 880px;
+        margin: 0 auto;
+      }
+      h1 {
+        font-size: 22px;
+        margin: 0 0 4px;
+      }
+      p.lead {
+        margin: 0 0 16px;
+        color: var(--muted);
+      }
+      .bar {
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+        align-items: center;
+        margin-bottom: 16px;
+      }
+      button {
+        font: inherit;
+        padding: 8px 16px;
+        border-radius: 8px;
+        border: 1px solid var(--line);
+        background: var(--card);
+        color: var(--fg);
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--accent);
+        border-color: var(--accent);
+        color: #fff;
+      }
+      button:disabled {
+        opacity: 0.6;
+        cursor: progress;
+      }
+      .status {
+        color: var(--muted);
+        font-size: 13px;
+      }
+      .table-wrap {
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+      }
+      table {
+        border-collapse: collapse;
+        width: 100%;
+        min-width: 640px;
+        background: var(--card);
+      }
+      th,
+      td {
+        text-align: left;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--line);
+        white-space: nowrap;
+      }
+      th {
+        font-weight: 600;
+        color: var(--muted);
+        font-size: 13px;
+      }
+      tr:last-child td {
+        border-bottom: 0;
+      }
+      td.num {
+        font-variant-numeric: tabular-nums;
+      }
+      .ok {
+        color: var(--ok);
+      }
+      .bad {
+        color: var(--bad);
+      }
+      .meta {
+        margin-top: 14px;
+        font-size: 13px;
+        color: var(--muted);
+        word-break: break-all;
+      }
+      pre {
+        display: none;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>HYBC 网络诊断</h1>
+      <p class="lead">
+        对三个 API 入口各发 5
+        次健康检查，比较从你当前网络出发的耗时。跑完后点「复制结果」，把文本发给管理员。
+      </p>
+      <div class="bar">
+        <button id="run" class="primary" type="button">开始测试</button>
+        <button id="copy" type="button" disabled>复制结果</button>
+        <span id="status" class="status">尚未开始</span>
+      </div>
+      <div class="table-wrap">
+        <table id="table">
+          <thead>
+            <tr>
+              <th>入口</th>
+              <th>说明</th>
+              <th>成功</th>
+              <th>最小 (ms)</th>
+              <th>中位 (ms)</th>
+              <th>最大 (ms)</th>
+              <th>relay_trusted</th>
+            </tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div id="meta" class="meta"></div>
+      <pre id="report"></pre>
+    </main>
+    <script>
+      (function () {
+        var ROUNDS = 5;
+        var TARGETS = [
+          {
+            key: "direct",
+            label: "api.hybcdg.com",
+            note: "直连 Cloudflare 边缘",
+            url: "https://api.hybcdg.com/api/v1/system/health"
+          },
+          {
+            key: "relay",
+            label: "api-relay.hybcdg.com",
+            note: "东京 Caddy 直通 Worker（网页端新入口）",
+            url: "https://api-relay.hybcdg.com/api/v1/system/health"
+          },
+          {
+            key: "bridge",
+            label: "bridge.hybcdg.com",
+            note: "东京 uvicorn 中继（小程序入口）",
+            url: "https://bridge.hybcdg.com/api/v1/system/health"
+          }
+        ];
+
+        var runBtn = document.getElementById("run");
+        var copyBtn = document.getElementById("copy");
+        var statusEl = document.getElementById("status");
+        var rowsEl = document.getElementById("rows");
+        var metaEl = document.getElementById("meta");
+        var reportEl = document.getElementById("report");
+
+        function median(values) {
+          if (!values.length) return null;
+          var sorted = values.slice().sort(function (a, b) {
+            return a - b;
+          });
+          var mid = Math.floor(sorted.length / 2);
+          return sorted.length % 2
+            ? sorted[mid]
+            : (sorted[mid - 1] + sorted[mid]) / 2;
+        }
+
+        function fmt(value) {
+          return value === null || value === undefined
+            ? "-"
+            : String(Math.round(value));
+        }
+
+        async function probeOnce(url) {
+          var started = performance.now();
+          var controller =
+            typeof AbortController === "function"
+              ? new AbortController()
+              : null;
+          var timer = controller
+            ? setTimeout(function () {
+                controller.abort();
+              }, 10000)
+            : null;
+          try {
+            var resp = await fetch(url + "?t=" + Date.now(), {
+              cache: "no-store",
+              signal: controller ? controller.signal : undefined
+            });
+            var body = null;
+            try {
+              body = await resp.json();
+            } catch (_) {
+              body = null;
+            }
+            return {
+              ok: resp.ok && !!(body && body.ok),
+              ms: performance.now() - started,
+              relayTrusted:
+                body && typeof body.relay_trusted === "boolean"
+                  ? body.relay_trusted
+                  : null
+            };
+          } catch (_) {
+            return {
+              ok: false,
+              ms: performance.now() - started,
+              relayTrusted: null
+            };
+          } finally {
+            if (timer) clearTimeout(timer);
+          }
+        }
+
+        async function probeTarget(target) {
+          var times = [];
+          var okCount = 0;
+          var relayTrusted = null;
+          for (var i = 0; i < ROUNDS; i += 1) {
+            var r = await probeOnce(target.url);
+            if (r.ok) {
+              okCount += 1;
+              times.push(r.ms);
+              if (r.relayTrusted !== null) relayTrusted = r.relayTrusted;
+            }
+          }
+          return {
+            target: target,
+            okCount: okCount,
+            min: times.length ? Math.min.apply(null, times) : null,
+            med: median(times),
+            max: times.length ? Math.max.apply(null, times) : null,
+            relayTrusted: relayTrusted
+          };
+        }
+
+        function render(results) {
+          rowsEl.innerHTML = "";
+          results.forEach(function (r) {
+            var tr = document.createElement("tr");
+            var cells = [
+              r.target.label,
+              r.target.note,
+              r.okCount + "/" + ROUNDS,
+              fmt(r.min),
+              fmt(r.med),
+              fmt(r.max),
+              r.relayTrusted === null ? "-" : r.relayTrusted ? "true" : "false"
+            ];
+            cells.forEach(function (text, index) {
+              var td = document.createElement("td");
+              td.textContent = text;
+              if (index >= 2 && index <= 5) td.className = "num";
+              if (index === 2)
+                td.className += r.okCount === ROUNDS ? " ok" : " bad";
+              tr.appendChild(td);
+            });
+            rowsEl.appendChild(tr);
+          });
+        }
+
+        function buildReport(results) {
+          var lines = [];
+          lines.push("HYBC 网络诊断 " + new Date().toISOString());
+          lines.push("页面: " + location.href);
+          lines.push("UA: " + navigator.userAgent);
+          lines.push("");
+          lines.push("入口\t成功\t最小ms\t中位ms\t最大ms\trelay_trusted");
+          results.forEach(function (r) {
+            lines.push(
+              [
+                r.target.label,
+                r.okCount + "/" + ROUNDS,
+                fmt(r.min),
+                fmt(r.med),
+                fmt(r.max),
+                r.relayTrusted === null ? "-" : String(r.relayTrusted)
+              ].join("\t")
+            );
+          });
+          return lines.join("\n");
+        }
+
+        async function run() {
+          runBtn.disabled = true;
+          copyBtn.disabled = true;
+          statusEl.textContent = "测试中，约需 10～30 秒…";
+          var results = [];
+          for (var i = 0; i < TARGETS.length; i += 1) {
+            statusEl.textContent =
+              "测试 " +
+              TARGETS[i].label +
+              "（" +
+              (i + 1) +
+              "/" +
+              TARGETS.length +
+              "）…";
+            results.push(await probeTarget(TARGETS[i]));
+            render(results);
+          }
+          reportEl.textContent = buildReport(results);
+          metaEl.textContent =
+            "完成于 " +
+            new Date().toLocaleString() +
+            " · " +
+            navigator.userAgent;
+          statusEl.textContent = "测试完成";
+          runBtn.disabled = false;
+          copyBtn.disabled = false;
+        }
+
+        async function copyReport() {
+          var text = reportEl.textContent || "";
+          if (!text) return;
+          try {
+            await navigator.clipboard.writeText(text);
+            statusEl.textContent = "已复制到剪贴板";
+          } catch (_) {
+            window.prompt("复制下面的文本：", text);
+          }
+        }
+
+        runBtn.addEventListener("click", run);
+        copyBtn.addEventListener("click", copyReport);
+      })();
+    </script>
+  </body>
+</html>

@@ -1,3 +1,4 @@
+import { resolveClientIp } from "../utils/client-ip";
 import { Hono } from "hono";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
@@ -75,12 +76,10 @@ const badRequest = (message: string) => {
   };
 };
 
-const getRequestMeta = (c: {
-  req: { header: (key: string) => string | undefined };
-}) => {
+const getRequestMeta = (c: { req: { raw: Request }; env: Env }) => {
   return {
-    ip: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
-    userAgent: c.req.header("user-agent")
+    ip: resolveClientIp(c.req.raw.headers, c.env),
+    userAgent: c.req.raw.headers.get("user-agent") ?? undefined
   };
 };
 
@@ -700,8 +699,7 @@ passkeyRoutes.delete("/credentials/:credentialId", async (c) => {
     action: "credential_revoke",
     success: changed,
     detail: { changed },
-    ip: c.req.header("cf-connecting-ip") ?? c.req.header("x-forwarded-for"),
-    userAgent: c.req.header("user-agent")
+    ...getRequestMeta(c)
   });
 
   if (!changed) {

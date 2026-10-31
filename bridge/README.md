@@ -84,6 +84,8 @@ uvicorn app.main:app --host 0.0.0.0 --port 9001
   - Forwards request to `${WORKER_API_BASE_URL}/api/{path}` with query string preserved
   - Keeps auth and request headers (except hop-by-hop unsafe headers)
   - Rejects early with `503` when relay is overloaded (`Retry-After` included)
+  - Drops any client-supplied `X-Relay-Auth` and injects `X-Relay-Auth: <RELAY_TRUST_TOKEN>` (when configured),
+    so the Worker trusts the first hop of `X-Forwarded-For` as the real client IP for rate limiting/audit
   - Intended for Worker primary -> relay fallback path, without changing business API logic
 
 ## Bridge -> Worker Signing Contract
@@ -110,6 +112,7 @@ Worker verifies:
 Optional:
 
 - `BRIDGE_SOURCE`
+- `RELAY_TRUST_TOKEN` (shared with Worker secret `RELAY_TRUST_TOKEN` and the Caddy env file on the VM)
 - `WORKER_TIMEOUT_SECONDS`
 - `WORKER_MAX_RETRIES`
 - `WORKER_API_BASE_URL`

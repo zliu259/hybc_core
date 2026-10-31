@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeApiUrl } from "@/utils/api-url";
 import type { UploadRequestOptions } from "element-plus";
 import { computed, onMounted, ref, watch } from "vue";
 import { message } from "@/utils/message";
@@ -194,7 +195,10 @@ onMounted(loadData);
             <el-button link type="primary" @click="openDrawer(scope.row)"
               >详情</el-button
             >
-            <el-link :href="scope.row.file_url" target="_blank" type="primary"
+            <el-link
+              :href="normalizeApiUrl(scope.row.file_url)"
+              target="_blank"
+              type="primary"
               >查看</el-link
             >
             <el-popconfirm

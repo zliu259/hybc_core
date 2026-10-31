@@ -17,6 +17,7 @@ import {
   getRelayCandidates,
   markRelayFailure
 } from "./relay-pool";
+import { shouldFallbackToRelay } from "./fallback-policy";
 
 // 相关配置请参考：www.axios-js.com/zh-cn/docs/#axios-request-config-1
 const defaultConfig: AxiosRequestConfig = {
@@ -52,22 +53,12 @@ class PureHttp {
   /** 保存当前`Axios`实例对象 */
   private static axiosInstance: AxiosInstance = Axios.create(defaultConfig);
 
-  private static isNetworkFallbackError(error: PureHttpError): boolean {
-    if (error.response) return false;
-    const code = String(error.code || "");
-    return (
-      code === "ECONNABORTED" ||
-      code === "ERR_NETWORK" ||
-      code === "ETIMEDOUT" ||
-      code === "ERR_CONNECTION_ABORTED"
-    );
-  }
-
   private static async retryWithRelay(error: PureHttpError): Promise<unknown> {
     const sourceConfig = error.config as PureHttpRequestConfig | undefined;
     if (!sourceConfig) throw error;
     if (sourceConfig.__relayFallbackTried) throw error;
-    if (!PureHttp.isNetworkFallbackError(error)) throw error;
+    // 网络错误或主入口 502/503/504 才回退；候选与写请求限制见 relay-pool
+    if (!shouldFallbackToRelay(error)) throw error;
 
     const baseURL =
       (typeof sourceConfig.baseURL === "string" && sourceConfig.baseURL) ||
@@ -213,12 +204,9 @@ class PureHttp {
         if ($error.isCancelRequest) {
           return Promise.reject($error);
         }
-        return PureHttp.retryWithRelay($error)
-          .then((resp: unknown) => {
-            const response = resp as PureHttpResponse;
-            return response.data;
-          })
-          .catch((fallbackError: unknown) => Promise.reject(fallbackError));
+        // 回退重试走的是同一个实例、同一组拦截器，成功分支已经返回 response.data，
+        // 这里不能再取一次 .data，否则调用方拿到的是 body.data 而不是 {success, data}。
+        return PureHttp.retryWithRelay($error);
       }
     );
   }

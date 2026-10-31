@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { normalizeApiUrl } from "@/utils/api-url";
 import type { UploadRequestOptions } from "element-plus";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
@@ -1447,9 +1448,11 @@ onUnmounted(() => {
                   :key="item.file_key"
                   class="photo-item"
                 >
-                  <el-link :href="item.file_url" target="_blank">{{
-                    item.file_name
-                  }}</el-link>
+                  <el-link
+                    :href="normalizeApiUrl(item.file_url)"
+                    target="_blank"
+                    >{{ item.file_name }}</el-link
+                  >
                   <el-button
                     link
                     type="danger"

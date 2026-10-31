@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+as_root() {
+  if [[ "${EUID}" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+# shellcheck source=bridge-caddy.sh
+source "$SCRIPT_DIR/bridge-caddy.sh"
+
 DEPLOY_ROOT="${DEPLOY_ROOT:-/opt/hybc_core}"
 GIT_BRANCH="${GIT_BRANCH:-main}"
 SERVICE_NAME="${SERVICE_NAME:-hybc-bridge}"
@@ -37,6 +48,16 @@ upsert_env "$DEPLOY_ROOT/bridge/.env" "RELAY_API_TIMEOUT_SECONDS" "$RELAY_API_TI
 if [[ -n "${BRIDGE_PROXY_TOKEN:-}" ]]; then
   upsert_env "$DEPLOY_ROOT/bridge/.env" "BRIDGE_PROXY_TOKEN" "$BRIDGE_PROXY_TOKEN"
 fi
+if [[ -n "${RELAY_TRUST_TOKEN:-}" ]]; then
+  upsert_env "$DEPLOY_ROOT/bridge/.env" "RELAY_TRUST_TOKEN" "$RELAY_TRUST_TOKEN"
+fi
+if [[ -n "${API_RELAY_PUBLIC_DOMAIN:-}" ]]; then
+  upsert_env "$DEPLOY_ROOT/bridge/.env" "API_RELAY_PUBLIC_DOMAIN" "$API_RELAY_PUBLIC_DOMAIN"
+fi
+if [[ -n "${API_RELAY_UPSTREAM:-}" ]]; then
+  upsert_env "$DEPLOY_ROOT/bridge/.env" "API_RELAY_UPSTREAM" "$API_RELAY_UPSTREAM"
+fi
+upsert_env "$DEPLOY_ROOT/bridge/.env" "BRIDGE_HOST" "${BRIDGE_HOST:-127.0.0.1}"
 
 if [[ ! -d "$DEPLOY_ROOT/bridge/.venv" ]]; then
   python3 -m venv "$DEPLOY_ROOT/bridge/.venv"
@@ -44,43 +65,7 @@ fi
 
 "$DEPLOY_ROOT/bridge/.venv/bin/pip" install -r "$DEPLOY_ROOT/bridge/requirements.txt"
 
-if command -v caddy >/dev/null 2>&1; then
-  DOMAIN_VALUE="$(grep -E '^BRIDGE_PUBLIC_DOMAIN=' "$DEPLOY_ROOT/bridge/.env" | tail -n 1 | cut -d '=' -f2-)"
-  EXTRA_DOMAINS_VALUE="$(grep -E '^BRIDGE_EXTRA_DOMAINS=' "$DEPLOY_ROOT/bridge/.env" | tail -n 1 | cut -d '=' -f2-)"
-  DOMAIN_LIST=""
-  if [[ -n "$DOMAIN_VALUE" ]]; then
-    DOMAIN_LIST="$DOMAIN_VALUE"
-  fi
-  if [[ -n "$EXTRA_DOMAINS_VALUE" ]]; then
-    CLEAN_EXTRA="$(printf '%s' "$EXTRA_DOMAINS_VALUE" | tr -d ' ' | tr ';' ',')"
-    if [[ -n "$CLEAN_EXTRA" ]]; then
-      if [[ -n "$DOMAIN_LIST" ]]; then
-        DOMAIN_LIST="$DOMAIN_LIST,$CLEAN_EXTRA"
-      else
-        DOMAIN_LIST="$CLEAN_EXTRA"
-      fi
-    fi
-  fi
-  if [[ -n "$DOMAIN_LIST" ]]; then
-    sudo tee /etc/caddy/Caddyfile >/dev/null <<EOF
-http://${DOMAIN_LIST} {
-  encode gzip
-  reverse_proxy 127.0.0.1:9001 {
-    header_up X-Forwarded-Proto {scheme}
-  }
-}
-
-https://${DOMAIN_LIST} {
-  encode gzip
-  reverse_proxy 127.0.0.1:9001 {
-    header_up X-Forwarded-Proto {scheme}
-  }
-}
-EOF
-    sudo systemctl enable caddy
-    sudo systemctl restart caddy
-  fi
-fi
+apply_caddy "$DEPLOY_ROOT/bridge/.env"
 
 sudo cp "$DEPLOY_ROOT/bridge/systemd/hybc-bridge.service" "/etc/systemd/system/${SERVICE_NAME}.service"
 sudo systemctl daemon-reload

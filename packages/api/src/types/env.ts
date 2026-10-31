@@ -18,9 +18,13 @@ export interface Env {
   AGENT_REPLAY_SECRET: string;
   UPLOAD_SIGNING_SECRET: string;
   TASK_API_KEY: string;
+  /** 可信中转（api-relay Caddy / bridge relay）在 X-Relay-Auth 头里出示的共享令牌；只走 secret store。 */
+  RELAY_TRUST_TOKEN?: string;
   BRIDGE_HMAC_SECRET?: string;
   BRIDGE_HEALTH_URL?: string;
   RELAY_STATUS_URLS?: string;
+  /** 网页端 API 入口（api-relay）健康探测地址，监控中心用。 */
+  API_RELAY_HEALTH_URL?: string;
   RUNNER_HEALTH_URL?: string;
   WECHAT_CORPID?: string;
   WECHAT_SECRET?: string;

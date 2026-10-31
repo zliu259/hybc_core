@@ -35,6 +35,8 @@ class Settings:
     bridge_hmac_secret: str = os.getenv("BRIDGE_HMAC_SECRET", "")
     bridge_source: str = os.getenv("BRIDGE_SOURCE", "azure_wecom_bridge")
     bridge_proxy_token: str = os.getenv("BRIDGE_PROXY_TOKEN", "")
+    # 可信中转令牌：/api/* 中继转发时以 X-Relay-Auth 出示，Worker 据此采信 XFF 首跳作客户端 IP。
+    relay_trust_token: str = os.getenv("RELAY_TRUST_TOKEN", "")
     worker_timeout_seconds: int = _int_env("WORKER_TIMEOUT_SECONDS", 10)
     worker_max_retries: int = _int_env("WORKER_MAX_RETRIES", 3)
     worker_api_base_url: str = os.getenv("WORKER_API_BASE_URL", "https://api.hybcdg.com")
