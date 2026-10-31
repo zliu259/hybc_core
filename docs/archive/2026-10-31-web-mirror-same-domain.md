@@ -8,7 +8,7 @@
 
 **Tech Stack:** bash · Caddy 2（caddy-dns/cloudflare）· GitHub Actions · Hono/Workers
 
-**Spec:** `docs/superpowers/specs/2026-10-31-web-mirror-same-domain-design.md`
+**Spec:** `docs/archive/2026-10-31-web-mirror-same-domain-design.md`
 
 ## Global Constraints
 
