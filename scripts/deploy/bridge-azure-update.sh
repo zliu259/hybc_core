@@ -57,6 +57,15 @@ fi
 if [[ -n "${API_RELAY_UPSTREAM:-}" ]]; then
   upsert_env "$DEPLOY_ROOT/bridge/.env" "API_RELAY_UPSTREAM" "$API_RELAY_UPSTREAM"
 fi
+if [[ -n "${WEB_PUBLIC_DOMAIN:-}" ]]; then
+  upsert_env "$DEPLOY_ROOT/bridge/.env" "WEB_PUBLIC_DOMAIN" "$WEB_PUBLIC_DOMAIN"
+fi
+if [[ -n "${WEB_STATIC_UPSTREAM:-}" ]]; then
+  upsert_env "$DEPLOY_ROOT/bridge/.env" "WEB_STATIC_UPSTREAM" "$WEB_STATIC_UPSTREAM"
+fi
+if [[ -n "${CF_DNS_API_TOKEN:-}" ]]; then
+  upsert_env "$DEPLOY_ROOT/bridge/.env" "CF_DNS_API_TOKEN" "$CF_DNS_API_TOKEN"
+fi
 upsert_env "$DEPLOY_ROOT/bridge/.env" "BRIDGE_HOST" "${BRIDGE_HOST:-127.0.0.1}"
 
 if [[ ! -d "$DEPLOY_ROOT/bridge/.venv" ]]; then

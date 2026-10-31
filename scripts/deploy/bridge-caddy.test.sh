@@ -55,4 +55,36 @@ grep -q '^ExecStart=$' <<<"$dropin" || fail "drop-in must reset ExecStart before
 grep -q '^ExecStart=/usr/bin/caddy run --config /etc/caddy/Caddyfile$' <<<"$dropin" || fail "drop-in must override ExecStart"
 grep -q -- '--environ' <<<"$dropin" && fail "drop-in must not keep --environ (prints RELAY_TRUST_TOKEN into journal)"
 
+# web 整站镜像段：只声明 https，DNS-01 签证书，/api/* 直通 Worker，其余反代 Pages 源站并改回 Location
+web="$(render_caddyfile "bridge.hybcdg.com" "api-relay.hybcdg.com" "api.hybcdg.com" "web.hybcdg.com" "hybc-core.pages.dev")"
+grep -q '^https://web.hybcdg.com {' <<<"$web" || fail "web site missing"
+grep -q '^http://web' <<<"$web" && fail "web site must not declare an http:// site"
+grep -q 'dns cloudflare {env.CF_DNS_API_TOKEN}' <<<"$web" || fail "web site must use Cloudflare DNS-01"
+grep -q 'resolvers 1.1.1.1' <<<"$web" || fail "web site tls block must pin resolvers"
+grep -q 'handle /api/\*' <<<"$web" || fail "web site must proxy /api/* to the Worker"
+grep -q 'reverse_proxy https://hybc-core.pages.dev {' <<<"$web" || fail "web site must proxy to the Pages origin"
+grep -q 'header_up Host hybc-core.pages.dev' <<<"$web" || fail "web site must rewrite Host to the Pages origin"
+grep -q 'header_down Location https://hybc-core.pages.dev https://web.hybcdg.com' <<<"$web" || fail "web site must rewrite Location back to the public domain"
+grep -q 'tls_server_name hybc-core.pages.dev' <<<"$web" || fail "web site tls_server_name missing"
+grep -q 'header_up X-Relay-Auth {env.RELAY_TRUST_TOKEN}' <<<"$web" || fail "web /api/* must inject X-Relay-Auth"
+grep -q 'header_up -' <<<"$web" && fail "no header deletions allowed (Caddy applies deletes after sets)"
+grep -q '^https://api-relay.hybcdg.com {' <<<"$web" || fail "api-relay site must still render alongside web"
+
+# 3 参调用（既有调用方）不得渲染 web 段
+grep -q 'web.hybcdg.com' <<<"$out" && fail "3-arg render must not emit a web site"
+
+# 下载地址按架构映射，未知架构必须失败
+[[ "$(caddy_download_url x86_64)" == *"os=linux&arch=amd64&p=github.com%2Fcaddy-dns%2Fcloudflare" ]] || fail "x86_64 download url wrong"
+[[ "$(caddy_download_url aarch64)" == *"arch=arm64"* ]] || fail "aarch64 download url wrong"
+caddy_download_url mips >/dev/null 2>&1 && fail "unknown arch must fail"
+
+# 已含 cloudflare DNS 模块的 caddy：ensure_caddy_cloudflare_dns 直接返回，不下载
+fake_bin="$(mktemp -d)"
+printf '#!/usr/bin/env bash\nif [[ "$1" == "list-modules" ]]; then echo "dns.providers.cloudflare"; echo "http"; fi\n' >"$fake_bin/caddy"
+printf '#!/usr/bin/env bash\necho "curl must not be called" >&2; exit 99\n' >"$fake_bin/curl"
+chmod +x "$fake_bin/caddy" "$fake_bin/curl"
+as_root() { "$@"; }
+( PATH="$fake_bin:$PATH" ensure_caddy_cloudflare_dns ) || fail "ensure_caddy_cloudflare_dns must be a no-op when the module is present"
+rm -rf "$fake_bin"
+
 echo "bridge-caddy.test.sh: ok"

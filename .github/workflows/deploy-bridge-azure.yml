@@ -75,6 +75,9 @@ jobs:
             export BRIDGE_PROXY_TOKEN="${{ secrets.AZURE_BRIDGE_PROXY_TOKEN }}"
             export RELAY_TRUST_TOKEN="${{ secrets.AZURE_BRIDGE_RELAY_TRUST_TOKEN }}"
             export API_RELAY_PUBLIC_DOMAIN="${{ vars.AZURE_BRIDGE_API_RELAY_DOMAIN }}"
+            export CF_DNS_API_TOKEN="${{ secrets.AZURE_BRIDGE_CF_DNS_API_TOKEN }}"
+            export WEB_PUBLIC_DOMAIN="${{ vars.AZURE_BRIDGE_WEB_DOMAIN }}"
+            export WEB_STATIC_UPSTREAM="${{ vars.AZURE_BRIDGE_WEB_UPSTREAM }}"
             export WORKER_API_BASE_URL="${{ vars.AZURE_BRIDGE_WORKER_API_BASE_URL }}"
             export RELAY_API_TIMEOUT_SECONDS="${{ vars.AZURE_BRIDGE_RELAY_API_TIMEOUT_SECONDS }}"
             : "${WORKER_API_BASE_URL:=https://api.hybcdg.com}"
@@ -102,4 +105,15 @@ jobs:
             if [ "$API_RELAY_CHECK_DOMAIN" != "none" ]; then
               curl -fsS --max-time 8 "https://${API_RELAY_CHECK_DOMAIN}/api/v1/system/health" \
                 || echo "api-relay not reachable yet (DNS record or certificate pending): https://${API_RELAY_CHECK_DOMAIN}"
+            fi
+            if command -v caddy >/dev/null 2>&1; then
+              caddy version | head -n 1
+            fi
+            # 网页整站镜像自检：DNS 尚未切到本机时也能验证（--resolve 直打 127.0.0.1）；证书可能在重启后几十秒才签好，只告警
+            if [ -n "${WEB_PUBLIC_DOMAIN:-}" ] && [ "$WEB_PUBLIC_DOMAIN" != "none" ]; then
+              WEB_CODE="$(curl -sS -o /dev/null -w '%{http_code}' --max-time 20 --resolve "${WEB_PUBLIC_DOMAIN}:443:127.0.0.1" "https://${WEB_PUBLIC_DOMAIN}/platform-config.json" || true)"
+              echo "web mirror self-check (${WEB_PUBLIC_DOMAIN} via 127.0.0.1): http ${WEB_CODE:-000}"
+              if [ "${WEB_CODE:-000}" != "200" ]; then
+                echo "web mirror not ready yet (certificate issuance may still be running); re-check with: curl --resolve ${WEB_PUBLIC_DOMAIN}:443:<VM IP> https://${WEB_PUBLIC_DOMAIN}/"
+              fi
             fi
