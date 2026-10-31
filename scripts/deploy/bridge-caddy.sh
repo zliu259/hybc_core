@@ -254,8 +254,15 @@ apply_caddy() {
     ensure_caddy_cloudflare_dns
   fi
   install_caddy_env "$env_file"
-  render_caddyfile "$bridge_domains" "$relay_domain" "$relay_upstream" "$web_domain" "$web_upstream" | as_root tee "$CADDYFILE_PATH" >/dev/null
-  as_root caddy validate --config "$CADDYFILE_PATH" --adapter caddyfile
+  # 先渲染到临时文件并带环境文件校验，再落盘：dns cloudflare 在 provision 阶段就校验令牌，sudo 下没有
+  # systemd 的 EnvironmentFile，{env.CF_DNS_API_TOKEN} 会是空串而校验失败（2026-10-31 部署实测）；
+  # 校验失败时线上 Caddyfile 保持原样。
+  local rendered
+  rendered="$(mktemp)"
+  render_caddyfile "$bridge_domains" "$relay_domain" "$relay_upstream" "$web_domain" "$web_upstream" >"$rendered"
+  as_root caddy validate --config "$rendered" --adapter caddyfile --envfile "$CADDY_ENV_FILE"
+  as_root install -m 0644 "$rendered" "$CADDYFILE_PATH"
+  rm -f "$rendered"
   as_root systemctl enable caddy
   as_root systemctl restart caddy
   echo "[bridge-caddy] Caddy configured: bridge=[${bridge_domains}] api-relay=[${relay_domain}] upstream=[${relay_upstream}] web=[${web_domain}] web-upstream=[${web_upstream}]"
