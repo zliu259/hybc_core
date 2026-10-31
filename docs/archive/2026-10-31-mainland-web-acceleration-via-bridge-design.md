@@ -1,6 +1,6 @@
 # 大陆网页端加速：Web 的 API 流量经东京 bridge 反代 设计
 
-日期：2026-10-31 · 状态：**owner 已批准 v2（2026-10-31「推进吧」）**；共用现有东京 VM，不单独开机（owner 2026-10-31 询问后采纳建议）；不以 Phase 0 测量为门槛，`diag.html` 改为上线后验证工具；第 10 节其余未答项按第 11 节默认决定执行 · 实施计划见 `docs/superpowers/plans/2026-10-31-mainland-web-acceleration-via-bridge.md`
+日期：2026-10-31 · 状态：**owner 已批准 v2（2026-10-31「推进吧」）**；共用现有东京 VM，不单独开机（owner 2026-10-31 询问后采纳建议）；不以 Phase 0 测量为门槛，`diag.html` 改为上线后验证工具；第 10 节其余未答项按第 11 节默认决定执行 · 实施计划见 `docs/archive/2026-10-31-mainland-web-acceleration-via-bridge.md`
 v1 曾提议把 `web.hybcdg.com` 整体切到 bridge；owner 2026-10-31 反馈 Pages 静态加载可接受且有缓存，**只要把 API 反代到东京服务器**。本版据此收窄：网页端宿主不动，只改 API 入口。v1 的事实调查与审阅结论保留在第 2 节。
 
 ## 1. 为什么要做

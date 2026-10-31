@@ -32,7 +32,7 @@ HYBC Core 是恒越百川建设集团（顶管施工与技术研发）的业务�
 - **自研审批引擎** —— 顺序签、会签、或签、抄送、自动、AI 关卡六类节点，支持金额阈值路由、退回（发起人 / 上一节点 / 指定节点）、转签、撤回、重新提交，配有可视化流程设计器。
 - **AI 异步辅助、全程留痕** —— 合同审查、付款风险评估、报销查重、日志智能填写、设备推荐等经 AI Slot 抽象层异步执行，不阻塞用户提交，结果统一写入 `ai_audit_log`。AI 关卡只在白名单维度上有拦截权，拦截即退回改单，误判可转人工裁决。
 - **Serverless 全栈** —— API 运行于 Cloudflare Workers，数据落在 D1 / KV / R2，事件经 Queue 解耦，定时任务由 Cron Triggers 驱动；重计算下沉到拉取式 Python 计算节点（节点不开放入站端口）。
-- **面向大陆网络** —— 部署在海外固定出口 IP 上的 bridge 中继，承担企微回调接入、企微 API 出口代理与 API 兜底中继。
+- **面向大陆网络** —— 部署在海外固定出口 IP 上的 bridge 中继，承担企微回调接入、企微 API 出口代理与小程序 API 中继；网页端 API 经同机 Caddy 的 `api-relay.hybcdg.com` 直通 Worker，绕开大陆到 Cloudflare 边缘的慢链路，Worker 凭可信中转头取回真实客户端 IP。
 - **AI 智能体接入** —— `hybc-mcp` 让 Claude 等 MCP 客户端以员工身份查询业务数据；审批类写操作必须由本人在企业微信确认后才真正执行。
 - **推送即发布** —— push 到 `main` 即自动部署 API 与 Web，CI 对每次推送执行类型检查、测试与 lint。
 
@@ -64,7 +64,7 @@ flowchart TB
     agent["AI 智能体<br/>hybc-mcp"]
     wecom["企业微信<br/>OAuth · 消息 · 机器人"]
 
-    bridge["bridge 中继<br/>FastAPI · 固定出口 IP"]
+    bridge["东京 VM<br/>Caddy api-relay · bridge FastAPI · 固定出口 IP"]
 
     subgraph cf["Cloudflare"]
         cron["Cron Triggers"]
@@ -81,8 +81,8 @@ flowchart TB
         llm["OpenAI / Anthropic"]
     end
 
-    web -->|主入口| api
-    web -.->|慢请求兜底| bridge
+    web -->|API 主入口 api-relay（Caddy 直通）| bridge
+    web -.->|兜底直连| api
     mini -->|主入口| bridge
     mini -.->|兜底直连| api
     agent -->|Agent Token| api
@@ -328,6 +328,7 @@ python -m runner.main
 | `WECHAT_SECRET` | 企业微信自建应用 Secret | Secret |
 | `WECHAT_REDIRECT_URI` | Web 扫码登录回调地址 | `wrangler.toml` vars |
 | `WECHAT_BRIDGE_TOKEN` | 调用 bridge 企微出口代理的令牌 | Secret |
+| `RELAY_TRUST_TOKEN` | 可信中转令牌：api-relay 的 Caddy 与 bridge 中继以 `X-Relay-Auth` 出示，Worker 据此采信 `X-Forwarded-For` 首跳为客户端 IP（与 GitHub secret `AZURE_BRIDGE_RELAY_TRUST_TOKEN` 同值） | Secret |
 | `PASSKEY_RP_ID` · `PASSKEY_RP_NAME` | WebAuthn Relying Party 标识 | `wrangler.toml` vars |
 
 完整绑定与可选变量见 [`packages/api/src/types/env.ts`](packages/api/src/types/env.ts)。
@@ -425,7 +426,8 @@ python -m runner.main
 | API（`packages/api`） | `api.hybcdg.com`（Worker `hybc-api-prod`） | push `main` → Workers Builds 自动部署 |
 | Web（`packages/web`） | `web.hybcdg.com`（Pages 项目 `hybc-core`） | push `main` → Pages 自动部署 |
 | D1 迁移 | `hybcdg-prod-db` | **手动执行**，见下方 |
-| bridge | `bridge.hybcdg.com` | `bridge/**` 变更 push 到 `main` 后，由 GitHub Actions「Deploy Azure Bridge」经 SSH 部署到海外 VM |
+| bridge（小程序 API 中继 · 企微回调） | `bridge.hybcdg.com` | `bridge/**` 或 `scripts/deploy/**` 变更 push 到 `main` 后，由 GitHub Actions「Deploy Azure Bridge」经 SSH 部署到东京 VM |
+| api-relay（网页端 API 入口） | `api-relay.hybcdg.com` | 同一台 VM 的 Caddy 站点，流式直通 `api.hybcdg.com`（模板见 `scripts/deploy/bridge-caddy.sh`），随「Deploy Azure Bridge」一起部署；DNS 须为灰云 A/AAAA |
 | task-runner（容器版） | `runner.hybcdg.com` | 将 `task-runner/runner/` 与 `requirements.txt` 同步到 `.cf-runner-container/` 后，在该目录执行 `npx wrangler deploy` |
 | task-runner（VM 版） | 自建主机 | `scripts/deploy/runner-azure-vm.sh`（Docker + systemd） |
 | 小程序 | 企业微信工作台 | 开发者工具上传，管理后台提交审核发布 |

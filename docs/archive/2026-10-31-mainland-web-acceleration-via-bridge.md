@@ -8,7 +8,7 @@
 
 **Tech Stack:** Hono on Cloudflare Workers（TypeScript, Vitest）· Vue 3 / Vite / Axios（Vitest, happy-dom）· FastAPI + httpx（Python 3.11）· Caddy 2 · bash 部署脚本 · GitHub Actions
 
-**Spec:** `docs/superpowers/specs/2026-10-31-mainland-web-acceleration-via-bridge-design.md`
+**Spec:** `docs/archive/2026-10-31-mainland-web-acceleration-via-bridge-design.md`
 
 ## Global Constraints
 

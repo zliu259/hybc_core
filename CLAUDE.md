@@ -167,7 +167,8 @@ Production runs as a Cloudflare Container (`.cf-runner-container/`, `runner.hybc
 
 ### Secrets
 - Local: `packages/api/.dev.vars` only. Production: `npx wrangler secret put <NAME> --env prod` only.
-- Never put `JWT_SECRET`, `UPLOAD_SIGNING_SECRET`, `TASK_API_KEY`, `WECHAT_SECRET`, `WECHAT_BRIDGE_TOKEN` or `AGENT_REPLAY_SECRET` in any `vars` section of wrangler.toml (guarded by `packages/api/test/wrangler-prod-env.test.ts`).
+- Never put `JWT_SECRET`, `UPLOAD_SIGNING_SECRET`, `TASK_API_KEY`, `WECHAT_SECRET`, `WECHAT_BRIDGE_TOKEN`, `AGENT_REPLAY_SECRET` or `RELAY_TRUST_TOKEN` in any `vars` section of wrangler.toml (guarded by `packages/api/test/wrangler-prod-env.test.ts`).
+- `RELAY_TRUST_TOKEN` is shared by the Worker secret, `bridge/.env` and the Caddy env file on the Tokyo VM (set via GitHub secret `AZURE_BRIDGE_RELAY_TRUST_TOKEN`); the web front-end's API base is `api-relay.hybcdg.com` (Caddy → `api.hybcdg.com`), with `api.hybcdg.com` kept as the relay-pool fallback.
 
 ## Documentation
 
