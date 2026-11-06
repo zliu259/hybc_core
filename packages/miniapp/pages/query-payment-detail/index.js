@@ -6,6 +6,7 @@ const {
   statusLabel,
   approvalActionLabel
 } = require("../../utils/enum-labels");
+const { formatAmount, toChineseAmount } = require("../../utils/amount-cn");
 
 const canAccessQuery = (roles) => {
   return roles.includes("super_admin") || roles.includes("finance") || roles.includes("manager");
@@ -150,14 +151,6 @@ const resolveAttachmentUrl = (fileUrl, fileKey) => {
   return buildUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
 };
 
-const formatAmount = (amount) => {
-  const numeric = Number(amount || 0);
-  return numeric.toLocaleString("zh-CN", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2
-  });
-};
-
 Page({
   data: {
     id: 0,
@@ -244,6 +237,7 @@ Page({
     try {
       const res = await request({ method: "GET", path: `/api/v1/payment/${this.data.id}` });
       const item = (res && res.data) || {};
+      const amountText = formatAmount(item.amount);
       const detail = {
         id: item.id,
         serialNo: item.serial_no || "-",
@@ -253,8 +247,8 @@ Page({
         applicant: this.formatUserName(item.applicant_userid),
         projectName: this.formatProjectName(item.project_id),
         expectDate: item.expected_payment_date || "-",
-        amountText: formatAmount(item.amount),
-        amountCn: item.amount_cn || "-",
+        amountText,
+        amountCn: amountText === "-" ? "-" : toChineseAmount(item.amount),
         category: paymentCategoryLabel(item.category, "-"),
         content: item.content || "-",
         paymentMethod: paymentMethodLabel(item.payment_method, "-"),
