@@ -19,15 +19,16 @@ export type CfAiTaskType = (typeof CF_AI_TASK_TYPES)[number];
 /**
  * 模型分工（owner 07-23 定稿）：
  * - 生成（默认/按指令合一）= gpt-5.6-luna（GPT-5.6 家族成本优化档）
- * - AI 审查 = claude-sonnet-5（异厂商挑错 + 输出修正稿）
- * - 完整性检查 = terra 与 sonnet-5 双模型同时全量审（定稿前最后一道关）
+ * - AI 审查 = claude-sonnet-5.5（异厂商挑错 + 输出修正稿）
+ * - 完整性检查 = gpt-6.1-terra 与 claude-sonnet-5.5 双模型全量审（定稿前最后一道关）
+ * 2026-11-06 升级：terra 5.6→6.1、sonnet 5→5.5（owner 批准）；起草的 luna 暂不动。
  * GLM 免费层因输出质量不达标已于 07-23 撤下。
  */
 export const CF_AI_DRAFT_MODEL = "openai/gpt-5.6-luna";
-export const CF_AI_REVIEW_MODEL = "anthropic/claude-sonnet-5";
+export const CF_AI_REVIEW_MODEL = "anthropic/claude-sonnet-5.5";
 export const CF_AI_COMPLETENESS_MODELS = [
-  "openai/gpt-5.6-terra",
-  "anthropic/claude-sonnet-5"
+  "openai/gpt-6.1-terra",
+  "anthropic/claude-sonnet-5.5"
 ] as const;
 
 const MAX_OUTPUT_TOKENS = 8192;
@@ -295,7 +296,7 @@ export const parseCfAiTextOutput = (resp: unknown): string => {
     .trim();
 };
 
-/** 调用 env.AI；GPT-5.6 系走 Responses 格式，Claude 走 Messages 格式。本地环境返回确定性 mock。 */
+/** 调用 env.AI；GPT 系走 Responses 格式，Claude 走 Messages 格式。本地环境返回确定性 mock。 */
 export const callCfAi = async (
   env: Env,
   model: string,

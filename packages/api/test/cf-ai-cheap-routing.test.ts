@@ -9,17 +9,17 @@ import {
   salvageTruncatedJson
 } from "../src/services/cf-ai";
 
-describe("模型分工（owner 07-23）", () => {
+describe("模型分工（owner 11-06 升级）", () => {
   it("生成统一走 luna", () => {
     expect(CF_AI_DRAFT_MODEL).toBe("openai/gpt-5.6-luna");
   });
-  it("AI 审查固定 sonnet-5", () => {
-    expect(CF_AI_REVIEW_MODEL).toBe("anthropic/claude-sonnet-5");
+  it("AI 审查固定 sonnet-5.5", () => {
+    expect(CF_AI_REVIEW_MODEL).toBe("anthropic/claude-sonnet-5.5");
   });
-  it("完整性检查 terra+sonnet-5 双模型", () => {
+  it("完整性检查 6.1-terra+sonnet-5.5 双模型", () => {
     expect([...CF_AI_COMPLETENESS_MODELS]).toEqual([
-      "openai/gpt-5.6-terra",
-      "anthropic/claude-sonnet-5"
+      "openai/gpt-6.1-terra",
+      "anthropic/claude-sonnet-5.5"
     ]);
   });
 });

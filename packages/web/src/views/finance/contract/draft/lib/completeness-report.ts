@@ -12,7 +12,7 @@ import type {
   CompletenessVerdict
 } from "@/api/contract-draft";
 
-/** 模型简名：gpt-5.6-terra→terra、claude-sonnet-5→sonnet，其余取路径末段。 */
+/** 模型简名：任意版本的 terra→terra、sonnet→sonnet（存量报告仍是旧版本名），其余取路径末段。 */
 export const completenessModelShortName = (model: string): string => {
   if (model.includes("terra")) return "terra";
   if (model.includes("sonnet")) return "sonnet";

@@ -7,7 +7,12 @@ import { requireRoles } from "../middleware/rbac";
 import type { Env } from "../types/env";
 import { createTask } from "../services/ai-slot";
 import { writeAuditLog } from "../services/audit-log";
-import { CF_AI_DRAFT_MODEL, CF_AI_REVIEW_MODEL, executeCfAiTask } from "../services/cf-ai";
+import {
+  CF_AI_COMPLETENESS_MODELS,
+  CF_AI_DRAFT_MODEL,
+  CF_AI_REVIEW_MODEL,
+  executeCfAiTask
+} from "../services/cf-ai";
 import {
   buildKeywordValues,
   collectUnresolvedKeys,
@@ -754,7 +759,7 @@ contractDraftRoutes.post("/:id/completeness-check", async (c) => {
       ),
       keywords_json: draft.keywords_json,
       // 递进链第一阶段=terra 初版诊断；完成后 completeTask 自动派生 sonnet 复核任务
-      model: "openai/gpt-5.6-terra"
+      model: CF_AI_COMPLETENESS_MODELS[0]
     },
     priority: 6,
     timeout_seconds: 300
