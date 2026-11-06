@@ -414,6 +414,17 @@ const run = async () => {
   state.availableActions = ["approve", "withdraw", "cancel"];
   page = await createPage({ id: String(INSTANCE_ID), readonly: "1", from: "query-payment" });
   assert.strictEqual(page.data.footerMode, "");
+  // 从付款详情过来不再链回去，避免两页来回叠栈
+  assert.strictEqual(page.data.paymentDetailId, 0);
+
+  // 其他入口都能跳到付款单，并带上来源：发起人、审批人不一定有查询权限
+  await fresh();
+  page = await createPage();
+  assert.strictEqual(page.data.paymentDetailId, PAYMENT_ID);
+  page.openPaymentDetail();
+  assert.deepStrictEqual(state.navigations, [
+    ["navigateTo", `/pages/query-payment-detail/index?id=${PAYMENT_ID}&from=approval`]
+  ]);
 
   // ── AI 审查：没读完附件的告警、findings 分组、旧数据回退 ──
   await fresh();

@@ -1,5 +1,6 @@
-const { request, buildUrl } = require("../../utils/request");
-const { getUserProfile, getToken } = require("../../utils/auth");
+const { request } = require("../../utils/request");
+const { getUserProfile } = require("../../utils/auth");
+const { parseQueryAttachments, openQueryAttachment } = require("../../utils/attachment-open");
 const { contractTypeLabel, amountChangeTypeLabel } = require("../../utils/enum-labels");
 
 const canAccessQuery = (roles) => {
@@ -61,95 +62,6 @@ const receiptStatusText = (status) => {
     deleted: "已删除"
   };
   return map[status] || "未知";
-};
-
-const isImageFile = (name) => {
-  const lower = String(name || "").toLowerCase();
-  return [".png", ".jpg", ".jpeg", ".webp", ".gif", ".bmp"].some((ext) => lower.endsWith(ext));
-};
-
-const inferDocumentType = (name) => {
-  const lower = String(name || "").toLowerCase();
-  const map = {
-    ".pdf": "pdf",
-    ".doc": "doc",
-    ".docx": "docx",
-    ".xls": "xls",
-    ".xlsx": "xlsx",
-    ".ppt": "ppt",
-    ".pptx": "pptx",
-    ".txt": "txt"
-  };
-  const matched = Object.keys(map).find((ext) => lower.endsWith(ext));
-  return matched ? map[matched] : "";
-};
-
-const buildPersistentFilePath = (fileName) => {
-  const userDataPath = (wx.env && wx.env.USER_DATA_PATH) || "";
-  if (!userDataPath) return "";
-  const docType = inferDocumentType(fileName);
-  const suffix = docType ? `.${docType}` : "";
-  return `${userDataPath}/hybc-${Date.now()}-${Math.random().toString(36).slice(2)}${suffix}`;
-};
-
-const inferFileName = (value) => {
-  const raw = String(value || "").trim();
-  if (!raw) return "附件";
-  const cleaned = raw.split("?")[0].split("#")[0];
-  const segments = cleaned.split("/").filter(Boolean);
-  const last = segments.length ? segments[segments.length - 1] : raw;
-  try {
-    return decodeURIComponent(last) || "附件";
-  } catch {
-    return last || "附件";
-  }
-};
-
-const parseAttachments = (raw) => {
-  if (!raw) return [];
-  let source = raw;
-  if (typeof raw === "string") {
-    try {
-      source = JSON.parse(raw);
-    } catch {
-      return [];
-    }
-  }
-  if (!Array.isArray(source)) return [];
-  return source
-    .map((item) => {
-      if (typeof item === "string") {
-        const raw = item.trim();
-        if (!raw) return null;
-        const isUrl = /^https?:\/\//i.test(raw) || raw.startsWith("/");
-        return {
-          file_key: isUrl ? "" : raw,
-          file_name: inferFileName(raw),
-          file_url: isUrl ? raw : ""
-        };
-      }
-      if (!item || typeof item !== "object") return null;
-      const fileKey = item.file_key || item.key || "";
-      const fileUrl = item.file_url || item.url || "";
-      if (!fileKey && !fileUrl) return null;
-      return {
-        file_key: fileKey,
-        file_name: item.file_name || item.name || inferFileName(fileKey || fileUrl),
-        file_size: item.file_size || item.size || 0,
-        file_url: fileUrl
-      };
-    })
-    .filter(Boolean);
-};
-
-const resolveAttachmentUrl = (fileUrl, fileKey) => {
-  if (fileUrl) {
-    if (/^https?:\/\//i.test(fileUrl)) return fileUrl;
-    if (fileUrl.startsWith("/")) return buildUrl(fileUrl);
-    return buildUrl(`/${fileUrl}`);
-  }
-  if (!fileKey) return "";
-  return buildUrl(`/api/v1/upload/object/${encodeURIComponent(fileKey)}`);
 };
 
 const directionText = (direction) => {
@@ -265,7 +177,7 @@ Page({
         paidAmountText: formatAmount(item.paid_amount),
         receivedAmountText: formatAmount(item.received_amount),
         remark: item.remark || "-",
-        attachments: parseAttachments(item.attachments_json),
+        attachments: parseQueryAttachments(item.attachments_json),
         amountChanges: Array.isArray(item.amount_changes) ? item.amount_changes : [],
         paymentRequests: Array.isArray(item.payment_requests) ? item.payment_requests : []
       };
@@ -314,143 +226,8 @@ Page({
     wx.navigateTo({ url: `/pages/query-receipt-detail/index?id=${id}` });
   },
 
-  async openAttachment(e) {
-    const key = e.currentTarget.dataset.key;
-    const fileUrl = e.currentTarget.dataset.url || "";
-    const name = e.currentTarget.dataset.name || "附件";
-    if (!key && !fileUrl) {
-      wx.showToast({ title: "附件链接无效", icon: "none" });
-      return;
-    }
-    let url = resolveAttachmentUrl(fileUrl, key);
-    // legacy/fin 等受保护前缀需签名访问；previewImage 无法带请求头，统一先取签名地址，失败回退直连
-    if (key) {
-      try {
-        const signRes = await request({
-          method: "POST",
-          path: "/api/v1/upload/sign-download",
-          data: { key }
-        });
-        const signed = signRes && signRes.data && signRes.data.url;
-        if (signed) {
-          url = /^https?:\/\//i.test(signed) ? signed : buildUrl(signed);
-        }
-      } catch (signErr) {
-        console.warn("[attachment] sign-download failed, fallback to direct url", signErr);
-      }
-    }
-    if (!url) {
-      wx.showToast({ title: "附件链接无效", icon: "none" });
-      return;
-    }
-    const lower = String(name).toLowerCase();
-    if (
-      lower.endsWith(".png") ||
-      lower.endsWith(".jpg") ||
-      lower.endsWith(".jpeg") ||
-      lower.endsWith(".webp") ||
-      lower.endsWith(".gif") ||
-      lower.endsWith(".bmp")
-    ) {
-      wx.previewImage({ urls: [url], current: url });
-      return;
-    }
-
-    const token = getToken();
-    const openFromArrayBuffer = () => {
-      const fs = typeof wx.getFileSystemManager === "function" ? wx.getFileSystemManager() : null;
-      const targetPath = buildPersistentFilePath(name);
-      if (!fs || typeof fs.writeFile !== "function" || !targetPath) {
-        wx.showToast({ title: "附件打开失败", icon: "none" });
-        return;
-      }
-      wx.request({
-        url,
-        method: "GET",
-        responseType: "arraybuffer",
-        header: token ? { Authorization: `Bearer ${token}` } : {},
-        success: (resp) => {
-          if (!(resp.statusCode >= 200 && resp.statusCode < 300) || !resp.data) {
-            wx.showToast({ title: "附件下载失败", icon: "none" });
-            return;
-          }
-          fs.writeFile({
-            filePath: targetPath,
-            data: resp.data,
-            success: () => {
-              const docType = inferDocumentType(name);
-              const options = {
-                filePath: targetPath,
-                showMenu: true,
-                fail: (err) => {
-                  console.error("[query-contract-detail] openAttachment arraybuffer fallback failed", {
-                    name,
-                    url,
-                    errMsg: (err && (err.errMsg || err.message)) || ""
-                  });
-                  wx.showToast({ title: "附件打开失败", icon: "none" });
-                }
-              };
-              if (docType) options.fileType = docType;
-              wx.openDocument(options);
-            },
-            fail: (err) => {
-              console.error("[query-contract-detail] writeFile fallback failed", {
-                name,
-                url,
-                errMsg: (err && (err.errMsg || err.message)) || ""
-              });
-              wx.showToast({ title: "附件打开失败", icon: "none" });
-            }
-          });
-        },
-        fail: (err) => {
-          console.error("[query-contract-detail] request arraybuffer fallback failed", {
-            name,
-            url,
-            errMsg: (err && (err.errMsg || err.message)) || ""
-          });
-          wx.showToast({ title: "附件下载失败", icon: "none" });
-        }
-      });
-    };
-
-    wx.downloadFile({
-      url,
-      header: token ? { Authorization: `Bearer ${token}` } : {},
-      success: (res) => {
-        if (res.statusCode >= 200 && res.statusCode < 300) {
-          const localPath = res.tempFilePath || res.filePath || res.apFilePath || "";
-          if (!localPath) {
-            openFromArrayBuffer();
-            return;
-          }
-          const docType = inferDocumentType(name);
-          wx.openDocument({
-            filePath: localPath,
-            showMenu: true,
-            ...(docType ? { fileType: docType } : {}),
-            fail: (err) => {
-              console.error("[query-contract-detail] openAttachment failed", {
-                name,
-                url,
-                errMsg: (err && (err.errMsg || err.message)) || ""
-              });
-              openFromArrayBuffer();
-            }
-          });
-          return;
-        }
-        wx.showToast({ title: "附件下载失败", icon: "none" });
-      },
-      fail: (err) => {
-        console.error("[query-contract-detail] download failed", {
-          name,
-          url,
-          errMsg: (err && (err.errMsg || err.message)) || ""
-        });
-        wx.showToast({ title: "附件下载失败", icon: "none" });
-      }
-    });
+  openAttachment(e) {
+    const { key, url, name } = e.currentTarget.dataset;
+    return openQueryAttachment({ key, url, name }, "query-contract-detail");
   }
 });

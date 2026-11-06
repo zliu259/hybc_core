@@ -681,24 +681,32 @@ paymentRoutes.get("/:id", async (c) => {
     return c.json({ success: false, error: { message: "Payment request not found" } }, 404);
   }
 
-  const contract =
+  // 详情页要显示的关联信息随单带回，前端不必再拉全量合同、项目列表（列表有条数上限，
+  // 超出上限的单据会显示成额度 0、主体为空）。
+  const [contract, payee, project, paymentEntity] = await Promise.all([
     pr.contract_id !== null
-      ? await c.env.DB.prepare(
-          "SELECT contract_no, counterparty, total_amount, paid_amount FROM contract WHERE id = ?"
+      ? c.env.DB.prepare(
+          "SELECT contract_no, counterparty, total_amount, paid_amount, entity_id FROM contract WHERE id = ?"
         )
           .bind(pr.contract_id)
           .first()
-      : null;
-
-  const payee = await c.env.DB.prepare(
-    "SELECT name, bank_name, bank_account FROM payee WHERE id = ?"
-  )
-    .bind(pr.payee_id)
-    .first();
+      : null,
+    c.env.DB.prepare("SELECT name, bank_name, bank_account FROM payee WHERE id = ?")
+      .bind(pr.payee_id)
+      .first(),
+    c.env.DB.prepare("SELECT project_name, project_code FROM project WHERE id = ?")
+      .bind(pr.project_id)
+      .first(),
+    pr.payment_entity_id !== null
+      ? c.env.DB.prepare("SELECT entity_name FROM entity WHERE id = ?")
+          .bind(pr.payment_entity_id)
+          .first()
+      : null
+  ]);
 
   return c.json({
     success: true,
-    data: { ...pr, contract, payee }
+    data: { ...pr, contract, payee, project, payment_entity: paymentEntity }
   });
 });
 

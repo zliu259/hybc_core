@@ -214,23 +214,20 @@
 
 #### G. 对外付款申请详情 `views/finance/payment/detail.vue`
 
-- 左侧：申请信息、合同信息、附件。
-- 右侧：审批轨迹、风险评估报告。
-- 付款执行：`已审批`状态下登记支付日期、支付流水号、付款账户、付款备注并标记付款。
-- 底部动作：通过/拒绝/退回/转签（必须填写意见）、标记付款。
-- 审批中显示“付款主体与账户调整”操作区（随审批流展示，不再依赖 `available_actions` 才可见），避免审批人看不到付款实体/账户选择控件。
-- 支持从付款详情直接跳转到对应审批详情（`/approval/detail/:id`），用于条目状态不一致时快速核对：`packages/web/src/views/finance/payment/detail.vue`
-- 付款附件预览统一改为抽屉模式（`el-drawer`），在详情页内完成预览与下载：`packages/web/src/views/finance/payment/detail.vue`
-- （2026-07-08）创建模式已废除：`/finance/payment/detail/create`、`/workspace/payment/detail/create` 均重定向至智能发单向导 `wizard.vue`，详情页专注查看/编辑/审批/付款。
-- （2026-07-08）页面容器化拆分为 1 个容器 + 4 个子组件：
-  - `detail.vue`：容器，加载详情/审批/风险数据并编排子组件与整体锁定状态。
-  - `components/PayoutPanel.vue`：付款执行面板，登记支付日期/流水号/付款账户/备注、标记付款、付款主体与账户调整。
-  - `components/PaymentInfoCard.vue`：申请信息卡，展示与编辑申请信息、合同信息、附件，支持超管绕锁编辑与 `?edit=1` 自动进入编辑态。
-  - `components/ApprovalActionPanel.vue`：审批与风险面板，审批轨迹、风险评估报告、通过/拒绝/退回/转签动作。
-  - `components/AdminEditPanel.vue`：超管编辑面板，绕锁开关与编辑备注输入。
-- （2026-07-08）支持 `?edit=1` 深链：从付款处理台「去修改」跳转时自动进入编辑态并滚动定位到申请信息卡。
-- （2026-08）容器主体再抽为 `components/PaymentDetailPanel.vue`（付款 id / autoEdit 走 props），`detail.vue` 保留为薄壳负责路由参数与返回目标（workspace 判断）；付款处理台「详情」改为 `components/PaymentDetailDrawer.vue` 右侧抽屉打开，见 §10。
-- API 指向：`/api/v1/payment/:id`, `/api/v1/payment/:id/mark-paid`, `/api/v1/approval/:id/*`
+（2026-11-06 重排，与小程序付款详情、审批详情同一阅读顺序）
+
+- 阅读顺序：头部（流水号、状态、事由、项目/收款方/付款单位等、金额大写）→ 退回或驳回原因 → AI 审查 → 申请信息 → 付款执行 → 附件 → 审批流程。金额大写按金额现算，不读存量 `amount_cn`。
+- 操作集中在头部，只显示当前状态和角色能用的按钮，不摆灰按钮；规则在 `payment-detail-view.ts` 的 `resolvePaymentCapabilities`，须与后端 `requireRoles` 和状态校验一致：
+  - 草稿：提交审批、触发风险评估（操作员只有提交）。
+  - 已审批：标记付款（超管、经理、财务）。
+  - 超管：废除付款、重新激活（只显示当前状态可用的那个）。
+- 申请信息：草稿且有写权限时是表单，否则是阅读视图；合同余额、项目、付款单位来自详情接口随单返回的 `contract`、`project`、`payment_entity`，不再拉全量列表（列表有条数上限，超出时会显示额度 0、主体为空）。超管在锁定状态下用「超管编辑」开关解锁，必须写修改说明。备注里的系统修改记录单独折叠，保存时原样保留。
+- 付款执行：已付款看支付日期、流水号、经办人；已审批未付款提示一句；审批中只有当前审批人（或超管编辑模式）能改付款单位和账户，默认显示一行摘要。
+- 附件：沿用审批详情的列表和预览抽屉。草稿、审批结束后走 `PUT /payment/:id`；审批进行中业务接口不允许写，当前审批人和超管走 `POST /approval/:id/attachments`。只有草稿或超管编辑模式能移除。
+- AI 审查、审批流程直接复用审批详情的 `AiVerdictPanel`、`FlowTimeline`，样式在本页换成财务分节样式。审批详情只对参与人和超管开放，取不到时提示看不到，也不给跳转入口。
+- 组件：`components/PaymentDetailPanel.vue`（容器，`detail.vue` 与列表抽屉 `PaymentDetailDrawer.vue` 共用）、`PaymentActions.vue`（头部操作）、`PaymentSubmitDialog.vue`、`PaymentMarkPaidDialog.vue`、`PaymentInfoCard.vue`、`PayoutPanel.vue`、`PaymentAttachments.vue`。
+- 支持 `?edit=1` 深链：从付款处理台「去修改」进入时滚动到申请信息表单（能否修改仍由权限决定）。
+- API 指向：`/api/v1/payment/:id`（2026-11-06 起随单返回 `project`、`payment_entity`，`contract` 增加 `entity_id`）、`/api/v1/payment/:id/mark-paid`、`/api/v1/approval/:id`、`/api/v1/approval/:id/attachments`
 
 #### H. 收款人管理 `views/finance/payee/index.vue`
 
@@ -863,7 +860,7 @@
 - 付款查询五阶段页签与退回件「去修改」入口（2026-07-08，仅发起人本人可见）：`packages/miniapp/pages/query-payment/index`
 - 收款查询（高权限）：`packages/miniapp/pages/query-receipt/index`
 - 合同查询详情（高权限）：`packages/miniapp/pages/query-contract-detail/index`
-- 付款查询详情（高权限）：`packages/miniapp/pages/query-payment-detail/index`
+- 付款详情（2026-11-06 改版）：`packages/miniapp/pages/query-payment-detail/index`。查询入口限高权限；从审批详情「查看付款单」进入不限角色。
 - 收款查询详情（高权限）：`packages/miniapp/pages/query-receipt-detail/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
 - 现场勘查：`packages/miniapp/pages/survey/index`
@@ -895,7 +892,7 @@
   - 申请人显示规则统一为“仅姓名”，若姓名缺失显示 `-`。
   - 付款查询列表需展示“所属项目名称”，避免仅凭项目ID识别。
   - 合同详情支持附件查看，并支持从“关联付款/关联收款”点击跳转到对应详情页。
-  - 付款详情支持附件查看、审批记录展示，并支持点击跳转到审批详情页。
+  - 付款详情与审批详情同一版式和阅读顺序（凭证头部 → AI 审查 → 付款明细 → 付款执行 → 附件 → 审批流程），共用 `styles/detail-cards.wxss` 与 `templates/detail-cards.wxml`；可跳转到审批详情（参与人才有入口），只读。
   - 查询列表中的状态标签按状态语义着色（例如待审批=橙色、生效/已付款=绿色、废止/拒绝=红色）。
 - 报销详情页补齐附件全链路能力：
   - 可按类型上传附件（发票/收据/合同/其他）

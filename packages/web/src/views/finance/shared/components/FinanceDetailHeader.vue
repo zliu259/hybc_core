@@ -100,6 +100,16 @@ const copySerial = async () => {
   justify-content: space-between;
 }
 
+/* 单号一栏占满剩余宽度、内部换行：事实信息再多也不会把金额挤到下一行 */
+.fin-masthead__serial-block {
+  flex: 1 1 320px;
+  min-width: 0;
+}
+
+.fin-masthead__amount-block {
+  flex: none;
+}
+
 .fin-masthead__label {
   display: block;
   font-size: 12px;

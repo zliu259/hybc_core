@@ -25,10 +25,13 @@ export const paymentStatusLabelMap: Record<string, string> = {
 
 export const paymentMethodLabelMap: Record<string, string> = {
   bank_transfer: "对公转账",
+  transfer: "对公转账",
+  personal_transfer: "转账",
   cash: "现金",
   bill: "票据",
   other: "其他",
   对公转账: "对公转账",
+  转账: "转账",
   现金: "现金",
   票据: "票据",
   其他: "其他"

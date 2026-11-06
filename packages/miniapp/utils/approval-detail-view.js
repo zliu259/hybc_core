@@ -393,6 +393,26 @@ const BIZ_VIEW_BUILDERS = {
 
 const hasAmount = (value) => value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
 
+/** 审批进行中时当前卡在哪个节点；其余状态返回空串 */
+const buildWaitText = (instance, nodes) => {
+  if (!instance || instance.status !== "in_progress") return "";
+  const currentNode = (Array.isArray(nodes) ? nodes : []).find(
+    (node) =>
+      node &&
+      String(node.node_key || "") === String(instance.current_node_key || "") &&
+      Number(node.round || 0) === Number(instance.current_round || 0)
+  );
+  return currentNode ? `等待${approvalNodeLabel(currentNode)}` : "";
+};
+
+const buildRemarkEdits = (edits, ctx) =>
+  (Array.isArray(edits) ? edits : []).map((edit, index) => ({
+    key: `edit-${index}`,
+    atText: ctx.formatTime(edit.at),
+    byText: ctx.user(edit.by),
+    note: edit.note
+  }));
+
 /**
  * 页面头部与明细，各业务统一成同一个形状。库房、开票等没有业务详情的单据也要能看到事由。
  * @param {object} params
@@ -406,21 +426,12 @@ const buildBizView = ({ instance, nodes, bizDetail, ctx }) => {
   const biz = builder ? builder(bizDetail, ctx) : null;
   const summary = humanizeBizSummary(instance.biz_summary) || "";
   const title = (biz && biz.title) || summary || "-";
-  const currentNode =
-    instance.status === "in_progress"
-      ? (Array.isArray(nodes) ? nodes : []).find(
-          (node) =>
-            node &&
-            String(node.node_key || "") === String(instance.current_node_key || "") &&
-            Number(node.round || 0) === Number(instance.current_round || 0)
-        )
-      : null;
 
   return {
     hero: {
       statusText: statusLabel(instance.status),
       statusTheme: statusTheme(instance.status),
-      waitText: currentNode ? `等待${approvalNodeLabel(currentNode)}` : "",
+      waitText: buildWaitText(instance, nodes),
       bizTypeLabel: lookup(BIZ_TYPE_LABELS, instance.biz_type, "未知"),
       bizNo: (biz && biz.bizNo) || instance.instance_no || "-",
       amountLabel: biz ? biz.amountLabel : "",
@@ -442,12 +453,7 @@ const buildBizView = ({ instance, nodes, bizDetail, ctx }) => {
           row("审批单号", instance.instance_no)
         ]
       : [],
-    remarkEdits: (biz ? biz.edits : []).map((edit, index) => ({
-      key: `edit-${index}`,
-      atText: ctx.formatTime(edit.at),
-      byText: ctx.user(edit.by),
-      note: edit.note
-    }))
+    remarkEdits: buildRemarkEdits(biz ? biz.edits : [], ctx)
   };
 };
 
@@ -621,7 +627,10 @@ module.exports = {
   buildCoverageView,
   buildAiPanel,
   buildNodeNameMap,
+  buildPaymentView,
   buildBizView,
+  buildWaitText,
+  buildRemarkEdits,
   buildReimbursementItemRows,
   buildTimelineNodes,
   extractStopReason,

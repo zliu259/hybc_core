@@ -39,11 +39,19 @@ export type PaymentRequestDetail = PaymentRequest & {
     counterparty: string;
     total_amount: number;
     paid_amount: number;
+    entity_id: number | null;
   } | null;
   payee: {
     name: string;
     bank_name: string;
     bank_account: string;
+  } | null;
+  project: {
+    project_name: string;
+    project_code: string;
+  } | null;
+  payment_entity: {
+    entity_name: string;
   } | null;
 };
 

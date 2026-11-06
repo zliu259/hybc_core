@@ -1,0 +1,156 @@
+<!-- 审批详情、付款详情共用。事件由所在页面处理，两页都要有 toggleAiPassed / toggleAiReport / toggleAiEarlier。 -->
+
+<!-- AI 审查：先判定和一句话，再列需要人关注的项 -->
+<template name="ai-review-body">
+  <view class="card-head">
+    <text class="card-title">AI 审查</text>
+    <t-tag wx:if="{{ai.latest && ai.latest.verdictLabel !== '-'}}" theme="{{ai.latest.verdictTheme}}" variant="light" size="small">{{ai.latest.verdictLabel}}</t-tag>
+  </view>
+  <block wx:if="{{ai.latest}}">
+    <!-- 没读完附件时结论可能不成立，告警排在结论之前 -->
+    <view class="coverage-alert" wx:if="{{ai.latest.coverage.incomplete}}">
+      <view class="coverage-title">{{ai.latest.coverage.title}}</view>
+      <view class="coverage-row" wx:for="{{ai.latest.coverage.rows}}" wx:key="key">{{item.text}}</view>
+    </view>
+    <view class="ai-summary">{{ai.latest.summary}}</view>
+    <view class="ai-note" wx:if="{{ai.latest.commentFallback}}">{{ai.latest.commentFallback}}</view>
+    <view class="ai-error" wx:if="{{ai.latest.errorText}}">{{ai.latest.errorText}}</view>
+    <view class="ai-note" wx:if="{{ai.latest.coverage && !ai.latest.coverage.incomplete}}">{{ai.latest.coverage.text}}</view>
+
+    <view class="finding" wx:for="{{ai.latest.concerns}}" wx:key="key">
+      <view class="finding-head">
+        <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+        <text class="finding-title">{{item.dimensionLabel}}</text>
+      </view>
+      <view class="finding-text" wx:if="{{item.detail}}">{{item.detail}}</view>
+      <view class="finding-evidence" wx:if="{{item.evidence}}">{{item.evidence}}</view>
+    </view>
+
+    <block wx:if="{{ai.latest.recommendations.length > 0}}">
+      <view class="sub-title">建议</view>
+      <view class="bullet" wx:for="{{ai.latest.recommendations}}" wx:key="key">{{item.text}}</view>
+    </block>
+
+    <view class="fold-link" wx:if="{{ai.latest.passed.length > 0}}" bindtap="toggleAiPassed">{{aiPassedOpen ? '收起' : '另有 ' + ai.latest.passed.length + ' 项未见异常'}}</view>
+    <block wx:if="{{aiPassedOpen}}">
+      <view class="finding" wx:for="{{ai.latest.passed}}" wx:key="key">
+        <view class="finding-head">
+          <t-tag theme="success" variant="light" size="small">{{item.statusLabel}}</t-tag>
+          <text class="finding-title">{{item.dimensionLabel}}</text>
+        </view>
+        <view class="finding-text" wx:if="{{item.detail}}">{{item.detail}}</view>
+      </view>
+    </block>
+  </block>
+  <view class="ai-note" wx:elif="{{!aiReportTitle}}">这笔审批没有经过 AI 审查，请人工核对。</view>
+
+  <block wx:if="{{aiReportTitle}}">
+    <view class="fold-row" bindtap="toggleAiReport">
+      <text class="fold-title">{{aiReportTitle}}</text>
+      <text class="fold-action">{{aiReportOpen ? '收起' : '展开'}}</text>
+    </view>
+    <block wx:if="{{aiReportOpen && aiBizReport}}">
+      <view class="ai-note" wx:if="{{aiBizReport.placeholder}}">{{aiBizReport.placeholder}}</view>
+      <block wx:else>
+        <view class="ai-note" wx:if="{{aiBizReport.pendingHint}}">{{aiBizReport.pendingHint}}</view>
+        <view class="tag-row" wx:if="{{aiBizReport.overallRiskLabel || aiBizReport.scoreText}}">
+          <t-tag wx:if="{{aiBizReport.overallRiskLabel}}" theme="{{aiBizReport.overallRiskTheme}}" variant="light" size="small">整体风险：{{aiBizReport.overallRiskLabel}}</t-tag>
+          <t-tag wx:if="{{aiBizReport.scoreText}}" theme="{{aiBizReport.scoreTheme}}" variant="light" size="small">{{aiBizReport.scoreText}}</t-tag>
+        </view>
+        <view class="report-text" wx:if="{{aiBizReport.summary}}">{{aiBizReport.summary}}</view>
+
+        <block wx:if="{{aiBizReport.scoreBasisRows.length > 0}}">
+          <view class="sub-title">分数构成</view>
+          <view class="bullet" wx:for="{{aiBizReport.scoreBasisRows}}" wx:key="key">{{item.text}}</view>
+        </block>
+
+        <block wx:if="{{aiBizReport.clauseRows.length > 0}}">
+          <view class="sub-title">条款审查</view>
+          <view class="finding" wx:for="{{aiBizReport.clauseRows}}" wx:key="key">
+            <view class="finding-head">
+              <t-tag theme="{{item.riskTheme}}" variant="light" size="small">风险{{item.riskLabel}}</t-tag>
+              <text class="finding-title">{{item.clause}}</text>
+            </view>
+            <view class="finding-text" wx:if="{{item.issue}}">{{item.issue}}</view>
+            <view class="finding-evidence" wx:if="{{item.suggestion}}">修改建议：{{item.suggestion}}</view>
+          </view>
+        </block>
+
+        <block wx:if="{{aiBizReport.findingRows.length > 0}}">
+          <view class="sub-title">检查发现</view>
+          <view class="finding" wx:for="{{aiBizReport.findingRows}}" wx:key="key">
+            <view class="finding-head">
+              <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+              <text class="finding-title">{{item.dimensionLabel}}</text>
+            </view>
+            <view class="finding-text" wx:if="{{item.detail}}">{{item.detail}}</view>
+            <view class="finding-evidence" wx:if="{{item.evidence}}">{{item.evidence}}</view>
+          </view>
+        </block>
+
+        <block wx:if="{{aiBizReport.amountAssessment}}">
+          <view class="sub-title">
+            <text>金额合理性</text>
+            <t-tag wx:if="{{aiBizReport.amountAssessment.riskLabel}}" theme="{{aiBizReport.amountAssessment.riskTheme}}" variant="light" size="small">{{aiBizReport.amountAssessment.riskLabel}}</t-tag>
+          </view>
+          <view class="report-text" wx:if="{{aiBizReport.amountAssessment.basis}}">{{aiBizReport.amountAssessment.basis}}</view>
+          <view class="bullet" wx:for="{{aiBizReport.amountAssessment.riskPointRows}}" wx:key="key">{{item.text}}</view>
+        </block>
+
+        <block wx:if="{{aiBizReport.recommendationRows.length > 0}}">
+          <view class="sub-title">处理建议</view>
+          <view class="bullet" wx:for="{{aiBizReport.recommendationRows}}" wx:key="key">{{item.text}}</view>
+        </block>
+
+        <block wx:if="{{aiBizReport.rawFallback}}">
+          <view class="sub-title">AI 返回了非标准结构，以下为原始结果</view>
+          <view class="report-raw">{{aiBizReport.rawFallback}}</view>
+        </block>
+        <view class="ai-note" wx:elif="{{aiBizReport.emptyHint}}">{{aiBizReport.emptyHint}}</view>
+      </block>
+    </block>
+    <block wx:if="{{aiReportOpen && detailAuditView}}">
+      <view class="tag-row">
+        <t-tag theme="{{detailAuditView.statusTheme}}" variant="light" size="small">{{detailAuditView.statusLabel}}</t-tag>
+      </view>
+      <view class="report-raw" wx:if="{{detailAuditView.reportText}}">{{detailAuditView.reportText}}</view>
+      <view class="ai-note" wx:else>暂无审计报告</view>
+    </block>
+  </block>
+
+  <block wx:if="{{ai.earlier.length > 0}}">
+    <view class="fold-row" bindtap="toggleAiEarlier">
+      <text class="fold-title">此前 {{ai.earlier.length}} 次审查结论</text>
+      <text class="fold-action">{{aiEarlierOpen ? '收起' : '展开'}}</text>
+    </view>
+    <block wx:if="{{aiEarlierOpen}}">
+      <view class="finding" wx:for="{{ai.earlier}}" wx:key="key">
+        <view class="finding-head">
+          <t-tag wx:if="{{item.verdictLabel !== '-'}}" theme="{{item.verdictTheme}}" variant="light" size="small">{{item.verdictLabel}}</t-tag>
+          <text class="finding-title">{{item.nodeLabel}}</text>
+        </view>
+        <view class="finding-text">{{item.summary}}</view>
+        <view class="finding-warn" wx:if="{{item.coverageIncomplete}}">这次 AI 没有读完附件</view>
+        <view class="finding-evidence">{{item.completedAtText}}</view>
+      </view>
+    </block>
+  </block>
+</template>
+
+<!-- 审批流程节点 -->
+<template name="flow-nodes">
+  <view class="flow-node" wx:for="{{timelineNodes}}" wx:key="id">
+    <view class="flow-node-head">
+      <text class="flow-node-name">{{item.node_name}}</text>
+      <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+    </view>
+    <view class="flow-task" wx:for="{{item.tasks}}" wx:for-item="task" wx:key="id">
+      <view class="flow-task-line">
+        <text class="flow-task-who">{{task.assigneeLabel}}</text>
+        <text class="flow-task-action">{{task.actionLabel}}</text>
+      </view>
+      <view class="flow-task-time" wx:if="{{task.actedAtText}}">{{task.actedAtText}}</view>
+      <view class="flow-task-comment" wx:if="{{task.showComment}}">{{task.commentBrief}}</view>
+    </view>
+  </view>
+</template>

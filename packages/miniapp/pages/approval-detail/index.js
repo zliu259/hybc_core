@@ -50,6 +50,7 @@ Page({
     detailState: "loading",
     detailErrorText: "",
     readOnlyView: false,
+    paymentDetailId: 0,
     // 头部与明细
     hero: null,
     detailTitle: "",
@@ -110,6 +111,8 @@ Page({
     });
     // 「我发起的」列表以只读方式进入，那里是发起人撤回、取消的唯一入口
     this.fromInitiated = params.from === "initiated";
+    // 从付款详情过来时不再链回去，避免两页来回叠栈
+    this.fromPaymentDetail = params.from === "query-payment";
     // 首次 onShow 必须加载；之后仅在显式标记时整页刷新
     this.needsRefreshOnShow = true;
     this.names = { users: {}, projects: {}, entities: {} };
@@ -373,6 +376,10 @@ Page({
         moreActions: actions.moreActions,
         payoutVisible,
         payoutEditorOpen: false,
+        paymentDetailId:
+          instance.biz_type === "payment_request" && records.bizDetail && !this.fromPaymentDetail
+            ? Number(records.bizDetail.id) || 0
+            : 0,
         detailState: "ready",
         detailErrorText: ""
       });
@@ -779,6 +786,12 @@ Page({
 
   toggleFlowCollapse() {
     this.setData({ flowCollapsed: !this.data.flowCollapsed });
+  },
+
+  openPaymentDetail() {
+    const { paymentDetailId } = this.data;
+    if (!paymentDetailId) return;
+    wx.navigateTo({ url: `/pages/query-payment-detail/index?id=${paymentDetailId}&from=approval` });
   },
 
   openAttachment(e) {

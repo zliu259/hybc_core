@@ -12,11 +12,16 @@ defineProps<{
   uploading: boolean;
   upload: (options: UploadRequestOptions) => Promise<void>;
   emptyText: string;
+  /** 限制可选的文件类型；不传则不限 */
+  accept?: string;
+  /** 付款单草稿等可以删除附件的场景才传 */
+  canRemove?: boolean;
 }>();
 
 const emit = defineEmits<{
   preview: [item: AttachmentItem];
   download: [item: AttachmentItem];
+  remove: [item: AttachmentItem];
 }>();
 
 /** 文件类型直接写成文字：比图标更好认，也不用再加载图标资源。 */
@@ -35,6 +40,7 @@ const fileBadge = (fileName: string): string => {
         :show-file-list="false"
         :http-request="upload"
         :disabled="uploading"
+        :accept="accept"
       >
         <el-button size="small" :loading="uploading">上传附件</el-button>
       </el-upload>
@@ -62,6 +68,17 @@ const fileBadge = (fileName: string): string => {
         <el-button link size="small" @click="emit('download', item)">
           下载
         </el-button>
+        <el-popconfirm
+          v-if="canRemove"
+          :title="`移除 ${item.file_name}？`"
+          confirm-button-text="移除"
+          cancel-button-text="取消"
+          @confirm="emit('remove', item)"
+        >
+          <template #reference>
+            <el-button link type="danger" size="small">移除</el-button>
+          </template>
+        </el-popconfirm>
       </li>
     </ul>
   </ApprovalPanel>
