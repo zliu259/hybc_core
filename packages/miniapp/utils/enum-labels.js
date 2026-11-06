@@ -122,6 +122,7 @@ const AMOUNT_CHANGE_TYPE_LABELS = {
 const PAYMENT_METHOD_LABELS = {
   bank_transfer: "对公转账",
   transfer: "对公转账",
+  personal_transfer: "转账",
   cash: "现金",
   bill: "票据",
   check: "支票",
@@ -134,13 +135,19 @@ const PAYMENT_METHOD_LABELS = {
  * 两种形态都要认，否则查询页会出现 `labor_fee` 这样的英文。
  */
 const PAYMENT_CATEGORY_LABELS = {
+  // 发单台写入的合同付款阶段
+  prepayment: "预付款",
+  progress: "进度款",
+  settlement: "结算款",
   special_approval: "特殊审批",
   admin_fee: "行政费",
+  administrative_fee: "行政费",
   labor_fee: "劳务费",
   machinery_fee: "机械费",
   material_fee: "材料费",
   subcontract_fee: "分包费",
-  other_fee: "其他费用"
+  other_fee: "其他费用",
+  other: "其他费用"
 };
 
 /** 报销通道 */

@@ -448,6 +448,7 @@
 - **加载**：实例先到先渲染，业务详情与报告随后补齐；名称映射后台加载，到达后原地替换；操作后静默刷新不闪遮罩。
 - **吸顶实现注意**：全局布局给滚动区内联了 `overflow:hidden` 会令 sticky 失效，本页用 `:has()` 局部改为 `overflow:clip`，勿改回。
 - 返回按钮按 `?from=` 回到来处；API 指向：`/api/v1/approval/:id/*`（`ai_gate_reviews[].findings/evidence_coverage` 由 2026-11-06 新增）、各业务详情接口。
+- 小程序同步版本见 §4.37（按手机竖屏重排，不照搬本节布局）。
 
 #### I-1. 审批监控台（超管/经理只读） `views/approval/admin-monitor.vue`
 
@@ -1237,6 +1238,8 @@
 
 ### 4.7 小程序审批详情视觉减负优化（2026-03）
 
+> 布局部分（分色分区、dot + key/value、40/40/20 底栏）已被 §4.37（2026-11）取代，以 §4.37 为准；退回后「编辑并重新提交」的规则不变。
+
 - 审批详情页面按信息域分色分区（摘要/业务明细/附件/AI结果/流程/操作意见），并增加板块分界线，降低视觉疲劳：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
 - 信息点改为 dot + key/value 结构，并对关键值使用 tag（如业务类型、状态、AI结论）做颜色提示：`packages/miniapp/pages/approval-detail/index.wxml`
 - 底部补齐固定操作栏，提供清晰、持续可见的审批动作按钮，避免长页滚动后找不到操作入口：`packages/miniapp/pages/approval-detail/index.wxml`、`packages/miniapp/pages/approval-detail/index.wxss`
@@ -1462,6 +1465,22 @@
 
 - 报销详情“智能核查摘要”优先解析 `ai_reasonability_summary` 与 `ai_reasonability.summary`，并输出办公室可读文本，不再以 JSON 兜底回显：`packages/web/src/views/finance/reimbursement/detail.vue`
 - 摘要格式统一为：风险等级、结论、主要异常（分级）与建议动作（列表），避免多附件场景下暴露结构化原始对象：`packages/web/src/views/finance/reimbursement/detail.vue`
+
+### 4.37 小程序审批详情改版（2026-11）
+
+`packages/miniapp/pages/approval-detail/`。思路与 Web §I 相同（先看清这笔钱再做决定），按手机竖屏重排。页面只负责调接口和 `setData`；规则和文案在 `utils/approval-decision.js`（动作、校验、支付方案、下一条待办）、`utils/approval-detail-view.js`（各业务统一成「头部 + 明细行」、AI 区、流程）、`utils/amount-cn.js`（金额）。页面仍在主包：路由 `pages/approval-detail/index` 写在企微推送模板（`wecom-approval-push.ts`）和已发出的卡片里，不能移到分包。
+
+- **从上到下**：头部 → AI 审查 → 明细 → 支付方案（仅可审批时）→ 附件 → 审批流程，底部固定决策栏。
+- **头部**：金额小写在上（60rpx）、大写在下，大写按金额现算，不读 `amount_cn`；状态标签与金额同行。其下是事由、驳回/退回原因、关键事实（收款方或主体、项目、发起人、时间），最后一行是「等待 XX」和业务编号。库房、开票等没有业务详情的单据不显示金额，事由取审批摘要。
+- **AI 审查**：标签显示判定（审查中、审查失败单独文案），下面一句话结论。`evidence_coverage.complete === false` 时橙色告警排在结论**之前**，逐条列未读内容（如「未读第 4-6 页」）；读完时一行灰字带过；字段缺失不显示。`findings` 非 pass 项逐条列出（异常排在关注前），pass 项折叠为「另有 N 项未见异常」。旧数据没有 `findings` 时回退显示 `comment`。风控/合同/审计报告和此前轮次结论都折叠；没有关卡结论时报告默认展开；什么都没有时显示「这笔审批没有经过 AI 审查，请人工核对」。判定前缀是跨端契约，`aiDecisionFromComment` 只搬了位置，逻辑未改。
+- **明细**：统一键值行，长文本保留换行，可长按复制。备注里的 `[超管修改 …]` 行拆出来，折叠成「支付信息修改记录（N 条）」。报销单据列在明细内，附件跟着单据走，不再单列一份。
+- **支付方案**：默认一行摘要，点「修改」展开选择器。**只有改动过才提交**（基线取同步后的选择器值，改回原值不算改动），否则超管每次审批都会往备注写一条修改日志。换主体时默认带上该主体第一个账户，避免新主体配旧账户。选项新增「转账」（`personal_transfer`），与 Web 一致。
+- **底部决策栏**：一个意见框 + 更多/退回/驳回/通过。通过意见可空（记为「同意」）；驳回、退回未写原因时就地报错并聚焦输入框；驳回、撤回、取消/终止二次确认。输入框聚焦时展开并显示快捷意见。键盘处理：`adjust-position=false` + `fixed`，用 `bindfocus`、`bindkeyboardheightchange` 的高度把栏顶到键盘上方。
+- **更多**：转办（改用 `hy-search-picker` 可搜索列表，原 `wx.showActionSheet` 按微信文档最多 6 项，放不下通讯录）、撤回、取消审批（超管显示「终止流程」）。
+- **只读视图**：审批动作全关。从「我发起的」（`from=initiated`）进入时保留撤回、取消（小程序此前没有这两个入口）；从付款查询进入什么都不能做。
+- **动作后流转**：通过/驳回/退回/转办后打开下一条待办（`redirectTo`，返回仍回列表）；列表确认为空才提示「待办已处理完」并回列表；待办取不到时不下这个结论。撤回、取消留在本页刷新。服务端报错原文提示。
+- **与 Web 的差异**：退回只退回发起人（Web 可选上一步/指定节点）；未选支付方案不拦通过（Web 拦）；没有付款主体与发票抬头不一致的确认；不支持审批台上传附件；开票、收款退款、库房单仍无业务明细。
+- **验证**：电脑模拟器登录不通，只能真机。`utils/approval-detail-page.test.js` 用真实页面代码跑通主要流程，界面和键盘要真机确认。
 
 ## 5. 组件与模块指向
 
