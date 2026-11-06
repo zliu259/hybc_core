@@ -1,247 +1,162 @@
 const { request } = require("../../utils/request");
 const { getUserProfile } = require("../../utils/auth");
+const { loadUserNameMap, toUserName } = require("../../utils/user-names");
+const {
+  buildEntrySections,
+  buildGreeting,
+  buildPendingPreview,
+  buildTodoTiles,
+  todoKeysFor
+} = require("../../utils/workbench-view");
 
-const canLaunchPayment = (roles) => {
-  return (
-    roles.includes("super_admin") ||
-    roles.includes("manager") ||
-    roles.includes("site_manager") ||
-    roles.includes("operator") ||
-    roles.includes("finance")
-  );
-};
+const USAGE_KEY_PREFIX = "workbench:usage:v1:";
 
-const canAccessQuery = (roles) => {
-  return roles.includes("super_admin") || roles.includes("finance") || roles.includes("manager");
-};
+const totalOf = (result) =>
+  Number((result && result.pagination && result.pagination.total) || 0);
 
-const canAccessManagerDashboard = (roles) => {
-  return roles.includes("super_admin") || roles.includes("manager");
-};
+const lengthOf = (result) =>
+  Array.isArray(result && result.data) ? result.data.length : 0;
 
-const canAccessExternalLogReview = (roles) => {
-  return roles.includes("super_admin") || roles.includes("manager") || roles.includes("site_manager");
-};
-
-const getTotal = (result) => {
-  return Number(
-    (result && result.pagination && result.pagination.total) ||
-      (result && result.total) ||
-      (result && result.count) ||
-      (Array.isArray(result && result.data) ? result.data.length : 0)
-  );
-};
-
-const isSystemProject = (item) => {
-  const code = String((item && item.project_code) || "");
-  const name = String((item && item.project_name) || "");
-  return code === "办公室" || code === "仓库" || name === "办公室" || name === "仓库";
-};
-
-const getRealProjectTotal = (result) => {
-  const total = getTotal(result);
-  const data = Array.isArray(result && result.data) ? result.data : [];
-  const systemCount = data.filter(isSystemProject).length;
-  return Math.max(0, total - systemCount);
-};
-
-const CORE_ACTIONS = [
-  { title: "🏗️ 看项目", desc: "进入项目列表，深看单个项目", path: "/pages/project-list/index", tone: "blue" },
-  { title: "📝 写日志", desc: "管理日志 / 施工日志", path: "/pages/log/index", tone: "green" },
-  { title: "✅ 批审批", desc: "处理待办与发起记录", path: "/pages/approval/index", tone: "orange" }
-];
-
-const DEFAULT_APPS = [
-  { title: "🚜 设备查验", desc: "扫码看设备状态", path: "/pages/asset/index" },
-  { title: "👷 安全勘查", desc: "定位拍照查隐患", path: "/pages/survey/index" },
-  {
-    title: "💸 智能发单台",
-    desc: "阈值识别后发起对外付款",
-    path: "/packageFinance/payment-apply/index"
+/** 每个待办数字怎么取。各取各的，一个接口失败不影响其他数字。 */
+const TODO_LOADERS = {
+  returned: {
+    path: "/api/v1/approval/initiated/summary",
+    read: (result) => Number((result.data && result.data.returned_needs_action) || 0)
   },
-  {
-    title: "⛽ 油卡额度申请",
-    desc: "发起油卡额度申请并跟踪进度",
-    path: "/packageFinance/fuel-apply/index"
+  review: {
+    path: "/api/v1/project/external-log-submissions?status=needs_manual_review&page=1&pageSize=1",
+    read: totalOf
   },
-  { title: "💰 我的报销提交", desc: "发起报销并跟踪进度", path: "/packageFinance/reimbursement-list/index" },
-  { title: "🔎 查询", desc: "合同/付款/收款统一查询", path: "/pages/query/index" },
-  { title: "📈 进度看板", desc: "查看进度预警", path: "/pages/progress/index" },
-  { title: "🔔 消息通知", desc: "查看催办提醒", path: "/pages/notice/index" }
-];
+  warning: { path: "/api/v1/log/progress-alert", read: lengthOf },
+  tasks: { path: "/api/v1/warehouse/work-order/mobile/my-tasks", read: lengthOf }
+};
+
+const get = (path) => request({ method: "GET", path });
+
+const settle = (promise) =>
+  promise.then(
+    (result) => ({ ok: true, result }),
+    () => ({ ok: false, result: null })
+  );
+
+const readUsage = (key) => {
+  try {
+    return wx.getStorageSync(key) || {};
+  } catch {
+    return {};
+  }
+};
+
+const writeUsage = (key, usage) => {
+  try {
+    wx.setStorageSync(key, usage);
+  } catch {
+    // 只影响常用入口的排序，存不下不必打扰用户
+  }
+};
+
+const nameFromProfile = (profile, userNames) => {
+  const nickname = String(profile.nickname || "");
+  if (/[一-鿿]/.test(nickname)) return nickname;
+  const name = toUserName(profile.username, userNames, "");
+  return name === "-" ? "" : name;
+};
 
 Page({
   data: {
-    title: "工作台",
-    pendingCount: 0,
-    noticeCount: 0,
-    warningCount: 0,
-    projectCount: 0,
-    activeProjectCount: 0,
-    externalReviewCount: 0,
-    loading: false,
-    coreActions: CORE_ACTIONS,
-    appEntries: DEFAULT_APPS,
-    riskTone: "green",
-    riskText: "现场正常",
-    riskDesc: "暂无进度预警，先处理高频事项",
-    showCreateProject: false,
-    showManagerDashboard: false,
-    showExternalLogReview: false
+    greeting: { text: "", dateText: "" },
+    todos: [],
+    common: [],
+    more: [],
+    pendingPreview: [],
+    pendingTotal: 0,
+    someCountsFailed: false
+  },
+
+  onLoad() {
+    // 上一次取到的数字。刷新失败时留着，不能变成 0 让人以为没有待办
+    this._counts = {};
+    this._requestId = 0;
   },
 
   onShow() {
+    this.syncEntries();
     this.loadWorkbench();
   },
 
+  async onPullDownRefresh() {
+    await this.loadWorkbench();
+    wx.stopPullDownRefresh();
+  },
+
+  /** 入口只在换了账号或角色时重排，一次使用过程中位置不变，才能凭手感点。 */
+  syncEntries() {
+    const profile = getUserProfile() || {};
+    const roles = Array.isArray(profile.roles) ? profile.roles : [];
+    const identity = `${profile.username || ""}|${roles.join(",")}`;
+    if (identity === this._identity) return;
+    this._identity = identity;
+    this._usageKey = `${USAGE_KEY_PREFIX}${profile.username || ""}`;
+    const { common, more } = buildEntrySections(roles, readUsage(this._usageKey));
+    this.setData({ common, more });
+  },
+
   async loadWorkbench() {
-    this.setData({ loading: true });
-    try {
-      const profile = getUserProfile() || {};
-      const roles = Array.isArray(profile.roles) ? profile.roles : [];
-      const paymentAllowed = canLaunchPayment(roles);
-      const queryAllowed = canAccessQuery(roles);
-      const showManagerDashboard = canAccessManagerDashboard(roles);
-      const showExternalLogReview = canAccessExternalLogReview(roles);
-      const pending = await request({
-        method: "GET",
-        path: "/api/v1/approval/pending?page=1&pageSize=20"
-      });
-      let externalReviewCount = 0;
-      if (showExternalLogReview) {
-        try {
-          const externalReview = await request({
-            method: "GET",
-            path: "/api/v1/project/external-log-submissions?status=needs_manual_review&page=1&pageSize=1"
-          });
-          externalReviewCount = getTotal(externalReview);
-        } catch {
-          externalReviewCount = 0;
-        }
-      }
-      let alerts = [];
-      try {
-        const alertResult = await request({
-          method: "GET",
-          path: "/api/v1/log/progress-alert"
-        });
-        alerts = Array.isArray(alertResult.data) ? alertResult.data : [];
-      } catch {
-        alerts = [];
-      }
-      const list = (pending && pending.data) || [];
-      const showCreateProject =
-        roles.includes("super_admin") ||
-        roles.includes("manager") ||
-        roles.includes("site_manager");
-      const appEntries = DEFAULT_APPS.filter(
-        item =>
-          (paymentAllowed || item.path !== "/packageFinance/payment-apply/index") &&
-          (queryAllowed || item.path !== "/pages/query/index")
-      );
-      const finalEntries = showCreateProject
-        ? appEntries.concat([
-            {
-              title: "🏗️ 创建项目",
-              desc: "一步一问快速立项",
-              path: "/pages/project-create/index"
-            }
-          ])
-        : appEntries;
-      const riskTone = alerts.some((item) => item.level === "high")
-        ? "red"
-        : alerts.length > 0
-          ? "yellow"
-          : "green";
-      this.setData({
-        pendingCount: list.length,
-        noticeCount: list.length,
-        warningCount: alerts.length,
-        riskTone,
-        riskText: riskTone === "red" ? "优先看预警" : riskTone === "yellow" ? "有项目偏慢" : "现场正常",
-        riskDesc:
-          riskTone === "red"
-            ? "存在明显低于近7日均值的项目"
-            : riskTone === "yellow"
-              ? "有项目进度低于近7日均值"
-              : "暂无进度预警，先处理高频事项",
-        showCreateProject,
-        showManagerDashboard,
-        showExternalLogReview,
-        externalReviewCount,
-        appEntries: finalEntries
-      });
+    this._requestId += 1;
+    const requestId = this._requestId;
+    const profile = getUserProfile() || {};
+    const roles = Array.isArray(profile.roles) ? profile.roles : [];
+    const keys = todoKeysFor(roles).filter((key) => TODO_LOADERS[key]);
 
-      this.loadProjectMeta();
-    } catch {
-      this.setData({
-        pendingCount: 0,
-        noticeCount: 0,
-        warningCount: 0,
-        projectCount: 0,
-        activeProjectCount: 0,
-        externalReviewCount: 0
-      });
-    } finally {
-      this.setData({ loading: false });
-    }
+    const [userNames, pending, ...others] = await Promise.all([
+      loadUserNameMap(),
+      settle(get("/api/v1/approval/pending?page=1&pageSize=3")),
+      ...keys.map((key) => settle(get(TODO_LOADERS[key].path)))
+    ]);
+    if (requestId !== this._requestId) return;
+
+    const counts = {
+      ...this._counts,
+      ...(pending.ok ? { pending: totalOf(pending.result) } : {}),
+      ...Object.fromEntries(
+        keys
+          .map((key, index) => [key, others[index]])
+          .filter(([, outcome]) => outcome.ok)
+          .map(([key, outcome]) => [key, TODO_LOADERS[key].read(outcome.result)])
+      )
+    };
+    this._counts = counts;
+
+    const toName = (userid) => toUserName(userid, userNames);
+    this.setData({
+      greeting: buildGreeting(new Date(), nameFromProfile(profile, userNames)),
+      todos: buildTodoTiles(roles, counts),
+      ...(pending.ok
+        ? {
+            pendingPreview: buildPendingPreview(pending.result.data, toName),
+            pendingTotal: counts.pending
+          }
+        : {}),
+      someCountsFailed: !pending.ok || others.some((outcome) => !outcome.ok)
+    });
   },
 
-  async loadProjectMeta() {
-    try {
-      const [result, activeResult] = await Promise.all([
-        request({
-          method: "GET",
-          path: "/api/v1/project?page=1&pageSize=100"
-        }),
-        request({
-          method: "GET",
-          path: "/api/v1/project?page=1&pageSize=100&status=active"
-        })
-      ]);
-      const count = getRealProjectTotal(result);
-      const activeCount = getRealProjectTotal(activeResult);
-      this.setData({ projectCount: count, activeProjectCount: activeCount });
-    } catch {
-      this.setData({ projectCount: 0, activeProjectCount: 0 });
-    }
+  openPath(e) {
+    wx.navigateTo({ url: e.currentTarget.dataset.path });
   },
 
-  openProjectList() {
-    wx.navigateTo({ url: "/pages/project-list/index" });
-  },
-
-  openManagerDashboard() {
-    wx.navigateTo({ url: "/pages/manager-dashboard/index" });
-  },
-
-  openExternalLogReview() {
-    wx.navigateTo({ url: "/pages/external-log-review/index" });
-  },
-
-  goTo(e) {
-    const path = e.currentTarget.dataset.path;
+  openEntry(e) {
+    const { key, path } = e.currentTarget.dataset;
+    const usage = readUsage(this._usageKey);
+    writeUsage(this._usageKey, { ...usage, [key]: Number(usage[key] || 0) + 1 });
     wx.navigateTo({ url: path });
   },
 
-  openGlobalHelper() {
-    wx.showActionSheet({
-      itemList: [
-        "🎤 我要发起对外付款",
-        "🎤 我要上报顶进数据",
-        "🎤 我要发起报销"
-      ],
-      success: async (res) => {
-        if (res.tapIndex === 0) {
-          wx.switchTab({ url: "/pages/finance/index" });
-          return;
-        }
-        if (res.tapIndex === 1) {
-          wx.navigateTo({ url: "/pages/operator-log/index" });
-          return;
-        }
-        wx.navigateTo({ url: "/packageFinance/reimbursement-list/index" });
-      }
-    });
+  openApproval(e) {
+    wx.navigateTo({ url: `/pages/approval-detail/index?id=${e.currentTarget.dataset.id}` });
+  },
+
+  openAllApprovals() {
+    wx.navigateTo({ url: "/pages/approval/index" });
   }
 });

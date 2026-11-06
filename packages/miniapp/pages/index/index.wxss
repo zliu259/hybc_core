@@ -1,210 +1,208 @@
-.btn {
-  font-size: 28rpx;
-}
-
-.workbench-hero {
+.greeting {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   justify-content: space-between;
-  gap: 18rpx;
-  padding: 30rpx 28rpx;
-  border-radius: 24rpx;
-  color: #ffffff;
-  background: linear-gradient(135deg, #183f36 0%, #2f6c5f 100%);
-  box-shadow: 0 16rpx 36rpx rgba(47, 108, 95, 0.22);
+  gap: 16rpx;
+  margin: 0 4rpx 16rpx;
 }
 
-.workbench-hero.yellow {
-  background: linear-gradient(135deg, #624412 0%, #c4872b 100%);
-}
-
-.workbench-hero.red {
-  background: linear-gradient(135deg, #5d1c1c 0%, #bd3f3f 100%);
-}
-
-.hero-main {
-  flex: 1;
+.greeting-text {
   min-width: 0;
-}
-
-.hero-title {
-  font-size: 40rpx;
-  font-weight: 800;
-}
-
-.hero-desc {
-  margin-top: 8rpx;
-  font-size: 24rpx;
-  color: rgba(255, 255, 255, 0.82);
-}
-
-.risk-pill {
-  flex: 0 0 auto;
-  padding: 10rpx 16rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.18);
-  font-size: 23rpx;
-}
-
-.risk-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18rpx;
-  margin-top: 18rpx;
-  padding: 20rpx 22rpx;
-  border-radius: 20rpx;
-  background: #f0fff4;
-  border: 1px solid #bde8c6;
-}
-
-.risk-card.yellow {
-  background: #fff7ea;
-  border-color: #ffd99a;
-}
-
-.risk-card.red {
-  background: #fff1f1;
-  border-color: #ffc7c7;
-}
-
-.risk-title {
-  font-size: 30rpx;
-  font-weight: 800;
-  color: #1f2329;
-}
-
-.risk-desc {
-  margin-top: 6rpx;
-  font-size: 23rpx;
-  color: #5c667a;
-}
-
-.risk-count {
-  width: 82rpx;
-  height: 82rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 24rpx;
-  background: #ffffff;
-  font-size: 42rpx;
-  font-weight: 800;
-  color: #1f2329;
-}
-
-.action-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14rpx;
-  margin-top: 16rpx;
-}
-
-.action-card {
-  min-height: 116rpx;
-  padding: 22rpx;
-  border-radius: 18rpx;
-  box-sizing: border-box;
-  background: #f8fbff;
-  border: 1px solid #dbe8f7;
-}
-
-.action-card:active,
-.manager-entry:active,
-.entry-card:active {
-  opacity: 0.82;
-}
-
-.action-card.blue {
-  background: #eef6ff;
-  border-color: #cfe3ff;
-}
-
-.action-card.green {
-  background: #eefbf3;
-  border-color: #c9edd5;
-}
-
-.action-card.orange {
-  background: #fff7ea;
-  border-color: #ffd99a;
-}
-
-.action-title {
-  font-size: 31rpx;
-  font-weight: 800;
-  color: #1f2329;
-}
-
-.action-desc {
-  margin-top: 8rpx;
-  font-size: 23rpx;
-  color: #5c667a;
-}
-
-.manager-entry {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20rpx;
-  margin-top: 16rpx;
-  padding: 24rpx;
-  border-radius: 20rpx;
-  background: linear-gradient(135deg, #183f36 0%, #2f6c5f 100%);
-  color: #ffffff;
-}
-
-.review-entry {
-  margin-top: 14rpx;
-  background: linear-gradient(135deg, #65350f 0%, #c06a1c 100%);
-}
-
-.manager-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.manager-title {
   font-size: 34rpx;
-  font-weight: 800;
+  font-weight: 600;
+  color: #1f2329;
 }
 
-.manager-desc {
-  margin-top: 8rpx;
-  font-size: 23rpx;
-  line-height: 1.45;
-  color: rgba(255, 255, 255, 0.82);
+.greeting-date {
+  flex: none;
+  font-size: 24rpx;
+  color: #5c667a;
 }
 
-.manager-arrow {
-  flex: 0 0 auto;
-  padding: 10rpx 16rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.16);
-  font-size: 23rpx;
-}
-
-.review-badge {
-  flex: 0 0 auto;
-  min-width: 96rpx;
-  padding: 12rpx 14rpx;
+/* 待办数字 */
+.todos {
+  display: flex;
+  overflow: hidden;
+  background: #fff;
   border-radius: 20rpx;
-  background: rgba(255, 255, 255, 0.16);
+}
+
+.todo {
+  flex: 1;
+  min-width: 0;
+  padding: 22rpx 4rpx 20rpx;
   text-align: center;
 }
 
-.review-count {
-  font-size: 36rpx;
-  line-height: 1;
-  font-weight: 800;
+.todo + .todo {
+  border-left: 1rpx solid #edf1f6;
 }
 
-.review-label {
-  margin-top: 8rpx;
-  font-size: 20rpx;
-  color: rgba(255, 255, 255, 0.78);
+.todo-hover,
+.entry-hover,
+.approval-hover,
+.section-head-hover {
+  background: #f0f4fa;
 }
 
-.entry-grid {
-  margin-top: 14rpx;
+.todo-count {
+  font-size: 48rpx;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+  color: #b4bccb;
+}
+
+.todo-count-alert {
+  color: #d9480f;
+}
+
+.todo-label {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  line-height: 1.4;
+  color: #1f2329;
+}
+
+.chevron {
+  margin-left: 4rpx;
+  color: #b4bccb;
+}
+
+.todo-hint {
+  margin: 10rpx 4rpx 0;
+  font-size: 24rpx;
+  line-height: 1.5;
+  color: #8a5300;
+}
+
+/* 分区 */
+.section {
+  margin-top: 16rpx;
+  padding: 22rpx 20rpx 12rpx;
+  background: #fff;
+  border-radius: 20rpx;
+}
+
+.section-title {
+  margin: 0 4rpx 14rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2329;
+}
+
+.section-title-inline {
+  margin-bottom: 0;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-bottom: 6rpx;
+  padding: 2rpx 4rpx 8rpx 0;
+  border-radius: 8rpx;
+}
+
+.section-more {
+  font-size: 24rpx;
+  color: #1677ff;
+}
+
+/* 入口：实色方块配白色线条图标，颜色表示类别 */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4rpx;
+}
+
+.entry {
+  padding: 10rpx 0 14rpx;
+  text-align: center;
+  border-radius: 16rpx;
+}
+
+.entry-tile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 88rpx;
+  height: 88rpx;
+  margin: 0 auto;
+  border-radius: 24rpx;
+}
+
+.entry-icon {
+  display: block;
+  width: 50rpx;
+  height: 50rpx;
+}
+
+.entry-tile-blue {
+  background: #2f7bf6;
+}
+
+.entry-tile-green {
+  background: #16a06f;
+}
+
+.entry-tile-orange {
+  background: #e8750f;
+}
+
+.entry-tile-slate {
+  background: #64748b;
+}
+
+.entry-label {
+  margin-top: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.35;
+  color: #1f2329;
+}
+
+/* 待审批预览 */
+.approval {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 16rpx 4rpx;
+  border-top: 1rpx solid #edf1f6;
+}
+
+.approval-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.approval-title {
+  overflow: hidden;
+  font-size: 27rpx;
+  line-height: 1.5;
+  color: #1f2329;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.approval-meta {
+  overflow: hidden;
+  margin-top: 2rpx;
+  font-size: 23rpx;
+  line-height: 1.5;
+  color: #8a94a6;
+  white-space: pre;
+  text-overflow: ellipsis;
+}
+
+.approval-amount {
+  flex: none;
+  max-width: 260rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #1f2329;
+  word-break: break-all;
+  text-align: right;
 }

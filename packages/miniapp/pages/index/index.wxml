@@ -1,75 +1,83 @@
 <view class="page">
-  <view class="workbench-hero {{riskTone}}">
-    <view class="hero-main">
-      <view class="hero-title">早安，工程伙伴</view>
-      <view class="hero-desc">先看红黄绿，再做今天的动作</view>
-    </view>
-    <view class="risk-pill">{{riskTone === 'red' ? '🔴' : riskTone === 'yellow' ? '🟡' : '🟢'}} {{riskText}}</view>
+  <view class="greeting">
+    <text class="greeting-text">{{greeting.text}}</text>
+    <text class="greeting-date">{{greeting.dateText}}</text>
   </view>
 
-  <view class="risk-card {{riskTone}}">
-    <view>
-      <view class="risk-title">{{riskText}}</view>
-      <view class="risk-desc">{{riskDesc}}</view>
-    </view>
-    <view class="risk-count">{{warningCount}}</view>
-  </view>
-
-  <view class="kpi-board">
-    <view class="kpi-item red">
-      <view class="kpi-label traffic-red">🔴 待审批</view>
-      <view class="kpi-value traffic-red">{{pendingCount}}</view>
-    </view>
-    <view class="kpi-item yellow">
-      <view class="kpi-label traffic-yellow">🟡 进度预警</view>
-      <view class="kpi-value traffic-yellow">{{warningCount}}</view>
-    </view>
-    <view class="kpi-item green">
-      <view class="kpi-label traffic-green">🟢 施工中项目</view>
-      <view class="kpi-value traffic-green">{{activeProjectCount}}</view>
-    </view>
-    <view class="kpi-item">
-      <view class="kpi-label">📍 全部项目</view>
-      <view class="kpi-value">{{projectCount}}</view>
+  <!-- 待办：每个数字都能点，点了直接去处理 -->
+  <view class="todos">
+    <view
+      wx:for="{{todos}}"
+      wx:key="key"
+      class="todo"
+      hover-class="todo-hover"
+      data-path="{{item.path}}"
+      bindtap="openPath"
+    >
+      <view class="todo-count {{item.alert ? 'todo-count-alert' : ''}}">{{item.countText}}</view>
+      <view class="todo-label">{{item.label}}<text class="chevron">›</text></view>
     </view>
   </view>
+  <view wx:if="{{someCountsFailed}}" class="todo-hint">有些数字没有取到，下拉刷新重试</view>
 
-  <hy-panel-card title="常用动作" icon="⚡" subtitle="现场高频操作放在最前面">
-    <view class="action-grid">
-      <view wx:for="{{coreActions}}" wx:key="title" class="action-card {{item.tone}}" data-path="{{item.path}}" bindtap="goTo">
-        <view class="action-title">{{item.title}}</view>
-        <view class="action-desc">{{item.desc}}</view>
+  <view class="section">
+    <view class="section-title">常用</view>
+    <view class="grid">
+      <view
+        wx:for="{{common}}"
+        wx:key="key"
+        class="entry"
+        hover-class="entry-hover"
+        data-key="{{item.key}}"
+        data-path="{{item.path}}"
+        bindtap="openEntry"
+      >
+        <view class="entry-tile entry-tile-{{item.tone}}">
+          <image class="entry-icon" src="{{item.icon}}" mode="aspectFit" />
+        </view>
+        <view class="entry-label">{{item.label}}</view>
       </view>
     </view>
-  </hy-panel-card>
+  </view>
 
-  <hy-panel-card wx:if="{{showManagerDashboard || showExternalLogReview}}" title="管理入口" icon="📊" subtitle="公司管理人员即时总览进行中项目">
-    <view wx:if="{{showManagerDashboard}}" class="manager-entry" bindtap="openManagerDashboard">
-      <view class="manager-copy">
-        <view class="manager-title">项目驾驶舱</view>
-        <view class="manager-desc">查看施工中项目、进度、日志和红黄灯预警</view>
-      </view>
-      <view class="manager-arrow">进入</view>
+  <view wx:if="{{pendingPreview.length > 0}}" class="section">
+    <view class="section-head" hover-class="section-head-hover" bindtap="openAllApprovals">
+      <text class="section-title section-title-inline">待我审批</text>
+      <text class="section-more">全部 {{pendingTotal}} 条<text class="chevron">›</text></text>
     </view>
-    <view wx:if="{{showExternalLogReview}}" class="manager-entry review-entry" bindtap="openExternalLogReview">
-      <view class="manager-copy">
-        <view class="manager-title">外部日志待复核</view>
-        <view class="manager-desc">集中处理 AI 未通过的外部项目/工作段日志</view>
+    <view
+      wx:for="{{pendingPreview}}"
+      wx:key="id"
+      class="approval"
+      hover-class="approval-hover"
+      data-id="{{item.id}}"
+      bindtap="openApproval"
+    >
+      <view class="approval-main">
+        <view class="approval-title">{{item.title}}</view>
+        <view class="approval-meta">{{item.metaText}}</view>
       </view>
-      <view class="review-badge">
-        <view class="review-count">{{externalReviewCount}}</view>
-        <view class="review-label">待处理</view>
-      </view>
+      <view wx:if="{{item.amountText}}" class="approval-amount">{{item.amountText}}</view>
     </view>
-  </hy-panel-card>
+  </view>
 
-  <hy-panel-card title="全部应用" icon="▦" subtitle="低频功能收纳在这里，减少工作台干扰">
-    <view class="entry-grid">
-      <view wx:for="{{appEntries}}" wx:key="title" class="entry-card" data-path="{{item.path}}" bindtap="goTo">
-        <view class="entry-top"><view class="entry-title">{{item.title}}</view></view>
-        <view class="entry-desc">{{item.desc}}</view>
+  <view wx:if="{{more.length > 0}}" class="section">
+    <view class="section-title">全部功能</view>
+    <view class="grid">
+      <view
+        wx:for="{{more}}"
+        wx:key="key"
+        class="entry"
+        hover-class="entry-hover"
+        data-key="{{item.key}}"
+        data-path="{{item.path}}"
+        bindtap="openEntry"
+      >
+        <view class="entry-tile entry-tile-{{item.tone}}">
+          <image class="entry-icon" src="{{item.icon}}" mode="aspectFit" />
+        </view>
+        <view class="entry-label">{{item.label}}</view>
       </view>
     </view>
-  </hy-panel-card>
-
+  </view>
 </view>
