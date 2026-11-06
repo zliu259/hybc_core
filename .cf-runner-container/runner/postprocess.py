@@ -16,6 +16,8 @@ from __future__ import annotations
 import json
 import re
 
+from .evidence import evidence_is_incomplete
+
 APPROVAL_TASK_TYPES = frozenset(
     {"approval_ai_gate", "payment_risk_assessment", "risk_assessment", "contract_review"}
 )
@@ -42,6 +44,13 @@ BLOCK_CAPABLE_DIMENSIONS: dict[str, frozenset[str]] = {
     ),
 }
 
+# 依赖附件内容才能判定的可拦截维度：证据不全时没有拦截权（未读内容可能正好推翻结论）。
+# 付款域三个维度靠系统结构化数据判定，不受影响。
+# 同步契约：packages/api/src/services/approval/ai-gate-result.ts
+# AI_GATE_EVIDENCE_DEPENDENT_DIMENSIONS 保持一致。
+EVIDENCE_DEPENDENT_DIMENSIONS = frozenset({"subject_match", "amount_terms"})
+
+_NOTE_PARTIAL_EVIDENCE = "（AI未读完全部附件，相关结论已降级为放行+人工关注）"
 _NOTE_NO_FAIL_EVIDENCE = "（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）"
 _NOTE_OUT_OF_SCOPE = "（AI拒绝意见超出该业务可拦截维度范围，已降级为放行+人工关注）"
 
@@ -157,6 +166,12 @@ def risk_level_for_score(score: int) -> str:
     return "low"
 
 
+def _coverage_field(metadata: dict[str, object]) -> dict[str, object]:
+    """把附件读取情况带进规范化结果，供审批页和合同详情页展示。"""
+    coverage = metadata.get("evidence_coverage")
+    return {"evidence_coverage": coverage} if isinstance(coverage, dict) else {}
+
+
 def _score_basis(findings: list[dict[str, str]]) -> list[str]:
     """分数构成说明——让『分数』可解释，而不是模型拍脑袋的数字。"""
     basis: list[str] = []
@@ -244,15 +259,26 @@ def postprocess_gate_result(
     # 白名单裁决：reject 必须有白名单内维度的 fail 证据，否则降级——
     # 旧契约 {outcome:"reject"} 无 findings 亦降级（无证据即无拦截权）。
     # 与服务端 ai-gate-result.ts 同一规则，两侧改动必须同步。
+    coverage = metadata.get("evidence_coverage")
+    evidence_incomplete = evidence_is_incomplete(coverage)
     allowed = BLOCK_CAPABLE_DIMENSIONS.get(biz_type or "", frozenset())
-    has_block_capable_fail = any(
-        f["status"] == "fail" and f["dimension"] in allowed for f in findings
-    )
+    fail_dimensions = {f["dimension"] for f in findings if f["status"] == "fail"}
+    if evidence_incomplete:
+        blocking = (fail_dimensions & allowed) - EVIDENCE_DEPENDENT_DIMENSIONS
+    else:
+        blocking = fail_dimensions & allowed
     guard_note = ""
-    if decision == "reject" and not has_block_capable_fail:
-        has_any_fail = any(f["status"] == "fail" for f in findings)
+    if decision == "reject" and not blocking:
+        if evidence_incomplete and fail_dimensions & allowed:
+            guard_note = _NOTE_PARTIAL_EVIDENCE
+        elif fail_dimensions:
+            guard_note = _NOTE_OUT_OF_SCOPE
+        else:
+            guard_note = _NOTE_NO_FAIL_EVIDENCE
         decision = "warn"
-        guard_note = _NOTE_OUT_OF_SCOPE if has_any_fail else _NOTE_NO_FAIL_EVIDENCE
+    # 没读完就不能说「通过」：放行照旧，但必须提示人工把关
+    elif decision == "pass" and evidence_incomplete:
+        decision = "warn"
 
     outcome = "reject" if decision == "reject" else "approve"
     needs_human_review = decision == "warn"
@@ -275,6 +301,9 @@ def postprocess_gate_result(
         comment += guard_note
     else:
         comment = f"AI审查通过：{summary or '各项检查未见异常'}"
+    # 未读范围写进意见：小程序与流程时间线只展示 comment
+    if evidence_incomplete and isinstance(coverage, dict):
+        comment = f"{comment}｜{_as_str(coverage.get('summary'), 200)}"
 
     effective_risk_level = risk_level or ("high" if decision == "reject" else "low")
     normalized_output = json.dumps(
@@ -284,6 +313,7 @@ def postprocess_gate_result(
             "summary": summary,
             "findings": findings,
             "suggestions": suggestions,
+            **_coverage_field(metadata),
         },
         ensure_ascii=False,
     )
@@ -338,6 +368,7 @@ def postprocess_payment_risk_result(
             "summary": summary,
             "findings": findings,
             "recommendations": recommendations,
+            **_coverage_field(metadata),
         },
         ensure_ascii=False,
     )
@@ -419,6 +450,7 @@ def postprocess_contract_review_result(
             "clause_analysis": clauses,
             "amount_assessment": amount_assessment,
             "recommendations": _normalize_string_list(parsed.get("recommendations")),
+            **_coverage_field(metadata),
         },
         ensure_ascii=False,
     )

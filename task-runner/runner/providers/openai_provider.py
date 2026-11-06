@@ -6,6 +6,7 @@ import logging
 import time
 from typing import Any
 
+from ..evidence import build_attachment_note
 from .base import AiProvider, ProviderResult
 
 logger = logging.getLogger(__name__)
@@ -30,6 +31,12 @@ def _image_part_cap(payload: dict[str, object]) -> int:
     if isinstance(raw, int) and 0 < raw <= 40:
         return raw
     return 8
+
+
+# 带附件的审查请求：现在会送全部页面，30s 默认超时会让长文档反复中途放弃并重复计费。
+# 120s × 2 次仍在 AI 关卡 300s 的任务预算内。
+_ATTACHMENT_REQUEST_TIMEOUT_SECONDS = 120.0
+_ATTACHMENT_REQUEST_MAX_RETRIES = 1
 
 
 # 转写被输出上限截断时的终态错误（半截合同进审计会漏条款，宁失败勿截半）
@@ -118,14 +125,8 @@ class OpenAIProvider(AiProvider):
             text_blocks = attachment_context.get("text_blocks")
             image_data_urls = attachment_context.get("image_data_urls")
             if isinstance(text_blocks, list) or isinstance(image_data_urls, list):
-                # 转写任务只做逐字誊录，不适用「审查判断/拒绝」样板语
-                attachment_note = (
-                    "以下为需要逐页转写的合同扫描图片。"
-                    if task_type == "contract_precheck_extract"
-                    else (
-                        "以下为系统从附件中提取的正文/图像证据，请必须结合这些证据做审查判断；"
-                        "若业务描述与附件证据不一致，必须拒绝或要求补充材料。"
-                    )
+                attachment_note = build_attachment_note(
+                    task_type, payload.get("_evidence_coverage")
                 )
                 parts: list[dict[str, Any]] = [
                     {
@@ -135,7 +136,8 @@ class OpenAIProvider(AiProvider):
                 ]
 
                 if isinstance(text_blocks, list):
-                    for index, block in enumerate(text_blocks[:8]):
+                    # 附件数与字数上限由 executor 统一控制并记入覆盖信息，这里不再二次截断
+                    for index, block in enumerate(text_blocks):
                         if not isinstance(block, dict):
                             continue
                         block_text = block.get("text")
@@ -145,7 +147,7 @@ class OpenAIProvider(AiProvider):
                         parts.append(
                             {
                                 "type": "text",
-                                "text": f"[Attachment Text {index + 1} | {source}]\n{block_text[:12000]}",
+                                "text": f"[Attachment Text {index + 1} | {source}]\n{block_text}",
                             }
                         )
 
@@ -155,7 +157,8 @@ class OpenAIProvider(AiProvider):
                             continue
                         parts.append({"type": "image_url", "image_url": {"url": data_url}})
 
-                if len(parts) > 1:
+                # 附件全部读不出来时也要把读取情况告诉模型，否则它会把"没读到"当成"没有"
+                if len(parts) > 1 or payload.get("_evidence_coverage"):
                     user_message_content = parts
                     use_multimodal = True
 
@@ -177,11 +180,15 @@ class OpenAIProvider(AiProvider):
             # 多页 OCR 转写需要分钟级生成时间：默认 30s 客户端超时会让每次调用
             # 都中途放弃并重试（重复付费视觉输入），必须单独放宽且关掉 SDK 自动重试
             # （240s 且不重试，留在任务队列 timeout_seconds 预算内）
-            client = (
-                self.client.with_options(timeout=240.0, max_retries=0)
-                if task_type == "contract_precheck_extract"
-                else self.client
-            )
+            if task_type == "contract_precheck_extract":
+                client = self.client.with_options(timeout=240.0, max_retries=0)
+            elif use_multimodal:
+                client = self.client.with_options(
+                    timeout=_ATTACHMENT_REQUEST_TIMEOUT_SECONDS,
+                    max_retries=_ATTACHMENT_REQUEST_MAX_RETRIES,
+                )
+            else:
+                client = self.client
             response = client.chat.completions.create(**request_kwargs)
             latency = int((time.monotonic() - start) * 1000)
             content = ""
@@ -240,6 +247,8 @@ class OpenAIProvider(AiProvider):
 
     @staticmethod
     def _requires_default_temperature(model: str) -> bool:
-        # AI Gateway 目录模型名带 provider 前缀（如 openai/gpt-5.6-terra），剥前缀后再判
+        # AI Gateway 目录模型名带 provider 前缀（如 openai/gpt-6.1-terra），剥前缀后再判。
+        # 只有 GPT-4 及更早的模型接受自定义 temperature；GPT-5/6、o 系与 Claude 5 系传了会 400，
+        # 用白名单而非黑名单，新模型上线不必再改这里。
         bare = model.strip().lower().split("/", 1)[-1]
-        return bare.startswith("gpt-5")
+        return not bare.startswith(("gpt-3", "gpt-4"))
