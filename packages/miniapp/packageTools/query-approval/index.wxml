@@ -1,0 +1,73 @@
+<view class="page" wx:if="{{allowed}}">
+  <view class="search">
+    <input
+      class="search-input"
+      placeholder="搜审批单号或摘要"
+      value="{{keyword}}"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onKeywordConfirm"
+    />
+    <text wx:if="{{keyword}}" class="search-clear" bindtap="clearKeyword">清除</text>
+  </view>
+
+  <scroll-view class="chips" scroll-x enhanced show-scrollbar="{{false}}">
+    <view
+      wx:for="{{statusChips}}"
+      wx:key="value"
+      class="chip {{status === item.value ? 'chip-active' : ''}}"
+      data-value="{{item.value}}"
+      bindtap="selectStatus"
+    >{{item.label}}</view>
+  </scroll-view>
+
+  <view class="filters">
+    <picker class="filter" mode="selector" range="{{typeNames}}" value="{{typeIndex}}" bindchange="onTypeChange">
+      <view class="filter-value">{{typeNames[typeIndex]}}</view>
+    </picker>
+    <view class="filter">
+      <hy-search-picker
+        range="{{initiatorLabels}}"
+        value="{{initiatorIndex}}"
+        title="选择发起人"
+        placeholder="全部发起人"
+        searchPlaceholder="输入姓名或拼音搜索"
+        emptyText="没有找到这个人"
+        bindchange="onInitiatorChange"
+      />
+    </view>
+  </view>
+
+  <view class="summary">{{loading ? '正在加载' : (loadError ? '' : '共 ' + total + ' 条流程')}}</view>
+
+  <view wx:if="{{loadError}}" class="state">
+    <view class="state-text">{{loadError}}</view>
+    <t-button size="small" variant="outline" bindtap="loadFirstPage">重试</t-button>
+  </view>
+
+  <view wx:elif="{{!loading && rows.length === 0}}" class="state">
+    <view class="state-text">没有符合条件的流程</view>
+    <t-button size="small" variant="outline" bindtap="clearFilters">清除筛选</t-button>
+  </view>
+
+  <view
+    wx:for="{{rows}}"
+    wx:key="id"
+    class="flow"
+    hover-class="flow-hover"
+    data-id="{{item.id}}"
+    bindtap="openDetail"
+  >
+    <view class="flow-head">
+      <view class="flow-title">{{item.title}}</view>
+      <t-tag class="flow-tag" theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusText}}</t-tag>
+    </view>
+    <view class="flow-meta">{{item.metaText}}</view>
+    <view wx:if="{{item.waitText}}" class="flow-wait">{{item.waitText}}</view>
+    <view class="flow-no">{{item.instanceNo}}</view>
+  </view>
+
+  <view wx:if="{{rows.length > 0}}" class="list-foot">
+    {{loadingMore ? '正在加载' : (hasMore ? '上拉加载更多' : '没有更多了')}}
+  </view>
+</view>

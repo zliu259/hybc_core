@@ -51,7 +51,8 @@
       "root": "packageTools",
       "pages": [
         "contract-precheck-list/index",
-        "contract-precheck-detail/index"
+        "contract-precheck-detail/index",
+        "query-approval/index"
       ]
     },
     {

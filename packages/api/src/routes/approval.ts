@@ -690,7 +690,18 @@ approvalRoutes.get("/admin/all", async (c) => {
   const pageSize = Number(c.req.query("pageSize") ?? "30");
   const offset = (page - 1) * pageSize;
 
-  let sql = "SELECT * FROM approval_instance WHERE 1=1";
+  // 除实例本身，再带上当前节点和等谁处理，列表一眼能看出流程卡在哪
+  let sql = `SELECT ai.*,
+      (SELECT ani.node_name FROM approval_node_instance ani
+        WHERE ani.instance_id = ai.id
+          AND ani.node_key = ai.current_node_key
+          AND ani.round = ai.current_round
+        LIMIT 1) AS current_node_name,
+      (SELECT GROUP_CONCAT(at2.assignee_userid) FROM approval_task at2
+        WHERE at2.instance_id = ai.id
+          AND at2.status = 'pending'
+          AND at2.round = ai.current_round) AS pending_assignees
+    FROM approval_instance ai WHERE 1=1`;
   let countSql = "SELECT COUNT(*) as total FROM approval_instance WHERE 1=1";
   const params: (string | number)[] = [];
 
@@ -715,9 +726,9 @@ approvalRoutes.get("/admin/all", async (c) => {
     params.push(initiator);
   }
   if (keyword) {
-    sql += " AND biz_summary LIKE ?";
-    countSql += " AND biz_summary LIKE ?";
-    params.push(`%${keyword}%`);
+    sql += " AND (biz_summary LIKE ? OR instance_no LIKE ?)";
+    countSql += " AND (biz_summary LIKE ? OR instance_no LIKE ?)";
+    params.push(`%${keyword}%`, `%${keyword}%`);
   }
 
   const countResult = await c.env.DB.prepare(countSql)
@@ -726,7 +737,7 @@ approvalRoutes.get("/admin/all", async (c) => {
   sql += " ORDER BY created_at DESC LIMIT ? OFFSET ?";
   const rows = await c.env.DB.prepare(sql)
     .bind(...params, pageSize, offset)
-    .all<ApprovalInstance>();
+    .all<ApprovalInstance & { current_node_name: string | null; pending_assignees: string | null }>();
 
   return c.json({
     success: true,
