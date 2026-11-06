@@ -211,6 +211,8 @@ const parsedResult = (overrides: Partial<ParsedAiGateResult>): ParsedAiGateResul
   needsHumanReview: false,
   manualOverride: false,
   downgraded: false,
+  findings: [],
+  evidenceCoverage: null,
   ...overrides
 });
 

@@ -18,9 +18,16 @@
  * 不信任模型自律。两条路径都过白名单（此前 fail 证据守卫只在路径2，
  * 现行 runner 走路径1，守卫实为死代码）。
  *
+ * 证据覆盖（2026-11-06，事故 SP-20261102-0004）：runner 把实际读取情况写入
+ * metadata.evidence_coverage。证据不全时，依赖附件内容才能判定的维度没有拦截权——
+ * 未读内容可能正好推翻结论；靠系统数据判定的维度（重复支付等）不受影响。
+ * 旧 runner 不写该字段时按原规则裁决（偏斜兼容）。
+ *
  * 唯一豁免：metadata.manual_override === true（超管人工覆写，是人的决定）。
  * bizType 未知 → 空白名单（fail-open 偏置：宁可放给人工，不可错拦）。
  */
+
+import type { AiEvidenceCoverage, AiGateFinding } from "../../types/approval";
 
 export type AiGateDecision = "pass" | "warn" | "reject";
 
@@ -36,10 +43,18 @@ export const AI_GATE_BLOCK_DIMENSIONS: Readonly<Record<string, readonly string[]
   payment_request: ["duplicate_payment", "overpayment", "counterparty_consistency"]
 };
 
-const NOTE_NO_FAIL_EVIDENCE =
-  "（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）";
-const NOTE_OUT_OF_SCOPE =
-  "（AI拒绝意见超出该业务可拦截维度范围，已降级为放行+人工关注）";
+/**
+ * 依赖附件内容才能判定的可拦截维度。
+ * 同步契约：task-runner/runner/postprocess.py EVIDENCE_DEPENDENT_DIMENSIONS 保持一致。
+ */
+export const AI_GATE_EVIDENCE_DEPENDENT_DIMENSIONS: readonly string[] = [
+  "subject_match",
+  "amount_terms"
+];
+
+const NOTE_PARTIAL_EVIDENCE = "（AI未读完全部附件，相关结论已降级为放行+人工关注）";
+const NOTE_NO_FAIL_EVIDENCE = "（AI给出拒绝结论但未提供fail级证据，已降级为放行+人工关注）";
+const NOTE_OUT_OF_SCOPE = "（AI拒绝意见超出该业务可拦截维度范围，已降级为放行+人工关注）";
 
 export interface ParsedAiGateResult {
   outcome: "approve" | "reject";
@@ -55,6 +70,10 @@ export interface ParsedAiGateResult {
   manualOverride: boolean;
   /** AI 的 reject 结论被白名单裁决降级为 warn 放行 */
   downgraded: boolean;
+  /** 逐项检查结果（无法解析时为空数组） */
+  findings: AiGateFinding[];
+  /** AI 实际读取附件的情况；旧 runner 或无附件时为 null */
+  evidenceCoverage: AiEvidenceCoverage | null;
 }
 
 export interface ParseAiGateOptions {
@@ -87,7 +106,10 @@ const asRiskLevel = (value: unknown): "low" | "medium" | "high" | null => {
 /** 容错解析模型输出：剥 Markdown 代码块、截取首尾花括号。 */
 const tolerantParseObject = (raw: unknown): Record<string, unknown> | null => {
   if (typeof raw !== "string" || raw.trim().length === 0) return null;
-  const stripped = raw.trim().replace(/^```(?:json)?\s*|\s*```$/g, "").trim();
+  const stripped = raw
+    .trim()
+    .replace(/^```(?:json)?\s*|\s*```$/g, "")
+    .trim();
   const candidates = [stripped];
   const start = stripped.indexOf("{");
   const end = stripped.lastIndexOf("}");
@@ -107,11 +129,7 @@ const tolerantParseObject = (raw: unknown): Record<string, unknown> | null => {
   return null;
 };
 
-interface NormalizedFinding {
-  dimension: string;
-  status: "pass" | "warn" | "fail";
-  detail: string;
-}
+type NormalizedFinding = AiGateFinding;
 
 const normalizeFindings = (raw: unknown): NormalizedFinding[] | null => {
   if (!Array.isArray(raw)) return null;
@@ -123,32 +141,78 @@ const normalizeFindings = (raw: unknown): NormalizedFinding[] | null => {
     const status: NormalizedFinding["status"] =
       statusRaw === "pass" || statusRaw === "ok" || statusRaw === "normal"
         ? "pass"
-        : statusRaw === "fail" || statusRaw === "failed" || statusRaw === "high" || statusRaw === "error"
+        : statusRaw === "fail" ||
+            statusRaw === "failed" ||
+            statusRaw === "high" ||
+            statusRaw === "error"
           ? "fail"
           : "warn";
     findings.push({
       dimension: asString(row.dimension) ?? "unknown",
       status,
-      detail: asString(row.detail) ?? asString(row.evidence) ?? ""
+      detail: asString(row.detail) ?? asString(row.evidence) ?? "",
+      evidence: asString(row.evidence) ?? ""
     });
   }
   return findings;
 };
 
-/** 白名单裁决：是否存在有拦截资格的 fail 级 finding。 */
+const parseEvidenceCoverage = (raw: unknown): AiEvidenceCoverage | null => {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const row = raw as Record<string, unknown>;
+  if (typeof row.complete !== "boolean") return null;
+  const items = Array.isArray(row.items)
+    ? row.items.flatMap((item): AiEvidenceCoverage["items"] => {
+        if (!item || typeof item !== "object") return [];
+        const entry = item as Record<string, unknown>;
+        return [
+          {
+            name: asString(entry.name) ?? "",
+            status: asString(entry.status) ?? "",
+            pages_total: typeof entry.pages_total === "number" ? entry.pages_total : null,
+            pages_read: typeof entry.pages_read === "number" ? entry.pages_read : null,
+            description: asString(entry.description) ?? ""
+          }
+        ];
+      })
+    : [];
+  return { complete: row.complete, summary: asString(row.summary) ?? "", items };
+};
+
+/**
+ * 白名单裁决：是否存在有拦截资格的 fail 级 finding。
+ * 证据不全时，依赖附件内容的维度不计入。
+ */
 const hasBlockCapableFail = (
   findings: NormalizedFinding[] | null,
-  bizType: string | null | undefined
+  bizType: string | null | undefined,
+  coverage: AiEvidenceCoverage | null
 ): boolean => {
   if (!findings || !bizType) return false;
   const allowed = AI_GATE_BLOCK_DIMENSIONS[bizType] ?? [];
   if (allowed.length === 0) return false;
-  return findings.some((f) => f.status === "fail" && allowed.includes(f.dimension));
+  const evidenceIncomplete = coverage?.complete === false;
+  return findings.some(
+    (f) =>
+      f.status === "fail" &&
+      allowed.includes(f.dimension) &&
+      !(evidenceIncomplete && AI_GATE_EVIDENCE_DEPENDENT_DIMENSIONS.includes(f.dimension))
+  );
 };
 
-/** 降级附注：区分「无 fail 证据」与「fail 超出可拦截范围」两种情况。 */
-const downgradeNoteFor = (findings: NormalizedFinding[] | null): string =>
-  (findings ?? []).some((f) => f.status === "fail") ? NOTE_OUT_OF_SCOPE : NOTE_NO_FAIL_EVIDENCE;
+/** 降级附注：区分「证据不全」「无 fail 证据」与「fail 超出可拦截范围」。 */
+const downgradeNoteFor = (
+  findings: NormalizedFinding[] | null,
+  bizType: string | null | undefined,
+  coverage: AiEvidenceCoverage | null
+): string => {
+  const fails = (findings ?? []).filter((f) => f.status === "fail");
+  const allowed = bizType ? (AI_GATE_BLOCK_DIMENSIONS[bizType] ?? []) : [];
+  if (coverage?.complete === false && fails.some((f) => allowed.includes(f.dimension))) {
+    return NOTE_PARTIAL_EVIDENCE;
+  }
+  return fails.length > 0 ? NOTE_OUT_OF_SCOPE : NOTE_NO_FAIL_EVIDENCE;
+};
 
 const normalizeDecision = (value: unknown): AiGateDecision | null => {
   const raw = asString(value)?.toLowerCase() ?? "";
@@ -193,7 +257,9 @@ const failOpenResult = (comment: string): ParsedAiGateResult => ({
   recommendations: [],
   needsHumanReview: true,
   manualOverride: false,
-  downgraded: false
+  downgraded: false,
+  findings: [],
+  evidenceCoverage: null
 });
 
 /**
@@ -205,8 +271,7 @@ export const parseAiGateTaskResult = (
   options: ParseAiGateOptions = {}
 ): ParsedAiGateResult => {
   const bizType = options.bizType ?? null;
-  const fallbackComment =
-    options.fallbackComment ?? "AI关卡已完成（结果无法解析，请人工复核）";
+  const fallbackComment = options.fallbackComment ?? "AI关卡已完成（结果无法解析，请人工复核）";
 
   if (!resultJson) return failOpenResult(fallbackComment);
 
@@ -224,6 +289,7 @@ export const parseAiGateTaskResult = (
   const metadata =
     envelope.metadata && typeof envelope.metadata === "object" ? envelope.metadata : {};
   const manualOverride = metadata.manual_override === true;
+  const evidenceCoverage = parseEvidenceCoverage(metadata.evidence_coverage);
 
   // 路径 1：新版 runner 已在 metadata 写入规范化结论
   const metadataOutcome = asString(metadata.outcome);
@@ -238,18 +304,25 @@ export const parseAiGateTaskResult = (
     // 超管覆写（manual_override）是人的决定，完全豁免。
     if (metadataOutcome === "reject" && !manualOverride) {
       const findings = normalizeFindings(output?.findings);
-      if (!hasBlockCapableFail(findings, bizType)) {
+      if (!hasBlockCapableFail(findings, bizType, evidenceCoverage)) {
         return {
           outcome: "approve",
           explicitOutcome: true,
           decision: "warn",
           riskLevel,
           summary,
-          comment: buildComment("warn", summary, findings, downgradeNoteFor(findings)),
+          comment: buildComment(
+            "warn",
+            summary,
+            findings,
+            downgradeNoteFor(findings, bizType, evidenceCoverage)
+          ),
           recommendations,
           needsHumanReview: true,
           manualOverride: false,
-          downgraded: true
+          downgraded: true,
+          findings: findings ?? [],
+          evidenceCoverage
         };
       }
     }
@@ -265,26 +338,27 @@ export const parseAiGateTaskResult = (
       decision,
       riskLevel,
       summary,
-      comment:
-        asString(metadata.comment) ?? summary ?? buildComment(decision, summary, null, null),
+      comment: asString(metadata.comment) ?? summary ?? buildComment(decision, summary, null, null),
       recommendations,
       needsHumanReview: metadata.needs_human_review === true || decision === "warn",
       manualOverride,
-      downgraded: false
+      downgraded: false,
+      findings: normalizeFindings(output?.findings) ?? [],
+      evidenceCoverage
     };
   }
 
   // 路径 2：兜底解析模型原始输出（旧版 runner 不写 metadata.outcome）
   const output = tolerantParseObject(envelope.output);
   if (output) {
-    const rawDecision =
-      normalizeDecision(output.decision) ?? normalizeDecision(output.outcome);
+    const rawDecision = normalizeDecision(output.decision) ?? normalizeDecision(output.outcome);
     if (rawDecision) {
       const findings = normalizeFindings(output.findings);
       // 与路径 1 同一白名单规则：reject 必须有白名单内 fail 证据，否则降级。
       // （旧契约 {outcome:"reject"} 无 findings 概念 → 无证据即无拦截权，
       //   较重构前收紧；runner 侧 postprocess.py 同步同一规则。）
-      const guardDowngraded = rawDecision === "reject" && !hasBlockCapableFail(findings, bizType);
+      const guardDowngraded =
+        rawDecision === "reject" && !hasBlockCapableFail(findings, bizType, evidenceCoverage);
       const decision: AiGateDecision = guardDowngraded ? "warn" : rawDecision;
       const summary = asString(output.summary) ?? asString(output.comment);
       return {
@@ -297,12 +371,14 @@ export const parseAiGateTaskResult = (
           decision,
           summary,
           findings,
-          guardDowngraded ? downgradeNoteFor(findings) : null
+          guardDowngraded ? downgradeNoteFor(findings, bizType, evidenceCoverage) : null
         ),
         recommendations: asStringArray(output.suggestions ?? output.recommendations),
         needsHumanReview: decision === "warn",
         manualOverride,
-        downgraded: guardDowngraded
+        downgraded: guardDowngraded,
+        findings: findings ?? [],
+        evidenceCoverage
       };
     }
   }

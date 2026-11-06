@@ -13,6 +13,8 @@ import type {
   TemplateNodeConfig,
   InstanceConfig,
   NodeInstanceOverride,
+  AiEvidenceCoverage,
+  AiGateFinding,
   AiGateReview
 } from "../../types/approval";
 import { resolveTemplate } from "./router";
@@ -91,7 +93,9 @@ const emptyAiGateReviewFields = {
   decision: null,
   risk_level: null,
   needs_human_review: false,
-  comment: null
+  comment: null,
+  findings: [] as AiGateFinding[],
+  evidence_coverage: null
 };
 
 const parseAiGateReviewFields = (
@@ -105,6 +109,8 @@ const parseAiGateReviewFields = (
   risk_level: "low" | "medium" | "high" | null;
   needs_human_review: boolean;
   comment: string | null;
+  findings: AiGateFinding[];
+  evidence_coverage: AiEvidenceCoverage | null;
 } => {
   if (!raw) return { ...emptyAiGateReviewFields };
 
@@ -120,7 +126,9 @@ const parseAiGateReviewFields = (
     decision: parsed.decision,
     risk_level: parsed.riskLevel,
     needs_human_review: parsed.needsHumanReview,
-    comment: parsed.comment
+    comment: parsed.comment,
+    findings: parsed.findings,
+    evidence_coverage: parsed.evidenceCoverage
   };
 };
 
@@ -843,6 +851,8 @@ export const getInstanceDetail = async (
       risk_level: parsedResult.risk_level,
       needs_human_review: parsedResult.needs_human_review,
       comment: parsedResult.comment,
+      findings: parsedResult.findings,
+      evidence_coverage: parsedResult.evidence_coverage,
       error_message: row.error_message,
       created_at: row.created_at,
       completed_at: row.completed_at

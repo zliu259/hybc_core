@@ -22,10 +22,7 @@ export type ApprovalInstance = {
   last_updated_at?: string;
 };
 
-export type InitiatedBucket =
-  | "returned_needs_action"
-  | "in_progress"
-  | "done";
+export type InitiatedBucket = "returned_needs_action" | "in_progress" | "done";
 
 export type InitiatedApprovalSummary = {
   total: number;
@@ -125,6 +122,26 @@ export type ApprovalInitiatorAction = {
   created_at: string;
 };
 
+/** AI 实际读取附件的情况（runner 写入，不含附件内容）。 */
+export type AiEvidenceCoverage = {
+  complete: boolean;
+  summary: string;
+  items: Array<{
+    name: string;
+    status: string;
+    pages_total: number | null;
+    pages_read: number | null;
+    description: string;
+  }>;
+};
+
+export type AiGateFinding = {
+  dimension: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  evidence: string;
+};
+
 export type AiGateReview = {
   task_id: number;
   node_key: string | null;
@@ -138,6 +155,10 @@ export type AiGateReview = {
   risk_level?: "low" | "medium" | "high" | null;
   needs_human_review?: boolean;
   comment: string | null;
+  /** 逐项检查结果；旧结果或旧版后端为空 */
+  findings?: AiGateFinding[];
+  /** AI 实际读取附件的情况；旧结果或无附件时为 null */
+  evidence_coverage?: AiEvidenceCoverage | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;

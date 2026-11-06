@@ -21,7 +21,8 @@ from runner.providers.openai_provider import OpenAIProvider
         ("openai/gpt-5.6-terra", True),
         ("openai/gpt-5.6-luna", True),
         ("openai/gpt-4o", False),
-        ("anthropic/claude-sonnet-5", False),
+        # Claude 5 系同样不接受自定义 temperature（Messages API 返回 400）
+        ("anthropic/claude-sonnet-5", True),
         # 大小写与空白容错（沿用既有 strip/lower 语义）
         ("  OPENAI/GPT-5.6-TERRA  ", True),
     ],

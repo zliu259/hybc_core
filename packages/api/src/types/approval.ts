@@ -298,6 +298,27 @@ export interface ApprovalDetailResponse {
   available_actions: ApprovalAction[];
 }
 
+/** AI 实际读取附件的情况（runner 写入，不含附件内容）。 */
+export interface AiEvidenceCoverage {
+  complete: boolean;
+  summary: string;
+  items: Array<{
+    name: string;
+    status: string;
+    pages_total: number | null;
+    pages_read: number | null;
+    description: string;
+  }>;
+}
+
+/** AI 关卡的逐项检查结果（模型原始维度标识，展示时由前端翻译）。 */
+export interface AiGateFinding {
+  dimension: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  evidence: string;
+}
+
 export interface AiGateReview {
   task_id: number;
   node_key: string | null;
@@ -311,6 +332,10 @@ export interface AiGateReview {
   risk_level: "low" | "medium" | "high" | null;
   needs_human_review: boolean;
   comment: string | null;
+  /** 逐项检查结果；旧结果为空数组 */
+  findings: AiGateFinding[];
+  /** AI 实际读取附件的情况；旧结果或无附件时为 null */
+  evidence_coverage: AiEvidenceCoverage | null;
   error_message: string | null;
   created_at: string;
   completed_at: string | null;
