@@ -39,6 +39,13 @@
 ### 3.1 页面总索引（必须有明确文件指向）
 
 - 个人工作台首页：`packages/web/src/views/welcome/index.vue`
+  - 2026-11-06 重做，下面的规则取代本文后面对个人工作台的旧描述（3.11 等）。
+  - 头部：问候、角色、日期和一句话结论（几件事等你处理、最久等了多久），右边是发起报销、发起对外付款、油卡额度申请。
+  - 待处理：退回、油卡、审批合在一张清单里。退回的排最前，同类里等得最久的在前；等待满 3 天变橙，满 7 天变红。标签可按类型筛选，每行直达审批详情或修改页。
+  - 右栏：常用入口 8 个（按角色给，Lucide 图标，颜色含义和小程序工作台一致，只放这个角色进得去的页面）、我的报销（只显示没走完的）。
+  - 各块数据分别取，一块取不到不影响其他块；待办没取全时结论写“至少 N 件事”。
+  - 去掉了“个人资质与证书”：后端没有存储，文件只在页面内存里，刷新就没了。
+  - 代码：`views/welcome/workbench-view.ts`（逻辑和测试）、`components/WorkbenchQueue.vue`、`WorkbenchEntries.vue`、`WorkbenchReimbursements.vue`。
 - 个人工作台-我的申请：`packages/web/src/views/workspace/my-applications/index.vue`
 - 工作台我的报销提交：`packages/web/src/views/workspace/reimbursement/list.vue`
 - 仪表盘：`packages/web/src/views/dashboard/index.vue`
