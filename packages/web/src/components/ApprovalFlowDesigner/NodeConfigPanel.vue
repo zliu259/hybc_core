@@ -36,7 +36,7 @@ const aiSlotOptionsRaw = ref<Array<{ slot_id: string; label: string }>>([]);
 const assigneeOptions = computed(() => {
   const mapped = wecomUsers.value.map(user => ({
     value: user.userid,
-    label: user.name ? `${user.name} (${user.userid})` : user.userid
+    label: user.name || user.userid
   }));
 
   const existing = new Set(mapped.map(item => item.value));

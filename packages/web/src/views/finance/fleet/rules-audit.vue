@@ -13,8 +13,11 @@ import {
   type FleetWecomNotification
 } from "@/api/fleet";
 import { fleetNotificationStatusLabel } from "@/utils/enum-labels";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "FleetRulesAuditCenter" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const policies = ref<FleetFuelRulePolicy[]>([]);
@@ -70,6 +73,8 @@ const retryNotification = async (row: FleetWecomNotification) => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -181,7 +186,11 @@ onMounted(loadData);
       <el-tab-pane label="操作审计">
         <el-table :data="auditLogs" stripe>
           <el-table-column prop="created_at" label="时间" width="180" />
-          <el-table-column prop="actor_userid" label="操作人" width="160" />
+          <el-table-column label="操作人" width="160">
+            <template #default="scope">{{
+              userNameOf(scope.row.actor_userid)
+            }}</template>
+          </el-table-column>
           <el-table-column prop="action" label="动作" width="220" />
           <el-table-column prop="target_type" label="对象" width="180" />
           <el-table-column prop="target_id" label="对象ID" width="120" />

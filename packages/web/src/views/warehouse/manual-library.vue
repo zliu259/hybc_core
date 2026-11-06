@@ -18,8 +18,11 @@ import {
   type WarehouseManualType,
   type WarehouseManualVersion
 } from "@/api/warehouse-manual";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "WarehouseManualLibrary" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const manuals = ref<WarehouseManual[]>([]);
@@ -244,6 +247,8 @@ const submitBinding = async () => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -304,11 +309,11 @@ onMounted(loadData);
               {{ versionStatusName(row.status) }}
             </template>
           </el-table-column>
-          <el-table-column
-            prop="created_by_userid"
-            label="创建人"
-            width="130"
-          />
+          <el-table-column label="创建人" width="130">
+            <template #default="scope">{{
+              userNameOf(scope.row.created_by_userid)
+            }}</template>
+          </el-table-column>
           <el-table-column prop="created_at" label="创建时间" min-width="170" />
           <el-table-column label="操作" width="130">
             <template #default="{ row }">

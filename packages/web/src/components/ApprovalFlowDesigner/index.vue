@@ -20,6 +20,7 @@ import {
 import { Background } from "@vue-flow/background";
 import { Controls } from "@vue-flow/controls";
 import { MiniMap } from "@vue-flow/minimap";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import NodePalette from "./NodePalette.vue";
 import NodeConfigPanel from "./NodeConfigPanel.vue";
 import { graphToTemplate, templateToGraph } from "./serializer";
@@ -405,6 +406,8 @@ const onKeyDown = (event: KeyboardEvent) => {
   removeSelection();
 };
 
+const { loadUserNames, userNameOf } = useWecomUserOptions();
+
 const miniMapNodeColor = (node: Node<FlowNodeData>) => {
   return NODE_COLORS[node.data.type] ?? "#6B7280";
 };
@@ -413,7 +416,10 @@ const formatAssigneeSummary = (assignees: string[]) => {
   if (!Array.isArray(assignees) || assignees.length === 0) {
     return "未设置负责人";
   }
-  const preview = assignees.slice(0, 2).join(" / ");
+  const preview = assignees
+    .slice(0, 2)
+    .map(userid => userNameOf(userid))
+    .join(" / ");
   return assignees.length > 2 ? `${preview} 等${assignees.length}人` : preview;
 };
 
@@ -467,6 +473,8 @@ onBeforeUnmount(() => {
     syncConfigTimer = null;
   }
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>

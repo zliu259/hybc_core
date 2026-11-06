@@ -23,8 +23,11 @@ import {
   resolveBizDetailRoute,
   resolveBizEditRoute
 } from "@/views/approval/biz-edit-routes";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "WorkspaceMyApplications" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const router = useRouter();
 const loading = ref(false);
@@ -222,6 +225,8 @@ const loadData = async () => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -396,11 +401,11 @@ onMounted(loadData);
             }}</template>
           </el-table-column>
           <el-table-column prop="processed_at" label="处理时间" width="180" />
-          <el-table-column
-            prop="processed_by_userid"
-            label="处理人"
-            width="140"
-          />
+          <el-table-column label="处理人" width="140">
+            <template #default="scope">{{
+              userNameOf(scope.row.processed_by_userid)
+            }}</template>
+          </el-table-column>
           <el-table-column prop="requested_at" label="申请时间" width="180" />
         </el-table>
 

@@ -81,7 +81,7 @@ const filters = ref<{
   project_id?: number;
   asset_type_id?: number;
 }>({});
-const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const { wecomUsers, loadWecomUsers, userNameOf } = useWecomUserOptions();
 
 const statusOptions: Array<{
   label: string;
@@ -158,11 +158,7 @@ const isTaskOverdue = (row: WarehouseAssetWorkOrder) => {
 const hasTaskException = (row: WarehouseAssetWorkOrder) =>
   row.status === "rejected" || isTaskOverdue(row);
 
-const workerText = (userid: string | null) => {
-  if (!userid) return "未派工";
-  const user = wecomUsers.value.find(item => item.userid === userid);
-  return user ? `${user.name} (${userid})` : userid;
-};
+const workerText = (userid: string | null) => userNameOf(userid, "未派工");
 
 const evidenceTypeText: Record<string, string> = {
   photo: "照片",
@@ -477,7 +473,7 @@ onMounted(async () => {
           <el-option
             v-for="item in wecomUsers"
             :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
+            :label="item.name || item.userid"
             :value="item.userid"
           />
         </el-select>
@@ -681,7 +677,7 @@ onMounted(async () => {
             <el-option
               v-for="item in wecomUsers"
               :key="item.userid"
-              :label="`${item.name} (${item.userid})`"
+              :label="item.name || item.userid"
               :value="item.userid"
             />
           </el-select>
@@ -736,7 +732,7 @@ onMounted(async () => {
             <el-option
               v-for="item in wecomUsers"
               :key="item.userid"
-              :label="`${item.name} (${item.userid})`"
+              :label="item.name || item.userid"
               :value="item.userid"
             />
           </el-select>
@@ -800,7 +796,7 @@ onMounted(async () => {
             <el-option
               v-for="item in wecomUsers"
               :key="item.userid"
-              :label="`${item.name} (${item.userid})`"
+              :label="item.name || item.userid"
               :value="item.userid"
             />
           </el-select>
@@ -868,7 +864,11 @@ onMounted(async () => {
           min-width="180"
           show-overflow-tooltip
         />
-        <el-table-column prop="operator_userid" label="提交人" width="120" />
+        <el-table-column label="提交人" width="120">
+          <template #default="scope">{{
+            userNameOf(scope.row.operator_userid)
+          }}</template>
+        </el-table-column>
       </el-table>
     </el-dialog>
 

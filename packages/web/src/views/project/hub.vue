@@ -2,12 +2,14 @@
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { listProjects, type Project } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "ProjectHub" });
 
 const router = useRouter();
 const userStore = useUserStoreHook();
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 const loading = ref(false);
 const rows = ref<Project[]>([]);
 const page = ref(1);
@@ -160,6 +162,7 @@ const goWorkspace = (id: number) => {
 };
 
 onMounted(loadData);
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -263,7 +266,7 @@ onMounted(loadData);
           <div class="project-card__meta">
             <span class="project-card__meta-label">负责人</span>
             <span class="project-card__meta-value">{{
-              item.manager_userid || "未指定"
+              userNameOf(item.manager_userid, "未指定")
             }}</span>
           </div>
           <div class="project-card__briefing">

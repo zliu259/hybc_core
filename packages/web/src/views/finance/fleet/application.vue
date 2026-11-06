@@ -21,8 +21,11 @@ import {
 } from "@/api/fleet";
 import { fuelCardOptionLabel, vehicleOptionLabel } from "./fuel-card-selection";
 import { useVehicleFuelCards } from "./useVehicleFuelCards";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "FuelQuotaApplicationPage" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const vehicles = ref<FleetVehicle[]>([]);
@@ -212,6 +215,8 @@ const resubmitApplication = async () => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -333,7 +338,11 @@ onMounted(loadData);
         min-width="180"
       />
       <el-table-column prop="requested_at" label="申请日期" width="180" />
-      <el-table-column prop="processed_by_userid" label="处理人" width="140" />
+      <el-table-column label="处理人" width="140">
+        <template #default="scope">{{
+          userNameOf(scope.row.processed_by_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column prop="processed_at" label="处理时间" width="180" />
       <el-table-column prop="office_remark" label="处理备注" min-width="180" />
       <el-table-column prop="latest_card_balance" label="卡余额" width="120" />

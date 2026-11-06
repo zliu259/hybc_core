@@ -20,6 +20,11 @@ vi.mock("@/api/agent", () => ({
   rejectPendingAction: mocks.rejectPendingAction
 }));
 vi.mock("@/utils/message", () => ({ message: mocks.message }));
+vi.mock("@/api/wecom", () => ({
+  getWeComContacts: async () => ({
+    data: { users: [{ userid: "ZhangSan", name: "张三" }] }
+  })
+}));
 vi.mock("vue-router", () => ({
   useRoute: () => mocks.routeHolder.current
 }));
@@ -98,6 +103,24 @@ describe("confirm.vue 展示", () => {
     expect(text).toContain("SP-20260719-001");
     expect(text).toContain("￥120,000");
     expect(text).toContain("金额与合同一致，建议批准");
+  });
+
+  it("发起人显示名字，通讯录里没有时才显示账号", async () => {
+    const known = await mountPage(view());
+    expect(known.text()).toContain("张三");
+    expect(known.text()).not.toContain("ZhangSan");
+
+    const unknown = await mountPage(
+      view({
+        detail: {
+          action_kind: "approval.approve",
+          verb: "批准",
+          target: "审批单 #42",
+          approval: { instance_no: "SP-1", initiator_userid: "Gone" }
+        }
+      })
+    );
+    expect(unknown.text()).toContain("Gone");
   });
 
   it("把 agent 意见明确标注为智能体填写、将以本人名义入库", async () => {

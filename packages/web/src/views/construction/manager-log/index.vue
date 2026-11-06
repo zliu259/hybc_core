@@ -9,8 +9,11 @@ import {
   type ManagerLog
 } from "@/api/log";
 import { useProjectOptions } from "@/composables/useProjectOptions";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ManagerLog" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const list = ref<ManagerLog[]>([]);
@@ -98,6 +101,8 @@ const remove = async (row: ManagerLog) => {
 onMounted(async () => {
   await Promise.all([loadData(), loadProjects()]);
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -153,7 +158,11 @@ onMounted(async () => {
       <el-table-column prop="project_id" label="项目ID" width="90" />
       <el-table-column prop="log_date" label="日期" width="120" />
       <el-table-column prop="title" label="标题" min-width="160" />
-      <el-table-column prop="manager_userid" label="填报人" width="120" />
+      <el-table-column label="填报人" width="120">
+        <template #default="scope">{{
+          userNameOf(scope.row.manager_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="scope">{{
           statusLabel(scope.row.status)

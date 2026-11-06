@@ -21,8 +21,11 @@ import {
   type ReimbursementBatchDetail
 } from "@/api/reimbursement";
 import ReimbursementDetail from "./detail.vue";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ReimbursementPayout" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 const route = useRoute();
 
 const loading = ref(false);
@@ -307,6 +310,8 @@ onMounted(async () => {
     openPayDialog([batchIdFromQuery]);
   }
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -345,11 +350,11 @@ onMounted(async () => {
             style="margin: 8px 0"
           >
             <el-table-column prop="envelope_no" label="信封编号" width="160" />
-            <el-table-column
-              prop="applicant_userid"
-              label="归属人"
-              width="130"
-            />
+            <el-table-column label="归属人" width="130">
+              <template #default="scope">{{
+                userNameOf(scope.row.applicant_userid)
+              }}</template>
+            </el-table-column>
             <el-table-column prop="amount" label="报销金额" width="120" />
             <el-table-column prop="invoice_no" label="发票号" min-width="180" />
             <el-table-column

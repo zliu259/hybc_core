@@ -14,6 +14,9 @@ import {
   type ProjectFile,
   type ProjectSection
 } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const props = defineProps<{ projectId: number }>();
 
@@ -123,6 +126,8 @@ watch(
 );
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -188,7 +193,11 @@ onMounted(loadData);
           formatBytes(scope.row.file_size)
         }}</template>
       </el-table-column>
-      <el-table-column prop="uploaded_by_userid" label="上传人" width="120" />
+      <el-table-column label="上传人" width="120">
+        <template #default="scope">{{
+          userNameOf(scope.row.uploaded_by_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="180" fixed="right">
         <template #default="scope">
           <div class="op-cell">
@@ -239,7 +248,7 @@ onMounted(loadData);
         {{ formatBytes(currentFile?.file_size || null) }}
       </el-descriptions-item>
       <el-descriptions-item label="上传人">{{
-        currentFile?.uploaded_by_userid
+        userNameOf(currentFile?.uploaded_by_userid)
       }}</el-descriptions-item>
       <el-descriptions-item label="备注">{{
         currentFile?.remark || "-"

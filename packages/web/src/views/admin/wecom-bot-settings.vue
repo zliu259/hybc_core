@@ -15,6 +15,9 @@ import {
   type WeComGroupChatType,
   type WeComToolDefinition
 } from "@/api/wecom-tools";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const savingToken = ref(false);
@@ -194,6 +197,8 @@ const syncExternalGroups = async () => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -418,7 +423,11 @@ onMounted(loadData);
             {{ chatTypeLabel(row.chat_type) }}
           </template>
         </el-table-column>
-        <el-table-column prop="owner_userid" label="群主" min-width="120" />
+        <el-table-column label="群主" min-width="120">
+          <template #default="scope">{{
+            userNameOf(scope.row.owner_userid)
+          }}</template>
+        </el-table-column>
         <el-table-column
           prop="webhook_secret_ref"
           label="Webhook Ref"

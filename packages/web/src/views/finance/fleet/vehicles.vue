@@ -82,7 +82,7 @@ const ownershipText = (value: string) => {
 const resolveUserName = (userid: string | null | undefined) => {
   if (!userid) return "-";
   const matched = wecomUsers.value.find(item => item.userid === userid);
-  return matched?.name?.trim() ? `${matched.name} (${userid})` : userid;
+  return matched?.name?.trim() || userid;
 };
 
 const plateOfVehicle = (vehicleId: number | null | undefined) =>

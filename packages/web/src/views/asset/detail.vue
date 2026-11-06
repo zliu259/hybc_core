@@ -20,8 +20,11 @@ import {
   type TrackedAsset,
   updateTrackedAsset
 } from "@/api/asset";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "AssetDetail" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 type AssetDocument = {
   id: number;
@@ -506,6 +509,8 @@ onMounted(async () => {
   await loadMeta();
   await loadData();
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -722,11 +727,11 @@ onMounted(async () => {
                 {{ taskStatusLabelMap[scope.row.status] || scope.row.status }}
               </template>
             </el-table-column>
-            <el-table-column
-              prop="assignee_userid"
-              label="执行人"
-              width="120"
-            />
+            <el-table-column label="执行人" width="120">
+              <template #default="scope">{{
+                userNameOf(scope.row.assignee_userid)
+              }}</template>
+            </el-table-column>
             <el-table-column label="手册" min-width="160" show-overflow-tooltip>
               <template #default="scope">
                 <span v-if="scope.row.manual_title">
@@ -841,11 +846,11 @@ onMounted(async () => {
               min-width="180"
               show-overflow-tooltip
             />
-            <el-table-column
-              prop="operator_userid"
-              label="提交人"
-              width="120"
-            />
+            <el-table-column label="提交人" width="120">
+              <template #default="scope">{{
+                userNameOf(scope.row.operator_userid)
+              }}</template>
+            </el-table-column>
             <el-table-column label="采集时间" width="180">
               <template #default="scope">{{
                 toDisplayTime(scope.row.captured_at)
@@ -903,7 +908,7 @@ onMounted(async () => {
             >
               <div>
                 {{ eventTypeLabelMap[item.event_type] || item.event_type }} ·
-                操作人：{{ item.operator_userid }}
+                操作人：{{ userNameOf(item.operator_userid) }}
               </div>
               <div style="color: #6e6458">
                 {{ toEventDetailText(item.detail) }}

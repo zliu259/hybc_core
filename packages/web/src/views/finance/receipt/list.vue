@@ -21,8 +21,11 @@ import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import { resolveApiErrorMessage } from "@/utils/api-error";
 import { invoiceReceivableAmount } from "@/utils/invoice-amount";
 import ReceiptDetailDrawer from "./components/ReceiptDetailDrawer.vue";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ReceiptList" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const list = ref<Receipt[]>([]);
@@ -309,6 +312,8 @@ onMounted(async () => {
   await loadReceiptAccounts();
   await loadData();
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -384,7 +389,11 @@ onMounted(async () => {
           {{ scope.row.vouchers_json ? "已上传" : "-" }}
         </template>
       </el-table-column>
-      <el-table-column prop="receiver_userid" label="登记人" width="140" />
+      <el-table-column label="登记人" width="140">
+        <template #default="scope">{{
+          userNameOf(scope.row.receiver_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="scope">{{
           statusLabel(scope.row.status)

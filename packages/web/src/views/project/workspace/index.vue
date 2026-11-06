@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { useUserStoreHook } from "@/store/modules/user";
 import { getProjectById, type Project } from "@/api/project";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import ProjectWorkspaceProjectPanel from "./project-panel.vue";
 import ProjectWorkspaceEquipmentPanel from "./equipment-panel.vue";
 import ProjectWorkspaceFinancePanel from "./finance-panel.vue";
@@ -16,6 +17,7 @@ defineOptions({
 const route = useRoute();
 const router = useRouter();
 const userStore = useUserStoreHook();
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const projectId = computed(() => Number(route.params.id));
 const activeTab = computed({
@@ -102,6 +104,7 @@ watch(projectId, () => {
 });
 
 onMounted(loadProject);
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -121,7 +124,9 @@ onMounted(loadProject);
           </div>
           <div class="head__meta">
             <span>位置：{{ project.location_text || "未设置" }}</span>
-            <span>负责人：{{ project.manager_userid || "未指定" }}</span>
+            <span
+              >负责人：{{ userNameOf(project.manager_userid, "未指定") }}</span
+            >
             <span>开工日期：{{ startDateText }}</span>
           </div>
           <div class="stage-bar">

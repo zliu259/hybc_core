@@ -218,7 +218,7 @@ onMounted(loadRows);
         <el-option
           v-for="user in superAdminOptions"
           :key="user.userid"
-          :label="`${user.name}（${user.userid}）`"
+          :label="user.name || user.userid"
           :value="user.userid"
         />
         <template #empty>

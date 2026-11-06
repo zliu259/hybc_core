@@ -15,7 +15,7 @@ defineOptions({ name: "ReceiptDashboard" });
 const router = useRouter();
 const loading = ref(false);
 const projects = ref<Project[]>([]);
-const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const { wecomUsers, loadWecomUsers, userNameOf } = useWecomUserOptions();
 
 const page = ref(1);
 const pageSize = ref(20);
@@ -381,7 +381,7 @@ onUnmounted(() => {
           <el-option
             v-for="item in wecomUsers"
             :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
+            :label="item.name || item.userid"
             :value="item.userid"
           />
         </el-select>
@@ -493,7 +493,11 @@ onUnmounted(() => {
             }}
           </template>
         </el-table-column>
-        <el-table-column prop="admin_userid" label="办公室行政" width="150" />
+        <el-table-column label="办公室行政" width="150">
+          <template #default="scope">{{
+            userNameOf(scope.row.admin_userid)
+          }}</template>
+        </el-table-column>
         <el-table-column label="金额" width="130">
           <template #default="scope"
             >¥{{ amountFormatter(scope.row.amount) }}</template

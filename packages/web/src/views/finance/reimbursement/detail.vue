@@ -1584,7 +1584,7 @@ watch(
                 <el-option
                   v-for="item in wecomUsers"
                   :key="item.userid"
-                  :label="`${item.name} (${item.userid})`"
+                  :label="item.name || item.userid"
                   :value="item.userid"
                 />
               </el-select>

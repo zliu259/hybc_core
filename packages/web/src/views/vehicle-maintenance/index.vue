@@ -18,6 +18,9 @@ import {
   type MaintenanceTypeOption,
   type VehicleMaintenanceRecord
 } from "@/api/vehicle-maintenance";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const userStore = useUserStoreHook();
 const canManage = computed(() =>
@@ -57,7 +60,8 @@ const parseAttachments = (raw: string | null): MaintenanceAttachment[] => {
 };
 
 const typeLabel = (value: string) =>
-  maintenanceTypes.value.find(item => item.dict_value === value)?.dict_label ?? value;
+  maintenanceTypes.value.find(item => item.dict_value === value)?.dict_label ??
+  value;
 
 const vehicleLabel = (row: VehicleMaintenanceRecord) =>
   row.current_plate_no ? `${row.current_plate_no}` : `车辆#${row.vehicle_id}`;
@@ -167,13 +171,16 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       contentType: options.file.type || undefined,
       category: "vehicle-maintenance"
     });
-    const uploadResp = await fetch(resolveUploadUrl(signResult.data.uploadUrl), {
-      method: "PUT",
-      headers: {
-        "content-type": options.file.type || "application/octet-stream"
-      },
-      body: options.file
-    });
+    const uploadResp = await fetch(
+      resolveUploadUrl(signResult.data.uploadUrl),
+      {
+        method: "PUT",
+        headers: {
+          "content-type": options.file.type || "application/octet-stream"
+        },
+        body: options.file
+      }
+    );
     if (!uploadResp.ok) {
       throw new Error(`upload_failed_${uploadResp.status}`);
     }
@@ -217,7 +224,8 @@ const buildPayload = (): MaintenanceCreatePayload | null => {
     content: form.content.trim(),
     mileage_km: Number(form.mileage_km),
     service_provider: form.service_provider.trim() || null,
-    cost: form.cost === undefined || form.cost === null ? null : Number(form.cost),
+    cost:
+      form.cost === undefined || form.cost === null ? null : Number(form.cost),
     serviced_at: form.serviced_at || undefined,
     attachments_json: JSON.stringify(form.attachments),
     remark: form.remark.trim() || null
@@ -254,7 +262,9 @@ const voidRecord = async (row: VehicleMaintenanceRecord) => {
 // ---- 详情抽屉 ----
 const drawerVisible = ref(false);
 const detail = ref<VehicleMaintenanceRecord | null>(null);
-const detailAttachments = computed(() => parseAttachments(detail.value?.attachments_json ?? null));
+const detailAttachments = computed(() =>
+  parseAttachments(detail.value?.attachments_json ?? null)
+);
 
 const openDetail = async (row: VehicleMaintenanceRecord) => {
   const res = await getMaintenanceRecord(row.id);
@@ -263,7 +273,9 @@ const openDetail = async (row: VehicleMaintenanceRecord) => {
 };
 
 const downloadAttachment = (att: MaintenanceAttachment) => {
-  const url = resolveUploadUrl(`/api/v1/upload/object/${encodeURIComponent(att.file_key)}`);
+  const url = resolveUploadUrl(
+    `/api/v1/upload/object/${encodeURIComponent(att.file_key)}`
+  );
   window.open(url, "_blank", "noopener,noreferrer");
 };
 
@@ -271,12 +283,20 @@ onMounted(async () => {
   await Promise.all([loadVehicles(), loadTypes()]);
   await loadRecords();
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>
   <el-card shadow="never" :loading="loading">
     <template #header>
-      <div style="display: flex; justify-content: space-between; align-items: center">
+      <div
+        style="
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+        "
+      >
         <span>车辆保养记录</span>
         <el-button type="primary" @click="openCreate">新增保养记录</el-button>
       </div>
@@ -355,14 +375,22 @@ onMounted(async () => {
         <template #default="scope">{{ vehicleLabel(scope.row) }}</template>
       </el-table-column>
       <el-table-column label="类型" width="110">
-        <template #default="scope">{{ typeLabel(scope.row.maintenance_type) }}</template>
+        <template #default="scope">{{
+          typeLabel(scope.row.maintenance_type)
+        }}</template>
       </el-table-column>
       <el-table-column prop="mileage_km" label="里程(km)" width="110" />
       <el-table-column prop="cost" label="费用(元)" width="110" />
       <el-table-column prop="serviced_at" label="保养时间" width="120">
-        <template #default="scope">{{ scope.row.serviced_at?.slice(0, 10) }}</template>
+        <template #default="scope">{{
+          scope.row.serviced_at?.slice(0, 10)
+        }}</template>
       </el-table-column>
-      <el-table-column prop="created_by_userid" label="登记人" width="120" />
+      <el-table-column label="登记人" width="120">
+        <template #default="scope">{{
+          userNameOf(scope.row.created_by_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="90">
         <template #default="scope">
           <el-tag :type="scope.row.status === 'active' ? 'success' : 'info'">
@@ -372,7 +400,9 @@ onMounted(async () => {
       </el-table-column>
       <el-table-column label="操作" width="200" fixed="right">
         <template #default="scope">
-          <el-button link type="primary" @click="openDetail(scope.row)">详情</el-button>
+          <el-button link type="primary" @click="openDetail(scope.row)"
+            >详情</el-button
+          >
           <el-button
             v-if="canManage && scope.row.status === 'active'"
             link
@@ -412,12 +442,26 @@ onMounted(async () => {
   >
     <el-form label-width="90px">
       <el-form-item label="车辆" required>
-        <el-select v-model="form.vehicle_id" filterable placeholder="请选择车辆" style="width: 100%">
-          <el-option v-for="v in vehicles" :key="v.id" :label="v.current_plate_no" :value="v.id" />
+        <el-select
+          v-model="form.vehicle_id"
+          filterable
+          placeholder="请选择车辆"
+          style="width: 100%"
+        >
+          <el-option
+            v-for="v in vehicles"
+            :key="v.id"
+            :label="v.current_plate_no"
+            :value="v.id"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="保养类型" required>
-        <el-select v-model="form.maintenance_type" placeholder="请选择类型" style="width: 100%">
+        <el-select
+          v-model="form.maintenance_type"
+          placeholder="请选择类型"
+          style="width: 100%"
+        >
           <el-option
             v-for="t in maintenanceTypes"
             :key="t.dict_value"
@@ -427,16 +471,34 @@ onMounted(async () => {
         </el-select>
       </el-form-item>
       <el-form-item label="保养内容" required>
-        <el-input v-model="form.content" type="textarea" :rows="3" placeholder="保养/维修内容" />
+        <el-input
+          v-model="form.content"
+          type="textarea"
+          :rows="3"
+          placeholder="保养/维修内容"
+        />
       </el-form-item>
       <el-form-item label="里程(km)" required>
-        <el-input-number v-model="form.mileage_km" :min="0" :controls="false" style="width: 100%" />
+        <el-input-number
+          v-model="form.mileage_km"
+          :min="0"
+          :controls="false"
+          style="width: 100%"
+        />
       </el-form-item>
       <el-form-item label="保养人">
-        <el-input v-model="form.service_provider" placeholder="修理厂/4S店/保养人姓名" />
+        <el-input
+          v-model="form.service_provider"
+          placeholder="修理厂/4S店/保养人姓名"
+        />
       </el-form-item>
       <el-form-item label="费用(元)">
-        <el-input-number v-model="form.cost" :min="0" :controls="false" style="width: 100%" />
+        <el-input-number
+          v-model="form.cost"
+          :min="0"
+          :controls="false"
+          style="width: 100%"
+        />
       </el-form-item>
       <el-form-item label="保养时间">
         <el-date-picker
@@ -451,7 +513,11 @@ onMounted(async () => {
         <el-input v-model="form.remark" placeholder="可选" />
       </el-form-item>
       <el-form-item label="附件">
-        <el-upload :http-request="uploadAttachment" :show-file-list="false" multiple>
+        <el-upload
+          :http-request="uploadAttachment"
+          :show-file-list="false"
+          multiple
+        >
           <el-button>上传附件</el-button>
         </el-upload>
         <div style="width: 100%; margin-top: 8px">
@@ -461,14 +527,18 @@ onMounted(async () => {
             style="display: flex; align-items: center; gap: 8px"
           >
             <span>{{ att.file_name }}</span>
-            <el-button link type="danger" @click="removeFormAttachment(index)">移除</el-button>
+            <el-button link type="danger" @click="removeFormAttachment(index)"
+              >移除</el-button
+            >
           </div>
         </div>
       </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="dialogVisible = false">取消</el-button>
-      <el-button type="primary" :loading="submitting" @click="submitForm">保存</el-button>
+      <el-button type="primary" :loading="submitting" @click="submitForm"
+        >保存</el-button
+      >
     </template>
   </el-dialog>
 
@@ -476,30 +546,61 @@ onMounted(async () => {
   <el-drawer v-model="drawerVisible" title="保养记录详情" size="420px">
     <template v-if="detail">
       <el-descriptions :column="1" border>
-        <el-descriptions-item label="保养单号">{{ detail.record_no }}</el-descriptions-item>
+        <el-descriptions-item label="保养单号">{{
+          detail.record_no
+        }}</el-descriptions-item>
         <el-descriptions-item label="车辆">
           {{ detail.current_plate_no || `车辆#${detail.vehicle_id}` }}
         </el-descriptions-item>
-        <el-descriptions-item label="类型">{{ typeLabel(detail.maintenance_type) }}</el-descriptions-item>
-        <el-descriptions-item label="里程(km)">{{ detail.mileage_km }}</el-descriptions-item>
-        <el-descriptions-item label="保养人">{{ detail.service_provider || "-" }}</el-descriptions-item>
-        <el-descriptions-item label="费用(元)">{{ detail.cost ?? "-" }}</el-descriptions-item>
-        <el-descriptions-item label="保养时间">{{ detail.serviced_at?.slice(0, 10) }}</el-descriptions-item>
-        <el-descriptions-item label="登记人">{{ detail.created_by_userid }}</el-descriptions-item>
-        <el-descriptions-item label="状态">{{ statusLabel(detail.status) }}</el-descriptions-item>
-        <el-descriptions-item label="内容">{{ detail.content }}</el-descriptions-item>
-        <el-descriptions-item label="备注">{{ detail.remark || "-" }}</el-descriptions-item>
+        <el-descriptions-item label="类型">{{
+          typeLabel(detail.maintenance_type)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="里程(km)">{{
+          detail.mileage_km
+        }}</el-descriptions-item>
+        <el-descriptions-item label="保养人">{{
+          detail.service_provider || "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="费用(元)">{{
+          detail.cost ?? "-"
+        }}</el-descriptions-item>
+        <el-descriptions-item label="保养时间">{{
+          detail.serviced_at?.slice(0, 10)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="登记人">{{
+          userNameOf(detail.created_by_userid)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="状态">{{
+          statusLabel(detail.status)
+        }}</el-descriptions-item>
+        <el-descriptions-item label="内容">{{
+          detail.content
+        }}</el-descriptions-item>
+        <el-descriptions-item label="备注">{{
+          detail.remark || "-"
+        }}</el-descriptions-item>
       </el-descriptions>
       <div style="margin-top: 16px">
         <div style="font-weight: 600; margin-bottom: 8px">附件</div>
-        <el-empty v-if="detailAttachments.length === 0" description="无附件" :image-size="60" />
+        <el-empty
+          v-if="detailAttachments.length === 0"
+          description="无附件"
+          :image-size="60"
+        />
         <div
           v-for="att in detailAttachments"
           :key="att.file_key"
-          style="display: flex; align-items: center; gap: 8px; margin-bottom: 6px"
+          style="
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 6px;
+          "
         >
           <span>{{ att.file_name }}</span>
-          <el-button link type="primary" @click="downloadAttachment(att)">下载</el-button>
+          <el-button link type="primary" @click="downloadAttachment(att)"
+            >下载</el-button
+          >
         </div>
       </div>
     </template>

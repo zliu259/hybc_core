@@ -32,8 +32,11 @@ import {
   type Invoice,
   type InvoiceRequest
 } from "@/api/receipt";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "InvoiceList" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 const router = useRouter();
 const route = useRoute();
 
@@ -860,6 +863,8 @@ onMounted(async () => {
   await Promise.all([loadContracts(), loadMeta()]);
   await loadData();
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -1571,7 +1576,7 @@ onMounted(async () => {
           toInvoiceRequestStatusLabel(detailRequest.status)
         }}</el-descriptions-item>
         <el-descriptions-item label="申请人">{{
-          detailRequest.applicant_userid
+          userNameOf(detailRequest.applicant_userid)
         }}</el-descriptions-item>
         <el-descriptions-item label="备注">{{
           detailRequest.remark || "-"

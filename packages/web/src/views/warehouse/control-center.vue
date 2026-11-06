@@ -9,8 +9,11 @@ import {
   type StockOrder,
   type WarehouseAssetWorkOrder
 } from "@/api/warehouse";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "WarehouseControlCenter" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const router = useRouter();
 const loading = ref(false);
@@ -80,6 +83,8 @@ const loadData = async () => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -135,7 +140,11 @@ onMounted(loadData);
           priorityText[row.priority] || row.priority
         }}</template>
       </el-table-column>
-      <el-table-column prop="assignee_userid" label="执行人" width="140" />
+      <el-table-column label="执行人" width="140">
+        <template #default="scope">{{
+          userNameOf(scope.row.assignee_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column
         prop="remark"
         label="任务说明"

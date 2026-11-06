@@ -178,7 +178,7 @@ const onForceTransfer = () => {
           <el-option
             v-for="item in users"
             :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
+            :label="item.name || item.userid"
             :value="item.userid"
           />
         </el-select>
@@ -220,7 +220,7 @@ const onForceTransfer = () => {
           <el-option
             v-for="item in users"
             :key="item.userid"
-            :label="`${item.name} (${item.userid})`"
+            :label="item.name || item.userid"
             :value="item.userid"
           />
         </el-select>

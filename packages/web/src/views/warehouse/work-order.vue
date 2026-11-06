@@ -38,7 +38,7 @@ const configurations = ref<TrackedAssetConfiguration[]>([]);
 const stockOrders = ref<StockOrder[]>([]);
 const projects = ref<Project[]>([]);
 const warehouses = ref<Warehouse[]>([]);
-const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const { wecomUsers, loadWecomUsers, userNameOf } = useWecomUserOptions();
 
 const filters = ref<{
   status?: WarehouseAssetWorkOrder["status"];
@@ -93,7 +93,10 @@ const completeForm = ref({
 
 const assetLabelMap = computed(() => {
   return Object.fromEntries(
-    assets.value.map(item => [item.id, `${item.asset_code} · ${item.asset_name}`])
+    assets.value.map(item => [
+      item.id,
+      `${item.asset_code} · ${item.asset_name}`
+    ])
   ) as Record<number, string>;
 });
 
@@ -108,7 +111,10 @@ const configurationLabelMap = computed(() => {
 
 const stockOrderLabelMap = computed(() => {
   return Object.fromEntries(
-    stockOrders.value.map(item => [item.id, `${item.order_no} · ${item.order_type}`])
+    stockOrders.value.map(item => [
+      item.id,
+      `${item.order_no} · ${item.order_type}`
+    ])
   ) as Record<number, string>;
 });
 
@@ -126,13 +132,14 @@ const statusTag = (status: WarehouseAssetWorkOrder["status"]) => {
 };
 
 const loadMeta = async () => {
-  const [assetRes, configRes, stockOrderRes, projectRes, warehouseRes] = await Promise.all([
-    listTrackedAssets({ page: 1, pageSize: 500 }),
-    listTrackedAssetConfigurations(),
-    listStockOrders(),
-    listProjects({ page: 1, pageSize: 500 }),
-    listWarehouses()
-  ]);
+  const [assetRes, configRes, stockOrderRes, projectRes, warehouseRes] =
+    await Promise.all([
+      listTrackedAssets({ page: 1, pageSize: 500 }),
+      listTrackedAssetConfigurations(),
+      listStockOrders(),
+      listProjects({ page: 1, pageSize: 500 }),
+      listWarehouses()
+    ]);
 
   assets.value = assetRes.data;
   configurations.value = configRes.data;
@@ -302,7 +309,9 @@ onMounted(async () => {
     <template #header>
       <div>
         <div class="work-order__title">资产工单中心</div>
-        <div class="work-order__sub">覆盖检查、维护、保养、改装与报废，支持审批与阻塞控制</div>
+        <div class="work-order__sub">
+          覆盖检查、维护、保养、改装与报废，支持审批与阻塞控制
+        </div>
       </div>
     </template>
 
@@ -311,20 +320,40 @@ onMounted(async () => {
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="工单类型">
             <el-select v-model="form.work_order_type" style="width: 100%">
-              <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
+              <el-option
+                v-for="item in typeOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="关联资产">
-            <el-select v-model="form.tracked_asset_id" clearable filterable style="width: 100%">
-              <el-option v-for="item in assets" :key="item.id" :label="`${item.asset_code} · ${item.asset_name}`" :value="item.id" />
+            <el-select
+              v-model="form.tracked_asset_id"
+              clearable
+              filterable
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in assets"
+                :key="item.id"
+                :label="`${item.asset_code} · ${item.asset_name}`"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="组合配置">
-            <el-select v-model="form.tracked_asset_configuration_id" clearable filterable style="width: 100%">
+            <el-select
+              v-model="form.tracked_asset_configuration_id"
+              clearable
+              filterable
+              style="width: 100%"
+            >
               <el-option
                 v-for="item in configurations"
                 :key="item.id"
@@ -336,8 +365,18 @@ onMounted(async () => {
         </el-col>
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="关联出入库单">
-            <el-select v-model="form.stock_order_id" clearable filterable style="width: 100%">
-              <el-option v-for="item in stockOrders" :key="item.id" :label="`${item.order_no} · ${item.order_type}`" :value="item.id" />
+            <el-select
+              v-model="form.stock_order_id"
+              clearable
+              filterable
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in stockOrders"
+                :key="item.id"
+                :label="`${item.order_no} · ${item.order_type}`"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
         </el-col>
@@ -346,28 +385,63 @@ onMounted(async () => {
       <el-row :gutter="12">
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="项目">
-            <el-select v-model="form.project_id" clearable filterable style="width: 100%">
-              <el-option v-for="item in projects" :key="item.id" :label="`${item.project_name} (${item.project_code})`" :value="item.id" />
+            <el-select
+              v-model="form.project_id"
+              clearable
+              filterable
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in projects"
+                :key="item.id"
+                :label="`${item.project_name} (${item.project_code})`"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="仓库">
-            <el-select v-model="form.warehouse_id" clearable filterable style="width: 100%">
-              <el-option v-for="item in warehouses" :key="item.id" :label="item.warehouse_name" :value="item.id" />
+            <el-select
+              v-model="form.warehouse_id"
+              clearable
+              filterable
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in warehouses"
+                :key="item.id"
+                :label="item.warehouse_name"
+                :value="item.id"
+              />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="负责人">
-            <el-select v-model="form.assignee_userid" clearable filterable style="width: 100%">
-              <el-option v-for="item in wecomUsers" :key="item.userid" :label="`${item.name} (${item.userid})`" :value="item.userid" />
+            <el-select
+              v-model="form.assignee_userid"
+              clearable
+              filterable
+              style="width: 100%"
+            >
+              <el-option
+                v-for="item in wecomUsers"
+                :key="item.userid"
+                :label="item.name || item.userid"
+                :value="item.userid"
+              />
             </el-select>
           </el-form-item>
         </el-col>
         <el-col :lg="6" :md="8" :sm="12" :xs="24">
           <el-form-item label="计划日期">
-            <el-date-picker v-model="form.scheduled_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+            <el-date-picker
+              v-model="form.scheduled_date"
+              type="date"
+              value-format="YYYY-MM-DD"
+              style="width: 100%"
+            />
           </el-form-item>
         </el-col>
       </el-row>
@@ -389,7 +463,9 @@ onMounted(async () => {
         />
         <div class="work-order__actions-right">
           <el-button @click="resetCreator">重置</el-button>
-          <el-button type="primary" :loading="submitting" @click="submit">创建工单</el-button>
+          <el-button type="primary" :loading="submitting" @click="submit"
+            >创建工单</el-button
+          >
         </div>
       </div>
     </el-form>
@@ -401,8 +477,17 @@ onMounted(async () => {
         <span>工单列表</span>
         <el-form inline>
           <el-form-item label="类型">
-            <el-select v-model="filters.work_order_type" clearable style="width: 150px">
-              <el-option v-for="item in typeOptions" :key="item.value" :label="item.label" :value="item.value" />
+            <el-select
+              v-model="filters.work_order_type"
+              clearable
+              style="width: 150px"
+            >
+              <el-option
+                v-for="item in typeOptions"
+                :key="item.value"
+                :label="item.label"
+                :value="item.value"
+              />
             </el-select>
           </el-form-item>
           <el-form-item label="状态">
@@ -416,7 +501,11 @@ onMounted(async () => {
             </el-select>
           </el-form-item>
           <el-form-item label="阻塞">
-            <el-select v-model="filters.blocking_flag" clearable style="width: 120px">
+            <el-select
+              v-model="filters.blocking_flag"
+              clearable
+              style="width: 120px"
+            >
               <el-option label="是" :value="1" />
               <el-option label="否" :value="0" />
             </el-select>
@@ -429,30 +518,56 @@ onMounted(async () => {
     <el-table :data="rows">
       <el-table-column prop="work_order_no" label="工单编号" width="170" />
       <el-table-column label="类型" width="100">
-        <template #default="scope">{{ typeLabelMap[scope.row.work_order_type] }}</template>
+        <template #default="scope">{{
+          typeLabelMap[scope.row.work_order_type]
+        }}</template>
       </el-table-column>
       <el-table-column label="关联资产" min-width="180">
         <template #default="scope">
-          {{ scope.row.tracked_asset_id ? assetLabelMap[scope.row.tracked_asset_id] || `#${scope.row.tracked_asset_id}` : "-" }}
+          {{
+            scope.row.tracked_asset_id
+              ? assetLabelMap[scope.row.tracked_asset_id] ||
+                `#${scope.row.tracked_asset_id}`
+              : "-"
+          }}
         </template>
       </el-table-column>
       <el-table-column label="组合配置" min-width="170">
         <template #default="scope">
-          {{ scope.row.tracked_asset_configuration_id ? configurationLabelMap[scope.row.tracked_asset_configuration_id] || `#${scope.row.tracked_asset_configuration_id}` : "-" }}
+          {{
+            scope.row.tracked_asset_configuration_id
+              ? configurationLabelMap[
+                  scope.row.tracked_asset_configuration_id
+                ] || `#${scope.row.tracked_asset_configuration_id}`
+              : "-"
+          }}
         </template>
       </el-table-column>
       <el-table-column label="出入库单" min-width="150">
         <template #default="scope">
-          {{ scope.row.stock_order_id ? stockOrderLabelMap[scope.row.stock_order_id] || `#${scope.row.stock_order_id}` : "-" }}
+          {{
+            scope.row.stock_order_id
+              ? stockOrderLabelMap[scope.row.stock_order_id] ||
+                `#${scope.row.stock_order_id}`
+              : "-"
+          }}
         </template>
       </el-table-column>
-      <el-table-column prop="assignee_userid" label="负责人" width="130" />
+      <el-table-column label="负责人" width="130">
+        <template #default="scope">{{
+          userNameOf(scope.row.assignee_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column label="阻塞" width="80">
-        <template #default="scope">{{ scope.row.blocking_flag === 1 ? "是" : "否" }}</template>
+        <template #default="scope">{{
+          scope.row.blocking_flag === 1 ? "是" : "否"
+        }}</template>
       </el-table-column>
       <el-table-column label="状态" width="130">
         <template #default="scope">
-          <el-tag :type="statusTag(scope.row.status)">{{ scope.row.status }}</el-tag>
+          <el-tag :type="statusTag(scope.row.status)">{{
+            scope.row.status
+          }}</el-tag>
         </template>
       </el-table-column>
       <el-table-column prop="scheduled_date" label="计划日期" width="120" />
@@ -469,7 +584,9 @@ onMounted(async () => {
             提审
           </el-button>
           <el-button
-            v-if="scope.row.status === 'draft' || scope.row.status === 'approved'"
+            v-if="
+              scope.row.status === 'draft' || scope.row.status === 'approved'
+            "
             link
             type="success"
             :loading="actionId === scope.row.id"
@@ -487,7 +604,10 @@ onMounted(async () => {
             完成
           </el-button>
           <el-button
-            v-if="scope.row.status !== 'completed' && scope.row.status !== 'cancelled'"
+            v-if="
+              scope.row.status !== 'completed' &&
+              scope.row.status !== 'cancelled'
+            "
             link
             type="danger"
             :loading="actionId === scope.row.id"
@@ -495,7 +615,9 @@ onMounted(async () => {
           >
             取消
           </el-button>
-          <el-button link type="info" @click="openEdit(scope.row)">编辑</el-button>
+          <el-button link type="info" @click="openEdit(scope.row)"
+            >编辑</el-button
+          >
         </template>
       </el-table-column>
     </el-table>
@@ -504,15 +626,33 @@ onMounted(async () => {
   <el-dialog v-model="editVisible" title="编辑工单" width="520px">
     <el-form label-width="110px">
       <el-form-item label="负责人">
-        <el-select v-model="editForm.assignee_userid" clearable filterable style="width: 100%">
-          <el-option v-for="item in wecomUsers" :key="item.userid" :label="`${item.name} (${item.userid})`" :value="item.userid" />
+        <el-select
+          v-model="editForm.assignee_userid"
+          clearable
+          filterable
+          style="width: 100%"
+        >
+          <el-option
+            v-for="item in wecomUsers"
+            :key="item.userid"
+            :label="item.name || item.userid"
+            :value="item.userid"
+          />
         </el-select>
       </el-form-item>
       <el-form-item label="计划日期">
-        <el-date-picker v-model="editForm.scheduled_date" type="date" value-format="YYYY-MM-DD" style="width: 100%" />
+        <el-date-picker
+          v-model="editForm.scheduled_date"
+          type="date"
+          value-format="YYYY-MM-DD"
+          style="width: 100%"
+        />
       </el-form-item>
       <el-form-item label="阻塞出库">
-        <el-switch :model-value="editForm.blocking_flag === 1" @update:model-value="editForm.blocking_flag = $event ? 1 : 0" />
+        <el-switch
+          :model-value="editForm.blocking_flag === 1"
+          @update:model-value="editForm.blocking_flag = $event ? 1 : 0"
+        />
       </el-form-item>
       <el-form-item label="结果摘要">
         <el-input v-model="editForm.result_summary" type="textarea" :rows="2" />
@@ -523,19 +663,34 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <el-button @click="editVisible = false">取消</el-button>
-      <el-button type="primary" :loading="actionId === editForm.id" @click="saveEdit">保存</el-button>
+      <el-button
+        type="primary"
+        :loading="actionId === editForm.id"
+        @click="saveEdit"
+        >保存</el-button
+      >
     </template>
   </el-dialog>
 
   <el-dialog v-model="completeVisible" title="完成工单" width="480px">
     <el-form label-width="100px">
       <el-form-item label="结果摘要">
-        <el-input v-model="completeForm.result_summary" type="textarea" :rows="3" placeholder="填写检查/维护/改装结果" />
+        <el-input
+          v-model="completeForm.result_summary"
+          type="textarea"
+          :rows="3"
+          placeholder="填写检查/维护/改装结果"
+        />
       </el-form-item>
     </el-form>
     <template #footer>
       <el-button @click="completeVisible = false">取消</el-button>
-      <el-button type="primary" :loading="actionId === completeForm.id" @click="completeWorkOrder">确认完成</el-button>
+      <el-button
+        type="primary"
+        :loading="actionId === completeForm.id"
+        @click="completeWorkOrder"
+        >确认完成</el-button
+      >
     </template>
   </el-dialog>
 </template>

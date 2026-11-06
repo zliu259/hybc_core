@@ -9,8 +9,11 @@ import {
   type OperatorLog
 } from "@/api/log";
 import { useProjectOptions } from "@/composables/useProjectOptions";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "OperatorLogList" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const router = useRouter();
 const loading = ref(false);
@@ -70,7 +73,8 @@ const deviationLabel = (row: OperatorLog) => {
     horizontalDirection && typeof horizontalValue === "number"
       ? `${directionMap[horizontalDirection] || horizontalDirection}${horizontalValue}mm`
       : "",
-    row.vertical_deviation_direction && typeof row.vertical_deviation_mm === "number"
+    row.vertical_deviation_direction &&
+    typeof row.vertical_deviation_mm === "number"
       ? `${directionMap[row.vertical_deviation_direction] || row.vertical_deviation_direction}${row.vertical_deviation_mm}mm`
       : ""
   ].filter(Boolean);
@@ -80,6 +84,8 @@ const deviationLabel = (row: OperatorLog) => {
 onMounted(async () => {
   await Promise.all([loadData(), loadProjects()]);
 });
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -178,7 +184,11 @@ onMounted(async () => {
       <el-table-column label="偏差" width="130">
         <template #default="scope">{{ deviationLabel(scope.row) }}</template>
       </el-table-column>
-      <el-table-column prop="operator_userid" label="填报人" width="120" />
+      <el-table-column label="填报人" width="120">
+        <template #default="scope">{{
+          userNameOf(scope.row.operator_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column label="状态" width="100">
         <template #default="scope">{{
           statusLabel(scope.row.status)

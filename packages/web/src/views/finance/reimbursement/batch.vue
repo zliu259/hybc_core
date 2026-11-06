@@ -40,7 +40,7 @@ defineOptions({ name: "ReimbursementBatchList" });
 const loading = ref(false);
 const list = ref<ReimbursementBatch[]>([]);
 const projects = ref<Project[]>([]);
-const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const { wecomUsers, loadWecomUsers, userNameOf } = useWecomUserOptions();
 const candidateLoading = ref(false);
 const historyLoading = ref(false);
 const candidates = ref<ReimbursementEnvelope[]>([]);
@@ -691,7 +691,7 @@ watch(
               <el-option
                 v-for="item in wecomUsers"
                 :key="item.userid"
-                :label="`${item.name} (${item.userid})`"
+                :label="item.name || item.userid"
                 :value="item.userid"
               />
             </el-select>
@@ -905,11 +905,11 @@ watch(
                 projectMap[scope.row.project_id] || scope.row.project_id
               }}</template>
             </el-table-column>
-            <el-table-column
-              prop="applicant_userid"
-              label="被报销人"
-              width="140"
-            />
+            <el-table-column label="被报销人" width="140">
+              <template #default="scope">{{
+                userNameOf(scope.row.applicant_userid)
+              }}</template>
+            </el-table-column>
             <el-table-column label="付款方式" width="120">
               <template #default="scope">{{
                 toPaymentMethodLabel(scope.row.payment_method)
@@ -964,11 +964,11 @@ watch(
                 projectMap[scope.row.project_id] || scope.row.project_id
               }}</template>
             </el-table-column>
-            <el-table-column
-              prop="applicant_userid"
-              label="被报销人"
-              width="140"
-            />
+            <el-table-column label="被报销人" width="140">
+              <template #default="scope">{{
+                userNameOf(scope.row.applicant_userid)
+              }}</template>
+            </el-table-column>
             <el-table-column label="付款方式" width="120">
               <template #default="scope">{{
                 toPaymentMethodLabel(scope.row.payment_method)
@@ -1057,8 +1057,10 @@ watch(
         <el-form-item label="手机号">
           <el-input v-model="newPayeeForm.phone" />
         </el-form-item>
-        <el-form-item label="关联 userid">
-          <span style="color: #555">{{ filters.applicant_userid || "—" }}</span>
+        <el-form-item label="关联人员">
+          <span style="color: #555">{{
+            userNameOf(filters.applicant_userid, "—")
+          }}</span>
         </el-form-item>
       </el-form>
       <template #footer>

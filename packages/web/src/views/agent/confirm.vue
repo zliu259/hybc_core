@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useRoute } from "vue-router";
 import dayjs from "dayjs";
 import { ElMessageBox } from "element-plus";
@@ -12,8 +12,11 @@ import {
   type PendingPublicView,
   type PendingStatus
 } from "@/api/agent";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "AgentConfirm" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 // 人在环的唯一人类界面：智能体发起的高危动作被服务端 park 住，只有本人在这里
 // 确认后才会真正落库，且【以本人名义】记入审批记录。因此本页的职责是——在给出
@@ -343,6 +346,8 @@ const onReject = () =>
     "不执行",
     runReject
   );
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -417,7 +422,7 @@ const onReject = () =>
             {{ approval.biz_summary }}
           </el-descriptions-item>
           <el-descriptions-item label="发起人">
-            {{ approval.initiator_userid }}
+            {{ userNameOf(approval.initiator_userid) }}
           </el-descriptions-item>
         </el-descriptions>
 

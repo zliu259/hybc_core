@@ -6,8 +6,11 @@ import {
   reviewWarehouseAssetWorkOrder,
   type WarehouseAssetWorkOrder
 } from "@/api/warehouse";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "WarehouseReturnMaintenance" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const rows = ref<WarehouseAssetWorkOrder[]>([]);
@@ -49,6 +52,8 @@ const rejectTask = async (row: WarehouseAssetWorkOrder) => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -79,7 +84,11 @@ onMounted(loadData);
       <el-table-column prop="tracked_asset_id" label="设备ID" width="100" />
       <el-table-column prop="stock_order_id" label="返库单ID" width="110" />
       <el-table-column prop="warehouse_id" label="签收仓库" width="110" />
-      <el-table-column prop="assignee_userid" label="执行人" width="140" />
+      <el-table-column label="执行人" width="140">
+        <template #default="scope">{{
+          userNameOf(scope.row.assignee_userid)
+        }}</template>
+      </el-table-column>
       <el-table-column
         prop="required_photo_count"
         label="照片要求"

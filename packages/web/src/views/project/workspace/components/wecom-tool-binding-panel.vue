@@ -18,6 +18,9 @@ import {
   type WeComToolCallAudit,
   type WeComToolDefinition
 } from "@/api/wecom-tools";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const props = defineProps<{ projectId: number }>();
 
@@ -229,6 +232,8 @@ const disableBinding = async (binding: ProjectWeComBinding) => {
 
 onMounted(loadData);
 watch(() => props.projectId, loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -387,11 +392,11 @@ watch(() => props.projectId, loadData);
         <el-tab-pane label="工具调用记录">
           <el-table :data="audits" border empty-text="暂无工具调用记录">
             <el-table-column prop="tool_name" label="工具" min-width="180" />
-            <el-table-column
-              prop="caller_userid"
-              label="调用人"
-              min-width="120"
-            />
+            <el-table-column label="调用人" min-width="120">
+              <template #default="scope">{{
+                userNameOf(scope.row.caller_userid)
+              }}</template>
+            </el-table-column>
             <el-table-column
               prop="group_chat_id"
               label="群聊 ID"

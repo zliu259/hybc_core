@@ -17,8 +17,11 @@ import { createUploadSignature, resolveUploadUrl } from "@/api/upload";
 import FinanceDetailHeader from "../../shared/components/FinanceDetailHeader.vue";
 import FinSection from "../../shared/components/FinSection.vue";
 import { formatMoney } from "../../shared/format";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ReceiptDetailPanel" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const props = defineProps<{
   receiptId: number;
@@ -241,6 +244,8 @@ const saveBankSlips = async () => {
 };
 
 onMounted(loadDetail);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -278,7 +283,7 @@ onMounted(loadDetail);
             invoiceText
           }}</el-descriptions-item>
           <el-descriptions-item label="登记人">{{
-            detail.receipt.receiver_userid
+            userNameOf(detail.receipt.receiver_userid)
           }}</el-descriptions-item>
           <el-descriptions-item label="创建时间">{{
             detail.receipt.created_at

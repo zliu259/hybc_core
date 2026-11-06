@@ -13,8 +13,11 @@ import {
   type AdminAgentGrant,
   type AgentGrant
 } from "@/api/agent";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "AgentGrants" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const userStore = useUserStoreHook();
 const isSuperAdmin = computed(() =>
@@ -88,6 +91,8 @@ const onRevoke = async (row: AgentGrant | AdminAgentGrant) => {
 };
 
 onMounted(loadData);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -125,7 +130,9 @@ onMounted(loadData);
           />
         </template>
         <el-table-column v-if="viewAll" label="员工" width="120">
-          <template #default="scope">{{ ownerOf(scope.row) }}</template>
+          <template #default="scope">{{
+            userNameOf(ownerOf(scope.row))
+          }}</template>
         </el-table-column>
         <el-table-column label="设备" min-width="140">
           <template #default="scope">

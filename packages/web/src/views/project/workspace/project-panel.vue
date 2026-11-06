@@ -56,7 +56,7 @@ const props = defineProps<{ projectId: number }>();
 
 const router = useRouter();
 const userStore = useUserStoreHook();
-const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
+const { wecomUsers, loadWecomUsers, userNameOf } = useWecomUserOptions();
 
 const loading = ref(false);
 const saving = ref(false);
@@ -1446,7 +1446,7 @@ onUnmounted(() => {
             <el-option
               v-for="item in wecomUsers"
               :key="item.userid"
-              :label="`${item.name} (${item.userid})`"
+              :label="item.name || item.userid"
               :value="item.userid"
             />
           </el-select>
@@ -1826,7 +1826,11 @@ onUnmounted(() => {
           min-width="220"
           show-overflow-tooltip
         />
-        <el-table-column prop="manager_userid" label="填报人" width="120" />
+        <el-table-column label="填报人" width="120">
+          <template #default="scope">{{
+            userNameOf(scope.row.manager_userid)
+          }}</template>
+        </el-table-column>
         <el-table-column label="状态" width="100">
           <template #default="scope">{{
             statusLabel(scope.row.status)
@@ -2225,11 +2229,11 @@ onUnmounted(() => {
                   min-width="200"
                   show-overflow-tooltip
                 />
-                <el-table-column
-                  prop="operator_userid"
-                  label="填报人"
-                  width="120"
-                />
+                <el-table-column label="填报人" width="120">
+                  <template #default="scope">{{
+                    userNameOf(scope.row.operator_userid)
+                  }}</template>
+                </el-table-column>
                 <el-table-column label="操作" width="180" fixed="right">
                   <template #default="scope">
                     <el-button
@@ -2787,7 +2791,7 @@ onUnmounted(() => {
             managerLogDetail?.title || "-"
           }}</el-descriptions-item>
           <el-descriptions-item label="填报人">{{
-            managerLogDetail?.manager_userid || "-"
+            userNameOf(managerLogDetail?.manager_userid)
           }}</el-descriptions-item>
           <el-descriptions-item label="状态">{{
             managerLogDetail?.status || "-"
@@ -2822,7 +2826,7 @@ onUnmounted(() => {
             shiftLabel(operatorLogDetail?.shift)
           }}</el-descriptions-item>
           <el-descriptions-item label="填报人">{{
-            operatorLogDetail?.operator_userid || "-"
+            userNameOf(operatorLogDetail?.operator_userid)
           }}</el-descriptions-item>
           <el-descriptions-item label="完成管节">{{
             operatorLogDetail?.completed_pipe_count ?? "-"

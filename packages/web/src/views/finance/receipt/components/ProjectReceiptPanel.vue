@@ -17,8 +17,11 @@ import FinanceDetailHeader from "../../shared/components/FinanceDetailHeader.vue
 import FinSection from "../../shared/components/FinSection.vue";
 import { formatMoney } from "../../shared/format";
 import ReceiptDetailDrawer from "./ReceiptDetailDrawer.vue";
+import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 
 defineOptions({ name: "ProjectReceiptPanel" });
+
+const { loadUserNames, userNameOf } = useWecomUserOptions();
 
 const props = defineProps<{
   projectId: number;
@@ -226,6 +229,8 @@ const onReceiptDrawerClosed = async () => {
 };
 
 onMounted(loadAll);
+
+onMounted(loadUserNames);
 </script>
 
 <template>
@@ -247,7 +252,7 @@ onMounted(loadAll);
       </template>
       <template v-if="project" #meta>
         <span>项目名称：{{ project.project_name }}</span>
-        <span>负责人：{{ project.manager_userid || "-" }}</span>
+        <span>负责人：{{ userNameOf(project.manager_userid) }}</span>
         <span v-if="project.external_party_name">
           外部单位：{{ project.external_party_name }}
         </span>
