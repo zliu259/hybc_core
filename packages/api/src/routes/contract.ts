@@ -29,6 +29,16 @@ import { isApprovalActive, isOwnerReworkState, isResubmittable } from "../servic
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
 import { amountChangeFloor } from "./contract-amount-change-floor";
 import {
+  CONTRACT_KEYWORD_SQL,
+  EXECUTION_BAND_SQL,
+  EXECUTION_PROGRESS_ORDER_SQL,
+  IN_EXECUTION_SQL,
+  contractKeywordParams,
+  isExecutionBand,
+  loadContractOverview,
+  parseContractOverviewQuery
+} from "./contract-overview";
+import {
   parseAmountChangeRequest,
   presentAmountChange,
   serializeAmountChangeAttachments
@@ -263,11 +273,19 @@ contractRoutes.get("/", async (c) => {
   const dateFrom = c.req.query("date_from");
   const dateTo = c.req.query("date_to");
   const legacyDataId = c.req.query("legacy_data_id");
+  const band = c.req.query("band");
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
-  let sql = "SELECT * FROM contract WHERE status != 'deleted'";
+  if (band && !isExecutionBand(band)) {
+    return c.json({ success: false, error: { message: "进度档位无效" } }, 400);
+  }
+
+  let sql = `SELECT contract.*,
+      COALESCE((SELECT project_name FROM project WHERE project.id = contract.project_id), legacy_project_name) AS project_name,
+      ${EXECUTION_BAND_SQL} AS execution_band
+    FROM contract WHERE status != 'deleted'`;
   let countSql = "SELECT COUNT(*) as total FROM contract WHERE status != 'deleted'";
   const params: (string | number)[] = [];
 
@@ -297,9 +315,9 @@ contractRoutes.get("/", async (c) => {
     params.push(status);
   }
   if (keyword) {
-    sql += " AND (contract_no LIKE ? OR counterparty LIKE ? OR remark LIKE ?)";
-    countSql += " AND (contract_no LIKE ? OR counterparty LIKE ? OR remark LIKE ?)";
-    params.push(`%${keyword}%`, `%${keyword}%`, `%${keyword}%`);
+    sql += ` AND ${CONTRACT_KEYWORD_SQL}`;
+    countSql += ` AND ${CONTRACT_KEYWORD_SQL}`;
+    params.push(...contractKeywordParams(keyword));
   }
   if (applicantUserid) {
     sql += " AND handler_userid = ?";
@@ -321,8 +339,16 @@ contractRoutes.get("/", async (c) => {
     countSql += " AND legacy_data_id = ?";
     params.push(legacyDataId);
   }
+  if (band) {
+    const bandSql = ` AND ${IN_EXECUTION_SQL} AND (${EXECUTION_BAND_SQL}) = ?`;
+    sql += bandSql;
+    countSql += bandSql;
+    params.push(band);
+  }
 
-  sql += " ORDER BY id DESC LIMIT ? OFFSET ?";
+  sql += band
+    ? ` ORDER BY ${EXECUTION_PROGRESS_ORDER_SQL}, id DESC LIMIT ? OFFSET ?`
+    : " ORDER BY id DESC LIMIT ? OFFSET ?";
 
   const countResult = await c.env.DB.prepare(countSql)
     .bind(...params)
@@ -343,6 +369,25 @@ contractRoutes.get("/", async (c) => {
     pagination: { page, pageSize, total }
   });
 });
+
+contractRoutes.get(
+  "/overview-summary",
+  requireRoles(["super_admin", "manager", "finance"]),
+  async (c) => {
+    const parsed = parseContractOverviewQuery({
+      direction: c.req.query("direction"),
+      project_id: c.req.query("project_id"),
+      keyword: c.req.query("keyword")
+    });
+    if (!parsed.ok) {
+      return c.json({ success: false, error: { message: parsed.message } }, 400);
+    }
+    return c.json({
+      success: true,
+      data: await loadContractOverview(c.env.DB, parsed.value)
+    });
+  }
+);
 
 contractRoutes.get("/:id", async (c) => {
   const id = Number(c.req.param("id"));

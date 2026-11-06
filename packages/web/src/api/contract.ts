@@ -1,5 +1,16 @@
 import { http } from "@/utils/http";
 
+/** 合同进度档位，由后端算。付款合同和收款合同各用其中一部分。 */
+export type ExecutionBand =
+  | "normal"
+  | "warning"
+  | "critical"
+  | "not_started"
+  | "collecting"
+  | "settled"
+  | "over"
+  | "unpriced";
+
 export type Contract = {
   id: number;
   contract_no: string;
@@ -24,6 +35,32 @@ export type Contract = {
   legacy_data_id: string | null;
   created_at: string;
   updated_at: string;
+  /** 只有列表接口带这两项 */
+  project_name?: string | null;
+  execution_band?: ExecutionBand;
+};
+
+export type ContractOverviewBand = {
+  band: ExecutionBand;
+  count: number;
+  total_amount: number;
+  done_amount: number;
+};
+
+export type ContractOverview = {
+  direction: Contract["direction"];
+  status_counts: Record<string, number>;
+  total_count: number;
+  execution: {
+    count: number;
+    total_amount: number;
+    /** 付款合同是已付，收款合同是已到账 */
+    done_amount: number;
+    remaining_amount: number;
+    /** 只有收款合同有 */
+    invoiced_amount: number;
+    bands: ContractOverviewBand[];
+  };
 };
 
 export type AmountChangeAttachment = {
@@ -101,6 +138,7 @@ export const listContracts = (params?: {
   status?: string;
   keyword?: string;
   applicant_userid?: string;
+  band?: ExecutionBand;
   page?: number;
   pageSize?: number;
 }) => {
@@ -109,6 +147,18 @@ export const listContracts = (params?: {
     data: Contract[];
     pagination: Pagination;
   }>("get", "/api/v1/contract", { params });
+};
+
+export const getContractOverview = (params: {
+  direction: Contract["direction"];
+  project_id?: number;
+  keyword?: string;
+}) => {
+  return http.request<{ success: boolean; data: ContractOverview }>(
+    "get",
+    "/api/v1/contract/overview-summary",
+    { params }
+  );
 };
 
 export const getContract = (id: number) => {

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-/** 发起合同金额变更并提交审批。合同详情和合同执行监控共用。 */
+/** 发起合同金额变更并提交审批。合同详情和合同管理总览共用。 */
 import type { UploadRequestOptions } from "element-plus";
 import { computed, ref, watch } from "vue";
 import {

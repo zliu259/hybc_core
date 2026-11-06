@@ -113,12 +113,13 @@ export default {
           }
         },
         {
+          // 执行监控已并入合同管理总览，保留旧地址给收藏夹和旧链接
           path: "/finance/contract/monitor",
           name: "ContractMonitor",
-          component: () => import("@/views/finance/contract/monitor.vue"),
+          redirect: "/finance/contract",
           meta: {
-            title: "合同执行监控",
-            roles: ["super_admin", "manager", "finance"]
+            title: "合同执行监控(旧地址)",
+            showLink: false
           }
         },
         {

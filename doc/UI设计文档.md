@@ -52,8 +52,7 @@
 - 企业微信通讯录：`packages/web/src/views/wecom/contacts.vue`
 - 企业微信成员查看（管理员）：`packages/web/src/views/wecom/member-admin.vue`
 - 企业微信 JS-SDK 能力台：`packages/web/src/views/wecom/sdk.vue`
-- 合同管理列表：`packages/web/src/views/finance/contract/index.vue`
-- 合同执行监控大屏：`packages/web/src/views/finance/contract/monitor.vue`
+- 合同管理总览（2026-11-06 起合并原合同列表和合同执行监控）：`packages/web/src/views/finance/contract/index.vue`
 - 合同详情/创建：`packages/web/src/views/finance/contract/detail.vue`
 - 对外付款申请列表：`packages/web/src/views/finance/payment/index.vue`
 - 资金流出智能发单台：`packages/web/src/views/finance/payment/wizard.vue`
@@ -172,6 +171,21 @@
 - API 指向：`/api/v1/project/:id`, `/api/v1/project/:id/financial-summary`
 
 #### D. 合同管理 `views/finance/contract/index.vue`
+
+> **2026-11-06 改版为合同管理总览**，合并原合同列表和合同执行监控（`monitor.vue` 已删除，`/finance/contract/monitor` 重定向到本页）。以下为现行设计，本节后面的旧说明以此为准。
+
+- **切换**：顶部分付款合同、收款合同，默认付款合同。不再有“全部方向”的看法，两类合同的进度含义不同。
+- **一句话结论**：付款合同说有几份快付到合同额、几份已超付；收款合同说还有多少钱没到账。没有要关注的合同时直接说没有。
+- **进度分布带**：在执行的合同按份数铺开。下方档位按钮同时是筛选，再点一次取消。
+  - 付款合同：正常（不到 80%）、接近额度（80%–95%）、即将付满（超过 95%）、已付清、超付、未定总额（单价合同，有才列出）。阈值沿用原监控页。
+  - 收款合同：未到账、回款中、已收齐、超收（有才列出）、未定总额（有才列出）。
+- **在执行的口径**：`active`、`completed`，加上还没生效但已有钱进出的合同。已终止、未付款的草稿和待审批不算。
+- **列表**：状态页签和进度档位二选一。项目、关键字同时影响汇总和列表。按档筛选时最接近上限的排在前面。
+- **行内进度**：付款合同显示已付、剩余（或超付）和 80%、95% 刻度；收款合同显示已到账、未到账，已开票垫在进度条底下。比例向下取整，没付清不会显示 100%。已终止合同进度条变灰，不报警。
+- **操作**：详情（点行也可以）、变更金额（只有生效中的合同）、删除。
+- **配色**：石板蓝 `#56708a`（正常、回款中）、琥珀 `#d4820f`（接近额度）、印章红 `#b8322a`（即将付满）、苔绿 `#5b7f63`（已付清、已收齐）、深红 `#6f1616`（超付、超收）。这几个颜色只表示进度。
+- **组件**：`components/ContractOverviewHead.vue`、`components/ContractGauge.vue`；文案和进度计算在 `contract-overview-view.ts`。
+- **API 指向**：`GET /api/v1/contract/overview-summary`（`direction`、`project_id`、`keyword`；角色 `super_admin`、`manager`、`finance`）；`GET /api/v1/contract` 新增 `band` 筛选，每行带 `project_name`、`execution_band`。档位在服务端用 SQL 算，见 `packages/api/src/routes/contract-overview.ts`。
 
 - 固定筛选：合同方向、项目、状态、关键字。
 - 表格列：合同号、方向、对方单位、合同类型、总额、已付、剩余、状态、AI审查状态。
