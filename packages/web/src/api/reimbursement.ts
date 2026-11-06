@@ -5,6 +5,8 @@ export type ReimbursementEnvelope = {
   envelope_no: string;
   envelope_uuid: string;
   project_id: number;
+  /** 只有列表接口带 */
+  project_name?: string | null;
   applicant_userid: string;
   channel: "physical" | "electronic";
   invoice_unique_no: string | null;

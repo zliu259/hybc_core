@@ -1463,7 +1463,8 @@ reimbursementRoutes.get("/", async (c) => {
         END
           FROM reimbursement_duplicate_check d
          WHERE d.envelope_id = e.id
-      ) AS duplicate_risk_level
+      ) AS duplicate_risk_level,
+      (SELECT p.project_name FROM project p WHERE p.id = e.project_id) AS project_name
     FROM reimbursement_envelope e
     WHERE e.status != 'deleted'`;
   let countSql = "SELECT COUNT(*) as total FROM reimbursement_envelope e WHERE e.status != 'deleted'";
