@@ -1,124 +1,167 @@
 const { request } = require("../../utils/request");
 const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const { getUserProfile } = require("../../utils/auth");
+const { buildProjectCard, isSystemProject } = require("../../utils/project-view");
 
-const statusText = {
-  planning: "规划中",
-  preparing: "筹备中",
-  active: "施工中",
-  completing: "收尾中",
-  archived: "已归档"
-};
+const PAGE_SIZE = 20;
+const SEARCH_DELAY_MS = 300;
 
-const STATUS_OPTIONS = [
-  { label: "全部状态", value: "" },
-  { label: "规划中", value: "planning" },
-  { label: "筹备中", value: "preparing" },
+const STATUS_CHIPS = [
+  { label: "全部", value: "" },
   { label: "施工中", value: "active" },
+  { label: "筹备中", value: "preparing" },
+  { label: "规划中", value: "planning" },
   { label: "收尾中", value: "completing" },
   { label: "已归档", value: "archived" }
-];
-
-const SCOPE_OPTIONS = [
-  { label: "全部项目", value: "all" },
-  { label: "我参与", value: "participant" },
-  { label: "仅只读", value: "readonly" }
 ];
 
 Page({
   data: {
     loading: false,
+    loadingMore: false,
+    loadError: "",
     projects: [],
+    total: 0,
+    hasMore: false,
     keyword: "",
-    statusIndex: 0,
-    scopeIndex: 0,
-    statusNames: STATUS_OPTIONS.map((item) => item.label),
-    scopeNames: SCOPE_OPTIONS.map((item) => item.label)
+    status: "",
+    mineOnly: false,
+    statusChips: STATUS_CHIPS
   },
 
-  onShow() {
-    this.loadProjects();
+  onLoad() {
+    this._page = 0;
+    this._requestId = 0;
+    this.loadFirstPage();
   },
 
-  toStatusText(status) {
-    return statusText[status] || "未知";
+  onUnload() {
+    clearTimeout(this._searchTimer);
   },
 
-  async loadProjects() {
-    if (this.data.loading) return;
-    this.setData({ loading: true });
+  async onPullDownRefresh() {
+    await this.loadFirstPage();
+    wx.stopPullDownRefresh();
+  },
+
+  onReachBottom() {
+    this.loadMore();
+  },
+
+  buildPath(page) {
+    const { keyword, status, mineOnly } = this.data;
+    const profile = getUserProfile() || {};
+    const query = [
+      `page=${page}`,
+      `pageSize=${PAGE_SIZE}`,
+      keyword.trim() ? `keyword=${encodeURIComponent(keyword.trim())}` : "",
+      status ? `status=${encodeURIComponent(status)}` : "",
+      mineOnly && profile.username
+        ? `manager_userid=${encodeURIComponent(profile.username)}`
+        : ""
+    ].filter(Boolean);
+    return `/api/v1/project?${query.join("&")}`;
+  },
+
+  async fetchPage(page) {
+    const [userNames, result] = await Promise.all([
+      loadUserNameMap(),
+      request({ method: "GET", path: this.buildPath(page) })
+    ]);
+    const rows = Array.isArray(result.data) ? result.data : [];
+    const profile = getUserProfile() || {};
+    const toName = (userid) => toUserName(userid, userNames);
+    const visible = rows.filter((item) => !isSystemProject(item));
+    const total = Number((result.pagination && result.pagination.total) || 0);
+    return {
+      cards: visible.map((item) => buildProjectCard(item, { toName, profile })),
+      // 占位项目排在最前面，接口的总数里也算了它们
+      total: total - (rows.length - visible.length),
+      hasMore: page * PAGE_SIZE < total
+    };
+  },
+
+  async loadFirstPage() {
+    this._requestId += 1;
+    const requestId = this._requestId;
+    this.setData({ loading: true, loadError: "" });
     try {
-      const profile = getUserProfile() || {};
-      const username = profile.username || "";
-      const roles = Array.isArray(profile.roles) ? profile.roles : [];
-      const [userNames, result] = await Promise.all([
-        loadUserNameMap(),
-        request({
-          method: "GET",
-          path: `/api/v1/project?page=1&pageSize=200&keyword=${encodeURIComponent(this.data.keyword || "")}&status=${encodeURIComponent(STATUS_OPTIONS[this.data.statusIndex].value || "")}`
-        })
-      ]);
-      const list = Array.isArray(result.data) ? result.data : [];
-      const mapped = list.map((item) => {
-        const isPrivileged =
-          roles.includes("super_admin") ||
-          roles.includes("manager") ||
-          roles.includes("site_manager");
-        const isParticipant = isPrivileged || item.manager_userid === username;
-        return {
-          id: item.id,
-          project_code: item.project_code,
-          project_name: item.project_name,
-          statusText: this.toStatusText(item.status),
-          managerName: toUserName(item.manager_userid, userNames),
-          participant: isParticipant
-        };
+      const { cards, total, hasMore } = await this.fetchPage(1);
+      if (requestId !== this._requestId) return;
+      this._page = 1;
+      this.setData({ projects: cards, total, hasMore, loading: false });
+    } catch (error) {
+      if (requestId !== this._requestId) return;
+      this.setData({
+        projects: [],
+        total: 0,
+        hasMore: false,
+        loading: false,
+        loadError: error.message || "项目列表加载失败"
       });
+    }
+  },
 
-      const scopeValue = SCOPE_OPTIONS[this.data.scopeIndex].value;
-      const projects = mapped.filter((item) => {
-        if (scopeValue === "participant") return item.participant;
-        if (scopeValue === "readonly") return !item.participant;
-        return true;
+  async loadMore() {
+    if (this.data.loading || this.data.loadingMore || !this.data.hasMore) return;
+    const requestId = this._requestId;
+    const nextPage = this._page + 1;
+    this.setData({ loadingMore: true });
+    try {
+      const { cards, hasMore } = await this.fetchPage(nextPage);
+      if (requestId !== this._requestId) return;
+      this._page = nextPage;
+      this.setData({
+        projects: [...this.data.projects, ...cards],
+        hasMore,
+        loadingMore: false
       });
-
-      this.setData({ projects });
-    } catch {
-      this.setData({ projects: [] });
-    } finally {
-      this.setData({ loading: false });
+    } catch (error) {
+      if (requestId !== this._requestId) return;
+      this.setData({ loadingMore: false });
+      wx.showToast({ title: error.message || "加载失败，请重试", icon: "none" });
     }
   },
 
   onKeywordInput(e) {
     this.setData({ keyword: e.detail.value || "" });
+    clearTimeout(this._searchTimer);
+    this._searchTimer = setTimeout(() => this.loadFirstPage(), SEARCH_DELAY_MS);
   },
 
-  onStatusChange(e) {
-    this.setData({ statusIndex: Number(e.detail.value || 0) });
+  onKeywordConfirm() {
+    clearTimeout(this._searchTimer);
+    this.loadFirstPage();
   },
 
-  onScopeChange(e) {
-    this.setData({ scopeIndex: Number(e.detail.value || 0) });
+  clearKeyword() {
+    clearTimeout(this._searchTimer);
+    this.setData({ keyword: "" });
+    this.loadFirstPage();
   },
 
-  searchProjects() {
-    this.loadProjects();
+  selectStatus(e) {
+    const { value } = e.currentTarget.dataset;
+    if (value === this.data.status) return;
+    this.setData({ status: value });
+    this.loadFirstPage();
   },
 
-  resetFilters() {
-    this.setData({
-      keyword: "",
-      statusIndex: 0,
-      scopeIndex: 0
-    });
-    this.loadProjects();
+  toggleMine() {
+    this.setData({ mineOnly: !this.data.mineOnly });
+    this.loadFirstPage();
+  },
+
+  clearFilters() {
+    clearTimeout(this._searchTimer);
+    this.setData({ keyword: "", status: "", mineOnly: false });
+    this.loadFirstPage();
   },
 
   openProjectDetail(e) {
-    const { id, participant } = e.currentTarget.dataset;
+    const { id, readonly } = e.currentTarget.dataset;
     wx.navigateTo({
-      url: `/pages/project-detail/index?id=${id}&readonly=${participant ? "0" : "1"}`
+      url: `/pages/project-detail/index?id=${id}&readonly=${readonly ? "1" : "0"}`
     });
   }
 });

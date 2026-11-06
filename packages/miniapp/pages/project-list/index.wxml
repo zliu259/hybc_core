@@ -1,28 +1,62 @@
 <view class="page">
-  <hy-panel-card title="项目列表" icon="📋" subtitle="专门项目页，避免工作台列表过长">
-    <view class="search-row">
-      <input class="search-input" placeholder="按项目编号或名称筛选" value="{{keyword}}" bindinput="onKeywordInput" />
-      <t-button class="search-btn" theme="primary" bindtap="searchProjects" loading="{{loading}}" disabled="{{loading}}">查询</t-button>
-    </view>
+  <view class="search">
+    <input
+      class="search-input"
+      placeholder="搜项目名称或编号"
+      value="{{keyword}}"
+      confirm-type="search"
+      bindinput="onKeywordInput"
+      bindconfirm="onKeywordConfirm"
+    />
+    <text wx:if="{{keyword}}" class="search-clear" bindtap="clearKeyword">清除</text>
+  </view>
 
-    <view class="filter-row">
-      <picker class="filter-cell" mode="selector" range="{{statusNames}}" value="{{statusIndex}}" bindchange="onStatusChange" disabled="{{loading}}">
-        <view class="filter-input">{{statusNames[statusIndex]}}</view>
-      </picker>
-      <picker class="filter-cell" mode="selector" range="{{scopeNames}}" value="{{scopeIndex}}" bindchange="onScopeChange" disabled="{{loading}}">
-        <view class="filter-input">{{scopeNames[scopeIndex]}}</view>
-      </picker>
-      <t-button class="reset-btn" variant="outline" bindtap="resetFilters" disabled="{{loading}}">重置</t-button>
-    </view>
+  <scroll-view class="chips" scroll-x enhanced show-scrollbar="{{false}}">
+    <view
+      wx:for="{{statusChips}}"
+      wx:key="value"
+      class="chip {{status === item.value ? 'chip-active' : ''}}"
+      data-value="{{item.value}}"
+      bindtap="selectStatus"
+    >{{item.label}}</view>
+  </scroll-view>
 
-    <view wx:if="{{projects.length === 0}}" class="empty-tip">暂无项目数据</view>
-    <view wx:for="{{projects}}" wx:key="id" class="project-card" data-id="{{item.id}}" data-participant="{{item.participant}}" bindtap="openProjectDetail">
-      <view class="project-title-row">
-        <view class="project-title">{{item.project_name}}</view>
-        <hy-status-chip text="{{item.participant ? '参与者' : '只读'}}" type="{{item.participant ? 'success' : 'warning'}}" />
-      </view>
-      <view class="project-sub">{{item.project_code}} · {{item.statusText}}</view>
-      <view class="project-sub">项目经理：{{item.managerName}}</view>
+  <view class="summary">
+    <text class="summary-count" wx:if="{{!loading && !loadError}}">共 {{total}} 个项目</text>
+    <text class="summary-count" wx:if="{{loading}}">正在加载</text>
+    <text class="mine {{mineOnly ? 'mine-active' : ''}}" bindtap="toggleMine">{{mineOnly ? '✓ ' : ''}}只看我负责的</text>
+  </view>
+
+  <view wx:if="{{loadError}}" class="state">
+    <view class="state-text">{{loadError}}</view>
+    <t-button size="small" variant="outline" bindtap="loadFirstPage">重试</t-button>
+  </view>
+
+  <view wx:elif="{{!loading && projects.length === 0}}" class="state">
+    <view class="state-text">没有符合条件的项目</view>
+    <t-button size="small" variant="outline" bindtap="clearFilters">清除筛选</t-button>
+  </view>
+
+  <view
+    wx:for="{{projects}}"
+    wx:key="id"
+    class="project-card {{item.archived ? 'project-card-archived' : ''}}"
+    data-id="{{item.id}}"
+    data-readonly="{{item.readonly}}"
+    bindtap="openProjectDetail"
+  >
+    <view class="project-head">
+      <view class="project-name">{{item.name}}</view>
+      <t-tag class="project-tag" theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusText}}</t-tag>
     </view>
-  </hy-panel-card>
+    <view class="project-meta">
+      <text>负责人 {{item.managerName}}</text>
+      <text wx:if="{{item.startDate}}">开工 {{item.startDate}}</text>
+    </view>
+    <view wx:if="{{item.location}}" class="project-location">{{item.location}}</view>
+  </view>
+
+  <view wx:if="{{projects.length > 0}}" class="list-foot">
+    {{loadingMore ? '正在加载' : (hasMore ? '上拉加载更多' : '没有更多了')}}
+  </view>
 </view>

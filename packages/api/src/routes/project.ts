@@ -113,6 +113,7 @@ projectRoutes.get("/", async (c) => {
   const projectKind = c.req.query("project_kind");
   const keyword = c.req.query("keyword");
   const location = c.req.query("location");
+  const managerUserid = c.req.query("manager_userid");
   const page = Math.max(Number(c.req.query("page") ?? "1"), 1);
   const pageSize = Math.min(Math.max(Number(c.req.query("pageSize") ?? "20"), 1), 100);
   const offset = (page - 1) * pageSize;
@@ -140,6 +141,11 @@ projectRoutes.get("/", async (c) => {
     sql += " AND IFNULL(location_text, '') LIKE ?";
     countSql += " AND IFNULL(location_text, '') LIKE ?";
     params.push(`%${location}%`);
+  }
+  if (managerUserid) {
+    sql += " AND manager_userid = ?";
+    countSql += " AND manager_userid = ?";
+    params.push(managerUserid);
   }
 
   sql +=

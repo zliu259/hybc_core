@@ -1,48 +1,88 @@
-<view class="page">
-  <hy-panel-card title="项目工作区" icon="🏗️" subtitle="项目级日志 + 标段级详情，移动端快速操作">
-    <view wx:if="{{readonly}}" class="readonly-tip" bindtap="showReadonlyTip">当前为只读模式（非参与者）</view>
-
-    <view wx:if="{{project}}" class="project-box">
-      <view class="project-title">{{project.project_name}}</view>
-      <view class="project-sub">{{project.project_code}} · {{project.statusText}}</view>
-      <view class="project-sub">项目经理：{{project.managerName}}</view>
-      <view class="project-sub">开工日期：{{project.project_start_at || '-'}}</view>
-      <view class="project-sub">项目位置：{{project.location_text || '-'}}</view>
+<view class="page" wx:if="{{pageState === 'ready'}}">
+  <!-- 头部：这是哪个项目、走到哪个阶段、谁负责 -->
+  <view class="card hero">
+    <view class="hero-top">
+      <text class="hero-code" user-select="{{true}}">{{project.code}}</text>
+      <t-tag theme="{{project.statusTheme}}" variant="light" size="small">{{project.statusText}}</t-tag>
     </view>
-  </hy-panel-card>
+    <view class="hero-name">{{project.name}}</view>
 
-  <hy-panel-card wx:if="{{canReviewExternalLogs}}" title="外部日志复核" icon="✅" subtitle="AI 未通过的外部日志需要项目管理人员放行或驳回">
-    <view class="external-review-card" bindtap="openExternalLogReview">
-      <view>
-        <view class="external-review-title">待人工复核</view>
-        <view class="external-review-desc">查看 AI 摘要、问题列表和填报内容后放行</view>
+    <view class="stages stages-{{project.status}}">
+      <view wx:for="{{stages}}" wx:key="key" class="stage stage-{{item.state}}">
+        <view class="stage-bar"></view>
+        <text class="stage-label">{{item.label}}</text>
       </view>
-      <view class="external-review-count">{{externalReviewCount}}</view>
-    </view>
-  </hy-panel-card>
-
-  <hy-panel-card title="项目日志" icon="📄" subtitle="默认折叠，按日期排序，点开看完整内容">
-    <view class="toolbar">
-      <t-button theme="primary" size="small" disabled="{{readonly}}" bindtap="goCreateManagerLog">快速填写项目日志</t-button>
     </view>
 
-    <view wx:if="{{managerLogs.length === 0}}" class="empty-tip">暂无项目日志</view>
-    <view wx:for="{{managerLogs}}" wx:key="id" class="log-row">
-      <view class="log-head" data-id="{{item.id}}" bindtap="toggleManagerLog">
-        <view class="log-head-left">
-          <view class="log-date">{{item.dayText}}</view>
-          <view class="log-status">{{item.statusText}}</view>
+    <view class="kv" wx:for="{{facts}}" wx:key="label">
+      <text class="k">{{item.label}}</text>
+      <text class="v" user-select="{{true}}">{{item.value}}</text>
+    </view>
+
+    <view wx:if="{{readonly}}" class="readonly-note">你只能查看这个项目，不能填写日志</view>
+    <view wx:if="{{canWriteLog}}" class="hero-action" hover-class="hero-action-hover" aria-role="button" bindtap="goCreateManagerLog">写项目日志</view>
+  </view>
+
+  <view class="card">
+    <view class="card-title">项目交底</view>
+    <view wx:if="{{briefing.mode === 'rows'}}" class="briefing-rows">
+      <block wx:for="{{briefing.rows}}" wx:key="key">
+        <view wx:if="{{item.label}}" class="kv">
+          <text class="k">{{item.label}}</text>
+          <text class="v" user-select="{{true}}">{{item.value}}</text>
         </view>
-        <view class="log-arrow">{{expandedManagerLogId === item.id ? '收起' : '展开'}}</view>
+        <text wx:else class="briefing-plain" user-select="{{true}}">{{item.value}}</text>
+      </block>
+    </view>
+    <text wx:elif="{{briefing.mode === 'text'}}" class="briefing-text" user-select="{{true}}">{{briefing.text}}</text>
+    <view wx:else class="card-empty">还没有填写项目交底</view>
+  </view>
+
+  <view wx:if="{{canReview}}" class="card link-row" bindtap="openExternalLogReview">
+    <text class="link-title">外部日志复核</text>
+    <text class="link-value {{externalReviewCount > 0 ? 'link-value-alert' : ''}}">{{externalReviewCount > 0 ? externalReviewCount + ' 条待处理' : '没有待处理'}}<text class="chevron">›</text></text>
+  </view>
+
+  <view class="card">
+    <view class="card-title">标段进度</view>
+    <view wx:if="{{sectionsFailed}}" class="card-empty">标段没有取到，下拉刷新重试</view>
+    <view wx:elif="{{sectionCards.length === 0}}" class="card-empty">这个项目还没有标段</view>
+    <view wx:for="{{sectionCards}}" wx:key="id" class="section" data-id="{{item.id}}" bindtap="openSectionPage">
+      <view class="section-head">
+        <text class="section-title">{{item.title}}</text>
+        <text class="section-status">{{item.statusText}}<text class="chevron">›</text></text>
       </view>
+      <view wx:if="{{item.percent !== null}}" class="section-progress">
+        <view class="section-track">
+          <view class="section-fill" style="width: {{item.percent}}%"></view>
+        </view>
+        <text class="section-percent">{{item.percent}}%</text>
+      </view>
+      <view class="section-foot">
+        <text wx:if="{{item.footageText}}">累计 {{item.footageText}}</text>
+        <text wx:if="{{item.breakthroughCount > 0}}">贯通报告 {{item.breakthroughCount}} 份</text>
+        <text>{{item.latestText}}</text>
+      </view>
+    </view>
+  </view>
 
-      <view wx:if="{{expandedManagerLogId === item.id}}" class="log-body">
-        <view class="log-sub">标题：{{item.title}}</view>
-        <view class="log-sub">填报人：{{item.managerName}}</view>
-        <view wx:if="{{item.detailText}}" class="log-content">{{item.detailText}}</view>
-        <view wx:if="{{item.risk_note}}" class="log-risk">风险提示：{{item.risk_note}}</view>
-
-        <view wx:if="{{item.photos.length > 0}}" class="photo-grid">
+  <view class="card">
+    <view class="card-title">项目日志</view>
+    <view wx:if="{{logsFailed}}" class="card-empty">项目日志没有取到，下拉刷新重试</view>
+    <view wx:elif="{{logs.length === 0}}" class="card-empty">还没有项目日志</view>
+    <view wx:for="{{visibleLogs}}" wx:key="id" class="log">
+      <view class="log-head" data-id="{{item.id}}" bindtap="toggleLog">
+        <view class="log-main">
+          <view class="log-title">{{item.title}}</view>
+          <view class="log-date">{{item.dayText}}<text class="log-toggle">{{expandedLogId === item.id ? '收起' : '展开'}}</text></view>
+        </view>
+        <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusText}}</t-tag>
+      </view>
+      <view wx:if="{{expandedLogId === item.id}}" class="log-body">
+        <view class="log-author">填报人 {{item.managerName}}</view>
+        <text wx:if="{{item.detailText}}" class="log-detail" user-select="{{true}}">{{item.detailText}}</text>
+        <view wx:if="{{item.riskNote}}" class="log-risk">风险提示：{{item.riskNote}}</view>
+        <view wx:if="{{item.photos.length > 0}}" class="log-photos">
           <image
             wx:for="{{item.photos}}"
             wx:for-item="photo"
@@ -57,43 +97,32 @@
         </view>
       </view>
     </view>
-  </hy-panel-card>
-
-  <hy-panel-card title="标段总览" icon="📋" subtitle="点击进入标段页面，查看施工日志与贯通信息">
-    <view wx:if="{{sectionCards.length === 0}}" class="empty-tip">暂无标段</view>
-    <view wx:for="{{sectionCards}}" wx:key="id" class="section-row" data-id="{{item.id}}" bindtap="openSectionPage">
-      <view class="section-head">
-        <view>
-          <view class="section-code">{{item.section_code}}</view>
-          <view class="section-name">{{item.section_name}}</view>
-        </view>
-        <view class="section-status">{{item.statusText}}</view>
-      </view>
-      <view class="section-sub">顶进进度 {{item.progress}}% · 累计 {{item.footage}} / {{item.section_length}}m</view>
-      <view class="section-sub">施工日志 {{item.logCount}} · 贯通报告 {{item.breakthroughCount}}</view>
-      <view class="section-sub">最近更新：{{item.latestLogDate}}</view>
-      <view class="tap-tip">点击查看标段详情</view>
+    <view wx:if="{{hiddenLogCount > 0}}" class="log-fold" bindtap="toggleAllLogs">
+      {{logsExpanded ? '收起' : '展开其余 ' + hiddenLogCount + ' 条'}}
     </view>
-  </hy-panel-card>
+  </view>
 
-  <hy-panel-card title="财务摘要" icon="💰">
-    <view wx:if="{{summary}}" class="summary-grid">
-      <view class="summary-item">
-        <view class="summary-label">对外付款已支付</view>
-        <view class="summary-value">{{summary.outboundPaidAmount}}</view>
-      </view>
-      <view class="summary-item">
-        <view class="summary-label">收款已开票</view>
-        <view class="summary-value">{{summary.inboundInvoicedAmount}}</view>
-      </view>
-      <view class="summary-item">
-        <view class="summary-label">收款已到账</view>
-        <view class="summary-value">{{summary.inboundReceivedAmount}}</view>
-      </view>
-      <view class="summary-item">
-        <view class="summary-label">报销累计</view>
-        <view class="summary-value">{{summary.reimbursementAmount}}</view>
+  <view class="card">
+    <view class="card-title">财务摘要</view>
+    <view wx:if="{{financeFailed}}" class="card-empty">财务摘要没有取到，下拉刷新重试</view>
+    <view wx:else class="finance">
+      <view wx:for="{{financeRows}}" wx:key="label" class="finance-item">
+        <view class="finance-label">{{item.label}}</view>
+        <view class="finance-value">{{item.value}}</view>
       </view>
     </view>
-  </hy-panel-card>
+  </view>
+</view>
+
+<view wx:elif="{{pageState === 'error'}}" class="page">
+  <view class="card state">
+    <view class="state-text">{{loadError}}</view>
+    <t-button size="small" variant="outline" wx:if="{{projectId}}" bindtap="loadData">重试</t-button>
+  </view>
+</view>
+
+<view wx:else class="page">
+  <view class="card state">
+    <view class="state-text">正在加载项目</view>
+  </view>
 </view>

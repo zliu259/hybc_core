@@ -1,203 +1,197 @@
 const { request } = require("../../utils/request");
 const { loadUserNameMap, toUserName } = require("../../utils/user-names");
 const { getUserProfile } = require("../../utils/auth");
+const {
+  STATUS_TEXT,
+  STATUS_THEME,
+  buildFinanceRows,
+  buildLogRows,
+  buildProjectFacts,
+  buildSectionCards,
+  buildStageBar,
+  canReviewExternalLogs,
+  parseBriefing
+} = require("../../utils/project-view");
 
-const sectionStatusText = {
-  planning: "规划中",
-  preparing: "筹备中",
-  active: "施工中",
-  completing: "收尾中",
-  archived: "已归档",
-  normal: "正常",
-  paused: "暂停",
-  blocked: "受阻",
-  done: "完成"
-};
+/** 项目日志默认只露最近几条，页面才不会被日志撑得看不到后面的内容 */
+const LOG_PREVIEW_COUNT = 5;
+/** 接口每页上限；日志按日期倒序，最新的累计进尺一定在第一页 */
+const SECTION_LOG_PAGE_SIZE = 100;
 
-const logStatusText = {
-  draft: "草稿",
-  submitted: "已提交",
-  approved: "已审核",
-  rejected: "已驳回"
-};
+const get = (path) => request({ method: "GET", path });
 
-const toDay = (value) => String(value || "").slice(0, 10) || "-";
-const stripHtml = (text) => String(text || "").replace(/<[^>]+>/g, "").trim();
-
-const normalizePhoto = (photo) => {
-  const url = photo && (photo.file_url || photo.url || photo.preview_url);
-  return url ? { url, name: photo.file_name || "日志图片" } : null;
-};
+/** 把成败都变成结果：一块内容取不到，不影响其他内容显示。 */
+const settle = (promise) =>
+  promise.then(
+    (result) => ({ ok: true, rows: Array.isArray(result.data) ? result.data : [], data: result.data, pagination: result.pagination }),
+    (error) => ({ ok: false, rows: [], data: null, error })
+  );
 
 Page({
   data: {
-    loading: false,
-    initialized: false,
+    pageState: "loading",
+    loadError: "",
     projectId: 0,
     readonly: true,
     project: null,
-    sections: [],
+    stages: [],
+    facts: [],
+    briefing: { mode: "empty", text: "", rows: [] },
+    canWriteLog: false,
+    canReview: false,
+    externalReviewCount: 0,
     sectionCards: [],
-    summary: null,
-    managerLogs: [],
-    expandedManagerLogId: 0,
-    canReviewExternalLogs: false,
-    externalReviewCount: 0
+    sectionsFailed: false,
+    logs: [],
+    logsFailed: false,
+    logsExpanded: false,
+    expandedLogId: 0,
+    visibleLogs: [],
+    hiddenLogCount: 0,
+    financeRows: null,
+    financeFailed: false
   },
 
   onLoad(query) {
-    const projectId = Number(query.id || 0);
-    const readonly = String(query.readonly || "1") === "1";
-    this.setData({ projectId, readonly, initialized: true });
+    this._openedOnce = false;
+    this.setData({
+      projectId: Number(query.id || 0),
+      readonly: String(query.readonly || "1") === "1"
+    });
+    if (!this.data.projectId) {
+      this.setData({ pageState: "error", loadError: "没有找到这个项目" });
+      return;
+    }
     this.loadData();
   },
 
   onShow() {
-    if (this.data.initialized && this.data.projectId) {
-      this.loadData();
+    // 第一次显示时 onLoad 已经在加载；之后从写日志、标段页返回才需要刷新
+    if (this._openedOnce && this.data.projectId) this.loadData();
+    this._openedOnce = true;
+  },
+
+  async onPullDownRefresh() {
+    await this.loadData();
+    wx.stopPullDownRefresh();
+  },
+
+  async loadData() {
+    const { projectId } = this.data;
+    this._requestId = (this._requestId || 0) + 1;
+    const requestId = this._requestId;
+    const base = `/api/v1/project/${projectId}`;
+    // 重试时先给反馈；已经显示的内容刷新时不闪
+    if (this.data.pageState === "error") {
+      this.setData({ pageState: "loading", loadError: "" });
     }
-  },
+    const [userNames, projectRes, sections, summary, managerLogs, breakthroughs] = await Promise.all([
+      loadUserNameMap(),
+      settle(get(base)),
+      settle(get(`${base}/sections`)),
+      settle(get(`${base}/financial-summary`)),
+      settle(get(`/api/v1/log/manager?project_id=${projectId}&page=1&pageSize=60`)),
+      settle(get(`/api/v1/survey/breakthrough?project_id=${projectId}`))
+    ]);
+    // 按标段分别取：整个项目混着取的话，停工久的标段会被挤出第一页，进度变成 0
+    const sectionLogs = await Promise.all(
+      sections.rows.map((section) =>
+        settle(
+          get(
+            `/api/v1/log/operator?project_id=${projectId}&section_id=${section.id}&page=1&pageSize=${SECTION_LOG_PAGE_SIZE}`
+          )
+        )
+      )
+    );
+    if (requestId !== this._requestId) return;
 
-  toSectionStatus(status) {
-    return sectionStatusText[status] || "未知";
-  },
-
-  toLogStatus(status) {
-    return logStatusText[status] || "未知";
-  },
-
-  buildSectionCards(sections, operatorLogs, breakthroughReports) {
-    return (sections || []).map((section) => {
-      const logs = (operatorLogs || []).filter((item) => Number(item.section_id) === Number(section.id));
-      const reports = (breakthroughReports || []).filter((item) => Number(item.section_id) === Number(section.id));
-      const footage = logs.reduce((sum, item) => sum + Number(item.footage_m || 0), 0);
-      const total = Number(section.section_length || 0);
-      const progress = total > 0 ? Math.min(100, (footage / total) * 100) : 0;
-      const latestLogDate = logs.length > 0 ? toDay(logs[0].log_date) : "-";
-      return {
-        id: Number(section.id),
-        section_code: section.section_code || "-",
-        section_name: section.section_name || "未命名标段",
-        statusText: this.toSectionStatus(section.status),
-        section_length: total,
-        footage: Number(footage.toFixed(1)),
-        progress: Number(progress.toFixed(1)),
-        logCount: logs.length,
-        breakthroughCount: reports.length,
-        latestLogDate
-      };
-    });
-  },
-
-  buildManagerLogs(rows) {
-    return (rows || [])
-      .slice()
-      .sort((a, b) => {
-        const d = String(b.log_date || "").localeCompare(String(a.log_date || ""));
-        if (d !== 0) return d;
-        return Number(b.id || 0) - Number(a.id || 0);
-      })
-      .map((item) => {
-        const photos = (Array.isArray(item.photos) ? item.photos : []).map(normalizePhoto).filter(Boolean);
-        return {
-          id: Number(item.id),
-          dayText: toDay(item.log_date),
-          statusText: this.toLogStatus(item.status),
-          title: item.title || "未命名日志",
-          detailText: stripHtml(item.detail_html),
-          risk_note: item.risk_note || "",
-          managerName: toUserName(item.manager_userid, this._userNames),
-          photos,
-          photoUrls: photos.map((photo) => photo.url)
-        };
-      });
-  },
-
-  canReviewExternalLogs(project) {
-    const profile = getUserProfile() || {};
-    const roles = Array.isArray(profile.roles) ? profile.roles : [];
-    const username = profile.username || "";
-    if (roles.includes("super_admin")) return true;
-    const hasManagementRole = roles.includes("manager") || roles.includes("site_manager");
-    return Boolean(hasManagementRole && project && project.manager_userid === username);
-  },
-
-  async loadExternalReviewCount(project, canReviewExternalLogs) {
-    if (!project || !canReviewExternalLogs) return 0;
-    try {
-      const res = await request({
-        method: "GET",
-        path: `/api/v1/project/${this.data.projectId}/external-log-submissions?status=needs_manual_review&page=1&pageSize=1`
-      });
-      if (res.pagination && Number.isFinite(Number(res.pagination.total))) {
-        return Number(res.pagination.total || 0);
+    if (!projectRes.ok || !projectRes.data) {
+      // 刷新失败时，已经显示的内容留着，提示一下就好
+      if (this.data.pageState === "ready") {
+        wx.showToast({ title: "刷新失败，请稍后再试", icon: "none" });
+        return;
       }
-      return Array.isArray(res.data) ? res.data.length : 0;
+      this.setData({
+        pageState: "error",
+        loadError: (projectRes.error && projectRes.error.message) || "项目加载失败"
+      });
+      return;
+    }
+
+    const raw = projectRes.data;
+    const toName = (userid) => toUserName(userid, userNames);
+    const canReview = canReviewExternalLogs(raw, getUserProfile() || {});
+    const externalReviewCount = canReview ? await this.loadExternalReviewCount() : 0;
+    if (requestId !== this._requestId) return;
+
+    this.setData({
+      pageState: "ready",
+      loadError: "",
+      project: {
+        name: raw.project_name || "未命名项目",
+        code: raw.project_code || "",
+        status: raw.status,
+        statusText: STATUS_TEXT[raw.status] || "未知",
+        statusTheme: STATUS_THEME[raw.status] || "default"
+      },
+      stages: buildStageBar(raw.status),
+      facts: buildProjectFacts(raw, toName),
+      briefing: parseBriefing(raw.project_briefing),
+      // 已归档的项目不再推写日志，真要补可以从「写日志」入口进
+      canWriteLog: !this.data.readonly && raw.status !== "archived",
+      canReview,
+      externalReviewCount,
+      sectionCards: buildSectionCards(
+        sections.rows,
+        sectionLogs.reduce((all, result) => all.concat(result.rows), []),
+        breakthroughs.rows,
+        sections.rows
+          .filter((_, index) => !sectionLogs[index].ok)
+          .map((section) => Number(section.id))
+      ),
+      sectionsFailed: !sections.ok,
+      logs: buildLogRows(managerLogs.rows, toName),
+      logsFailed: !managerLogs.ok,
+      financeRows: buildFinanceRows(summary.ok ? summary.data : null),
+      financeFailed: !summary.ok
+    });
+    this.syncVisibleLogs();
+  },
+
+  async loadExternalReviewCount() {
+    try {
+      const res = await get(
+        `/api/v1/project/${this.data.projectId}/external-log-submissions?status=needs_manual_review&page=1&pageSize=1`
+      );
+      return Number((res.pagination && res.pagination.total) || 0);
     } catch {
       return 0;
     }
   },
 
-  async loadData() {
-    if (!this.data.projectId) return;
-    this.setData({ loading: true });
-    try {
-      const [userNames, projectRes, sectionsRes, summaryRes, managerLogsRes, operatorLogsRes, breakthroughRes] = await Promise.all([
-        loadUserNameMap(),
-        request({ method: "GET", path: `/api/v1/project/${this.data.projectId}` }),
-        request({ method: "GET", path: `/api/v1/project/${this.data.projectId}/sections` }),
-        request({ method: "GET", path: `/api/v1/project/${this.data.projectId}/financial-summary` }),
-        request({ method: "GET", path: `/api/v1/log/manager?project_id=${this.data.projectId}&page=1&pageSize=60` }),
-        request({ method: "GET", path: `/api/v1/log/operator?project_id=${this.data.projectId}&page=1&pageSize=200` }),
-        request({ method: "GET", path: `/api/v1/survey/breakthrough?project_id=${this.data.projectId}` })
-      ]);
-
-      const sections = Array.isArray(sectionsRes.data) ? sectionsRes.data : [];
-      const operatorLogs = Array.isArray(operatorLogsRes.data) ? operatorLogsRes.data : [];
-      const breakthroughs = Array.isArray(breakthroughRes.data) ? breakthroughRes.data : [];
-
-      this._userNames = userNames;
-      const project = projectRes.data
-        ? {
-            ...projectRes.data,
-            statusText: this.toSectionStatus(projectRes.data.status),
-            managerName: toUserName(projectRes.data.manager_userid, userNames)
-          }
-        : null;
-      const canReviewExternalLogs = this.canReviewExternalLogs(project);
-      const externalReviewCount = await this.loadExternalReviewCount(project, canReviewExternalLogs);
-
-      this.setData({
-        project,
-        sections,
-        sectionCards: this.buildSectionCards(sections, operatorLogs, breakthroughs),
-        summary: summaryRes.data || null,
-        managerLogs: this.buildManagerLogs(Array.isArray(managerLogsRes.data) ? managerLogsRes.data : []),
-        canReviewExternalLogs,
-        externalReviewCount
-      });
-    } catch (error) {
-      wx.showToast({ title: "加载项目失败", icon: "none" });
-    } finally {
-      this.setData({ loading: false });
-    }
-  },
-
-  toggleManagerLog(e) {
-    const id = Number(e.currentTarget.dataset.id || 0);
-    if (!id) return;
+  syncVisibleLogs() {
+    const { logs, logsExpanded } = this.data;
     this.setData({
-      expandedManagerLogId: this.data.expandedManagerLogId === id ? 0 : id
+      visibleLogs: logsExpanded ? logs : logs.slice(0, LOG_PREVIEW_COUNT),
+      hiddenLogCount: Math.max(0, logs.length - LOG_PREVIEW_COUNT)
     });
   },
 
+  toggleAllLogs() {
+    this.setData({ logsExpanded: !this.data.logsExpanded });
+    this.syncVisibleLogs();
+  },
+
+  toggleLog(e) {
+    const id = Number(e.currentTarget.dataset.id || 0);
+    this.setData({ expandedLogId: this.data.expandedLogId === id ? 0 : id });
+  },
+
   previewLogPhoto(e) {
-    const logId = Number(e.currentTarget.dataset.logid || 0);
-    const row = (this.data.managerLogs || []).find((item) => Number(item.id) === logId);
-    const urls = row ? row.photoUrls : [];
-    const current = e.currentTarget.dataset.current || "";
-    if (!Array.isArray(urls) || urls.length === 0 || !current) return;
-    wx.previewImage({ current, urls });
+    const { logid, current } = e.currentTarget.dataset;
+    const row = this.data.logs.find((item) => item.id === Number(logid));
+    if (!row || !current) return;
+    wx.previewImage({ current, urls: row.photoUrls });
   },
 
   openSectionPage(e) {
@@ -209,25 +203,10 @@ Page({
   },
 
   goCreateManagerLog() {
-    if (this.data.readonly) {
-      this.showReadonlyTip();
-      return;
-    }
     wx.navigateTo({ url: `/pages/manager-log/index?projectId=${this.data.projectId}` });
   },
 
   openExternalLogReview() {
-    if (!this.data.canReviewExternalLogs) {
-      wx.showToast({ title: "当前账号不可复核该项目外部日志", icon: "none" });
-      return;
-    }
     wx.navigateTo({ url: `/pages/external-log-review/index?projectId=${this.data.projectId}` });
-  },
-
-  showReadonlyTip() {
-    wx.showToast({
-      title: "只读模式：非参与者不可执行写操作",
-      icon: "none"
-    });
   }
 });
