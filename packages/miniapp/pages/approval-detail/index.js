@@ -29,6 +29,8 @@ const {
   buildBizView,
   buildReimbursementItemRows,
   buildTimelineNodes,
+  groupTimelineRounds,
+  shouldExpandFlow,
   extractStopReason,
   parseAttachments,
   withFileSizeText
@@ -43,6 +45,21 @@ const COMMENT_BLUR_DELAY_MS = 180;
 
 const accountLabel = (account) => `${account.bank_name} / ${account.account_no}`;
 
+/** 审批人想看业务单全貌时的入口；发起人、审批人不一定有查询权限，所以带上来源 */
+const buildBizDetailLink = (bizType, bizDetail) => {
+  if (!bizDetail) return null;
+  if (bizType === "payment_request") {
+    return { label: "查看付款单", url: `/pages/query-payment-detail/index?id=${bizDetail.id}&from=approval` };
+  }
+  const contractId =
+    bizType === "contract_amount_change"
+      ? bizDetail.contract && bizDetail.contract.id
+      : (bizType === "outbound_contract" || bizType === "inbound_contract") && bizDetail.id;
+  return contractId
+    ? { label: "查看合同", url: `/pages/query-contract-detail/index?id=${contractId}&from=approval` }
+    : null;
+};
+
 Page({
   data: {
     id: 0,
@@ -50,7 +67,8 @@ Page({
     detailState: "loading",
     detailErrorText: "",
     readOnlyView: false,
-    paymentDetailId: 0,
+    // 跳到业务单详情：{ label, url }，没有时为 null
+    bizDetailLink: null,
     // 头部与明细
     hero: null,
     detailTitle: "",
@@ -61,6 +79,7 @@ Page({
     detailAttachments: [],
     stopReasonText: "",
     stopIsReturned: false,
+    stopIsClosed: false,
     // AI 审查
     ai: { latest: null, earlier: [] },
     aiPassedOpen: false,
@@ -71,6 +90,9 @@ Page({
     detailAuditView: null,
     // 审批流程
     detailTimelineNodes: [],
+    earlierRounds: [],
+    flowRoundLabel: "",
+    flowOpenRound: 0,
     flowCollapsed: true,
     // 支付方案
     payoutVisible: false,
@@ -111,8 +133,8 @@ Page({
     });
     // 「我发起的」列表以只读方式进入，那里是发起人撤回、取消的唯一入口
     this.fromInitiated = params.from === "initiated";
-    // 从付款详情过来时不再链回去，避免两页来回叠栈
-    this.fromPaymentDetail = params.from === "query-payment";
+    // 从业务单详情过来时不再链回去，避免两页来回叠栈
+    this.fromBizDetail = params.from === "query-payment" || params.from === "query-contract";
     // 首次 onShow 必须加载；之后仅在显式标记时整页刷新
     this.needsRefreshOnShow = true;
     this.names = { users: {}, projects: {}, entities: {} };
@@ -342,7 +364,8 @@ Page({
       const ctx = this.viewContext();
       const view = buildBizView({ instance, nodes: detail.nodes, bizDetail: records.bizDetail, ctx });
       const ai = buildAiPanel(detail.ai_gate_reviews, buildNodeNameMap(detail), formatBeijingTime);
-      const detailTimelineNodes = buildTimelineNodes(detail, ctx);
+      const allTimelineNodes = buildTimelineNodes(detail, ctx);
+      const flowRounds = groupTimelineRounds(allTimelineNodes, detail);
       const payoutVisible =
         actions.canApprove && Boolean(records.bizDetail) && PAYOUT_BIZ_TYPES.indexOf(instance.biz_type) >= 0;
 
@@ -362,11 +385,20 @@ Page({
         aiReportTitle: records.aiReportTitle,
         // 有关卡结论时报告折叠；没有时报告就是唯一内容，直接展开
         aiReportOpen: !ai.latest,
-        detailTimelineNodes,
-        stopReasonText: extractStopReason(detailTimelineNodes, detail),
+        detailTimelineNodes: flowRounds.currentNodes,
+        earlierRounds: flowRounds.earlier,
+        flowRoundLabel: flowRounds.roundLabel,
+        flowOpenRound: 0,
+        stopReasonText: extractStopReason(
+          allTimelineNodes,
+          detail,
+          records.bizDetail && records.bizDetail.remark,
+          ctx
+        ),
         stopIsReturned: instance.status === "returned",
-        // 驳回/退回（含 AI 拦截退回）时默认展开流程，拦截理由不能藏在折叠层里
-        flowCollapsed: instance.status !== "rejected" && instance.status !== "returned",
+        stopIsClosed: instance.status === "cancelled" || instance.status === "withdrawn",
+        // 流程停下来（含 AI 拦截退回）或有人写了实际意见时默认展开，不能藏在折叠层里
+        flowCollapsed: !shouldExpandFlow(instance.status, flowRounds.currentNodes),
         footerMode,
         canApprove: actions.canApprove,
         canReject: actions.canReject,
@@ -376,10 +408,7 @@ Page({
         moreActions: actions.moreActions,
         payoutVisible,
         payoutEditorOpen: false,
-        paymentDetailId:
-          instance.biz_type === "payment_request" && records.bizDetail && !this.fromPaymentDetail
-            ? Number(records.bizDetail.id) || 0
-            : 0,
+        bizDetailLink: this.fromBizDetail ? null : buildBizDetailLink(instance.biz_type, records.bizDetail),
         detailState: "ready",
         detailErrorText: ""
       });
@@ -788,10 +817,14 @@ Page({
     this.setData({ flowCollapsed: !this.data.flowCollapsed });
   },
 
-  openPaymentDetail() {
-    const { paymentDetailId } = this.data;
-    if (!paymentDetailId) return;
-    wx.navigateTo({ url: `/pages/query-payment-detail/index?id=${paymentDetailId}&from=approval` });
+  toggleFlowRound(e) {
+    const round = Number(e.currentTarget.dataset.round) || 0;
+    this.setData({ flowOpenRound: this.data.flowOpenRound === round ? 0 : round });
+  },
+
+  openBizDetail() {
+    const { bizDetailLink } = this.data;
+    if (bizDetailLink) wx.navigateTo({ url: bizDetailLink.url });
   },
 
   openAttachment(e) {

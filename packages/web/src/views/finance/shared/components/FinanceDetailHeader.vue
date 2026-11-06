@@ -106,10 +106,6 @@ const copySerial = async () => {
   min-width: 0;
 }
 
-.fin-masthead__amount-block {
-  flex: none;
-}
-
 .fin-masthead__label {
   display: block;
   font-size: 12px;
@@ -155,6 +151,7 @@ const copySerial = async () => {
 }
 
 .fin-masthead__amount-block {
+  flex: none;
   text-align: right;
 }
 

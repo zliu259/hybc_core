@@ -10,6 +10,7 @@ import { publishEvent } from "../event-bus";
 import { createAiGateHandler } from "../ai-slot";
 import { cancelPendingAiGateTasksForInstance } from "../task-queue";
 import { BIZ_TYPE_TABLE_MAP } from "./biz-table";
+import { closeRunningNodes } from "./close-running-nodes";
 
 const nowIso = () => new Date().toISOString();
 
@@ -521,6 +522,8 @@ export const withdraw = async (
     .bind(now, instanceId)
     .run();
 
+  await closeRunningNodes(env.DB, instanceId, now);
+
   // Update instance
   await env.DB.prepare(
     `UPDATE approval_instance SET status = 'withdrawn', updated_at = ?
@@ -576,6 +579,8 @@ export const cancel = async (
   )
     .bind(now, instanceId)
     .run();
+
+  await closeRunningNodes(env.DB, instanceId, now);
 
   // Update instance
   await env.DB.prepare(

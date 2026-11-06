@@ -28,6 +28,7 @@ import {
   beginIdempotentRequest,
   completeIdempotentRequest
 } from "../services/idempotency";
+import { closeRunningNodes } from "../services/approval/close-running-nodes";
 import { submitForApproval } from "../services/approval/engine";
 import { resubmit as resubmitOp } from "../services/approval/operations";
 import {
@@ -1664,8 +1665,10 @@ paymentRoutes.post(
         .bind(now, pr.approval_instance_id)
         .run();
 
+      await closeRunningNodes(c.env.DB, pr.approval_instance_id, now);
+
       // 退回/撤回中的实例同样随付款一起收口，否则会留成「退回待处理」僵尸（见 OPEN_APPROVAL_STATUSES）
-      await c.env.DB.prepare(
+      const closedInstance = await c.env.DB.prepare(
         `UPDATE approval_instance
             SET status = 'cancelled',
                 completed_at = COALESCE(completed_at, ?),
@@ -1675,6 +1678,17 @@ paymentRoutes.post(
       )
         .bind(now, now, pr.approval_instance_id)
         .run();
+
+      // 审批详情靠这条记录说明是谁、为什么取消的（SP-20261014-0010 就是因为没有它，页面什么都不显示）
+      if (closedInstance.meta.changes > 0) {
+        await c.env.DB.prepare(
+          `INSERT INTO approval_initiator_action
+            (instance_id, action, userid, comment, created_at)
+            VALUES (?, 'cancel', ?, ?, ?)`
+        )
+          .bind(pr.approval_instance_id, auth.sub, reason || null, now)
+          .run();
+      }
     }
 
     // 作废顺带撤回尚未执行的 AI 任务：付款自身的风控任务 + 其审批实例的 AI 关卡任务

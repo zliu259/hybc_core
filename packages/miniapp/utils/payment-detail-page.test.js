@@ -217,6 +217,12 @@ const run = async () => {
   });
   assert.strictEqual(state.previews[0], "https://api.test/api/v1/upload/object/fin%2Fk2?sig=1");
 
+  // 财务能跳到合同；从合同详情过来的不再链回去，其他角色不给入口（与 Web 一致）
+  assert.strictEqual(page.data.showContractLink, true);
+  page.openContractDetail();
+  assert.strictEqual(state.navigations[0], "/pages/query-contract-detail/index?id=9");
+  state.navigations = [];
+
   // 从附件预览返回不重新请求
   const callsBefore = state.calls.length;
   await page.onShow();
@@ -285,6 +291,62 @@ const run = async () => {
   assert.strictEqual(page.data.flowCollapsed, false);
   assert.strictEqual(page.data.waitText, "");
 
+  // SP-20261014-0010 的情形：付款被作废，实例 cancelled，节点还停在进行中，没有驳回记录
+  resetState();
+  state.payment = {
+    ...basePayment(),
+    status: "cancelled",
+    remark: "代理费\n[VOID 2026-10-14T12:35:37.812Z] boss"
+  };
+  state.approval = {
+    ...baseApproval(),
+    instance: { ...baseApproval().instance, status: "cancelled" },
+    tasks: [
+      { id: 2, node_instance_id: 12, assignee_userid: "starter", status: "completed", action: "approve", comment: "通过" },
+      { id: 3, node_instance_id: 12, assignee_userid: "boss", status: "cancelled", action: null, comment: null }
+    ],
+    ai_gate_reviews: []
+  };
+  page = await openPage();
+  assert.strictEqual(page.data.stopReasonText, "付款单已作废，这笔审批随之取消。李总，未填写原因");
+  assert.strictEqual(page.data.stopIsClosed, true);
+  assert.strictEqual(page.data.stopIsReturned, false);
+  assert.strictEqual(page.data.flowCollapsed, false);
+  assert.strictEqual(page.data.waitText, "");
+  assert.strictEqual(page.data.timelineNodes[1].statusLabel, "已中止");
+  assert.strictEqual(page.data.timelineNodes[1].tasks[1].actionLabel, "未处理");
+  // 备注区不再露出作废日志，归到修改记录
+  assert.strictEqual(rowValue(page, "备注"), "代理费");
+  assert.strictEqual(page.data.detail.remarkEdits[0].note, "作废付款");
+
+  // 退回后第二轮：当前轮单独显示，前一轮折叠并写清退回原因
+  resetState();
+  state.approval = {
+    instance: { id: INSTANCE_ID, status: "in_progress", current_node_key: "fin", current_round: 2 },
+    nodes: [
+      { id: 21, node_key: "fin", node_name: "财务审批", node_type: "sequential", round: 1, sort_order: 1, status: "returned" },
+      { id: 22, node_key: "boss", node_name: "总经理审批", node_type: "sequential", round: 1, sort_order: 2, status: "pending" },
+      { id: 31, node_key: "fin", node_name: "财务审批", node_type: "sequential", round: 2, sort_order: 1, status: "in_progress" },
+      { id: 32, node_key: "boss", node_name: "总经理审批", node_type: "sequential", round: 2, sort_order: 2, status: "pending" }
+    ],
+    tasks: [
+      { id: 5, node_instance_id: 21, round: 1, assignee_userid: "boss", status: "completed", action: "return_initiator", comment: "发票抬头不对" },
+      { id: 6, node_instance_id: 31, round: 2, assignee_userid: "boss", status: "pending", action: null, comment: null }
+    ],
+    ai_gate_reviews: []
+  };
+  page = await openPage();
+  assert.strictEqual(page.data.flowRoundLabel, "第 2 轮");
+  assert.deepStrictEqual(page.data.timelineNodes.map((item) => item.id), [31, 32]);
+  assert.strictEqual(page.data.timelineNodes[1].statusLabel, "待处理");
+  assert.strictEqual(page.data.earlierRounds[0].endText, "财务审批 李总 退回：发票抬头不对");
+  assert.strictEqual(page.data.earlierRounds[0].nodes[1].statusLabel, "未执行");
+  page.toggleFlowRound({ currentTarget: { dataset: { round: 1 } } });
+  assert.strictEqual(page.data.flowOpenRound, 1);
+  page.toggleFlowRound({ currentTarget: { dataset: { round: 1 } } });
+  assert.strictEqual(page.data.flowOpenRound, 0);
+  assert.strictEqual(page.data.waitText, "等待财务审批");
+
   // 已付款：付款执行信息；只写日期的不补时分秒
   resetState();
   state.payment = {
@@ -304,6 +366,20 @@ const run = async () => {
       ["经办人", "李总"]
     ]
   );
+
+  // 通过时写了实际意见：流程默认展开，意见不藏在折叠层里
+  resetState();
+  state.approval = {
+    ...baseApproval(),
+    tasks: [
+      ...baseApproval().tasks.slice(0, 1),
+      { id: 2, node_instance_id: 12, assignee_userid: "boss", status: "completed", action: "approve", comment: "付款后补发票" }
+    ]
+  };
+  page = await openPage();
+  assert.strictEqual(page.data.flowCollapsed, false);
+  assert.strictEqual(page.data.timelineNodes[1].tasks[0].commentBrief, "付款后补发票");
+  assert.strictEqual(page.data.timelineNodes[1].tasks[0].showComment, true);
 
   // 已审批未付款：一句话说明
   resetState();
@@ -358,6 +434,19 @@ const run = async () => {
   assert.strictEqual(page.data.detailState, "ready");
   assert.deepStrictEqual(state.toasts, []);
   assert.strictEqual(page.data.showApprovalLink, false);
+  assert.strictEqual(page.data.showContractLink, false);
+
+  // 从合同详情过来：不链回合同
+  resetState();
+  page = await openPage({ from: "contract" });
+  assert.strictEqual(page.data.showContractLink, false);
+  assert.strictEqual(page.data.showApprovalLink, true);
+
+  // 无合同付款：没有入口
+  resetState();
+  state.payment = { ...basePayment(), contract_id: null, contract: null };
+  page = await openPage();
+  assert.strictEqual(page.data.showContractLink, false);
 
   // 参数错误
   resetState();

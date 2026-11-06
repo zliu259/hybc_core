@@ -92,6 +92,8 @@ export const contractTypeLabel = (v: string): string => {
     machinery: "机械",
     general: "总包",
     material: "材料",
+    service: "服务",
+    lease: "租赁",
     other: "其他"
   };
   return m[v] ?? v;

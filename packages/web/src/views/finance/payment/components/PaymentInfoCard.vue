@@ -17,11 +17,10 @@ import {
   toPaymentCategoryLabel
 } from "@/views/approval/detail/formatters";
 import FinSection from "../../shared/components/FinSection.vue";
-import { formatMoney } from "../../shared/format";
+import { formatMoney, mergeRemarkEditLog } from "../../shared/format";
 import {
   contractRemaining,
   mergeCurrentPayee,
-  mergeRemarkEditLog,
   PAYMENT_CATEGORY_OPTIONS,
   PAYMENT_METHOD_OPTIONS,
   type PaymentCapabilities

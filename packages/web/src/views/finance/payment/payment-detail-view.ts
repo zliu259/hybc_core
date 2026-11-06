@@ -1,5 +1,6 @@
 import type { ApprovalDetailResponse } from "@/api/approval";
 import type { Payee, PaymentRequestDetail } from "@/api/payment";
+import type { AttachmentUploadRoute } from "../shared/format";
 
 /** PUT /payment/:id 和触发风险评估的角色，与后端 requireRoles 保持一致 */
 const WRITE_ROLES = ["super_admin", "manager", "site_manager", "finance"];
@@ -14,9 +15,6 @@ const DECISION_ACTIONS = [
 ];
 /** 这些状态已走完审批，只允许补传附件 */
 const FINISHED_STATUSES = ["approved", "paid", "rejected", "cancelled"];
-
-/** 付款单和审批都在进行中时，附件走审批接口；业务接口此时会拒绝写入 */
-export type AttachmentUploadRoute = "payment" | "approval" | null;
 
 export type PaymentCapabilities = {
   canEditFields: boolean;
@@ -67,8 +65,8 @@ const resolveUploadRoute = (params: {
   superEdit: boolean;
   canDecide: boolean;
 }): AttachmentUploadRoute => {
-  if (params.superEdit) return "payment";
-  if (params.isDraft) return params.canWrite ? "payment" : null;
+  if (params.superEdit) return "biz";
+  if (params.isDraft) return params.canWrite ? "biz" : null;
   if (params.approvalRunning) {
     return params.hasInstance && (params.canDecide || params.isSuperAdmin)
       ? "approval"
@@ -77,7 +75,7 @@ const resolveUploadRoute = (params: {
   return params.canWrite &&
     params.hasInstance &&
     FINISHED_STATUSES.includes(params.status)
-    ? "payment"
+    ? "biz"
     : null;
 };
 
@@ -148,19 +146,6 @@ export const mergeCurrentPayee = (
     return payees;
   }
   return [{ id: detail.payee_id, ...detail.payee }, ...payees];
-};
-
-/**
- * 表单只显示发起人写的备注，保存时要把系统追加的修改记录接回去，否则留痕会被覆盖掉。
- */
-export const mergeRemarkEditLog = (
-  text: string,
-  originalRemark: string | null | undefined
-): string => {
-  const editLines = (originalRemark ?? "")
-    .split("\n")
-    .filter(line => line.trim().startsWith("[超管修改 "));
-  return [text.trim(), ...editLines].filter(Boolean).join("\n");
 };
 
 export const PAYMENT_CATEGORY_OPTIONS: ReadonlyArray<{

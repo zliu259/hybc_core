@@ -3,13 +3,18 @@
 import { computed, ref, watch } from "vue";
 import type { ApprovalNodeInstance, ApprovalTask } from "@/api/approval";
 import { formatBeijingDateTime } from "@/utils/datetime";
-import { toStatusLabel } from "../../labels";
 import {
   humanReviewStatusText,
   isAiGateHumanReviewTask
 } from "../../human-review";
 import { toTaskComment, toTaskDecision } from "../ai-verdict";
-import { isMeaningfulComment } from "../formatters";
+import {
+  buildRoundNotes,
+  isCurrentNode,
+  resolveNodeDisplay,
+  shouldShowTaskComment,
+  taskIdleText
+} from "../flow-view";
 import ApprovalPanel from "./ApprovalPanel.vue";
 
 defineOptions({ name: "FlowTimeline" });
@@ -19,6 +24,7 @@ const props = defineProps<{
   tasks: ApprovalTask[];
   currentNodeKey: string | null;
   currentRound: number;
+  instanceStatus: string;
   isSuperAdmin: boolean;
   toUserLabel: (userid: string | null | undefined) => string;
 }>();
@@ -53,6 +59,35 @@ const roundNodes = computed(() =>
 const nodeTasks = (nodeId: number) =>
   props.tasks.filter(task => task.node_instance_id === nodeId);
 
+const instanceState = computed(() => ({
+  status: props.instanceStatus,
+  current_round: props.currentRound
+}));
+
+const nodeDisplay = (node: ApprovalNodeInstance) =>
+  resolveNodeDisplay(node, nodeTasks(node.id), instanceState.value);
+
+const roundNotes = computed(() =>
+  buildRoundNotes(
+    {
+      instance: instanceState.value,
+      nodes: props.nodes,
+      tasks: props.tasks
+    },
+    userid => props.toUserLabel(userid)
+  )
+);
+
+/** 选中当前轮时说上一轮为什么结束，选中旧轮次时说这一轮怎么结束的。 */
+const roundNote = computed(() => {
+  if (selectedRound.value < props.currentRound) {
+    const note = roundNotes.value[selectedRound.value];
+    return note ? `这一轮：${note}` : "";
+  }
+  const previous = roundNotes.value[props.currentRound - 1];
+  return previous ? `上一轮：${previous}` : "";
+});
+
 const assigneeLabels = (raw: string | null): string => {
   if (!raw) return "";
   try {
@@ -83,16 +118,21 @@ const taskName = (task: ApprovalTask) =>
       </el-radio-group>
     </template>
 
+    <p v-if="roundNote" class="flow__round-note">{{ roundNote }}</p>
+
     <ol class="flow">
       <li
         v-for="node in roundNodes"
         :key="node.id"
         class="flow__node"
         :class="[
-          `flow__node--${node.status}`,
+          `flow__node--${nodeDisplay(node).tone}`,
           {
-            'flow__node--current':
-              currentNodeKey === node.node_key && node.status === 'in_progress'
+            'flow__node--current': isCurrentNode(
+              node,
+              instanceState,
+              currentNodeKey
+            )
           }
         ]"
       >
@@ -103,7 +143,7 @@ const taskName = (task: ApprovalTask) =>
             <span v-if="NODE_TYPE_LABELS[node.node_type]" class="flow__type">
               {{ NODE_TYPE_LABELS[node.node_type] }}
             </span>
-            <span class="flow__status">{{ toStatusLabel(node.status) }}</span>
+            <span class="flow__status">{{ nodeDisplay(node).label }}</span>
           </div>
 
           <p
@@ -146,6 +186,9 @@ const taskName = (task: ApprovalTask) =>
                 >
                   {{ humanReviewStatusText(node.node_type, task) }}
                 </span>
+                <span v-else-if="taskIdleText(task)" class="flow__idle">
+                  {{ taskIdleText(task) }}
+                </span>
                 <el-button
                   v-if="
                     isSuperAdmin &&
@@ -161,11 +204,7 @@ const taskName = (task: ApprovalTask) =>
                 </el-button>
               </div>
               <p
-                v-if="
-                  task.assignee_userid === 'AI_GATE'
-                    ? toTaskComment(task)
-                    : isMeaningfulComment(task.comment)
-                "
+                v-if="shouldShowTaskComment(task)"
                 class="flow__comment"
                 :class="{
                   'flow__comment--ai': task.assignee_userid === 'AI_GATE'
@@ -226,20 +265,29 @@ const taskName = (task: ApprovalTask) =>
   border-radius: 50%;
 }
 
-.flow__node--completed .flow__dot {
+.flow__node--success .flow__dot {
   background: var(--el-color-success);
   border-color: var(--el-color-success);
 }
 
-.flow__node--in_progress .flow__dot {
+.flow__node--active .flow__dot {
   background: var(--el-color-primary);
   border-color: var(--el-color-primary);
   box-shadow: 0 0 0 3px var(--el-color-primary-light-8);
 }
 
-.flow__node--returned .flow__dot {
+.flow__node--warning .flow__dot {
   background: var(--el-color-warning);
   border-color: var(--el-color-warning);
+}
+
+.flow__node--danger .flow__dot {
+  background: var(--el-color-danger);
+  border-color: var(--el-color-danger);
+}
+
+.flow__node--danger .flow__status {
+  color: var(--el-color-danger);
 }
 
 .flow__body {
@@ -267,9 +315,26 @@ const taskName = (task: ApprovalTask) =>
   color: var(--el-text-color-primary);
 }
 
-.flow__node--pending .flow__title strong {
+.flow__node--pending .flow__title strong,
+.flow__node--muted .flow__title strong {
   font-weight: 400;
   color: var(--el-text-color-regular);
+}
+
+.flow__round-note {
+  padding: 6px 8px;
+  margin: 0 0 10px;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--el-text-color-regular);
+  word-break: break-word;
+  background: var(--el-fill-color-light);
+  border-radius: 4px;
+}
+
+.flow__idle {
+  font-size: 12px;
+  color: var(--el-text-color-secondary);
 }
 
 .flow__type {

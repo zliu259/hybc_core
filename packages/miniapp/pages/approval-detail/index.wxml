@@ -12,7 +12,7 @@
       <view class="voucher-upper">{{hero.amountUpper}}</view>
     </block>
     <view class="hero-title">{{hero.title}}</view>
-    <view class="stop-notice {{stopIsReturned ? 'stop-returned' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
+    <view class="stop-notice {{stopIsReturned ? 'stop-returned' : ''}} {{stopIsClosed ? 'stop-closed' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
     <view class="kv" wx:for="{{hero.facts}}" wx:key="label">
       <text class="k">{{item.label}}</text>
       <text class="v">{{item.value}}</text>
@@ -31,7 +31,7 @@
   <view class="card" wx:if="{{detailRows.length > 0}}">
     <view class="card-head">
       <text class="card-title">{{detailTitle}}</text>
-      <text class="fold-action" wx:if="{{paymentDetailId}}" bindtap="openPaymentDetail">查看付款单</text>
+      <text class="fold-action" wx:if="{{bizDetailLink}}" bindtap="openBizDetail">{{bizDetailLink.label}}</text>
     </view>
     <view class="kv" wx:for="{{detailRows}}" wx:key="label">
       <text class="k">{{item.label}}</text>
@@ -111,11 +111,12 @@
   <!-- 审批流程 -->
   <view class="card" wx:if="{{detailTimelineNodes.length > 0}}">
     <view class="card-head" bindtap="toggleFlowCollapse">
-      <text class="card-title">审批流程</text>
+      <text class="card-title">审批流程{{flowRoundLabel ? ' · ' + flowRoundLabel : ''}}</text>
       <text class="fold-action">{{flowCollapsed ? '展开' : '收起'}}</text>
     </view>
     <block wx:if="{{!flowCollapsed}}">
       <template is="flow-nodes" data="{{timelineNodes: detailTimelineNodes}}" />
+      <template is="flow-earlier-rounds" data="{{earlierRounds, flowOpenRound}}" />
     </block>
   </view>
 

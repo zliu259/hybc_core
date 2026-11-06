@@ -154,3 +154,17 @@
     </view>
   </view>
 </template>
+
+<!-- 前面的轮次：折叠，并说明每一轮是怎么结束的。事件由所在页面的 toggleFlowRound 处理 -->
+<template name="flow-earlier-rounds">
+  <block wx:for="{{earlierRounds}}" wx:for-item="roundItem" wx:key="round">
+    <view class="fold-row" data-round="{{roundItem.round}}" bindtap="toggleFlowRound">
+      <text class="fold-title">{{roundItem.title}}</text>
+      <text class="fold-action">{{flowOpenRound === roundItem.round ? '收起' : '展开'}}</text>
+    </view>
+    <view class="round-end" wx:if="{{roundItem.endText}}">{{roundItem.endText}}</view>
+    <block wx:if="{{flowOpenRound === roundItem.round}}">
+      <template is="flow-nodes" data="{{timelineNodes: roundItem.nodes}}" />
+    </block>
+  </block>
+</template>

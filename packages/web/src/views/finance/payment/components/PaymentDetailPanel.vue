@@ -9,6 +9,7 @@ import { getApprovalDetail, type ApprovalDetailResponse } from "@/api/approval";
 import {
   getPaymentRequest,
   getRiskReport,
+  updatePaymentRequest,
   type PaymentRequestDetail
 } from "@/api/payment";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
@@ -19,10 +20,18 @@ import { message } from "@/utils/message";
 import AiVerdictPanel from "@/views/approval/detail/components/AiVerdictPanel.vue";
 import FlowTimeline from "@/views/approval/detail/components/FlowTimeline.vue";
 import { toPaymentCategoryLabel } from "@/views/approval/detail/formatters";
-import { buildStopNotice } from "@/views/approval/detail/notices";
+import {
+  buildStopNotice,
+  stopNoticeAlertType
+} from "@/views/approval/detail/notices";
 import type { AiReport } from "@/views/approval/detail/useApprovalDetail";
 import { formatBeijingDateTime } from "@/utils/datetime";
+import { parseAttachments } from "@/views/approval/detail/formatters";
+import type { AttachmentItem } from "@/views/approval/detail/types";
+import { waitingNodeName as resolveWaitingNode } from "../../shared/approval-view";
+import BizAttachments from "../../shared/components/BizAttachments.vue";
 import FinanceDetailHeader from "../../shared/components/FinanceDetailHeader.vue";
+import FinPanels from "../../shared/components/FinPanels.vue";
 import FinSection from "../../shared/components/FinSection.vue";
 import { resolvePaymentCapabilities } from "../payment-detail-view";
 import {
@@ -31,7 +40,6 @@ import {
   toPaymentStatusLabel
 } from "../payment-labels";
 import PaymentActions from "./PaymentActions.vue";
-import PaymentAttachments from "./PaymentAttachments.vue";
 import PaymentInfoCard from "./PaymentInfoCard.vue";
 import PayoutPanel from "./PayoutPanel.vue";
 
@@ -87,19 +95,44 @@ const amountUpper = computed(() =>
   detail.value ? toChineseAmount(detail.value.amount) : null
 );
 
-const waitingNodeName = computed(() => {
-  const approval = approvalDetail.value;
-  if (approval?.instance.status !== "in_progress") return "";
-  const { current_node_key: key, current_round: round } = approval.instance;
-  return (
-    approval.nodes.find(node => node.node_key === key && node.round === round)
-      ?.node_name ?? ""
-  );
-});
+const waitingNodeName = computed(() =>
+  resolveWaitingNode(approvalDetail.value)
+);
+
+const attachmentItems = computed(() =>
+  parseAttachments(detail.value?.attachments_json ?? null)
+);
+
+const attachmentBlockedReason = computed(() =>
+  superEditMode.value && !superEditNote.value.trim()
+    ? "超管编辑模式下必须填写修改说明"
+    : ""
+);
+
+const persistAttachments = async (next: AttachmentItem[]) => {
+  const id = detail.value?.id;
+  if (!id) throw new Error("付款详情未加载");
+  await updatePaymentRequest(id, {
+    attachments_json: JSON.stringify(
+      next.map(item => ({
+        file_key: item.file_key,
+        file_name: item.file_name,
+        file_size: item.file_size ?? undefined
+      }))
+    ),
+    ...(superEditMode.value
+      ? { admin_edit_mode: true, edit_note: superEditNote.value.trim() }
+      : {})
+  });
+};
 
 const stopNotice = computed(() =>
   approvalDetail.value
-    ? buildStopNotice(approvalDetail.value, id => toUserLabel(id))
+    ? buildStopNotice(
+        approvalDetail.value,
+        id => toUserLabel(id),
+        detail.value?.remark
+      )
     : null
 );
 
@@ -239,7 +272,7 @@ onMounted(() => {
 
       <el-alert
         v-if="stopNotice"
-        :type="stopNotice.kind === 'rejected' ? 'error' : 'warning'"
+        :type="stopNoticeAlertType(stopNotice.kind)"
         :closable="false"
         show-icon
         :title="stopNotice.title"
@@ -251,7 +284,7 @@ onMounted(() => {
         </time>
       </el-alert>
 
-      <div v-if="detail" class="payment-detail-panel__sections">
+      <FinPanels v-if="detail">
         <AiVerdictPanel
           v-if="aiVisible"
           :reviews="aiGateReviews"
@@ -279,12 +312,14 @@ onMounted(() => {
           @refresh="silentRefresh"
         />
 
-        <PaymentAttachments
-          :detail="detail"
+        <BizAttachments
+          :items="attachmentItems"
+          category="payment"
           :upload-via="capabilities.attachmentUploadVia"
           :can-remove="capabilities.canRemoveAttachment"
-          :super-edit-mode="superEditMode"
-          :super-edit-note="superEditNote"
+          :instance-id="detail.approval_instance_id"
+          :persist="persistAttachments"
+          :blocked-reason="attachmentBlockedReason"
           @refresh="silentRefresh"
         />
 
@@ -294,6 +329,7 @@ onMounted(() => {
           :tasks="approvalDetail.tasks"
           :current-node-key="approvalDetail.instance.current_node_key"
           :current-round="approvalDetail.instance.current_round"
+          :instance-status="approvalDetail.instance.status"
           :is-super-admin="false"
           :to-user-label="toUserLabel"
         />
@@ -302,7 +338,7 @@ onMounted(() => {
             暂时看不到审批流程：可能没有查看权限，或者网络中断。
           </p>
         </FinSection>
-      </div>
+      </FinPanels>
     </template>
   </div>
 </template>
@@ -336,43 +372,5 @@ onMounted(() => {
 .payment-detail-panel__notice-time {
   margin-left: 8px;
   color: var(--el-text-color-secondary);
-}
-
-/* 复用的审批详情面板换成财务页的分节样式，整页看起来是一套 */
-.payment-detail-panel__sections :deep(.approval-panel) {
-  padding: 0;
-  margin-top: 20px;
-  background: transparent;
-  border: none;
-  border-radius: 0;
-}
-
-.payment-detail-panel__sections :deep(.approval-panel__head) {
-  gap: 10px;
-  justify-content: flex-start;
-  margin-bottom: 10px;
-}
-
-.payment-detail-panel__sections :deep(.approval-panel__head)::after {
-  flex: 1;
-  order: 1;
-  content: "";
-  border-top: 1px dashed #e3d5b8;
-}
-
-.payment-detail-panel__sections :deep(.approval-panel__head > *) {
-  order: 2;
-}
-
-.payment-detail-panel__sections :deep(.approval-panel__title) {
-  flex-shrink: 0;
-  order: 0;
-  padding-left: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-  color: #6b4f2a;
-  letter-spacing: 0.06em;
-  border-left: 3px solid #c9a35c;
 }
 </style>

@@ -356,26 +356,38 @@ contractRoutes.get("/:id", async (c) => {
     return c.json({ success: false, error: { message: "Contract not found" } }, 404);
   }
 
-  const changes = await c.env.DB.prepare(
-    "SELECT * FROM contract_amount_change WHERE contract_id = ? ORDER BY id DESC"
-  )
-    .bind(id)
-    .all<ContractAmountChange>();
-
-  const payments = await c.env.DB.prepare(
-    "SELECT id, serial_no, amount, status, created_at FROM payment_request WHERE contract_id = ? ORDER BY id DESC"
-  )
-    .bind(id)
-    .all();
-
-  const [contractWithInvoiceTotal] = await applyInboundInvoicedTotals(c.env.DB, [
-    contract
+  const [changes, payments, project, entity, [contractWithInvoiceTotal]] = await Promise.all([
+    // 变更单停在 pending 时，审批可能在跑也可能被退回；要靠实例状态判断能不能再提交
+    c.env.DB.prepare(
+      `SELECT c.*, ai.status AS approval_status
+       FROM contract_amount_change c
+       LEFT JOIN approval_instance ai ON ai.id = c.approval_instance_id
+       WHERE c.contract_id = ?
+       ORDER BY c.id DESC`
+    )
+      .bind(id)
+      .all<ContractAmountChange & { approval_status: string | null }>(),
+    c.env.DB.prepare(
+      "SELECT id, serial_no, amount, status, created_at FROM payment_request WHERE contract_id = ? ORDER BY id DESC"
+    )
+      .bind(id)
+      .all(),
+    // 名称随单带回，详情页不必再拉全量项目和主体列表（项目列表有条数上限）
+    c.env.DB.prepare("SELECT project_name, project_code FROM project WHERE id = ?")
+      .bind(contract.project_id)
+      .first(),
+    c.env.DB.prepare("SELECT entity_name FROM entity WHERE id = ?")
+      .bind(contract.entity_id)
+      .first(),
+    applyInboundInvoicedTotals(c.env.DB, [contract])
   ]);
 
   return c.json({
     success: true,
     data: {
       ...contractWithInvoiceTotal,
+      project,
+      entity,
       amount_changes: (changes.results ?? []).map(presentAmountChange),
       payment_requests: payments.results ?? []
     }

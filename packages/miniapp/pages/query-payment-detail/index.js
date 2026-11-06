@@ -1,55 +1,33 @@
 const { request } = require("../../utils/request");
 const { getUserProfile } = require("../../utils/auth");
-const { buildAiReportViewModel } = require("../../utils/ai-review");
-const {
-  buildAiPanel,
-  buildNodeNameMap,
-  buildTimelineNodes,
-  buildWaitText,
-  extractStopReason,
-  formatBeijingTime
-} = require("../../utils/approval-detail-view");
 const { openQueryAttachment } = require("../../utils/attachment-open");
+const {
+  canAccessQuery,
+  INITIAL_DETAIL_CARD_DATA,
+  buildAiState,
+  buildApprovalState,
+  DETAIL_CARD_TOGGLES
+} = require("../../utils/detail-page-common");
 const { buildPaymentDetailView } = require("../../utils/payment-detail-view");
 const { loadUserNameMap } = require("../../utils/user-names");
 
-const QUERY_ROLES = ["super_admin", "finance", "manager"];
 const NOT_FOUND_LIKE = /不存在|无权限|not\s*found|permission|403|404/i;
-const NO_AI = { latest: null, earlier: [] };
-
-const canAccessQuery = (roles) => roles.some((role) => QUERY_ROLES.indexOf(role) >= 0);
 
 const fetchOptional = async (path) => {
   const res = await request({ method: "GET", path }).catch(() => null);
   return res && res.data ? res.data : null;
 };
 
-const reportRan = (source, status) => Boolean(source) || Boolean(status && status !== "none");
-
 Page({
+  ...DETAIL_CARD_TOGGLES,
+
   data: {
     id: 0,
     detailState: "loading",
     detailErrorText: "",
     detail: null,
-    waitText: "",
-    stopReasonText: "",
-    stopIsReturned: false,
-    remarkEditsOpen: false,
-    // AI 审查
-    aiVisible: false,
-    ai: NO_AI,
-    aiPassedOpen: false,
-    aiEarlierOpen: false,
-    aiReportTitle: "",
-    aiReportOpen: false,
-    aiBizReport: null,
-    detailAuditView: null,
-    // 审批流程
-    timelineNodes: [],
-    flowCollapsed: true,
-    showApprovalLink: false,
-    approvalUnavailable: false
+    showContractLink: false,
+    ...INITIAL_DETAIL_CARD_DATA
   },
 
   onLoad(options) {
@@ -58,6 +36,8 @@ Page({
     // 从审批详情过来的发起人、审批人不一定有查询权限，这一路不拦；
     // 接口本身不按角色限制，直接进查询入口的限制只是入口分流
     this.fromApproval = params.from === "approval";
+    // 从合同详情过来时不再链回去，避免两页来回叠栈
+    this.fromContract = params.from === "contract";
     // 首次 onShow 必须加载；之后仅在上次失败时重试
     this.needsRefreshOnShow = true;
     if (!id) {
@@ -68,11 +48,14 @@ Page({
     this.setData({ id });
   },
 
+  currentRoles() {
+    const profile = getUserProfile() || {};
+    return Array.isArray(profile.roles) ? profile.roles : [];
+  },
+
   async onShow() {
     if (!this.data.id) return;
-    const profile = getUserProfile() || {};
-    const roles = Array.isArray(profile.roles) ? profile.roles : [];
-    if (!this.fromApproval && !canAccessQuery(roles)) {
+    if (!this.fromApproval && !canAccessQuery(this.currentRoles())) {
       wx.showToast({ title: "当前角色无查询权限", icon: "none" });
       setTimeout(() => wx.navigateBack({ delta: 1 }), 300);
       return;
@@ -82,45 +65,6 @@ Page({
     if (!this.needsRefreshOnShow && this.data.detailState === "ready") return;
     this.needsRefreshOnShow = false;
     await this.loadDetail();
-  },
-
-  buildAiState(payment, risk, approval) {
-    const ai = approval
-      ? buildAiPanel(approval.ai_gate_reviews, buildNodeNameMap(approval), formatBeijingTime)
-      : NO_AI;
-    // risk-report 拉取失败时回退付款详情自带的原始字段
-    const source = (risk && risk.result) || payment.ai_risk_result || null;
-    const status = (risk && risk.status) || payment.ai_risk_status || "";
-    const hasReport = reportRan(source, status);
-    return {
-      ai,
-      aiVisible: Boolean(ai.latest) || hasReport,
-      aiPassedOpen: false,
-      aiEarlierOpen: false,
-      aiBizReport: buildAiReportViewModel(source, "payment", status),
-      aiReportTitle: hasReport ? "付款风控报告" : "",
-      // 有关卡结论时报告折叠；没有时报告就是唯一内容，直接展开
-      aiReportOpen: !ai.latest
-    };
-  },
-
-  buildApprovalState(approval, userNames) {
-    if (!approval || !approval.instance) {
-      return { waitText: "", stopReasonText: "", stopIsReturned: false, timelineNodes: [], flowCollapsed: true };
-    }
-    const { instance } = approval;
-    const timelineNodes = buildTimelineNodes(approval, {
-      user: (id) => (id && userNames[id]) || "未匹配",
-      formatTime: formatBeijingTime
-    });
-    return {
-      waitText: buildWaitText(instance, approval.nodes),
-      stopReasonText: extractStopReason(timelineNodes, approval),
-      stopIsReturned: instance.status === "returned",
-      timelineNodes,
-      // 驳回/退回时默认展开流程，理由不能藏在折叠层里
-      flowCollapsed: instance.status !== "rejected" && instance.status !== "returned"
-    };
   },
 
   async loadDetail() {
@@ -138,14 +82,28 @@ Page({
         fetchOptional(`/api/v1/payment/${id}/risk-report`),
         instanceId ? fetchOptional(`/api/v1/approval/${instanceId}`) : null
       ]);
+      const detail = buildPaymentDetailView({ payment, userNames });
       this.setData({
-        detail: buildPaymentDetailView({ payment, userNames }),
+        detail,
+        // 合同详情会列出合同下全部付款，范围比这张付款单大，只给查询角色入口（与 Web 一致）
+        showContractLink:
+          Boolean(detail.contractId) && !this.fromContract && canAccessQuery(this.currentRoles()),
         remarkEditsOpen: false,
-        // 审批详情只对参与人和超管开放，取不到时跳过去也打不开
-        showApprovalLink: Boolean(approval) && !this.fromApproval,
-        approvalUnavailable: Boolean(instanceId) && !approval,
-        ...this.buildAiState(payment, risk, approval),
-        ...this.buildApprovalState(approval, userNames),
+        ...buildAiState({
+          approval,
+          // risk-report 拉取失败时回退付款详情自带的原始字段
+          source: (risk && risk.result) || payment.ai_risk_result || null,
+          status: (risk && risk.status) || payment.ai_risk_status || "",
+          kind: "payment",
+          reportTitle: "付款风控报告"
+        }),
+        ...buildApprovalState({
+          approval,
+          instanceId,
+          userNames,
+          fromApproval: this.fromApproval,
+          bizRemark: payment.remark
+        }),
         detailState: "ready"
       });
     } catch (error) {
@@ -158,31 +116,17 @@ Page({
     }
   },
 
-  // ── 折叠与跳转 ──
-
-  toggleAiPassed() {
-    this.setData({ aiPassedOpen: !this.data.aiPassedOpen });
-  },
-
-  toggleAiReport() {
-    this.setData({ aiReportOpen: !this.data.aiReportOpen });
-  },
-
-  toggleAiEarlier() {
-    this.setData({ aiEarlierOpen: !this.data.aiEarlierOpen });
-  },
-
-  toggleRemarkEdits() {
-    this.setData({ remarkEditsOpen: !this.data.remarkEditsOpen });
-  },
-
-  toggleFlowCollapse() {
-    this.setData({ flowCollapsed: !this.data.flowCollapsed });
-  },
+  // ── 跳转 ──
 
   openAttachment(e) {
     const { key, url, name } = e.currentTarget.dataset;
     return openQueryAttachment({ key, url, name }, "query-payment-detail");
+  },
+
+  openContractDetail() {
+    const { detail } = this.data;
+    if (!detail || !detail.contractId) return;
+    wx.navigateTo({ url: `/pages/query-contract-detail/index?id=${detail.contractId}` });
   },
 
   openApprovalDetail() {

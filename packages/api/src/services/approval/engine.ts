@@ -987,13 +987,18 @@ export const checkApprovalTimeouts = async (env: Env): Promise<number> => {
   let recorded = 0;
 
   try {
-    // Find nodes that have been in_progress too long (24h default)
+    // Find nodes that have been in_progress too long (24h default). 只看还在跑的实例的
+    // 当前轮：取消、撤回、作废留下的存量节点也停在 in_progress，不能算超时。
     const timedOut = await env.DB.prepare(
-      `SELECT * FROM approval_node_instance
-       WHERE status = 'in_progress'
-         AND started_at IS NOT NULL
-         AND (julianday(?) - julianday(started_at)) * 24 > COALESCE(timeout_hours, 24)
-         AND (timeout_event_at IS NULL OR timeout_event_at < started_at)`
+      `SELECT n.*
+       FROM approval_node_instance n
+       JOIN approval_instance i ON i.id = n.instance_id
+       WHERE n.status = 'in_progress'
+         AND i.status = 'in_progress'
+         AND n.round = i.current_round
+         AND n.started_at IS NOT NULL
+         AND (julianday(?) - julianday(n.started_at)) * 24 > COALESCE(n.timeout_hours, 24)
+         AND (n.timeout_event_at IS NULL OR n.timeout_event_at < n.started_at)`
     )
       .bind(now)
       .all<ApprovalNodeInstance>();

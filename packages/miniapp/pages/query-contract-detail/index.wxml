@@ -1,62 +1,170 @@
-<view class="page">
-  <hy-panel-card title="📄 合同详情" subtitle="查询详情（只读）">
-    <view wx:if="{{!detail && !loading}}" class="empty">暂无详情数据</view>
+<import src="../../templates/detail-cards.wxml" />
 
-    <view wx:if="{{detail}}" class="detail-card">
-      <view class="row-between">
-        <view class="title">{{detail.contractNo}}</view>
-        <view class="item-chips">
-          <hy-status-chip wx:if="{{detail.isLegacy}}" text="历史数据" theme="default" variant="light" />
-          <hy-status-chip text="{{detail.statusText}}" theme="{{detail.statusTheme}}" variant="light" />
-        </view>
+<view class="page detail-page" wx:if="{{detailState === 'ready' && detail}}">
+  <!-- 头部：和审批详情同一版式，先看多少钱、和谁签，再看执行到哪了 -->
+  <view class="card hero">
+    <view class="hero-head">
+      <text class="hero-label">{{detail.amountLabel}}</text>
+      <view class="hero-tags">
+        <t-tag wx:if="{{detail.isLegacy}}" theme="default" variant="light" size="small">历史数据</t-tag>
+        <t-tag theme="{{detail.statusTheme}}" variant="light" size="small">{{detail.statusText}}</t-tag>
       </view>
-      <view class="item">合同方向：{{detail.directionText}}</view>
-      <view class="item">所属项目：{{detail.projectName}}</view>
-      <view class="item">申请人：{{detail.applicant}}</view>
-      <view class="item">合同日期：{{detail.contractDate}}</view>
-      <view class="item">合同类型：{{detail.contractType}}</view>
-      <view class="item">对方单位：{{detail.counterparty}}</view>
-      <view class="item amount">合同总额：¥{{detail.totalAmountText}}</view>
-      <view class="item">已付款：¥{{detail.paidAmountText}}</view>
-      <view class="item">已收款：¥{{detail.receivedAmountText}}</view>
-      <view class="item">备注：{{detail.remark}}</view>
+    </view>
+    <view class="voucher-amount">{{detail.amountText}}<text class="voucher-unit" wx:if="{{detail.amountText !== '-'}}">元</text></view>
+    <view class="voucher-upper">{{detail.amountCn}}</view>
+    <view class="hero-title">{{detail.title}}</view>
+    <view class="stop-notice {{stopIsReturned ? 'stop-returned' : ''}} {{stopIsClosed ? 'stop-closed' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
+    <view class="kv" wx:for="{{detail.facts}}" wx:key="label">
+      <text class="k">{{item.label}}</text>
+      <text class="v">{{item.value}}</text>
     </view>
 
-    <view wx:if="{{detail}}" class="section-title">附件（{{detail.attachments.length}}）</view>
-    <view wx:if="{{detail && !detail.attachments.length}}" class="empty">暂无附件</view>
-    <view wx:for="{{detail.attachments}}" wx:key="file_key" class="sub-card" data-key="{{item.file_key}}" data-url="{{item.file_url}}" data-name="{{item.file_name}}" bindtap="openAttachment">
-      <view class="item">{{item.file_name}}</view>
-      <view class="tap-tip">点击查看附件</view>
+    <view class="progress-item" wx:for="{{detail.progress}}" wx:key="label">
+      <view class="progress-head">
+        <text class="k">{{item.label}}</text>
+        <text class="progress-figure {{item.over ? 'is-over' : ''}}">{{item.doneText}}<text wx:if="{{item.percent !== null}}"> / {{item.totalText}}</text></text>
+      </view>
+      <view class="progress-track" wx:if="{{item.percent !== null}}">
+        <view class="progress-fill {{item.over ? 'is-over' : ''}}" style="width: {{item.percent}}%"></view>
+      </view>
+    </view>
+    <view class="progress-remain" wx:if="{{detail.remainText}}">{{detail.remainText}}</view>
+
+    <view class="hero-foot">
+      <text wx:if="{{waitText}}" class="hero-wait">{{waitText}}</text>
+      <text class="hero-no" user-select="{{true}}">合同 · {{detail.contractNo}}</text>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{aiVisible}}">
+    <template is="ai-review-body" data="{{ai, aiPassedOpen, aiEarlierOpen, aiReportTitle, aiReportOpen, aiBizReport, detailAuditView}}" />
+  </view>
+
+  <!-- 明细 -->
+  <view class="card">
+    <view class="card-head"><text class="card-title">合同明细</text></view>
+    <view class="kv" wx:for="{{detail.rows}}" wx:key="label">
+      <text class="k">{{item.label}}</text>
+      <text class="v {{item.multiline ? 'v-multiline' : ''}}" user-select="{{true}}">{{item.value}}</text>
     </view>
 
-    <view wx:if="{{detail}}" class="section-title">金额变更记录（{{detail.amountChanges.length}}）</view>
-    <view wx:if="{{detail && !detail.amountChanges.length}}" class="empty">暂无金额变更记录</view>
-    <view wx:for="{{detail.amountChanges}}" wx:key="id" class="sub-card">
-      <view class="item">变更类型：{{item.change_type_text}}</view>
-      <view class="item">变更金额：{{item.old_amount}} → {{item.new_amount}}</view>
-      <view class="item">状态：{{item.status_text}}</view>
-      <view class="item">发起人：{{item.applicant_text}}</view>
-    </view>
+    <block wx:if="{{detail.remarkEdits.length > 0}}">
+      <view class="fold-row" bindtap="toggleRemarkEdits">
+        <text class="fold-title">资料修改记录（{{detail.remarkEdits.length}} 条）</text>
+        <text class="fold-action">{{remarkEditsOpen ? '收起' : '展开'}}</text>
+      </view>
+      <block wx:if="{{remarkEditsOpen}}">
+        <view class="edit-row" wx:for="{{detail.remarkEdits}}" wx:key="key">
+          <view class="edit-meta">{{item.atText}} · {{item.byText}}</view>
+          <view class="edit-note">{{item.note}}</view>
+        </view>
+      </block>
+    </block>
+  </view>
 
-    <view wx:if="{{detail}}" class="section-title">关联付款（{{detail.paymentRequests.length}}）</view>
-    <view wx:if="{{detail && !detail.paymentRequests.length}}" class="empty">暂无关联付款</view>
-    <view wx:for="{{detail.paymentRequests}}" wx:key="id" class="sub-card" data-id="{{item.id}}" bindtap="openPaymentDetail">
-      <view class="item">流水号：{{item.serial_no}}</view>
-      <view class="item">金额：¥{{item.amount}}</view>
-      <view class="item">状态：{{item.status_text}}</view>
-      <view class="item">创建时间：{{item.created_at}}</view>
-      <view class="tap-tip">点击查看付款详情</view>
+  <!-- 关联付款：只有付款合同才有 -->
+  <view class="card" wx:if="{{!detail.isInbound}}">
+    <view class="card-head">
+      <text class="card-title">关联付款</text>
+      <text class="card-stat" wx:if="{{detail.paymentSummary}}">{{detail.paymentSummary}}</text>
     </view>
+    <view class="card-empty" wx:if="{{detail.payments.length === 0}}">还没有关联付款</view>
+    <view class="record-row" wx:for="{{detail.payments}}" wx:key="id" data-id="{{item.id}}" bindtap="openPaymentDetail">
+      <view class="record-main">
+        <text class="record-no">{{item.serialNo}}</text>
+        <text class="record-amount">{{item.amountText}}</text>
+      </view>
+      <view class="record-sub">
+        <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusText}}</t-tag>
+        <text class="record-time">{{item.createdAtText}}</text>
+        <text class="fold-action">查看</text>
+      </view>
+    </view>
+  </view>
 
-    <view wx:if="{{detail}}" class="section-title">关联收款（{{detail.receipts.length}}）</view>
-    <view wx:if="{{detail && !detail.receipts.length}}" class="empty">暂无关联收款</view>
-    <view wx:for="{{detail.receipts}}" wx:key="id" class="sub-card" data-id="{{item.id}}" bindtap="openReceiptDetail">
-      <view class="item">收款单号：{{item.receiptNo}}</view>
-      <view class="item">收款金额：¥{{item.amountText}}</view>
-      <view class="item">申请人：{{item.applicant_text}}</view>
-      <view class="item">收款日期：{{item.receivedDate}}</view>
-      <view class="item">状态：{{item.status_text}}</view>
-      <view class="tap-tip">点击查看收款详情</view>
+  <!-- 收款记录：只有收款合同才有 -->
+  <view class="card" wx:if="{{detail.isInbound}}">
+    <view class="card-head"><text class="card-title">收款记录（{{receipts.length}}）</text></view>
+    <view class="card-empty" wx:if="{{receipts.length === 0}}">还没有收款记录</view>
+    <view class="record-row" wx:for="{{receipts}}" wx:key="id" data-id="{{item.id}}" bindtap="openReceiptDetail">
+      <view class="record-main">
+        <text class="record-no">{{item.receiptNo}}</text>
+        <text class="record-amount">{{item.amountText}}</text>
+      </view>
+      <view class="record-sub">
+        <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusText}}</t-tag>
+        <text class="record-time">{{item.receivedDate}} · {{item.receiverText}}</text>
+        <text class="fold-action" wx:if="{{canOpenReceipt}}">查看</text>
+      </view>
     </view>
-  </hy-panel-card>
+  </view>
+
+  <!-- 金额变更：没有就不占位 -->
+  <view class="card" wx:if="{{detail.amountChanges.length > 0}}">
+    <view class="card-head"><text class="card-title">金额变更（{{detail.amountChanges.length}}）</text></view>
+    <view class="record-row" wx:for="{{detail.amountChanges}}" wx:key="id">
+      <view class="record-main">
+        <text class="record-no">{{item.typeText}}</text>
+        <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusText}}</t-tag>
+      </view>
+      <view class="record-amounts">{{item.amountText}}</view>
+      <view class="record-reason" wx:if="{{item.reason}}">{{item.reason}}</view>
+      <view class="record-time">{{item.createdAtText}} · {{item.applicantText}}</view>
+      <view class="attach-row" wx:for="{{item.attachments}}" wx:for-item="file" wx:key="file_key" data-key="{{file.file_key}}" data-url="{{file.file_url}}" data-name="{{file.file_name}}" bindtap="openAttachment">
+        <text class="attach-ext">{{file.extLabel}}</text>
+        <text class="attach-name">{{file.file_name}}</text>
+        <text class="attach-size" wx:if="{{file.sizeText}}">{{file.sizeText}}</text>
+        <text class="fold-action">查看</text>
+      </view>
+    </view>
+  </view>
+
+  <!-- 附件 -->
+  <view class="card">
+    <view class="card-head"><text class="card-title">附件（{{detail.attachments.length}}）</text></view>
+    <view class="card-empty" wx:if="{{detail.attachments.length === 0}}">还没有附件</view>
+    <view class="attach-row" wx:for="{{detail.attachments}}" wx:key="file_key" data-key="{{item.file_key}}" data-url="{{item.file_url}}" data-name="{{item.file_name}}" bindtap="openAttachment">
+      <text class="attach-ext">{{item.extLabel}}</text>
+      <text class="attach-name">{{item.file_name}}</text>
+      <text class="attach-size" wx:if="{{item.sizeText}}">{{item.sizeText}}</text>
+      <text class="fold-action">查看</text>
+    </view>
+  </view>
+
+  <!-- 审批流程 -->
+  <view class="card" wx:if="{{timelineNodes.length > 0 || approvalUnavailable}}">
+    <view class="card-head" bindtap="toggleFlowCollapse">
+      <text class="card-title">审批流程{{flowRoundLabel ? ' · ' + flowRoundLabel : ''}}</text>
+      <text class="fold-action" wx:if="{{timelineNodes.length > 0}}">{{flowCollapsed ? '展开' : '收起'}}</text>
+    </view>
+    <view class="card-empty" wx:if="{{approvalUnavailable}}">暂时看不到审批流程：可能没有查看权限，或者网络中断。</view>
+    <block wx:if="{{!flowCollapsed}}">
+      <template is="flow-nodes" data="{{timelineNodes}}" />
+      <template is="flow-earlier-rounds" data="{{earlierRounds, flowOpenRound}}" />
+    </block>
+    <view class="fold-row" wx:if="{{showApprovalLink}}" bindtap="openApprovalDetail">
+      <text class="fold-title">查看审批详情</text>
+      <text class="fold-action">打开</text>
+    </view>
+  </view>
+</view>
+
+<view wx:if="{{detailState === 'loading'}}" class="page skeleton-page">
+  <view class="skeleton-card" wx:for="{{[0, 1, 2]}}" wx:key="*this">
+    <view class="skeleton-line skeleton-title"></view>
+    <view class="skeleton-line"></view>
+    <view class="skeleton-line"></view>
+    <view class="skeleton-line skeleton-short"></view>
+  </view>
+  <view class="skeleton-hint">
+    <t-loading theme="dots" size="40rpx" />
+    <text class="skeleton-hint-text">加载合同详情中…</text>
+  </view>
+</view>
+
+<view wx:if="{{detailState === 'error'}}" class="empty-wrap">
+  <t-empty description="{{detailErrorText}}" />
+  <view class="retry-row">
+    <t-button variant="outline" size="small" bindtap="loadDetail">重新加载</t-button>
+  </view>
 </view>

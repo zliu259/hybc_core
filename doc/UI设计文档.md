@@ -180,11 +180,20 @@
 
 #### E. 合同详情 `views/finance/contract/detail.vue`
 
-- 表单区：方向、项目、实体、对方单位、类型、经办人、日期、金额、附件、备注。
-- 摘要区：合同总额、已付金额、剩余额度。
-- AI区：审查状态、风险等级、分数、总结、建议。
-- （2026-08）页面主体抽为 `components/ContractDetailPanel.vue`（合同 id 走 props），`detail.vue` 保留为读路由参数的薄壳供新建与深链接使用；列表侧通过 `components/ContractDetailDrawer.vue` 右侧抽屉打开，见 §10。
-- API 指向：`/api/v1/contract/:id`, `/api/v1/contract/:id/ai-review`
+（2026-11-06 重排，与付款详情、小程序同一阅读顺序）
+
+- 阅读顺序：头部（合同号、状态、对方单位、项目/主体/经办人、金额大写、执行进度）→ 退回或驳回原因 → AI 审查 → 合同信息 → 关联付款（付款合同）或开票记录、收款登记（收款合同）→ 金额变更记录 → 附件 → 审批流程。没有金额变更时整段不占位。
+- 头部操作只显示当前状态和角色能用的，规则在 `contract-detail-view.ts` 的 `resolveContractCapabilities`，须与后端 `requireRoles` 和状态校验一致：
+  - 草稿、待审查：提交审批（超管、经理、项目经理、财务）、触发AI审查（超管、经理、财务）。
+  - 生效中：发起金额变更（超管、经理、财务）。
+- 合同信息：阅读视图和「编辑资料」表单。方向、项目、我方主体只有新建时能选，更新接口不接受这三个字段（改主体见开发记录的直连 D1 手法）。金额只有草稿能直接改，其他状态提示走金额变更，保存时不提交金额；超管在锁定状态下用「超管编辑」开关解锁，必须写修改说明。备注里的系统修改记录单独折叠，保存时原样保留。
+- 执行进度：付款合同看已付和余额，收款合同看已开票和已到账；总额不大于 0（单价合同）时不算比例和余额。
+- 关联付款的合计只算有效付款，作废和被拒的不计入。
+- 金额变更：`GET /contract/:id` 随行返回 `approval_status`，状态显示待提交、审批中、已退回、已撤回、已通过等；审批在跑时不再给提交按钮，改给「查看审批」。
+- 附件：沿用审批详情的列表和预览。审批进行中业务接口不允许写，当前审批人和超管走 `POST /approval/:id/attachments`；其余走 `PUT /contract/:id`。可编辑时才能移除。新建时附件先记在页面，随合同一起创建。
+- AI 审查、审批流程复用审批详情的 `AiVerdictPanel`、`FlowTimeline`。审批详情只对参与人和超管开放，取不到时提示看不到，也不给跳转入口。
+- 组件：`components/ContractDetailPanel.vue`（容器，页面与 `ContractDetailDrawer.vue` 共用）、`ContractActions.vue`、`ContractProgress.vue`、`ContractInfoSection.vue`、`ContractPayments.vue`、`ContractInboundRecords.vue`、`ContractAmountChanges.vue`、`AmountChangeDrawer.vue`（合同执行监控共用）。与付款详情共用 `finance/shared/components/` 下的 `ApprovalSubmitDialog.vue`、`BizAttachments.vue`、`FinPanels.vue`。
+- API 指向：`/api/v1/contract/:id`（2026-11-06 起随单返回 `project`、`entity`）、`/api/v1/contract/:id/submit-approval`、`/api/v1/contract/:id/trigger-review`、`/api/v1/contract/:id/amount-change`、`/api/v1/approval/:id`、`/api/v1/approval/:id/attachments`
 
 #### E-1. 合同生成工作台 `views/finance/contract/draft/index.vue`（2026-07-22 新增 M1；2026-07-23 布局重构 UI2）
 
@@ -440,7 +449,11 @@
 - **附件**（`AttachmentPanel`）：一行一个，文件类型文字标签、可读的文件大小；点行预览，抽屉内可前后翻（`AttachmentPreviewDrawer`）；上传改为头部小按钮。
 - **决策面板**（`DecisionPanel`，右栏吸顶）：「通过」是主按钮，不写意见时记为「同意」；快捷意见一键填入；「退回」「驳回」次级；转办、撤回、取消/终止收进「更多」。驳回未写原因就地报错并聚焦输入框；驳回、撤回、取消/终止需二次确认。退回弹窗只列当前可用的方式并带入已写意见。
 - **支付方案**：默认折叠成一行摘要，点「修改」展开；付款账户只在选中主体时才请求。审批时**只有改动过才提交**，避免每次审批都往备注写一条修改日志。
-- **审批流程**（`FlowTimeline`）：待处理节点才显示待办人；已完成节点显示「谁、什么动作、何时」；「同意/通过」这类意见不重复显示，真实意见用正文色（不再红色斜体）；AI 任务只留一句结论；超管可对待办强制改派。多轮可切换。
+- **审批流程**（`FlowTimeline`，规则在 `detail/flow-view.ts`）：待处理节点才显示待办人；已完成节点显示「谁、什么动作、何时」；通过时「同意/通过」这类意见不重复显示，驳回、退回写什么都显示；AI 任务只留一句结论；超管可对待办强制改派。
+  - 节点状态不照搬库里的值（2026-11-06）：驳回的节点写「已驳回」（引擎落成 completed）；流程结束或进入下一轮后，卡住的节点写「已中止」，没走到的写「未执行」；流程结束时没轮到的人写「未处理」。
+  - 通过时的意见：只有恰好是「同意、通过、已阅、ok」才隐藏，其他都显示（2026-11-06 线上核对，人工通过 2,312 条里有 72 条实际意见）。小程序流程区默认折叠，当前轮有实际意见或流程已停下时默认展开。
+  - 多轮（退回或撤回后重新提交会新开一轮）：Web 切换「第 N 轮」，并说明上一轮或这一轮是怎么结束的；小程序只展开当前轮，标题带「第 N 轮」，前面的轮次折叠并写结束原因。
+  - 流程停止提示（`notices.ts`）：除驳回、退回外，取消、撤回、付款作废也显示谁操作和原因。付款作废自 2026-11-06 起必须填原因，并写入 `approval_initiator_action`；存量作废只记在付款备注，从备注解析。
 - **动作后流转**：通过/驳回/退回/转办成功后自动打开下一条待办（`from=monitor` 回监控台）；没有待办时回「待我审批」并提示已处理完。服务端报错原文展示，不再笼统提示「操作失败」。
 - **加载**：实例先到先渲染，业务详情与报告随后补齐；名称映射后台加载，到达后原地替换；操作后静默刷新不闪遮罩。
 - **吸顶实现注意**：全局布局给滚动区内联了 `overflow:hidden` 会令 sticky 失效，本页用 `:has()` 局部改为 `overflow:clip`，勿改回。
@@ -859,7 +872,7 @@
 - 付款查询（高权限）：`packages/miniapp/pages/query-payment/index`
 - 付款查询五阶段页签与退回件「去修改」入口（2026-07-08，仅发起人本人可见）：`packages/miniapp/pages/query-payment/index`
 - 收款查询（高权限）：`packages/miniapp/pages/query-receipt/index`
-- 合同查询详情（高权限）：`packages/miniapp/pages/query-contract-detail/index`
+- 合同详情（2026-11-06 改版）：`packages/miniapp/pages/query-contract-detail/index`。查询入口限高权限；从审批详情「查看合同」进入不限角色。
 - 付款详情（2026-11-06 改版）：`packages/miniapp/pages/query-payment-detail/index`。查询入口限高权限；从审批详情「查看付款单」进入不限角色。
 - 收款查询详情（高权限）：`packages/miniapp/pages/query-receipt-detail/index`
 - 设备扫码：`packages/miniapp/pages/asset/index`
@@ -891,7 +904,7 @@
   - 列表条目支持点击进入详情页；详情页以只读卡片形式展示关键字段。
   - 申请人显示规则统一为“仅姓名”，若姓名缺失显示 `-`。
   - 付款查询列表需展示“所属项目名称”，避免仅凭项目ID识别。
-  - 合同详情支持附件查看，并支持从“关联付款/关联收款”点击跳转到对应详情页。
+  - 合同详情与审批详情同一版式和阅读顺序（凭证头部含执行进度 → AI 审查 → 合同明细 → 关联付款或收款记录 → 金额变更 → 附件 → 审批流程），只读；页面公共逻辑在 `utils/detail-page-common.js`。付款详情对查询角色提供「查看合同」。
   - 付款详情与审批详情同一版式和阅读顺序（凭证头部 → AI 审查 → 付款明细 → 付款执行 → 附件 → 审批流程），共用 `styles/detail-cards.wxss` 与 `templates/detail-cards.wxml`；可跳转到审批详情（参与人才有入口），只读。
   - 查询列表中的状态标签按状态语义着色（例如待审批=橙色、生效/已付款=绿色、废止/拒绝=红色）。
 - 报销详情页补齐附件全链路能力：

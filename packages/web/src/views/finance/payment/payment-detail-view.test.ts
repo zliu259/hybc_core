@@ -5,7 +5,6 @@ import {
   contractRemaining,
   isDateOnly,
   mergeCurrentPayee,
-  mergeRemarkEditLog,
   resolvePaymentCapabilities,
   type CapabilityInput
 } from "./payment-detail-view";
@@ -40,7 +39,7 @@ describe("resolvePaymentCapabilities", () => {
     expect(caps.canSubmit).toBe(true);
     expect(caps.canAssessRisk).toBe(true);
     expect(caps.canMarkPaid).toBe(false);
-    expect(caps.attachmentUploadVia).toBe("payment");
+    expect(caps.attachmentUploadVia).toBe("biz");
     expect(caps.canRemoveAttachment).toBe(true);
     expect(caps.canToggleSuperEdit).toBe(false);
   });
@@ -109,7 +108,7 @@ describe("resolvePaymentCapabilities", () => {
       detail: { status: "paid", approval_instance_id: 9 },
       approvalDetail: approval("approved")
     });
-    expect(caps.attachmentUploadVia).toBe("payment");
+    expect(caps.attachmentUploadVia).toBe("biz");
     expect(caps.canRemoveAttachment).toBe(false);
   });
 
@@ -156,7 +155,7 @@ describe("resolvePaymentCapabilities", () => {
     });
     expect(unlocked.canEditFields).toBe(true);
     expect(unlocked.canAdjustPayout).toBe(true);
-    expect(unlocked.attachmentUploadVia).toBe("payment");
+    expect(unlocked.attachmentUploadVia).toBe("biz");
     expect(unlocked.canRemoveAttachment).toBe(true);
 
     expect(
@@ -199,22 +198,6 @@ describe("isDateOnly", () => {
     expect(isDateOnly("2026-11-05")).toBe(true);
     expect(isDateOnly("2026-11-05T01:00:00.000Z")).toBe(false);
     expect(isDateOnly(null)).toBe(false);
-  });
-});
-
-describe("mergeRemarkEditLog", () => {
-  const log = "[超管修改 2026-10-01T02:03:04.000Z] admin：改账户";
-
-  it("改备注时保留系统修改记录", () => {
-    expect(mergeRemarkEditLog(" 新备注 ", `旧备注\n${log}`)).toBe(
-      `新备注\n${log}`
-    );
-  });
-
-  it("备注清空时只留修改记录，没有记录时就是空串", () => {
-    expect(mergeRemarkEditLog("", `旧备注\n${log}`)).toBe(log);
-    expect(mergeRemarkEditLog("", "旧备注")).toBe("");
-    expect(mergeRemarkEditLog("新备注", null)).toBe("新备注");
   });
 });
 

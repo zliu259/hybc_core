@@ -13,7 +13,7 @@
     <view class="voucher-amount">{{detail.amountText}}<text class="voucher-unit" wx:if="{{detail.amountText !== '-'}}">元</text></view>
     <view class="voucher-upper">{{detail.amountCn}}</view>
     <view class="hero-title">{{detail.title}}</view>
-    <view class="stop-notice {{stopIsReturned ? 'stop-returned' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
+    <view class="stop-notice {{stopIsReturned ? 'stop-returned' : ''}} {{stopIsClosed ? 'stop-closed' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
     <view class="kv" wx:for="{{detail.facts}}" wx:key="label">
       <text class="k">{{item.label}}</text>
       <text class="v">{{item.value}}</text>
@@ -48,6 +48,11 @@
         </view>
       </block>
     </block>
+
+    <view class="fold-row" wx:if="{{showContractLink}}" bindtap="openContractDetail">
+      <text class="fold-title">查看合同</text>
+      <text class="fold-action">打开</text>
+    </view>
   </view>
 
   <!-- 付款执行：付了才有明细，已审批未付时说一句 -->
@@ -75,12 +80,13 @@
   <!-- 审批流程 -->
   <view class="card" wx:if="{{timelineNodes.length > 0 || approvalUnavailable}}">
     <view class="card-head" bindtap="toggleFlowCollapse">
-      <text class="card-title">审批流程</text>
+      <text class="card-title">审批流程{{flowRoundLabel ? ' · ' + flowRoundLabel : ''}}</text>
       <text class="fold-action" wx:if="{{timelineNodes.length > 0}}">{{flowCollapsed ? '展开' : '收起'}}</text>
     </view>
     <view class="payout-note" wx:if="{{approvalUnavailable}}">暂时看不到审批流程：可能没有查看权限，或者网络中断。</view>
     <block wx:if="{{!flowCollapsed}}">
       <template is="flow-nodes" data="{{timelineNodes}}" />
+      <template is="flow-earlier-rounds" data="{{earlierRounds, flowOpenRound}}" />
     </block>
     <view class="fold-row" wx:if="{{showApprovalLink}}" bindtap="openApprovalDetail">
       <text class="fold-title">查看审批详情</text>

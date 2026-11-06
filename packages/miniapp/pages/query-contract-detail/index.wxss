@@ -1,57 +1,145 @@
-.detail-card,
-.sub-card {
-  background: #fff;
-  border: 1rpx solid #e7eaf0;
-  border-radius: 14rpx;
-  padding: 16rpx;
-  margin-bottom: 14rpx;
-}
+@import "../../styles/detail-cards.wxss";
 
-.row-between {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8rpx;
-}
-
-.title {
-  font-size: 30rpx;
-  font-weight: 700;
-  color: #1f2937;
-}
-
-.item-chips {
+.hero-tags {
   display: flex;
   align-items: center;
-  gap: 8rpx;
+  gap: 10rpx;
 }
 
-.item {
-  margin-top: 6rpx;
-  color: #4b5563;
+.card-stat {
+  flex: none;
   font-size: 24rpx;
+  color: #5c667a;
 }
 
-.amount {
-  color: #174ea6;
-  font-weight: 700;
+.card-empty {
+  font-size: 26rpx;
+  line-height: 1.55;
+  color: #5c667a;
 }
 
-.section-title {
-  margin: 16rpx 0 8rpx;
-  color: #1f2937;
+.retry-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 16rpx;
+}
+
+/* 执行进度 */
+.progress-item {
+  margin-top: 14rpx;
+}
+
+.progress-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.progress-figure {
+  font-size: 26rpx;
+  font-variant-numeric: tabular-nums;
+  color: #1f2329;
+}
+
+.progress-figure.is-over {
+  color: #d54941;
+}
+
+.progress-track {
+  height: 10rpx;
+  margin-top: 8rpx;
+  overflow: hidden;
+  border-radius: 6rpx;
+  background: #edf1f6;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 6rpx;
+  background: #1677ff;
+}
+
+.progress-fill.is-over {
+  background: #d54941;
+}
+
+.progress-remain {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+  text-align: right;
+  color: #5c667a;
+}
+
+/* 付款、收款、金额变更的行 */
+.record-row {
+  padding: 16rpx 0;
+  border-top: 1rpx solid #edf1f6;
+}
+
+.card-head + .record-row {
+  border-top: 0;
+  padding-top: 4rpx;
+}
+
+.record-row:last-child {
+  padding-bottom: 0;
+}
+
+.record-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.record-no {
+  flex: 1;
+  min-width: 0;
   font-size: 26rpx;
   font-weight: 600;
+  color: #1f2329;
+  word-break: break-all;
 }
 
-.empty {
-  text-align: center;
-  color: #7b8494;
-  padding: 20rpx 0;
+.record-amount {
+  flex: none;
+  font-size: 28rpx;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: #1f2329;
 }
 
-.tap-tip {
+.record-amounts {
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  font-variant-numeric: tabular-nums;
+  color: #1f2329;
+}
+
+.record-reason {
+  margin-top: 6rpx;
+  font-size: 26rpx;
+  line-height: 1.55;
+  color: #1f2329;
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.record-sub {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
   margin-top: 8rpx;
-  color: #174ea6;
-  font-size: 22rpx;
+}
+
+.record-time {
+  flex: 1;
+  min-width: 0;
+  font-size: 24rpx;
+  color: #8a94a6;
+}
+
+.record-row .attach-row {
+  margin-top: 8rpx;
 }

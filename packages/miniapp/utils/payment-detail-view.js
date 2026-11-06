@@ -23,7 +23,7 @@ const UNKNOWN_STATUS = ["未知", "default"];
 
 const textRow = (label, value) => ({ label, value: value || "-", multiline: false });
 
-const statusView = (status) =>
+const paymentStatusView = (status) =>
   Object.prototype.hasOwnProperty.call(STATUS_VIEWS, status) ? STATUS_VIEWS[status] : UNKNOWN_STATUS;
 
 /** 合同已付和总额都有意义时才算余额；单价合同总额可能是 0，算出来反而误导 */
@@ -77,7 +77,7 @@ const buildPaymentDetailView = ({ payment, userNames }) => {
     entity: () => entity.entity_name || "未匹配",
     formatTime: formatBeijingTime
   });
-  const [statusText, statusTheme] = statusView(payment.status);
+  const [statusText, statusTheme] = paymentStatusView(payment.status);
   const amountText = formatAmount(payment.amount);
 
   return {
@@ -101,8 +101,9 @@ const buildPaymentDetailView = ({ payment, userNames }) => {
     remarkEdits: buildRemarkEdits(base.edits, { user, formatTime: formatBeijingTime }),
     ...buildPayout(payment, user),
     approvalInstanceId: Number(payment.approval_instance_id) || 0,
+    contractId: Number(payment.contract_id) || 0,
     attachments: withFileSizeText(parseQueryAttachments(payment.attachments_json))
   };
 };
 
-module.exports = { buildPaymentDetailView };
+module.exports = { buildPaymentDetailView, paymentStatusView };

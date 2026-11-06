@@ -8,6 +8,9 @@ const {
   buildBizView,
   buildReimbursementItemRows,
   buildTimelineNodes,
+  groupTimelineRounds,
+  isFlowStopped,
+  shouldExpandFlow,
   formatBeijingTime,
   extractStopReason,
   parseAttachments,
@@ -487,6 +490,127 @@ assert.strictEqual(humanNode.tasks[1].actionLabel, "驳回");
 // 待处理任务不显示「-」
 assert.strictEqual(humanNode.tasks[2].actionLabel, "待处理");
 assert.strictEqual(humanNode.tasks[2].actedAtText, "");
+
+// ── 节点状态：引擎把驳回节点落成 completed，流程结束后节点也可能还停在进行中 ──
+const statusOf = (node, tasks, instance) => {
+  const [item] = buildTimelineNodes(
+    { instance, nodes: [{ id: 1, node_key: "n", node_name: "财务审批", node_type: "sequential", round: 1, sort_order: 1, ...node }], tasks: tasks || [], ai_gate_reviews: [] },
+    ctx
+  );
+  return [item.statusLabel, item.statusTheme];
+};
+const inProgress = { status: "in_progress", current_round: 1 };
+assert.deepStrictEqual(statusOf({ status: "in_progress" }, [], inProgress), ["进行中", "primary"]);
+assert.deepStrictEqual(statusOf({ status: "pending" }, [], inProgress), ["待处理", "warning"]);
+assert.deepStrictEqual(
+  statusOf({ status: "completed" }, [{ id: 1, node_instance_id: 1, assignee_userid: "u1", action: "reject", status: "completed", comment: "不对" }], { status: "rejected", current_round: 1 }),
+  ["已驳回", "danger"]
+);
+assert.deepStrictEqual(statusOf({ status: "in_progress" }, [], { status: "cancelled", current_round: 1 }), ["已中止", "default"]);
+assert.deepStrictEqual(statusOf({ status: "pending" }, [], { status: "cancelled", current_round: 1 }), ["未执行", "default"]);
+assert.deepStrictEqual(statusOf({ status: "pending", round: 1 }, [], { status: "in_progress", current_round: 3 }), ["未执行", "default"]);
+assert.deepStrictEqual(statusOf({ status: "returned", round: 2 }, [], { status: "in_progress", current_round: 3 }), ["已退回", "warning"]);
+
+// 通过时「同意」不重复，其他动作的意见都要显示；没轮到的人写未处理
+const taskView = (task) =>
+  buildTimelineNodes(
+    { instance: inProgress, nodes: [{ id: 1, node_key: "n", node_name: "财务审批", node_type: "sequential", round: 1, sort_order: 1, status: "in_progress" }], tasks: [{ id: 1, node_instance_id: 1, assignee_userid: "u1", ...task }], ai_gate_reviews: [] },
+    ctx
+  )[0].tasks[0];
+assert.strictEqual(taskView({ action: "reject", status: "completed", comment: "通过" }).showComment, true);
+assert.strictEqual(taskView({ action: "return_initiator", status: "completed", comment: "同意" }).showComment, true);
+assert.strictEqual(taskView({ action: "approve", status: "completed", comment: "通过" }).showComment, false);
+// 线上真实数据：通过时写的实际意见都要显示，只有恰好是这几个字才隐藏
+for (const comment of ["付款后补发票", "老合同，通过", "同意支付", "按月支付", "审核通过"]) {
+  assert.strictEqual(taskView({ action: "approve", status: "completed", comment }).showComment, true, comment);
+  assert.strictEqual(taskView({ action: "approve", status: "completed", comment }).commentBrief, comment);
+}
+assert.strictEqual(taskView({ action: "approve", status: "completed", comment: "同意\n" }).showComment, false);
+
+// 流程区默认折叠；停下来或有人写了实际意见时默认展开
+const flowNodesWith = (comment) => [{ tasks: [taskView({ action: "approve", status: "completed", comment })] }];
+assert.strictEqual(shouldExpandFlow("in_progress", flowNodesWith("同意")), false);
+assert.strictEqual(shouldExpandFlow("approved", flowNodesWith("付款后补发票")), true);
+assert.strictEqual(shouldExpandFlow("in_progress", flowNodesWith("付款后补发票")), true);
+assert.strictEqual(shouldExpandFlow("rejected", []), true);
+assert.strictEqual(shouldExpandFlow("in_progress", []), false);
+// AI 的结论有专门的审查区，不算
+assert.strictEqual(
+  shouldExpandFlow("in_progress", [{ tasks: [{ assignee_userid: "AI_GATE", showComment: true }] }]),
+  false
+);
+assert.strictEqual(taskView({ action: null, status: "cancelled", comment: null }).actionLabel, "未处理");
+
+// ── 多轮：当前轮单独显示，前面的轮次说明怎么结束的 ──
+const multiRound = {
+  instance: { status: "in_progress", current_round: 3 },
+  nodes: [
+    { id: 11, node_key: "fin", node_name: "财务审批", node_type: "sequential", round: 1, sort_order: 1, status: "in_progress" },
+    { id: 12, node_key: "boss", node_name: "总经理审批", node_type: "sequential", round: 1, sort_order: 2, status: "pending" },
+    { id: 21, node_key: "fin", node_name: "财务审批", node_type: "sequential", round: 2, sort_order: 1, status: "returned" },
+    { id: 22, node_key: "boss", node_name: "总经理审批", node_type: "sequential", round: 2, sort_order: 2, status: "pending" },
+    { id: 31, node_key: "fin", node_name: "财务审批", node_type: "sequential", round: 3, sort_order: 1, status: "in_progress" },
+    { id: 32, node_key: "boss", node_name: "总经理审批", node_type: "sequential", round: 3, sort_order: 2, status: "pending" }
+  ],
+  tasks: [
+    { id: 1, node_instance_id: 21, assignee_userid: "u2", action: "return_initiator", status: "completed", comment: "补充详细说明再报", round: 2, acted_at: "2026-08-26T03:44:00Z" },
+    { id: 2, node_instance_id: 31, assignee_userid: "u3", action: null, status: "pending", comment: null, round: 3 }
+  ],
+  ai_gate_reviews: []
+};
+const multiNodes = buildTimelineNodes(multiRound, ctx);
+assert.strictEqual(multiNodes.length, 6);
+const rounds = groupTimelineRounds(multiNodes, multiRound, ctx);
+assert.deepStrictEqual(rounds.currentNodes.map((item) => item.id), [31, 32]);
+assert.strictEqual(rounds.roundLabel, "第 3 轮");
+// 最近的一轮排前面
+assert.deepStrictEqual(
+  rounds.earlier.map((item) => [item.round, item.title, item.endText, item.nodes.map((node) => node.id)]),
+  [
+    [2, "第 2 轮", "财务审批 人员u2 退回：补充详细说明再报", [21, 22]],
+    [1, "第 1 轮", "发起人撤回后重新提交", [11, 12]]
+  ]
+);
+// 只有一轮时不打扰
+const oneRound = groupTimelineRounds(nodes, { instance: { status: "in_progress", current_round: 1 }, tasks: [] }, ctx);
+assert.strictEqual(oneRound.roundLabel, "");
+assert.deepStrictEqual(oneRound.earlier, []);
+assert.strictEqual(oneRound.currentNodes.length, nodes.length);
+// 旧数据 nodes 没有 round 时不能把节点丢掉
+assert.strictEqual(groupTimelineRounds([{ id: 1, tasks: [] }], { instance: {}, tasks: [] }, ctx).currentNodes.length, 1);
+
+// ── 取消和撤回也要说清楚（SP-20261014-0010 被作废，只有备注里有记录） ──
+assert.strictEqual(
+  extractStopReason([], { instance: { status: "cancelled" }, initiator_actions: [] }, "代理费\n[VOID 2026-10-14T12:35:37.812Z] u9", ctx),
+  "付款单已作废，这笔审批随之取消。人员u9，未填写原因"
+);
+assert.strictEqual(
+  extractStopReason([], { instance: { status: "cancelled" }, initiator_actions: [] }, "[VOID 2026-10-14T12:35:37.812Z] u9: 附件对象不符", ctx),
+  "付款单已作废，这笔审批随之取消。人员u9：附件对象不符"
+);
+assert.strictEqual(
+  extractStopReason([], { instance: { status: "cancelled" }, initiator_actions: [{ action: "cancel", userid: "u2", comment: "重复提交", created_at: "2026-11-01" }] }, "", ctx),
+  "这笔审批已取消。人员u2：重复提交"
+);
+assert.strictEqual(
+  extractStopReason([], { instance: { status: "withdrawn" }, initiator_actions: [{ action: "withdraw", userid: "u3", comment: null, created_at: "2026-11-01" }] }, "", ctx),
+  "发起人已撤回这笔审批。人员u3，未填写原因"
+);
+assert.strictEqual(extractStopReason([], { instance: { status: "cancelled" } }, "", ctx), "这笔审批已取消。未填写原因");
+assert.strictEqual(isFlowStopped("cancelled"), true);
+assert.strictEqual(isFlowStopped("withdrawn"), true);
+assert.strictEqual(isFlowStopped("rejected"), true);
+assert.strictEqual(isFlowStopped("returned"), true);
+assert.strictEqual(isFlowStopped("in_progress"), false);
+assert.strictEqual(isFlowStopped("approved"), false);
+
+// splitRemark：作废和激活记录不混进备注
+const voidRemark = splitRemark("按月结算\n[VOID 2026-03-16T05:58:05.444Z] boss: 重复提交\n[REACTIVATE 2026-03-16T06:17:25.639Z] boss");
+assert.strictEqual(voidRemark.text, "按月结算");
+assert.deepStrictEqual(voidRemark.edits, [
+  { at: "2026-03-16T05:58:05.444Z", by: "boss", note: "作废付款：重复提交" },
+  { at: "2026-03-16T06:17:25.639Z", by: "boss", note: "重新激活" }
+]);
 
 // ── 停止原因（口径不变：人工与 AI 取更晚的） ──
 const humanReject = {

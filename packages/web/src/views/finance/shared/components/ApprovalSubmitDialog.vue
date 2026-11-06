@@ -1,32 +1,36 @@
 <script setup lang="ts">
+/** 付款单、合同共用的提交审批设置。提交动作由调用方传入，这里只管表单和幂等键。 */
 import { computed, ref, watch } from "vue";
 import type { InstanceConfig } from "@/api/contract";
-import {
-  submitPaymentApproval,
-  type PaymentRequestDetail
-} from "@/api/payment";
 import type { WeComUser } from "@/api/wecom";
 import { useUserStoreHook } from "@/store/modules/user";
 import { resolveApiErrorMessage } from "@/utils/api-error";
 import { message } from "@/utils/message";
 
-defineOptions({ name: "PaymentSubmitDialog" });
+defineOptions({ name: "ApprovalSubmitDialog" });
 
 const visible = defineModel<boolean>("visible", { required: true });
 
+type ApprovalSubmitPayload = {
+  biz_summary?: string;
+  instance_config?: InstanceConfig;
+};
+
 const props = defineProps<{
-  detail: PaymentRequestDetail | null;
+  /** 业务单 id，未加载时为 null */
+  bizId: number | null;
+  /** 幂等键前缀，如 payment-detail-submit */
+  scope: string;
+  defaultSummary: string;
+  noteTemplates: readonly string[];
   wecomUsers: WeComUser[];
+  submit: (
+    payload: ApprovalSubmitPayload,
+    options: { idempotencyKey: string }
+  ) => Promise<unknown>;
 }>();
 
 const emit = defineEmits<{ (e: "submitted"): void }>();
-
-const NOTE_TEMPLATES = [
-  "请优先审批，业务节点加急。",
-  "付款凭证已补齐，请审核通过。",
-  "金额与收款信息已复核，请确认。",
-  "请关注付款时效，审批完成后将立即执行打款。"
-];
 
 const userStore = useUserStoreHook();
 const isSuperAdmin = computed(() =>
@@ -52,7 +56,7 @@ const createIdempotencyKey = () => {
     typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
       ? crypto.randomUUID()
       : `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-  return `payment-detail-submit-${random}`;
+  return `${props.scope}-${random}`;
 };
 
 const applyTemplate = (value: string) => {
@@ -62,10 +66,7 @@ const applyTemplate = (value: string) => {
 
 watch(visible, open => {
   if (!open) return;
-  const { detail } = props;
-  summary.value = detail?.serial_no
-    ? `${detail.serial_no} | ${detail.content} | ${detail.amount}`
-    : "";
+  summary.value = props.defaultSummary;
   configMode.value = "form";
   configText.value = "{}";
   formConfig.value = { default_assignee_userids: [], note: "" };
@@ -96,7 +97,7 @@ const buildInstanceConfig = (): { value?: InstanceConfig } | null => {
 };
 
 const confirm = async () => {
-  const id = props.detail?.id;
+  const id = props.bizId;
   if (submitting.value || !id) return;
   const config = buildInstanceConfig();
   if (!config) return;
@@ -113,8 +114,7 @@ const confirm = async () => {
 
   submitting.value = true;
   try {
-    await submitPaymentApproval(
-      id,
+    await props.submit(
       {
         biz_summary: bizSummary || undefined,
         instance_config: config.value
@@ -188,7 +188,7 @@ const confirm = async () => {
             @change="applyTemplate"
           >
             <el-option
-              v-for="item in NOTE_TEMPLATES"
+              v-for="item in noteTemplates"
               :key="item"
               :label="item"
               :value="item"
@@ -209,7 +209,7 @@ const confirm = async () => {
           v-model="configText"
           type="textarea"
           :rows="7"
-          placeholder='例如 {"default_assignee_userids":["zhangsan"],"note":"付款凭证已补传"}'
+          placeholder='例如 {"default_assignee_userids":["zhangsan"],"note":"加急审批"}'
         />
       </el-form-item>
     </el-form>

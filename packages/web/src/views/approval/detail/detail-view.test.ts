@@ -279,6 +279,23 @@ describe("buildBizView", () => {
   });
 });
 
+describe("splitRemark 作废和激活记录", () => {
+  it("VOID、REACTIVATE 行不混进备注正文，归到修改记录", () => {
+    const { text, edits } = splitRemark(
+      "按月结算\n[VOID 2026-03-16T05:58:05.444Z] boss: 重复提交\n[REACTIVATE 2026-03-16T06:17:25.639Z] boss"
+    );
+    expect(text).toBe("按月结算");
+    expect(edits).toEqual([
+      {
+        at: "2026-03-16T05:58:05.444Z",
+        by: "boss",
+        note: "作废付款：重复提交"
+      },
+      { at: "2026-03-16T06:17:25.639Z", by: "boss", note: "重新激活" }
+    ]);
+  });
+});
+
 describe("AI 结论", () => {
   it("三态判定优先，主文用模型摘要而不是整段意见", () => {
     const verdict = toAiVerdict(

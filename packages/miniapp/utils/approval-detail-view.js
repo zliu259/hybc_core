@@ -229,17 +229,40 @@ const buildNodeNameMap = (detail) =>
 // ── 业务视图 ──
 
 const REMARK_EDIT_LINE = /^\[超管修改 ([^\]]+)\] ([^：:]+)[：:](.*)$/;
+const REMARK_VOID_LINE = /^\[VOID ([^\]]+)\] ([^：:]+)(?:[：:](.*))?$/;
+const REMARK_REACTIVATE_LINE = /^\[REACTIVATE ([^\]]+)\] ([^：:]+)/;
 
-/** 把备注里系统追加的「[超管修改 …]」日志行分离出来，备注区只显示发起人写的内容 */
+const parseRemarkLog = (line) => {
+  const text = line.trim();
+  const edit = text.match(REMARK_EDIT_LINE);
+  if (edit) return { at: edit[1], by: edit[2].trim(), note: edit[3].trim() };
+  const voided = text.match(REMARK_VOID_LINE);
+  if (voided) {
+    const reason = (voided[3] || "").trim();
+    return { at: voided[1], by: voided[2].trim(), note: reason ? `作废付款：${reason}` : "作废付款" };
+  }
+  const reactivated = text.match(REMARK_REACTIVATE_LINE);
+  return reactivated ? { at: reactivated[1], by: reactivated[2].trim(), note: "重新激活" } : null;
+};
+
+/** 把备注里系统追加的日志行（超管修改、作废、激活）分离出来，备注区只显示发起人写的内容 */
 const splitRemark = (remark) => {
   const lines = String(remark || "").split("\n");
-  const matched = lines.map((line) => line.trim().match(REMARK_EDIT_LINE));
+  const logs = lines.map(parseRemarkLog);
   return {
-    text: lines.filter((_, index) => !matched[index]).join("\n").trim(),
-    edits: matched
-      .filter(Boolean)
-      .map((match) => ({ at: match[1], by: match[2].trim(), note: match[3].trim() }))
+    text: lines.filter((_, index) => !logs[index]).join("\n").trim(),
+    edits: logs.filter(Boolean)
   };
+};
+
+/** 付款作废写在备注里的记录，取最后一条（作废后可能被重新激活再作废） */
+const parseVoidRecord = (remark) => {
+  const records = String(remark || "")
+    .split("\n")
+    .map((line) => line.trim().match(REMARK_VOID_LINE))
+    .filter(Boolean);
+  const last = records[records.length - 1];
+  return last ? { at: last[1], by: last[2].trim(), reason: (last[3] || "").trim() } : null;
 };
 
 const INSTANCE_STATUS_VIEWS = {
@@ -251,7 +274,8 @@ const INSTANCE_STATUS_VIEWS = {
   cancelled: ["已取消", "default"],
   withdrawn: ["已撤回", "default"],
   completed: ["已完成", "success"],
-  transferred: ["已转签", "default"]
+  transferred: ["已转签", "default"],
+  skipped: ["已跳过", "default"]
 };
 const statusLabel = (status) => lookup(INSTANCE_STATUS_VIEWS, status, ["未知"])[0];
 const statusTheme = (status) => lookup(INSTANCE_STATUS_VIEWS, status, ["", "default"])[1];
@@ -471,6 +495,29 @@ const buildReimbursementItemRows = (items) =>
 
 const REDUNDANT_COMMENTS = ["同意", "通过", "已阅", "ok", "OK"];
 
+/** 流程已不在这一轮跑了：实例结束、退回、撤回，或者这是旧轮次 */
+const isRoundClosed = (node, instance) => {
+  if (!instance || !instance.status) return false;
+  return instance.status !== "in_progress" || Number(node.round) < Number(instance.current_round);
+};
+
+/** 最后一个决定是驳回：引擎把驳回节点也落成 completed，不能显示成已完成 */
+const isNodeRejected = (tasks) => {
+  const decisions = tasks.filter((task) => task && (task.action === "approve" || task.action === "reject"));
+  const last = decisions[decisions.length - 1];
+  return Boolean(last) && last.action === "reject";
+};
+
+const resolveNodeStatus = (node, tasks, instance) => {
+  if (node.status === "returned") return ["已退回", "warning"];
+  if (node.status === "completed" && isNodeRejected(tasks)) return ["已驳回", "danger"];
+  if (isRoundClosed(node, instance)) {
+    if (node.status === "in_progress" || node.status === "cancelled") return ["已中止", "default"];
+    if (node.status === "pending") return ["未执行", "default"];
+  }
+  return [statusLabel(node.status), statusTheme(node.status)];
+};
+
 const toTaskView = (task, node, aiFallback, ctx) => {
   const isAi = task.assignee_userid === "AI_GATE";
   const embedded = parseEmbedded(task.comment);
@@ -486,7 +533,9 @@ const toTaskView = (task, node, aiFallback, ctx) => {
       : aiOutcomeLabel((embedded && embedded.outcome) || task.action, rawComment)
     : task.action
       ? approvalActionLabel(task.action)
-      : statusLabel(task.status);
+      : task.status === "cancelled"
+        ? "未处理" // 流程已结束，没轮到这个人
+        : statusLabel(task.status);
   return {
     ...task,
     // AI_GATE 不在通讯录里，走 ctx.user 会显示成「未匹配」
@@ -495,7 +544,9 @@ const toTaskView = (task, node, aiFallback, ctx) => {
     // 仅 AI 任务的意见做字段名汉化，人工意见原样保留
     commentText: (isAi ? humanizeAiText(rawComment) : rawComment) || "-",
     commentBrief,
-    showComment: Boolean(commentBrief) && (isAi || REDUNDANT_COMMENTS.indexOf(commentBrief) < 0),
+    // 通过时「同意」这类字样和动作标签重复，其他动作的意见都要显示
+    showComment:
+      Boolean(commentBrief) && (isAi || task.action !== "approve" || REDUNDANT_COMMENTS.indexOf(commentBrief) < 0),
     actedAtText: task.acted_at ? ctx.formatTime(task.acted_at) : ""
   };
 };
@@ -509,16 +560,101 @@ const buildTimelineNodes = (detail, ctx) => {
     .sort((a, b) => (a.round !== b.round ? a.round - b.round : a.sort_order - b.sort_order))
     .map((node) => {
       const aiFallback = reviews.find((review) => review && review.node_key === node.node_key);
+      const nodeTasks = tasks.filter((task) => task && task.node_instance_id === node.id);
+      const [nodeStatusLabel, nodeStatusTheme] = resolveNodeStatus(node, nodeTasks, detail && detail.instance);
       return {
         ...node,
-        statusLabel: statusLabel(node.status),
-        statusTheme: statusTheme(node.status),
+        statusLabel: nodeStatusLabel,
+        statusTheme: nodeStatusTheme,
         nodeTypeLabel: approvalNodeTypeLabel(node.node_type, ""),
-        tasks: tasks
-          .filter((task) => task && task.node_instance_id === node.id)
-          .map((task) => toTaskView(task, node, aiFallback, ctx))
+        tasks: nodeTasks.map((task) => toTaskView(task, node, aiFallback, ctx))
       };
     });
+};
+
+/** 这一轮是怎么结束的。退回发起人或 AI 拦截会写节点和原因 */
+const describeRoundEnd = (nodes) => {
+  const withTasks = nodes.flatMap((node) => (node.tasks || []).map((task) => ({ node, task })));
+  const returned = withTasks.filter(({ task }) => task.action === "return_initiator").pop();
+  if (returned) {
+    const comment = asText(returned.task.commentText);
+    return `${returned.node.node_name} ${returned.task.assigneeLabel} 退回：${comment && comment !== "-" ? comment : "未留意见"}`;
+  }
+  const aiReturned = withTasks
+    .filter(({ node, task }) => node.status === "returned" && task.assignee_userid === "AI_GATE" && task.action === "reject")
+    .pop();
+  if (aiReturned) return `${aiReturned.node.node_name} AI 审查 退回：${aiReturned.task.commentBrief || "未留意见"}`;
+  if (nodes.some((node) => node.status === "in_progress" || node.status === "cancelled")) {
+    return "发起人撤回后重新提交";
+  }
+  return "这一轮没有走完";
+};
+
+/**
+ * 退回或撤回后重新提交会新开一轮，同名节点再来一遍。当前轮单独显示，
+ * 前面的轮次折叠，并说明每一轮是怎么结束的，否则看起来像流程走重了。
+ * @param {Array} nodes buildTimelineNodes 的结果，已按轮次升序
+ * @param {object} detail 审批详情
+ */
+const groupTimelineRounds = (nodes, detail) => {
+  const list = Array.isArray(nodes) ? nodes : [];
+  const instance = (detail && detail.instance) || {};
+  const rounds = list.map((node) => Number(node.round) || 0);
+  const current = Number(instance.current_round) || Math.max(0, ...rounds);
+  const earlierRounds = Array.from(new Set(rounds))
+    .filter((round) => round > 0 && round < current)
+    .sort((a, b) => b - a);
+  const earlierSet = new Set(earlierRounds);
+  return {
+    currentNodes: list.filter((node) => !earlierSet.has(Number(node.round) || 0)),
+    roundLabel: current > 1 ? `第 ${current} 轮` : "",
+    earlier: earlierRounds.map((round) => {
+      const roundNodes = list.filter((node) => Number(node.round) === round);
+      return {
+        round,
+        title: `第 ${round} 轮`,
+        endText: describeRoundEnd(roundNodes),
+        nodes: roundNodes
+      };
+    })
+  };
+};
+
+const FLOW_STOPPED_STATUSES = ["rejected", "returned", "cancelled", "withdrawn"];
+
+/** 流程停下来时默认展开，停在哪、为什么不能藏在折叠层里 */
+const isFlowStopped = (status) => FLOW_STOPPED_STATUSES.indexOf(status) >= 0;
+
+/**
+ * 流程区默认折叠，这些情况要默认展开：流程停下来了，或者有人写了实际意见
+ * （如通过时写「付款后补发票」），意见不能藏在折叠层里。
+ * @param {string} status 实例状态
+ * @param {Array} nodes 当前轮的节点
+ */
+const shouldExpandFlow = (status, nodes) =>
+  isFlowStopped(status) ||
+  (Array.isArray(nodes) ? nodes : []).some((node) =>
+    (node.tasks || []).some((task) => task.assignee_userid !== "AI_GATE" && task.showComment)
+  );
+
+const describeClosedInstance = (detail, bizRemark, ctx) => {
+  const withdrawn = detail.instance.status === "withdrawn";
+  const wanted = withdrawn ? "withdraw" : "cancel";
+  const actions = (Array.isArray(detail.initiator_actions) ? detail.initiator_actions : []).filter(
+    (item) => item && item.action === wanted
+  );
+  const action = actions[actions.length - 1] || null;
+  const voided = withdrawn ? null : parseVoidRecord(bizRemark);
+  const title = withdrawn
+    ? "发起人已撤回这笔审批"
+    : voided
+      ? "付款单已作废，这笔审批随之取消"
+      : "这笔审批已取消";
+  const by = (action && action.userid) || (voided && voided.by) || "";
+  const who = by && ctx ? ctx.user(by) : "";
+  const reason = asText(action && action.comment) || (voided && voided.reason) || "";
+  if (!who) return `${title}。${reason || "未填写原因"}`;
+  return reason ? `${title}。${who}：${reason}` : `${title}。${who}，未填写原因`;
 };
 
 /**
@@ -527,8 +663,9 @@ const buildTimelineNodes = (detail, ctx) => {
  * 任务 action 仍是 reject、理由在 comment）。人工与 AI 都有时取时间更晚的，
  * 避免把上一轮的旧 AI 结论错标成本次退回原因。
  */
-const extractStopReason = (timelineNodes, detail) => {
+const extractStopReason = (timelineNodes, detail, bizRemark, ctx) => {
   const status = detail && detail.instance ? detail.instance.status : "";
+  if (status === "cancelled" || status === "withdrawn") return describeClosedInstance(detail, bizRemark, ctx);
   if (status !== "rejected" && status !== "returned") return "";
   const wantActions = status === "rejected" ? ["reject"] : ["return_initiator", "return_prev", "return_to"];
 
@@ -628,11 +765,15 @@ module.exports = {
   buildAiPanel,
   buildNodeNameMap,
   buildPaymentView,
+  buildContractView,
   buildBizView,
   buildWaitText,
   buildRemarkEdits,
   buildReimbursementItemRows,
   buildTimelineNodes,
+  groupTimelineRounds,
+  isFlowStopped,
+  shouldExpandFlow,
   extractStopReason,
   parseAttachments,
   withFileSizeText,

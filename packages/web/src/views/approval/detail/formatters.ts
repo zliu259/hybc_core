@@ -227,6 +227,23 @@ export const parseAttachments = (
 };
 
 const REMARK_EDIT_LINE = /^\[超管修改 ([^\]]+)\] ([^：:]+)[：:](.*)$/;
+const REMARK_VOID_LINE = /^\[VOID ([^\]]+)\] ([^：:]+)(?:[：:](.*))?$/;
+const REMARK_REACTIVATE_LINE = /^\[REACTIVATE ([^\]]+)\] ([^：:]+)/;
+
+export type VoidRecord = { at: string; by: string; reason: string };
+
+/** 付款作废写在备注里的记录，取最后一条（作废后可能被重新激活再作废）。 */
+export const parseVoidRecord = (
+  remark: string | null | undefined
+): VoidRecord | null => {
+  const records = (remark ?? "").split("\n").flatMap((line): VoidRecord[] => {
+    const match = line.trim().match(REMARK_VOID_LINE);
+    return match
+      ? [{ at: match[1], by: match[2].trim(), reason: (match[3] ?? "").trim() }]
+      : [];
+  });
+  return records[records.length - 1] ?? null;
+};
 
 /** 把备注里系统追加的「[超管修改 …]」日志行分离出来，备注区只显示发起人写的内容。 */
 export const splitRemark = (
@@ -235,9 +252,25 @@ export const splitRemark = (
   const edits: RemarkEdit[] = [];
   const kept: string[] = [];
   for (const line of (remark ?? "").split("\n")) {
-    const match = line.trim().match(REMARK_EDIT_LINE);
+    const trimmed = line.trim();
+    const match = trimmed.match(REMARK_EDIT_LINE);
+    const voided = trimmed.match(REMARK_VOID_LINE);
+    const reactivated = trimmed.match(REMARK_REACTIVATE_LINE);
     if (match) {
       edits.push({ at: match[1], by: match[2].trim(), note: match[3].trim() });
+    } else if (voided) {
+      const reason = (voided[3] ?? "").trim();
+      edits.push({
+        at: voided[1],
+        by: voided[2].trim(),
+        note: reason ? `作废付款：${reason}` : "作废付款"
+      });
+    } else if (reactivated) {
+      edits.push({
+        at: reactivated[1],
+        by: reactivated[2].trim(),
+        note: "重新激活"
+      });
     } else {
       kept.push(line);
     }

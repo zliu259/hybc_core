@@ -27,7 +27,7 @@ import {
   parseInvoiceItems,
   splitRemark
 } from "./detail/formatters";
-import { buildStopNotice } from "./detail/notices";
+import { buildStopNotice, stopNoticeAlertType } from "./detail/notices";
 import type { AttachmentItem, LabelContext } from "./detail/types";
 import { useApprovalActions } from "./detail/useApprovalActions";
 import { useApprovalDetail } from "./detail/useApprovalDetail";
@@ -92,7 +92,9 @@ const bizView = computed(() =>
 );
 
 const stopNotice = computed(() =>
-  detail.value ? buildStopNotice(detail.value, toUserLabel) : null
+  detail.value
+    ? buildStopNotice(detail.value, toUserLabel, records.value.payment?.remark)
+    : null
 );
 
 const currentNodeName = computed(() => {
@@ -231,7 +233,7 @@ onMounted(() => {
     <template v-else>
       <el-alert
         v-if="stopNotice"
-        :type="stopNotice.kind === 'rejected' ? 'error' : 'warning'"
+        :type="stopNoticeAlertType(stopNotice.kind)"
         :closable="false"
         show-icon
         :title="stopNotice.title"
@@ -308,6 +310,7 @@ onMounted(() => {
             :tasks="detail.tasks"
             :current-node-key="detail.instance.current_node_key"
             :current-round="detail.instance.current_round"
+            :instance-status="detail.instance.status"
             :is-super-admin="isSuperAdmin"
             :to-user-label="toUserLabel"
             @force-transfer="task => (forceTask = task)"

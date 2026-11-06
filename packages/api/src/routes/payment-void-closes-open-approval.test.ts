@@ -203,6 +203,32 @@ describe("voiding a payment closes its still-open approval instance", () => {
     expect(env.DB.approvalInstanceClosed).toBe(true);
   });
 
+  it("把作废人和原因记到审批记录，并收口还在进行的节点", async () => {
+    const env = createEnv(
+      new PaymentVoidDb({ paymentStatus: "pending_approval", approvalStatus: "in_progress" })
+    );
+
+    const response = await postJson(env, "/payment/2899/void", { reason: "  附件对象不符 " });
+
+    expect(response.status).toBe(200);
+    const action = env.DB.runs.find((call) => call.sql.includes("INSERT INTO approval_initiator_action"));
+    expect(action?.params.slice(0, 3)).toEqual([362, "boss-a", "附件对象不符"]);
+    expect(action?.sql).toContain("'cancel'");
+    const nodes = env.DB.runs.find(
+      (call) => call.sql.includes("UPDATE approval_node_instance") && call.sql.includes("'in_progress'")
+    );
+    expect(nodes?.params).toContain(362);
+  });
+
+  it("没关联审批实例时不写审批记录", async () => {
+    const env = createEnv(new PaymentVoidDb({ paymentStatus: "draft", approvalStatus: null }));
+
+    const response = await postJson(env, "/payment/2899/void", { reason: "录错了" });
+
+    expect(response.status).toBe(200);
+    expect(env.DB.runs.some((call) => call.sql.includes("approval_initiator_action"))).toBe(false);
+  });
+
   it("leaves a terminal (approved) instance untouched", async () => {
     const env = createEnv(
       new PaymentVoidDb({ paymentStatus: "approved", approvalStatus: "approved" })

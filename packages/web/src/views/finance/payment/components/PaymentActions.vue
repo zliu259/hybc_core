@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /** 付款单的流程操作，集中放在页面头部。只显示当前能用的按钮，不摆灰按钮。 */
-import { ElMessageBox } from "element-plus";
-import { ref } from "vue";
+import { ElMessageBox, type MessageBoxData } from "element-plus";
+import { computed, ref } from "vue";
 import {
   reactivatePayment,
+  submitPaymentApproval,
   triggerRiskAssessment,
   voidPayment,
   type PaymentRequestDetail
@@ -11,9 +12,9 @@ import {
 import type { WeComUser } from "@/api/wecom";
 import { resolveApiErrorMessage } from "@/utils/api-error";
 import { message } from "@/utils/message";
+import ApprovalSubmitDialog from "../../shared/components/ApprovalSubmitDialog.vue";
 import type { PaymentCapabilities } from "../payment-detail-view";
 import PaymentMarkPaidDialog from "./PaymentMarkPaidDialog.vue";
-import PaymentSubmitDialog from "./PaymentSubmitDialog.vue";
 
 defineOptions({ name: "PaymentActions" });
 
@@ -24,6 +25,25 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{ (e: "refresh"): void }>();
+
+const NOTE_TEMPLATES = [
+  "请优先审批，业务节点加急。",
+  "付款凭证已补齐，请审核通过。",
+  "金额与收款信息已复核，请确认。",
+  "请关注付款时效，审批完成后将立即执行打款。"
+];
+
+const defaultSummary = computed(() => {
+  const { detail } = props;
+  return detail?.serial_no
+    ? `${detail.serial_no} | ${detail.content} | ${detail.amount}`
+    : "";
+});
+
+const submitApproval = (
+  payload: Parameters<typeof submitPaymentApproval>[1],
+  options: { idempotencyKey: string }
+) => submitPaymentApproval(props.detail?.id ?? 0, payload, options);
 
 const submitVisible = ref(false);
 const markPaidVisible = ref(false);
@@ -70,12 +90,29 @@ const onAssessRisk = () =>
   run("risk", triggerRiskAssessment, "已触发风险评估", "触发风险评估失败");
 
 const onVoid = async () => {
-  const ok = await confirmed(
-    "确认废除该付款申请？废除后将不再出现在付款列表中。",
-    "废除付款",
-    "确认废除"
+  let reason = "";
+  try {
+    const result = await ElMessageBox.prompt(
+      "废除后将不再出现在付款列表中。原因会显示在付款详情和审批详情里。",
+      "废除付款",
+      {
+        confirmButtonText: "确认废除",
+        cancelButtonText: "取消",
+        type: "warning",
+        inputPlaceholder: "请填写废除原因",
+        inputValidator: value => Boolean(value?.trim()) || "请填写废除原因"
+      }
+    );
+    reason = (result as Exclude<MessageBoxData, string>).value.trim();
+  } catch {
+    return;
+  }
+  await run(
+    "void",
+    id => voidPayment(id, { reason }),
+    "付款已废除",
+    "废除失败"
   );
-  if (ok) await run("void", id => voidPayment(id), "付款已废除", "废除失败");
 };
 
 const onReactivate = async () => {
@@ -136,10 +173,14 @@ const onReactivate = async () => {
     标记付款
   </el-button>
 
-  <PaymentSubmitDialog
+  <ApprovalSubmitDialog
     v-model:visible="submitVisible"
-    :detail="detail"
+    :biz-id="detail?.id ?? null"
+    scope="payment-detail-submit"
+    :default-summary="defaultSummary"
+    :note-templates="NOTE_TEMPLATES"
     :wecom-users="wecomUsers"
+    :submit="submitApproval"
     @submitted="emit('refresh')"
   />
   <PaymentMarkPaidDialog

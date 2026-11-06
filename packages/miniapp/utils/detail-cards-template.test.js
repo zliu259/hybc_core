@@ -8,7 +8,7 @@ const path = require("path");
 
 const read = (file) => fs.readFileSync(path.join(__dirname, "..", file), "utf8");
 
-const LOCAL_NAMES = new Set(["item", "index", "task", "file", "true", "false", "null"]);
+const LOCAL_NAMES = new Set(["item", "index", "task", "file", "roundItem", "true", "false", "null"]);
 
 const templateBodies = (wxml) => {
   const bodies = {};
@@ -27,14 +27,16 @@ const stripStrings = (expression) => expression.replace(/'[^']*'|"[^"]*"/g, "");
 const usedRoots = (body) => {
   const roots = new Set();
   const pattern = /\{\{([\s\S]*?)\}\}/g;
-  let match = pattern.exec(body);
+  // 模板里嵌套使用其他模板时，data 的键是对方的变量名，不是这个模板要的变量
+  const ownBody = body.replace(/<template is=[^>]*>/g, "");
+  let match = pattern.exec(ownBody);
   while (match) {
     const names = stripStrings(match[1]).match(/(^|[^.\w])([A-Za-z_]\w*)/g) || [];
     names.forEach((token) => {
       const name = token.replace(/[^\w]/g, "");
       if (!LOCAL_NAMES.has(name) && !/^\d/.test(name)) roots.add(name);
     });
-    match = pattern.exec(body);
+    match = pattern.exec(ownBody);
   }
   return roots;
 };
@@ -68,16 +70,23 @@ const usages = (wxml) => {
 };
 
 const templates = templateBodies(read("templates/detail-cards.wxml"));
-assert.deepStrictEqual(Object.keys(templates).sort(), ["ai-review-body", "flow-nodes"]);
+assert.deepStrictEqual(Object.keys(templates).sort(), ["ai-review-body", "flow-earlier-rounds", "flow-nodes"]);
 
 const PAGES = [
   ["pages/approval-detail/index.wxml", "pages/approval-detail/index.js"],
-  ["pages/query-payment-detail/index.wxml", "pages/query-payment-detail/index.js"]
+  ["pages/query-payment-detail/index.wxml", "pages/query-payment-detail/index.js"],
+  ["pages/query-contract-detail/index.wxml", "pages/query-contract-detail/index.js"]
 ];
+
+/** 付款、合同详情的折叠开关在公共模块里，用 ...DETAIL_CARD_TOGGLES 展开进页面 */
+const pageSource = (jsFile) => {
+  const js = read(jsFile);
+  return js.includes("...DETAIL_CARD_TOGGLES") ? js + read("utils/detail-page-common.js") : js;
+};
 
 for (const [wxmlFile, jsFile] of PAGES) {
   const wxml = read(wxmlFile);
-  const js = read(jsFile);
+  const js = pageSource(jsFile);
   assert.ok(
     wxml.includes('<import src="../../templates/detail-cards.wxml" />'),
     `${wxmlFile} 要 import 模板`
@@ -85,8 +94,8 @@ for (const [wxmlFile, jsFile] of PAGES) {
   const pageUsages = usages(wxml);
   assert.deepStrictEqual(
     pageUsages.map((item) => item.name).sort(),
-    ["ai-review-body", "flow-nodes"],
-    `${wxmlFile} 两个模板都要用到`
+    ["ai-review-body", "flow-earlier-rounds", "flow-nodes"],
+    `${wxmlFile} 三个模板都要用到`
   );
   for (const { name, keys } of pageUsages) {
     const body = templates[name];

@@ -74,6 +74,12 @@
   word-break: break-word;
 }
 
+/* 取消、撤回：不是谁否决了这笔单子，用中性色 */
+.stop-closed {
+  background: #eef1f5;
+  color: #5c667a;
+}
+
 /* 退回（含 AI 拦截退回）非终态，用警示色与终态驳回区分 */
 .stop-returned {
   background: #fff4e0;
@@ -359,6 +365,14 @@
 }
 
 /* 审批流程 */
+.round-end {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  line-height: 1.55;
+  color: #5c667a;
+  word-break: break-word;
+}
+
 .flow-node {
   padding: 14rpx 0;
   border-top: 1rpx solid #edf1f6;

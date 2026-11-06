@@ -48,6 +48,8 @@ export type ContractAmountChange = {
   applicant_userid: string;
   attachments: AmountChangeAttachmentView[];
   created_at: string;
+  /** 审批实例状态；变更单提交后业务状态一直是 pending，要靠它判断走到哪了 */
+  approval_status?: string | null;
 };
 
 /** 审批详情页用：单条金额变更申请 + 所属合同摘要 */
@@ -69,6 +71,8 @@ export type AmountChangeDetail = ContractAmountChange & {
 };
 
 export type ContractDetail = Contract & {
+  project: { project_name: string; project_code: string } | null;
+  entity: { entity_name: string } | null;
   amount_changes: ContractAmountChange[];
   payment_requests: {
     id: number;
