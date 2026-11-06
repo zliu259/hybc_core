@@ -383,3 +383,110 @@ describe("parseAiGateTaskResult — 历史驳回回溯", () => {
     expect(parsed.explicitOutcome).toBe(false);
   });
 });
+
+// 事故 SP-20261102-0004：扫描件只读了前 3 页，模型把部分合计当全部，判 amount_terms=fail 拦截。
+describe("parseAiGateTaskResult — 证据覆盖裁决", () => {
+  const partialCoverage = {
+    complete: false,
+    summary: "未读完：《工资表.pdf》共 25 页，已读 20 页，未读第 21-25 页",
+    items: [
+      {
+        name: "工资表.pdf",
+        status: "partial",
+        pages_total: 25,
+        pages_read: 20,
+        description: "《工资表.pdf》共 25 页，已读 20 页，未读第 21-25 页"
+      }
+    ]
+  };
+  const completeCoverage = { complete: true, summary: "附件已全部读取", items: [] };
+
+  it("证据不全时依赖附件的 fail 没有拦截权", () => {
+    const parsed = parseAiGateTaskResult(
+      runnerEnvelope("reject", [{ dimension: "amount_terms", status: "fail" }], "合计不符", {
+        evidence_coverage: partialCoverage
+      }),
+      { bizType: "outbound_contract" }
+    );
+    expect(parsed.outcome).toBe("approve");
+    expect(parsed.decision).toBe("warn");
+    expect(parsed.downgraded).toBe(true);
+    expect(parsed.needsHumanReview).toBe(true);
+    expect(parsed.comment).toContain("未读完全部附件");
+    expect(parsed.comment.startsWith("AI审查放行（需人工重点关注）")).toBe(true);
+    expect(parsed.evidenceCoverage?.complete).toBe(false);
+  });
+
+  it("证据不全时 subject_match 同样不得拦截", () => {
+    const parsed = parseAiGateTaskResult(
+      runnerEnvelope("reject", [{ dimension: "subject_match", status: "fail" }], "主体不符", {
+        evidence_coverage: partialCoverage
+      }),
+      { bizType: "inbound_contract" }
+    );
+    expect(parsed.outcome).toBe("approve");
+  });
+
+  it("证据不全不影响靠系统数据判定的维度（重复支付）", () => {
+    const parsed = parseAiGateTaskResult(
+      runnerEnvelope("reject", [{ dimension: "duplicate_payment", status: "fail" }], "重复支付", {
+        evidence_coverage: partialCoverage
+      }),
+      { bizType: "payment_request" }
+    );
+    expect(parsed.outcome).toBe("reject");
+  });
+
+  it("证据完整时依赖附件的 fail 仍可拦截", () => {
+    const parsed = parseAiGateTaskResult(
+      runnerEnvelope("reject", [{ dimension: "amount_terms", status: "fail" }], "金额矛盾", {
+        evidence_coverage: completeCoverage
+      }),
+      { bizType: "outbound_contract" }
+    );
+    expect(parsed.outcome).toBe("reject");
+    expect(parsed.evidenceCoverage?.complete).toBe(true);
+  });
+
+  it("旧 runner 没有覆盖信息时保持原裁决（偏斜兼容）", () => {
+    const parsed = parseAiGateTaskResult(
+      runnerEnvelope("reject", [{ dimension: "amount_terms", status: "fail" }], "金额矛盾"),
+      { bizType: "outbound_contract" }
+    );
+    expect(parsed.outcome).toBe("reject");
+    expect(parsed.evidenceCoverage).toBeNull();
+  });
+
+  it("超管覆写是人的决定，不受证据覆盖影响", () => {
+    const parsed = parseAiGateTaskResult(
+      runnerEnvelope("reject", [{ dimension: "amount_terms", status: "fail" }], "人工判定", {
+        evidence_coverage: partialCoverage,
+        manual_override: true
+      }),
+      { bizType: "outbound_contract" }
+    );
+    expect(parsed.outcome).toBe("reject");
+  });
+
+  it("output 兜底路径同样过证据裁决", () => {
+    const parsed = parseAiGateTaskResult(
+      envelope(gateOutput("reject", [{ dimension: "amount_terms", status: "fail" }]), {
+        evidence_coverage: partialCoverage
+      }),
+      { bizType: "outbound_contract" }
+    );
+    expect(parsed.outcome).toBe("approve");
+    expect(parsed.comment).toContain("未读完全部附件");
+  });
+
+  it("覆盖信息形状异常时按没有处理，不抛异常", () => {
+    const parsed = parseAiGateTaskResult(
+      runnerEnvelope("reject", [{ dimension: "amount_terms", status: "fail" }], "金额矛盾", {
+        evidence_coverage: "not-an-object"
+      }),
+      { bizType: "outbound_contract" }
+    );
+    expect(parsed.outcome).toBe("reject");
+    expect(parsed.evidenceCoverage).toBeNull();
+  });
+});

@@ -7,6 +7,10 @@ import {
 describe("completenessModelShortName", () => {
   it("terra/sonnet 简名映射", () => {
     expect(completenessModelShortName("openai/gpt-5.6-terra")).toBe("terra");
+    expect(completenessModelShortName("openai/gpt-6.1-terra")).toBe("terra");
+    expect(completenessModelShortName("anthropic/claude-sonnet-5.5")).toBe(
+      "sonnet"
+    );
     expect(completenessModelShortName("anthropic/claude-sonnet-5")).toBe(
       "sonnet"
     );

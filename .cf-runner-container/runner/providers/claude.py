@@ -7,6 +7,7 @@ import logging
 import time
 from typing import Any, Protocol, cast
 
+from ..evidence import build_attachment_note
 from .base import AiProvider, ProviderResult
 
 logger = logging.getLogger(__name__)
@@ -121,14 +122,8 @@ class ClaudeProvider(AiProvider):
             text_blocks = attachment_context.get("text_blocks")
             image_data_urls = attachment_context.get("image_data_urls")
             if isinstance(text_blocks, list) or isinstance(image_data_urls, list):
-                # 转写任务只做逐字誊录，不适用「审查判断/拒绝」样板语
-                attachment_note = (
-                    "以下为需要逐页转写的合同扫描图片。"
-                    if task_type == "contract_precheck_extract"
-                    else (
-                        "以下为系统从附件中提取的正文/图像证据，请必须结合这些证据做审查判断；"
-                        "若业务描述与附件证据不一致，必须拒绝或要求补充材料。"
-                    )
+                attachment_note = build_attachment_note(
+                    task_type, payload.get("_evidence_coverage")
                 )
                 parts: list[dict[str, Any]] = [
                     {
@@ -138,7 +133,8 @@ class ClaudeProvider(AiProvider):
                 ]
 
                 if isinstance(text_blocks, list):
-                    for index, block in enumerate(text_blocks[:8]):
+                    # 附件数与字数上限由 executor 统一控制并记入覆盖信息，这里不再二次截断
+                    for index, block in enumerate(text_blocks):
                         if not isinstance(block, dict):
                             continue
                         block_text = block.get("text")
@@ -152,7 +148,7 @@ class ClaudeProvider(AiProvider):
                         parts.append(
                             {
                                 "type": "text",
-                                "text": f"[Attachment Text {index + 1} | {source}]\n{block_text[:12000]}",
+                                "text": f"[Attachment Text {index + 1} | {source}]\n{block_text}",
                             }
                         )
 
@@ -164,7 +160,8 @@ class ClaudeProvider(AiProvider):
                         if image_part is not None:
                             parts.append(image_part)
 
-                if len(parts) > 1:
+                # 附件全部读不出来时也要把读取情况告诉模型，否则它会把"没读到"当成"没有"
+                if len(parts) > 1 or payload.get("_evidence_coverage"):
                     user_content = parts
                     use_multimodal = True
 

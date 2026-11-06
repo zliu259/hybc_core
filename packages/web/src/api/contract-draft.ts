@@ -133,7 +133,7 @@ export type CompletenessResult = {
 
 /**
  * 完整检查 v2 前后递进结果（completeness_result_json / check.result_json）：
- * initial=terra 初版结论，audit=sonnet-5 复核把关（最终结论以 audit 为准）。
+ * initial=terra 初版结论，audit=sonnet 复核把关（最终结论以 audit 为准）。
  */
 export type CompletenessReport = {
   initial: { model: string; result: CompletenessResult };

@@ -9,6 +9,8 @@
  * 成同样的表格呈现，不做假定、不吞内容。
  */
 import { computed } from "vue";
+import type { AiEvidenceCoverage } from "@/api/approval";
+import CoverageNote from "./CoverageNote.vue";
 import {
   humanizeAiText,
   normalizeAiFindings,
@@ -111,6 +113,16 @@ const report = computed<Record<string, unknown> | null>(() => {
     }
   }
   return null;
+});
+
+/** 附件读取情况：只提示没读全的情况；读全了不占报告版面。 */
+const incompleteCoverage = computed<AiEvidenceCoverage | null>(() => {
+  const raw = report.value?.evidence_coverage;
+  if (!raw || typeof raw !== "object") return null;
+  const coverage = raw as Partial<AiEvidenceCoverage>;
+  if (coverage.complete !== false || !Array.isArray(coverage.items))
+    return null;
+  return coverage as AiEvidenceCoverage;
 });
 
 const score = computed<number | null>(() => {
@@ -266,6 +278,7 @@ const pendingHint = computed(() =>
         show-icon
         style="margin-bottom: 8px"
       />
+      <CoverageNote v-if="incompleteCoverage" :coverage="incompleteCoverage" />
       <div class="ai-review-report__head">
         <el-tag
           v-if="overallRisk"
@@ -387,15 +400,18 @@ const pendingHint = computed(() =>
   gap: 8px;
   margin-bottom: 8px;
 }
+
 .ai-review-report__summary {
   margin: 0 0 10px;
   font-weight: 500;
   line-height: 1.6;
   color: var(--el-text-color-primary);
 }
+
 .ai-review-report__block {
   margin-top: 12px;
 }
+
 .ai-review-report__label {
   display: flex;
   gap: 8px;
@@ -404,18 +420,22 @@ const pendingHint = computed(() =>
   font-size: 13px;
   color: var(--el-text-color-secondary);
 }
+
 .ai-review-report__text {
   margin: 0;
   line-height: 1.6;
 }
+
 .ai-review-report__list {
   padding-left: 18px;
   margin: 0;
   line-height: 1.7;
 }
+
 .ai-review-report__table {
   margin-top: 12px;
 }
+
 .ai-review-report__raw {
   padding: 8px;
   margin: 8px 0 0;
