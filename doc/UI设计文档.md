@@ -46,7 +46,8 @@
 - 财务中心-实体资料管理：`packages/web/src/views/entity/index.vue`（路由：`/finance/entity/profile`）
 - 数据字典管理：`packages/web/src/views/dict/index.vue`
 - 项目列表：`packages/web/src/views/project/list.vue`
-- 项目选择大厅：`packages/web/src/views/project/hub.vue`
+- 项目选择大厅：`packages/web/src/views/project/hub.vue`（2026-11-06 起负责人显示名字；项目工作区头部的负责人、项目经理下拉框同样只显示名字）
+- 人员显示规则（2026-11-06）：页面上只读的人员（负责人、填报人、执行人、处理人、操作人等）一律显示名字，用 `useWecomUserOptions` 的 `userNameOf`；通讯录里没有的人（如已离职）显示账号，不留空。选人下拉框也只显示名字，只能按名字搜索。企业微信通讯录、成员查看页的账号列保留。
 - 项目立项：`packages/web/src/views/project/create.vue`
 - 项目详情：`packages/web/src/views/project/detail.vue`
 - 企业微信通讯录：`packages/web/src/views/wecom/contacts.vue`
@@ -859,6 +860,24 @@
 ### 4.1 页面总索引
 
 - 工作台（Tab1）：`packages/miniapp/pages/index/index`
+  - 2026-11-06 重做，下面的规则取代本文后面对工作台的旧描述。第一屏的内容都能点。
+  - 顺序：问候和日期、待办数字（待审批、被退回、待复核、进度预警、库房任务，按角色显示，点了直接去处理）、常用入口 8 个、待我审批前 3 条（点了直接进详情）、全部功能。
+  - 待办数字最多 4 个，放不下时先去掉数字为 0 的；有事的不会被挤掉。没取到的显示 `-`，不能显示成 0。
+  - 入口是实色方块配白色线条图标（Lucide，见 `assets/workbench/README.md`），颜色表示类别：现场绿、财务橙、项目和管理蓝、查询和记录灰。入口和后端角色一致，只放点得进去的。
+  - 常用入口按角色给默认顺序；同一个入口用满 3 次后往前排，一次使用过程中位置不变。
+  - 视图逻辑在 `utils/workbench-view.js`，流程测试 `utils/workbench-page.test.js`。
+- 项目列表：`packages/miniapp/pages/project-list/index`（2026-11-06 重做）
+  - 搜索和状态标签选了就生效，“只看我负责的”走接口 `manager_userid` 筛选；每页 20 条，上拉加载，下拉刷新。
+  - 卡片只放项目名、状态、负责人、开工日期、位置。办公室、仓库两个占位项目不显示。已归档的项目排在后面，文字变浅。
+- 项目详情：`packages/miniapp/pages/project-detail/index`（2026-11-06 重做）
+  - 阅读顺序：头部（编号、状态、项目名、五段阶段条、项目经理、开工日期、位置、写项目日志）、项目交底、外部日志复核入口（只给有权限的人）、标段进度、项目日志、财务摘要。
+  - 项目交底：至少两项“项：内容”才拆成一行一项，否则整段显示，避免一段话都被算成第一个冒号的内容。没填时写明还没有填写。
+  - 项目日志默认露 5 条，可展开。“写项目日志”只显示给能写的人，已归档的项目不显示。
+  - 某一块取不到只影响那一块，提示下拉刷新；项目本身取不到才显示错误页和重试。
+  - 视图逻辑在 `utils/project-view.js`，流程测试 `utils/project-pages.test.js`。
+- 流程查询（仅超级管理员）：`packages/miniapp/packageTools/query-approval/index`，入口在综合查询（2026-11-06 新增）
+  - 按审批单号或摘要搜索，按状态、业务类型、发起人筛选，上拉加载。进行中的单子显示当前节点和等谁处理，点一条进审批详情。
+  - 其他角色看不到入口，直接打开也会被挡回去。接口 `GET /api/v1/approval/admin/all` 仍允许 `super_admin`、`manager`，网页审批监控台在用。
 - 项目驾驶舱（管理人员）：`packages/miniapp/pages/manager-dashboard/index`
 - 外部日志复核：`packages/miniapp/pages/external-log-review/index`
 - 库房（Tab2）：`packages/miniapp/pages/warehouse/index`
