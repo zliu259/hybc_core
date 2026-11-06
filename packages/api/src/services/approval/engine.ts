@@ -952,8 +952,8 @@ const recordNodeTimeout = async (
   if (claim.meta.changes !== 1) return false;
 
   try {
-    // 只写 event_log，不进队列：这个事件没有消费方，而 queue() 收到任何事件都会再写一行。
-    // 以后要做超时催办时才改回 publishEvent，并处理消费者的重复写入。
+    // 只写 event_log，不进队列：这个事件没有消费方，投递只会白白占用队列操作。
+    // 以后要做超时催办时再改回 publishEvent。
     await logEvent(env, {
       type: "APPROVAL_TIMEOUT",
       source: "approval-engine",

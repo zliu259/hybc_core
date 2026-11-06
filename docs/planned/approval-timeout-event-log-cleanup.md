@@ -15,7 +15,7 @@
 真正的原因是同一个事件写了两次：
 
 1. `publishEvent`（`services/event-bus.ts`）写一行，再投递到队列。
-2. 队列消费者 `queue()`（`queue-handler.ts`）收到后，不管什么事件都先 `logEvent` 再写一行。
+2. 队列消费者 `queue()`（`queue-handler.ts`）收到后，不管什么事件都先 `logEvent` 再写一行。这一处现在已经去掉，新事件只写一行。
 
 测试复现：2 个节点巡检 2 次，得到 8 行。按 3,558 行/天推算，生产上大约有 74 个超时节点在持续产生事件。
 
@@ -115,6 +115,28 @@ SELECT COUNT(*) AS total, SUM(LENGTH(event_payload)) AS payload_bytes,
 FROM event_log WHERE event_type = 'APPROVAL_TIMEOUT';
 ```
 
-## 没有处理的问题
+## 其它事件类型的历史重复行
 
-`queue()` 的重复写入影响所有经过 `publishEvent` 的事件，不只是超时事件。这次只让 `APPROVAL_TIMEOUT` 绕开队列，其它事件类型仍然写两行，需要单独处理。
+`queue()` 的重复写入以前影响所有经过 `publishEvent` 的事件。代码已修复，但其它事件类型的历史重复行还在，**这次不清理**。是否值得清理，先用下面的只读查询评估，同样需要 owner 同意后再查生产。
+
+查询按月统计，同一事件的多行 `created_at` 和负载完全相同，每次都会扫一遍 `event_log`：
+
+```sql
+SELECT event_type,
+       COUNT(*) AS duplicated_events,
+       SUM(copies - 1) AS extra_rows,
+       SUM(bytes * (copies - 1)) AS extra_payload_bytes
+FROM (
+  SELECT event_type, COUNT(*) AS copies, LENGTH(event_payload) AS bytes
+  FROM event_log
+  WHERE event_type != 'APPROVAL_TIMEOUT'
+    AND created_at >= '2026-10-01T00:00:00.000Z'
+    AND created_at < '2026-11-01T00:00:00.000Z'
+  GROUP BY event_type, created_at, event_payload
+  HAVING COUNT(*) > 1
+)
+GROUP BY event_type
+ORDER BY extra_rows DESC;
+```
+
+`extra_rows` 是可以删掉的行数，`extra_payload_bytes` 只算负载，实际占用还要加上其它字段和索引。这条查询已在本地 D1 上用合成数据核对过。

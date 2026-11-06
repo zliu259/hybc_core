@@ -1,5 +1,5 @@
 import type { Env } from "./types/env";
-import { logEvent, type DomainEvent } from "./services/event-bus";
+import type { DomainEvent } from "./services/event-bus";
 import { advanceWorkflow } from "./services/approval/engine";
 import { parseAiGateTaskResult } from "./services/approval/ai-gate-result";
 import { applyAiGateDecision } from "./services/approval/ai-gate-apply";
@@ -621,8 +621,8 @@ const resolveRejectPushReason = async (env: Env, instanceId: number): Promise<st
 export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise<void> => {
   for (const msg of batch.messages) {
     try {
+      // publishEvent 投递前已写过 event_log，这里不再写。
       const event = msg.body;
-      await logEvent(env, event);
 
       switch (event.type) {
         case "APPROVAL_SUBMITTED": {
