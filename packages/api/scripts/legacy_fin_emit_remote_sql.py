@@ -140,73 +140,38 @@ def sql_num(value: float) -> str:
 
 # ---------- amount-cn.ts 的 Python 移植（与 JS 逐语义对齐） ----------
 CN_DIGITS = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"]
-CN_UNITS = ["", "拾", "佰", "仟"]
-CN_SECTION_UNITS = ["", "万", "亿", "万亿"]
-
-
-def _convert_section(section: int) -> str:
-    result = ""
-    unit_index = 0
-    need_zero = False
-    while section > 0:
-        digit = section % 10
-        if digit == 0:
-            need_zero = True
-        else:
-            if need_zero:
-                result = CN_DIGITS[0] + result
-                need_zero = False
-            result = CN_DIGITS[digit] + CN_UNITS[unit_index] + result
-        section //= 10
-        unit_index += 1
-    return result
+CN_UNITS = [(100000000, "亿"), (10000, "万"), (1000, "仟"), (100, "佰"), (10, "拾")]
 
 
 def _convert_integer(n: int) -> str:
-    if n == 0:
-        return CN_DIGITS[0]
-    result = ""
-    section_index = 0
-    need_zero = False
-    while n > 0:
-        section = n % 10000
-        if section != 0:
-            section_str = _convert_section(section)
-            if need_zero:
-                result = section_str + CN_SECTION_UNITS[section_index] + "零" + result
-            else:
-                result = section_str + CN_SECTION_UNITS[section_index] + result
-            need_zero = False
-        else:
-            need_zero = True
-        n //= 10000
-        section_index += 1
-    return result
+    unit = next((u for u in CN_UNITS if n >= u[0]), None)
+    if unit is None:
+        return CN_DIGITS[n]
+    base, name = unit
+    high = _convert_integer(n // base) + name
+    low = n % base
+    if low == 0:
+        return high
+    return high + (CN_DIGITS[0] if low < base // 10 else "") + _convert_integer(low)
 
 
 def to_amount_chinese(amount: float) -> str:
-    if amount < 0:
-        return "负" + to_amount_chinese(-amount)
-    if amount == 0:
+    cents = math.floor(abs(amount) * 100 + 0.5)  # JS Math.round：half 向上
+    if cents == 0:
         return "零元整"
-    rounded = math.floor(amount * 100 + 0.5)  # JS Math.round：half 向上
-    integer_part = rounded // 100
-    decimal_part = rounded % 100
-    jiao = decimal_part // 10
-    fen = decimal_part % 10
-    result = ""
-    if integer_part > 0:
-        result = _convert_integer(integer_part) + "元"
+    yuan = cents // 100
+    jiao = cents // 10 % 10
+    fen = cents % 10
+    sign = "负" if amount < 0 else ""
+    yuan_text = _convert_integer(yuan) + "元" if yuan > 0 else ""
     if jiao == 0 and fen == 0:
-        result += "整"
+        return sign + yuan_text + "整"
+    if jiao > 0:
+        jiao_text = CN_DIGITS[jiao] + "角"
     else:
-        if integer_part > 0 and jiao == 0:
-            result += "零"
-        if jiao > 0:
-            result += CN_DIGITS[jiao] + "角"
-        if fen > 0:
-            result += CN_DIGITS[fen] + "分"
-    return result
+        jiao_text = CN_DIGITS[0] if yuan > 0 else ""
+    fen_text = CN_DIGITS[fen] + "分" if fen > 0 else ""
+    return sign + yuan_text + jiao_text + fen_text
 
 
 def run_amount_cn_parity(ts_path: Path, amounts: list[float]) -> dict[str, Any]:

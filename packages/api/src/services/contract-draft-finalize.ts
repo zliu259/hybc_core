@@ -1,7 +1,7 @@
 // packages/api/src/services/contract-draft-finalize.ts
 // 定稿固化：服务端关键字表构建（与 web 端 keywordValues 同口径）+ 占位符替换。
 // 大写金额由本服务经 toAmountChinese 生成，AI 与前端不生成数字。
-import { toAmountChinese } from "./amount-cn";
+import { canConvertAmount, toAmountChinese } from "./amount-cn";
 import { TABLE_SENTINEL } from "./contract-draft-table";
 import type { ContractDraft } from "../types/contract-draft";
 
@@ -77,7 +77,7 @@ export const buildKeywordValues = (
   setIf(values, "party_b_bank_account", partyB.account);
 
   const amount = Number(values.amount);
-  if (Number.isFinite(amount) && amount > 0) {
+  if (amount > 0 && canConvertAmount(amount)) {
     values.amount_cn = toAmountChinese(amount);
   } else {
     delete values.amount_cn;

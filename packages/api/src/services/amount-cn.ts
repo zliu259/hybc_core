@@ -1,86 +1,58 @@
+// 人民币大写金额，落库口径（payment_request.amount_cn、合同定稿 amount_cn）。
+// packages/web/src/utils/amount-cn.ts 是同算法的展示版本，改这里必须同步那边。
+// 规则：
+// - 每四位一级，级末尾的零不写；其余位置一个或连续几个零只写一个"零"；
+// - 万位是零而千位不是零时不写"零"，元位是零而角位不是零时也不写；
+// - 角位是零而分位不是零时，元后写"零"；
+// - 到元为止写"整"，有角或分不写"整"。
 const CN_DIGITS = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
-const CN_UNITS = ["", "拾", "佰", "仟"];
-const CN_SECTION_UNITS = ["", "万", "亿", "万亿"];
+const CN_UNITS = [
+  { base: 100000000, name: "亿" },
+  { base: 10000, name: "万" },
+  { base: 1000, name: "仟" },
+  { base: 100, name: "佰" },
+  { base: 10, name: "拾" }
+];
+
+// 拆成「高位 + 单位 + 低位」：低位为零就不写，低位最高一位是零才补一个"零"。
+// 整级为零（如 100001000 的万级）也落在这条规则里。
+const convertInteger = (n: number): string => {
+  const unit = CN_UNITS.find(({ base }) => n >= base);
+  if (!unit) return CN_DIGITS[n];
+
+  const high = convertInteger(Math.floor(n / unit.base)) + unit.name;
+  const low = n % unit.base;
+  if (low === 0) return high;
+  return high + (low < unit.base / 10 ? CN_DIGITS[0] : "") + convertInteger(low);
+};
+
+const toCents = (amount: number): number => Math.round(Math.abs(amount) * 100);
+
+export const canConvertAmount = (amount: number): boolean =>
+  Number.isFinite(amount) && Number.isSafeInteger(toCents(amount));
 
 export const toAmountChinese = (amount: number): string => {
-  if (amount < 0) return `负${toAmountChinese(-amount)}`;
-  if (amount === 0) return "零元整";
-
-  const rounded = Math.round(amount * 100);
-  const integerPart = Math.floor(rounded / 100);
-  const decimalPart = rounded % 100;
-  const jiao = Math.floor(decimalPart / 10);
-  const fen = decimalPart % 10;
-
-  let result = "";
-
-  if (integerPart > 0) {
-    result = convertInteger(integerPart) + "元";
+  // payment 路由的 body 没有运行时校验，字符串金额也会传到这里。
+  const value = Number(amount);
+  if (!Number.isFinite(value)) {
+    throw new TypeError(`toAmountChinese: amount must be a finite number, got ${String(amount)}`);
+  }
+  if (!canConvertAmount(value)) {
+    throw new RangeError(`toAmountChinese: amount out of range, got ${String(amount)}`);
   }
 
-  if (jiao === 0 && fen === 0) {
-    result += "整";
-  } else {
-    if (integerPart > 0 && jiao === 0) {
-      result += "零";
-    }
-    if (jiao > 0) {
-      result += CN_DIGITS[jiao] + "角";
-    }
-    if (fen > 0) {
-      result += CN_DIGITS[fen] + "分";
-    }
-  }
+  const cents = toCents(value);
+  if (cents === 0) return "零元整";
 
-  return result;
-};
+  const yuan = Math.floor(cents / 100);
+  const jiao = Math.floor(cents / 10) % 10;
+  const fen = cents % 10;
 
-const convertInteger = (n: number): string => {
-  if (n === 0) return CN_DIGITS[0];
+  const sign = value < 0 ? "负" : "";
+  const yuanText = yuan > 0 ? `${convertInteger(yuan)}元` : "";
+  if (jiao === 0 && fen === 0) return `${sign}${yuanText}整`;
 
-  let result = "";
-  let sectionIndex = 0;
-  let needZero = false;
-
-  while (n > 0) {
-    const section = n % 10000;
-    if (section !== 0) {
-      const sectionStr = convertSection(section);
-      if (needZero) {
-        result = sectionStr + CN_SECTION_UNITS[sectionIndex] + "零" + result;
-      } else {
-        result = sectionStr + CN_SECTION_UNITS[sectionIndex] + result;
-      }
-      needZero = false;
-    } else {
-      needZero = true;
-    }
-    n = Math.floor(n / 10000);
-    sectionIndex++;
-  }
-
-  return result;
-};
-
-const convertSection = (section: number): string => {
-  let result = "";
-  let unitIndex = 0;
-  let needZero = false;
-
-  while (section > 0) {
-    const digit = section % 10;
-    if (digit === 0) {
-      needZero = true;
-    } else {
-      if (needZero) {
-        result = CN_DIGITS[0] + result;
-        needZero = false;
-      }
-      result = CN_DIGITS[digit] + CN_UNITS[unitIndex] + result;
-    }
-    section = Math.floor(section / 10);
-    unitIndex++;
-  }
-
-  return result;
+  const jiaoText = jiao > 0 ? `${CN_DIGITS[jiao]}角` : yuan > 0 ? CN_DIGITS[0] : "";
+  const fenText = fen > 0 ? `${CN_DIGITS[fen]}分` : "";
+  return `${sign}${yuanText}${jiaoText}${fenText}`;
 };

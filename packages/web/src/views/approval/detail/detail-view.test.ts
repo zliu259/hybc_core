@@ -88,6 +88,13 @@ describe("金额与文件大小", () => {
     expect(toChineseAmount(560)).toBe("伍佰陆拾元整");
   });
 
+  it("大写金额不漏写该有的零，也不写多余的零元", () => {
+    expect(toChineseAmount(200400)).toBe("贰拾万零肆佰元整");
+    expect(toChineseAmount(10005)).toBe("壹万零伍元整");
+    expect(toChineseAmount(100.05)).toBe("壹佰元零伍分");
+    expect(toChineseAmount(0.5)).toBe("伍角");
+  });
+
   it("文件大小换算成人能读的单位，不再显示裸字节数", () => {
     expect(formatFileSize(1923659)).toBe("1.8 MB");
     expect(formatFileSize(62078)).toBe("60.6 KB");
