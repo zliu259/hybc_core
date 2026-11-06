@@ -15,7 +15,7 @@ import type {
 import type { InstanceConfig } from "../types/approval";
 import { writeAuditLog } from "../services/audit-log";
 import { generateSerial } from "../services/serial";
-import { toAmountChinese } from "../services/amount-cn";
+import { canConvertAmount, toAmountChinese } from "../services/amount-cn";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
 import {
@@ -225,6 +225,16 @@ const getNoContractThreshold = async (env: Env): Promise<number> => {
   const min = row?.min_threshold ?? null;
   return typeof min === "number" && Number.isFinite(min) ? min : DEFAULT_NO_CONTRACT_THRESHOLD;
 };
+
+// body 只有类型断言。转不成大写的金额要在这里拦下，否则会在写库途中抛错。
+const isConvertibleAmount = (raw: unknown): boolean =>
+  (typeof raw === "number" || (typeof raw === "string" && raw.trim() !== "")) &&
+  canConvertAmount(Number(raw));
+
+const INVALID_AMOUNT_RESPONSE = {
+  success: false,
+  error: { message: "金额无效，请填写数字金额" }
+} as const;
 
 const normalizeTextForIdempotency = (value: string | null | undefined) => {
   return String(value ?? "").trim().replace(/\s+/g, " ");
@@ -698,6 +708,9 @@ paymentRoutes.post(
   async (c) => {
     const auth = c.get("auth");
     const body = (await c.req.json()) as CreatePaymentRequestBody;
+    if (!isConvertibleAmount(body.amount)) {
+      return c.json(INVALID_AMOUNT_RESPONSE, 400);
+    }
     const now = nowIso();
 
     const contractId = typeof body.contract_id === "number" ? body.contract_id : null;
@@ -852,6 +865,9 @@ paymentRoutes.put(
     const auth = c.get("auth");
     const id = Number(c.req.param("id"));
     const body = (await c.req.json()) as UpdatePaymentRequestBody;
+    if (body.amount !== undefined && !isConvertibleAmount(body.amount)) {
+      return c.json(INVALID_AMOUNT_RESPONSE, 400);
+    }
     const now = nowIso();
     const isSuperAdmin = auth.roles.includes("super_admin");
 

@@ -1,66 +1,8 @@
+import { toChineseAmount } from "@/utils/amount-cn";
 import type { AttachmentItem, RemarkEdit, TagType } from "./types";
 
-/** 金额转大写。页面按金额现算，不读 amount_cn：存量和新单里都有写错的旧值。 */
-export const toChineseAmount = (amount: number): string => {
-  if (!Number.isFinite(amount) || amount < 0) return "金额格式错误";
-  if (amount === 0) return "零元整";
-
-  const fractionUnits = ["角", "分"];
-  const digit = ["零", "壹", "贰", "叁", "肆", "伍", "陆", "柒", "捌", "玖"];
-  const intUnits = ["", "拾", "佰", "仟"];
-  const sectionUnits = ["", "万", "亿", "兆"];
-
-  let value = Math.round(amount * 100);
-  const fraction = value % 100;
-  let result = "";
-
-  if (fraction === 0) {
-    result = "整";
-  } else {
-    const jiao = Math.floor(fraction / 10);
-    const fen = fraction % 10;
-    if (jiao > 0) result += `${digit[jiao]}${fractionUnits[0]}`;
-    if (fen > 0) result += `${digit[fen]}${fractionUnits[1]}`;
-  }
-
-  value = Math.floor(value / 100);
-  let sectionIndex = 0;
-  let intResult = "";
-
-  while (value > 0 && sectionIndex < sectionUnits.length) {
-    const sectionValue = value % 10000;
-    if (sectionValue !== 0) {
-      let sectionText = "";
-      let unitIndex = 0;
-      let section = sectionValue;
-      let zeroPending = false;
-      while (section > 0) {
-        const num = section % 10;
-        if (num === 0) {
-          if (!zeroPending && sectionText) {
-            zeroPending = true;
-            sectionText = `零${sectionText}`;
-          }
-        } else {
-          zeroPending = false;
-          sectionText = `${digit[num]}${intUnits[unitIndex]}${sectionText}`;
-        }
-        unitIndex += 1;
-        section = Math.floor(section / 10);
-      }
-      sectionText = sectionText.replace(/零+/g, "零").replace(/零$/g, "");
-      intResult = `${sectionText}${sectionUnits[sectionIndex]}${intResult}`;
-    } else if (intResult && !intResult.startsWith("零")) {
-      intResult = `零${intResult}`;
-    }
-    sectionIndex += 1;
-    value = Math.floor(value / 10000);
-  }
-
-  intResult = intResult.replace(/零+/g, "零").replace(/零([万亿兆])/g, "$1");
-  intResult = intResult.replace(/亿万/g, "亿").replace(/零$/g, "");
-  return `${intResult || "零"}元${result}`;
-};
+// 页面按金额现算大写，不读 amount_cn：存量里有写错的旧值。
+export { toChineseAmount };
 
 export const formatAmount = (amount: number | null | undefined): string => {
   if (typeof amount !== "number" || !Number.isFinite(amount)) return "-";

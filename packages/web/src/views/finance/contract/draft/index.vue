@@ -40,7 +40,7 @@ import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useContractDraftAI } from "./composables/useContractDraftAI";
 import { parseCompletenessReport } from "./lib/completeness-report";
 import { parseReviewResult } from "./lib/review-result";
-import { amountToChinese } from "./lib/amount-cn";
+import { toChineseAmount } from "@/utils/amount-cn";
 import { buildContractDocxBlocks } from "./lib/contract-docx-blocks";
 import { collectUnfilledKeys, fillPlaceholdersForDoc } from "./lib/segments";
 import { downloadDocxFromBlocks } from "@/views/bidding/dedup/lib/docx-export";
@@ -173,7 +173,7 @@ const keywordValues = computed<Record<string, string>>(() => {
   // amount 与 amount_cn 关联：填了数字金额即自动派生大写（展示用；定稿以后端为权威）
   const amountNum = Number(base.amount);
   if (Number.isFinite(amountNum) && amountNum > 0) {
-    base.amount_cn = amountToChinese(amountNum);
+    base.amount_cn = toChineseAmount(amountNum);
   }
   if (!cp) return base;
   const acct = selectedBankAccount.value;
