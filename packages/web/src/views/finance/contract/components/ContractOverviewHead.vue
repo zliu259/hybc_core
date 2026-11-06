@@ -114,28 +114,6 @@ const groupLabel = computed(() =>
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .overview-head__ribbon {
-    animation: none;
-  }
-
-  .overview-head__segment,
-  .overview-head__band {
-    transition: none;
-  }
-}
-
-@media (width <= 720px) {
-  .overview-head__headline {
-    font-size: 20px;
-    line-height: 28px;
-  }
-
-  .overview-head__bands {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-}
-
 .overview-head__headline {
   margin: 0;
   font-size: 24px;
@@ -270,5 +248,27 @@ const groupLabel = computed(() =>
   align-items: center;
   font-size: 14px;
   color: #b8322a;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .overview-head__ribbon {
+    animation: none;
+  }
+
+  .overview-head__segment,
+  .overview-head__band {
+    transition: none;
+  }
+}
+
+@media (width <= 720px) {
+  .overview-head__headline {
+    font-size: 20px;
+    line-height: 28px;
+  }
+
+  .overview-head__bands {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 </style>
