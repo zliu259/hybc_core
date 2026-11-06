@@ -1,322 +1,322 @@
-<view class="page" wx:if="{{detailState === 'ready' && detail}}">
-  <view class="detail-content">
-    <view class="section-wrap section-summary">
-      <hy-panel-card title="{{detail.instance.instance_no}}" subtitle="{{detail.instance.biz_summary}}">
-        <view class="meta-row">
-          <t-tag theme="primary" variant="light">{{detail.instance.bizTypeLabel}}</t-tag>
-          <t-tag theme="{{detail.instance.status === 'approved' ? 'success' : detail.instance.status === 'rejected' ? 'danger' : detail.instance.status === 'pending' ? 'warning' : 'default'}}" variant="light">{{detail.instance.statusText}}</t-tag>
+<view class="page detail-page {{footerMode ? 'has-footer' : ''}}" wx:if="{{detailState === 'ready' && hero}}">
+  <!-- 头部：版式取自付款凭证，先看多少钱、干什么用 -->
+  <view class="card hero">
+    <view class="hero-head">
+      <text class="hero-label">{{hero.amountLabel || hero.bizTypeLabel}}</text>
+      <t-tag theme="{{hero.statusTheme}}" variant="light" size="small">{{hero.statusText}}</t-tag>
+    </view>
+    <block wx:if="{{hero.amountText}}">
+      <view class="voucher-amount">{{hero.amountText}}<text class="voucher-unit">元</text></view>
+      <view class="voucher-upper">{{hero.amountUpper}}</view>
+    </block>
+    <view class="hero-title">{{hero.title}}</view>
+    <view class="stop-notice {{stopIsReturned ? 'stop-returned' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
+    <view class="kv" wx:for="{{hero.facts}}" wx:key="label">
+      <text class="k">{{item.label}}</text>
+      <text class="v">{{item.value}}</text>
+    </view>
+    <view class="hero-foot">
+      <text wx:if="{{hero.waitText}}" class="hero-wait">{{hero.waitText}}</text>
+      <text class="hero-no">{{hero.amountText ? hero.bizTypeLabel + ' · ' : ''}}{{hero.bizNo}}</text>
+    </view>
+  </view>
+
+  <!-- AI 审查：先判定和一句话，再列需要人关注的项 -->
+  <view class="card">
+    <view class="card-head">
+      <text class="card-title">AI 审查</text>
+      <t-tag wx:if="{{ai.latest && ai.latest.verdictLabel !== '-'}}" theme="{{ai.latest.verdictTheme}}" variant="light" size="small">{{ai.latest.verdictLabel}}</t-tag>
+    </view>
+    <block wx:if="{{ai.latest}}">
+      <!-- 没读完附件时结论可能不成立，告警排在结论之前 -->
+      <view class="coverage-alert" wx:if="{{ai.latest.coverage.incomplete}}">
+        <view class="coverage-title">{{ai.latest.coverage.title}}</view>
+        <view class="coverage-row" wx:for="{{ai.latest.coverage.rows}}" wx:key="key">{{item.text}}</view>
+      </view>
+      <view class="ai-summary">{{ai.latest.summary}}</view>
+      <view class="ai-note" wx:if="{{ai.latest.commentFallback}}">{{ai.latest.commentFallback}}</view>
+      <view class="ai-error" wx:if="{{ai.latest.errorText}}">{{ai.latest.errorText}}</view>
+      <view class="ai-note" wx:if="{{ai.latest.coverage && !ai.latest.coverage.incomplete}}">{{ai.latest.coverage.text}}</view>
+
+      <view class="finding" wx:for="{{ai.latest.concerns}}" wx:key="key">
+        <view class="finding-head">
+          <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+          <text class="finding-title">{{item.dimensionLabel}}</text>
         </view>
-        <view class="reject-reason {{detail.instance.status === 'returned' ? 'reason-returned' : ''}}" wx:if="{{stopReasonText}}">{{stopReasonText}}</view>
-        <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">发起人</text><text class="v">{{detail.instance.initiatorLabel}}</text></view>
-        <view class="kv-row" wx:if="{{detail.instance.biz_type === 'reimbursement_batch'}}"><text class="dot dot-blue">•</text><text class="k">被报销人</text><text class="v">{{detail.instance.bizApplicantLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">提交时间</text><text class="v">{{detail.instance.submittedAtText}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成时间</text><text class="v">{{detail.instance.completedAtText}}</text></view>
-      </hy-panel-card>
-    </view>
+        <view class="finding-text" wx:if="{{item.detail}}">{{item.detail}}</view>
+        <view class="finding-evidence" wx:if="{{item.evidence}}">{{item.evidence}}</view>
+      </view>
 
-    <view class="section-divider"></view>
+      <block wx:if="{{ai.latest.recommendations.length > 0}}">
+        <view class="sub-title">建议</view>
+        <view class="bullet" wx:for="{{ai.latest.recommendations}}" wx:key="key">{{item.text}}</view>
+      </block>
 
-    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type === 'payment_request' && bizDetail}}">
-      <hy-panel-card title="申请明细（付款）">
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">流水号</text><text class="v">{{bizDetail.serial_no}}</text></view>
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">关联合同</text><text class="v">{{bizDetail.contractLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">收款方</text><text class="v">{{bizDetail.payee ? bizDetail.payee.name : '-'}}</text></view>
-        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">收款账号</text><text class="v">{{bizDetail.payee ? (bizDetail.payee.bank_name + ' / ' + bizDetail.payee.bank_account) : '-'}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">申请金额</text><text class="v v-strong">{{bizDetail.amountDisplay}}</text></view>
-          <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">付款类别</text><text class="v">{{bizDetail.categoryLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">预计付款日</text><text class="v">{{bizDetail.expected_payment_date}}</text></view>
-          <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">付款方式</text><text class="v">{{bizDetail.paymentMethodLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">付款内容</text><text class="v">{{bizDetail.content}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">备注</text><text class="v">{{bizDetail.remark || '-'}}</text></view>
-
-        <view wx:if="{{canApprove}}" class="section-divider"></view>
-        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款主体</text></view>
-        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentEntityLabels}}" value="{{paymentEntityIndex}}" bindchange="onPaymentEntityChange">
-          <view class="picker-value">{{paymentEntityLabels[paymentEntityIndex]}}</view>
-        </picker>
-        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款账户</text></view>
-        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentAccountLabels}}" value="{{paymentAccountIndex}}" bindchange="onPaymentAccountChange">
-          <view class="picker-value">{{paymentAccountLabels[paymentAccountIndex]}}</view>
-        </picker>
-        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">支付方式</text></view>
-        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentMethodLabelOptions}}" value="{{paymentMethodIndex}}" bindchange="onPaymentMethodChange">
-          <view class="picker-value">{{paymentMethodLabelOptions[paymentMethodIndex]}}</view>
-        </picker>
-        <view wx:if="{{canApprove}}" class="kv-row" style="margin-top: 8px">
-          <t-button size="small" variant="outline" loading="{{acting}}" bindtap="onSavePaymentSelection">保存付款设置</t-button>
-        </view>
-      </hy-panel-card>
-    </view>
-
-    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type === 'contract_amount_change' && bizDetail}}">
-      <hy-panel-card title="申请明细（合同金额变更）">
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">合同号</text><text class="v">{{bizDetail.contractNoLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">方向</text><text class="v">{{bizDetail.directionLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">对方单位</text><text class="v">{{bizDetail.counterpartyLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">原合同金额</text><text class="v">{{bizDetail.oldAmountDisplay}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">新合同金额</text><text class="v v-strong">{{bizDetail.newAmountDisplay}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">变更差额</text><text class="v">{{bizDetail.deltaLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">{{bizDetail.settledLabel}}</text><text class="v">{{bizDetail.settledDisplay}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">申请人</text><text class="v">{{bizDetail.applicantLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">变更缘由</text><text class="v v-multiline">{{bizDetail.reasonText}}</text></view>
-        <view class="kv-row" wx:if="{{detailAttachments.length === 0}}"><text class="dot dot-gray">•</text><text class="k">附件</text><text class="v">申请人未上传附件</text></view>
-      </hy-panel-card>
-    </view>
-
-    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type !== 'payment_request' && detail.instance.biz_type !== 'reimbursement_batch' && detail.instance.biz_type !== 'contract_amount_change' && bizDetail}}">
-      <hy-panel-card title="申请明细（合同）">
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">合同号</text><text class="v">{{bizDetail.contract_no}}</text></view>
-          <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">方向</text><text class="v">{{bizDetail.directionLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">我方主体</text><text class="v">{{bizDetail.entityLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">对方单位</text><text class="v">{{bizDetail.counterparty}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">合同金额</text><text class="v v-strong">{{bizDetail.totalAmountDisplay}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">已付金额</text><text class="v">{{bizDetail.paidAmountDisplay}}</text></view>
-          <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">合同类型</text><text class="v">{{bizDetail.contractTypeLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">经办人</text><text class="v">{{bizDetail.handlerLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">合同日期</text><text class="v">{{bizDetail.contract_date}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">备注</text><text class="v">{{bizDetail.remark || '-'}}</text></view>
-      </hy-panel-card>
-    </view>
-
-    <view class="section-wrap section-biz" wx:if="{{detail.instance.biz_type === 'reimbursement_batch' && bizDetail}}">
-      <hy-panel-card title="申请明细（报销批次）">
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">批次号</text><text class="v">{{bizDetail.batch_no}}</text></view>
-        <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">所属项目</text><text class="v">{{bizDetail.projectLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-green">•</text><text class="k">被报销人</text><text class="v">{{bizDetail.applicantLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">总金额</text><text class="v v-strong">{{bizDetail.totalAmountDisplay}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">单据数</text><text class="v">{{bizDetail.item_count}}</text></view>
-        <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">支付方式</text><text class="v">{{bizDetail.paymentMethodLabel}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">付款账户</text><text class="v">{{bizDetail.paymentAccountLabel}}</text></view>
-
-        <view wx:if="{{canApprove}}" class="section-divider"></view>
-        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款主体</text></view>
-        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentEntityLabels}}" value="{{paymentEntityIndex}}" bindchange="onPaymentEntityChange">
-          <view class="picker-value">{{paymentEntityLabels[paymentEntityIndex]}}</view>
-        </picker>
-        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">付款账户</text></view>
-        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentAccountLabels}}" value="{{paymentAccountIndex}}" bindchange="onPaymentAccountChange">
-          <view class="picker-value">{{paymentAccountLabels[paymentAccountIndex]}}</view>
-        </picker>
-        <view wx:if="{{canApprove}}" class="kv-row"><text class="dot dot-sky">•</text><text class="k">支付方式</text></view>
-        <picker wx:if="{{canApprove}}" mode="selector" range="{{paymentMethodLabelOptions}}" value="{{paymentMethodIndex}}" bindchange="onPaymentMethodChange">
-          <view class="picker-value">{{paymentMethodLabelOptions[paymentMethodIndex]}}</view>
-        </picker>
-        <view wx:if="{{canApprove}}" class="kv-row" style="margin-top: 8px">
-          <t-button size="small" variant="outline" loading="{{acting}}" bindtap="onSavePaymentSelection">保存支付设置</t-button>
-        </view>
-
-        <view class="section-divider" wx:if="{{reimbursementItemRows.length > 0}}"></view>
-        <block wx:for="{{reimbursementItemRows}}" wx:key="id">
-          <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">报销单号</text><text class="v">{{item.envelope_no}}</text></view>
-          <view class="kv-row"><text class="dot dot-sky">•</text><text class="k">发票号</text><text class="v">{{item.invoice_no || '-'}}</text></view>
-          <view class="kv-row"><text class="dot dot-orange">•</text><text class="k">金额</text><text class="v">{{item.amount}}</text></view>
-          <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">单项AI结论</text><text class="v">{{item.aiReasonabilitySummary}}</text></view>
-          <view class="kv-row" wx:if="{{item.invoiceRiskLabel}}"><text class="dot dot-orange">•</text><text class="k">票据风险</text><t-tag theme="{{item.invoiceRiskTheme}}" variant="light" size="small">{{item.invoiceRiskLabel}}</t-tag></view>
-          <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">抽查附件</text></view>
-          <block wx:if="{{item.attachments && item.attachments.length}}">
-            <block wx:for="{{item.attachments}}" wx:key="id">
-              <view class="attach-row">
-                <view class="attach-name">{{item.file_name}}</view>
-                <t-button
-                  size="small"
-                  variant="outline"
-                  data-key="{{item.file_key}}"
-                  data-name="{{item.file_name}}"
-                  bindtap="openAttachment"
-                >查看</t-button>
-              </view>
-            </block>
-          </block>
-          <view class="kv-row" wx:else><text class="dot dot-gray">•</text><text class="k">-</text></view>
-          <view class="section-divider"></view>
-        </block>
-      </hy-panel-card>
-    </view>
-
-    <view class="section-wrap section-attachment" wx:if="{{detailAttachments.length > 0}}">
-      <hy-panel-card title="附件">
-        <block wx:for="{{detailAttachments}}" wx:key="file_key">
-          <view class="attach-row">
-            <view class="attach-name">{{item.file_name}}</view>
-            <t-tag theme="default" variant="light" wx:if="{{item.file_size}}">{{item.file_size}}</t-tag>
-            <t-button size="small" variant="outline" data-key="{{item.file_key}}" data-name="{{item.file_name}}" bindtap="openAttachment">查看</t-button>
+      <view class="fold-link" wx:if="{{ai.latest.passed.length > 0}}" bindtap="toggleAiPassed">{{aiPassedOpen ? '收起' : '另有 ' + ai.latest.passed.length + ' 项未见异常'}}</view>
+      <block wx:if="{{aiPassedOpen}}">
+        <view class="finding" wx:for="{{ai.latest.passed}}" wx:key="key">
+          <view class="finding-head">
+            <t-tag theme="success" variant="light" size="small">{{item.statusLabel}}</t-tag>
+            <text class="finding-title">{{item.dimensionLabel}}</text>
           </view>
-        </block>
-      </hy-panel-card>
-    </view>
+          <view class="finding-text" wx:if="{{item.detail}}">{{item.detail}}</view>
+        </view>
+      </block>
+    </block>
+    <view class="ai-note" wx:elif="{{!aiReportTitle}}">这笔审批没有经过 AI 审查，请人工核对。</view>
 
-    <view class="section-wrap section-ai" wx:if="{{detailAiReviews.length > 0}}">
-      <hy-panel-card title="AI审核结果">
-    <block wx:for="{{detailAiReviews}}" wx:key="task_id" wx:for-index="idx">
-      <view class="ai-item {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}">
-        <view class="meta-row">
-          <t-tag theme="default" variant="light">{{item.nodeLabel}}</t-tag>
-          <t-tag theme="{{item.outcomeTheme || 'default'}}" variant="light">{{item.outcomeLabel}}</t-tag>
-            </view>
-            <view class="kv-row"><text class="dot dot-indigo">•</text><text class="k">状态</text><t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag></view>
-            <view class="kv-row" wx:if="{{item.errorText}}"><text class="dot dot-orange">•</text><text class="k">失败原因</text><text class="v">{{item.errorText}}</text></view>
-            <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">总结</text><text class="v">{{item.commentText}}</text></view>
-            <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成时间</text><text class="v">{{item.completedAtText}}</text></view>
-          </view>
-        </block>
-      </hy-panel-card>
-    </view>
-
-    <view class="section-wrap section-ai-report" wx:if="{{aiBizReport}}">
-      <hy-panel-card title="{{aiBizReport.title}}">
-        <view class="ai-report-hint" wx:if="{{aiBizReport.placeholder}}">{{aiBizReport.placeholder}}</view>
+    <block wx:if="{{aiReportTitle}}">
+      <view class="fold-row" bindtap="toggleAiReport">
+        <text class="fold-title">{{aiReportTitle}}</text>
+        <text class="fold-action">{{aiReportOpen ? '收起' : '展开'}}</text>
+      </view>
+      <block wx:if="{{aiReportOpen && aiBizReport}}">
+        <view class="ai-note" wx:if="{{aiBizReport.placeholder}}">{{aiBizReport.placeholder}}</view>
         <block wx:else>
-          <view class="ai-report-hint" wx:if="{{aiBizReport.pendingHint}}">{{aiBizReport.pendingHint}}</view>
-          <view class="meta-row" wx:if="{{aiBizReport.overallRiskLabel || aiBizReport.scoreText}}">
+          <view class="ai-note" wx:if="{{aiBizReport.pendingHint}}">{{aiBizReport.pendingHint}}</view>
+          <view class="tag-row" wx:if="{{aiBizReport.overallRiskLabel || aiBizReport.scoreText}}">
             <t-tag wx:if="{{aiBizReport.overallRiskLabel}}" theme="{{aiBizReport.overallRiskTheme}}" variant="light" size="small">整体风险：{{aiBizReport.overallRiskLabel}}</t-tag>
             <t-tag wx:if="{{aiBizReport.scoreText}}" theme="{{aiBizReport.scoreTheme}}" variant="light" size="small">{{aiBizReport.scoreText}}</t-tag>
           </view>
-
-          <view class="ai-report-summary" wx:if="{{aiBizReport.summary}}">{{aiBizReport.summary}}</view>
+          <view class="report-text" wx:if="{{aiBizReport.summary}}">{{aiBizReport.summary}}</view>
 
           <block wx:if="{{aiBizReport.scoreBasisRows.length > 0}}">
-            <view class="ai-report-label">分数构成</view>
-            <view class="ai-report-line" wx:for="{{aiBizReport.scoreBasisRows}}" wx:key="key">
-              <text class="dot dot-indigo">•</text><text class="ai-report-line-text">{{item.text}}</text>
-            </view>
+            <view class="sub-title">分数构成</view>
+            <view class="bullet" wx:for="{{aiBizReport.scoreBasisRows}}" wx:key="key">{{item.text}}</view>
           </block>
 
           <block wx:if="{{aiBizReport.clauseRows.length > 0}}">
-            <view class="ai-report-label">条款审查</view>
-            <view class="ai-report-row {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}" wx:for="{{aiBizReport.clauseRows}}" wx:key="key" wx:for-index="idx">
-              <view class="ai-report-row-head">
-                <text class="ai-report-row-title">{{item.clause}}</text>
+            <view class="sub-title">条款审查</view>
+            <view class="finding" wx:for="{{aiBizReport.clauseRows}}" wx:key="key">
+              <view class="finding-head">
                 <t-tag theme="{{item.riskTheme}}" variant="light" size="small">风险{{item.riskLabel}}</t-tag>
+                <text class="finding-title">{{item.clause}}</text>
               </view>
-              <view class="kv-row" wx:if="{{item.issue}}"><text class="dot dot-orange">•</text><text class="k">问题</text><text class="v">{{item.issue}}</text></view>
-              <view class="kv-row" wx:if="{{item.suggestion}}"><text class="dot dot-green">•</text><text class="k">修改建议</text><text class="v">{{item.suggestion}}</text></view>
+              <view class="finding-text" wx:if="{{item.issue}}">{{item.issue}}</view>
+              <view class="finding-evidence" wx:if="{{item.suggestion}}">修改建议：{{item.suggestion}}</view>
             </view>
           </block>
 
           <block wx:if="{{aiBizReport.findingRows.length > 0}}">
-            <view class="ai-report-label">检查发现</view>
-            <view class="ai-report-row {{idx % 2 === 0 ? 'alt-even' : 'alt-odd'}}" wx:for="{{aiBizReport.findingRows}}" wx:key="key" wx:for-index="idx">
-              <view class="ai-report-row-head">
-                <text class="ai-report-row-title">{{item.dimensionLabel}}</text>
+            <view class="sub-title">检查发现</view>
+            <view class="finding" wx:for="{{aiBizReport.findingRows}}" wx:key="key">
+              <view class="finding-head">
                 <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+                <text class="finding-title">{{item.dimensionLabel}}</text>
               </view>
-              <view class="kv-row" wx:if="{{item.detail}}"><text class="dot dot-gray">•</text><text class="k">说明</text><text class="v">{{item.detail}}</text></view>
-              <view class="kv-row" wx:if="{{item.evidence}}"><text class="dot dot-sky">•</text><text class="k">依据</text><text class="v">{{item.evidence}}</text></view>
+              <view class="finding-text" wx:if="{{item.detail}}">{{item.detail}}</view>
+              <view class="finding-evidence" wx:if="{{item.evidence}}">{{item.evidence}}</view>
             </view>
           </block>
 
           <block wx:if="{{aiBizReport.amountAssessment}}">
-            <view class="ai-report-label">
-              <text class="ai-report-label-text">金额合理性</text>
+            <view class="sub-title">
+              <text>金额合理性</text>
               <t-tag wx:if="{{aiBizReport.amountAssessment.riskLabel}}" theme="{{aiBizReport.amountAssessment.riskTheme}}" variant="light" size="small">{{aiBizReport.amountAssessment.riskLabel}}</t-tag>
             </view>
-            <view class="ai-report-text" wx:if="{{aiBizReport.amountAssessment.basis}}">{{aiBizReport.amountAssessment.basis}}</view>
-            <view class="ai-report-line" wx:for="{{aiBizReport.amountAssessment.riskPointRows}}" wx:key="key">
-              <text class="dot dot-orange">•</text><text class="ai-report-line-text">{{item.text}}</text>
-            </view>
+            <view class="report-text" wx:if="{{aiBizReport.amountAssessment.basis}}">{{aiBizReport.amountAssessment.basis}}</view>
+            <view class="bullet" wx:for="{{aiBizReport.amountAssessment.riskPointRows}}" wx:key="key">{{item.text}}</view>
           </block>
 
           <block wx:if="{{aiBizReport.recommendationRows.length > 0}}">
-            <view class="ai-report-label">处理建议</view>
-            <view class="ai-report-line" wx:for="{{aiBizReport.recommendationRows}}" wx:key="key">
-              <text class="dot dot-green">•</text><text class="ai-report-line-text">{{item.text}}</text>
-            </view>
+            <view class="sub-title">处理建议</view>
+            <view class="bullet" wx:for="{{aiBizReport.recommendationRows}}" wx:key="key">{{item.text}}</view>
           </block>
 
           <block wx:if="{{aiBizReport.rawFallback}}">
-            <view class="ai-report-label">AI 返回了非标准结构，以下为原始结果</view>
-            <view class="ai-report-raw">{{aiBizReport.rawFallback}}</view>
+            <view class="sub-title">AI 返回了非标准结构，以下为原始结果</view>
+            <view class="report-raw">{{aiBizReport.rawFallback}}</view>
           </block>
-          <view class="ai-report-hint" wx:elif="{{aiBizReport.emptyHint}}">{{aiBizReport.emptyHint}}</view>
+          <view class="ai-note" wx:elif="{{aiBizReport.emptyHint}}">{{aiBizReport.emptyHint}}</view>
         </block>
-      </hy-panel-card>
-    </view>
-
-    <view class="section-wrap section-ai-report" wx:if="{{detailAuditView}}">
-      <hy-panel-card title="报销批次AI审计报告">
-        <view class="meta-row">
+      </block>
+      <block wx:if="{{aiReportOpen && detailAuditView}}">
+        <view class="tag-row">
           <t-tag theme="{{detailAuditView.statusTheme}}" variant="light" size="small">{{detailAuditView.statusLabel}}</t-tag>
         </view>
-        <view class="ai-report-raw" wx:if="{{detailAuditView.reportText}}">{{detailAuditView.reportText}}</view>
-        <view class="ai-report-hint" wx:else>暂无审计报告</view>
-      </hy-panel-card>
-    </view>
+        <view class="report-raw" wx:if="{{detailAuditView.reportText}}">{{detailAuditView.reportText}}</view>
+        <view class="ai-note" wx:else>暂无审计报告</view>
+      </block>
+    </block>
 
-    <view class="section-wrap section-flow" wx:if="{{detailTimelineNodes.length > 0}}">
-      <hy-panel-card title="审批流程">
-        <view class="flow-toggle-row">
-          <t-tag theme="default" variant="light" bindtap="toggleFlowCollapse">
-            {{flowCollapsed ? '展开流程节点' : '收起流程节点'}}
-          </t-tag>
-        </view>
-        <block wx:if="{{!flowCollapsed}}" wx:for="{{detailTimelineNodes}}" wx:key="id" wx:for-index="nodeIdx">
-          <view class="node-item {{nodeIdx % 2 === 0 ? 'alt-even' : 'alt-odd'}}">
-        <view class="meta-row">
-          <t-tag theme="primary" variant="light">{{item.node_name}}</t-tag>
-          <t-tag theme="default" variant="light" wx:if="{{item.nodeTypeLabel}}">{{item.nodeTypeLabel}}</t-tag>
-          <t-tag theme="default" variant="light">{{item.statusLabel}}</t-tag>
-        </view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">开始</text><text class="v">{{item.startedAtText}}</text></view>
-        <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">完成</text><text class="v">{{item.completedAtText}}</text></view>
-        <block wx:for="{{item.tasks}}" wx:key="id" wx:for-index="taskIdx">
-          <view class="task-item {{taskIdx % 2 === 0 ? 'task-even' : 'task-odd'}}">
-            <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">处理人</text><text class="v">{{item.assigneeLabel}}</text></view>
-            <view class="kv-row"><text class="dot dot-blue">•</text><text class="k">动作</text><text class="v">{{item.actionLabel}}</text></view>
-            <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">时间</text><text class="v">{{item.actedAtText}}</text></view>
-                <view class="kv-row"><text class="dot dot-gray">•</text><text class="k">意见</text><text class="v">{{item.commentText}}</text></view>
-              </view>
-            </block>
+    <block wx:if="{{ai.earlier.length > 0}}">
+      <view class="fold-row" bindtap="toggleAiEarlier">
+        <text class="fold-title">此前 {{ai.earlier.length}} 次审查结论</text>
+        <text class="fold-action">{{aiEarlierOpen ? '收起' : '展开'}}</text>
+      </view>
+      <block wx:if="{{aiEarlierOpen}}">
+        <view class="finding" wx:for="{{ai.earlier}}" wx:key="key">
+          <view class="finding-head">
+            <t-tag wx:if="{{item.verdictLabel !== '-'}}" theme="{{item.verdictTheme}}" variant="light" size="small">{{item.verdictLabel}}</t-tag>
+            <text class="finding-title">{{item.nodeLabel}}</text>
           </view>
-        </block>
-      </hy-panel-card>
+          <view class="finding-text">{{item.summary}}</view>
+          <view class="finding-warn" wx:if="{{item.coverageIncomplete}}">这次 AI 没有读完附件</view>
+          <view class="finding-evidence">{{item.completedAtText}}</view>
+        </view>
+      </block>
+    </block>
+  </view>
+
+  <!-- 明细 -->
+  <view class="card" wx:if="{{detailRows.length > 0}}">
+    <view class="card-head"><text class="card-title">{{detailTitle}}</text></view>
+    <view class="kv" wx:for="{{detailRows}}" wx:key="label">
+      <text class="k">{{item.label}}</text>
+      <text class="v {{item.multiline ? 'v-multiline' : ''}}" user-select="{{true}}">{{item.value}}</text>
     </view>
 
-    <view class="section-wrap section-op" wx:if="{{!readOnlyView && hasAnyAction}}">
-      <hy-panel-card title="审批意见">
-        <textarea class="comment-box" value="{{actionComment}}" bindinput="onCommentInput" placeholder="请输入审批意见（建议填写）" maxlength="1000" />
-      </hy-panel-card>
+    <view class="biz-item" wx:for="{{reimbursementItemRows}}" wx:key="id">
+      <view class="biz-item-head">
+        <text class="biz-item-no">{{item.envelope_no}}</text>
+        <text class="biz-item-amount">{{item.amountText}}</text>
+      </view>
+      <view class="kv" wx:if="{{item.invoice_no}}"><text class="k">发票号</text><text class="v">{{item.invoice_no}}</text></view>
+      <view class="kv"><text class="k">AI 结论</text><text class="v">{{item.aiReasonabilitySummary}}</text></view>
+      <view class="kv" wx:if="{{item.invoiceRiskLabel}}">
+        <text class="k">票据风险</text>
+        <t-tag theme="{{item.invoiceRiskTheme}}" variant="light" size="small">{{item.invoiceRiskLabel}}</t-tag>
+      </view>
+      <view class="attach-row" wx:for="{{item.attachments}}" wx:for-item="file" wx:key="file_key" data-key="{{file.file_key}}" data-name="{{file.file_name}}" bindtap="openAttachment">
+        <text class="attach-ext">{{file.extLabel}}</text>
+        <text class="attach-name">{{file.file_name}}</text>
+        <text class="attach-size" wx:if="{{file.sizeText}}">{{file.sizeText}}</text>
+        <text class="fold-action">查看</text>
+      </view>
+    </view>
+
+    <block wx:if="{{remarkEdits.length > 0}}">
+      <view class="fold-row" bindtap="toggleRemarkEdits">
+        <text class="fold-title">支付信息修改记录（{{remarkEdits.length}} 条）</text>
+        <text class="fold-action">{{remarkEditsOpen ? '收起' : '展开'}}</text>
+      </view>
+      <block wx:if="{{remarkEditsOpen}}">
+        <view class="edit-row" wx:for="{{remarkEdits}}" wx:key="key">
+          <view class="edit-meta">{{item.atText}} · {{item.byText}}</view>
+          <view class="edit-note">{{item.note}}</view>
+        </view>
+      </block>
+    </block>
+  </view>
+
+  <!-- 支付方案：默认一行摘要，要改才展开 -->
+  <view class="card" wx:if="{{payoutVisible}}">
+    <view class="card-head" bindtap="togglePayoutEditor">
+      <text class="card-title">支付方案</text>
+      <text class="fold-action">{{payoutEditorOpen ? '收起' : '修改'}}</text>
+    </view>
+    <view class="payout-summary" wx:if="{{!payoutEditorOpen}}">{{payoutSummary}}</view>
+    <block wx:else>
+      <view class="field-label">支付方式</view>
+      <picker mode="selector" range="{{paymentMethodLabelOptions}}" value="{{paymentMethodIndex}}" bindchange="onPaymentMethodChange">
+        <view class="picker-value">{{paymentMethodLabelOptions[paymentMethodIndex]}}</view>
+      </picker>
+      <view class="field-label">付款主体</view>
+      <picker mode="selector" range="{{paymentEntityLabels}}" value="{{paymentEntityIndex}}" bindchange="onPaymentEntityChange">
+        <view class="picker-value">{{paymentEntityLabels[paymentEntityIndex]}}</view>
+      </picker>
+      <view class="field-label">付款账户</view>
+      <picker mode="selector" range="{{paymentAccountLabels}}" value="{{paymentAccountIndex}}" bindchange="onPaymentAccountChange">
+        <view class="picker-value">{{paymentAccountLabels[paymentAccountIndex]}}</view>
+      </picker>
+      <view class="payout-save">
+        <t-button size="small" variant="outline" disabled="{{acting || !payoutDirty}}" loading="{{pendingAction === 'save_payout'}}" bindtap="onSavePaymentSelection">保存支付方案</t-button>
+      </view>
+    </block>
+  </view>
+
+  <!-- 附件 -->
+  <view class="card" wx:if="{{detailAttachments.length > 0}}">
+    <view class="card-head"><text class="card-title">附件（{{detailAttachments.length}}）</text></view>
+    <view class="attach-row" wx:for="{{detailAttachments}}" wx:key="file_key" data-key="{{item.file_key}}" data-name="{{item.file_name}}" bindtap="openAttachment">
+      <text class="attach-ext">{{item.extLabel}}</text>
+      <text class="attach-name">{{item.file_name}}</text>
+      <text class="attach-size" wx:if="{{item.sizeText}}">{{item.sizeText}}</text>
+      <text class="fold-action">查看</text>
     </view>
   </view>
 
-  <view class="footer-actions" wx:if="{{!readOnlyView && hasAnyAction}}">
-    <view class="footer-row">
-      <view class="footer-col col-40">
-        <view class="footer-cell">
-          <t-button class="action-btn" theme="primary" block disabled="{{!canApprove}}" loading="{{acting}}" bindtap="onApprove">通过</t-button>
+  <!-- 审批流程 -->
+  <view class="card" wx:if="{{detailTimelineNodes.length > 0}}">
+    <view class="card-head" bindtap="toggleFlowCollapse">
+      <text class="card-title">审批流程</text>
+      <text class="fold-action">{{flowCollapsed ? '展开' : '收起'}}</text>
+    </view>
+    <block wx:if="{{!flowCollapsed}}">
+      <view class="flow-node" wx:for="{{detailTimelineNodes}}" wx:key="id">
+        <view class="flow-node-head">
+          <text class="flow-node-name">{{item.node_name}}</text>
+          <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+        </view>
+        <view class="flow-task" wx:for="{{item.tasks}}" wx:for-item="task" wx:key="id">
+          <view class="flow-task-line">
+            <text class="flow-task-who">{{task.assigneeLabel}}</text>
+            <text class="flow-task-action">{{task.actionLabel}}</text>
+          </view>
+          <view class="flow-task-time" wx:if="{{task.actedAtText}}">{{task.actedAtText}}</view>
+          <view class="flow-task-comment" wx:if="{{task.showComment}}">{{task.commentBrief}}</view>
         </view>
       </view>
-      <view class="footer-col col-40">
-        <view class="footer-cell footer-cell-outline">
-          <t-button class="action-btn action-btn-outline" variant="outline" block disabled="{{!canReturn}}" loading="{{acting}}" bindtap="onReturn">退回</t-button>
-        </view>
+    </block>
+  </view>
+
+  <!-- 转办人选择：字段本身不显示，由「更多 → 转办」打开它的搜索弹层 -->
+  <view class="transfer-host" wx:if="{{canTransfer}}">
+    <hy-search-picker id="transferPicker" range="{{transferLabels}}" value="{{0}}" title="转办给" bindchange="onTransferPick" />
+  </view>
+
+  <!-- 底部决策栏：通过是主路径，意见可空；驳回、退回未写原因时就地报错 -->
+  <view class="footer-bar {{keyboardHeight ? 'is-typing' : ''}}" style="bottom: {{keyboardHeight}}px" wx:if="{{footerMode === 'decide'}}">
+    <view class="comment-error" wx:if="{{commentError}}">{{commentError}}</view>
+    <textarea
+      class="comment-input {{commentFocused || actionComment ? 'is-open' : ''}} {{commentError ? 'is-error' : ''}}"
+      value="{{actionComment}}"
+      focus="{{commentFocus}}"
+      fixed="{{true}}"
+      adjust-position="{{false}}"
+      show-confirm-bar="{{false}}"
+      maxlength="1000"
+      placeholder="审批意见（通过时可不填，记为「同意」）"
+      placeholder-class="comment-placeholder"
+      bindinput="onCommentInput"
+      bindfocus="onCommentFocus"
+      bindblur="onCommentBlur"
+      bindkeyboardheightchange="onKeyboardHeightChange"
+    />
+    <view class="quick-row" wx:if="{{commentFocused}}">
+      <view class="quick-chip" wx:for="{{quickComments}}" wx:key="*this" data-text="{{item}}" bindtap="onQuickComment">{{item}}</view>
+    </view>
+    <view class="action-row">
+      <view class="action-cell" wx:if="{{moreActions.length > 0}}">
+        <t-button variant="outline" block disabled="{{acting}}" bindtap="onMoreAction">更多</t-button>
       </view>
-      <view class="footer-col col-20">
-        <view class="footer-cell footer-cell-outline">
-          <t-button class="action-btn action-btn-outline" variant="outline" block disabled="{{!canMoreAction}}" loading="{{acting}}" bindtap="onMoreAction">更多</t-button>
-        </view>
+      <view class="action-cell" wx:if="{{canReturn}}">
+        <t-button variant="outline" block disabled="{{acting}}" loading="{{pendingAction === 'return'}}" bindtap="onReturn">退回</t-button>
+      </view>
+      <view class="action-cell" wx:if="{{canReject}}">
+        <t-button theme="danger" variant="outline" block disabled="{{acting}}" loading="{{pendingAction === 'reject'}}" bindtap="onReject">驳回</t-button>
+      </view>
+      <view class="action-cell action-cell-main" wx:if="{{canApprove}}">
+        <t-button theme="primary" block disabled="{{acting}}" loading="{{pendingAction === 'approve'}}" bindtap="onApprove">通过</t-button>
       </view>
     </view>
   </view>
 
-  <view class="footer-actions" wx:if="{{canEditReturnedBusiness}}">
-    <view class="footer-row">
-      <view class="footer-col col-100">
-        <view class="footer-cell">
-          <t-button class="action-btn" theme="primary" block loading="{{acting}}" bindtap="goEditReturnedBusiness">编辑并重新提交</t-button>
-        </view>
+  <view class="footer-bar" wx:if="{{footerMode === 'manage'}}">
+    <view class="action-row">
+      <view class="action-cell" wx:for="{{manageActions}}" wx:key="action">
+        <t-button variant="outline" block disabled="{{acting}}" loading="{{pendingAction === item.action}}" data-action="{{item.action}}" bindtap="onManageAction">{{item.label}}</t-button>
       </view>
     </view>
   </view>
 
-  <view class="footer-actions footer-acted" wx:if="{{!readOnlyView && !hasAnyAction && userAlreadyActed && !loading}}">
-    <view class="acted-hint">
-      <t-icon name="check-circle" size="36rpx" color="#67c23a" />
-      <text class="acted-hint-text">您已完成本条审批操作</text>
-    </view>
-    <t-button class="action-btn" theme="primary" variant="outline" block bindtap="goToPendingList">返回我的待审批</t-button>
+  <view class="footer-bar" wx:if="{{footerMode === 'edit'}}">
+    <t-button theme="primary" block disabled="{{acting}}" bindtap="goEditReturnedBusiness">编辑并重新提交</t-button>
+  </view>
+
+  <view class="footer-bar footer-acted" wx:if="{{footerMode === 'acted'}}">
+    <view class="acted-hint">您已完成本条审批操作</view>
+    <t-button theme="primary" variant="outline" block bindtap="goToPendingList">返回我的待审批</t-button>
   </view>
 </view>
 
