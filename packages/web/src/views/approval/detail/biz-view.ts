@@ -36,6 +36,9 @@ export type BizView = {
   rows: DetailRow[];
 };
 
+/** 支付方案可以后补，没选的时候要说清楚，不能显示成短横线让人以为没这一项。 */
+const NOT_SPECIFIED = "尚未指定";
+
 const contractLink = (id: number | null | undefined) =>
   id ? `/finance/contract/detail/${id}` : null;
 
@@ -78,6 +81,12 @@ const buildPaymentView = (
         ? `/finance/payment/detail/${payment.id}`
         : null,
       facts: [
+        {
+          label: "付款单位",
+          value: payment.payment_entity_id
+            ? ctx.entity(payment.payment_entity_id)
+            : NOT_SPECIFIED
+        },
         { label: "收款方", value: payment.payee?.name || "-" },
         { label: "所属项目", value: ctx.project(payment.project_id) },
         ...commonFacts(instance, ctx)
@@ -102,6 +111,11 @@ const buildPaymentView = (
         value: payment.payee
           ? `${payment.payee.bank_name} / ${payment.payee.bank_account}`
           : "-",
+        wide: true
+      },
+      {
+        label: "付款账户",
+        value: payment.payment_account || NOT_SPECIFIED,
         wide: true
       },
       { label: "预计付款日", value: payment.expected_payment_date },
@@ -243,6 +257,14 @@ const buildReimbursementView = (
       ? `/finance/reimbursement/batch/${batch.id}`
       : null,
     facts: [
+      {
+        label: "付款单位",
+        value:
+          batch.payment_entity?.entity_name ||
+          (batch.payment_entity_id
+            ? ctx.entity(batch.payment_entity_id)
+            : NOT_SPECIFIED)
+      },
       { label: "所属项目", value: ctx.project(batch.project_id) },
       ...commonFacts(instance, ctx)
     ]
@@ -251,7 +273,11 @@ const buildReimbursementView = (
   rows: [
     { label: "批次状态", value: toStatusLabel(batch.status) },
     { label: "支付方式", value: toPaymentMethodLabel(batch.payment_method) },
-    { label: "付款账户", value: batch.payment_account || "-", wide: true },
+    {
+      label: "付款账户",
+      value: batch.payment_account || NOT_SPECIFIED,
+      wide: true
+    },
     ...summaryRow(instance, "")
   ]
 });

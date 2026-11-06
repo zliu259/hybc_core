@@ -270,6 +270,9 @@ const BIZ_TYPE_LABELS = {
 
 const row = (label, value, multiline = false) => ({ label, value: value || "-", multiline });
 
+/** 支付方案可以后补，没选的时候要说清楚，不能显示成短横线让人以为没这一项。 */
+const NOT_SPECIFIED = "尚未指定";
+
 const settledRow = (contract) =>
   contract && contract.direction === "inbound"
     ? row("已收金额", formatAmount(contract.received_amount))
@@ -289,6 +292,10 @@ const buildPaymentView = (bizDetail, ctx) => {
     title: bizDetail.content,
     bizNo: bizDetail.serial_no,
     keyFacts: [
+      {
+        label: "付款单位",
+        value: bizDetail.payment_entity_id ? ctx.entity(bizDetail.payment_entity_id) : NOT_SPECIFIED
+      },
       { label: "收款方", value: (payee && payee.name) || "-" },
       { label: "所属项目", value: ctx.project(bizDetail.project_id) }
     ],
@@ -298,6 +305,7 @@ const buildPaymentView = (bizDetail, ctx) => {
       row("关联合同", contractText),
       row("付款类别", paymentCategoryLabel(bizDetail.category, "未知")),
       row("收款账号", payee ? `${payee.bank_name} / ${payee.bank_account}` : "-"),
+      row("付款账户", bizDetail.payment_account || NOT_SPECIFIED),
       row("预计付款日", bizDetail.expected_payment_date),
       row("付款方式", paymentMethodLabel(bizDetail.payment_method, "-")),
       row("备注", remark.text, true)
@@ -358,12 +366,20 @@ const buildReimbursementView = (bizDetail, ctx) => ({
   amountLabel: "报销总额",
   title: `${ctx.user(bizDetail.applicant_userid)} 的报销（${bizDetail.item_count} 张单据）`,
   bizNo: bizDetail.batch_no,
-  keyFacts: [{ label: "所属项目", value: ctx.project(bizDetail.project_id) }],
+  keyFacts: [
+    {
+      label: "付款单位",
+      value:
+        (bizDetail.payment_entity && bizDetail.payment_entity.entity_name) ||
+        (bizDetail.payment_entity_id ? ctx.entity(bizDetail.payment_entity_id) : NOT_SPECIFIED)
+    },
+    { label: "所属项目", value: ctx.project(bizDetail.project_id) }
+  ],
   detailTitle: "报销明细",
   edits: [],
   rows: [
     row("支付方式", paymentMethodLabel(bizDetail.payment_method, "-")),
-    row("付款账户", bizDetail.payment_account)
+    row("付款账户", bizDetail.payment_account || NOT_SPECIFIED)
   ]
 });
 

@@ -193,6 +193,75 @@ describe("buildBizView", () => {
     );
   });
 
+  it("付款单：同时显示我方付款单位和付款账户，所有查看者都能看到", () => {
+    const view = buildBizView(
+      instance,
+      {
+        ...noRecords,
+        payment: {
+          ...payment,
+          payment_entity_id: 22,
+          payment_account: "中国农业银行 / 5066"
+        }
+      },
+      ctx
+    );
+    const labels = view.hero.facts.map(fact => fact.label);
+    expect(labels.indexOf("付款单位")).toBe(0);
+    expect(labels.indexOf("收款方")).toBe(1);
+    expect(view.hero.facts[0].value).toBe("主体22");
+    expect(view.rows.find(row => row.label === "付款账户")?.value).toBe(
+      "中国农业银行 / 5066"
+    );
+  });
+
+  it("付款单位还没选时明确提示，不显示成短横线", () => {
+    const view = buildBizView(
+      instance,
+      {
+        ...noRecords,
+        payment: {
+          ...payment,
+          payment_entity_id: null,
+          payment_account: null
+        }
+      },
+      ctx
+    );
+    expect(view.hero.facts[0]).toEqual({
+      label: "付款单位",
+      value: "尚未指定"
+    });
+    expect(view.rows.find(row => row.label === "付款账户")?.value).toBe(
+      "尚未指定"
+    );
+  });
+
+  it("报销批次：头部显示付款单位，优先用接口返回的名称", () => {
+    const batch = {
+      id: 7,
+      batch_no: "BX-1",
+      project_id: 7,
+      applicant_userid: "LiuKun",
+      item_count: 2,
+      total_amount: 100,
+      status: "submitted",
+      payment_method: "transfer",
+      payment_account: "账户",
+      payment_entity_id: 22,
+      payment_entity: { id: 22, entity_code: "X", entity_name: "北京鑫丰畅" }
+    } as unknown as NonNullable<BizRecords["reimbursementBatch"]>;
+    const view = buildBizView(
+      instance,
+      { ...noRecords, reimbursementBatch: batch },
+      ctx
+    );
+    expect(view.hero.facts[0]).toEqual({
+      label: "付款单位",
+      value: "北京鑫丰畅"
+    });
+  });
+
   it("没有财务权限时业务编号不可点", () => {
     const view = buildBizView(
       instance,

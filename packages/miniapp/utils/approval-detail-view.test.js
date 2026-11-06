@@ -257,6 +257,8 @@ const payment = {
   payment_method: "personal_transfer",
   remark: "正文\n[超管修改 2026-10-01T02:03:04.000Z] u9：审批页更新支付信息",
   payee: { name: "北京鑫丰畅", bank_name: "工行", bank_account: "6222" },
+  payment_entity_id: 22,
+  payment_account: "农行 / 5066",
   contract_id: 3,
   contract: { contract_no: "CT-1", counterparty: "北京鑫丰畅" }
 };
@@ -266,7 +268,8 @@ assert.strictEqual(paymentView.hero.amountText, "100,500.00");
 assert.strictEqual(paymentView.hero.amountUpper, "壹拾万零伍佰元整");
 assert.strictEqual(paymentView.hero.title, "2026.9 工资");
 assert.strictEqual(paymentView.hero.bizNo, "SP-20261102-0004");
-assert.deepStrictEqual(paymentView.hero.facts.slice(0, 3), [
+assert.deepStrictEqual(paymentView.hero.facts.slice(0, 4), [
+  { label: "付款单位", value: "主体22" },
   { label: "收款方", value: "北京鑫丰畅" },
   { label: "所属项目", value: "项目7" },
   { label: "发起人", value: "人员u1" }
@@ -276,6 +279,17 @@ assert.strictEqual(rowOf(paymentView, "备注").value, "正文");
 assert.strictEqual(rowOf(paymentView, "付款类别").value, "进度款");
 assert.strictEqual(rowOf(paymentView, "付款方式").value, "转账");
 assert.strictEqual(rowOf(paymentView, "收款账号").value, "工行 / 6222");
+assert.strictEqual(rowOf(paymentView, "付款账户").value, "农行 / 5066");
+// 付款单位还没选时明确提示，不显示成短横线
+{
+  const unset = buildBizView({
+    instance,
+    bizDetail: { ...payment, payment_entity_id: null, payment_account: null },
+    ctx
+  });
+  assert.deepStrictEqual(unset.hero.facts[0], { label: "付款单位", value: "尚未指定" });
+  assert.strictEqual(rowOf(unset, "付款账户").value, "尚未指定");
+}
 assert.strictEqual(rowOf(paymentView, "关联合同").value, "CT-1 - 北京鑫丰畅");
 assert.strictEqual(rowOf(paymentView, "审批摘要").value, "付款摘要");
 assert.deepStrictEqual(paymentView.remarkEdits, [
@@ -385,7 +399,24 @@ const batchView = buildBizView({
 });
 assert.strictEqual(batchView.hero.amountLabel, "报销总额");
 assert.strictEqual(batchView.hero.title, "人员u5 的报销（2 张单据）");
-assert.strictEqual(rowOf(batchView, "付款账户").value, "-");
+assert.strictEqual(rowOf(batchView, "付款账户").value, "尚未指定");
+assert.deepStrictEqual(batchView.hero.facts[0], { label: "付款单位", value: "尚未指定" });
+{
+  const named = buildBizView({
+    instance: { ...instance, biz_type: "reimbursement_batch" },
+    bizDetail: {
+      batch_no: "RB-2",
+      total_amount: 1,
+      item_count: 1,
+      applicant_userid: "u5",
+      project_id: 7,
+      payment_entity_id: 22,
+      payment_entity: { id: 22, entity_name: "北京鑫丰畅" }
+    },
+    ctx
+  });
+  assert.deepStrictEqual(named.hero.facts[0], { label: "付款单位", value: "北京鑫丰畅" });
+}
 
 // 没有业务详情（库房、开票等）：仍要能看到事由，不能白屏
 const bareView = buildBizView({ instance: { ...instance, biz_type: "stock_order" }, bizDetail: null, ctx });
