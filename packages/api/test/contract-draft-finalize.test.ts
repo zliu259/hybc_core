@@ -49,8 +49,7 @@ describe("buildKeywordValues", () => {
     expect(values.party_a_credit_code).toBe("91110000TEST");
     expect(values.party_b_credit_code).toBe("91110000OUR");
     expect(values.amount).toBe("246400");
-    // 期望值以 services/amount-cn.ts 实现为准（该实现对节内末尾零补"零"）
-    expect(values.amount_cn).toBe("贰拾肆万陆仟肆佰零元整");
+    expect(values.amount_cn).toBe("贰拾肆万陆仟肆佰元整");
   });
   it("outbound：我方主体=甲方、对方=乙方", () => {
     const values = buildKeywordValues(draftWith({ direction: "outbound" }), {
@@ -62,6 +61,10 @@ describe("buildKeywordValues", () => {
     });
     expect(values.party_a).toBe("我方公司");
     expect(values.party_b).toBe("对方公司");
+  });
+  it("amount 超出可转换范围时不生成 amount_cn，留给未填占位符校验", () => {
+    const values = buildKeywordValues(draftWith({ keywords_json: '{"amount":"99999999999999999"}' }), null);
+    expect(values.amount_cn).toBeUndefined();
   });
   it("amount 非数字时不生成 amount_cn", () => {
     const values = buildKeywordValues(draftWith({ keywords_json: '{"amount":"面议"}' }), null);
