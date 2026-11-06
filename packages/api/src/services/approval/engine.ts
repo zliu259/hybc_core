@@ -22,7 +22,7 @@ import { parseAiGateTaskResult } from "./ai-gate-result";
 import { applyAiGateReturn } from "./ai-gate-apply";
 import { parseTemplate, getNextNodeKey, type ParsedNode, type ParsedTemplate } from "./template-parser";
 import { executorFactory, setAiGateHandler } from "./executors";
-import { publishEvent } from "../event-bus";
+import { logEvent, publishEvent } from "../event-bus";
 import { generateSerial } from "../serial";
 
 const nowIso = () => new Date().toISOString();
@@ -933,31 +933,78 @@ const determineAvailableActions = (
 // ─── Timeout Check ──────────
 
 /**
- * Check for timed-out approval nodes and handle them.
+ * Record APPROVAL_TIMEOUT for one node, at most once per entry into the node.
+ * Returns false when another patrol already recorded it.
+ */
+const recordNodeTimeout = async (
+  env: Env,
+  node: ApprovalNodeInstance,
+  now: string
+): Promise<boolean> => {
+  // 条件 UPDATE 当乐观锁：整点 cron 和 /automation/cron/run 同时跑时只有一方抢得到。
+  const claim = await env.DB.prepare(
+    `UPDATE approval_node_instance SET timeout_event_at = ?
+     WHERE id = ? AND started_at = ? AND status = 'in_progress'
+       AND (timeout_event_at IS NULL OR timeout_event_at < started_at)`
+  )
+    .bind(now, node.id, node.started_at)
+    .run();
+  if (claim.meta.changes !== 1) return false;
+
+  try {
+    // 只写 event_log，不进队列：这个事件没有消费方，而 queue() 收到任何事件都会再写一行。
+    // 以后要做超时催办时才改回 publishEvent，并处理消费者的重复写入。
+    await logEvent(env, {
+      type: "APPROVAL_TIMEOUT",
+      source: "approval-engine",
+      payload: {
+        instance_id: node.instance_id,
+        node_key: node.node_key,
+        node_type: node.node_type,
+        started_at: node.started_at
+      },
+      timestamp: now
+    });
+    return true;
+  } catch (error) {
+    // D1 没有事务回滚，这里显式放开占位，下次巡检补记。
+    await env.DB.prepare(
+      `UPDATE approval_node_instance SET timeout_event_at = NULL
+       WHERE id = ? AND timeout_event_at = ?`
+    )
+      .bind(node.id, now)
+      .run();
+    throw error;
+  }
+};
+
+/**
+ * Record timed-out approval nodes. Returns how many nodes were newly recorded by this run,
+ * not how many are currently timed out.
  */
 export const checkApprovalTimeouts = async (env: Env): Promise<number> => {
   const now = nowIso();
+  let recorded = 0;
 
-  // Find nodes that have been in_progress too long (24h default)
-  const timedOut = await env.DB.prepare(
-    `SELECT * FROM approval_node_instance
-     WHERE status = 'in_progress'
-       AND started_at IS NOT NULL
-       AND (julianday(?) - julianday(started_at)) * 24 > COALESCE(timeout_hours, 24)`
-  )
-    .bind(now)
-    .all<ApprovalNodeInstance>();
+  try {
+    // Find nodes that have been in_progress too long (24h default)
+    const timedOut = await env.DB.prepare(
+      `SELECT * FROM approval_node_instance
+       WHERE status = 'in_progress'
+         AND started_at IS NOT NULL
+         AND (julianday(?) - julianday(started_at)) * 24 > COALESCE(timeout_hours, 24)
+         AND (timeout_event_at IS NULL OR timeout_event_at < started_at)`
+    )
+      .bind(now)
+      .all<ApprovalNodeInstance>();
 
-  const nodes = timedOut.results ?? [];
-
-  for (const node of nodes) {
-    await publishEvent(env, "APPROVAL_TIMEOUT", "approval-engine", {
-      instance_id: node.instance_id,
-      node_key: node.node_key,
-      node_type: node.node_type,
-      started_at: node.started_at
-    });
+    for (const node of timedOut.results ?? []) {
+      if (await recordNodeTimeout(env, node, now)) recorded += 1;
+    }
+  } catch (error) {
+    // 这只是留痕，不能拖垮同批的其它 cron 任务；没记上的节点下次巡检会再试。
+    console.error("Approval timeout check failed", error);
   }
 
-  return nodes.length;
+  return recorded;
 };

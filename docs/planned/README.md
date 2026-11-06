@@ -4,4 +4,4 @@
 
 ## 清单
 
-暂无待实现计划。
+- [APPROVAL_TIMEOUT 历史行清理方案](approval-timeout-event-log-cleanup.md)：分批删除约 49.7 万行历史事件，待 owner 同意后执行。
