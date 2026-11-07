@@ -350,3 +350,47 @@ describe.skipIf(!hasSqlite)("其他路径共用规则", () => {
     expect((await again.json()).error.code).toBe("ENVELOPE_HAS_ACTIVE_INVOICE");
   });
 });
+
+describe.skipIf(!hasSqlite)("POST /:id/void", () => {
+  beforeEach(() => asUser("admin", ["super_admin"]));
+
+  const voidEnvelope = (h, id, body) => callReimbursement(h, "POST", `/${id}/void`, body);
+
+  it("废止时保存原因并写进审计", async () => {
+    const { h } = setup();
+    const id = await h.seedEnvelope({ status: "submitted" });
+    const response = await voidEnvelope(h, id, { reason: "  重复提交 " });
+    expect(response.status).toBe(200);
+    expect(h.getEnvelope(id)).toMatchObject({ status: "cancelled", void_reason: "重复提交" });
+    const audit = h.db
+      .prepare("SELECT detail_json FROM api_audit_log WHERE action = 'reimbursement.envelope.void' AND target_id = ?")
+      .get(String(id));
+    expect(JSON.parse(audit.detail_json).reason).toBe("重复提交");
+  });
+
+  it("不传原因仍能废止", async () => {
+    const { h } = setup();
+    const id = await h.seedEnvelope({ status: "submitted" });
+    expect((await voidEnvelope(h, id, {})).status).toBe(200);
+    expect(h.getEnvelope(id)).toMatchObject({ status: "cancelled", void_reason: null });
+  });
+
+  it("没有请求体也能废止", async () => {
+    const { h } = setup();
+    const id = await h.seedEnvelope({ status: "submitted" });
+    expect((await voidEnvelope(h, id, undefined)).status).toBe(200);
+  });
+
+  it("原因超过 200 字拒绝", async () => {
+    const { h } = setup();
+    const id = await h.seedEnvelope({ status: "submitted" });
+    expect((await voidEnvelope(h, id, { reason: "很".repeat(201) })).status).toBe(400);
+    expect(h.getEnvelope(id).status).toBe("submitted");
+  });
+
+  it("原因不是字符串拒绝", async () => {
+    const { h } = setup();
+    const id = await h.seedEnvelope({ status: "submitted" });
+    expect((await voidEnvelope(h, id, { reason: 1 })).status).toBe(400);
+  });
+});

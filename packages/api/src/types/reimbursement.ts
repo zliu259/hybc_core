@@ -61,6 +61,7 @@ export interface ReimbursementEnvelope {
   ocr_expense_date_hint: string | null;
   duplicate_check_status: TaskStatus;
   silent_review_result: string | null;
+  void_reason: string | null;
   duplicate_override_requested: number;
   duplicate_override_reason: string | null;
   split_from_envelope_id: number | null;

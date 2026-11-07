@@ -98,6 +98,7 @@ const reimbursementStatusSet = new Set<string>(reimbursementStatuses);
 const UUID_REGEX =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const reimbursementOfficeRoles = ["super_admin", "manager", "site_manager", "finance"];
+const MAX_VOID_REASON_LENGTH = 200;
 const isValidUuid = (value: string | null | undefined): boolean => {
   const trimmed = String(value || "").trim();
   return Boolean(trimmed && UUID_REGEX.test(trimmed));
@@ -4518,6 +4519,16 @@ reimbursementRoutes.post(
   async (c) => {
     const id = Number(c.req.param("id"));
     const auth = c.get("auth");
+    const body = (await c.req.json().catch(() => ({}))) as { reason?: unknown };
+
+    // 旧页面不传原因，所以接口不强制；新页面的弹窗必填
+    if (body.reason !== undefined && body.reason !== null && typeof body.reason !== "string") {
+      return c.json({ success: false, error: { message: "reason must be a string" } }, 400);
+    }
+    const voidReason = typeof body.reason === "string" ? body.reason.trim() || null : null;
+    if (voidReason && voidReason.length > MAX_VOID_REASON_LENGTH) {
+      return c.json({ success: false, error: { message: "废止原因不能超过 200 字" } }, 400);
+    }
 
     const envelope = await c.env.DB.prepare(
       "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
@@ -4549,9 +4560,9 @@ reimbursementRoutes.post(
     }
 
     await c.env.DB.prepare(
-      "UPDATE reimbursement_envelope SET status = 'cancelled', updated_at = ? WHERE id = ?"
+      "UPDATE reimbursement_envelope SET status = 'cancelled', void_reason = ?, updated_at = ? WHERE id = ?"
     )
-      .bind(nowIso(), id)
+      .bind(voidReason, nowIso(), id)
       .run();
 
     await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CANCELLED", "reimbursement_envelope", {
@@ -4569,7 +4580,8 @@ reimbursementRoutes.post(
       targetId: id,
       detail: {
         envelope_uuid: envelope.envelope_uuid,
-        previous_status: envelope.status
+        previous_status: envelope.status,
+        reason: voidReason
       }
     });
 
