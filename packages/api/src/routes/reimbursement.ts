@@ -4237,7 +4237,8 @@ reimbursementRoutes.post(
     if (idempotency.kind === "replay") {
       return c.json(idempotency.payload, { status: idempotency.statusCode as 200 });
     }
-    if (idempotency.kind === "pending") {
+    // 上一次请求可能在改完状态后中断，幂等行留在 pending。单子已提交就补完成，否则重试会一直 409。
+    if (idempotency.kind === "pending" && envelope.status !== "submitted") {
       return c.json(
         { success: false, error: { message: "Submission already in progress" } },
         409
@@ -4305,6 +4306,8 @@ reimbursementRoutes.post(
     const submitResult = await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          status = 'submitted',
+         precheck_status = 'pending',
+         duplicate_check_status = 'pending',
          duplicate_override_requested = ?,
          duplicate_override_reason = ?,
          submitted_at = COALESCE(submitted_at, ?),
@@ -4353,18 +4356,19 @@ reimbursementRoutes.post(
       );
     }
 
-    await enqueueEnvelopeAiAudit(c.env, id, {
-      file_key: attachmentRow.file_key,
-      forceRerun: false,
-      triggeredBy: auth.sub,
-      reason: "submit_auto_silent_review"
-    });
-
-    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SCANNED", "reimbursement_envelope", {
+    // 状态已经改好。识别任务由队列补，发事件失败也有 Cron 兜底，不能让提交失败。
+    const submitEventPayload = {
       envelope_id: id,
       envelope_uuid: envelope.envelope_uuid,
       submitted_by: auth.sub
-    });
+    };
+    for (const eventType of ["REIMBURSEMENT_ENVELOPE_SUBMITTED", "REIMBURSEMENT_ENVELOPE_SCANNED"] as const) {
+      try {
+        await publishEvent(c.env, eventType, "reimbursement_envelope", submitEventPayload);
+      } catch (error) {
+        console.error("Reimbursement submit event publish failed", { envelope_id: id, eventType, error });
+      }
+    }
 
     const payload = { success: true, data: { id, status: "submitted" } };
     await completeIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey, 200, payload);

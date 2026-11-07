@@ -6,6 +6,8 @@ import { applyAiGateDecision } from "./services/approval/ai-gate-apply";
 import { hasPendingHumanTaskOnNode } from "./services/approval/ai-gate-fallback";
 import { createAiGateHandler } from "./services/ai-slot";
 import { executeCfAiTask, isCfAiTaskType } from "./services/cf-ai";
+import { wakeRunner } from "./services/cron-jobs";
+import { ensureInvoiceReviews, syncEnvelopeAuditState } from "./services/reimbursement/review-pipeline";
 import {
   resolveApplicantDisplayName,
   resolveApprovalPushMeta,
@@ -618,6 +620,8 @@ const resolveRejectPushReason = async (env: Env, instanceId: number): Promise<st
   }
 };
 
+const REIMBURSEMENT_REVIEW_TASK_TYPES = new Set(["ocr_extract", "reimbursement_anomaly"]);
+
 export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise<void> => {
   for (const msg of batch.messages) {
     try {
@@ -821,6 +825,23 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
           const taskId = Number(event.payload?.task_id ?? 0);
           if (!Number.isNaN(taskId) && taskId > 0) {
             await handleAiGateTaskCompleted(env, taskId);
+          }
+          const completedBizId = Number(event.payload?.biz_id ?? 0);
+          if (
+            event.payload?.biz_type === "reimbursement_envelope" &&
+            REIMBURSEMENT_REVIEW_TASK_TYPES.has(String(event.payload?.task_type ?? "")) &&
+            completedBizId > 0
+          ) {
+            await syncEnvelopeAuditState(env, completedBizId);
+          }
+          break;
+        }
+        case "REIMBURSEMENT_ENVELOPE_SUBMITTED": {
+          const submittedEnvelopeId = Number(event.payload?.envelope_id ?? 0);
+          if (submittedEnvelopeId > 0) {
+            const reviews = await ensureInvoiceReviews(env, submittedEnvelopeId);
+            await syncEnvelopeAuditState(env, submittedEnvelopeId);
+            if (reviews.created > 0) await wakeRunner(env);
           }
           break;
         }
