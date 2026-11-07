@@ -284,6 +284,119 @@ describe.skipIf(!hasSqlite)("报销提交链路", () => {
     });
   });
 
+  describe("重新提交", () => {
+    const seedReturned = async (h, precheck_status) => {
+      const seeded = await seedDraft(h, 1, {
+        status: "submitted",
+        precheck_status,
+        precheck_comment: "请补发票",
+        verification_status: "mismatch"
+      });
+      return seeded;
+    };
+
+    it.each(["supplement", "rejected"])("%s 的单重新提交回到办公室", async (precheck_status) => {
+      const h = createHarness();
+      const { id } = await seedReturned(h, precheck_status);
+      const response = await submit(h, id);
+      expect(response.status).toBe(200);
+      const payload = await response.json();
+      expect(payload.data).toEqual({ id, status: "submitted", resubmitted: true });
+      expect(h.getEnvelope(id)).toMatchObject({
+        status: "submitted",
+        precheck_status: "pending",
+        verification_status: "pending"
+      });
+      const audit = h.db
+        .prepare("SELECT * FROM api_audit_log WHERE action = 'reimbursement.envelope.resubmit' AND target_id = ?")
+        .get(String(id));
+      expect(audit).toBeTruthy();
+      expect(audit.actor_userid).toBe("u1");
+      const event = h.listSentEvents().find((item) => item.type === "REIMBURSEMENT_ENVELOPE_SUBMITTED");
+      expect(event.payload.envelope_id).toBe(id);
+    });
+
+    it("重新提交后消费队列会补上新加附件的识别", async () => {
+      const h = createHarness();
+      const { id } = await seedReturned(h, "supplement");
+      await submit(h, id);
+      await h.drainQueue();
+      expect(h.listReviews(id)).toHaveLength(1);
+    });
+
+    it("普通已提交的单仍返回 already_submitted", async () => {
+      const h = createHarness();
+      const { id } = await seedDraft(h, 1, { status: "submitted", precheck_status: "pending", verification_status: "verified" });
+      const response = await submit(h, id);
+      const payload = await response.json();
+      expect(payload.data).toMatchObject({ already_submitted: true });
+      expect(payload.data.resubmitted).toBeUndefined();
+      expect(h.getEnvelope(id).verification_status).toBe("verified");
+      expect(h.listSentEvents()).toHaveLength(0);
+    });
+
+    it("重新提交也要过查重", async () => {
+      const h = createHarness();
+      const now = new Date().toISOString();
+      const other = await h.seedEnvelope({ status: "submitted", invoice_no: "DUP", amount: 9, created_at: now });
+      expect(other).toBeGreaterThan(0);
+      const { id } = await seedDraft(h, 1, {
+        status: "submitted",
+        precheck_status: "supplement",
+        invoice_no: "DUP",
+        amount: 500
+      });
+      const response = await submit(h, id);
+      expect(response.status).toBe(409);
+      const payload = await response.json();
+      expect(payload.data.require_force_submit).toBe(true);
+      expect(h.getEnvelope(id).precheck_status).toBe("supplement");
+
+      const forced = await submit(h, id, { body: { force_submit: true, force_submit_reason: "确认不是重复" } });
+      expect(forced.status).toBe(200);
+      expect(h.getEnvelope(id)).toMatchObject({
+        precheck_status: "pending",
+        duplicate_override_requested: 1,
+        duplicate_override_reason: "确认不是重复"
+      });
+    });
+
+    it("重新提交时没有附件要先传", async () => {
+      const h = createHarness();
+      const id = await h.seedEnvelope({ status: "submitted", precheck_status: "supplement" });
+      const response = await submit(h, id);
+      expect(response.status).toBe(400);
+      expect(h.getEnvelope(id).precheck_status).toBe("supplement");
+    });
+
+    it("同一个 Key 重放返回同样结果，不再改状态", async () => {
+      const h = createHarness();
+      const { id } = await seedReturned(h, "supplement");
+      await submit(h, id, { idempotencyKey: "re-1" });
+      h.db.prepare("UPDATE reimbursement_envelope SET precheck_status = 'supplement' WHERE id = ?").run(id);
+      const replay = await submit(h, id, { idempotencyKey: "re-1" });
+      const payload = await replay.json();
+      expect(payload.data.resubmitted).toBe(true);
+      expect(h.getEnvelope(id).precheck_status).toBe("supplement");
+    });
+
+    it("被退回的单中断后用同一个 Key 重试，真正完成重新提交", async () => {
+      const h = createHarness();
+      const { id } = await seedReturned(h, "supplement");
+      const now = new Date().toISOString();
+      h.db
+        .prepare(
+          `INSERT INTO api_idempotency_request (scope, actor_key, idempotency_key, status, created_at, updated_at)
+           VALUES (?, 'u1', 're-2', 'pending', ?, ?)`
+        )
+        .run(`reimbursement:submit:${id}`, now, now);
+      const response = await submit(h, id, { idempotencyKey: "re-2" });
+      expect(response.status).toBe(200);
+      expect((await response.json()).data.resubmitted).toBe(true);
+      expect(h.getEnvelope(id).precheck_status).toBe("pending");
+    });
+  });
+
   it("提交被中断后同一个 Idempotency-Key 重试成功", async () => {
     const h = createHarness();
     const { id } = await seedDraft(h, 1, { status: "submitted", precheck_status: "pending" });

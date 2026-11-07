@@ -4218,7 +4218,10 @@ reimbursementRoutes.post(
     }
 
     const idempotencyKey = c.req.header("Idempotency-Key");
-    const idempotency = await beginIdempotentRequest<{ success: boolean; data: { id: number; status: string; already_submitted?: boolean } }>(
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { id: number; status: string; already_submitted?: boolean; resubmitted?: boolean };
+    }>(
       c.env.DB,
       `reimbursement:submit:${id}`,
       auth.sub,
@@ -4235,7 +4238,11 @@ reimbursementRoutes.post(
       );
     }
 
-    if (envelope.status === "submitted") {
+    // 办公室要求补充或驳回都把状态改回 submitted，申请人再点提交才是把单子交回办公室
+    const isResubmit =
+      envelope.status === "submitted" && ["supplement", "rejected"].includes(envelope.precheck_status);
+
+    if (envelope.status === "submitted" && !isResubmit) {
       const payload = {
         success: true,
         data: {
@@ -4295,26 +4302,37 @@ reimbursementRoutes.post(
     }
 
     const now = nowIso();
-    const submitResult = await c.env.DB.prepare(
-      `UPDATE reimbursement_envelope SET
-         status = 'submitted',
-         precheck_status = 'pending',
-         duplicate_check_status = 'pending',
-         duplicate_override_requested = ?,
-         duplicate_override_reason = ?,
-         submitted_at = COALESCE(submitted_at, ?),
-         updated_at = ?
-       WHERE id = ?
-         AND status IN ('draft', 'unregistered')`
-    )
-      .bind(
-        body.force_submit === true ? 1 : 0,
-        body.force_submit === true ? body.force_submit_reason?.trim() ?? null : null,
-        now,
-        now,
-        id
-      )
-      .run();
+    const overrideRequested = body.force_submit === true ? 1 : 0;
+    const overrideReason = body.force_submit === true ? body.force_submit_reason?.trim() ?? null : null;
+    const submitResult = isResubmit
+      ? await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope SET
+             precheck_status = 'pending',
+             verification_status = 'pending',
+             duplicate_check_status = 'pending',
+             duplicate_override_requested = ?,
+             duplicate_override_reason = ?,
+             updated_at = ?
+           WHERE id = ?
+             AND status = 'submitted'
+             AND precheck_status IN ('supplement', 'rejected')`
+        )
+          .bind(overrideRequested, overrideReason, now, id)
+          .run()
+      : await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope SET
+             status = 'submitted',
+             precheck_status = 'pending',
+             duplicate_check_status = 'pending',
+             duplicate_override_requested = ?,
+             duplicate_override_reason = ?,
+             submitted_at = COALESCE(submitted_at, ?),
+             updated_at = ?
+           WHERE id = ?
+             AND status IN ('draft', 'unregistered')`
+        )
+          .bind(overrideRequested, overrideReason, now, now, id)
+          .run();
 
     if ((submitResult.meta.changes ?? 0) === 0) {
       const latest = await c.env.DB.prepare(
@@ -4354,7 +4372,10 @@ reimbursementRoutes.post(
       envelope_uuid: envelope.envelope_uuid,
       submitted_by: auth.sub
     };
-    for (const eventType of ["REIMBURSEMENT_ENVELOPE_SUBMITTED", "REIMBURSEMENT_ENVELOPE_SCANNED"] as const) {
+    const submitEvents = isResubmit
+      ? (["REIMBURSEMENT_ENVELOPE_SUBMITTED"] as const)
+      : (["REIMBURSEMENT_ENVELOPE_SUBMITTED", "REIMBURSEMENT_ENVELOPE_SCANNED"] as const);
+    for (const eventType of submitEvents) {
       try {
         await publishEvent(c.env, eventType, "reimbursement_envelope", submitEventPayload);
       } catch (error) {
@@ -4362,7 +4383,29 @@ reimbursementRoutes.post(
       }
     }
 
-    const payload = { success: true, data: { id, status: "submitted" } };
+    if (isResubmit) {
+      try {
+        await writeAuditLog(c.env.DB, {
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          action: "reimbursement.envelope.resubmit",
+          targetType: "reimbursement_envelope",
+          targetId: id,
+          detail: {
+            previous_precheck_status: envelope.precheck_status,
+            previous_verification_status: envelope.verification_status,
+            force_submit: body.force_submit === true
+          }
+        });
+      } catch (error) {
+        console.error("Reimbursement resubmit audit failed", { envelope_id: id, error });
+      }
+    }
+
+    const payload = {
+      success: true,
+      data: isResubmit ? { id, status: "submitted", resubmitted: true } : { id, status: "submitted" }
+    };
     await completeIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey, 200, payload);
     return c.json(payload);
   }
