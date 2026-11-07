@@ -194,6 +194,7 @@ class UploadDb {
 const createEnv = (db: UploadDb) =>
   ({
     DB: db,
+    FILES: { head: async () => ({ size: 1024 }) },
     KV: {
       async get() {
         return "session";

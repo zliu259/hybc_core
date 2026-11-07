@@ -102,7 +102,9 @@ type EnvelopeAttachmentDraft = {
 };
 
 const attachmentItems = ref<EnvelopeAttachmentDraft[]>([]);
-const uploadingAttachment = ref(false);
+// 一次可以选多个文件，全部传完才解除按钮
+const uploadingAttachmentCount = ref(0);
+const uploadingAttachment = computed(() => uploadingAttachmentCount.value > 0);
 const attachmentType = ref("invoice");
 const officeRoles = ["super_admin", "manager", "site_manager", "finance"];
 
@@ -895,7 +897,7 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
   }
 
   const rawFile = options.file;
-  uploadingAttachment.value = true;
+  uploadingAttachmentCount.value += 1;
   try {
     const signRes = await createUploadSignature({
       fileName: rawFile.name,
@@ -916,21 +918,24 @@ const uploadAttachment = async (options: UploadRequestOptions) => {
       throw new Error(`upload_failed_${uploadResp.status}`);
     }
 
-    attachmentItems.value.unshift({
-      attachment_type: attachmentType.value,
-      file_key: signRes.data.key,
-      file_name: rawFile.name,
-      file_size: rawFile.size,
-      is_new: true
-    });
+    attachmentItems.value = [
+      {
+        attachment_type: attachmentType.value,
+        file_key: signRes.data.key,
+        file_name: rawFile.name,
+        file_size: rawFile.size,
+        is_new: true
+      },
+      ...attachmentItems.value
+    ];
 
-    message("附件上传成功", { type: "success" });
+    message(`${rawFile.name} 上传成功`, { type: "success" });
     options.onSuccess?.({});
   } catch {
-    message("附件上传失败", { type: "error" });
+    message(`${rawFile.name} 上传失败`, { type: "error" });
     options.onError?.(new Error("upload_failed") as never);
   } finally {
-    uploadingAttachment.value = false;
+    uploadingAttachmentCount.value -= 1;
   }
 };
 
@@ -941,7 +946,7 @@ const removeStagedAttachment = (index: number) => {
     message("已入库附件不支持在此页面删除", { type: "info" });
     return;
   }
-  attachmentItems.value.splice(index, 1);
+  attachmentItems.value = attachmentItems.value.filter((_, itemIndex) => itemIndex !== index);
 };
 
 const downloadAttachment = (item: EnvelopeAttachmentDraft) => {
@@ -1806,12 +1811,13 @@ watch(
         :show-file-list="false"
         :disabled="!canEdit || uploadingAttachment"
         :http-request="uploadAttachment"
-        accept=".pdf,.jpg,.jpeg,.png,.webp"
+        multiple
+        accept=".pdf,.jpg,.jpeg,.png"
       >
         <div class="el-upload__text">拖拽文件到这里，或 <em>点击上传</em></div>
         <template #tip>
           <div class="el-upload__tip">
-            支持 PDF / 图片，上传后将进入附件列表
+            支持 PDF、JPG、PNG，可以一次选多个，上传后将进入附件列表
           </div>
         </template>
       </el-upload>

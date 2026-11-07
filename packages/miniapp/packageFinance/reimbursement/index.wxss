@@ -1,122 +1,180 @@
-.top-actions {
-  display: flex;
-  gap: 20rpx;
-  margin-bottom: 16rpx;
+.rb-page {
+  padding-bottom: 48rpx;
 }
 
-.status-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 12rpx;
-  margin: 8rpx 0 16rpx;
+.rb-verdict {
+  padding: 8rpx 4rpx 28rpx;
 }
 
-.label {
-  margin-top: 14rpx;
-  margin-bottom: 8rpx;
-  color: #4b5563;
+.rb-headline {
+  color: #1f2329;
+  font-size: 40rpx;
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.rb-headline--warn {
+  color: #b4470c;
+}
+
+.rb-next {
+  margin-top: 12rpx;
+  color: #5c667a;
   font-size: 28rpx;
-}
-
-.input,
-.picker-value,
-.textarea {
-  width: 100%;
-  background: #fff;
-  border: 1rpx solid #d7dbe3;
-  border-radius: 12rpx;
-  padding: 18rpx 20rpx;
-  box-sizing: border-box;
-  font-size: 28rpx;
-}
-
-.standard-input {
-  min-height: 88rpx;
-  height: 88rpx;
-  line-height: 48rpx;
-}
-
-.picker-value {
-  min-height: 88rpx;
-  display: flex;
-  align-items: center;
-}
-
-.picker-value {
-  color: #1f2937;
-}
-
-.textarea {
-  min-height: 140rpx;
-}
-
-.row {
-  display: flex;
-  gap: 20rpx;
-  margin-top: 16rpx;
-}
-
-.btn {
-  flex: 1;
-}
-
-.upload-tip {
-  margin-top: 8rpx;
-  color: #6b7280;
-  font-size: 22rpx;
   line-height: 1.5;
 }
 
-.attachment-empty {
-  color: #7b8494;
-  font-size: 24rpx;
-  margin-top: 8rpx;
-}
-
-.attachment-item {
-  margin-top: 12rpx;
-  padding: 14rpx;
-  border: 1rpx solid #e5e7eb;
-  border-radius: 12rpx;
+.rb-section {
+  margin-bottom: 20rpx;
+  padding: 24rpx;
   background: #fff;
+  border: 1rpx solid #e7ebf0;
+  border-radius: 16rpx;
 }
 
-.attachment-main {
+.rb-section-title {
   margin-bottom: 8rpx;
+  color: #1f2329;
+  font-size: 28rpx;
+  font-weight: 600;
 }
 
-.attachment-name {
-  color: #111827;
+.rb-empty {
+  padding: 16rpx 0;
+  color: #7b8494;
   font-size: 26rpx;
+}
+
+.rb-file {
+  padding: 20rpx 0;
+  border-bottom: 1rpx solid #e7ebf0;
+}
+
+.rb-file-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.rb-file-name {
+  flex: 1;
+  min-width: 0;
+  color: #1f2329;
+  font-size: 28rpx;
   word-break: break-all;
 }
 
-.attachment-meta {
-  color: #6b7280;
-  font-size: 22rpx;
-  margin-top: 4rpx;
+.rb-file-status {
+  flex-shrink: 0;
+  color: #5c667a;
+  font-size: 26rpx;
 }
 
-.attachment-actions {
+.rb-file-status--warn,
+.rb-file-error {
+  color: #b4470c;
+}
+
+.rb-file-error {
+  margin-top: 8rpx;
+  font-size: 24rpx;
+}
+
+.rb-file-detail {
+  margin-top: 12rpx;
+}
+
+.rb-fact {
+  margin-top: 6rpx;
+  color: #1f2329;
+  font-size: 24rpx;
+  line-height: 1.5;
+  word-break: break-all;
+}
+
+.rb-fact-label {
+  margin-right: 12rpx;
+  color: #5c667a;
+}
+
+.rb-file-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 12rpx;
+  margin-top: 16rpx;
 }
 
-.duplicate-item {
+.rb-upload {
+  margin-top: 24rpx;
+}
+
+.rb-tip {
   margin-top: 10rpx;
-  padding: 12rpx;
-  border-radius: 12rpx;
-  border: 1rpx solid #f0d9ad;
-  background: #fff9f1;
-}
-
-.duplicate-summary {
-  font-size: 25rpx;
-  color: #6c4c1f;
-}
-
-.duplicate-risk {
-  margin-top: 4rpx;
+  color: #7b8494;
   font-size: 22rpx;
-  color: #ad6500;
+}
+
+.rb-totals {
+  margin-bottom: 8rpx;
+  color: #1f2329;
+  font-size: 28rpx;
+}
+
+.rb-label {
+  margin: 20rpx 0 10rpx;
+  color: #5c667a;
+  font-size: 26rpx;
+}
+
+.rb-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 84rpx;
+  padding: 18rpx 20rpx;
+  background: #fff;
+  border: 1rpx solid #d7dbe3;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+}
+
+.rb-picker {
+  display: flex;
+  align-items: center;
+  color: #1f2329;
+}
+
+.rb-textarea {
+  height: 140rpx;
+}
+
+.rb-scan,
+.rb-save {
+  display: block;
+  margin-top: 16rpx;
+}
+
+.rb-footer {
+  margin-top: 8rpx;
+}
+
+.rb-action {
+  display: block;
+  margin-bottom: 16rpx;
+}
+
+.rb-links {
+  display: flex;
+  justify-content: center;
+  gap: 48rpx;
+  margin-top: 12rpx;
+}
+
+.rb-link {
+  color: #1361d8;
+  font-size: 26rpx;
+}
+
+.rb-link--off {
+  color: #a0a7b4;
 }
