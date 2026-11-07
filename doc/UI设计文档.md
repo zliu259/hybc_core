@@ -1002,6 +1002,7 @@
 - 权限一致性补齐：
   - `packages/miniapp/pages/finance/index.{js,wxml}`：按角色显示“对外付款”入口
 - `packages/miniapp/pages/reimbursement/index.{js,wxml}`：聚焦个人报销操作（保存草稿、上传附件、提交报销）
+- `packages/miniapp/packageFinance/reimbursement/index.{js,wxml,wxss}`（2026-11-07 改版，路由不变）：只面向申请人。从上到下：结论和该做什么（接口的 `guidance.applicant`）；文件列表（名称、状态或金额，失败的可重试，点开看销售方、发票号、日期、系统读到的内容和原件；可编辑时能删）；上传（图片一次最多 9 张，聊天记录和手机文件最多 30 个，只收 PDF、JPG、PNG，单个 20MB，同时传 2 个）；合计和报销金额（默认等于已识别合计，改过不再覆盖）；表单（通道、信封识别号、项目、类别、说明、费用日期）；底部提交或重新提交。去掉了五个状态标签、固定的「建议流程」提示、发票号输入、附件类型选择和替换或另建弹窗。逻辑在 `utils/upload-queue.js`、`utils/reimbursement-view.js`。
   - UUID 绑定区前置到页面上部，先绑定再录入，减少现场漏绑。
   - `uuid/发票号/金额/类别` 输入框统一标准高度，避免文字显示被压缩。
   - 电子发票按钮文案收敛为“上传电子发票（自动OCR）”；提示文案明确“资料确认后点击提交报销”。
