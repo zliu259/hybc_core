@@ -133,7 +133,13 @@ class SubmitStatement {
   async run() {
     this.db.executed.push({ sql: this.sql, args: this.args });
     if (this.sql.includes("DELETE FROM reimbursement_duplicate_check")) {
-      this.db.duplicateRows = [];
+      // 整单规则和发票级查重各自只清自己写的那几种
+      const invoiceLevel = ["invoice_no_date", "qr_hash", "same_envelope"];
+      this.db.duplicateRows = this.db.duplicateRows.filter(row =>
+        this.sql.includes("match_type NOT IN")
+          ? invoiceLevel.includes(row.match_type)
+          : !invoiceLevel.includes(row.match_type)
+      );
     }
     if (this.sql.includes("INSERT INTO reimbursement_duplicate_check")) {
       this.db.duplicateRows = [
@@ -190,6 +196,10 @@ class SubmitDb {
 
   prepare(sql: string) {
     return new SubmitStatement(this, sql);
+  }
+
+  async batch(statements: SubmitStatement[]) {
+    return Promise.all(statements.map(statement => statement.run()));
   }
 }
 
@@ -319,7 +329,7 @@ describe("POST /reimbursement/:id/submit duplicate response contract", () => {
     expect(fuzzySelects.length).toBeGreaterThanOrEqual(1);
     for (const query of fuzzySelects) {
       expect(query.sql).toContain("applicant_userid = ?");
-      expect(query.sql).toContain("status NOT IN ('deleted', 'cancelled')");
+      expect(query.sql).toContain("status NOT IN ('draft', 'unregistered', 'cancelled', 'deleted')");
       expect(query.args[1]).toBe("operator.a");
     }
     expect(fuzzyInserts(db)).toHaveLength(0);

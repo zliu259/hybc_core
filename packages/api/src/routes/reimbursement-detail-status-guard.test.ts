@@ -83,6 +83,10 @@ class GuardDb {
   prepare(sql: string) {
     return new GuardStatement(this, sql);
   }
+
+  async batch(statements: GuardStatement[]) {
+    return Promise.all(statements.map(statement => statement.run()));
+  }
 }
 
 const buildEnvelope = (status: string): Record<string, unknown> => ({

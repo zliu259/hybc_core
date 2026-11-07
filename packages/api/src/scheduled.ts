@@ -19,6 +19,7 @@ import {
   createFleetTimeoutNotifications,
   deliverPendingFleetNotifications
 } from "./services/fleet-notification";
+import { reconcileReimbursementReviews } from "./services/reimbursement/review-reconcile";
 import type { Env } from "./types/env";
 
 /**
@@ -71,6 +72,11 @@ export const scheduled = async (
           });
           return { id: task.id };
         }).catch((error) => console.error("Precheck reconcile failed", error));
+        // 报销识别对账：补缺失的任务，同步已结束的任务，永不抛出。
+        const reimbursementReviews = await reconcileReimbursementReviews(env);
+        if (reimbursementReviews.ensured > 0) {
+          await wakeRunner(env);
+        }
         return;
       }
 

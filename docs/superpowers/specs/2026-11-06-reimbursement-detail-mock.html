@@ -1,0 +1,243 @@
+<style>
+  .rb-stack { display: flex; flex-direction: column; gap: 28px; }
+  .rb-block > h3 { margin: 0 0 4px; }
+  .rb-block > p { margin: 0 0 12px; color: var(--text-secondary); font-size: 0.85rem; }
+  .rb-shell {
+    padding: 20px;
+    background: #f2f5f9;
+    border-radius: 10px;
+    color: #1f2329;
+    font-size: 13px;
+    line-height: 20px;
+    font-variant-numeric: tabular-nums;
+    text-align: left;
+  }
+  .rb-shell * { box-sizing: border-box; }
+  .rb-page { background: #fff; border: 1px solid #e7ebf0; border-radius: 10px; }
+  .rb-verdict { display: flex; flex-wrap: wrap; gap: 16px 32px; align-items: flex-start; justify-content: space-between; padding: 24px; }
+  .rb-verdict__text { flex: 1 1 420px; min-width: 0; }
+  .rb-title { margin: 0; font-size: 24px; font-weight: 600; line-height: 34px; color: #1f2329; }
+  .rb-title--warn { color: #b4470c; }
+  .rb-todo { margin: 6px 0 0; font-size: 15px; font-weight: 500; line-height: 24px; color: #1361d8; }
+  .rb-facts { margin: 10px 0 0; color: #5c667a; }
+  .rb-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .rb-btn { height: 36px; padding: 0 18px; font-size: 14px; color: #1f2329; background: #fff; border: 1px solid #d5dbe5; border-radius: 6px; }
+  .rb-btn--primary { font-weight: 500; color: #fff; background: #1361d8; border-color: #1361d8; }
+  .rb-btn--off { color: #fff; background: #a9c3ec; border-color: #a9c3ec; }
+  .rb-btn--text { padding: 0 8px; color: #5c667a; background: transparent; border-color: transparent; }
+
+  .rb-review { display: grid; grid-template-columns: 320px minmax(0, 1fr); border-top: 1px solid #f1f3f7; }
+  .rb-picker { border-right: 1px solid #f1f3f7; }
+  .rb-group { padding: 12px 16px 6px 24px; font-size: 13px; font-weight: 600; color: #1f2329; border-top: 1px solid #f1f3f7; }
+  .rb-pick { display: flex; gap: 10px; align-items: center; justify-content: space-between; padding: 8px 16px 8px 24px; border-top: 1px solid #f1f3f7; }
+  .rb-pick:first-child { border-top: 0; }
+  .rb-pick > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rb-pick > span:last-child { flex: none; font-weight: 500; }
+  .rb-pick--on { background: #e6f0ff; box-shadow: inset 3px 0 0 #1361d8; }
+  .rb-pick__state { font-weight: 400 !important; color: #8a94a6; }
+  .rb-pick__state--bad { color: #b4470c; }
+  .rb-pick__state--link { color: #1361d8; }
+  .rb-more { padding: 8px 16px 8px 24px; color: #8a94a6; border-top: 1px solid #f1f3f7; }
+  .rb-drop { margin: 12px 16px 12px 24px; padding: 14px; color: #5c667a; text-align: center; background: #f6f8fb; border: 1px dashed #c5cede; border-radius: 6px; }
+  .rb-bar { display: block; height: 3px; margin-top: 4px; overflow: hidden; background: #edf0f4; border-radius: 2px; }
+  .rb-bar i { display: block; width: 62%; height: 100%; background: #1361d8; }
+
+  .rb-viewer { min-width: 0; padding: 16px 24px 20px; }
+  .rb-sheet { display: flex; align-items: center; justify-content: center; height: 200px; color: #8a94a6; background: #f6f8fb; border: 1px dashed #d5dbe5; border-radius: 6px; }
+  .rb-kv4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px 16px; margin: 12px 0 0; }
+  .rb-kv4 dt, .rb-read dt { color: #8a94a6; }
+  .rb-kv4 dd { margin: 0; overflow-wrap: anywhere; }
+  .rb-read { margin: 12px 0 0; }
+  .rb-read dd { margin: 2px 0 0; line-height: 22px; }
+
+  .rb-form { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 12px 12px; align-items: center; max-width: 520px; }
+  .rb-form label { color: #5c667a; }
+  .rb-input { display: flex; align-items: center; height: 34px; padding: 0 10px; background: #fff; border: 1px solid #d5dbe5; border-radius: 6px; }
+  .rb-input--area { height: 64px; align-items: flex-start; padding-top: 6px; }
+  .rb-hint { grid-column: 2; margin-top: -6px; color: #5c667a; }
+
+  .rb-total { display: flex; flex-wrap: wrap; gap: 4px 20px; justify-content: flex-end; padding: 12px 24px; color: #5c667a; border-top: 1px solid #e7ebf0; }
+  .rb-total strong { font-weight: 600; color: #1f2329; }
+  .rb-ok { font-weight: 500; color: #15803d; }
+  .rb-bad { font-weight: 500; color: #b4470c; }
+
+  .rb-copy { width: 100%; border-collapse: collapse; }
+  .rb-copy th { padding: 10px 14px; font-weight: 600; color: #5c667a; text-align: left; background: #f6f8fb; border-bottom: 1px solid #e7ebf0; }
+  .rb-copy td { padding: 10px 14px; vertical-align: top; border-top: 1px solid #f1f3f7; }
+  .rb-copy tr:first-child td { border-top: 0; }
+  .rb-copy td:first-child { color: #5c667a; white-space: nowrap; }
+  .rb-copy td:nth-child(2) { font-weight: 600; }
+  .rb-copy td:nth-child(3) { color: #1361d8; }
+  .rb-copy td:nth-child(4) { color: #5c667a; }
+
+  @media (max-width: 860px) {
+    .rb-review { grid-template-columns: minmax(0, 1fr); }
+    .rb-picker { border-right: 0; border-bottom: 1px solid #f1f3f7; }
+    .rb-shell { padding: 10px; }
+    .rb-verdict { padding: 16px; }
+    .rb-title { font-size: 20px; line-height: 28px; }
+    .rb-verdict__text { flex-basis: 100%; }
+    .rb-viewer { padding: 14px 16px 16px; }
+    .rb-form { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .rb-form .rb-input { margin-bottom: 8px; }
+    .rb-hint { grid-column: 1; margin-top: 0; }
+    .rb-kv4 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .rb-group, .rb-pick, .rb-more { padding-left: 16px; }
+    .rb-drop { margin-left: 16px; }
+    .rb-total { padding: 12px 16px; }
+    .rb-copy, .rb-copy tbody, .rb-copy tr, .rb-copy td { display: block; width: 100%; }
+    .rb-copy tr:first-child { display: none; }
+    .rb-copy tr { padding: 10px 14px; border-top: 1px solid #f1f3f7; }
+    .rb-copy tr:nth-child(2) { border-top: 0; }
+    .rb-copy td { padding: 1px 0; border-top: 0; }
+    .rb-copy td:first-child { white-space: normal; }
+  }
+</style>
+
+<h2>C 在不同情况下怎么提醒</h2>
+<p class="subtitle">看结论和提醒说得对不对，也看左边多了「报销信息」一行是否顺手。</p>
+
+<div class="rb-stack">
+
+  <section class="rb-block">
+    <h3>办公室：金额有差额（信封 322 的真实情况）</h3>
+    <p>结论直接说差多少，默认选中金额最大的发票。</p>
+    <div class="rb-shell">
+      <div class="rb-page">
+        <div class="rb-verdict">
+          <div class="rb-verdict__text">
+            <p class="rb-title rb-title--warn">16 张发票都识别了，但票面合计比申报多 ¥0.04</p>
+            <p class="rb-todo">请核对差额，确认没问题就签收，不对就标记异常。</p>
+            <p class="rb-facts">李震报销 ¥1,568.91，项目：仓库。</p>
+          </div>
+          <div class="rb-actions">
+            <button class="rb-btn rb-btn--primary" type="button">核查签收</button>
+            <button class="rb-btn" type="button">标记异常</button>
+            <button class="rb-btn rb-btn--text" type="button">更多</button>
+          </div>
+        </div>
+        <div class="rb-review">
+          <div class="rb-picker">
+            <div class="rb-pick"><span>报销信息</span><span></span></div>
+            <div class="rb-group">发票 16 张</div>
+            <div class="rb-pick rb-pick--on"><span>深圳市博润森科技</span><span>¥470.00</span></div>
+            <div class="rb-pick"><span>金华久时科技</span><span>¥142.50</span></div>
+            <div class="rb-pick"><span>青岛嘉鹏焊割工具</span><span>¥121.40</span></div>
+            <div class="rb-pick"><span>新华红翔兴工控电气</span><span>¥120.00</span></div>
+            <div class="rb-more">还有 12 张</div>
+          </div>
+          <div class="rb-viewer">
+            <div class="rb-sheet">这里显示发票原件</div>
+            <dl class="rb-kv4">
+              <div><dt>销售方</dt><dd>深圳市博润森科技有限公司</dd></div>
+              <div><dt>发票号</dt><dd>26952000004608086821</dd></div>
+              <div><dt>开票日期</dt><dd>2026-10-29</dd></div>
+              <div><dt>金额</dt><dd>¥470.00</dd></div>
+            </dl>
+          </div>
+        </div>
+        <div class="rb-total"><span>票面合计 <strong>¥1,568.95</strong></span><span>申报 <strong>¥1,568.91</strong></span><span class="rb-bad">多 ¥0.04</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rb-block">
+    <h3>申请人：新建报销，一次传多张</h3>
+    <p>文件可以一次选多个或拖入多个，每个文件单独显示进度。右边默认是要填的信息，点某张发票才看原件。</p>
+    <div class="rb-shell">
+      <div class="rb-page">
+        <div class="rb-verdict">
+          <div class="rb-verdict__text">
+            <p class="rb-title">还有 2 张发票没传完</p>
+            <p class="rb-todo">传完确认金额，就可以提交了。</p>
+          </div>
+          <div class="rb-actions">
+            <button class="rb-btn rb-btn--off" type="button">提交报销</button>
+            <button class="rb-btn rb-btn--text" type="button">更多</button>
+          </div>
+        </div>
+        <div class="rb-review">
+          <div class="rb-picker">
+            <div class="rb-pick rb-pick--on"><span>报销信息</span><span></span></div>
+            <div class="rb-group">发票 4 张</div>
+            <div class="rb-drop">拖入文件，或点击选择多个<br>支持 PDF、JPG、PNG</div>
+            <div class="rb-pick"><span>金华久时科技</span><span>¥142.50</span></div>
+            <div class="rb-pick"><span>261029_120.00_红翔兴工控.pdf</span><span class="rb-pick__state">识别中</span></div>
+            <div class="rb-pick"><span>IMG_2041.jpg<span class="rb-bar"><i></i></span></span><span class="rb-pick__state">上传 62%</span></div>
+            <div class="rb-pick"><span>IMG_2042.jpg</span><span class="rb-pick__state rb-pick__state--link">失败，重试</span></div>
+          </div>
+          <div class="rb-viewer">
+            <div class="rb-form">
+              <label>所属项目</label><div class="rb-input">仓库</div>
+              <label>费用类别</label><div class="rb-input">材料</div>
+              <label>说明</label><div class="rb-input rb-input--area">榆垡基地维修及现场使用单向阀</div>
+              <label>报销金额</label><div class="rb-input">¥142.50</div>
+              <div class="rb-hint">默认等于已识别的票面合计，可以改。</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rb-block">
+    <h3>办公室：照片是手写收据（信封 327 的真实内容）</h3>
+    <p>系统算不出合计时直接说明白，把读到的内容摆出来，不再报"金额不一致"。</p>
+    <div class="rb-shell">
+      <div class="rb-page">
+        <div class="rb-verdict">
+          <div class="rb-verdict__text">
+            <p class="rb-title rb-title--warn">2 个附件是手写收据，系统算不出合计</p>
+            <p class="rb-todo">请按原件核对 ¥2,300.00，没问题就签收。</p>
+          </div>
+          <div class="rb-actions">
+            <button class="rb-btn rb-btn--primary" type="button">核查签收</button>
+            <button class="rb-btn" type="button">标记异常</button>
+            <button class="rb-btn rb-btn--text" type="button">更多</button>
+          </div>
+        </div>
+        <div class="rb-review">
+          <div class="rb-picker">
+            <div class="rb-pick"><span>报销信息</span><span></span></div>
+            <div class="rb-group">附件 2 个</div>
+            <div class="rb-pick rb-pick--on"><span>照片 1</span><span class="rb-pick__state rb-pick__state--bad">不是发票</span></div>
+            <div class="rb-pick"><span>照片 2</span><span class="rb-pick__state rb-pick__state--bad">不是发票</span></div>
+          </div>
+          <div class="rb-viewer">
+            <div class="rb-sheet">这里显示照片原件</div>
+            <dl class="rb-read">
+              <dt>系统读到的内容</dt>
+              <dd>多张收据及一张支出凭单，未见发票。收据金额分别为 38 元、184 元、47 元、30 元、110 元；支出凭单日期 2026 年 10 月 31 日，金额 2300 元。</dd>
+            </dl>
+          </div>
+        </div>
+        <div class="rb-total"><span>票面合计 <strong>算不出</strong></span><span>申报 <strong>¥2,300.00</strong></span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="rb-block">
+    <h3>其他情况的说法</h3>
+    <p>版面不变，只换这三句和按钮。</p>
+    <div class="rb-shell" style="padding: 0;">
+      <div class="rb-page" style="overflow: hidden;">
+        <table class="rb-copy">
+          <tr><th>谁看到、什么时候</th><th>结论</th><th>该做什么</th><th>按钮</th></tr>
+          <tr><td>办公室，有疑似重复</td><td>1 张发票疑似重复报销</td><td>先看标出的那张，确认后再签收。</td><td>核查签收、标记异常</td></tr>
+          <tr><td>办公室，还在识别</td><td>还有 3 张发票在识别</td><td>可以先看原件，识别完会自动更新。</td><td>核查签收、标记异常</td></tr>
+          <tr><td>办公室，识别失败</td><td>2 张发票没读出来</td><td>请直接看原件，或重新识别这 2 张。</td><td>重新识别、核查签收</td></tr>
+          <tr><td>办公室，已签收</td><td>已签收，等你复核</td><td>确认无误就通过，缺材料就要求补充。</td><td>复核通过、要求补充、驳回</td></tr>
+          <tr><td>申请人，还没传发票</td><td>还差发票，传完就能提交</td><td>把发票拖进左边，可以一次传多张。</td><td>提交报销（不可点）</td></tr>
+          <tr><td>申请人，已提交</td><td>已提交，等办公室核查</td><td>现在不用做什么。实物信封记得寄给办公室。</td><td>无</td></tr>
+          <tr><td>申请人，被要求补充</td><td>办公室要求补充材料</td><td>显示办公室的原话，补完重新提交。</td><td>重新提交</td></tr>
+          <tr><td>申请人，被驳回</td><td>办公室驳回了这张报销</td><td>显示驳回原因，改好后可以重新提交。</td><td>重新提交</td></tr>
+          <tr><td>所有人，审批中</td><td>已进入批次，审批中</td><td>现在不用做什么。</td><td>查看批次</td></tr>
+          <tr><td>所有人，待打款</td><td>审批通过，等待打款</td><td>现在不用做什么。</td><td>查看批次</td></tr>
+          <tr><td>所有人，已打款</td><td>已打款 ¥5,763.75</td><td>流程已结束。</td><td>无</td></tr>
+          <tr><td>所有人，已废止</td><td>这张报销已废止</td><td>显示废止原因，不再流转。</td><td>无</td></tr>
+        </table>
+      </div>
+    </div>
+  </section>
+
+</div>

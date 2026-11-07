@@ -40,21 +40,26 @@ import {
 } from "./reimbursement-channel-switch-policy";
 import { decideCreateRouteBranch } from "./reimbursement-create-policy";
 import { evaluateDuplicatePrecheckGate } from "./reimbursement-duplicate-gate";
-import {
-  BLOCKING_RISK_LEVELS,
-  classifyFuzzyDuplicate,
-  isBlockingRiskLevel,
-  listDuplicateCheckSummaries,
-  type DuplicateScanResult
-} from "./reimbursement-duplicate-scan";
+import { BLOCKING_RISK_LEVELS, listDuplicateCheckSummaries } from "./reimbursement-duplicate-scan";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
-import {
-  parseInvoiceTitleFilter,
-  pickBuyerNameFromReviews,
-  readInvoiceExtractionText
-} from "./reimbursement-invoice-title-policy";
-import { syncEnvelopeInvoiceTitle } from "./reimbursement-invoice-title-sync";
+import { parseInvoiceTitleFilter } from "./reimbursement-invoice-title-policy";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
+import { applyDuplicateChecks, scanEnvelopeDuplicates } from "../services/reimbursement/duplicate-checks";
+import {
+  ensureAnomalyReview,
+  ensureInvoiceReviews,
+  refreshInvoiceReviewRows,
+  restartEnvelopeReview,
+  syncEnvelopeAuditState
+} from "../services/reimbursement/review-pipeline";
+import {
+  extractInvoiceRecognitionHints,
+  isMissingInvoiceReviewTableError,
+  parseStoredJson,
+  parseTaskResult,
+  supportsInvoiceReviewTable,
+  UNASSIGNED_APPLICANT
+} from "../services/reimbursement/review-helpers";
 import type { Env } from "../types/env";
 import { reimbursementChannels, reimbursementStatuses } from "../types/reimbursement";
 import type {
@@ -82,7 +87,6 @@ import type {
 } from "../types/reimbursement";
 
 const nowIso = () => new Date().toISOString();
-const UNASSIGNED_APPLICANT = "__UNASSIGNED__";
 const validChannelSet = new Set<string>(reimbursementChannels);
 const reimbursementStatusSet = new Set<string>(reimbursementStatuses);
 const UUID_REGEX =
@@ -104,166 +108,6 @@ const sanitizeInvoiceUniqueNo = (value: string | null | undefined): string | nul
   if (!trimmed) return null;
   if (!INVOICE_NO_PATTERN.test(trimmed)) return null;
   return trimmed;
-};
-
-const parseTaskResult = (resultJson: string | null): Record<string, unknown> | null => {
-  if (!resultJson) {
-    return null;
-  }
-
-  try {
-    const raw = JSON.parse(resultJson) as { output?: string } & Record<string, unknown>;
-    if (typeof raw.output === "string") {
-      try {
-        return JSON.parse(raw.output) as Record<string, unknown>;
-      } catch {
-        return { output: raw.output };
-      }
-    }
-    return raw;
-  } catch {
-    return null;
-  }
-};
-
-const extractInvoiceUniqueNo = (payload: Record<string, unknown> | null): string | null => {
-  if (!payload) return null;
-  const candidates = [payload.invoice_unique_no, payload.invoice_number, payload.fphm, payload.invoice_no];
-  for (const candidate of candidates) {
-    if (typeof candidate === "string") {
-      const normalized = candidate.trim();
-      if (normalized) return normalized;
-    }
-  }
-  return null;
-};
-
-const parseStoredJson = (value: string | null | undefined): Record<string, unknown> | null => {
-  if (!value) return null;
-  try {
-    return JSON.parse(value) as Record<string, unknown>;
-  } catch {
-    return null;
-  }
-};
-
-const normalizeHintValue = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  const normalized = value.trim();
-  return normalized || null;
-};
-
-const extractInvoiceRecognitionHints = (payload: Record<string, unknown> | null) => {
-  return {
-    invoice_unique_no: extractInvoiceUniqueNo(payload),
-    invoice_no:
-      normalizeHintValue(payload?.invoice_no) ?? normalizeHintValue(payload?.invoice_number),
-    expense_date:
-      normalizeHintValue(payload?.issue_date) ?? normalizeHintValue(payload?.date),
-    result_json: payload ? JSON.stringify(payload) : null
-  };
-};
-
-const normalizeInvoiceNo = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  const normalized = value.replace(/\s+/g, "").trim();
-  return normalized || null;
-};
-
-const normalizeInvoiceDate = (value: unknown): string | null => {
-  if (typeof value !== "string") return null;
-  const cleaned = value.trim();
-  if (!cleaned) return null;
-  const digits = cleaned.replace(/[^0-9]/g, "");
-  if (/^\d{8}$/.test(digits)) {
-    return `${digits.slice(0, 4)}-${digits.slice(4, 6)}-${digits.slice(6, 8)}`;
-  }
-  if (/^\d{4}-\d{2}-\d{2}$/.test(cleaned)) {
-    return cleaned;
-  }
-  return null;
-};
-
-const toAmountValue = (value: unknown): number | null => {
-  if (typeof value === "number" && Number.isFinite(value)) return value;
-  if (typeof value === "string") {
-    const cleaned = value.replace(/[^0-9.-]/g, "").trim();
-    if (!cleaned) return null;
-    const parsed = Number(cleaned);
-    return Number.isFinite(parsed) ? parsed : null;
-  }
-  return null;
-};
-
-const parseQrInvoiceHints = (qrText: string | null): {
-  invoice_no: string | null;
-  invoice_date: string | null;
-  invoice_unique_no: string | null;
-  amount: number | null;
-} => {
-  if (!qrText) {
-    return { invoice_no: null, invoice_date: null, invoice_unique_no: null, amount: null };
-  }
-  const compact = qrText.trim();
-  const lower = compact.toLowerCase();
-
-  const params = new URLSearchParams(lower.includes("?") ? lower.split("?").slice(1).join("?") : "");
-  const queryInvoiceNo = normalizeInvoiceNo(params.get("invoice_no") || params.get("invoiceNumber"));
-  const queryDate = normalizeInvoiceDate(params.get("invoice_date") || params.get("date"));
-  const queryAmount = toAmountValue(params.get("amount") || params.get("total"));
-
-  const tokens = compact.split(/[，,;；\s]+/).filter(Boolean);
-  let tokenInvoiceNo: string | null = null;
-  let tokenDate: string | null = null;
-  let tokenAmount: number | null = null;
-  let tokenUniqueNo: string | null = null;
-
-  for (const token of tokens) {
-    if (!tokenInvoiceNo && /^\d{8}$/.test(token)) {
-      tokenInvoiceNo = token;
-    }
-    if (!tokenDate) {
-      const parsedDate = normalizeInvoiceDate(token);
-      if (parsedDate) tokenDate = parsedDate;
-    }
-    if (tokenAmount === null) {
-      const parsedAmount = toAmountValue(token);
-      if (parsedAmount !== null && parsedAmount > 0) tokenAmount = parsedAmount;
-    }
-    if (!tokenUniqueNo && /^\d{10,20}$/.test(token)) {
-      tokenUniqueNo = token;
-    }
-  }
-
-  return {
-    invoice_no: queryInvoiceNo ?? tokenInvoiceNo,
-    invoice_date: queryDate ?? tokenDate,
-    invoice_unique_no: tokenUniqueNo,
-    amount: queryAmount ?? tokenAmount
-  };
-};
-
-const sha256Hex = async (value: string): Promise<string> => {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
-  return Array.from(new Uint8Array(digest))
-    .map((part) => part.toString(16).padStart(2, "0"))
-    .join("");
-};
-
-const isMissingInvoiceReviewTableError = (error: unknown): boolean => {
-  const message = error instanceof Error ? error.message : String(error ?? "");
-  return message.includes("no such table") && message.includes("reimbursement_invoice_review");
-};
-
-const supportsInvoiceReviewTable = async (env: Env): Promise<boolean> => {
-  try {
-    const row = await env.DB.prepare(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'reimbursement_invoice_review'"
-    ).first<{ name: string }>();
-    return Boolean(row?.name);
-  } catch {
-    return false;
-  }
 };
 
 const hasOfficeRole = (roles: string[] = []) => {
@@ -484,848 +328,6 @@ const insertAttachments = async (
         item.issue_date ?? null,
         now
       )
-      .run();
-  }
-};
-
-type InvoiceReviewRow = {
-  id: number;
-  attachment_id: number;
-  review_round: number;
-  task_id: number | null;
-  task_status: string;
-  extraction_json: string | null;
-  qr_text: string | null;
-  qr_hash: string | null;
-  invoice_unique_no: string | null;
-  invoice_no: string | null;
-  invoice_date: string | null;
-  invoice_amount: number | null;
-  source: string | null;
-  risk_level: string;
-  risk_hint: string | null;
-};
-
-const createInvoiceReviewTasks = async (
-  env: Env,
-  envelope: ReimbursementEnvelope,
-  attachments: Array<{ id: number; file_key: string; file_name: string | null }>,
-  options?: { forceRerun?: boolean }
-): Promise<{ round: number; latestTaskId: number | null }> => {
-  const latestRoundRow = await env.DB.prepare(
-    "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
-  )
-    .bind(envelope.id)
-    .first<{ max_round: number | null }>();
-  const latestRound = Number(latestRoundRow?.max_round ?? 0);
-  const round = options?.forceRerun ? latestRound + 1 : Math.max(latestRound, 1);
-  const now = nowIso();
-
-  const existingRows = await env.DB.prepare(
-    `SELECT attachment_id, task_id, task_status
-       FROM reimbursement_invoice_review
-      WHERE envelope_id = ? AND review_round = ?`
-  )
-    .bind(envelope.id, round)
-    .all<{ attachment_id: number; task_id: number | null; task_status: string }>();
-  const existingByAttachment = new Map<number, { task_id: number | null; task_status: string }>();
-  for (const row of existingRows.results ?? []) {
-    existingByAttachment.set(row.attachment_id, row);
-  }
-
-  let latestTaskId: number | null = null;
-  for (const attachment of attachments) {
-    const existing = existingByAttachment.get(attachment.id);
-    if (existing && !options?.forceRerun && ["pending", "assigned", "running", "completed"].includes(existing.task_status)) {
-      latestTaskId = existing.task_id ?? latestTaskId;
-      continue;
-    }
-
-    const task = await createTask(env, {
-      task_type: "ocr_extract",
-      biz_type: "reimbursement_envelope",
-      biz_id: envelope.id,
-      priority: envelope.channel === "electronic" ? 5 : 4,
-      payload: {
-        envelope_id: envelope.id,
-        attachment_id: attachment.id,
-        file_key: attachment.file_key,
-        file_name: attachment.file_name,
-        channel: envelope.channel,
-        project_id: envelope.project_id
-      },
-      timeout_seconds: 300
-    });
-    latestTaskId = task.id;
-
-    await env.DB.prepare(
-      `INSERT INTO reimbursement_invoice_review
-        (envelope_id, attachment_id, review_round, channel, task_id, task_status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`
-    )
-      .bind(envelope.id, attachment.id, round, envelope.channel, task.id, now, now)
-      .run();
-  }
-
-  return { round, latestTaskId };
-};
-
-const applyInvoiceReviewDuplicateChecks = async (
-  env: Env,
-  envelopeId: number,
-  rows: InvoiceReviewRow[]
-): Promise<number> => {
-  await env.DB.prepare(
-    "DELETE FROM reimbursement_duplicate_check WHERE envelope_id = ? AND match_type IN ('invoice_no_date', 'qr_hash')"
-  )
-    .bind(envelopeId)
-    .run();
-
-  const now = nowIso();
-  let count = 0;
-  for (const row of rows) {
-    const invoiceNo = row.invoice_no?.trim();
-    const invoiceDate = row.invoice_date?.trim();
-    if (invoiceNo && invoiceDate) {
-      const matched = await env.DB.prepare(
-        `SELECT envelope_id FROM reimbursement_invoice_review
-          WHERE envelope_id != ?
-            AND invoice_no = ?
-            AND invoice_date = ?
-            AND task_status = 'completed'
-          ORDER BY id DESC
-          LIMIT 10`
-      )
-        .bind(envelopeId, invoiceNo, invoiceDate)
-        .all<{ envelope_id: number }>();
-
-      for (const item of matched.results ?? []) {
-        const riskLevel = row.invoice_unique_no ? "high" : "medium";
-        await env.DB.prepare(
-          `INSERT INTO reimbursement_duplicate_check
-            (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
-           VALUES (?, ?, ?, 'invoice_no_date', 1, ?, ?, ?, ?)`
-        )
-          .bind(
-            envelopeId,
-            item.envelope_id,
-            invoiceNo,
-            riskLevel,
-            row.invoice_unique_no
-              ? "电子发票号+日期重复且唯一编号可交叉验证，疑似重复票据"
-              : "电子发票号+日期重复，建议办公室结合附件原件进一步核对",
-            JSON.stringify({
-              invoice_no: invoiceNo,
-              invoice_date: invoiceDate,
-              invoice_unique_no: row.invoice_unique_no,
-              confidence: row.invoice_unique_no ? "strong" : "medium"
-            }),
-            now
-          )
-          .run();
-        count += 1;
-      }
-    }
-
-    const qrHash = row.qr_hash?.trim();
-    if (!qrHash) continue;
-    const matchedQr = await env.DB.prepare(
-      `SELECT envelope_id FROM reimbursement_invoice_review
-        WHERE envelope_id != ?
-          AND qr_hash = ?
-          AND task_status = 'completed'
-        ORDER BY id DESC
-        LIMIT 10`
-    )
-      .bind(envelopeId, qrHash)
-      .all<{ envelope_id: number }>();
-    for (const item of matchedQr.results ?? []) {
-      await env.DB.prepare(
-        `INSERT INTO reimbursement_duplicate_check
-          (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
-         VALUES (?, ?, ?, 'qr_hash', 1, 'high', ?, ?, ?)`
-      )
-        .bind(
-          envelopeId,
-          item.envelope_id,
-          row.invoice_no,
-          "电子发票二维码内容重复，疑似重复票据",
-          JSON.stringify({ qr_hash: qrHash, invoice_no: row.invoice_no, invoice_date: row.invoice_date }),
-          now
-        )
-        .run();
-      count += 1;
-    }
-  }
-  return count;
-};
-
-const applyDuplicateChecks = async (
-  env: Env,
-  envelopeId: number,
-  hints?: {
-    invoice_unique_no?: string | null;
-    invoice_no?: string | null;
-    expense_date?: string | null;
-  }
-): Promise<DuplicateScanResult> => {
-  const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
-    .bind(envelopeId)
-    .first<ReimbursementEnvelope>();
-
-  if (!envelope || envelope.status === "deleted") {
-    return { total: 0, blocking: 0 };
-  }
-
-  await env.DB.prepare("DELETE FROM reimbursement_duplicate_check WHERE envelope_id = ?")
-    .bind(envelopeId)
-    .run();
-
-  const now = nowIso();
-  let total = 0;
-  let blocking = 0;
-
-  const invoiceUniqueNo = hints?.invoice_unique_no?.trim() || envelope.invoice_unique_no?.trim();
-  const invoiceNo = hints?.invoice_no?.trim() || envelope.invoice_no?.trim();
-  const expenseDate = hints?.expense_date?.trim() || envelope.expense_date;
-  if (invoiceUniqueNo || invoiceNo) {
-    const rows = invoiceUniqueNo
-      ? await env.DB.prepare(
-          `SELECT id, project_id, invoice_no, invoice_unique_no FROM reimbursement_envelope
-           WHERE id != ? AND status != 'deleted' AND invoice_unique_no = ?`
-        )
-          .bind(envelopeId, invoiceUniqueNo)
-          .all<{ id: number; project_id: number; invoice_no: string | null; invoice_unique_no: string | null }>()
-      : await env.DB.prepare(
-          `SELECT id, project_id, invoice_no, invoice_unique_no FROM reimbursement_envelope
-           WHERE id != ? AND status != 'deleted' AND invoice_no = ?`
-        )
-          .bind(envelopeId, invoiceNo ?? "")
-          .all<{ id: number; project_id: number; invoice_no: string | null; invoice_unique_no: string | null }>();
-
-    for (const row of rows.results ?? []) {
-      const matchType = row.project_id === envelope.project_id ? "exact" : "cross_project";
-      await env.DB.prepare(
-        `INSERT INTO reimbursement_duplicate_check
-          (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
-         VALUES (?, ?, ?, ?, ?, 'high', ?, ?, ?)`
-      )
-        .bind(
-          envelopeId,
-          row.id,
-          row.invoice_unique_no ?? row.invoice_no,
-          matchType,
-          1,
-          matchType === "exact" ? "发票唯一编号完全重复" : "发票唯一编号跨项目重复",
-          JSON.stringify({
-            matched_envelope_id: row.id,
-            invoice_unique_no: row.invoice_unique_no,
-            invoice_no: row.invoice_no
-          }),
-          now
-        )
-        .run();
-      total += 1;
-      blocking += 1;
-    }
-  }
-
-  if (envelope.amount > 0 && envelope.applicant_userid !== UNASSIGNED_APPLICANT) {
-    const fuzzyRows = await env.DB.prepare(
-      `SELECT id, project_id, invoice_no, amount, expense_date FROM reimbursement_envelope
-       WHERE id != ? AND status NOT IN ('deleted', 'cancelled')
-         AND applicant_userid = ?
-         AND ABS(amount - ?) <= 1
-         AND (
-           expense_date IS NULL OR ? IS NULL OR ABS(julianday(expense_date) - julianday(?)) <= 7
-         )
-       ORDER BY updated_at DESC
-       LIMIT 10`
-    )
-      .bind(envelopeId, envelope.applicant_userid, envelope.amount, expenseDate, expenseDate)
-      .all<{
-        id: number;
-        project_id: number;
-        invoice_no: string | null;
-        amount: number;
-        expense_date: string | null;
-      }>();
-
-    for (const row of fuzzyRows.results ?? []) {
-      const classification = classifyFuzzyDuplicate(expenseDate ?? null, row.expense_date);
-      await env.DB.prepare(
-        `INSERT INTO reimbursement_duplicate_check
-          (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
-         VALUES (?, ?, ?, 'fuzzy', ?, ?, ?, ?, ?)`
-      )
-        .bind(
-          envelopeId,
-          row.id,
-          row.invoice_no,
-          classification.match_score,
-          classification.risk_level,
-          classification.summary,
-          JSON.stringify({
-            matched_envelope_id: row.id,
-            amount: row.amount,
-            expense_date: row.expense_date
-          }),
-          now
-        )
-        .run();
-      total += 1;
-      if (isBlockingRiskLevel(classification.risk_level)) {
-        blocking += 1;
-      }
-    }
-  }
-
-  const attachmentRows = await env.DB.prepare(
-    "SELECT file_key FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' AND file_key IS NOT NULL"
-  )
-    .bind(envelopeId)
-    .all<{ file_key: string }>();
-  const fileKeys = Array.from(
-    new Set(
-      (attachmentRows.results ?? [])
-        .map(row => row.file_key?.trim())
-        .filter((value): value is string => Boolean(value))
-    )
-  );
-
-  for (const fileKey of fileKeys) {
-    const matched = await env.DB.prepare(
-      `SELECT ea.envelope_id
-         FROM envelope_attachment ea
-         JOIN reimbursement_envelope re ON re.id = ea.envelope_id
-        WHERE ea.file_key = ?
-          AND ea.status = 'active'
-          AND ea.envelope_id != ?
-          AND re.status != 'deleted'
-        ORDER BY ea.id DESC
-        LIMIT 10`
-    )
-      .bind(fileKey, envelopeId)
-      .all<{ envelope_id: number }>();
-
-    for (const row of matched.results ?? []) {
-      await env.DB.prepare(
-        `INSERT INTO reimbursement_duplicate_check
-          (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
-         VALUES (?, ?, NULL, 'attachment_file_key', ?, 'high', ?, ?, ?)`
-      )
-        .bind(
-          envelopeId,
-          row.envelope_id,
-          0.95,
-          "附件文件疑似重复提交（file_key 一致）",
-          JSON.stringify({ matched_envelope_id: row.envelope_id, file_key: fileKey }),
-          now
-        )
-        .run();
-      total += 1;
-      blocking += 1;
-    }
-  }
-
-  await env.DB.prepare(
-    "UPDATE reimbursement_envelope SET duplicate_check_status = 'completed', updated_at = ? WHERE id = ?"
-  )
-    .bind(nowIso(), envelopeId)
-    .run();
-
-  return { total, blocking };
-};
-
-const enqueueEnvelopeAiAudit = async (
-  env: Env,
-  envelopeId: number,
-  options?: { file_key?: string | null; forceRerun?: boolean; triggeredBy?: string | null; reason?: string | null }
-) => {
-  const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
-    .bind(envelopeId)
-    .first<ReimbursementEnvelope>();
-
-  if (!envelope || envelope.status === "deleted") return;
-
-  const duplicateScan = await applyDuplicateChecks(env, envelopeId);
-  const now = nowIso();
-
-  const attachments = await env.DB.prepare(
-    `SELECT id, attachment_type, file_key, file_name, file_size, invoice_no, amount, issue_date
-       FROM envelope_attachment
-      WHERE envelope_id = ? AND status = 'active'
-      ORDER BY id ASC`
-  )
-    .bind(envelopeId)
-    .all<{
-      id: number;
-      attachment_type: string;
-      file_key: string;
-      file_name: string | null;
-      file_size: number | null;
-      invoice_no: string | null;
-      amount: number | null;
-      issue_date: string | null;
-    }>();
-
-  const duplicateChecks = await env.DB.prepare(
-    `SELECT matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json
-       FROM reimbursement_duplicate_check
-      WHERE envelope_id = ?
-      ORDER BY id DESC`
-  )
-    .bind(envelopeId)
-    .all<{
-      matched_envelope_id: number | null;
-      matched_invoice_no: string | null;
-      match_type: string;
-      match_score: number | null;
-      risk_level: string;
-      summary: string | null;
-      evidence_json: string | null;
-    }>();
-
-  await createTask(env, {
-    task_type: "reimbursement_anomaly",
-    biz_type: "reimbursement_envelope",
-    biz_id: envelopeId,
-    priority: 4,
-    payload: {
-      envelope_id: envelopeId,
-      review_strategy:
-        envelope.channel === "electronic"
-          ? "electronic_qr_first_duplicate_by_invoice_no_date"
-          : "physical_invoice_multimodal_redundant",
-      review_triggered_by: options?.triggeredBy ?? null,
-      review_reason: options?.reason ?? null,
-      rerun: options?.forceRerun === true,
-      amount: envelope.amount,
-      duplicate_count: duplicateScan.total,
-      project_id: envelope.project_id,
-      applicant_userid: envelope.applicant_userid,
-      category: envelope.category,
-      description: envelope.description,
-      channel: envelope.channel,
-      attachments: (attachments.results ?? []).map(item => ({
-        attachment_type: item.attachment_type,
-        file_key: item.file_key,
-        file_name: item.file_name,
-        file_size: item.file_size,
-        invoice_no: item.invoice_no,
-        amount: item.amount,
-        issue_date: item.issue_date
-      })),
-      duplicate_checks: duplicateChecks.results ?? []
-    },
-    timeout_seconds: 300
-  });
-
-  await env.DB.prepare(
-    "UPDATE reimbursement_envelope SET precheck_status = 'pending', duplicate_check_status = 'pending', silent_review_result = NULL, updated_at = ? WHERE id = ?"
-  )
-    .bind(now, envelopeId)
-    .run();
-
-  const validAttachments = (attachments.results ?? [])
-    .map((item) => ({ id: item.id, file_key: item.file_key?.trim() ?? "", file_name: item.file_name ?? null }))
-    .filter((item) => item.file_key);
-  if (validAttachments.length === 0) return;
-
-  const hasInvoiceReviewTable = await supportsInvoiceReviewTable(env);
-  if (hasInvoiceReviewTable) {
-    try {
-      const reviewTaskState = await createInvoiceReviewTasks(env, envelope, validAttachments, {
-        forceRerun: options?.forceRerun === true
-      });
-
-      await env.DB.prepare(
-        "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
-      )
-        .bind(reviewTaskState.latestTaskId, nowIso(), envelopeId)
-        .run();
-      return;
-    } catch (error) {
-      if (!isMissingInvoiceReviewTableError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  const preferredFromOption = options?.file_key?.trim();
-  const preferredAttachment =
-    (preferredFromOption && validAttachments.find((item) => item.file_key === preferredFromOption)) ||
-    validAttachments[validAttachments.length - 1];
-  if (!preferredAttachment) return;
-  const fallbackOcrTask = await createTask(env, {
-    task_type: "ocr_extract",
-    biz_type: "reimbursement_envelope",
-    biz_id: envelopeId,
-    priority: envelope.channel === "electronic" ? 5 : 4,
-    payload: {
-      envelope_id: envelopeId,
-      file_key: preferredAttachment.file_key,
-      file_name: preferredAttachment.file_name,
-      project_id: envelope.project_id,
-      channel: envelope.channel
-    },
-    timeout_seconds: 300
-  });
-
-  await env.DB.prepare(
-    "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
-  )
-    .bind(fallbackOcrTask.id, nowIso(), envelopeId)
-    .run();
-};
-
-const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<void> => {
-  const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'")
-    .bind(envelopeId)
-    .first<ReimbursementEnvelope>();
-  if (!envelope) return;
-  if (envelope.status === "cancelled") return;
-
-  let hasReviewRows = false;
-  let latestReviewRound = 0;
-  if (await supportsInvoiceReviewTable(env)) {
-    try {
-      const reviewRoundRow = await env.DB.prepare(
-        "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
-      )
-        .bind(envelopeId)
-        .first<{ max_round: number | null }>();
-      latestReviewRound = Number(reviewRoundRow?.max_round ?? 0);
-      hasReviewRows = latestReviewRound > 0;
-    } catch (error) {
-      if (!isMissingInvoiceReviewTableError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  if (hasReviewRows) {
-    const reviewRows = await env.DB.prepare(
-      `SELECT id, attachment_id, review_round, task_id, task_status, extraction_json,
-              qr_text, qr_hash, invoice_unique_no, invoice_no, invoice_date, invoice_amount,
-              source, risk_level, risk_hint
-         FROM reimbursement_invoice_review
-        WHERE envelope_id = ? AND review_round = ?
-        ORDER BY id ASC`
-    )
-      .bind(envelopeId, latestReviewRound)
-      .all<InvoiceReviewRow>();
-
-    for (const row of reviewRows.results ?? []) {
-      if (!row.task_id) continue;
-      if (!["pending", "assigned", "running"].includes(row.task_status)) continue;
-      const task = await env.DB.prepare("SELECT status, result_json FROM task_queue WHERE id = ?")
-        .bind(row.task_id)
-        .first<{ status: string; result_json: string | null }>();
-      if (!task) continue;
-
-      if (task.status === "completed") {
-        const parsed = parseTaskResult(task.result_json ?? null);
-        const hints = extractInvoiceRecognitionHints(parsed);
-        const qrText = normalizeHintValue(parsed?.qr_code_text) ?? normalizeHintValue(parsed?.qr_text);
-        const qrHints = parseQrInvoiceHints(qrText);
-        const invoiceNo = normalizeInvoiceNo(hints.invoice_no ?? qrHints.invoice_no ?? null);
-        const invoiceDate = normalizeInvoiceDate(hints.expense_date ?? qrHints.invoice_date ?? null);
-        const invoiceUniqueNo = normalizeInvoiceNo(hints.invoice_unique_no ?? qrHints.invoice_unique_no ?? null);
-        const invoiceAmount =
-          toAmountValue(parsed?.amount_with_tax) ??
-          toAmountValue(parsed?.amount) ??
-          qrHints.amount ??
-          null;
-        const qrHash = qrText ? await sha256Hex(qrText) : null;
-        const source = qrText
-          ? "qr_payload"
-          : parsed && Object.keys(parsed).length > 0
-            ? "ocr_text"
-            : "fallback";
-
-        await env.DB.prepare(
-          `UPDATE reimbursement_invoice_review SET
-             task_status = 'completed',
-             extraction_json = ?,
-             qr_text = ?,
-             qr_hash = ?,
-             invoice_unique_no = ?,
-             invoice_no = ?,
-             invoice_date = ?,
-             invoice_amount = ?,
-             source = ?,
-             risk_level = ?,
-             risk_hint = ?,
-             updated_at = ?
-           WHERE id = ?`
-        )
-          .bind(
-            parsed ? JSON.stringify(parsed) : null,
-            qrText,
-            qrHash,
-            invoiceUniqueNo,
-            invoiceNo,
-            invoiceDate,
-            invoiceAmount,
-            source,
-            invoiceNo && invoiceDate ? "low" : "medium",
-            invoiceNo && invoiceDate ? null : "票据识别字段不完整，建议人工复核",
-            nowIso(),
-            row.id
-          )
-          .run();
-      } else if (task.status === "failed" || task.status === "timeout") {
-        await env.DB.prepare(
-          `UPDATE reimbursement_invoice_review SET
-             task_status = 'failed',
-             risk_level = 'high',
-             risk_hint = '票据识别失败，建议办公室人工复核原件',
-             updated_at = ?
-           WHERE id = ?`
-        )
-          .bind(nowIso(), row.id)
-          .run();
-      } else {
-        await env.DB.prepare(
-          "UPDATE reimbursement_invoice_review SET task_status = ?, updated_at = ? WHERE id = ?"
-        )
-          .bind(task.status, nowIso(), row.id)
-          .run();
-      }
-    }
-
-    const syncedRows = await env.DB.prepare(
-      `SELECT id, attachment_id, review_round, task_id, task_status, extraction_json,
-              qr_text, qr_hash, invoice_unique_no, invoice_no, invoice_date, invoice_amount,
-              source, risk_level, risk_hint
-         FROM reimbursement_invoice_review
-        WHERE envelope_id = ? AND review_round = ?
-        ORDER BY id ASC`
-    )
-      .bind(envelopeId, latestReviewRound)
-      .all<InvoiceReviewRow>();
-
-    const rows = syncedRows.results ?? [];
-    const pendingCount = rows.filter((row) => ["pending", "assigned", "running"].includes(row.task_status)).length;
-    const completedRows = rows.filter((row) => row.task_status === "completed");
-    const failedCount = rows.filter((row) => row.task_status === "failed").length;
-    const ocrStatus = pendingCount > 0 ? "pending" : completedRows.length > 0 ? "completed" : "failed";
-    const bestRow =
-      completedRows.find((row) => row.qr_text && row.invoice_no && row.invoice_date) ??
-      completedRows.find((row) => row.invoice_no || row.invoice_unique_no || row.invoice_date) ??
-      rows[0];
-
-    const extractedTotal = completedRows.reduce((sum, row) => {
-      return sum + (typeof row.invoice_amount === "number" && Number.isFinite(row.invoice_amount) ? row.invoice_amount : 0);
-    }, 0);
-    const amountDelta = Number(((envelope.amount || 0) - extractedTotal).toFixed(2));
-    const amountMismatch = completedRows.length > 0 && Math.abs(amountDelta) > 0.01;
-
-    const hints = {
-      invoice_unique_no: bestRow?.invoice_unique_no ?? null,
-      invoice_no: bestRow?.invoice_no ?? null,
-      expense_date: bestRow?.invoice_date ?? null,
-      result_json: JSON.stringify({
-        review_round: latestReviewRound,
-        extracted_invoices: completedRows.map((row) => ({
-          attachment_id: row.attachment_id,
-          invoice_no: row.invoice_no,
-          invoice_unique_no: row.invoice_unique_no,
-          invoice_date: row.invoice_date,
-          invoice_amount: row.invoice_amount,
-          qr_text: row.qr_text,
-          source: row.source,
-          risk_level: row.risk_level,
-          risk_hint: row.risk_hint,
-          buyer_name: readInvoiceExtractionText(row.extraction_json, "buyer_name"),
-          seller_name: readInvoiceExtractionText(row.extraction_json, "seller_name")
-        })),
-        failed_count: failedCount,
-        pending_count: pendingCount,
-        amount_summary: {
-          declared_amount: envelope.amount,
-          extracted_total: Number(extractedTotal.toFixed(2)),
-          delta: amountDelta,
-          mismatch: amountMismatch
-        }
-      })
-    };
-
-    await applyDuplicateChecks(env, envelopeId, hints);
-    await applyInvoiceReviewDuplicateChecks(env, envelopeId, rows);
-
-    // 审计同步只回写 OCR/审查字段;业务状态(成批/送审/付款等)由各自动作显式流转,
-    // 此处绝不能改写 status,否则已进入后续流程的信封会被打回「待签收」
-    await env.DB.prepare(
-      `UPDATE reimbursement_envelope SET
-         ocr_status = ?,
-         ocr_result_json = ?,
-         ocr_invoice_unique_no_hint = ?,
-         ocr_invoice_no_hint = ?,
-         ocr_expense_date_hint = ?,
-         duplicate_check_status = CASE WHEN ? > 0 THEN 'pending' ELSE 'completed' END,
-         silent_review_result = COALESCE(silent_review_result, ?),
-         updated_at = ?
-       WHERE id = ?`
-    )
-      .bind(
-        ocrStatus,
-        hints.result_json,
-        hints.invoice_unique_no,
-        hints.invoice_no,
-        hints.expense_date,
-        pendingCount,
-        JSON.stringify({
-          review_round: latestReviewRound,
-          channel: envelope.channel,
-          strategy:
-            envelope.channel === "electronic"
-              ? "电子发票二维码优先提取+历史比对+费用合理性AI辅助"
-              : "实体票据OCR/Vision双通道识别+冗余安全兜底",
-          summary: amountMismatch
-            ? "检测到票据合计与申报金额不一致，请办公室优先复核金额与票据明细"
-            : "静默审查已完成，建议结合AI建议与附件原件进行确认",
-          invoice_review: {
-            total: rows.length,
-            completed: completedRows.length,
-            failed: failedCount,
-            pending: pendingCount
-          },
-          amount_consistency: {
-            declared_amount: envelope.amount,
-            extracted_total: Number(extractedTotal.toFixed(2)),
-            delta: amountDelta,
-            mismatch: amountMismatch,
-            conclusion: amountMismatch
-              ? "票据合计与申报金额存在差异，需办公室人工复核"
-              : "票据合计与申报金额一致"
-          },
-          office_hints: [
-            pendingCount > 0 ? "仍有票据识别任务进行中，请稍后刷新" : null,
-            failedCount > 0 ? "存在票据识别失败，请人工核对附件原件" : null,
-            amountMismatch ? "检测到票据合计与申报金额不一致" : null
-          ].filter((item): item is string => Boolean(item))
-        }),
-        nowIso(),
-        envelopeId
-      )
-      .run();
-
-    await syncEnvelopeInvoiceTitle(env.DB, {
-      envelopeId,
-      currentStatus: envelope.status,
-      currentEntityId: envelope.invoice_title_entity_id ?? null,
-      currentName: envelope.invoice_title_name ?? null,
-      currentSource: envelope.invoice_title_source ?? null,
-      buyerName: pickBuyerNameFromReviews(completedRows, bestRow ?? null),
-      pendingCount,
-      completedCount: completedRows.length
-    });
-  }
-
-  if (!hasReviewRows && envelope.ocr_task_id) {
-    const ocrTask = await env.DB.prepare("SELECT status, result_json FROM task_queue WHERE id = ?")
-      .bind(envelope.ocr_task_id)
-      .first<{ status: string; result_json: string | null }>();
-    const ocrResult = parseTaskResult(ocrTask?.result_json ?? null);
-
-    if (ocrTask?.status === "completed" && envelope.ocr_status !== "completed") {
-      const hints = extractInvoiceRecognitionHints(ocrResult);
-      // 同上:审计同步不改写业务状态
-      await env.DB.prepare(
-        `UPDATE reimbursement_envelope SET
-           ocr_status = 'completed',
-           ocr_result_json = ?,
-           ocr_invoice_unique_no_hint = ?,
-           ocr_invoice_no_hint = ?,
-           ocr_expense_date_hint = ?,
-           updated_at = ?
-         WHERE id = ?`
-      )
-        .bind(
-          hints.result_json,
-          hints.invoice_unique_no,
-          hints.invoice_no,
-          hints.expense_date,
-          nowIso(),
-          envelopeId
-        )
-        .run();
-
-      await applyDuplicateChecks(env, envelopeId, hints);
-
-      const fallbackBuyerName =
-        typeof ocrResult?.buyer_name === "string" && ocrResult.buyer_name.trim()
-          ? ocrResult.buyer_name.trim()
-          : null;
-      // 单任务回退路径只在有抬头时写入，从不清空（该路径每个旧信封最多跑一次）
-      if (fallbackBuyerName) {
-        await syncEnvelopeInvoiceTitle(env.DB, {
-          envelopeId,
-          currentStatus: envelope.status,
-          currentEntityId: envelope.invoice_title_entity_id ?? null,
-          currentName: envelope.invoice_title_name ?? null,
-          currentSource: envelope.invoice_title_source ?? null,
-          buyerName: fallbackBuyerName,
-          pendingCount: 0,
-          completedCount: 1
-        });
-      }
-    }
-
-    if ((ocrTask?.status === "failed" || ocrTask?.status === "timeout") && envelope.ocr_status !== "failed") {
-      await env.DB.prepare(
-        "UPDATE reimbursement_envelope SET ocr_status = 'failed', duplicate_check_status = 'failed', updated_at = ? WHERE id = ?"
-      )
-        .bind(nowIso(), envelopeId)
-        .run();
-    }
-  }
-
-  const anomalyTask = await env.DB.prepare(
-    `SELECT status, result_json FROM task_queue
-     WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
-     ORDER BY id DESC LIMIT 1`
-  )
-    .bind(envelopeId)
-    .first<{ status: string; result_json: string | null }>();
-
-  if (anomalyTask?.status === "completed") {
-    const silentReviewResult = parseTaskResult(anomalyTask.result_json ?? null);
-    const latestSilentReviewRow = await env.DB.prepare(
-      "SELECT silent_review_result FROM reimbursement_envelope WHERE id = ?"
-    )
-      .bind(envelopeId)
-      .first<{ silent_review_result: string | null }>();
-    const existingSilentReview = parseStoredJson(latestSilentReviewRow?.silent_review_result ?? null);
-    const mergedSilentReview = {
-      ...(existingSilentReview ?? {}),
-      ai_reasonability: silentReviewResult,
-      ai_reasonability_summary:
-        typeof silentReviewResult?.summary === "string"
-          ? silentReviewResult.summary
-          : typeof silentReviewResult?.comment === "string"
-            ? silentReviewResult.comment
-            : null
-    };
-    await env.DB.prepare(
-      `UPDATE reimbursement_envelope SET
-         duplicate_check_status = 'completed',
-         silent_review_result = ?,
-         precheck_status = CASE WHEN precheck_status = 'none' THEN 'pending' ELSE precheck_status END,
-         updated_at = ?
-       WHERE id = ?`
-    )
-      .bind(JSON.stringify(mergedSilentReview), nowIso(), envelopeId)
-      .run();
-  }
-
-  if (anomalyTask?.status === "failed" || anomalyTask?.status === "timeout") {
-    await env.DB.prepare(
-      "UPDATE reimbursement_envelope SET duplicate_check_status = 'failed', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), envelopeId)
       .run();
   }
 };
@@ -3806,6 +2808,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          ocr_status = 'completed',
+         duplicate_check_status = 'completed',
          ocr_result_json = ?,
          ocr_invoice_unique_no_hint = ?,
          ocr_invoice_no_hint = ?,
@@ -3902,11 +2905,15 @@ reimbursementRoutes.post(
     }
 
     try {
-      await enqueueEnvelopeAiAudit(c.env, id, {
-        forceRerun: body.rerun_full !== false,
-        triggeredBy: auth.sub,
-        reason: body.reason?.trim() || "manual_office_silent_review"
-      });
+      if (body.rerun_full !== false) {
+        await restartEnvelopeReview(c.env, id);
+      } else {
+        await ensureAnomalyReview(c.env, id, {
+          force: true,
+          triggeredBy: auth.sub,
+          reason: body.reason?.trim() || "manual_office_silent_review"
+        });
+      }
 
       const latestTask = await c.env.DB.prepare(
         `SELECT id FROM task_queue
@@ -4014,7 +3021,7 @@ reimbursementRoutes.post(
     }
 
     const envelope = await c.env.DB.prepare(
-      `SELECT id, status, duplicate_check_status, duplicate_override_requested, applicant_userid,
+      `SELECT id, status, duplicate_override_requested, applicant_userid,
               channel, ocr_result_json, ocr_invoice_unique_no_hint
          FROM reimbursement_envelope
         WHERE id = ? AND status != 'deleted'`
@@ -4023,7 +3030,6 @@ reimbursementRoutes.post(
       .first<{
         id: number;
         status: string;
-        duplicate_check_status: string;
         duplicate_override_requested: number;
         applicant_userid: string;
         channel: string;
@@ -4044,31 +3050,15 @@ reimbursementRoutes.post(
     }
 
     if (body.action === "approved") {
-      if (envelope.duplicate_check_status !== "completed") {
-        const latestAuditTask = await c.env.DB.prepare(
-          `SELECT id, status FROM task_queue
-           WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
-           ORDER BY id DESC LIMIT 1`
-        )
-          .bind(id)
-          .first<{ id: number; status: string }>();
-
-        const runningStatuses = new Set(["pending", "assigned", "running"]);
-        const hasRunningAudit =
-          latestAuditTask?.status && runningStatuses.has(latestAuditTask.status);
-
-        if (!hasRunningAudit) {
-          const latestAttachment = await c.env.DB.prepare(
-            `SELECT file_key FROM envelope_attachment
-             WHERE envelope_id = ? AND status = 'active'
-             ORDER BY id DESC LIMIT 1`
-          )
-            .bind(id)
-            .first<{ file_key: string | null }>();
-          await enqueueEnvelopeAiAudit(c.env, id, {
-            file_key: latestAttachment?.file_key ?? null
-          });
-        }
+      // 先同步再判断：查重状态只由识别进度决定，费用合理性审查没跑完或失败都不拦
+      await syncEnvelopeAuditState(c.env, id);
+      const auditState = await c.env.DB.prepare(
+        "SELECT duplicate_check_status FROM reimbursement_envelope WHERE id = ?"
+      )
+        .bind(id)
+        .first<{ duplicate_check_status: string }>();
+      if (auditState?.duplicate_check_status !== "completed") {
+        const reviews = await ensureInvoiceReviews(c.env, id);
 
         return c.json(
           {
@@ -4076,8 +3066,8 @@ reimbursementRoutes.post(
             error: { message: "Duplicate audit is mandatory before precheck approval" },
             data: {
               wait_for_audit: true,
-              audit_triggered: !hasRunningAudit,
-              task_id: latestAuditTask?.id ?? null
+              audit_triggered: reviews.created > 0,
+              task_id: reviews.latestTaskId
             }
           },
           409
@@ -4492,11 +3482,7 @@ reimbursementRoutes.post(
             .bind(id)
             .first<{ id: number }>();
           if (activeAttachment) {
-            await enqueueEnvelopeAiAudit(c.env, id, {
-              forceRerun: true,
-              triggeredBy: auth.sub,
-              reason: `channel_switch_heal_to_${decision.channel}`
-            });
+            await restartEnvelopeReview(c.env, id);
             aiAuditTriggered = true;
           }
         }
@@ -4550,11 +3536,7 @@ reimbursementRoutes.post(
 
     let aiAuditTriggered = false;
     if (activeAttachment) {
-      await enqueueEnvelopeAiAudit(c.env, id, {
-        forceRerun: true,
-        triggeredBy: auth.sub,
-        reason: `channel_switch_to_${decision.toChannel}`
-      });
+      await restartEnvelopeReview(c.env, id);
       aiAuditTriggered = true;
     }
 
@@ -4980,8 +3962,15 @@ reimbursementRoutes.put(
 
     if (body.attachments && body.attachments.length > 0) {
       await insertAttachments(c.env.DB, id, body.attachments);
-      const latestFileKey = body.attachments.find(item => item.file_key?.trim())?.file_key ?? null;
-      await enqueueEnvelopeAiAudit(c.env, id, { file_key: latestFileKey });
+      // 旧版小程序没有「重新提交」可用，传附件时继续把被退回的单交回办公室
+      if (["approved", "supplement", "rejected"].includes(existing.precheck_status)) {
+        await c.env.DB.prepare(
+          "UPDATE reimbursement_envelope SET precheck_status = 'pending', updated_at = ? WHERE id = ?"
+        )
+          .bind(nowIso(), id)
+          .run();
+      }
+      await ensureInvoiceReviews(c.env, id);
     }
 
     return c.json({ success: true });
@@ -5229,7 +4218,10 @@ reimbursementRoutes.post(
     }
 
     const idempotencyKey = c.req.header("Idempotency-Key");
-    const idempotency = await beginIdempotentRequest<{ success: boolean; data: { id: number; status: string; already_submitted?: boolean } }>(
+    const idempotency = await beginIdempotentRequest<{
+      success: boolean;
+      data: { id: number; status: string; already_submitted?: boolean; resubmitted?: boolean };
+    }>(
       c.env.DB,
       `reimbursement:submit:${id}`,
       auth.sub,
@@ -5238,14 +4230,19 @@ reimbursementRoutes.post(
     if (idempotency.kind === "replay") {
       return c.json(idempotency.payload, { status: idempotency.statusCode as 200 });
     }
-    if (idempotency.kind === "pending") {
+    // 上一次请求可能在改完状态后中断，幂等行留在 pending。单子已提交就补完成，否则重试会一直 409。
+    if (idempotency.kind === "pending" && envelope.status !== "submitted") {
       return c.json(
         { success: false, error: { message: "Submission already in progress" } },
         409
       );
     }
 
-    if (envelope.status === "submitted") {
+    // 办公室要求补充或驳回都把状态改回 submitted，申请人再点提交才是把单子交回办公室
+    const isResubmit =
+      envelope.status === "submitted" && ["supplement", "rejected"].includes(envelope.precheck_status);
+
+    if (envelope.status === "submitted" && !isResubmit) {
       const payload = {
         success: true,
         data: {
@@ -5282,7 +4279,9 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "At least one attachment is required before submit" } }, 400);
     }
 
-    const duplicateScan = await applyDuplicateChecks(c.env, id);
+    // 草稿阶段已经在识别，提交时把每张发票的结果也算进去
+    await refreshInvoiceReviewRows(c.env, id);
+    const duplicateScan = await scanEnvelopeDuplicates(c.env, id);
     if (duplicateScan.blocking > 0 && body.force_submit !== true) {
       await abandonIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey);
       return c.json(
@@ -5303,24 +4302,37 @@ reimbursementRoutes.post(
     }
 
     const now = nowIso();
-    const submitResult = await c.env.DB.prepare(
-      `UPDATE reimbursement_envelope SET
-         status = 'submitted',
-         duplicate_override_requested = ?,
-         duplicate_override_reason = ?,
-         submitted_at = COALESCE(submitted_at, ?),
-         updated_at = ?
-       WHERE id = ?
-         AND status IN ('draft', 'unregistered')`
-    )
-      .bind(
-        body.force_submit === true ? 1 : 0,
-        body.force_submit === true ? body.force_submit_reason?.trim() ?? null : null,
-        now,
-        now,
-        id
-      )
-      .run();
+    const overrideRequested = body.force_submit === true ? 1 : 0;
+    const overrideReason = body.force_submit === true ? body.force_submit_reason?.trim() ?? null : null;
+    const submitResult = isResubmit
+      ? await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope SET
+             precheck_status = 'pending',
+             verification_status = 'pending',
+             duplicate_check_status = 'pending',
+             duplicate_override_requested = ?,
+             duplicate_override_reason = ?,
+             updated_at = ?
+           WHERE id = ?
+             AND status = 'submitted'
+             AND precheck_status IN ('supplement', 'rejected')`
+        )
+          .bind(overrideRequested, overrideReason, now, id)
+          .run()
+      : await c.env.DB.prepare(
+          `UPDATE reimbursement_envelope SET
+             status = 'submitted',
+             precheck_status = 'pending',
+             duplicate_check_status = 'pending',
+             duplicate_override_requested = ?,
+             duplicate_override_reason = ?,
+             submitted_at = COALESCE(submitted_at, ?),
+             updated_at = ?
+           WHERE id = ?
+             AND status IN ('draft', 'unregistered')`
+        )
+          .bind(overrideRequested, overrideReason, now, now, id)
+          .run();
 
     if ((submitResult.meta.changes ?? 0) === 0) {
       const latest = await c.env.DB.prepare(
@@ -5354,20 +4366,46 @@ reimbursementRoutes.post(
       );
     }
 
-    await enqueueEnvelopeAiAudit(c.env, id, {
-      file_key: attachmentRow.file_key,
-      forceRerun: false,
-      triggeredBy: auth.sub,
-      reason: "submit_auto_silent_review"
-    });
-
-    await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SCANNED", "reimbursement_envelope", {
+    // 状态已经改好。识别任务由队列补，发事件失败也有 Cron 兜底，不能让提交失败。
+    const submitEventPayload = {
       envelope_id: id,
       envelope_uuid: envelope.envelope_uuid,
       submitted_by: auth.sub
-    });
+    };
+    const submitEvents = isResubmit
+      ? (["REIMBURSEMENT_ENVELOPE_SUBMITTED"] as const)
+      : (["REIMBURSEMENT_ENVELOPE_SUBMITTED", "REIMBURSEMENT_ENVELOPE_SCANNED"] as const);
+    for (const eventType of submitEvents) {
+      try {
+        await publishEvent(c.env, eventType, "reimbursement_envelope", submitEventPayload);
+      } catch (error) {
+        console.error("Reimbursement submit event publish failed", { envelope_id: id, eventType, error });
+      }
+    }
 
-    const payload = { success: true, data: { id, status: "submitted" } };
+    if (isResubmit) {
+      try {
+        await writeAuditLog(c.env.DB, {
+          actorUserId: auth.sub,
+          actorRoles: auth.roles,
+          action: "reimbursement.envelope.resubmit",
+          targetType: "reimbursement_envelope",
+          targetId: id,
+          detail: {
+            previous_precheck_status: envelope.precheck_status,
+            previous_verification_status: envelope.verification_status,
+            force_submit: body.force_submit === true
+          }
+        });
+      } catch (error) {
+        console.error("Reimbursement resubmit audit failed", { envelope_id: id, error });
+      }
+    }
+
+    const payload = {
+      success: true,
+      data: isResubmit ? { id, status: "submitted", resubmitted: true } : { id, status: "submitted" }
+    };
     await completeIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey, 200, payload);
     return c.json(payload);
   }
@@ -5774,16 +4812,8 @@ reimbursementRoutes.post(
     }
 
     // 拆单后自动核查：两边各自重新静默审查（票据识别+重复校验+合理性）
-    await enqueueEnvelopeAiAudit(c.env, id, {
-      forceRerun: true,
-      triggeredBy: auth.sub,
-      reason: "envelope_split_source"
-    });
-    await enqueueEnvelopeAiAudit(c.env, newId, {
-      forceRerun: true,
-      triggeredBy: auth.sub,
-      reason: "envelope_split_child"
-    });
+    await restartEnvelopeReview(c.env, id);
+    await restartEnvelopeReview(c.env, newId);
 
     await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SPLIT", "reimbursement_envelope", {
       source_envelope_id: id,
