@@ -89,6 +89,8 @@ const resetState = () => {
   state.sheetIndex = 0;
   state.sheetItems = [];
   state.previewed = [];
+  state.bindFailsOnce = undefined;
+  state.uploadCount = 0;
 };
 
 const call = (method, url) => state.calls.filter((item) => item.method === method && item.path === url);
@@ -102,6 +104,10 @@ const respond = (options) => {
     return { data: { id: ENVELOPE_ID, envelope_no: "NO", envelope_uuid: VALID_UUID } };
   }
   if (method === "POST" && url === `/api/v1/reimbursement/${ENVELOPE_ID}/attachments`) {
+    if (state.bindFailsOnce) {
+      state.bindFailsOnce = false;
+      throw new Error("网络不太好");
+    }
     state.bound = [...state.bound, ...data.attachments];
     return { data: { attachment_ids: state.bound.map((_, index) => index + 1) } };
   }
@@ -155,6 +161,7 @@ stubModule("request.js", {
 stubModule("auth.js", { getToken: () => "token", getUserProfile: () => ({ username: "me", roles: ["operator"] }) });
 stubModule("upload.js", {
   uploadFileToR2: (filePath, options) => {
+    state.uploadCount = (state.uploadCount || 0) + 1;
     if (state.autoUpload) return Promise.resolve({ key: `reimbursement/${options.fileName}` });
     return new Promise((resolve, reject) => {
       state.uploads.push({ filePath, options, resolve: () => resolve({ key: `reimbursement/${options.fileName}` }), reject });
@@ -374,6 +381,62 @@ const tests = {
     await flush();
     assert.strictEqual(page.data.latestEnvelopeId, ENVELOPE_ID);
     assert.strictEqual(state.bound.length, 1);
+    page.onUnload();
+  },
+
+  async "一直失败的文件可以移除，移除后能提交"() {
+    const page = await openExisting({ amount: 10, guidance: { applicant: guidanceOf(), office: null } });
+    state.autoUpload = false;
+    state.pickedImages = [image("a.jpg")];
+    await page.pickImages();
+    await flush();
+    state.uploads[0].reject(new Error("一张报销最多 30 个附件"));
+    await flush();
+    assert.strictEqual(page.data.canSubmit, false);
+    page.dismissUpload(event({ id: page.data.rows[0].localId }));
+    await flush();
+    assert.strictEqual(page.data.rows.filter((row) => row.kind === "upload").length, 0);
+    assert.strictEqual(page.data.canSubmit, true);
+    page.onUnload();
+  },
+
+  async "绑定失败后重试不重传，用同一个 file_key"() {
+    const page = await openExisting({ guidance: { applicant: guidanceOf(), office: null } });
+    const realRespond = state.bindFailsOnce;
+    assert.strictEqual(realRespond, undefined);
+    state.bindFailsOnce = true;
+    state.pickedImages = [image("a.jpg")];
+    await page.pickImages();
+    await flush();
+    const failed = page.data.rows.find((row) => row.kind === "upload");
+    assert.strictEqual(failed.canRetry, true);
+    state.uploadCount = 0;
+    page.retryUpload(event({ id: failed.localId }));
+    await flush();
+    assert.strictEqual(state.uploadCount, 0, "不能再传一次 R2");
+    assert.strictEqual(state.bound.length, 1);
+    assert.strictEqual(state.bound[0].file_key, "reimbursement/a.jpg");
+    page.onUnload();
+  },
+
+  async "保存时没改过的金额不写回，提交时才写"() {
+    const totals = { ...baseDetail().review_totals, attachment_count: 1, recognized_count: 1, extracted_total: 120, complete: true };
+    const page = await openExisting({ amount: 0, review_totals: totals, guidance: { applicant: guidanceOf(), office: null } });
+    assert.strictEqual(page.data.draft.amount, "120");
+    await page.saveDraft();
+    assert.strictEqual(call("PUT", `/api/v1/reimbursement/${ENVELOPE_ID}`)[0].data.amount, undefined);
+
+    page.onDraftInput({ currentTarget: { dataset: { key: "amount" } }, detail: { value: "99" } });
+    await page.saveDraft();
+    assert.strictEqual(call("PUT", `/api/v1/reimbursement/${ENVELOPE_ID}`)[1].data.amount, 99);
+    page.onUnload();
+  },
+
+  async "提交时写回默认带出的金额"() {
+    const totals = { ...baseDetail().review_totals, attachment_count: 1, recognized_count: 1, extracted_total: 120, complete: true };
+    const page = await openExisting({ amount: 0, review_totals: totals, guidance: { applicant: guidanceOf(), office: null } });
+    await page.submitEnvelope();
+    assert.strictEqual(call("PUT", `/api/v1/reimbursement/${ENVELOPE_ID}`)[0].data.amount, 120);
     page.onUnload();
   },
 

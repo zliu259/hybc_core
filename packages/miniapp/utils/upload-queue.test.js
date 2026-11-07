@@ -125,6 +125,18 @@ const tests = {
     assert.deepStrictEqual(result.skipped, []);
   },
 
+  async "dismiss 去掉失败的文件，别的不受影响"() {
+    const { queue, calls } = createHarness();
+    queue.add([file("a.pdf"), file("b.pdf")]);
+    await flush();
+    calls[0].reject(new Error("断网了"));
+    await flush();
+    queue.dismiss(queue.getItems()[0].localId);
+    assert.deepStrictEqual(queue.getItems().map((item) => item.name), ["b.pdf"]);
+    queue.dismiss(queue.getItems()[0].localId);
+    assert.strictEqual(queue.getItems().length, 1, "传输中的不能去掉");
+  },
+
   async "每次变化都通知，拿到的是副本"() {
     const { queue, calls, changes } = createHarness();
     queue.add([file("a.pdf")]);

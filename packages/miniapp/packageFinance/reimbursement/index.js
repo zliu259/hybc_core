@@ -125,6 +125,7 @@ Page({
   createQueue() {
     this._detail = null;
     this._creatingEnvelope = null;
+    this._uploadedKeys = {};
     this._queue = createUploadQueue({
       concurrency: UPLOAD_CONCURRENCY,
       uploadOne: (item) => this.uploadOne(item),
@@ -295,12 +296,13 @@ Page({
     }
   },
 
-  draftPayload() {
+  /** 没改过的金额不写回：否则保存一次，金额就固定成当时的合计，后面再加发票也不跟着变。提交时才写。 */
+  draftPayload({ includeAmount }) {
     const { draft } = this.data;
     return {
       project_id: Number(draft.project_id || 0),
       expense_date: draft.expense_date || undefined,
-      amount: Number(draft.amount || 0) || undefined,
+      amount: includeAmount ? Number(draft.amount || 0) || undefined : undefined,
       category: draft.category || undefined,
       description: draft.description || undefined
     };
@@ -325,7 +327,7 @@ Page({
       method: "POST",
       path: "/api/v1/reimbursement",
       data: {
-        ...this.draftPayload(),
+        ...this.draftPayload({ includeAmount: this.data.amountTouched }),
         channel: draft.channel,
         preferred_envelope_uuid: draft.channel === "physical" ? draft.preferred_envelope_uuid : undefined
       }
@@ -356,7 +358,7 @@ Page({
         await request({
           method: "PUT",
           path: `/api/v1/reimbursement/${this.data.latestEnvelopeId}`,
-          data: this.draftPayload()
+          data: this.draftPayload({ includeAmount: this.data.amountTouched })
         });
       }
       const envelopeId = await this.ensureEnvelopeId();
@@ -446,24 +448,38 @@ Page({
     }
   },
 
-  /** 每个文件独立走完「传 R2、绑定」。 */
+  /**
+   * 每个文件独立走完「传 R2、绑定」。传过的重试时不再传：沿用同一个 key，接口看到相同 file_key
+   * 会返回已有记录，否则绑定成功但响应丢了的文件，重试会多绑一份。
+   */
   async uploadOne(item) {
-    const file = await uploadFileToR2(item.path, {
-      fileName: item.name,
-      category: "reimbursement",
-      debugContext: "reimbursement-attachment"
-    });
+    if (!this._uploadedKeys[item.localId]) {
+      const file = await uploadFileToR2(item.path, {
+        fileName: item.name,
+        category: "reimbursement",
+        debugContext: "reimbursement-attachment"
+      });
+      this._uploadedKeys = { ...this._uploadedKeys, [item.localId]: file.key };
+    }
     const envelopeId = await this.ensureEnvelopeId();
     await request({
       method: "POST",
       path: `/api/v1/reimbursement/${envelopeId}/attachments`,
-      data: { attachments: [{ file_key: file.key, file_name: item.name, file_size: item.size }] }
+      data: {
+        attachments: [
+          { file_key: this._uploadedKeys[item.localId], file_name: item.name, file_size: item.size }
+        ]
+      }
     });
     await this.loadEnvelopeDetail(envelopeId);
   },
 
   retryUpload(e) {
     this._queue.retry(e.currentTarget.dataset.id);
+  },
+
+  dismissUpload(e) {
+    this._queue.dismiss(e.currentTarget.dataset.id);
   },
 
   // ── 结论区的按钮 ──
@@ -582,7 +598,7 @@ Page({
       await request({
         method: "PUT",
         path: `/api/v1/reimbursement/${envelopeId}`,
-        data: this.draftPayload()
+        data: this.draftPayload({ includeAmount: true })
       });
 
       const firstKey = this.data.submitRequestKey || this.newSubmitKey();

@@ -15,7 +15,10 @@
 
       <view wx:if="{{item.kind === 'upload' && item.canRetry}}" class="rb-file-detail">
         <view wx:if="{{item.error}}" class="rb-file-error">{{item.error}}</view>
-        <t-button size="small" variant="outline" data-id="{{item.localId}}" bindtap="retryUpload">重试</t-button>
+        <view class="rb-file-actions">
+          <t-button size="small" variant="outline" data-id="{{item.localId}}" bindtap="retryUpload">重试</t-button>
+          <t-button size="small" variant="outline" data-id="{{item.localId}}" bindtap="dismissUpload">移除</t-button>
+        </view>
       </view>
 
       <view wx:if="{{item.duplicateText}}" class="rb-file-error">{{item.duplicateText}}</view>

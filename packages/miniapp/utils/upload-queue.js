@@ -72,6 +72,14 @@ const createUploadQueue = ({ concurrency, uploadOne, onChange }) => {
       pump();
     },
 
+    /** 去掉失败的文件。一直传不上去时（比如超过数量）不能卡住提交。 */
+    dismiss(localId) {
+      const target = items.find((item) => item.localId === localId);
+      if (!target || target.status !== "failed") return;
+      items = items.filter((item) => item.localId !== localId);
+      notify();
+    },
+
     getItems: () => items.slice(),
 
     isBusy: () => items.some((item) => item.status === "waiting" || item.status === "uploading")
