@@ -12,8 +12,9 @@ const nowIso = () => new Date().toISOString();
 // 所有查重都只和已提交及之后的单比：草稿现在也识别，而申请人删不掉自己的废弃草稿，
 // 不排除的话会被旧草稿拦下。两张草稿有同一张发票时，先提交的不报，后提交的报。
 const COMPARABLE_ENVELOPE_SQL = "NOT IN ('draft', 'unregistered', 'cancelled', 'deleted')";
+const INVOICE_LEVEL_MATCH_SQL = "'invoice_no_date', 'qr_hash', 'same_envelope'";
 
-const insertDuplicateRow = (
+const buildDuplicateInsert = (
   env: Env,
   row: {
     envelopeId: number;
@@ -40,8 +41,7 @@ const insertDuplicateRow = (
       row.summary,
       JSON.stringify(row.evidence),
       row.now
-    )
-    .run();
+    );
 
 /** 同一张发票在同一单里出现的判断依据，任何一项相同都算。 */
 const sameInvoiceKeys = (row: InvoiceReviewRow): string[] => {
@@ -56,37 +56,38 @@ const sameInvoiceKeys = (row: InvoiceReviewRow): string[] => {
   ].filter((key): key is string => Boolean(key));
 };
 
-const applySameEnvelopeChecks = async (
+const buildSameEnvelopeInserts = (
   env: Env,
   envelopeId: number,
   rows: InvoiceReviewRow[],
   now: string
-): Promise<number> => {
+): D1PreparedStatement[] => {
   let firstSeen = new Map<string, InvoiceReviewRow>();
-  let count = 0;
+  const inserts: D1PreparedStatement[] = [];
   for (const row of rows) {
     const keys = sameInvoiceKeys(row);
     const earlier = keys.map((key) => firstSeen.get(key)).find(Boolean);
     firstSeen = new Map([...keys.map((key) => [key, firstSeen.get(key) ?? row] as const), ...firstSeen]);
     if (!earlier) continue;
-    await insertDuplicateRow(env, {
-      envelopeId,
-      matchedEnvelopeId: envelopeId,
-      matchedInvoiceNo: row.invoice_no,
-      matchType: "same_envelope",
-      riskLevel: "high",
-      summary: "同一张发票在这张报销里传了不止一次",
-      evidence: {
-        attachment_id: earlier.attachment_id,
-        other_attachment_id: row.attachment_id,
-        invoice_no: row.invoice_no,
-        invoice_date: row.invoice_date
-      },
-      now
-    });
-    count += 1;
+    inserts.push(
+      buildDuplicateInsert(env, {
+        envelopeId,
+        matchedEnvelopeId: envelopeId,
+        matchedInvoiceNo: row.invoice_no,
+        matchType: "same_envelope",
+        riskLevel: "high",
+        summary: "同一张发票在这张报销里传了不止一次",
+        evidence: {
+          attachment_id: earlier.attachment_id,
+          other_attachment_id: row.attachment_id,
+          invoice_no: row.invoice_no,
+          invoice_date: row.invoice_date
+        },
+        now
+      })
+    );
   }
-  return count;
+  return inserts;
 };
 
 export const applyInvoiceReviewDuplicateChecks = async (
@@ -94,15 +95,9 @@ export const applyInvoiceReviewDuplicateChecks = async (
   envelopeId: number,
   rows: InvoiceReviewRow[]
 ): Promise<number> => {
-  await env.DB.prepare(
-    "DELETE FROM reimbursement_duplicate_check WHERE envelope_id = ? AND match_type IN ('invoice_no_date', 'qr_hash', 'same_envelope')"
-  )
-    .bind(envelopeId)
-    .run();
-
   const now = nowIso();
   const completedRows = rows.filter((row) => row.task_status === "completed");
-  let count = 0;
+  const inserts: D1PreparedStatement[] = [];
   for (const row of completedRows) {
     const invoiceNo = row.invoice_no?.trim();
     const invoiceDate = row.invoice_date?.trim();
@@ -125,7 +120,7 @@ export const applyInvoiceReviewDuplicateChecks = async (
         .all<{ envelope_id: number }>();
 
       for (const item of matched.results ?? []) {
-        await insertDuplicateRow(env, {
+        inserts.push(buildDuplicateInsert(env, {
           envelopeId,
           matchedEnvelopeId: item.envelope_id,
           matchedInvoiceNo: invoiceNo,
@@ -142,8 +137,7 @@ export const applyInvoiceReviewDuplicateChecks = async (
             confidence: row.invoice_unique_no ? "strong" : "medium"
           },
           now
-        });
-        count += 1;
+        }));
       }
     }
 
@@ -165,7 +159,7 @@ export const applyInvoiceReviewDuplicateChecks = async (
       .bind(envelopeId, qrHash)
       .all<{ envelope_id: number }>();
     for (const item of matchedQr.results ?? []) {
-      await insertDuplicateRow(env, {
+      inserts.push(buildDuplicateInsert(env, {
         envelopeId,
         matchedEnvelopeId: item.envelope_id,
         matchedInvoiceNo: row.invoice_no,
@@ -179,12 +173,19 @@ export const applyInvoiceReviewDuplicateChecks = async (
           invoice_date: row.invoice_date
         },
         now
-      });
-      count += 1;
+      }));
     }
   }
 
-  return count + (await applySameEnvelopeChecks(env, envelopeId, completedRows, now));
+  const allInserts = [...inserts, ...buildSameEnvelopeInserts(env, envelopeId, completedRows, now)];
+  // 删除和写入放进同一个 batch：复核通过要读这张表，读到空窗就会漏掉重复直接放行
+  await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM reimbursement_duplicate_check WHERE envelope_id = ? AND match_type IN (${INVOICE_LEVEL_MATCH_SQL})`
+    ).bind(envelopeId),
+    ...allInserts
+  ]);
+  return allInserts.length;
 };
 
 export const applyDuplicateChecks = async (
@@ -205,11 +206,8 @@ export const applyDuplicateChecks = async (
     return { total: 0, blocking: 0 };
   }
 
-  await env.DB.prepare("DELETE FROM reimbursement_duplicate_check WHERE envelope_id = ?")
-    .bind(envelopeId)
-    .run();
-
   const now = nowIso();
+  const inserts: D1PreparedStatement[] = [];
   let total = 0;
   let blocking = 0;
 
@@ -233,7 +231,7 @@ export const applyDuplicateChecks = async (
 
     for (const row of rows.results ?? []) {
       const matchType = row.project_id === envelope.project_id ? "exact" : "cross_project";
-      await env.DB.prepare(
+      inserts.push(env.DB.prepare(
         `INSERT INTO reimbursement_duplicate_check
           (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
          VALUES (?, ?, ?, ?, ?, 'high', ?, ?, ?)`
@@ -252,8 +250,7 @@ export const applyDuplicateChecks = async (
             attachment_id: hints?.attachment_id ?? null
           }),
           now
-        )
-        .run();
+        ));
       total += 1;
       blocking += 1;
     }
@@ -295,7 +292,7 @@ export const applyDuplicateChecks = async (
 
     for (const row of fuzzyRows.results ?? []) {
       const classification = classifyFuzzyDuplicate(expenseDate ?? null, row.expense_date);
-      await env.DB.prepare(
+      inserts.push(env.DB.prepare(
         `INSERT INTO reimbursement_duplicate_check
           (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
          VALUES (?, ?, ?, 'fuzzy', ?, ?, ?, ?, ?)`
@@ -313,8 +310,7 @@ export const applyDuplicateChecks = async (
             expense_date: row.expense_date
           }),
           now
-        )
-        .run();
+        ));
       total += 1;
       if (isBlockingRiskLevel(classification.risk_level)) {
         blocking += 1;
@@ -351,7 +347,7 @@ export const applyDuplicateChecks = async (
       .all<{ envelope_id: number }>();
 
     for (const row of matched.results ?? []) {
-      await env.DB.prepare(
+      inserts.push(env.DB.prepare(
         `INSERT INTO reimbursement_duplicate_check
           (envelope_id, matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json, created_at)
          VALUES (?, ?, NULL, 'attachment_file_key', ?, 'high', ?, ?, ?)`
@@ -363,12 +359,19 @@ export const applyDuplicateChecks = async (
           "附件文件疑似重复提交（file_key 一致）",
           JSON.stringify({ matched_envelope_id: row.envelope_id, file_key: fileKey }),
           now
-        )
-        .run();
+        ));
       total += 1;
       blocking += 1;
     }
   }
+
+  // 只换这里写的几种，发票级的由 applyInvoiceReviewDuplicateChecks 负责。放进同一个 batch，别的请求读不到空窗。
+  await env.DB.batch([
+    env.DB.prepare(
+      `DELETE FROM reimbursement_duplicate_check WHERE envelope_id = ? AND match_type NOT IN (${INVOICE_LEVEL_MATCH_SQL})`
+    ).bind(envelopeId),
+    ...inserts
+  ]);
 
   return { total, blocking };
 };

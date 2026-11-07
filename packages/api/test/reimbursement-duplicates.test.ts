@@ -235,6 +235,48 @@ describe.skipIf(!hasSqlite)("报销查重", () => {
     expect(childA).toBeGreaterThan(0);
   });
 
+  describe("重写查重结果", () => {
+    const countOf = (h, envelopeId, matchType) =>
+      h.db
+        .prepare("SELECT COUNT(*) AS n FROM reimbursement_duplicate_check WHERE envelope_id = ? AND match_type = ?")
+        .get(envelopeId, matchType).n;
+
+    const seedBothKinds = async (h) => {
+      await seedRecognized(h, [INVOICE], { amount: 5000, expense_date: "2026-01-01" });
+      await h.seedEnvelope({ status: "submitted", amount: 100, applicant_userid: "u1", expense_date: "2026-10-01" });
+      const mine = await seedRecognized(h, [INVOICE], { amount: 100, expense_date: "2026-10-01" });
+      expect(countOf(h, mine.envelopeId, "invoice_no_date")).toBe(1);
+      expect(countOf(h, mine.envelopeId, "fuzzy")).toBe(1);
+      return mine;
+    };
+
+    it("别的请求任何时候都读不到空窗", async () => {
+      const h = createRouteHarness();
+      const mine = await seedBothKinds(h);
+      let lowestInvoice = Infinity;
+      let lowestFuzzy = Infinity;
+      h.setStatementHook(() => {
+        lowestInvoice = Math.min(lowestInvoice, countOf(h, mine.envelopeId, "invoice_no_date"));
+        lowestFuzzy = Math.min(lowestFuzzy, countOf(h, mine.envelopeId, "fuzzy"));
+      });
+      await syncEnvelopeAuditState(h.env, mine.envelopeId);
+      h.setStatementHook(null);
+      expect(lowestInvoice).toBe(1);
+      expect(lowestFuzzy).toBe(1);
+    });
+
+    it("两个同步同时跑不会重复插入", async () => {
+      const h = createRouteHarness();
+      const mine = await seedBothKinds(h);
+      await Promise.all([
+        syncEnvelopeAuditState(h.env, mine.envelopeId),
+        syncEnvelopeAuditState(h.env, mine.envelopeId)
+      ]);
+      expect(countOf(h, mine.envelopeId, "invoice_no_date")).toBe(1);
+      expect(countOf(h, mine.envelopeId, "fuzzy")).toBe(1);
+    });
+  });
+
   it("提交时算每张发票", async () => {
     const h = createRouteHarness();
     const mine = await seedRecognized(h, [INVOICE, INVOICE], { status: "draft", amount: 200 });

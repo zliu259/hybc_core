@@ -46,27 +46,34 @@ const executeStatement = (database, sql, params) => {
   };
 };
 
-const createStatement = (database, sql, params = []) => ({
+const createStatement = (database, sql, params, hooks) => ({
   sql,
   params,
-  bind: (...next) => createStatement(database, sql, next),
+  bind: (...next) => createStatement(database, sql, next, hooks),
   async first(column) {
+    hooks.beforeStatement?.();
     const row = database.prepare(sql).get(...params.map(normalizeParam));
     if (!row) return null;
     return column ? (row[column] ?? null) : { ...row };
   },
   async all() {
+    hooks.beforeStatement?.();
     return { success: true, results: database.prepare(sql).all(...params.map(normalizeParam)).map((row) => ({ ...row })), meta: {} };
   },
   async run() {
+    hooks.beforeStatement?.();
     return executeStatement(database, sql, params);
   }
 });
 
-/** node:sqlite 上的 D1 外壳。和真实 D1 一样，prepare 不校验 SQL，执行时才报错。 */
-export const createSqliteD1 = (database) => ({
-  prepare: (sql) => createStatement(database, sql),
+/**
+ * node:sqlite 上的 D1 外壳。和真实 D1 一样，prepare 不校验 SQL，执行时才报错。
+ * hooks.beforeStatement 在每次和数据库往返前调用：别的请求只能插在这些点上，batch 算一次往返。
+ */
+export const createSqliteD1 = (database, hooks = {}) => ({
+  prepare: (sql) => createStatement(database, sql, [], hooks),
   async batch(statements) {
+    hooks.beforeStatement?.();
     database.exec("BEGIN");
     try {
       const results = statements.map((statement) =>
@@ -107,7 +114,8 @@ const insertRow = (database, table, row) => {
 
 export const createReimbursementHarness = (options = {}) => {
   const database = options.database ?? createMigratedDatabase();
-  const db = createSqliteD1(database);
+  const hooks = { beforeStatement: null };
+  const db = createSqliteD1(database, hooks);
 
   let sent = [];
   let files = new Map();
@@ -158,6 +166,10 @@ export const createReimbursementHarness = (options = {}) => {
     },
     setQueueSendFailure(value) {
       failQueueSend = value;
+    },
+    /** 在每次数据库往返前调用，用来模拟别的请求这时读到什么。 */
+    setStatementHook(fn) {
+      hooks.beforeStatement = fn;
     },
     listSentEvents: () => sent,
     /** 把累积的消息交给真实的 queue()，直到队列变空。消费中新发的事件也会被处理。 */

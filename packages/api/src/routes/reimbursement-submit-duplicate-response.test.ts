@@ -133,12 +133,13 @@ class SubmitStatement {
   async run() {
     this.db.executed.push({ sql: this.sql, args: this.args });
     if (this.sql.includes("DELETE FROM reimbursement_duplicate_check")) {
-      // 发票级查重只清自己写的三种，别把整单规则的结果也清掉
-      this.db.duplicateRows = this.sql.includes("match_type IN")
-        ? this.db.duplicateRows.filter(
-            row => !["invoice_no_date", "qr_hash", "same_envelope"].includes(row.match_type)
-          )
-        : [];
+      // 整单规则和发票级查重各自只清自己写的那几种
+      const invoiceLevel = ["invoice_no_date", "qr_hash", "same_envelope"];
+      this.db.duplicateRows = this.db.duplicateRows.filter(row =>
+        this.sql.includes("match_type NOT IN")
+          ? invoiceLevel.includes(row.match_type)
+          : !invoiceLevel.includes(row.match_type)
+      );
     }
     if (this.sql.includes("INSERT INTO reimbursement_duplicate_check")) {
       this.db.duplicateRows = [
@@ -195,6 +196,10 @@ class SubmitDb {
 
   prepare(sql: string) {
     return new SubmitStatement(this, sql);
+  }
+
+  async batch(statements: SubmitStatement[]) {
+    return Promise.all(statements.map(statement => statement.run()));
   }
 }
 
