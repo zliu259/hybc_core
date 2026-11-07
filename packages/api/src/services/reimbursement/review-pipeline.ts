@@ -4,7 +4,11 @@ import type { Env } from "../../types/env";
 import type { EnvelopeAttachment, ReimbursementEnvelope } from "../../types/reimbursement";
 import { createTask, createTaskWithCompanions } from "../ai-slot";
 import { buildAttachmentViews, computeReviewTotals } from "./attachment-state";
-import { applyDuplicateChecks, applyInvoiceReviewDuplicateChecks } from "./duplicate-checks";
+import {
+  applyDuplicateChecks,
+  applyInvoiceReviewDuplicateChecks,
+  pickBestReviewRow
+} from "./duplicate-checks";
 import {
   extractInvoiceRecognitionHints,
   isMissingInvoiceReviewTableError,
@@ -252,6 +256,118 @@ export const enqueueEnvelopeAiAudit = async (
     .run();
 };
 
+/**
+ * 把任务结果写回当前轮次的识别行。不只看进行中的行：failed 行的任务可能后来完成或被重新排队。
+ * 提交请求也用它，所以这里只读写识别行，不碰信封。
+ */
+export const refreshInvoiceReviewRows = async (env: Env, envelopeId: number): Promise<void> => {
+  const roundRow = await env.DB.prepare(
+    "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
+  )
+    .bind(envelopeId)
+    .first<{ max_round: number | null }>();
+  const round = Number(roundRow?.max_round ?? 0);
+  if (round <= 0) return;
+
+  const reviewRows = await env.DB.prepare(
+    `SELECT id, attachment_id, review_round, task_id, task_status, extraction_json,
+            qr_text, qr_hash, invoice_unique_no, invoice_no, invoice_date, invoice_amount,
+            source, risk_level, risk_hint
+       FROM reimbursement_invoice_review
+      WHERE envelope_id = ? AND review_round = ?
+      ORDER BY id ASC`
+  )
+    .bind(envelopeId, round)
+    .all<InvoiceReviewRow>();
+
+  for (const row of reviewRows.results ?? []) {
+    if (!row.task_id) continue;
+    if (row.task_status === "completed") continue;
+    const task = await env.DB.prepare(
+      "SELECT status, result_json, retry_count, max_retries FROM task_queue WHERE id = ?"
+    )
+      .bind(row.task_id)
+      .first<{ status: string; result_json: string | null; retry_count: number; max_retries: number }>();
+    if (!task) continue;
+
+    if (task.status === "completed") {
+      const parsed = parseTaskResult(task.result_json ?? null);
+      const hints = extractInvoiceRecognitionHints(parsed);
+      const qrText = normalizeHintValue(parsed?.qr_code_text) ?? normalizeHintValue(parsed?.qr_text);
+      const qrHints = parseQrInvoiceHints(qrText);
+      const invoiceNo = normalizeInvoiceNo(hints.invoice_no ?? qrHints.invoice_no ?? null);
+      const invoiceDate = normalizeInvoiceDate(hints.expense_date ?? qrHints.invoice_date ?? null);
+      const invoiceUniqueNo = normalizeInvoiceNo(hints.invoice_unique_no ?? qrHints.invoice_unique_no ?? null);
+      const invoiceAmount =
+        toAmountValue(parsed?.amount_with_tax) ??
+        toAmountValue(parsed?.amount) ??
+        qrHints.amount ??
+        null;
+      const qrHash = qrText ? await sha256Hex(qrText) : null;
+      const source = qrText
+        ? "qr_payload"
+        : parsed && Object.keys(parsed).length > 0
+          ? "ocr_text"
+          : "fallback";
+
+      await env.DB.prepare(
+        `UPDATE reimbursement_invoice_review SET
+           task_status = 'completed',
+           extraction_json = ?,
+           qr_text = ?,
+           qr_hash = ?,
+           invoice_unique_no = ?,
+           invoice_no = ?,
+           invoice_date = ?,
+           invoice_amount = ?,
+           source = ?,
+           risk_level = ?,
+           risk_hint = ?,
+           updated_at = ?
+         WHERE id = ?`
+      )
+        .bind(
+          parsed ? JSON.stringify(parsed) : null,
+          qrText,
+          qrHash,
+          invoiceUniqueNo,
+          invoiceNo,
+          invoiceDate,
+          invoiceAmount,
+          source,
+          invoiceNo && invoiceDate ? "low" : "medium",
+          invoiceNo && invoiceDate ? null : "票据识别字段不完整，建议人工复核",
+          nowIso(),
+          row.id
+        )
+        .run();
+    } else if (task.status === "failed" || (task.status === "timeout" && task.retry_count >= task.max_retries)) {
+      if (row.task_status !== "failed") {
+        await env.DB.prepare(
+          `UPDATE reimbursement_invoice_review SET
+             task_status = 'failed',
+             risk_level = 'high',
+             risk_hint = '票据识别失败，建议办公室人工复核原件',
+             updated_at = ?
+           WHERE id = ?`
+        )
+          .bind(nowIso(), row.id)
+          .run();
+      }
+    } else {
+      // 有重试额度的 timeout 会被 Cron 重新排队，按还在识别算
+      const nextStatus = task.status === "timeout" ? "pending" : task.status;
+      if (row.task_status !== nextStatus) {
+        await env.DB.prepare(
+          "UPDATE reimbursement_invoice_review SET task_status = ?, updated_at = ? WHERE id = ?"
+        )
+          .bind(nextStatus, nowIso(), row.id)
+          .run();
+      }
+    }
+  }
+};
+
 export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Promise<void> => {
   const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'")
     .bind(envelopeId)
@@ -278,103 +394,7 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
   }
 
   if (hasReviewRows) {
-    const reviewRows = await env.DB.prepare(
-      `SELECT id, attachment_id, review_round, task_id, task_status, extraction_json,
-              qr_text, qr_hash, invoice_unique_no, invoice_no, invoice_date, invoice_amount,
-              source, risk_level, risk_hint
-         FROM reimbursement_invoice_review
-        WHERE envelope_id = ? AND review_round = ?
-        ORDER BY id ASC`
-    )
-      .bind(envelopeId, latestReviewRound)
-      .all<InvoiceReviewRow>();
-
-    for (const row of reviewRows.results ?? []) {
-      if (!row.task_id) continue;
-      if (row.task_status === "completed") continue;
-      const task = await env.DB.prepare(
-        "SELECT status, result_json, retry_count, max_retries FROM task_queue WHERE id = ?"
-      )
-        .bind(row.task_id)
-        .first<{ status: string; result_json: string | null; retry_count: number; max_retries: number }>();
-      if (!task) continue;
-
-      if (task.status === "completed") {
-        const parsed = parseTaskResult(task.result_json ?? null);
-        const hints = extractInvoiceRecognitionHints(parsed);
-        const qrText = normalizeHintValue(parsed?.qr_code_text) ?? normalizeHintValue(parsed?.qr_text);
-        const qrHints = parseQrInvoiceHints(qrText);
-        const invoiceNo = normalizeInvoiceNo(hints.invoice_no ?? qrHints.invoice_no ?? null);
-        const invoiceDate = normalizeInvoiceDate(hints.expense_date ?? qrHints.invoice_date ?? null);
-        const invoiceUniqueNo = normalizeInvoiceNo(hints.invoice_unique_no ?? qrHints.invoice_unique_no ?? null);
-        const invoiceAmount =
-          toAmountValue(parsed?.amount_with_tax) ??
-          toAmountValue(parsed?.amount) ??
-          qrHints.amount ??
-          null;
-        const qrHash = qrText ? await sha256Hex(qrText) : null;
-        const source = qrText
-          ? "qr_payload"
-          : parsed && Object.keys(parsed).length > 0
-            ? "ocr_text"
-            : "fallback";
-
-        await env.DB.prepare(
-          `UPDATE reimbursement_invoice_review SET
-             task_status = 'completed',
-             extraction_json = ?,
-             qr_text = ?,
-             qr_hash = ?,
-             invoice_unique_no = ?,
-             invoice_no = ?,
-             invoice_date = ?,
-             invoice_amount = ?,
-             source = ?,
-             risk_level = ?,
-             risk_hint = ?,
-             updated_at = ?
-           WHERE id = ?`
-        )
-          .bind(
-            parsed ? JSON.stringify(parsed) : null,
-            qrText,
-            qrHash,
-            invoiceUniqueNo,
-            invoiceNo,
-            invoiceDate,
-            invoiceAmount,
-            source,
-            invoiceNo && invoiceDate ? "low" : "medium",
-            invoiceNo && invoiceDate ? null : "票据识别字段不完整，建议人工复核",
-            nowIso(),
-            row.id
-          )
-          .run();
-      } else if (task.status === "failed" || (task.status === "timeout" && task.retry_count >= task.max_retries)) {
-        if (row.task_status !== "failed") {
-          await env.DB.prepare(
-            `UPDATE reimbursement_invoice_review SET
-               task_status = 'failed',
-               risk_level = 'high',
-               risk_hint = '票据识别失败，建议办公室人工复核原件',
-               updated_at = ?
-             WHERE id = ?`
-          )
-            .bind(nowIso(), row.id)
-            .run();
-        }
-      } else {
-        // 有重试额度的 timeout 会被 Cron 重新排队，按还在识别算
-        const nextStatus = task.status === "timeout" ? "pending" : task.status;
-        if (row.task_status !== nextStatus) {
-          await env.DB.prepare(
-            "UPDATE reimbursement_invoice_review SET task_status = ?, updated_at = ? WHERE id = ?"
-          )
-            .bind(nextStatus, nowIso(), row.id)
-            .run();
-        }
-      }
-    }
+    await refreshInvoiceReviewRows(env, envelopeId);
 
     const syncedRows = await env.DB.prepare(
       `SELECT id, attachment_id, review_round, task_id, task_status, extraction_json,
@@ -412,10 +432,7 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
     const failedCount = totals.failed_count;
     const ocrStatus =
       attachments.length === 0 ? "none" : pendingCount > 0 ? "pending" : completedRows.length > 0 ? "completed" : "failed";
-    const bestRow =
-      completedRows.find((row) => row.qr_text && row.invoice_no && row.invoice_date) ??
-      completedRows.find((row) => row.invoice_no || row.invoice_unique_no || row.invoice_date) ??
-      rows[0];
+    const bestRow = pickBestReviewRow(completedRows) ?? rows[0];
 
     const extractedTotal = totals.extracted_total;
     const amountDelta = Number(((envelope.amount || 0) - extractedTotal).toFixed(2));
@@ -451,7 +468,7 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
       })
     };
 
-    await applyDuplicateChecks(env, envelopeId, hints);
+    await applyDuplicateChecks(env, envelopeId, { ...hints, attachment_id: bestRow?.attachment_id ?? null });
     await applyInvoiceReviewDuplicateChecks(env, envelopeId, rows);
 
     // 审计同步只回写 OCR/审查字段;业务状态(成批/送审/付款等)由各自动作显式流转,
@@ -543,6 +560,7 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
       await env.DB.prepare(
         `UPDATE reimbursement_envelope SET
            ocr_status = 'completed',
+           duplicate_check_status = 'completed',
            ocr_result_json = ?,
            ocr_invoice_unique_no_hint = ?,
            ocr_invoice_no_hint = ?,
@@ -590,6 +608,22 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
     }
   }
 
+  if (!hasReviewRows && ["pending", "failed"].includes(envelope.duplicate_check_status)) {
+    // 没有附件就没有要等的识别，否则复核通过会一直等下去
+    const activeAttachment = await env.DB.prepare(
+      "SELECT 1 AS found FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' LIMIT 1"
+    )
+      .bind(envelopeId)
+      .first<{ found: number }>();
+    if (!activeAttachment) {
+      await env.DB.prepare(
+        "UPDATE reimbursement_envelope SET duplicate_check_status = 'completed', updated_at = ? WHERE id = ?"
+      )
+        .bind(nowIso(), envelopeId)
+        .run();
+    }
+  }
+
   const anomalyTask = await env.DB.prepare(
     `SELECT status, result_json FROM task_queue
      WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
@@ -618,21 +652,12 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
     };
     await env.DB.prepare(
       `UPDATE reimbursement_envelope SET
-         duplicate_check_status = 'completed',
          silent_review_result = ?,
          precheck_status = CASE WHEN precheck_status = 'none' THEN 'pending' ELSE precheck_status END,
          updated_at = ?
        WHERE id = ?`
     )
       .bind(JSON.stringify(mergedSilentReview), nowIso(), envelopeId)
-      .run();
-  }
-
-  if (anomalyTask?.status === "failed" || anomalyTask?.status === "timeout") {
-    await env.DB.prepare(
-      "UPDATE reimbursement_envelope SET duplicate_check_status = 'failed', updated_at = ? WHERE id = ?"
-    )
-      .bind(nowIso(), envelopeId)
       .run();
   }
 };

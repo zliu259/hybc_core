@@ -44,9 +44,11 @@ import { BLOCKING_RISK_LEVELS, listDuplicateCheckSummaries } from "./reimburseme
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { parseInvoiceTitleFilter } from "./reimbursement-invoice-title-policy";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
-import { applyDuplicateChecks } from "../services/reimbursement/duplicate-checks";
+import { applyDuplicateChecks, scanEnvelopeDuplicates } from "../services/reimbursement/duplicate-checks";
 import {
   enqueueEnvelopeAiAudit,
+  ensureInvoiceReviews,
+  refreshInvoiceReviewRows,
   syncEnvelopeAuditState
 } from "../services/reimbursement/review-pipeline";
 import {
@@ -2805,6 +2807,7 @@ reimbursementRoutes.get("/:id/ocr-status", async (c) => {
     await c.env.DB.prepare(
       `UPDATE reimbursement_envelope SET
          ocr_status = 'completed',
+         duplicate_check_status = 'completed',
          ocr_result_json = ?,
          ocr_invoice_unique_no_hint = ?,
          ocr_invoice_no_hint = ?,
@@ -3013,7 +3016,7 @@ reimbursementRoutes.post(
     }
 
     const envelope = await c.env.DB.prepare(
-      `SELECT id, status, duplicate_check_status, duplicate_override_requested, applicant_userid,
+      `SELECT id, status, duplicate_override_requested, applicant_userid,
               channel, ocr_result_json, ocr_invoice_unique_no_hint
          FROM reimbursement_envelope
         WHERE id = ? AND status != 'deleted'`
@@ -3022,7 +3025,6 @@ reimbursementRoutes.post(
       .first<{
         id: number;
         status: string;
-        duplicate_check_status: string;
         duplicate_override_requested: number;
         applicant_userid: string;
         channel: string;
@@ -3043,31 +3045,15 @@ reimbursementRoutes.post(
     }
 
     if (body.action === "approved") {
-      if (envelope.duplicate_check_status !== "completed") {
-        const latestAuditTask = await c.env.DB.prepare(
-          `SELECT id, status FROM task_queue
-           WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
-           ORDER BY id DESC LIMIT 1`
-        )
-          .bind(id)
-          .first<{ id: number; status: string }>();
-
-        const runningStatuses = new Set(["pending", "assigned", "running"]);
-        const hasRunningAudit =
-          latestAuditTask?.status && runningStatuses.has(latestAuditTask.status);
-
-        if (!hasRunningAudit) {
-          const latestAttachment = await c.env.DB.prepare(
-            `SELECT file_key FROM envelope_attachment
-             WHERE envelope_id = ? AND status = 'active'
-             ORDER BY id DESC LIMIT 1`
-          )
-            .bind(id)
-            .first<{ file_key: string | null }>();
-          await enqueueEnvelopeAiAudit(c.env, id, {
-            file_key: latestAttachment?.file_key ?? null
-          });
-        }
+      // 先同步再判断：查重状态只由识别进度决定，费用合理性审查没跑完或失败都不拦
+      await syncEnvelopeAuditState(c.env, id);
+      const auditState = await c.env.DB.prepare(
+        "SELECT duplicate_check_status FROM reimbursement_envelope WHERE id = ?"
+      )
+        .bind(id)
+        .first<{ duplicate_check_status: string }>();
+      if (auditState?.duplicate_check_status !== "completed") {
+        const reviews = await ensureInvoiceReviews(c.env, id);
 
         return c.json(
           {
@@ -3075,8 +3061,8 @@ reimbursementRoutes.post(
             error: { message: "Duplicate audit is mandatory before precheck approval" },
             data: {
               wait_for_audit: true,
-              audit_triggered: !hasRunningAudit,
-              task_id: latestAuditTask?.id ?? null
+              audit_triggered: reviews.created > 0,
+              task_id: reviews.latestTaskId
             }
           },
           409
@@ -4282,7 +4268,9 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: "At least one attachment is required before submit" } }, 400);
     }
 
-    const duplicateScan = await applyDuplicateChecks(c.env, id);
+    // 草稿阶段已经在识别，提交时把每张发票的结果也算进去
+    await refreshInvoiceReviewRows(c.env, id);
+    const duplicateScan = await scanEnvelopeDuplicates(c.env, id);
     if (duplicateScan.blocking > 0 && body.force_submit !== true) {
       await abandonIdempotentRequest(c.env.DB, `reimbursement:submit:${id}`, auth.sub, idempotencyKey);
       return c.json(
