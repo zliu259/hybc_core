@@ -304,49 +304,22 @@
 - 输出能力：支持横向或纵向直接生成 PDF、PDF 打印（新窗口打印）；同时支持导出 CSV 与导入/导出批次 JSON（用于离线复打与跨设备交接）。
 - 排版细节：二维码尺寸下调；UUID 字号与正文一致，提升人工核对可读性。
 
-#### F-2. 报销详情 `views/finance/reimbursement/detail.vue`
+#### F-2. 报销详情 `views/finance/reimbursement/detail.vue`（2026-11-07 改版）
 
-- 页面分区：基础信息、信封标识、状态总览、附件（拖拽上传）、操作区。
-- 表单区：项目、填报人、通道、费用日期、金额、类别、说明。
-- 附件区：拖拽上传替代 JSON 手工录入；附件列表展示类型、文件名、大小、状态。
-  - 附件操作区提供显式“下载”按钮（不再依赖点击文件名跳转），避免在工作台路由下误跳转。
-- UUID 规则：
-  - “报销识别号”与 `envelope_uuid` 统一；
-  - 创建态支持“绑定现有信封UUID”（预打印离线信封）；
-  - 实物信封创建强制提供 UUID（输入或扫码），无 UUID 不允许建单；
-  - 非创建态在附件已入库或非草稿时视为锁定。
-- 状态总览统一中文化显示（状态、核对状态、复核状态、PDF状态）；员工工作台路由下隐藏技术处理状态，仅保留业务状态。
-- 审计与签收：
-  - 员工提交后才进入后台静默核查；识别结果与智能核查结果仅作为办公室处理提示，不得覆盖员工原始填报内容；
-  - 电子发票上传后保留草稿态，提交后进入办公室核查流，核查通过后才签收（`received`）；
-  - 实物信封需办公室收到并核查后签收。
-- 查重强制：
-  - 存在查重风险时，申请人需“坚持提交”后才允许进入办公室预审通过；
-  - 页面显示审计提示，办公室侧可见坚持提交标记并执行复核。
-  - **办公室放行**（2026-07-13 新增）：申请人未坚持提交时（如异步查重在提交后才命中风险），`finance`/`super_admin` 点击复核通过会弹「重复风险拦截」理由框，填写必填放行理由后强制通过并写审计日志（`reimbursement.envelope.precheck_duplicate_override`）；复核工作台（`precheck.vue`）与详情页（`detail.vue`）均支持，其余角色维持拦截提示。是否可放行由后端拦截响应的 `can_override_duplicate` 告知，前端不自行判断角色。
-- 操作区收敛：保存、实物扫码登记、实物提交、办公室核查签收/异常、复核动作；员工端不再展示 OCR 刷新一类技术按钮。
-- 提交入口补齐：电子发票通道在 `draft/submitted` 状态同样显示“提交电子发票报销”，避免仅见“保存”不见“提交”的操作断层。
-- UUID 逻辑对齐 miniapp：创建态下若通道为“电子发票”，绑定 UUID 输入禁用并自动清空，创建请求不传 `preferred_envelope_uuid`，由后端自动生成。
-- 提交流程统一：`POST /api/v1/reimbursement/:id/submit` 对实物/电子通道均可执行（前提满足附件、状态、权限校验），避免电子通道点击提交时报 400。
-- 超管废止能力：报销详情新增“废止报销提交”动作（仅 `super_admin` 可见），可对 `draft/submitted/received/unregistered` 状态执行废止，废止后状态为 `cancelled`：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/api/src/routes/reimbursement.ts`
-- 办公室修正能力：办公室角色（super_admin/manager/site_manager/finance）可在报销 `submitted/received` 状态对员工提交信息进行修正并保存：`packages/web/src/views/finance/reimbursement/detail.vue`、`packages/api/src/routes/reimbursement.ts`
-- 附件预览补齐：报销详情附件区新增“预览”操作，与“下载”并列，预览统一使用右侧抽屉（`el-drawer`）承载，不再打开新页面，支持办公室在详情页快速核查附件：`packages/web/src/views/finance/reimbursement/detail.vue`
-- 详情页加载反馈：进入报销详情时，基础选项数据与详情数据回填阶段统一显示 loading，避免空白等待与旧数据残留感知：`packages/web/src/views/finance/reimbursement/detail.vue`
-- 后台静默审查提示：办公室详情页新增“后台静默审查提示”区，展示识别建议与智能核查摘要，供办公室签收处理参考：`packages/web/src/views/finance/reimbursement/detail.vue`
-- 详情页首屏新增状态摘要（当前状态、报销金额、报销通道、后台核查）。
-- **智能核查结果显眼化**（2026-07-10，取代原底部折叠区方案）：概要磁贴正下方新增全宽卡片「智能核查与风险提示」，office 视角**始终展开、不可折叠**，按最高风险等级（`highestRiskLevel`）着色左边框/标题；重复风险表并入该卡片；命中电子发票混入实物信封时卡片内新增红色 `el-alert` 提示「复核通过将被拦截，请复核驳回并引导员工改用电子发票通道」；员工视角维持现状（不展示 office 审查内容）。
-- **操作区三分组重组**（2026-07-10，取代原“保存/提交/核查签收/复核动作平铺一行”布局）：
-  - 顶部新增「当前环节」提示条（`stageHint`），如“当前：待签收 → 下一步：办公室核查签收或标记核查异常”，覆盖草稿/退回/待签收/待复核/已批次/审批中/已通过/已付款/已驳回/已废止全部阶段。
-  - 「员工操作」组：保存、实物扫码登记、提交。
-  - 「办公室签收与复核」组：核查签收、核查异常、复核三键（通过/要求补充/驳回，电子发票混入时复核通过默认拦截、`force_pass` 留痕强制通过；重复风险未坚持提交时同样默认拦截，finance/super_admin 可填理由放行留痕，2026-07-13）、拆单入口（接入 `SplitEnvelopeDialog.vue`）、二次静默审查。
-  - 「管理操作」组（危险区样式）：废止报销提交（仅 `super_admin`）。
-  - 每个分组内动作按钮统一 per-action loading（请求期间禁用同组按钮防重复点击）；当前阶段不可用的分组收起/置灰。
-- **报销拆单**（2026-07-10 新增）：办公室在「待复核」或「待成批」阶段（`status IN (submitted, received)` 且未挂批次/未挂审批实例）可对信封执行拆单——弹窗中多选要转移的附件、填写新信封项目与金额，提交后原单保留剩余金额与附件，新信封携带转移附件与拆单溯源（`split_from_envelope_id`/`split_reason`）；成功后可直接「打印新信封」二维码（`envelope-print.ts`，从 `envelope-generator.vue` 抽出的单信封版本）。拆单仅 `finance`/`super_admin` 可见。
-- **附件图片预览缩放**（2026-07-10）：预览抽屉中图片类附件改用 `el-image`（内置 viewer：滚轮缩放/旋转/拖拽/全屏），PDF 保持 iframe，其他类型维持下载提示。
-- **状态与附件类型全面汉化**（2026-07-10）：状态、复核状态、任务状态（新增 `assigned=已分派`、`running=处理中`、`queued=排队中`）与附件「类型」列（`invoice/receipt/contract/other` → 发票/凭证/合同/其他）统一走模块内 `reimbursement-labels.ts`，修复此前复核动作 toast 直接输出英文枚举原值的问题。
-- **报销通道切换**（2026-07-12 新增）：「通道」表单项旁新增「切换通道」按钮，仅 `super_admin`/`finance` 且状态为草稿/未登记/待签收（`draft/unregistered/submitted`）时可见；点击弹出确认框，可填写切换原因（选填）；成功提示区分三种语义——实际切换、已是目标通道无需切换、已是目标通道但补触发 AI 核验（自愈）。编辑态通道下拉始终禁用（仅创建态可选，修复此前“看似可改、保存必被后端 400”的陷阱）；不可切换时显示「通道创建后不可修改」灰色提示。
-- 详情页支持路由页与抽屉两种承载方式；抽屉模式通过 `envelopeId` 载入指定报销条目，并在保存、提交、签收、复核、拆单等动作后通知父页面刷新当前数据但不改变所在页面状态：`packages/web/src/views/finance/reimbursement/detail.vue`
-- API 指向：`/api/v1/reimbursement/:id`, `/api/v1/reimbursement/scan`, `/api/v1/reimbursement/:id/submit`, `/api/v1/reimbursement/verify`, `/api/v1/reimbursement/:id/generate-pdf`, `/api/v1/reimbursement/:id/ocr-status`, `/api/v1/reimbursement/:id/trigger-anomaly-check`, `/api/v1/reimbursement/:id/precheck`, `/api/v1/reimbursement/:id/split`（2026-07-10 新增，拆单）, `/api/v1/reimbursement/:id/switch-channel`（2026-07-12 新增，通道切换）, `/api/v1/reimbursement/resolve/by-uuid`
+设计见 `docs/superpowers/specs/2026-11-06-reimbursement-multi-attachment-design.md` 第 6、7 节，样稿 `2026-11-06-reimbursement-detail-mock.html`。`detail.vue` 是薄入口，外部接口不变（`envelopeId`、`drawerMode`、`workspaceView`，事件 `close`、`changed`、`created`），内容在 `detail/` 下。
+
+- **顶部 `VerdictHeader`**：第一行结论（26px/600，有问题时 `#b4470c`），第二行该做什么（`#1361d8`），第三行小字谁报销、多少钱、哪个项目；办公室有「留意」时多一行提醒。右边是接口 `guidance.actions` 给的按钮（第一个是主按钮）、「更多」和返回或关闭。工作台路由用 `guidance.applicant`，其他入口有 `office` 用 `office`。上传中由前端覆盖为「还有 N 张发票没传完」，提交不可点。
+- **左列 `AttachmentPicker`（300px）**：第一行「报销信息」；分组标题「发票 N 张」，有非发票时写「附件 N 个」；可编辑时有上传框（一次选或拖多个，只收 PDF、JPG、PNG，单个 20MB，同时传 3 个，失败的单独重试）；文件行显示销售方（没有用文件名）和状态或金额，标「疑似重复」「留意」，可删除的有删除。排序：还在传的、重复、失败、不是发票、没金额、留意的，然后金额从大到小。
+- **右侧 `AttachmentViewer`**：选中文件时显示原件（图片或 iframe，每次切换重新取签名地址）和销售方、发票号、开票日期、金额；没金额时显示「系统读到的内容」；重复时写说明并能跳到那张单；办公室能看到留意的理由；失败的可重新识别。
+- **右侧 `EnvelopeInfoPanel`**：选中「报销信息」时显示。项目、填报人、通道、费用日期、报销金额、类别、说明；改动后才出现「保存」，提交前自动保存，不做失焦保存。报销金额没改过时等于已识别合计，改过不再覆盖。下方是报销识别号、信封识别号和状态、发票抬头（显示、识别原文、来源、办公室指定）、PDF 状态和文件、批次；对应不到具体发票的重复（金额接近）列在这里。
+- **底部 `TotalsBar`**：票面合计、申报、差额。一致为绿色，有差额为警示色，没读全写「算不出」或「另有 N 个没有金额」，不比差额。
+- **更多 `MoreActionsMenu`**：换绑信封、切换通道、拆单、全部重新识别（原「二次静默审查」）、废止（必填原因）。权限沿用原来的判断（`useEnvelopePermissions`）。
+- **弹窗 `ActionDialogs`**：核查签收（备注可选）、标记异常、要求补充、驳回（都必填，申请人会看到原话）、废止、换绑、全部重新识别确认。复核通过的重复放行和电子发票放行仍是原来的理由提示框。
+- **默认选中**：新建和草稿选「报销信息」；办公室打开时选有问题的发票，其次金额最大的；申请人看已提交的单选「报销信息」。
+- **自动刷新**：有附件在识别时每 3 秒静默刷新，只更新数据，不动上传项，不冲掉正在填的表单；拆单弹窗打开时暂停。没有手动刷新按钮。
+- **宽度**：小于 860px（含抽屉）上下排列，用容器查询判断，因为页面也放在 `batch.vue`、`batch-detail.vue`、`payout.vue`、`office-workbench.vue` 的抽屉里。
+- **去掉**：状态总览、三张统计卡、智能核查摘要、可读版识别结果、附件类型选择、发票号字段、刷新识别状态按钮。
+- **API 指向**：`GET /api/v1/reimbursement/:id`（`guidance`、`attachment_views`、`review_totals`）、`POST /:id/attachments`、`POST /:id/attachments/:attachmentId/rerecognize`、`POST /:id/attachments/:attachmentId/delete`、`POST /:id/submit`（`resubmitted`）、`POST /:id/void`（`reason`），其余沿用。
 
 #### F-3. 功能页融合说明（预审/查重）
 
