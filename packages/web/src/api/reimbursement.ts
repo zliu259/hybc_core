@@ -57,6 +57,82 @@ export type EnvelopeAttachment = {
   created_at: string;
 };
 
+export type AttachmentReviewState =
+  | "recognizing"
+  | "recognized"
+  | "not_invoice"
+  | "no_amount"
+  | "failed"
+  | "not_recognized";
+
+export type AttachmentReviewView = {
+  attachment_id: number;
+  file_key: string;
+  file_name: string | null;
+  file_size: number | null;
+  state: AttachmentReviewState;
+  /** 销售方，没有用文件名，再没有用「附件 {id}」 */
+  display_name: string;
+  amount: number | null;
+  invoice_no: string | null;
+  invoice_date: string | null;
+  seller_name: string | null;
+  raw_text_summary: string | null;
+  duplicates: {
+    match_type: string;
+    risk_level: string;
+    summary: string | null;
+    matched_envelope_id: number | null;
+  }[];
+  attention: string | null;
+};
+
+export type ReviewTotals = {
+  attachment_count: number;
+  recognized_count: number;
+  recognizing_count: number;
+  failed_count: number;
+  no_amount_count: number;
+  not_invoice_count: number;
+  extracted_total: number;
+  declared_amount: number;
+  complete: boolean;
+  delta: number | null;
+  mismatch: boolean;
+};
+
+export type GuidanceActionKey =
+  | "verify"
+  | "mark_mismatch"
+  | "precheck_approve"
+  | "precheck_supplement"
+  | "precheck_reject"
+  | "submit"
+  | "resubmit"
+  | "rerecognize_failed"
+  | "scan_register"
+  | "view_batch"
+  | "open_batching";
+
+export type GuidanceAction = {
+  key: GuidanceActionKey;
+  label: string;
+  disabled?: boolean;
+};
+
+export type Guidance = {
+  tone: "normal" | "warn" | "done";
+  headline: string;
+  next_step: string;
+  note: string | null;
+  actions: GuidanceAction[];
+};
+
+export type EnvelopeGuidance = {
+  applicant: Guidance;
+  office: Guidance | null;
+};
+
 export type ReimbursementEnvelopeDetail = ReimbursementEnvelope & {
   attachments: EnvelopeAttachment[];
   duplicate_checks: {
@@ -65,12 +141,18 @@ export type ReimbursementEnvelopeDetail = ReimbursementEnvelope & {
     risk_level: string;
     summary: string | null;
     matched_invoice_no: string | null;
+    matched_envelope_id?: number | null;
+    evidence_json?: string | null;
   }[];
   batch: {
     id: number;
     batch_no: string;
     status: string;
   } | null;
+  guidance?: EnvelopeGuidance;
+  attachment_views?: AttachmentReviewView[];
+  review_totals?: ReviewTotals;
+  void_reason?: string | null;
 };
 
 type Pagination = { page: number; pageSize: number; total: number };
@@ -283,11 +365,39 @@ export const submitReimbursementEnvelope = (
   });
 };
 
-export const voidReimbursementEnvelope = (id: number) => {
-  return http.request<{
-    success: boolean;
-    data: { id: number; status: string };
-  }>("post", `/api/v1/reimbursement/${id}/void`);
+export const voidReimbursementEnvelope = (id: number, reason?: string) => {
+  return http.request<{ success: boolean; data: { id: number; status: string } }>(
+    "post",
+    `/api/v1/reimbursement/${id}/void`,
+    { data: reason ? { reason } : {} }
+  );
+};
+
+export const addEnvelopeAttachments = (
+  id: number,
+  attachments: { file_key: string; file_name?: string; file_size?: number }[]
+) => {
+  return http.request<{ success: boolean; data: { attachment_ids: number[] } }>(
+    "post",
+    `/api/v1/reimbursement/${id}/attachments`,
+    { data: { attachments } }
+  );
+};
+
+export const rerecognizeAttachment = (id: number, attachmentId: number) => {
+  return http.request<{ success: boolean; data: { task_id: number } }>(
+    "post",
+    `/api/v1/reimbursement/${id}/attachments/${attachmentId}/rerecognize`,
+    { data: {} }
+  );
+};
+
+export const deleteEnvelopeAttachment = (id: number, attachmentId: number) => {
+  return http.request<{ success: boolean; data: { id: number; attachment_id: number } }>(
+    "post",
+    `/api/v1/reimbursement/${id}/attachments/${attachmentId}/delete`,
+    { data: {} }
+  );
 };
 
 export const verifyReimbursementEnvelope = (data: {
