@@ -1,113 +1,83 @@
-<view class="page">
-  <hy-panel-card title="🧾 报销提交详情" subtitle="草稿、附件、提交与状态追踪">
-    <view class="top-actions">
-      <t-button class="btn" variant="outline" bindtap="goMyList">返回我的提交</t-button>
-      <t-button class="btn" variant="outline" bindtap="resetDraft" disabled="{{busy}}">新建草稿</t-button>
+<view class="page rb-page">
+  <view class="rb-verdict">
+    <view class="rb-headline {{tone === 'warn' ? 'rb-headline--warn' : ''}}">{{headline}}</view>
+    <view wx:if="{{nextStep}}" class="rb-next">{{nextStep}}</view>
+  </view>
+
+  <view class="rb-section">
+    <view class="rb-section-title">发票和附件</view>
+    <view wx:if="{{rows.length === 0}}" class="rb-empty">还没有文件</view>
+    <view wx:for="{{rows}}" wx:key="key" class="rb-file">
+      <view class="rb-file-line" data-key="{{item.key}}" bindtap="toggleRow">
+        <view class="rb-file-name">{{item.name}}</view>
+        <view class="rb-file-status {{item.tone === 'warn' ? 'rb-file-status--warn' : ''}}">{{item.statusText}}</view>
+      </view>
+
+      <view wx:if="{{item.kind === 'upload' && item.canRetry}}" class="rb-file-detail">
+        <view wx:if="{{item.error}}" class="rb-file-error">{{item.error}}</view>
+        <t-button size="small" variant="outline" data-id="{{item.localId}}" bindtap="retryUpload">重试</t-button>
+      </view>
+
+      <view wx:if="{{item.duplicateText}}" class="rb-file-error">{{item.duplicateText}}</view>
+
+      <view wx:if="{{item.expanded}}" class="rb-file-detail">
+        <view wx:if="{{item.sellerName}}" class="rb-fact"><text class="rb-fact-label">销售方</text>{{item.sellerName}}</view>
+        <view wx:if="{{item.invoiceNo}}" class="rb-fact"><text class="rb-fact-label">发票号</text>{{item.invoiceNo}}</view>
+        <view wx:if="{{item.invoiceDate}}" class="rb-fact"><text class="rb-fact-label">开票日期</text>{{item.invoiceDate}}</view>
+        <view wx:if="{{item.rawTextSummary}}" class="rb-fact"><text class="rb-fact-label">系统读到的内容</text>{{item.rawTextSummary}}</view>
+        <view class="rb-file-actions">
+          <t-button size="small" variant="outline" data-key="{{item.key}}" bindtap="openAttachment">查看原件</t-button>
+          <t-button wx:if="{{item.canRerecognize}}" size="small" variant="outline" data-id="{{item.attachmentId}}" disabled="{{busy}}" bindtap="rerecognizeOne">重新识别</t-button>
+          <t-button wx:if="{{item.canDelete}}" size="small" theme="danger" variant="outline" data-id="{{item.attachmentId}}" disabled="{{busy}}" bindtap="removeAttachment">删除</t-button>
+        </view>
+      </view>
     </view>
 
-    <view class="status-grid">
-      <hy-status-chip text="报销单编号：{{latestEnvelopeId || '-'}}" theme="warning" variant="light" />
-      <hy-status-chip text="识别号：{{latestEnvelopeNo || latestEnvelopeUuid || '-'}}" theme="success" variant="light" />
-      <hy-status-chip text="状态：{{latestEnvelopeStatusText}}" theme="warning" variant="light" />
-      <hy-status-chip text="核验：{{verificationStatusText}}" theme="success" variant="light" />
-      <hy-status-chip text="附件数：{{attachmentCount}}" theme="success" variant="light" />
+    <view wx:if="{{canUpload}}" class="rb-upload">
+      <t-button block variant="outline" bindtap="onUploadTap">上传发票（可以一次选多张）</t-button>
+      <view class="rb-tip">支持 PDF、JPG、PNG，单个不超过 20MB</view>
     </view>
+  </view>
 
-    <t-notice-bar wx:if="{{editLocked}}" content="当前状态（{{latestEnvelopeStatusText}}）已锁定，内容不可修改，仅供查看。" theme="info" />
-    <t-notice-bar wx:else content="建议流程：先绑定信封识别号（实物信封必填）并保存，再上传附件后提交；提交后系统会在后台自动核查，无需手动触发处理步骤。" theme="warning" />
+  <view class="rb-section">
+    <view wx:if="{{totalsText}}" class="rb-totals">{{totalsText}}</view>
+    <view class="rb-label">报销金额</view>
+    <input class="rb-input" type="digit" value="{{draft.amount}}" data-key="amount" bindinput="onDraftInput" disabled="{{busy || editLocked}}" placeholder="默认等于已识别的票面合计" />
+  </view>
 
-    <view class="label">报销通道</view>
-    <picker mode="selector" range="{{channelOptions}}" range-key="label" value="{{channelIndex}}" bindchange="onChannelChange">
-      <view class="picker-value">{{channelOptions[channelIndex].label}}</view>
+  <view class="rb-section">
+    <view class="rb-label">报销通道</view>
+    <picker mode="selector" range="{{channelOptions}}" range-key="label" value="{{channelIndex}}" disabled="{{!!latestEnvelopeId}}" bindchange="onChannelChange">
+      <view class="rb-input rb-picker">{{channelOptions[channelIndex].label}}</view>
     </picker>
 
-    <view class="label">绑定信封识别号（实物信封必填）</view>
-    <input class="input standard-input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy || draft.channel === 'electronic'}}" placeholder="{{draft.channel === 'electronic' ? '电子发票通道自动生成识别号' : '可扫码或粘贴信封识别号'}}" />
-
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="scanQr" disabled="{{busy || draft.channel === 'electronic'}}">📷 扫码录入识别号</t-button>
-    </view>
+    <block wx:if="{{draft.channel === 'physical'}}">
+      <view class="rb-label">信封识别号</view>
+      <input class="rb-input" value="{{draft.preferred_envelope_uuid}}" data-key="preferred_envelope_uuid" bindinput="onDraftInput" disabled="{{busy || !!latestEnvelopeId}}" placeholder="扫码或粘贴信封识别号" />
+      <t-button wx:if="{{!latestEnvelopeId}}" class="rb-scan" size="small" variant="outline" bindtap="scanQr" disabled="{{busy}}">扫码录入</t-button>
+    </block>
 
     <hy-project-picker value="{{sharedProjectId}}" label="所属项目" enableGps="{{false}}" bind:change="onProjectChange" />
 
-    <view class="label">发票号（可选）</view>
-    <input class="input standard-input" value="{{draft.invoice_no}}" data-key="invoice_no" bindinput="onDraftInput" disabled="{{busy}}" />
+    <view class="rb-label">类别</view>
+    <input class="rb-input" value="{{draft.category}}" data-key="category" bindinput="onDraftInput" disabled="{{busy || editLocked}}" />
 
-    <view class="label">费用日期（可选）</view>
-    <picker mode="date" value="{{draft.expense_date}}" bindchange="onDraftInput" data-key="expense_date">
-      <view class="picker-value">{{draft.expense_date || '请选择日期'}}</view>
+    <view class="rb-label">说明</view>
+    <textarea class="rb-input rb-textarea" value="{{draft.description}}" data-key="description" bindinput="onDraftInput" maxlength="240" disabled="{{busy || editLocked}}" />
+
+    <view class="rb-label">费用日期</view>
+    <picker mode="date" value="{{draft.expense_date}}" data-key="expense_date" disabled="{{editLocked}}" bindchange="onDraftInput">
+      <view class="rb-input rb-picker">{{draft.expense_date || '请选择日期'}}</view>
     </picker>
 
-    <view class="label">金额（可选）</view>
-    <input class="input standard-input" type="digit" value="{{draft.amount}}" data-key="amount" bindinput="onDraftInput" disabled="{{busy}}" />
+    <t-button wx:if="{{!editLocked}}" class="rb-save" size="small" variant="outline" bindtap="saveDraft" disabled="{{busy}}">保存</t-button>
+  </view>
 
-    <view class="label">类别（可选）</view>
-    <input class="input standard-input" value="{{draft.category}}" data-key="category" bindinput="onDraftInput" disabled="{{busy}}" />
-
-    <view class="label">说明（可选）</view>
-    <textarea class="textarea" value="{{draft.description}}" data-key="description" bindinput="onDraftInput" maxlength="240" disabled="{{busy}}" />
-
-    <view class="row">
-      <t-button class="btn btn-primary" theme="primary" bindtap="createOrUpdateDraft" loading="{{busy}}" disabled="{{busy || editLocked}}">💾 保存草稿</t-button>
+  <view class="rb-footer">
+    <t-button wx:for="{{actions}}" wx:key="key" block class="rb-action" theme="{{index === 0 ? 'primary' : 'default'}}" variant="{{index === 0 ? 'base' : 'outline'}}" data-key="{{item.key}}" loading="{{busy && index === 0}}" disabled="{{busy || item.disabled}}" bindtap="onGuidanceAction">{{item.label}}</t-button>
+    <view class="rb-links">
+      <text class="rb-link" bindtap="goMyList">返回我的提交</text>
+      <text class="rb-link {{uploading ? 'rb-link--off' : ''}}" bindtap="resetDraft">新建一张</text>
     </view>
-
-    <view class="label">附件类型</view>
-    <picker mode="selector" range="{{attachmentTypeOptions}}" range-key="label" value="{{attachmentTypeIndex}}" bindchange="onAttachmentTypeChange">
-      <view class="picker-value">{{attachmentTypeOptions[attachmentTypeIndex].label}}</view>
-    </picker>
-
-    <view class="row">
-      <t-button class="btn" variant="outline" bindtap="onUploadTap" loading="{{busy}}" disabled="{{busy || editLocked}}">📎 上传本地文件（统一入口）</t-button>
-    </view>
-    <view class="upload-tip">支持 PDF、图片（JPG/PNG/WEBP/TIFF/HEIC）及 OFD/XML 等常见发票与扫描格式</view>
-    <view wx:if="{{draft.channel === 'electronic'}}" class="upload-tip">电子报销一单对应一张发票；已有发票时再上传，可选择替换原发票或另建一单报销</view>
-
-    <view class="row">
-      <t-button class="btn btn-primary" theme="primary" bindtap="submitEnvelope" loading="{{busy}}" disabled="{{busy || !latestEnvelopeId || (latestEnvelopeStatus !== 'draft' && latestEnvelopeStatus !== 'unregistered')}}">📨 提交报销</t-button>
-    </view>
-
-    <view class="label">附件列表</view>
-    <view wx:if="{{attachmentItems.length === 0}}" class="attachment-empty">暂无附件</view>
-    <view wx:for="{{attachmentItems}}" wx:key="id" class="attachment-item">
-      <view class="attachment-main">
-        <view class="attachment-name">{{item.file_name}}</view>
-        <view class="attachment-meta">类型：{{item.attachment_type}}</view>
-      </view>
-      <view class="attachment-actions">
-        <t-button
-          class="btn"
-          size="small"
-          variant="outline"
-          data-url="{{item.file_url}}"
-          data-image="{{item.is_image}}"
-          bindtap="previewAttachment"
-        >查看</t-button>
-        <t-button
-          class="btn"
-          size="small"
-          theme="primary"
-          data-url="{{item.file_url}}"
-          data-name="{{item.file_name}}"
-          bindtap="downloadAttachment"
-        >下载</t-button>
-        <t-button
-          class="btn"
-          size="small"
-          theme="danger"
-          variant="outline"
-          data-id="{{item.id}}"
-          bindtap="removeAttachment"
-          disabled="{{busy || (latestEnvelopeStatus !== 'draft' && latestEnvelopeStatus !== 'unregistered')}}"
-        >删除</t-button>
-      </view>
-    </view>
-
-    <view class="label">复核提示</view>
-    <view wx:if="{{duplicateChecks.length === 0}}" class="attachment-empty">暂无复核提示</view>
-    <view wx:for="{{duplicateChecks}}" wx:key="id" class="duplicate-item">
-      <view class="duplicate-summary">{{item.summary}}</view>
-      <view class="duplicate-risk">{{item.risk}}</view>
-    </view>
-  </hy-panel-card>
-
+  </view>
 </view>
