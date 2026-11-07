@@ -1,8 +1,9 @@
 import { pickBuyerNameFromReviews, readInvoiceExtractionText } from "../../routes/reimbursement-invoice-title-policy";
 import { syncEnvelopeInvoiceTitle } from "../../routes/reimbursement-invoice-title-sync";
 import type { Env } from "../../types/env";
-import type { ReimbursementEnvelope } from "../../types/reimbursement";
+import type { EnvelopeAttachment, ReimbursementEnvelope } from "../../types/reimbursement";
 import { createTask, createTaskWithCompanions } from "../ai-slot";
+import { buildAttachmentViews, computeReviewTotals } from "./attachment-state";
 import { applyDuplicateChecks, applyInvoiceReviewDuplicateChecks } from "./duplicate-checks";
 import {
   extractInvoiceRecognitionHints,
@@ -290,10 +291,12 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
 
     for (const row of reviewRows.results ?? []) {
       if (!row.task_id) continue;
-      if (!["pending", "assigned", "running"].includes(row.task_status)) continue;
-      const task = await env.DB.prepare("SELECT status, result_json FROM task_queue WHERE id = ?")
+      if (row.task_status === "completed") continue;
+      const task = await env.DB.prepare(
+        "SELECT status, result_json, retry_count, max_retries FROM task_queue WHERE id = ?"
+      )
         .bind(row.task_id)
-        .first<{ status: string; result_json: string | null }>();
+        .first<{ status: string; result_json: string | null; retry_count: number; max_retries: number }>();
       if (!task) continue;
 
       if (task.status === "completed") {
@@ -347,23 +350,29 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
             row.id
           )
           .run();
-      } else if (task.status === "failed" || task.status === "timeout") {
-        await env.DB.prepare(
-          `UPDATE reimbursement_invoice_review SET
-             task_status = 'failed',
-             risk_level = 'high',
-             risk_hint = '票据识别失败，建议办公室人工复核原件',
-             updated_at = ?
-           WHERE id = ?`
-        )
-          .bind(nowIso(), row.id)
-          .run();
+      } else if (task.status === "failed" || (task.status === "timeout" && task.retry_count >= task.max_retries)) {
+        if (row.task_status !== "failed") {
+          await env.DB.prepare(
+            `UPDATE reimbursement_invoice_review SET
+               task_status = 'failed',
+               risk_level = 'high',
+               risk_hint = '票据识别失败，建议办公室人工复核原件',
+               updated_at = ?
+             WHERE id = ?`
+          )
+            .bind(nowIso(), row.id)
+            .run();
+        }
       } else {
-        await env.DB.prepare(
-          "UPDATE reimbursement_invoice_review SET task_status = ?, updated_at = ? WHERE id = ?"
-        )
-          .bind(task.status, nowIso(), row.id)
-          .run();
+        // 有重试额度的 timeout 会被 Cron 重新排队，按还在识别算
+        const nextStatus = task.status === "timeout" ? "pending" : task.status;
+        if (row.task_status !== nextStatus) {
+          await env.DB.prepare(
+            "UPDATE reimbursement_invoice_review SET task_status = ?, updated_at = ? WHERE id = ?"
+          )
+            .bind(nextStatus, nowIso(), row.id)
+            .run();
+        }
       }
     }
 
@@ -378,21 +387,39 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
       .bind(envelopeId, latestReviewRound)
       .all<InvoiceReviewRow>();
 
-    const rows = syncedRows.results ?? [];
-    const pendingCount = rows.filter((row) => ["pending", "assigned", "running"].includes(row.task_status)).length;
+    const attachmentRows = await env.DB.prepare(
+      "SELECT * FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' ORDER BY id ASC"
+    )
+      .bind(envelopeId)
+      .all<EnvelopeAttachment>();
+    const attachments = attachmentRows.results ?? [];
+    const activeAttachmentIds = new Set(attachments.map((attachment) => attachment.id));
+
+    const totals = computeReviewTotals(
+      buildAttachmentViews({
+        attachments,
+        reviews: syncedRows.results ?? [],
+        duplicates: [],
+        anomalies: [],
+        envelopeStatus: envelope.status
+      }),
+      envelope.amount || 0
+    );
+
+    const rows = (syncedRows.results ?? []).filter((row) => activeAttachmentIds.has(row.attachment_id));
+    const pendingCount = totals.recognizing_count;
     const completedRows = rows.filter((row) => row.task_status === "completed");
-    const failedCount = rows.filter((row) => row.task_status === "failed").length;
-    const ocrStatus = pendingCount > 0 ? "pending" : completedRows.length > 0 ? "completed" : "failed";
+    const failedCount = totals.failed_count;
+    const ocrStatus =
+      attachments.length === 0 ? "none" : pendingCount > 0 ? "pending" : completedRows.length > 0 ? "completed" : "failed";
     const bestRow =
       completedRows.find((row) => row.qr_text && row.invoice_no && row.invoice_date) ??
       completedRows.find((row) => row.invoice_no || row.invoice_unique_no || row.invoice_date) ??
       rows[0];
 
-    const extractedTotal = completedRows.reduce((sum, row) => {
-      return sum + (typeof row.invoice_amount === "number" && Number.isFinite(row.invoice_amount) ? row.invoice_amount : 0);
-    }, 0);
+    const extractedTotal = totals.extracted_total;
     const amountDelta = Number(((envelope.amount || 0) - extractedTotal).toFixed(2));
-    const amountMismatch = completedRows.length > 0 && Math.abs(amountDelta) > 0.01;
+    const amountMismatch = totals.mismatch;
 
     const hints = {
       invoice_unique_no: bestRow?.invoice_unique_no ?? null,
@@ -417,7 +444,7 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
         pending_count: pendingCount,
         amount_summary: {
           declared_amount: envelope.amount,
-          extracted_total: Number(extractedTotal.toFixed(2)),
+          extracted_total: extractedTotal,
           delta: amountDelta,
           mismatch: amountMismatch
         }
@@ -437,7 +464,7 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
          ocr_invoice_no_hint = ?,
          ocr_expense_date_hint = ?,
          duplicate_check_status = CASE WHEN ? > 0 THEN 'pending' ELSE 'completed' END,
-         silent_review_result = COALESCE(silent_review_result, ?),
+         silent_review_result = ?,
          updated_at = ?
        WHERE id = ?`
     )
@@ -449,6 +476,8 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
         hints.expense_date,
         pendingCount,
         JSON.stringify({
+          // 其余字段每次覆盖，只有 AI 合理性结果（ai_reasonability*）沿用已有内容
+          ...(parseStoredJson(envelope.silent_review_result ?? null) ?? {}),
           review_round: latestReviewRound,
           channel: envelope.channel,
           strategy:
@@ -457,21 +486,27 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
               : "实体票据OCR/Vision双通道识别+冗余安全兜底",
           summary: amountMismatch
             ? "检测到票据合计与申报金额不一致，请办公室优先复核金额与票据明细"
-            : "静默审查已完成，建议结合AI建议与附件原件进行确认",
+            : pendingCount > 0
+              ? "票据仍在识别，完成后自动更新"
+              : totals.complete
+                ? "静默审查已完成，建议结合AI建议与附件原件进行确认"
+                : "部分票据没有读出金额，请办公室按原件核对",
           invoice_review: {
-            total: rows.length,
+            total: attachments.length,
             completed: completedRows.length,
             failed: failedCount,
             pending: pendingCount
           },
           amount_consistency: {
             declared_amount: envelope.amount,
-            extracted_total: Number(extractedTotal.toFixed(2)),
+            extracted_total: extractedTotal,
             delta: amountDelta,
             mismatch: amountMismatch,
             conclusion: amountMismatch
               ? "票据合计与申报金额存在差异，需办公室人工复核"
-              : "票据合计与申报金额一致"
+              : totals.complete
+                ? "票据合计与申报金额一致"
+                : "票据还没有全部读出金额，暂不比较"
           },
           office_hints: [
             pendingCount > 0 ? "仍有票据识别任务进行中，请稍后刷新" : null,

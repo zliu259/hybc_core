@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { createTaskWithCompanions } from "../src/services/ai-slot";
-import { ensureInvoiceReviews } from "../src/services/reimbursement/review-pipeline";
+import { ensureInvoiceReviews, syncEnvelopeAuditState } from "../src/services/reimbursement/review-pipeline";
 import {
   createMigratedDatabase,
   createReimbursementHarness,
@@ -203,5 +203,138 @@ describe.skipIf(!hasSqlite)("迁移 0092", () => {
     expect(after.find((row) => row.id === before[1].id).review_round).toBe(1);
     expect(after.find((row) => row.id === before[0].id).review_round).toBe(-before[0].id);
     expect(() => insertReviewRow(h, envelopeId, attachmentIds[0], 1)).toThrow(/UNIQUE/);
+  });
+});
+
+describe.skipIf(!hasSqlite)("syncEnvelopeAuditState", () => {
+  const seedRecognized = async (h, amounts, fields = {}) => {
+    const { envelopeId, attachmentIds } = await seedWithAttachments(h, amounts.length, fields);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    const reviews = h.listReviews(envelopeId);
+    for (let index = 0; index < amounts.length; index += 1) {
+      if (amounts[index] === undefined) continue;
+      await h.finishTask(reviews[index].task_id, "completed", { amount_with_tax: amounts[index], invoice_no: `N${index}` });
+    }
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    return { envelopeId, attachmentIds, reviews };
+  };
+
+  const silentReview = (h, envelopeId) => JSON.parse(h.getEnvelope(envelopeId).silent_review_result);
+
+  it("删除附件后合计和结论更新", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, attachmentIds } = await seedRecognized(h, [100, 50], { amount: 100 });
+    expect(silentReview(h, envelopeId).amount_consistency.extracted_total).toBe(150);
+    expect(silentReview(h, envelopeId).amount_consistency.mismatch).toBe(true);
+
+    h.db.prepare("UPDATE envelope_attachment SET status = 'deleted' WHERE id = ?").run(attachmentIds[1]);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+
+    const review = silentReview(h, envelopeId);
+    expect(review.amount_consistency.extracted_total).toBe(100);
+    expect(review.amount_consistency.mismatch).toBe(false);
+    expect(review.invoice_review.total).toBe(1);
+  });
+
+  it("结论不再冻结，AI 合理性结果保留", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedRecognized(h, [100], { amount: 100 });
+    const stored = { ...silentReview(h, envelopeId), ai_reasonability: { summary: "合理" }, ai_reasonability_summary: "合理" };
+    h.db.prepare("UPDATE reimbursement_envelope SET silent_review_result = ? WHERE id = ?").run(JSON.stringify(stored), envelopeId);
+
+    await h.seedAttachment(envelopeId);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    const added = h.listReviews(envelopeId)[1];
+    await h.finishTask(added.task_id, "completed", { amount_with_tax: 20 });
+    await syncEnvelopeAuditState(h.env, envelopeId);
+
+    const review = silentReview(h, envelopeId);
+    expect(review.invoice_review.total).toBe(2);
+    expect(review.amount_consistency.extracted_total).toBe(120);
+    expect(review.summary).toContain("不一致");
+    expect(review.ai_reasonability).toEqual({ summary: "合理" });
+    expect(review.ai_reasonability_summary).toBe("合理");
+  });
+
+  it("有附件没有识别行时 ocr_status 是 pending", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedRecognized(h, [100], { amount: 100 });
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("completed");
+    await h.seedAttachment(envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("pending");
+    expect(h.getEnvelope(envelopeId).duplicate_check_status).toBe("pending");
+  });
+
+  it("没读全不报金额不一致", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, reviews } = await seedRecognized(h, [100, undefined], { amount: 300 });
+    await h.finishTask(reviews[1].task_id, "completed", { raw_text_summary: "手写收据" });
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    const review = silentReview(h, envelopeId);
+    expect(review.summary).not.toContain("不一致");
+    expect(review.amount_consistency.mismatch).toBe(false);
+    expect(review.amount_consistency.conclusion).not.toContain("不一致");
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("completed");
+  });
+
+  it("全部读出且一致时结论不提不一致", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedRecognized(h, [100], { amount: 100 });
+    const review = silentReview(h, envelopeId);
+    expect(review.summary).not.toContain("不一致");
+    expect(review.amount_consistency).toMatchObject({ delta: 0, mismatch: false, conclusion: "票据合计与申报金额一致" });
+  });
+
+  it("差额的符号保持申报减票面", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedRecognized(h, [100], { amount: 90 });
+    expect(silentReview(h, envelopeId).amount_consistency.delta).toBe(-10);
+  });
+
+  it("有重试额度的 timeout 不标 failed", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, reviews } = await seedRecognized(h, [undefined], { amount: 100 });
+    h.db.prepare("UPDATE task_queue SET status = 'timeout', retry_count = 1, max_retries = 3 WHERE id = ?").run(reviews[0].task_id);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listReviews(envelopeId)[0].task_status).not.toBe("failed");
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("pending");
+  });
+
+  it("重试用完的 timeout 标 failed", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, reviews } = await seedRecognized(h, [undefined], { amount: 100 });
+    h.db.prepare("UPDATE task_queue SET status = 'timeout', retry_count = 3, max_retries = 3 WHERE id = ?").run(reviews[0].task_id);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listReviews(envelopeId)[0].task_status).toBe("failed");
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("failed");
+  });
+
+  it("failed 行的任务后来完成了能写回结果", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, reviews } = await seedRecognized(h, [undefined], { amount: 100 });
+    h.db.prepare("UPDATE reimbursement_invoice_review SET task_status = 'failed' WHERE id = ?").run(reviews[0].id);
+    await h.finishTask(reviews[0].task_id, "completed", { amount_with_tax: 100, invoice_no: "A1" });
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listReviews(envelopeId)[0]).toMatchObject({ task_status: "completed", invoice_amount: 100, invoice_no: "A1" });
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("completed");
+  });
+
+  it("failed 行的任务被重新排队后回到识别中", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, reviews } = await seedRecognized(h, [undefined], { amount: 100 });
+    h.db.prepare("UPDATE reimbursement_invoice_review SET task_status = 'failed' WHERE id = ?").run(reviews[0].id);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listReviews(envelopeId)[0].task_status).toBe("pending");
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("pending");
+  });
+
+  it("全部删除后不再显示识别中或失败", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, attachmentIds } = await seedRecognized(h, [undefined], { amount: 100 });
+    h.db.prepare("UPDATE envelope_attachment SET status = 'deleted' WHERE id = ?").run(attachmentIds[0]);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.getEnvelope(envelopeId).ocr_status).toBe("none");
+    expect(h.getEnvelope(envelopeId).duplicate_check_status).toBe("completed");
   });
 });
