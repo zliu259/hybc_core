@@ -1,6 +1,6 @@
 # 报销多附件统一与详情页改版 设计
 
-日期：2026-11-06 · 状态：待 owner 批准
+日期：2026-11-06 · 状态：owner 已批准
 
 样稿：[2026-11-06-reimbursement-detail-mock.html](2026-11-06-reimbursement-detail-mock.html)（owner 选定的 C 版，含三种真实情况和全部说法）
 
