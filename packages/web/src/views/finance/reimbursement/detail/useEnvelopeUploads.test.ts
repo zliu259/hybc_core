@@ -7,7 +7,10 @@ import { useEnvelopeUploads } from "./useEnvelopeUploads";
 
 vi.mock("@/api/upload", () => ({
   createUploadSignature: vi.fn(async (data: { fileName: string }) => ({
-    data: { key: `reimbursement/${data.fileName}`, uploadUrl: `/upload/${data.fileName}` }
+    data: {
+      key: `reimbursement/${data.fileName}`,
+      uploadUrl: `/upload/${data.fileName}`
+    }
   })),
   resolveUploadUrl: (url: string) => `https://api.test${url}`
 }));
@@ -23,7 +26,13 @@ vi.mock("@/utils/auth", () => ({
 
 class FakeXhr {
   static instances: FakeXhr[] = [];
-  upload: { onprogress?: (event: { lengthComputable: boolean; loaded: number; total: number }) => void } = {};
+  upload: {
+    onprogress?: (event: {
+      lengthComputable: boolean;
+      loaded: number;
+      total: number;
+    }) => void;
+  } = {};
   status = 0;
   onload?: () => void;
   onerror?: () => void;
@@ -66,10 +75,16 @@ const file = (name: string, size = 10) => {
   return created;
 };
 
-const setup = (overrides: Partial<Parameters<typeof useEnvelopeUploads>[0]> = {}) => {
+const setup = (
+  overrides: Partial<Parameters<typeof useEnvelopeUploads>[0]> = {}
+) => {
   const ensureEnvelopeId = vi.fn(async () => 7);
   const onBound = vi.fn(async () => {});
-  const uploads = useEnvelopeUploads({ ensureEnvelopeId, onBound, ...overrides });
+  const uploads = useEnvelopeUploads({
+    ensureEnvelopeId,
+    onBound,
+    ...overrides
+  });
   return { uploads, ensureEnvelopeId, onBound };
 };
 
@@ -87,7 +102,13 @@ describe("useEnvelopeUploads", () => {
 
   it("同时最多 3 个", async () => {
     const { uploads } = setup();
-    uploads.addFiles([file("1.pdf"), file("2.pdf"), file("3.pdf"), file("4.pdf"), file("5.pdf")]);
+    uploads.addFiles([
+      file("1.pdf"),
+      file("2.pdf"),
+      file("3.pdf"),
+      file("4.pdf"),
+      file("5.pdf")
+    ]);
     await flush();
     expect(FakeXhr.instances).toHaveLength(3);
     expect(uploads.items.value.map(item => item.status)).toEqual([
@@ -150,13 +171,19 @@ describe("useEnvelopeUploads", () => {
 
   it("相同文件名和大小跳过", async () => {
     const { uploads } = setup();
-    const first = uploads.addFiles([file("1.pdf", 10), file("1.pdf", 10), file("1.pdf", 20)]);
+    const first = uploads.addFiles([
+      file("1.pdf", 10),
+      file("1.pdf", 10),
+      file("1.pdf", 20)
+    ]);
     expect(first.skipped).toEqual(["1.pdf"]);
     expect(uploads.items.value).toHaveLength(2);
   });
 
   it("和已有附件相同的也跳过", () => {
-    const { uploads } = setup({ existingFiles: () => [{ name: "1.pdf", size: 10 }] });
+    const { uploads } = setup({
+      existingFiles: () => [{ name: "1.pdf", size: 10 }]
+    });
     const result = uploads.addFiles([file("1.pdf", 10), file("2.pdf", 10)]);
     expect(result.skipped).toEqual(["1.pdf"]);
     expect(uploads.items.value.map(item => item.name)).toEqual(["2.pdf"]);
@@ -175,7 +202,11 @@ describe("useEnvelopeUploads", () => {
 
   it("后缀不对当场拒绝且不上传", async () => {
     const { uploads } = setup();
-    const result = uploads.addFiles([file("a.heic"), file("A.PDF"), file("noext")]);
+    const result = uploads.addFiles([
+      file("a.heic"),
+      file("A.PDF"),
+      file("noext")
+    ]);
     expect(result.rejected).toEqual([
       { name: "a.heic", message: "a.heic：只支持 PDF、JPG、PNG" },
       { name: "noext", message: "noext：只支持 PDF、JPG、PNG" }
@@ -187,8 +218,13 @@ describe("useEnvelopeUploads", () => {
 
   it("大于 20MB 当场拒绝", () => {
     const { uploads } = setup();
-    const result = uploads.addFiles([file("大.pdf", 20 * 1024 * 1024 + 1), file("正好.pdf", 20 * 1024 * 1024)]);
-    expect(result.rejected).toEqual([{ name: "大.pdf", message: "大.pdf：不能超过 20MB" }]);
+    const result = uploads.addFiles([
+      file("大.pdf", 20 * 1024 * 1024 + 1),
+      file("正好.pdf", 20 * 1024 * 1024)
+    ]);
+    expect(result.rejected).toEqual([
+      { name: "大.pdf", message: "大.pdf：不能超过 20MB" }
+    ]);
     expect(uploads.items.value.map(item => item.name)).toEqual(["正好.pdf"]);
   });
 
@@ -212,7 +248,9 @@ describe("useEnvelopeUploads", () => {
     release(7);
     await flush();
     expect(addEnvelopeAttachments).toHaveBeenCalledTimes(3);
-    expect(vi.mocked(addEnvelopeAttachments).mock.calls.every(call => call[0] === 7)).toBe(true);
+    expect(
+      vi.mocked(addEnvelopeAttachments).mock.calls.every(call => call[0] === 7)
+    ).toBe(true);
   });
 
   it("建草稿失败后重试会再建", async () => {
@@ -260,7 +298,11 @@ describe("useEnvelopeUploads", () => {
   });
 
   it("通知刷新失败不把上传算失败", async () => {
-    const { uploads } = setup({ onBound: vi.fn(async () => { throw new Error("刷新失败"); }) });
+    const { uploads } = setup({
+      onBound: vi.fn(async () => {
+        throw new Error("刷新失败");
+      })
+    });
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     uploads.addFiles([file("1.pdf")]);
     await flush();
@@ -274,7 +316,11 @@ describe("useEnvelopeUploads", () => {
     const { uploads } = setup();
     uploads.addFiles([file("1.pdf")]);
     await flush();
-    FakeXhr.instances[0].upload.onprogress?.({ lengthComputable: true, loaded: 5, total: 10 });
+    FakeXhr.instances[0].upload.onprogress?.({
+      lengthComputable: true,
+      loaded: 5,
+      total: 10
+    });
     expect(uploads.items.value[0].progress).toBe(50);
   });
 
@@ -282,7 +328,11 @@ describe("useEnvelopeUploads", () => {
     const { uploads, onBound } = setup();
     uploads.addFiles([file("1.pdf"), file("2.pdf")]);
     await flush();
-    FakeXhr.instances[0].upload.onprogress?.({ lengthComputable: true, loaded: 4, total: 10 });
+    FakeXhr.instances[0].upload.onprogress?.({
+      lengthComputable: true,
+      loaded: 4,
+      total: 10
+    });
     const before = uploads.items.value.map(item => ({ ...item }));
     // 外部刷新详情只会改 detail，不经过这里
     await flush();

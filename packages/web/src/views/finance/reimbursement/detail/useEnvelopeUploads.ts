@@ -23,29 +23,40 @@ const MAX_FILE_BYTES = 20 * 1024 * 1024;
 const validateFile = (file: File): string | null => {
   const dot = file.name.lastIndexOf(".");
   const extension = dot >= 0 ? file.name.slice(dot + 1).toLowerCase() : "";
-  if (!ALLOWED_EXTENSIONS.includes(extension)) return `${file.name}：只支持 PDF、JPG、PNG`;
+  if (!ALLOWED_EXTENSIONS.includes(extension))
+    return `${file.name}：只支持 PDF、JPG、PNG`;
   if (file.size > MAX_FILE_BYTES) return `${file.name}：不能超过 20MB`;
   return null;
 };
 
 const errorMessage = (error: unknown): string => {
   const shape = error as {
-    response?: { data?: { message?: string; error?: string | { message?: string } } };
+    response?: {
+      data?: { message?: string; error?: string | { message?: string } };
+    };
     message?: string;
   };
   const rawError = shape?.response?.data?.error;
   const backend =
-    shape?.response?.data?.message || (typeof rawError === "string" ? rawError : rawError?.message);
+    shape?.response?.data?.message ||
+    (typeof rawError === "string" ? rawError : rawError?.message);
   if (backend) return backend;
   const message = shape?.message ?? "";
   return /[一-鿿]/.test(message) ? message : "上传失败，请重试";
 };
 
-const putFile = (url: string, file: File, onProgress: (percent: number) => void) =>
+const putFile = (
+  url: string,
+  file: File,
+  onProgress: (percent: number) => void
+) =>
   new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("PUT", url);
-    xhr.setRequestHeader("content-type", file.type || "application/octet-stream");
+    xhr.setRequestHeader(
+      "content-type",
+      file.type || "application/octet-stream"
+    );
     xhr.setRequestHeader("Authorization", formatToken(getToken().accessToken));
     xhr.upload.onprogress = event => {
       if (event.lengthComputable && event.total > 0) {
@@ -69,7 +80,10 @@ export const useEnvelopeUploads = (options: {
   items: Ref<UploadItem[]>;
   uploadingCount: ComputedRef<number>;
   hasFailed: ComputedRef<boolean>;
-  addFiles: (files: File[]) => { skipped: string[]; rejected: { name: string; message: string }[] };
+  addFiles: (files: File[]) => {
+    skipped: string[];
+    rejected: { name: string; message: string }[];
+  };
   retry: (localId: string) => void;
   dismiss: (localId: string) => void;
 } => {
@@ -78,12 +92,19 @@ export const useEnvelopeUploads = (options: {
   let creatingEnvelope: Promise<number> | null = null;
 
   const uploadingCount = computed(
-    () => items.value.filter(item => item.status === "waiting" || item.status === "uploading").length
+    () =>
+      items.value.filter(
+        item => item.status === "waiting" || item.status === "uploading"
+      ).length
   );
-  const hasFailed = computed(() => items.value.some(item => item.status === "failed"));
+  const hasFailed = computed(() =>
+    items.value.some(item => item.status === "failed")
+  );
 
   const patchItem = (localId: string, patch: Partial<UploadItem>) => {
-    items.value = items.value.map(item => (item.localId === localId ? { ...item, ...patch } : item));
+    items.value = items.value.map(item =>
+      item.localId === localId ? { ...item, ...patch } : item
+    );
   };
 
   const removeItem = (localId: string) => {
@@ -107,16 +128,26 @@ export const useEnvelopeUploads = (options: {
         contentType: item.file.type,
         category: "reimbursement"
       });
-      await putFile(resolveUploadUrl(sign.data.uploadUrl), item.file, progress =>
-        patchItem(item.localId, { progress })
+      await putFile(
+        resolveUploadUrl(sign.data.uploadUrl),
+        item.file,
+        progress => patchItem(item.localId, { progress })
       );
       const envelopeId = await ensureEnvelopeOnce();
       await addEnvelopeAttachments(envelopeId, [
-        { file_key: sign.data.key, file_name: item.file.name, file_size: item.file.size }
+        {
+          file_key: sign.data.key,
+          file_name: item.file.name,
+          file_size: item.file.size
+        }
       ]);
       removeItem(item.localId);
     } catch (error) {
-      patchItem(item.localId, { status: "failed", error: errorMessage(error), progress: 0 });
+      patchItem(item.localId, {
+        status: "failed",
+        error: errorMessage(error),
+        progress: 0
+      });
       pump();
       return;
     }
@@ -130,12 +161,18 @@ export const useEnvelopeUploads = (options: {
   };
 
   const pump = () => {
-    const running = items.value.filter(item => item.status === "uploading").length;
+    const running = items.value.filter(
+      item => item.status === "uploading"
+    ).length;
     const next = items.value
       .filter(item => item.status === "waiting")
       .slice(0, Math.max(CONCURRENCY - running, 0));
     next.forEach(item => {
-      patchItem(item.localId, { status: "uploading", error: null, progress: 0 });
+      patchItem(item.localId, {
+        status: "uploading",
+        error: null,
+        progress: 0
+      });
       void runItem(item);
     });
   };
@@ -150,10 +187,14 @@ export const useEnvelopeUploads = (options: {
         rejected.push({ name: file.name, message });
         return;
       }
-      const isSame = (candidate: { name: string | null; size: number | null }) =>
-        candidate.name === file.name && candidate.size === file.size;
+      const isSame = (candidate: {
+        name: string | null;
+        size: number | null;
+      }) => candidate.name === file.name && candidate.size === file.size;
       const queued = items.value.some(
-        item => item.status !== "failed" && isSame({ name: item.name, size: item.file.size })
+        item =>
+          item.status !== "failed" &&
+          isSame({ name: item.name, size: item.file.size })
       );
       if (queued || existing.some(isSame)) {
         skipped.push(file.name);
@@ -162,9 +203,20 @@ export const useEnvelopeUploads = (options: {
       sequence += 1;
       items.value = [
         ...items.value.filter(
-          item => !(item.status === "failed" && isSame({ name: item.name, size: item.file.size }))
+          item =>
+            !(
+              item.status === "failed" &&
+              isSame({ name: item.name, size: item.file.size })
+            )
         ),
-        { localId: `u${sequence}`, file, name: file.name, progress: 0, status: "waiting", error: null }
+        {
+          localId: `u${sequence}`,
+          file,
+          name: file.name,
+          progress: 0,
+          status: "waiting",
+          error: null
+        }
       ];
     });
     pump();
@@ -178,5 +230,12 @@ export const useEnvelopeUploads = (options: {
     pump();
   };
 
-  return { items, uploadingCount, hasFailed, addFiles, retry, dismiss: removeItem };
+  return {
+    items,
+    uploadingCount,
+    hasFailed,
+    addFiles,
+    retry,
+    dismiss: removeItem
+  };
 };

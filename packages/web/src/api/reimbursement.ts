@@ -356,7 +356,12 @@ export const submitReimbursementEnvelope = (
 ) => {
   return http.request<{
     success: boolean;
-    data: { id: number; status: string };
+    data: {
+      id: number;
+      status: string;
+      already_submitted?: boolean;
+      resubmitted?: boolean;
+    };
   }>("post", `/api/v1/reimbursement/${id}/submit`, {
     data,
     headers: options?.idempotencyKey
@@ -366,11 +371,12 @@ export const submitReimbursementEnvelope = (
 };
 
 export const voidReimbursementEnvelope = (id: number, reason?: string) => {
-  return http.request<{ success: boolean; data: { id: number; status: string } }>(
-    "post",
-    `/api/v1/reimbursement/${id}/void`,
-    { data: reason ? { reason } : {} }
-  );
+  return http.request<{
+    success: boolean;
+    data: { id: number; status: string };
+  }>("post", `/api/v1/reimbursement/${id}/void`, {
+    data: reason ? { reason } : {}
+  });
 };
 
 export const addEnvelopeAttachments = (
@@ -393,11 +399,12 @@ export const rerecognizeAttachment = (id: number, attachmentId: number) => {
 };
 
 export const deleteEnvelopeAttachment = (id: number, attachmentId: number) => {
-  return http.request<{ success: boolean; data: { id: number; attachment_id: number } }>(
-    "post",
-    `/api/v1/reimbursement/${id}/attachments/${attachmentId}/delete`,
-    { data: {} }
-  );
+  return http.request<{
+    success: boolean;
+    data: { id: number; attachment_id: number };
+  }>("post", `/api/v1/reimbursement/${id}/attachments/${attachmentId}/delete`, {
+    data: {}
+  });
 };
 
 export const verifyReimbursementEnvelope = (data: {
