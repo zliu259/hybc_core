@@ -4,9 +4,11 @@ import type { Env } from "../../types/env";
 import type { EnvelopeAttachment, ReimbursementEnvelope } from "../../types/reimbursement";
 import { createTask, createTaskWithCompanions } from "../ai-slot";
 import { buildAttachmentViews, computeReviewTotals } from "./attachment-state";
+import { normalizeAnomalyResult } from "./anomaly-result";
 import {
   applyDuplicateChecks,
   applyInvoiceReviewDuplicateChecks,
+  loadCurrentReviewRows,
   pickBestReviewRow
 } from "./duplicate-checks";
 import {
@@ -25,6 +27,8 @@ import {
 } from "./review-helpers";
 
 const nowIso = () => new Date().toISOString();
+
+const ANOMALY_REVIEW_STATUSES = new Set(["submitted", "received"]);
 
 /**
  * 当前轮次里，每个有效附件没有识别行就建。任务和识别行一起写入，重复调用安全。
@@ -122,37 +126,57 @@ export const ensureInvoiceReviews = async (
   return { round, created, latestTaskId };
 };
 
-export const enqueueEnvelopeAiAudit = async (
+/**
+ * 费用合理性审查。只在已提交、所有附件识别结束、至少一张成功时才建，全部失败时没有内容可审。
+ * 用附件和识别任务算指纹：和最新一次相同就不重复建，增删附件或重新识别后才重跑。
+ * force 是办公室手动重跑，跳过这些条件。
+ */
+export const ensureAnomalyReview = async (
   env: Env,
   envelopeId: number,
-  options?: { file_key?: string | null; forceRerun?: boolean; triggeredBy?: string | null; reason?: string | null }
-) => {
+  options?: { force?: boolean; triggeredBy?: string | null; reason?: string | null }
+): Promise<number | null> => {
   const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
     .bind(envelopeId)
     .first<ReimbursementEnvelope>();
+  if (!envelope || envelope.status === "deleted" || envelope.status === "cancelled") return null;
+  const force = options?.force === true;
+  if (!force && !ANOMALY_REVIEW_STATUSES.has(envelope.status)) return null;
 
-  if (!envelope || envelope.status === "deleted") return;
-
-  const duplicateScan = await applyDuplicateChecks(env, envelopeId);
-  const now = nowIso();
-
-  const attachments = await env.DB.prepare(
-    `SELECT id, attachment_type, file_key, file_name, file_size, invoice_no, amount, issue_date
-       FROM envelope_attachment
-      WHERE envelope_id = ? AND status = 'active'
-      ORDER BY id ASC`
+  const attachmentRows = await env.DB.prepare(
+    "SELECT * FROM envelope_attachment WHERE envelope_id = ? AND status = 'active' ORDER BY id ASC"
   )
     .bind(envelopeId)
-    .all<{
-      id: number;
-      attachment_type: string;
-      file_key: string;
-      file_name: string | null;
-      file_size: number | null;
-      invoice_no: string | null;
-      amount: number | null;
-      issue_date: string | null;
-    }>();
+    .all<EnvelopeAttachment>();
+  const attachments = attachmentRows.results ?? [];
+  const rows = await loadCurrentReviewRows(env, envelopeId);
+  const views = buildAttachmentViews({
+    attachments,
+    reviews: rows,
+    duplicates: [],
+    anomalies: [],
+    envelopeStatus: envelope.status
+  });
+
+  if (!force) {
+    const allFinished = views.every((view) => view.state !== "recognizing");
+    if (!allFinished || !rows.some((row) => row.task_status === "completed")) return null;
+  }
+
+  const fingerprint = rows
+    .map((row) => `${row.attachment_id}:${row.task_id}`)
+    .sort()
+    .join(",");
+  const latest = await env.DB.prepare(
+    `SELECT payload_json FROM task_queue
+      WHERE biz_type = 'reimbursement_envelope' AND biz_id = ? AND task_type = 'reimbursement_anomaly'
+      ORDER BY id DESC LIMIT 1`
+  )
+    .bind(envelopeId)
+    .first<{ payload_json: string | null }>();
+  if (!force && parseStoredJson(latest?.payload_json ?? null)?.review_fingerprint === fingerprint) {
+    return null;
+  }
 
   const duplicateChecks = await env.DB.prepare(
     `SELECT matched_envelope_id, matched_invoice_no, match_type, match_score, risk_level, summary, evidence_json
@@ -161,17 +185,10 @@ export const enqueueEnvelopeAiAudit = async (
       ORDER BY id DESC`
   )
     .bind(envelopeId)
-    .all<{
-      matched_envelope_id: number | null;
-      matched_invoice_no: string | null;
-      match_type: string;
-      match_score: number | null;
-      risk_level: string;
-      summary: string | null;
-      evidence_json: string | null;
-    }>();
+    .all<Record<string, unknown>>();
+  const rowByAttachment = new Map(rows.map((row) => [row.attachment_id, row]));
 
-  await createTask(env, {
+  const task = await createTask(env, {
     task_type: "reimbursement_anomaly",
     biz_type: "reimbursement_envelope",
     biz_id: envelopeId,
@@ -184,15 +201,16 @@ export const enqueueEnvelopeAiAudit = async (
           : "physical_invoice_multimodal_redundant",
       review_triggered_by: options?.triggeredBy ?? null,
       review_reason: options?.reason ?? null,
-      rerun: options?.forceRerun === true,
+      review_fingerprint: fingerprint,
+      rerun: force,
       amount: envelope.amount,
-      duplicate_count: duplicateScan.total,
+      duplicate_count: duplicateChecks.results?.length ?? 0,
       project_id: envelope.project_id,
       applicant_userid: envelope.applicant_userid,
       category: envelope.category,
       description: envelope.description,
       channel: envelope.channel,
-      attachments: (attachments.results ?? []).map(item => ({
+      attachments: attachments.map((item) => ({
         attachment_type: item.attachment_type,
         file_key: item.file_key,
         file_name: item.file_name,
@@ -201,59 +219,39 @@ export const enqueueEnvelopeAiAudit = async (
         amount: item.amount,
         issue_date: item.issue_date
       })),
+      invoices: views.map((view) => {
+        const extraction = rowByAttachment.get(view.attachment_id)?.extraction_json ?? null;
+        return {
+          attachment_id: view.attachment_id,
+          file_name: view.file_name,
+          seller_name: view.seller_name,
+          buyer_name: readInvoiceExtractionText(extraction, "buyer_name"),
+          invoice_no: view.invoice_no,
+          invoice_date: view.invoice_date,
+          amount: view.amount,
+          document_type: readInvoiceExtractionText(extraction, "document_type")
+        };
+      }),
       duplicate_checks: duplicateChecks.results ?? []
     },
     timeout_seconds: 300
   });
+  return task.id;
+};
 
+/** 全部重新识别：清空结论、开新一轮。合理性审查在这一轮识别结束后由同步自动建。 */
+export const restartEnvelopeReview = async (env: Env, envelopeId: number): Promise<void> => {
   await env.DB.prepare(
-    "UPDATE reimbursement_envelope SET precheck_status = 'pending', duplicate_check_status = 'pending', silent_review_result = NULL, updated_at = ? WHERE id = ?"
+    `UPDATE reimbursement_envelope SET
+       precheck_status = 'pending',
+       duplicate_check_status = 'pending',
+       silent_review_result = NULL,
+       updated_at = ?
+     WHERE id = ?`
   )
-    .bind(now, envelopeId)
+    .bind(nowIso(), envelopeId)
     .run();
-
-  const validAttachments = (attachments.results ?? [])
-    .map((item) => ({ id: item.id, file_key: item.file_key?.trim() ?? "", file_name: item.file_name ?? null }))
-    .filter((item) => item.file_key);
-  if (validAttachments.length === 0) return;
-
-  const hasInvoiceReviewTable = await supportsInvoiceReviewTable(env);
-  if (hasInvoiceReviewTable) {
-    try {
-      await ensureInvoiceReviews(env, envelopeId, { forceNewRound: options?.forceRerun === true });
-      return;
-    } catch (error) {
-      if (!isMissingInvoiceReviewTableError(error)) {
-        throw error;
-      }
-    }
-  }
-
-  const preferredFromOption = options?.file_key?.trim();
-  const preferredAttachment =
-    (preferredFromOption && validAttachments.find((item) => item.file_key === preferredFromOption)) ||
-    validAttachments[validAttachments.length - 1];
-  if (!preferredAttachment) return;
-  const fallbackOcrTask = await createTask(env, {
-    task_type: "ocr_extract",
-    biz_type: "reimbursement_envelope",
-    biz_id: envelopeId,
-    priority: envelope.channel === "electronic" ? 5 : 4,
-    payload: {
-      envelope_id: envelopeId,
-      file_key: preferredAttachment.file_key,
-      file_name: preferredAttachment.file_name,
-      project_id: envelope.project_id,
-      channel: envelope.channel
-    },
-    timeout_seconds: 300
-  });
-
-  await env.DB.prepare(
-    "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
-  )
-    .bind(fallbackOcrTask.id, nowIso(), envelopeId)
-    .run();
+  await ensureInvoiceReviews(env, envelopeId, { forceNewRound: true });
 };
 
 /**
@@ -633,7 +631,8 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
     .first<{ status: string; result_json: string | null }>();
 
   if (anomalyTask?.status === "completed") {
-    const silentReviewResult = parseTaskResult(anomalyTask.result_json ?? null);
+    const rawResult = parseTaskResult(anomalyTask.result_json ?? null);
+    const normalizedResult = normalizeAnomalyResult(rawResult);
     const latestSilentReviewRow = await env.DB.prepare(
       "SELECT silent_review_result FROM reimbursement_envelope WHERE id = ?"
     )
@@ -642,13 +641,8 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
     const existingSilentReview = parseStoredJson(latestSilentReviewRow?.silent_review_result ?? null);
     const mergedSilentReview = {
       ...(existingSilentReview ?? {}),
-      ai_reasonability: silentReviewResult,
-      ai_reasonability_summary:
-        typeof silentReviewResult?.summary === "string"
-          ? silentReviewResult.summary
-          : typeof silentReviewResult?.comment === "string"
-            ? silentReviewResult.comment
-            : null
+      ai_reasonability: { ...(rawResult ?? {}), ...normalizedResult },
+      ai_reasonability_summary: normalizedResult.summary
     };
     await env.DB.prepare(
       `UPDATE reimbursement_envelope SET
@@ -659,5 +653,12 @@ export const syncEnvelopeAuditState = async (env: Env, envelopeId: number): Prom
     )
       .bind(JSON.stringify(mergedSilentReview), nowIso(), envelopeId)
       .run();
+  }
+
+  // AI 故障不能挡住同步和办公室：建不成就等下一次同步
+  try {
+    await ensureAnomalyReview(env, envelopeId);
+  } catch (error) {
+    console.error("Reimbursement anomaly review create failed", { envelope_id: envelopeId, error });
   }
 };

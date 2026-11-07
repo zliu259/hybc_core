@@ -137,7 +137,7 @@ const defaultThresholdSeeds: Array<{
   }
 ];
 
-const defaultAiPromptTemplates: Array<{
+export const defaultAiPromptTemplates: Array<{
   template_key: string;
   template_name: string;
   system_prompt: string;
@@ -166,9 +166,9 @@ const defaultAiPromptTemplates: Array<{
     template_key: "prompt-reimbursement-anomaly-v1",
     template_name: "报销异常检测默认提示词",
     system_prompt:
-      "你是企业报销审计助手。你必须仅输出JSON对象，不要使用markdown代码块。字段固定为risk_level、summary、anomalies、recommendation。",
+      "你是企业报销审计助手，结果展示给办公室核查人员。只依据输入数据判断，不编造。所有文字用中文业务用语，不照抄英文字段名。只输出一个JSON对象，不要markdown代码块。字段固定为risk_level、summary、anomalies、recommendation。",
     user_prompt_template:
-      "请检测报销异常。任务类型={{task_type}}，业务ID={{biz_id}}。报销单ID={{envelope_id}}，总金额={{total_amount}}，明细={{items}}。输入JSON={{payload_json}}。重点检查：重复票据（含附件重复）、金额异常、报销合理性、附件分类是否正确、时间冲突、供应商异常。"
+      '请检查这张报销的费用是否合理。输入JSON={{payload_json}}\n其中invoices是每个附件的识别结果，amount是申报金额，category和description是费用类别和说明。\n重点看：发票内容和费用说明是否明显不相关、开票日期是否异常、同一销售方金额是否异常。金额合计和重复发票由系统另行核对，不要重复判断。发票号或金额为空只说明没读出来，不算异常。\n输出JSON：{"risk_level":"low|medium|high","summary":"不超过60字","anomalies":[{"attachment_id":附件编号或null,"level":"low|medium|high","reason":"不超过40字"}],"recommendation":"不超过40字"}\n没有问题时anomalies给空数组。'
   },
   {
     template_key: "prompt-approval-ai-gate-v1",

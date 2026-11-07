@@ -1,7 +1,13 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
+import { defaultAiPromptTemplates } from "../src/routes/admin";
 import { createTaskWithCompanions } from "../src/services/ai-slot";
-import { ensureInvoiceReviews, syncEnvelopeAuditState } from "../src/services/reimbursement/review-pipeline";
+import {
+  ensureAnomalyReview,
+  ensureInvoiceReviews,
+  restartEnvelopeReview,
+  syncEnvelopeAuditState
+} from "../src/services/reimbursement/review-pipeline";
 import {
   createMigratedDatabase,
   createReimbursementHarness,
@@ -336,5 +342,225 @@ describe.skipIf(!hasSqlite)("syncEnvelopeAuditState", () => {
     await syncEnvelopeAuditState(h.env, envelopeId);
     expect(h.getEnvelope(envelopeId).ocr_status).toBe("none");
     expect(h.getEnvelope(envelopeId).duplicate_check_status).toBe("completed");
+  });
+});
+
+describe.skipIf(!hasSqlite)("费用合理性审查", () => {
+  const finishAll = async (h, envelopeId, output = { amount_with_tax: 100, seller_name: "某酒店", buyer_name: "恒越", invoice_no: "A1", issue_date: "2026-10-01", document_type: "invoice" }) => {
+    for (const row of h.listReviews(envelopeId)) {
+      await h.finishTask(row.task_id, "completed", output);
+    }
+  };
+
+  const anomalyPayload = (task) => JSON.parse(task.payload_json);
+
+  it("识别完才建合理性任务，payload 带识别内容和附件编号", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, attachmentIds } = await seedWithAttachments(h, 2);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    const [first, second] = h.listReviews(envelopeId);
+
+    await h.finishTask(first.task_id, "completed", { amount_with_tax: 100 });
+    expect(await ensureAnomalyReview(h.env, envelopeId)).toBeNull();
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(0);
+
+    await h.finishTask(second.task_id, "failed");
+    await h.finishTask(first.task_id, "completed", {
+      amount_with_tax: 100,
+      seller_name: "某酒店",
+      buyer_name: "恒越",
+      invoice_no: "A1",
+      issue_date: "2026-10-01",
+      document_type: "invoice"
+    });
+    h.db.prepare("UPDATE reimbursement_invoice_review SET task_status = 'pending' WHERE id = ?").run(first.id);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+
+    const tasks = h.listTasks("reimbursement_anomaly");
+    expect(tasks).toHaveLength(1);
+    const payload = anomalyPayload(tasks[0]);
+    expect(payload.invoices[0]).toEqual({
+      attachment_id: attachmentIds[0],
+      file_name: expect.any(String),
+      seller_name: "某酒店",
+      buyer_name: "恒越",
+      invoice_no: "A1",
+      invoice_date: "2026-10-01",
+      amount: 100,
+      document_type: "invoice"
+    });
+    expect(payload.review_fingerprint).toContain(`${attachmentIds[0]}:`);
+  });
+
+  it("全部失败不建", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 1);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await h.finishTask(h.listReviews(envelopeId)[0].task_id, "failed");
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(await ensureAnomalyReview(h.env, envelopeId)).toBeNull();
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(0);
+  });
+
+  it("草稿不建", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 1, { status: "draft" });
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(0);
+  });
+
+  it("指纹相同不重复建", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 1);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(1);
+  });
+
+  it("加附件后重跑", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 1);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+
+    await h.seedAttachment(envelopeId);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(1);
+
+    await h.finishTask(h.listReviews(envelopeId)[1].task_id, "completed", { amount_with_tax: 20 });
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(2);
+  });
+
+  it("删除附件后重跑", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, attachmentIds } = await seedWithAttachments(h, 2);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    h.db.prepare("UPDATE envelope_attachment SET status = 'deleted' WHERE id = ?").run(attachmentIds[1]);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(2);
+    expect(anomalyPayload(h.listTasks("reimbursement_anomaly")[1]).invoices).toHaveLength(1);
+  });
+
+  it("上次失败不自动重跑，force 可以", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 1);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    await h.finishTask(h.listTasks("reimbursement_anomaly")[0].id, "failed");
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(1);
+    expect(await ensureAnomalyReview(h.env, envelopeId, { force: true })).toEqual(expect.any(Number));
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(2);
+  });
+
+  it("结果写入 silent_review_result 时已规范", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId, attachmentIds } = await seedWithAttachments(h, 1);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    await h.finishTask(h.listTasks("reimbursement_anomaly")[0].id, "completed", {
+      risk_level: "中",
+      summary: "日期偏早",
+      anomalies: [{ attachment_id: attachmentIds[0], level: "中", reason: "开票日期早于项目" }, { reason: "缺等级" }],
+      recommendation: "核对"
+    });
+    await syncEnvelopeAuditState(h.env, envelopeId);
+    const review = JSON.parse(h.getEnvelope(envelopeId).silent_review_result);
+    expect(review.ai_reasonability).toMatchObject({
+      risk_level: "medium",
+      summary: "日期偏早",
+      anomalies: [{ attachment_id: attachmentIds[0], level: "medium", reason: "开票日期早于项目" }],
+      recommendation: "核对"
+    });
+    expect(review.ai_reasonability_summary).toBe("日期偏早");
+    expect(review.amount_consistency).toBeDefined();
+  });
+
+  it("OCR 全部完成后经 TASK_COMPLETED 建任务", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 1);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await h.drainQueue();
+    const [row] = h.listReviews(envelopeId);
+    await h.finishTask(row.task_id, "completed", { amount_with_tax: 100 });
+    await h.env.EVENT_QUEUE.send({
+      type: "TASK_COMPLETED",
+      source: "ai-slot",
+      payload: { task_id: row.task_id, task_type: "ocr_extract", biz_type: "reimbursement_envelope", biz_id: envelopeId },
+      timestamp: new Date().toISOString()
+    });
+    await h.drainQueue();
+    expect(h.listTasks("reimbursement_anomaly")).toHaveLength(1);
+  });
+
+  it("建合理性任务失败不影响同步", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 1);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    const realPrepare = h.env.DB.prepare;
+    h.env.DB.prepare = (sql) => {
+      if (sql.includes("INSERT INTO task_queue")) throw new Error("boom");
+      return realPrepare(sql);
+    };
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    await expect(syncEnvelopeAuditState(h.env, envelopeId)).resolves.toBeUndefined();
+    expect(h.getEnvelope(envelopeId).duplicate_check_status).toBe("completed");
+    errorSpy.mockRestore();
+  });
+
+  it("restartEnvelopeReview 清空结论并开新一轮", async () => {
+    const h = createReimbursementHarness();
+    const { envelopeId } = await seedWithAttachments(h, 2);
+    await ensureInvoiceReviews(h.env, envelopeId);
+    await finishAll(h, envelopeId);
+    await syncEnvelopeAuditState(h.env, envelopeId);
+
+    await restartEnvelopeReview(h.env, envelopeId);
+
+    expect(h.getEnvelope(envelopeId)).toMatchObject({
+      precheck_status: "pending",
+      duplicate_check_status: "pending",
+      ocr_status: "pending",
+      silent_review_result: null
+    });
+    const rounds = h.listReviews(envelopeId).map((row) => row.review_round);
+    expect(rounds.filter((round) => round === 2)).toHaveLength(2);
+  });
+});
+
+describe.skipIf(!hasSqlite)("迁移 0093 和默认提示词", () => {
+  it("迁移写入的文本和 admin 默认值逐字相同", () => {
+    const database = createMigratedDatabase({ stopBefore: "0093" });
+    const now = new Date().toISOString();
+    database
+      .prepare(
+        `INSERT INTO ai_prompt_template (template_key, template_name, system_prompt, user_prompt_template, version, status, created_at, updated_at)
+         VALUES ('prompt-reimbursement-anomaly-v1', '报销异常检测默认提示词', '旧', '旧 {{items}}', 1, 'active', ?, ?)`
+      )
+      .run(now, now);
+    database.exec(readMigration("0093_reimbursement_anomaly_prompt_v2.sql"));
+    const row = database
+      .prepare("SELECT * FROM ai_prompt_template WHERE template_key = 'prompt-reimbursement-anomaly-v1'")
+      .get();
+    const defaults = defaultAiPromptTemplates.find((item) => item.template_key === "prompt-reimbursement-anomaly-v1");
+    expect(row.system_prompt).toBe(defaults.system_prompt);
+    expect(row.user_prompt_template).toBe(defaults.user_prompt_template);
+    expect(row.version).toBe(2);
+    expect(row.user_prompt_template).not.toContain("{{items}}");
+    expect(row.user_prompt_template).not.toContain("{{total_amount}}");
+    expect(row.user_prompt_template).not.toContain("附件分类");
   });
 });

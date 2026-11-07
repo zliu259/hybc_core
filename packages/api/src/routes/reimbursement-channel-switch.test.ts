@@ -161,6 +161,9 @@ const requestSwitch = (db: SwitchDb, body: Record<string, unknown>) => {
 const channelUpdates = (db: SwitchDb) =>
   db.executed.filter(item => item.sql.includes("SET channel = ?"));
 
+const restartStatements = (db: SwitchDb) =>
+  db.executed.filter((item) => item.sql.includes("silent_review_result = NULL"));
+
 describe("POST /reimbursement/:id/switch-channel", () => {
   beforeEach(() => {
     mockAuthState.payload = { ...mockAuthState.payload, roles: ["finance"] };
@@ -247,16 +250,7 @@ describe("POST /reimbursement/:id/switch-channel", () => {
     expect(payload.data.changed).toBe(false);
     expect(payload.data.ai_audit_triggered).toBe(true);
     expect(channelUpdates(db)).toHaveLength(0);
-    expect(createTaskMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        task_type: "reimbursement_anomaly",
-        payload: expect.objectContaining({
-          rerun: true,
-          review_reason: "channel_switch_heal_to_physical"
-        })
-      })
-    );
+    expect(restartStatements(db)).toHaveLength(1);
   });
 
   it("returns 409 when optimistic lock hits concurrent change", async () => {
@@ -296,19 +290,8 @@ describe("POST /reimbursement/:id/switch-channel", () => {
     expect(updates[0].args[0]).toBe("electronic");
     expect(updates[0].args[3]).toBe("physical");
 
-    // AI 核验以新通道策略整轮重跑
-    expect(createTaskMock).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        task_type: "reimbursement_anomaly",
-        payload: expect.objectContaining({
-          channel: "electronic",
-          review_strategy: "electronic_qr_first_duplicate_by_invoice_no_date",
-          rerun: true,
-          review_reason: "channel_switch_to_electronic"
-        })
-      })
-    );
+    // AI 核验以新通道策略整轮重跑：清空结论，新一轮识别结束后自动重新审查
+    expect(restartStatements(db)).toHaveLength(1);
 
     expect(publishEventMock).toHaveBeenCalledWith(
       expect.anything(),

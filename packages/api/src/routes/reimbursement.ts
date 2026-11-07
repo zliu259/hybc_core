@@ -46,9 +46,10 @@ import { parseInvoiceTitleFilter } from "./reimbursement-invoice-title-policy";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
 import { applyDuplicateChecks, scanEnvelopeDuplicates } from "../services/reimbursement/duplicate-checks";
 import {
-  enqueueEnvelopeAiAudit,
+  ensureAnomalyReview,
   ensureInvoiceReviews,
   refreshInvoiceReviewRows,
+  restartEnvelopeReview,
   syncEnvelopeAuditState
 } from "../services/reimbursement/review-pipeline";
 import {
@@ -2904,11 +2905,15 @@ reimbursementRoutes.post(
     }
 
     try {
-      await enqueueEnvelopeAiAudit(c.env, id, {
-        forceRerun: body.rerun_full !== false,
-        triggeredBy: auth.sub,
-        reason: body.reason?.trim() || "manual_office_silent_review"
-      });
+      if (body.rerun_full !== false) {
+        await restartEnvelopeReview(c.env, id);
+      } else {
+        await ensureAnomalyReview(c.env, id, {
+          force: true,
+          triggeredBy: auth.sub,
+          reason: body.reason?.trim() || "manual_office_silent_review"
+        });
+      }
 
       const latestTask = await c.env.DB.prepare(
         `SELECT id FROM task_queue
@@ -3477,11 +3482,7 @@ reimbursementRoutes.post(
             .bind(id)
             .first<{ id: number }>();
           if (activeAttachment) {
-            await enqueueEnvelopeAiAudit(c.env, id, {
-              forceRerun: true,
-              triggeredBy: auth.sub,
-              reason: `channel_switch_heal_to_${decision.channel}`
-            });
+            await restartEnvelopeReview(c.env, id);
             aiAuditTriggered = true;
           }
         }
@@ -3535,11 +3536,7 @@ reimbursementRoutes.post(
 
     let aiAuditTriggered = false;
     if (activeAttachment) {
-      await enqueueEnvelopeAiAudit(c.env, id, {
-        forceRerun: true,
-        triggeredBy: auth.sub,
-        reason: `channel_switch_to_${decision.toChannel}`
-      });
+      await restartEnvelopeReview(c.env, id);
       aiAuditTriggered = true;
     }
 
@@ -3965,8 +3962,15 @@ reimbursementRoutes.put(
 
     if (body.attachments && body.attachments.length > 0) {
       await insertAttachments(c.env.DB, id, body.attachments);
-      const latestFileKey = body.attachments.find(item => item.file_key?.trim())?.file_key ?? null;
-      await enqueueEnvelopeAiAudit(c.env, id, { file_key: latestFileKey });
+      // 旧版小程序没有「重新提交」可用，传附件时继续把被退回的单交回办公室
+      if (["approved", "supplement", "rejected"].includes(existing.precheck_status)) {
+        await c.env.DB.prepare(
+          "UPDATE reimbursement_envelope SET precheck_status = 'pending', updated_at = ? WHERE id = ?"
+        )
+          .bind(nowIso(), id)
+          .run();
+      }
+      await ensureInvoiceReviews(c.env, id);
     }
 
     return c.json({ success: true });
@@ -4765,16 +4769,8 @@ reimbursementRoutes.post(
     }
 
     // 拆单后自动核查：两边各自重新静默审查（票据识别+重复校验+合理性）
-    await enqueueEnvelopeAiAudit(c.env, id, {
-      forceRerun: true,
-      triggeredBy: auth.sub,
-      reason: "envelope_split_source"
-    });
-    await enqueueEnvelopeAiAudit(c.env, newId, {
-      forceRerun: true,
-      triggeredBy: auth.sub,
-      reason: "envelope_split_child"
-    });
+    await restartEnvelopeReview(c.env, id);
+    await restartEnvelopeReview(c.env, newId);
 
     await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SPLIT", "reimbursement_envelope", {
       source_envelope_id: id,

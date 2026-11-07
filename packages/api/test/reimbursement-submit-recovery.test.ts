@@ -63,6 +63,7 @@ const createHarness = () => {
 
 describe.skipIf(!hasSqlite)("报销提交链路", () => {
   beforeEach(() => {
+    mockAuth.payload = { ...mockAuth.payload, sub: "u1", roles: ["operator"] };
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response("ok"))
@@ -237,6 +238,50 @@ describe.skipIf(!hasSqlite)("报销提交链路", () => {
     expect(h.listReviews(id)[0].task_status).toBe("completed");
     expect(h.getEnvelope(id).ocr_status).toBe("completed");
     expect(h.getEnvelope(id).duplicate_check_status).toBe("completed");
+  });
+
+  describe("旧路径 PUT 传附件", () => {
+    const put = (h, id, attachments) => {
+      const app = new Hono();
+      app.route("/reimbursement", reimbursementRoutes);
+      return app.request(
+        `/reimbursement/${id}`,
+        {
+          method: "PUT",
+          headers: { authorization: "Bearer test-token", "content-type": "application/json" },
+          body: JSON.stringify({ attachments })
+        },
+        h.env
+      );
+    };
+    const file = { file_key: "reimbursement/new.pdf", file_name: "new.pdf", attachment_type: "invoice" };
+
+    it.each(["supplement", "rejected"])("把 %s 的单交回办公室", async (precheck_status) => {
+      const h = createHarness();
+      const { id } = await seedDraft(h, 1, { status: "submitted", precheck_status });
+      const response = await put(h, id, [file]);
+      expect(response.status).toBe(200);
+      expect(h.getEnvelope(id).precheck_status).toBe("pending");
+      expect(h.listTasks("ocr_extract")).toHaveLength(2);
+      expect(h.listTasks("reimbursement_anomaly")).toHaveLength(0);
+    });
+
+    it("已复核通过的单退回待复核", async () => {
+      mockAuth.payload = { ...mockAuth.payload, sub: "office", roles: ["finance"] };
+      const h = createHarness();
+      const { id } = await seedDraft(h, 1, { status: "received", precheck_status: "approved" });
+      await put(h, id, [file]);
+      expect(h.getEnvelope(id).precheck_status).toBe("pending");
+    });
+
+    it("草稿的 precheck_status 不变，也不开新轮", async () => {
+      const h = createHarness();
+      const { id } = await seedDraft(h, 1, { status: "draft", precheck_status: "none" });
+      await put(h, id, [file]);
+      expect(h.getEnvelope(id).precheck_status).toBe("none");
+      expect(h.listReviews(id).every((row) => row.review_round === 1)).toBe(true);
+      expect(h.listReviews(id)).toHaveLength(2);
+    });
   });
 
   it("提交被中断后同一个 Idempotency-Key 重试成功", async () => {
