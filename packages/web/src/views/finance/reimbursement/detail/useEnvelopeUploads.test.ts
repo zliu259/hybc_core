@@ -264,10 +264,10 @@ describe("useEnvelopeUploads", () => {
     FakeXhr.instances[0].succeed();
     await flush();
     expect(uploads.hasFailed.value).toBe(true);
+    // 文件已经传上去了，重试只补建草稿和绑定
     uploads.retry(uploads.items.value[0].localId);
     await flush();
-    FakeXhr.instances[1].succeed();
-    await flush();
+    expect(FakeXhr.instances).toHaveLength(1);
     expect(ensureEnvelopeId).toHaveBeenCalledTimes(2);
     expect(uploads.items.value).toEqual([]);
   });
@@ -295,6 +295,27 @@ describe("useEnvelopeUploads", () => {
     FakeXhr.instances[0].succeed();
     await flush();
     expect(uploads.items.value[0].error).toBe("一张报销最多 30 个附件");
+  });
+
+  it("绑定失败后重试不重传，用同一个 file_key，接口才认得出是重试", async () => {
+    vi.mocked(addEnvelopeAttachments).mockRejectedValueOnce(new Error("断网"));
+    const { uploads } = setup();
+    uploads.addFiles([file("1.pdf")]);
+    await flush();
+    FakeXhr.instances[0].succeed();
+    await flush();
+    expect(uploads.hasFailed.value).toBe(true);
+
+    uploads.retry(uploads.items.value[0].localId);
+    await flush();
+    expect(FakeXhr.instances).toHaveLength(1);
+    expect(createUploadSignature).toHaveBeenCalledTimes(1);
+    expect(addEnvelopeAttachments).toHaveBeenCalledTimes(2);
+    const keys = vi
+      .mocked(addEnvelopeAttachments)
+      .mock.calls.map(call => call[1][0].file_key);
+    expect(keys[0]).toBe(keys[1]);
+    expect(uploads.items.value).toEqual([]);
   });
 
   it("通知刷新失败不把上传算失败", async () => {

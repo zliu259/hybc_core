@@ -9,6 +9,7 @@ import type {
 } from "@/api/reimbursement";
 import {
   buildEnvelopeForm,
+  buildEnvelopeUpdatePayload,
   declaredAmountDefault,
   defaultSelection,
   formatYuan,
@@ -18,7 +19,8 @@ import {
   resolveGuidance,
   sortAttachmentViews,
   totalsDisplay,
-  wholeEnvelopeDuplicates
+  wholeEnvelopeDuplicates,
+  withDeclaredAmount
 } from "./view-model";
 
 const view = (
@@ -455,5 +457,86 @@ describe("整单级重复", () => {
       check(4, "high", "不是 JSON")
     ]);
     expect(result.map(item => item.id)).toEqual([1, 4]);
+  });
+});
+
+describe("buildEnvelopeUpdatePayload", () => {
+  const form = {
+    project_id: 5,
+    applicant_userid: "u1",
+    channel: "electronic" as const,
+    bind_envelope_uuid: "",
+    expense_date: "",
+    amount: 300,
+    category: "差旅",
+    description: ""
+  };
+
+  it("没改过的金额不写回，否则之后加发票不再跟着合计变", () => {
+    expect(
+      buildEnvelopeUpdatePayload(form, { includeAmount: false }).amount
+    ).toBeUndefined();
+  });
+
+  it("手动改过或提交时写回", () => {
+    expect(
+      buildEnvelopeUpdatePayload(form, { includeAmount: true }).amount
+    ).toBe(300);
+  });
+
+  it("空字段不写", () => {
+    const payload = buildEnvelopeUpdatePayload(form, { includeAmount: true });
+    expect(payload).toMatchObject({
+      project_id: 5,
+      applicant_userid: "u1",
+      category: "差旅"
+    });
+    expect(payload.expense_date).toBeUndefined();
+    expect(payload.description).toBeUndefined();
+  });
+});
+
+describe("withDeclaredAmount", () => {
+  it("草稿按表单里的金额比，不按还没保存的 0", () => {
+    const result = withDeclaredAmount(
+      totals({
+        extracted_total: 450,
+        declared_amount: 0,
+        delta: 450,
+        mismatch: true
+      }),
+      450
+    );
+    expect(result).toMatchObject({
+      declared_amount: 450,
+      delta: 0,
+      mismatch: false
+    });
+    expect(totalsDisplay(result)).toMatchObject({ delta: "一致", tone: "ok" });
+  });
+
+  it("手动改过的金额和票面不同时还是显示差额", () => {
+    expect(
+      withDeclaredAmount(totals({ extracted_total: 100 }), 90)
+    ).toMatchObject({
+      declared_amount: 90,
+      delta: 10,
+      mismatch: true
+    });
+  });
+
+  it("没读全时不比差额", () => {
+    expect(
+      withDeclaredAmount(
+        totals({ complete: false, delta: null, extracted_total: 50 }),
+        500
+      )
+    ).toMatchObject({ declared_amount: 500, delta: null, mismatch: false });
+  });
+
+  it("差额算到分，不留浮点尾巴", () => {
+    expect(
+      withDeclaredAmount(totals({ extracted_total: 1568.95 }), 1568.91).delta
+    ).toBe(0.04);
   });
 });

@@ -19,10 +19,10 @@ import { useDetailCommands } from "./detail/useDetailCommands";
 import { useEnvelopeActions } from "./detail/useEnvelopeActions";
 import { useEnvelopeDetail } from "./detail/useEnvelopeDetail";
 import { useEnvelopePermissions } from "./detail/useEnvelopePermissions";
+import { useEnvelopeSummary } from "./detail/useEnvelopeSummary";
 import { useEnvelopeUploads } from "./detail/useEnvelopeUploads";
 import {
   defaultSelection,
-  formatYuan,
   resolveGuidance,
   type PickerSelection
 } from "./detail/view-model";
@@ -60,11 +60,19 @@ const effectiveEnvelopeId = computed(
 const isCreate = computed(() => effectiveEnvelopeId.value === "create");
 const resolvedEnvelopeId = computed(() => Number(effectiveEnvelopeId.value));
 
-const { detail, form, loading, dirty, pollingPaused, load, patchForm } =
-  useEnvelopeDetail({
-    envelopeId: resolvedEnvelopeId,
-    isCreate
-  });
+const {
+  detail,
+  form,
+  loading,
+  dirty,
+  amountTouched,
+  pollingPaused,
+  load,
+  patchForm
+} = useEnvelopeDetail({
+  envelopeId: resolvedEnvelopeId,
+  isCreate
+});
 
 const baseLoading = ref(false);
 const { projects, loadProjects } = useProjectOptions();
@@ -91,6 +99,7 @@ const permissions = useEnvelopePermissions({
 const actions = useEnvelopeActions({
   detail,
   form,
+  amountTouched,
   isCreate,
   envelopeId: resolvedEnvelopeId,
   titleEntityId,
@@ -169,16 +178,12 @@ watch(views, () => {
     selection.value = { kind: "info" };
 });
 
-const facts = computed(() => {
-  if (!detail.value) return "";
-  const applicant = wecomUsers.value.find(
-    user => user.userid === detail.value?.applicant_userid
-  );
-  const project = projects.value.find(
-    item => item.id === detail.value?.project_id
-  );
-  const who = applicant?.name || detail.value.applicant_userid;
-  return `${who}报销 ${formatYuan(detail.value.amount)}${project ? `，项目：${project.project_name}` : ""}。`;
+const { facts, displayedTotals } = useEnvelopeSummary({
+  detail,
+  form,
+  canEdit: permissions.canEdit,
+  projects,
+  users: wecomUsers
 });
 
 const attachmentActions = useAttachmentActions({
@@ -197,13 +202,16 @@ const {
   openEnvelope,
   onGuidanceAction,
   onMoreAction,
-  onDialogConfirm
+  onDialogConfirm,
+  onFiles
 } = useDetailCommands({
   detail,
   views,
   actions,
   attachmentActions,
   permissions,
+  uploads,
+  isCreate,
   openDialog: kind => dialogs.value?.open(kind),
   openSplit: () => {
     splitDialogVisible.value = true;
@@ -213,20 +221,6 @@ const {
   detailPath,
   close: () => emit("close")
 });
-
-const onFiles = (files: File[]) => {
-  if (isCreate.value) {
-    const error = actions.validateCreate();
-    if (error) {
-      message(error, { type: "warning" });
-      return;
-    }
-  }
-  const { skipped, rejected } = uploads.addFiles(files);
-  rejected.forEach(item => message(item.message, { type: "warning" }));
-  if (skipped.length > 0)
-    message(`已跳过重复的文件：${skipped.join("、")}`, { type: "info" });
-};
 
 const initializeEnvelope = async () => {
   await load();
@@ -349,10 +343,8 @@ const onSplitDone = async () => {
       </div>
 
       <TotalsBar
-        v-if="
-          detail?.review_totals && detail.review_totals.attachment_count > 0
-        "
-        :totals="detail.review_totals"
+        v-if="displayedTotals && displayedTotals.attachment_count > 0"
+        :totals="displayedTotals"
       />
     </div>
 

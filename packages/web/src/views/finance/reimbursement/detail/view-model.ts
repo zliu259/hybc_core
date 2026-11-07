@@ -233,6 +233,38 @@ export const refreshForm = (input: {
   return editing ? { ...input.current, amount } : { ...next, amount };
 };
 
+/**
+ * 写回表单。没改过的金额不写：否则保存一次说明，金额就固定成当时的合计，后面再加发票也不跟着变。
+ * 提交时要写，申报金额以提交时为准。
+ */
+export const buildEnvelopeUpdatePayload = (
+  form: EnvelopeForm,
+  options: { includeAmount: boolean }
+) => ({
+  project_id: form.project_id,
+  applicant_userid: form.applicant_userid || undefined,
+  expense_date: form.expense_date || undefined,
+  amount: options.includeAmount ? form.amount : undefined,
+  category: form.category || undefined,
+  description: form.description || undefined
+});
+
+/** 还能改的单按表单里的金额算差额。接口算的是已保存的金额，新草稿是 0，会显示假的差额。 */
+export const withDeclaredAmount = (
+  totals: ReviewTotals,
+  amount: number
+): ReviewTotals => {
+  if (!totals.complete)
+    return { ...totals, declared_amount: amount, delta: null, mismatch: false };
+  const delta = Number((totals.extracted_total - amount).toFixed(2));
+  return {
+    ...totals,
+    declared_amount: amount,
+    delta,
+    mismatch: Math.abs(delta) > 0.01
+  };
+};
+
 type DuplicateCheck = ReimbursementEnvelopeDetail["duplicate_checks"][number];
 
 const evidenceAttachmentId = (check: DuplicateCheck): unknown => {

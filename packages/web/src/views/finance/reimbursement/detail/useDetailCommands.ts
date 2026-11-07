@@ -10,6 +10,7 @@ import { message } from "@/utils/message";
 import type { useAttachmentActions } from "./useAttachmentActions";
 import type { useEnvelopeActions } from "./useEnvelopeActions";
 import type { useEnvelopePermissions } from "./useEnvelopePermissions";
+import type { useEnvelopeUploads } from "./useEnvelopeUploads";
 import type { ActionDialogKind, MoreActionKey } from "./view-model";
 
 // 把结论区的按钮、「更多」菜单和弹窗确认接到具体操作上。
@@ -20,6 +21,8 @@ export const useDetailCommands = (deps: {
   actions: ReturnType<typeof useEnvelopeActions>;
   attachmentActions: ReturnType<typeof useAttachmentActions>;
   permissions: ReturnType<typeof useEnvelopePermissions>;
+  uploads: ReturnType<typeof useEnvelopeUploads>;
+  isCreate: ComputedRef<boolean>;
   openDialog: (kind: ActionDialogKind) => void;
   openSplit: () => void;
   drawerMode: ComputedRef<boolean>;
@@ -140,6 +143,21 @@ export const useDetailCommands = (deps: {
     void handlers[payload.kind]();
   };
 
+  const onFiles = (files: File[]) => {
+    if (deps.isCreate.value) {
+      const error = actions.validateCreate();
+      if (error) {
+        message(error, { type: "warning" });
+        return;
+      }
+    }
+    const { skipped, rejected } = deps.uploads.addFiles(files);
+    rejected.forEach(item => message(item.message, { type: "warning" }));
+    if (skipped.length > 0) {
+      message(`已跳过重复的文件：${skipped.join("、")}`, { type: "info" });
+    }
+  };
+
   return {
     loadingKeys,
     moreItems,
@@ -147,6 +165,7 @@ export const useDetailCommands = (deps: {
     openEnvelope,
     onGuidanceAction,
     onMoreAction,
-    onDialogConfirm
+    onDialogConfirm,
+    onFiles
   };
 };

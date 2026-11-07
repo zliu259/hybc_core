@@ -90,6 +90,7 @@ export const useEnvelopeUploads = (options: {
   const items = ref<UploadItem[]>([]) as Ref<UploadItem[]>;
   let sequence = 0;
   let creatingEnvelope: Promise<number> | null = null;
+  const uploadedKeys = new Map<string, string>();
 
   const uploadingCount = computed(
     () =>
@@ -121,26 +122,37 @@ export const useEnvelopeUploads = (options: {
     return pending;
   };
 
+  /**
+   * 传过的文件重试时不再传：沿用同一个 key，接口看到相同 file_key 会返回已有记录。
+   * 否则绑定成功但响应丢了的文件，重试会多绑一份。
+   */
+  const uploadOnce = async (item: UploadItem): Promise<string> => {
+    const existing = uploadedKeys.get(item.localId);
+    if (existing) return existing;
+    const sign = await createUploadSignature({
+      fileName: item.file.name,
+      contentType: item.file.type,
+      category: "reimbursement"
+    });
+    await putFile(resolveUploadUrl(sign.data.uploadUrl), item.file, progress =>
+      patchItem(item.localId, { progress })
+    );
+    uploadedKeys.set(item.localId, sign.data.key);
+    return sign.data.key;
+  };
+
   const runItem = async (item: UploadItem) => {
     try {
-      const sign = await createUploadSignature({
-        fileName: item.file.name,
-        contentType: item.file.type,
-        category: "reimbursement"
-      });
-      await putFile(
-        resolveUploadUrl(sign.data.uploadUrl),
-        item.file,
-        progress => patchItem(item.localId, { progress })
-      );
+      const fileKey = await uploadOnce(item);
       const envelopeId = await ensureEnvelopeOnce();
       await addEnvelopeAttachments(envelopeId, [
         {
-          file_key: sign.data.key,
+          file_key: fileKey,
           file_name: item.file.name,
           file_size: item.file.size
         }
       ]);
+      uploadedKeys.delete(item.localId);
       removeItem(item.localId);
     } catch (error) {
       patchItem(item.localId, {

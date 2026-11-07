@@ -16,7 +16,7 @@ import { message } from "@/utils/message";
 import { resolveApiErrorMessage } from "./api-error";
 import { usePrecheckActions } from "./usePrecheckActions";
 import { useSubmitEnvelope } from "./useSubmitEnvelope";
-import type { EnvelopeForm } from "./view-model";
+import { buildEnvelopeUpdatePayload, type EnvelopeForm } from "./view-model";
 
 // 详情页的操作。页面只负责把它们接到按钮上；权限判断在 useEnvelopePermissions。
 
@@ -25,6 +25,7 @@ const SCANNABLE_STATUSES = new Set(["draft", "submitted", "unregistered"]);
 export const useEnvelopeActions = (deps: {
   detail: Ref<ReimbursementEnvelopeDetail | null>;
   form: Ref<EnvelopeForm>;
+  amountTouched: Ref<boolean>;
   isCreate: ComputedRef<boolean>;
   envelopeId: ComputedRef<number>;
   titleEntityId: Ref<number | undefined>;
@@ -87,15 +88,11 @@ export const useEnvelopeActions = (deps: {
     return result.data.id;
   };
 
-  const persistForm = async () => {
-    await updateReimbursementEnvelope(envelopeId.value, {
-      project_id: form.value.project_id,
-      applicant_userid: form.value.applicant_userid || undefined,
-      expense_date: form.value.expense_date || undefined,
-      amount: form.value.amount,
-      category: form.value.category || undefined,
-      description: form.value.description || undefined
-    });
+  const persistForm = async (options: { includeAmount: boolean }) => {
+    await updateReimbursementEnvelope(
+      envelopeId.value,
+      buildEnvelopeUpdatePayload(form.value, options)
+    );
   };
 
   const save = async () => {
@@ -117,7 +114,7 @@ export const useEnvelopeActions = (deps: {
         message("已保存", { type: "success" });
         return;
       }
-      await persistForm();
+      await persistForm({ includeAmount: deps.amountTouched.value });
       message("已保存", { type: "success" });
       await deps.loadFresh();
       notifyChanged();
@@ -134,7 +131,7 @@ export const useEnvelopeActions = (deps: {
     detail,
     form,
     canEdit: deps.canEdit,
-    persistForm,
+    persistForm: () => persistForm({ includeAmount: true }),
     load: deps.loadFresh,
     notifyChanged
   });
@@ -158,7 +155,7 @@ export const useEnvelopeActions = (deps: {
         envelope_uuid: detail.value.envelope_uuid,
         project_id: form.value.project_id,
         expense_date: form.value.expense_date || undefined,
-        amount: form.value.amount,
+        amount: deps.amountTouched.value ? form.value.amount : undefined,
         category: form.value.category || undefined,
         description: form.value.description || undefined
       });
