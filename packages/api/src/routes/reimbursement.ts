@@ -50,6 +50,7 @@ import {
   validateNewAttachments,
   type NewAttachmentInput
 } from "../services/reimbursement/attachment-rules";
+import { buildEnvelopeReviewView } from "../services/reimbursement/detail-view";
 import { applyDuplicateChecks, scanEnvelopeDuplicates } from "../services/reimbursement/duplicate-checks";
 import {
   ensureAnomalyReview,
@@ -3253,8 +3254,17 @@ reimbursementRoutes.get("/:id", async (c) => {
         "SELECT id, batch_no, project_id, applicant_userid, total_amount, item_count, status FROM reimbursement_batch WHERE id = ?"
       )
         .bind(envelope.batch_id)
-        .first()
+        .first<{ status: string }>()
     : null;
+
+  const canSelfAudit = auth.roles.includes("super_admin") || auth.roles.includes("finance");
+  const reviewView = await buildEnvelopeReviewView(c.env, {
+    envelope,
+    attachments: attachments.results ?? [],
+    duplicates: duplicates.results ?? [],
+    batchStatus: batch?.status ?? null,
+    canOfficeAudit: hasOfficeRole(auth.roles) && (envelope.applicant_userid !== auth.sub || canSelfAudit)
+  });
 
   return c.json({
     success: true,
@@ -3262,7 +3272,8 @@ reimbursementRoutes.get("/:id", async (c) => {
       ...envelope,
       attachments: attachments.results ?? [],
       duplicate_checks: duplicates.results ?? [],
-      batch
+      batch,
+      ...reviewView
     }
   });
 });

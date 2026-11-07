@@ -394,3 +394,125 @@ describe.skipIf(!hasSqlite)("POST /:id/void", () => {
     expect((await voidEnvelope(h, id, { reason: 1 })).status).toBe(400);
   });
 });
+
+describe.skipIf(!hasSqlite)("GET /:id 的结论和附件状态", () => {
+  beforeEach(() => {
+    asUser("u1");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("ok")));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const getDetail = async (h, id) => (await (await callReimbursement(h, "GET", `/${id}`)).json()).data;
+
+  const seedWithAnomaly = async (h) => {
+    const { ensureInvoiceReviews, syncEnvelopeAuditState } = await import("../src/services/reimbursement/review-pipeline");
+    const id = await h.seedEnvelope({ status: "submitted", amount: 100, applicant_userid: "u1" });
+    const attachmentId = await h.seedAttachment(id);
+    await ensureInvoiceReviews(h.env, id);
+    await h.finishTask(h.listReviews(id)[0].task_id, "completed", { amount_with_tax: 100, seller_name: "某酒店" });
+    await syncEnvelopeAuditState(h.env, id);
+    await h.finishTask(h.listTasks("reimbursement_anomaly")[0].id, "completed", {
+      risk_level: "中",
+      anomalies: [{ attachment_id: attachmentId, level: "中", reason: "日期偏早" }]
+    });
+    return { id, attachmentId };
+  };
+
+  it("响应带三个新字段，原有字段不变", async () => {
+    const { h } = setup();
+    const { id, attachmentId } = await seedWithAnomaly(h);
+    const data = await getDetail(h, id);
+    expect(data.status).toBe("submitted");
+    expect(data.attachments.map((item) => item.id)).toEqual([attachmentId]);
+    expect(data.duplicate_checks).toEqual([]);
+    expect(data.guidance.applicant.headline).toBe("已提交，等办公室核查");
+    expect(data.attachment_views[0]).toMatchObject({
+      attachment_id: attachmentId,
+      state: "recognized",
+      amount: 100,
+      display_name: "某酒店"
+    });
+    expect(data.review_totals).toMatchObject({ complete: true, mismatch: false, extracted_total: 100 });
+  });
+
+  it("申请人看不到留意，也没有办公室视图", async () => {
+    const { h } = setup();
+    const { id } = await seedWithAnomaly(h);
+    const data = await getDetail(h, id);
+    expect(data.attachment_views[0].attention).toBeNull();
+    expect(data.guidance.office).toBeNull();
+    expect(data.guidance.applicant.note).toBeNull();
+  });
+
+  it("办公室看得到留意", async () => {
+    const { h } = setup();
+    const { id } = await seedWithAnomaly(h);
+    asUser("office", ["manager"]);
+    const data = await getDetail(h, id);
+    expect(data.attachment_views[0].attention).toBe("日期偏早");
+    expect(data.guidance.office.headline).toBe("1 张发票都识别了，金额和申报一致");
+    expect(data.guidance.office.note).toBe("需要留意：日期偏早");
+  });
+
+  it("不能自审的办公室角色按申请人看，财务和超管能自审", async () => {
+    const { h } = setup();
+    const { id } = await seedWithAnomaly(h);
+    asUser("u1", ["manager"]);
+    expect((await getDetail(h, id)).guidance.office).toBeNull();
+    asUser("u1", ["finance"]);
+    expect((await getDetail(h, id)).guidance.office).not.toBeNull();
+  });
+
+  it("整单级重复算进结论", async () => {
+    const { h } = setup();
+    const { id } = await seedWithAnomaly(h);
+    const other = await h.seedEnvelope({ status: "submitted", amount: 100, applicant_userid: "u1", expense_date: "2026-10-01" });
+    h.db.prepare("UPDATE reimbursement_envelope SET expense_date = '2026-10-01' WHERE id = ?").run(id);
+    asUser("office", ["finance"]);
+    const data = await getDetail(h, id);
+    expect(other).toBeGreaterThan(0);
+    expect(data.guidance.office.headline).toBe("这张报销疑似和其他报销重复");
+  });
+
+  it("所在批次被驳回", async () => {
+    const { h } = setup();
+    const now = new Date().toISOString();
+    const batchId = Number(
+      h.db
+        .prepare(
+          `INSERT INTO reimbursement_batch (batch_no, project_id, applicant_userid, total_amount, item_count, status, created_at, updated_at)
+           VALUES ('B-1', 1, 'u1', 100, 1, 'rejected', ?, ?)`
+        )
+        .run(now, now).lastInsertRowid
+    );
+    const id = await h.seedEnvelope({ status: "received", precheck_status: "approved", batch_id: batchId });
+    expect((await getDetail(h, id)).guidance.applicant.headline).toBe("所在批次被驳回");
+  });
+
+  describe("历史数据不报错", () => {
+    it.each([
+      ["已付款没有识别行", { status: "paid", amount: 200, precheck_status: "approved" }, "已打款 ¥200.00", "not_recognized"],
+      ["已废止没有识别行", { status: "cancelled" }, "这张报销已废止", "not_recognized"],
+      ["已提交没有识别行", { status: "submitted", silent_review_result: null }, "已提交，等办公室核查", "recognizing"],
+      ["silent_review_result 不是 JSON", { status: "submitted", silent_review_result: "乱码" }, "已提交，等办公室核查", "recognizing"]
+    ])("%s", async (_name, fields, headline, state) => {
+      const { h } = setup();
+      const id = await h.seedEnvelope(fields);
+      await h.seedAttachment(id);
+      const data = await getDetail(h, id);
+      expect(data.guidance.applicant.headline).toBe(headline);
+      expect(data.attachment_views[0].state).toBe(state);
+    });
+
+    it("没有 document_type 的老结果算没读到金额", async () => {
+      const { h } = setup();
+      const { ensureInvoiceReviews } = await import("../src/services/reimbursement/review-pipeline");
+      const id = await h.seedEnvelope({ status: "submitted", amount: 100 });
+      await h.seedAttachment(id);
+      await ensureInvoiceReviews(h.env, id);
+      await h.finishTask(h.listReviews(id)[0].task_id, "completed", { raw_text_summary: "看不清" });
+      const data = await getDetail(h, id);
+      expect(data.attachment_views[0].state).toBe("no_amount");
+    });
+  });
+});
