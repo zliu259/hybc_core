@@ -241,7 +241,9 @@ describe.skipIf(!hasSqlite)("报销提交链路", () => {
   });
 
   describe("旧路径 PUT 传附件", () => {
+    const file = { file_key: "reimbursement/new.pdf", file_name: "new.pdf", attachment_type: "invoice" };
     const put = (h, id, attachments) => {
+      h.putFile(file.file_key, 100);
       const app = new Hono();
       app.route("/reimbursement", reimbursementRoutes);
       return app.request(
@@ -254,7 +256,6 @@ describe.skipIf(!hasSqlite)("报销提交链路", () => {
         h.env
       );
     };
-    const file = { file_key: "reimbursement/new.pdf", file_name: "new.pdf", attachment_type: "invoice" };
 
     it.each(["supplement", "rejected"])("把 %s 的单交回办公室", async (precheck_status) => {
       const h = createHarness();

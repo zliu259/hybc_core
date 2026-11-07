@@ -1,5 +1,6 @@
 import { pickBuyerNameFromReviews, readInvoiceExtractionText } from "../../routes/reimbursement-invoice-title-policy";
 import { syncEnvelopeInvoiceTitle } from "../../routes/reimbursement-invoice-title-sync";
+import type { CreateTaskRequest } from "../../types/ai";
 import type { Env } from "../../types/env";
 import type { EnvelopeAttachment, ReimbursementEnvelope } from "../../types/reimbursement";
 import { createTask, createTaskWithCompanions } from "../ai-slot";
@@ -29,6 +30,25 @@ import {
 const nowIso = () => new Date().toISOString();
 
 const ANOMALY_REVIEW_STATUSES = new Set(["submitted", "received"]);
+
+const buildOcrTaskRequest = (
+  envelope: ReimbursementEnvelope,
+  attachment: { id: number; file_key: string | null; file_name: string | null }
+): CreateTaskRequest => ({
+  task_type: "ocr_extract",
+  biz_type: "reimbursement_envelope",
+  biz_id: envelope.id,
+  priority: envelope.channel === "electronic" ? 5 : 4,
+  payload: {
+    envelope_id: envelope.id,
+    attachment_id: attachment.id,
+    file_key: attachment.file_key,
+    file_name: attachment.file_name,
+    channel: envelope.channel,
+    project_id: envelope.project_id
+  },
+  timeout_seconds: 300
+});
 
 /**
  * 当前轮次里，每个有效附件没有识别行就建。任务和识别行一起写入，重复调用安全。
@@ -84,21 +104,7 @@ export const ensureInvoiceReviews = async (
 
     const task = await createTaskWithCompanions(
       env,
-      {
-        task_type: "ocr_extract",
-        biz_type: "reimbursement_envelope",
-        biz_id: envelopeId,
-        priority: envelope.channel === "electronic" ? 5 : 4,
-        payload: {
-          envelope_id: envelopeId,
-          attachment_id: attachment.id,
-          file_key: attachment.file_key,
-          file_name: attachment.file_name,
-          channel: envelope.channel,
-          project_id: envelope.project_id
-        },
-        timeout_seconds: 300
-      },
+      buildOcrTaskRequest(envelope, attachment),
       (taskCode) => {
         const now = nowIso();
         return [
@@ -124,6 +130,56 @@ export const ensureInvoiceReviews = async (
   }
 
   return { round, created, latestTaskId };
+};
+
+/**
+ * 只重跑这一张没读出来的附件，更新原识别行，不开新轮。不是 failed 就返回 null。
+ * 先把行抢占成 pending 防止连点建两个任务；建任务失败时旧任务仍是 failed，下次同步会把行改回去。
+ */
+export const retryFailedReview = async (
+  env: Env,
+  envelopeId: number,
+  attachmentId: number
+): Promise<number | null> => {
+  await refreshInvoiceReviewRows(env, envelopeId);
+
+  const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
+    .bind(envelopeId)
+    .first<ReimbursementEnvelope>();
+  const attachment = await env.DB.prepare(
+    "SELECT id, file_key, file_name FROM envelope_attachment WHERE id = ? AND envelope_id = ? AND status = 'active'"
+  )
+    .bind(attachmentId, envelopeId)
+    .first<{ id: number; file_key: string | null; file_name: string | null }>();
+  const row = (await loadCurrentReviewRows(env, envelopeId)).find((item) => item.attachment_id === attachmentId);
+  if (!envelope || !attachment || !row || row.task_status !== "failed") return null;
+
+  const claimed = await env.DB.prepare(
+    "UPDATE reimbursement_invoice_review SET task_status = 'pending', updated_at = ? WHERE id = ? AND task_status = 'failed'"
+  )
+    .bind(nowIso(), row.id)
+    .run();
+  if ((claimed.meta.changes ?? 0) === 0) return null;
+
+  const task = await createTaskWithCompanions(env, buildOcrTaskRequest(envelope, attachment), (taskCode) => [
+    env.DB.prepare(
+      `UPDATE reimbursement_invoice_review SET
+         task_id = (SELECT id FROM task_queue WHERE task_code = ?),
+         task_status = 'pending',
+         risk_level = 'low',
+         risk_hint = NULL,
+         updated_at = ?
+       WHERE id = ?`
+    ).bind(taskCode, nowIso(), row.id)
+  ]);
+  if (!task) return null;
+
+  await env.DB.prepare(
+    "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
+  )
+    .bind(task.id, nowIso(), envelopeId)
+    .run();
+  return task.id;
 };
 
 /**

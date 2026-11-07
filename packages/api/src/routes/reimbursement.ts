@@ -43,7 +43,13 @@ import { evaluateDuplicatePrecheckGate } from "./reimbursement-duplicate-gate";
 import { BLOCKING_RISK_LEVELS, listDuplicateCheckSummaries } from "./reimbursement-duplicate-scan";
 import { detectEInvoiceInPhysical } from "./reimbursement-einvoice-guard";
 import { parseInvoiceTitleFilter } from "./reimbursement-invoice-title-policy";
+import { reimbursementAttachmentRoutes } from "./reimbursement-attachments";
 import { decideSplitEnvelope } from "./reimbursement-split-policy";
+import {
+  bindEnvelopeAttachments,
+  validateNewAttachments,
+  type NewAttachmentInput
+} from "../services/reimbursement/attachment-rules";
 import { applyDuplicateChecks, scanEnvelopeDuplicates } from "../services/reimbursement/duplicate-checks";
 import {
   ensureAnomalyReview,
@@ -332,12 +338,28 @@ const insertAttachments = async (
   }
 };
 
+/** 新建和编辑共用：绑定附件并建识别任务。任务建不成时由 Cron 补，不让保存失败。 */
+const bindAttachmentsAndReview = async (
+  env: Env,
+  envelopeId: number,
+  attachments: NewAttachmentInput[]
+): Promise<void> => {
+  if (attachments.length === 0) return;
+  await bindEnvelopeAttachments(env, envelopeId, attachments);
+  try {
+    await ensureInvoiceReviews(env, envelopeId);
+  } catch (error) {
+    console.error("Reimbursement attachment review create failed", { envelope_id: envelopeId, error });
+  }
+};
+
 export const reimbursementRoutes = new Hono<{
   Bindings: Env;
   Variables: AuthVariables;
 }>();
 
 reimbursementRoutes.use("*", authMiddleware);
+reimbursementRoutes.route("/", reimbursementAttachmentRoutes);
 
 reimbursementRoutes.get(
   "/workbench-summary",
@@ -2543,6 +2565,13 @@ reimbursementRoutes.post(
     if (!body.file_key?.trim()) {
       return c.json({ success: false, error: { message: "file_key is required" } }, 400);
     }
+    // 旧版小程序还在用这个入口，这里只加文件检查，一单一票和替换弹窗都不变
+    const fileValidation = await validateNewAttachments(c.env, null, [
+      { file_key: body.file_key, file_name: body.file_name, file_size: body.file_size }
+    ]);
+    if (!fileValidation.ok) {
+      return c.json({ success: false, error: { message: fileValidation.message } }, 400);
+    }
 
     const idempotencyScope = `reimbursement:electronic-upload:${body.project_id}:${body.file_key}`;
     const idempotency = await beginIdempotentRequest<{
@@ -3660,6 +3689,15 @@ reimbursementRoutes.post(
       return c.json({ success: false, error: { message: decision.message } }, decision.status);
     }
 
+    const attachmentValidation = await validateNewAttachments(
+      c.env,
+      decision.kind === "bind-existing" ? decision.envelopeId : null,
+      body.attachments ?? []
+    );
+    if (!attachmentValidation.ok) {
+      return c.json({ success: false, error: { message: attachmentValidation.message } }, 400);
+    }
+
     // Idempotency guard: the web client sends an Idempotency-Key and its HTTP
     // layer transparently re-sends the same POST on network/timeout fallback
     // (utils/http retryWithRelay). Without this guard a create that already
@@ -3716,7 +3754,7 @@ reimbursementRoutes.post(
           )
           .run();
 
-        await insertAttachments(c.env.DB, decision.envelopeId, body.attachments);
+        await bindAttachmentsAndReview(c.env, decision.envelopeId, attachmentValidation.attachments);
 
         await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
           envelope_id: decision.envelopeId,
@@ -3774,7 +3812,7 @@ reimbursementRoutes.post(
         .run();
 
       const envelopeId = result.meta.last_row_id as number;
-      await insertAttachments(c.env.DB, envelopeId, body.attachments);
+      await bindAttachmentsAndReview(c.env, envelopeId, attachmentValidation.attachments);
 
       await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_CREATED", "reimbursement_envelope", {
         envelope_id: envelopeId,
@@ -3837,6 +3875,11 @@ reimbursementRoutes.put(
         },
         400
       );
+    }
+
+    const attachmentValidation = await validateNewAttachments(c.env, id, body.attachments ?? []);
+    if (!attachmentValidation.ok) {
+      return c.json({ success: false, error: { message: attachmentValidation.message } }, 400);
     }
 
     if (body.channel && !validChannelSet.has(body.channel)) {
@@ -3960,8 +4003,7 @@ reimbursementRoutes.put(
       }
     }
 
-    if (body.attachments && body.attachments.length > 0) {
-      await insertAttachments(c.env.DB, id, body.attachments);
+    if (attachmentValidation.attachments.length > 0) {
       // 旧版小程序没有「重新提交」可用，传附件时继续把被退回的单交回办公室
       if (["approved", "supplement", "rejected"].includes(existing.precheck_status)) {
         await c.env.DB.prepare(
@@ -3970,67 +4012,10 @@ reimbursementRoutes.put(
           .bind(nowIso(), id)
           .run();
       }
-      await ensureInvoiceReviews(c.env, id);
+      await bindAttachmentsAndReview(c.env, id, attachmentValidation.attachments);
     }
 
     return c.json({ success: true });
-  }
-);
-
-reimbursementRoutes.post(
-  "/:id/attachments/:attachmentId/delete",
-  requireRoles(["super_admin", "manager", "site_manager", "finance", "operator"]),
-  async (c) => {
-    const id = Number(c.req.param("id"));
-    const attachmentId = Number(c.req.param("attachmentId"));
-    const auth = c.get("auth");
-
-    if (!Number.isFinite(attachmentId) || attachmentId <= 0) {
-      return c.json({ success: false, error: { message: "attachmentId is required" } }, 400);
-    }
-
-    const envelope = await c.env.DB.prepare(
-      "SELECT * FROM reimbursement_envelope WHERE id = ? AND status != 'deleted'"
-    )
-      .bind(id)
-      .first<ReimbursementEnvelope>();
-
-    if (!envelope) {
-      return c.json({ success: false, error: { message: "Envelope not found" } }, 404);
-    }
-
-    const isPrivileged = auth.roles.some((role) =>
-      ["super_admin", "manager", "site_manager", "finance"].includes(role)
-    );
-    if (!isPrivileged && envelope.applicant_userid !== auth.sub) {
-      return c.json({ success: false, error: { message: "Forbidden" } }, 403);
-    }
-
-    if (!["draft", "unregistered"].includes(envelope.status)) {
-      return c.json(
-        {
-          success: false,
-          error: { message: `Attachments can only be removed before submit. Current status: ${envelope.status}` }
-        },
-        400
-      );
-    }
-
-    const attachment = await c.env.DB.prepare(
-      "SELECT id, file_key, status FROM envelope_attachment WHERE id = ? AND envelope_id = ?"
-    )
-      .bind(attachmentId, id)
-      .first<{ id: number; file_key: string; status: string }>();
-
-    if (!attachment || attachment.status !== "active") {
-      return c.json({ success: false, error: { message: "Attachment not found" } }, 404);
-    }
-
-    await c.env.DB.prepare("UPDATE envelope_attachment SET status = 'deleted' WHERE id = ?")
-      .bind(attachmentId)
-      .run();
-
-    return c.json({ success: true, data: { id, attachment_id: attachmentId } });
   }
 );
 
@@ -4121,6 +4106,11 @@ reimbursementRoutes.post("/scan", async (c) => {
     return c.json({ success: false, error: { message: "Forbidden" } }, 403);
   }
 
+  const attachmentValidation = await validateNewAttachments(c.env, envelope.id, body.attachments ?? []);
+  if (!attachmentValidation.ok) {
+    return c.json({ success: false, error: { message: attachmentValidation.message } }, 400);
+  }
+
   await c.env.DB.prepare(
     `UPDATE reimbursement_envelope SET
        project_id = COALESCE(?, project_id),
@@ -4150,9 +4140,7 @@ reimbursementRoutes.post("/scan", async (c) => {
     )
     .run();
 
-  if (body.attachments && body.attachments.length > 0) {
-    await insertAttachments(c.env.DB, envelope.id, body.attachments);
-  }
+  await bindAttachmentsAndReview(c.env, envelope.id, attachmentValidation.attachments);
 
   await publishEvent(c.env, "REIMBURSEMENT_ENVELOPE_SCANNED", "reimbursement_envelope", {
     envelope_id: envelope.id,
