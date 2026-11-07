@@ -2,7 +2,7 @@ import { pickBuyerNameFromReviews, readInvoiceExtractionText } from "../../route
 import { syncEnvelopeInvoiceTitle } from "../../routes/reimbursement-invoice-title-sync";
 import type { Env } from "../../types/env";
 import type { ReimbursementEnvelope } from "../../types/reimbursement";
-import { createTask } from "../ai-slot";
+import { createTask, createTaskWithCompanions } from "../ai-slot";
 import { applyDuplicateChecks, applyInvoiceReviewDuplicateChecks } from "./duplicate-checks";
 import {
   extractInvoiceRecognitionHints,
@@ -21,68 +21,100 @@ import {
 
 const nowIso = () => new Date().toISOString();
 
-const createInvoiceReviewTasks = async (
+/**
+ * 当前轮次里，每个有效附件没有识别行就建。任务和识别行一起写入，重复调用安全。
+ * 已有行（包括 failed）不重建：失败的由人点重新识别。
+ */
+export const ensureInvoiceReviews = async (
   env: Env,
-  envelope: ReimbursementEnvelope,
-  attachments: Array<{ id: number; file_key: string; file_name: string | null }>,
-  options?: { forceRerun?: boolean }
-): Promise<{ round: number; latestTaskId: number | null }> => {
+  envelopeId: number,
+  options?: { forceNewRound?: boolean }
+): Promise<{ round: number; created: number; latestTaskId: number | null }> => {
+  const envelope = await env.DB.prepare("SELECT * FROM reimbursement_envelope WHERE id = ?")
+    .bind(envelopeId)
+    .first<ReimbursementEnvelope>();
+  if (!envelope || envelope.status === "deleted" || envelope.status === "cancelled") {
+    return { round: 0, created: 0, latestTaskId: null };
+  }
+
   const latestRoundRow = await env.DB.prepare(
     "SELECT MAX(review_round) AS max_round FROM reimbursement_invoice_review WHERE envelope_id = ?"
   )
-    .bind(envelope.id)
+    .bind(envelopeId)
     .first<{ max_round: number | null }>();
-  const latestRound = Number(latestRoundRow?.max_round ?? 0);
-  const round = options?.forceRerun ? latestRound + 1 : Math.max(latestRound, 1);
-  const now = nowIso();
+  const latestRound = Math.max(Number(latestRoundRow?.max_round ?? 0), 0);
+  const round = options?.forceNewRound ? latestRound + 1 : Math.max(latestRound, 1);
+
+  const attachmentRows = await env.DB.prepare(
+    `SELECT id, file_key, file_name
+       FROM envelope_attachment
+      WHERE envelope_id = ? AND status = 'active'
+      ORDER BY id ASC`
+  )
+    .bind(envelopeId)
+    .all<{ id: number; file_key: string | null; file_name: string | null }>();
+  const attachments = (attachmentRows.results ?? []).filter((item) => item.file_key?.trim());
 
   const existingRows = await env.DB.prepare(
-    `SELECT attachment_id, task_id, task_status
+    `SELECT attachment_id, task_id
        FROM reimbursement_invoice_review
       WHERE envelope_id = ? AND review_round = ?`
   )
-    .bind(envelope.id, round)
-    .all<{ attachment_id: number; task_id: number | null; task_status: string }>();
-  const existingByAttachment = new Map<number, { task_id: number | null; task_status: string }>();
-  for (const row of existingRows.results ?? []) {
-    existingByAttachment.set(row.attachment_id, row);
+    .bind(envelopeId, round)
+    .all<{ attachment_id: number; task_id: number | null }>();
+  const existingAttachmentIds = new Set((existingRows.results ?? []).map((row) => row.attachment_id));
+
+  const existingTaskIds = (existingRows.results ?? [])
+    .map((row) => row.task_id)
+    .filter((taskId): taskId is number => taskId !== null);
+  let created = 0;
+  let latestTaskId: number | null = existingTaskIds.length > 0 ? Math.max(...existingTaskIds) : null;
+
+  for (const attachment of attachments) {
+    if (existingAttachmentIds.has(attachment.id)) continue;
+
+    const task = await createTaskWithCompanions(
+      env,
+      {
+        task_type: "ocr_extract",
+        biz_type: "reimbursement_envelope",
+        biz_id: envelopeId,
+        priority: envelope.channel === "electronic" ? 5 : 4,
+        payload: {
+          envelope_id: envelopeId,
+          attachment_id: attachment.id,
+          file_key: attachment.file_key,
+          file_name: attachment.file_name,
+          channel: envelope.channel,
+          project_id: envelope.project_id
+        },
+        timeout_seconds: 300
+      },
+      (taskCode) => {
+        const now = nowIso();
+        return [
+          env.DB.prepare(
+            `INSERT INTO reimbursement_invoice_review
+              (envelope_id, attachment_id, review_round, channel, task_id, task_status, created_at, updated_at)
+             VALUES (?, ?, ?, ?, (SELECT id FROM task_queue WHERE task_code = ?), 'pending', ?, ?)`
+          ).bind(envelopeId, attachment.id, round, envelope.channel, taskCode, now, now)
+        ];
+      }
+    );
+    if (!task) continue;
+    created += 1;
+    latestTaskId = task.id;
   }
 
-  let latestTaskId: number | null = null;
-  for (const attachment of attachments) {
-    const existing = existingByAttachment.get(attachment.id);
-    if (existing && !options?.forceRerun && ["pending", "assigned", "running", "completed"].includes(existing.task_status)) {
-      latestTaskId = existing.task_id ?? latestTaskId;
-      continue;
-    }
-
-    const task = await createTask(env, {
-      task_type: "ocr_extract",
-      biz_type: "reimbursement_envelope",
-      biz_id: envelope.id,
-      priority: envelope.channel === "electronic" ? 5 : 4,
-      payload: {
-        envelope_id: envelope.id,
-        attachment_id: attachment.id,
-        file_key: attachment.file_key,
-        file_name: attachment.file_name,
-        channel: envelope.channel,
-        project_id: envelope.project_id
-      },
-      timeout_seconds: 300
-    });
-    latestTaskId = task.id;
-
+  if (created > 0) {
     await env.DB.prepare(
-      `INSERT INTO reimbursement_invoice_review
-        (envelope_id, attachment_id, review_round, channel, task_id, task_status, created_at, updated_at)
-       VALUES (?, ?, ?, ?, ?, 'pending', ?, ?)`
+      "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
     )
-      .bind(envelope.id, attachment.id, round, envelope.channel, task.id, now, now)
+      .bind(latestTaskId, nowIso(), envelopeId)
       .run();
   }
 
-  return { round, latestTaskId };
+  return { round, created, latestTaskId };
 };
 
 export const enqueueEnvelopeAiAudit = async (
@@ -183,15 +215,7 @@ export const enqueueEnvelopeAiAudit = async (
   const hasInvoiceReviewTable = await supportsInvoiceReviewTable(env);
   if (hasInvoiceReviewTable) {
     try {
-      const reviewTaskState = await createInvoiceReviewTasks(env, envelope, validAttachments, {
-        forceRerun: options?.forceRerun === true
-      });
-
-      await env.DB.prepare(
-        "UPDATE reimbursement_envelope SET ocr_task_id = ?, ocr_status = 'pending', updated_at = ? WHERE id = ?"
-      )
-        .bind(reviewTaskState.latestTaskId, nowIso(), envelopeId)
-        .run();
+      await ensureInvoiceReviews(env, envelopeId, { forceNewRound: options?.forceRerun === true });
       return;
     } catch (error) {
       if (!isMissingInvoiceReviewTableError(error)) {

@@ -528,6 +528,86 @@ export const createTask = async (env: Env, request: CreateTaskRequest): Promise<
   return task;
 };
 
+const MAX_TASK_CODE_RETRIES = 3;
+
+const errorText = (error: unknown): string =>
+  error instanceof Error ? error.message : String(error ?? "");
+
+const bumpSerial = (serial: string, offset: number): string =>
+  serial.replace(/(\d+)$/, (digits) => String(Number(digits) + offset).padStart(digits.length, "0"));
+
+/**
+ * 建任务并在同一个 D1 batch 里写入附带语句，两者要么都写入要么都没有。
+ * task_code 由 COUNT+1 生成，并发或有空洞时会撞唯一约束，换一个再试；
+ * 附带语句撞唯一约束说明别的请求已经写入，返回 null，不留下任务。
+ */
+export const createTaskWithCompanions = async (
+  env: Env,
+  request: CreateTaskRequest,
+  companions: (taskCode: string) => D1PreparedStatement[]
+): Promise<TaskQueueItem | null> => {
+  const provider = await resolveProvider(env, request.biz_type, request.task_type);
+  const payloadJson = JSON.stringify(request.payload);
+
+  for (let attempt = 0; ; attempt += 1) {
+    const baseCode = await generateSerial(env.DB, "TK", "task_queue", "task_code");
+    const taskCode = attempt === 0 ? baseCode : bumpSerial(baseCode, attempt);
+    const now = nowIso();
+
+    try {
+      await env.DB.batch([
+        env.DB.prepare(
+          `INSERT INTO task_queue
+            (task_code, task_type, biz_type, biz_id, priority, payload_json,
+             provider_id, status, max_retries, retry_count, timeout_seconds,
+             created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', 3, 0, ?, ?, ?)`
+        ).bind(
+          taskCode,
+          request.task_type,
+          request.biz_type,
+          request.biz_id,
+          request.priority ?? 5,
+          payloadJson,
+          provider?.id ?? null,
+          request.timeout_seconds ?? 300,
+          now,
+          now
+        ),
+        ...companions(taskCode)
+      ]);
+    } catch (error) {
+      const message = errorText(error);
+      if (!message.includes("UNIQUE")) throw error;
+      if (!message.includes("task_queue.task_code")) return null;
+      if (attempt >= MAX_TASK_CODE_RETRIES) throw error;
+      continue;
+    }
+
+    const task = await env.DB.prepare("SELECT * FROM task_queue WHERE task_code = ?")
+      .bind(taskCode)
+      .first<TaskQueueItem>();
+    if (!task) {
+      throw new Error("Failed to retrieve created task");
+    }
+
+    // 任务已经写入，事件只影响 cf_ai 任务的即时执行；这里失败不能让调用方以为没建成。
+    try {
+      await publishEvent(env, "TASK_CREATED", "ai-slot", {
+        task_id: task.id,
+        task_code: taskCode,
+        task_type: request.task_type,
+        biz_type: request.biz_type,
+        biz_id: request.biz_id
+      });
+    } catch (error) {
+      console.error("TASK_CREATED publish failed", { task_id: task.id, error: errorText(error) });
+    }
+
+    return task;
+  }
+};
+
 /**
  * Complete a task with results. Writes audit log.
  */
