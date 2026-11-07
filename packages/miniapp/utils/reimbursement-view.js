@@ -49,14 +49,14 @@ const blockingDuplicate = (view) =>
   (view.duplicates || []).find((item) => BLOCKING_RISK_LEVELS.includes(item.risk_level)) || null;
 
 const rowPriority = (view) => {
-  if (PROBLEM_STATES.includes(view.state) || blockingDuplicate(view)) return 0;
+  if (PROBLEM_STATES.includes(view.state) || blockingDuplicate(view) || view.merged_label) return 0;
   if (view.state === "recognizing" || view.state === "not_recognized") return 1;
   return 2;
 };
 
 const toAttachmentRow = (view) => {
   const duplicate = blockingDuplicate(view);
-  const isProblem = PROBLEM_STATES.includes(view.state) || Boolean(duplicate);
+  const isProblem = PROBLEM_STATES.includes(view.state) || Boolean(duplicate) || Boolean(view.merged_label);
   return {
     key: `a${view.attachment_id}`,
     kind: "attachment",
@@ -68,6 +68,7 @@ const toAttachmentRow = (view) => {
     tone: isProblem ? "warn" : "normal",
     canRerecognize: view.state === "failed",
     duplicateText: duplicate ? duplicate.summary || "疑似重复" : "",
+    mergedText: view.merged_label ? `这个文件${view.merged_label}，系统没法逐张查重` : "",
     invoiceNo: view.invoice_no,
     invoiceDate: view.invoice_date,
     sellerName: view.seller_name,
@@ -103,7 +104,12 @@ const buildTotalsText = (totals) => {
 
 const disableAll = (actions) => actions.map((action) => ({ ...action, disabled: true }));
 
-const resolveGuidance = (detail) => {
+const resolveGuidance = (detail, options) => {
+  if (!detail && options.opening) {
+    return options.openFailed
+      ? { tone: "warn", headline: "这张报销没有加载出来", next_step: "请返回后重新打开。", actions: [] }
+      : { tone: "normal", headline: "正在加载…", next_step: "", actions: [] };
+  }
   if (!detail) {
     return {
       tone: "normal",
@@ -125,7 +131,7 @@ const resolveGuidance = (detail) => {
 const buildReimbursementView = (detail, options = {}) => {
   const uploadItems = options.uploadItems || [];
   const unfinished = uploadItems.filter((item) => item.status !== "done");
-  const guidance = resolveGuidance(detail);
+  const guidance = resolveGuidance(detail, options);
   const totals = detail ? detail.review_totals : null;
   const actions = unfinished.length > 0 ? disableAll(guidance.actions) : guidance.actions;
 

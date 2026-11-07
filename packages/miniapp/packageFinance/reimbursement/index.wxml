@@ -22,6 +22,7 @@
       </view>
 
       <view wx:if="{{item.duplicateText}}" class="rb-file-error">{{item.duplicateText}}</view>
+      <view wx:if="{{item.mergedText}}" class="rb-file-error">{{item.mergedText}}</view>
 
       <view wx:if="{{item.expanded}}" class="rb-file-detail">
         <view wx:if="{{item.sellerName}}" class="rb-fact"><text class="rb-fact-label">销售方</text>{{item.sellerName}}</view>

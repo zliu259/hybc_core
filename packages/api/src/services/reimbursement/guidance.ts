@@ -107,6 +107,7 @@ interface Facts {
   notInvoice: number;
   missingAmount: number;
   count: number;
+  mergedLabels: string[];
 }
 
 const collectFacts = (input: EnvelopeGuidanceInput): Facts => {
@@ -122,7 +123,8 @@ const collectFacts = (input: EnvelopeGuidanceInput): Facts => {
     noAmount: totals.no_amount_count,
     notInvoice: totals.not_invoice_count,
     missingAmount: totals.no_amount_count + totals.not_invoice_count,
-    count: totals.attachment_count
+    count: totals.attachment_count,
+    mergedLabels: views.map((view) => view.merged_label).filter((label): label is string => Boolean(label))
   };
 };
 
@@ -131,8 +133,20 @@ const hasDuplicate = (facts: Facts): boolean => facts.duplicateViews > 0 || fact
 const duplicateHeadline = (facts: Facts, perInvoice: string): string =>
   facts.wholeEnvelopeDuplicate ? "这张报销疑似和其他报销重复" : perInvoice;
 
-const duplicateTarget = (facts: Facts): string =>
-  facts.wholeEnvelopeDuplicate ? "报销信息里列出的记录" : "标出的那张";
+const duplicateTarget = (facts: Facts): string => {
+  if (facts.wholeEnvelopeDuplicate) return "报销信息里列出的记录";
+  return facts.duplicateViews > 1 ? "标出的这几张" : "标出的那张";
+};
+
+/** 合并文件的金额能对上，但没法逐张查重，不能说成「都识别了」。 */
+const hasMergedFile = (facts: Facts): boolean => facts.mergedLabels.length > 0;
+
+const mergedSubject = (facts: Facts): string =>
+  facts.mergedLabels.length === 1
+    ? `1 个文件${facts.mergedLabels[0]}`
+    : `${facts.mergedLabels.length} 个文件各含多张发票`;
+
+const mergedHeadline = (facts: Facts): string => `${mergedSubject(facts)}，系统没法逐张查重`;
 
 /** 所有人看到一样的说法，优先于两张表。 */
 const sharedGuidance = (input: EnvelopeGuidanceInput): Guidance | null => {
@@ -191,10 +205,12 @@ const draftGuidance = (input: EnvelopeGuidanceInput, facts: Facts): Guidance => 
       ["submit"]
     );
   }
+  if (hasMergedFile(facts)) {
+    return guidance("warn", mergedHeadline(facts), "请拆成单张重新上传，这样才能查重。", ["submit"]);
+  }
   if (facts.missingAmount > 0) {
-    return guidance("warn", `${facts.missingAmount} 个附件没读出金额`, "请自己填写报销金额，办公室会核对原件。", [
-      "submit"
-    ]);
+    const amountStep = envelope.amount > 0 ? `请确认报销金额 ${formatYuan(envelope.amount)}` : "请自己填写报销金额";
+    return guidance("warn", `${facts.missingAmount} 个附件没读出金额`, `${amountStep}，办公室会核对原件。`, ["submit"]);
   }
   return guidance(
     "normal",
@@ -282,6 +298,9 @@ const submittedOfficeGuidance = (input: EnvelopeGuidanceInput, facts: Facts): Gu
   if (facts.recognizing > 0) {
     return guidance("normal", `还有 ${facts.recognizing} 张发票在识别`, "可以先看原件，识别完会自动更新。", verifyActions);
   }
+  if (hasMergedFile(facts)) {
+    return guidance("warn", mergedHeadline(facts), "请逐张核对原件，确认没有重复就签收，不对就标记异常。", verifyActions);
+  }
   if (totals.recognized_count === 0) {
     const headline =
       facts.noAmount === 0
@@ -327,6 +346,9 @@ const receivedOfficeGuidance = (input: EnvelopeGuidanceInput, facts: Facts): Gui
       "precheck_supplement",
       "precheck_approve"
     ]);
+  }
+  if (hasMergedFile(facts)) {
+    return guidance("warn", `已签收，但 ${mergedSubject(facts)}`, "请逐张核对原件，确认没有重复再通过。", reviewActions);
   }
   return guidance("normal", "已签收，等你复核", "确认无误就通过，缺材料就要求补充。", reviewActions);
 };
