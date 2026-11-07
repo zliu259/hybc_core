@@ -14,6 +14,7 @@ import {
   defaultSelection,
   formatYuan,
   isEnvelopeFormDirty,
+  isProblemView,
   pickerGroupTitle,
   refreshForm,
   resolveGuidance,
@@ -41,6 +42,7 @@ const view = (
   raw_text_summary: null,
   duplicates: [],
   attention: null,
+  merged_label: null,
   ...fields
 });
 
@@ -95,6 +97,16 @@ describe("sortAttachmentViews", () => {
     expect(sorted.map(item => item.attachment_id)).toEqual([
       5, 4, 7, 6, 3, 2, 1, 8
     ]);
+  });
+
+  it("合并文件排在有问题的后面、留意的前面", () => {
+    const sorted = sortAttachmentViews([
+      view(1, "recognized", { amount: 10, attention: "日期偏早" }),
+      view(2, "recognized", { amount: 1, merged_label: "含 2 张发票" }),
+      view(3, "no_amount"),
+      view(4, "recognized", { amount: 500 })
+    ]);
+    expect(sorted.map(item => item.attachment_id)).toEqual([3, 2, 1, 4]);
   });
 
   it("低风险重复不算有问题", () => {
@@ -223,6 +235,38 @@ describe("resolveGuidance", () => {
     expect(result.headline).toBe("请核对报销信息");
     expect(result.actions).toEqual([]);
   });
+
+  it("打开已有的单、数据还没到时不说新建的话", () => {
+    const result = resolveGuidance(null, context);
+    expect(result.headline).toBe("正在加载…");
+    expect(result.next_step).toBe("");
+    expect(result.actions).toEqual([]);
+  });
+
+  it("打开已有的单失败时说清楚", () => {
+    const result = resolveGuidance(null, { ...context, loadFailed: true });
+    expect(result.headline).toBe("这张报销没有加载出来");
+    expect(result.next_step).toBe("请刷新页面重试。");
+    expect(result.tone).toBe("warn");
+    expect(result.actions).toEqual([]);
+  });
+
+  it("已经有数据时后续刷新失败不改结论", () => {
+    expect(
+      resolveGuidance(both, { ...context, loadFailed: true }).headline
+    ).toBe("办公室的话");
+  });
+});
+
+describe("isProblemView", () => {
+  it("合并文件算有问题", () => {
+    expect(
+      isProblemView(
+        view(1, "recognized", { amount: 10, merged_label: "含 2 张发票" })
+      )
+    ).toBe(true);
+    expect(isProblemView(view(1, "recognized", { amount: 10 }))).toBe(false);
+  });
 });
 
 describe("declaredAmountDefault", () => {
@@ -315,13 +359,9 @@ describe("totalsDisplay", () => {
 
 describe("pickerGroupTitle", () => {
   it("分组标题", () => {
-    expect(
-      pickerGroupTitle([
-        view(1, "recognized"),
-        view(2, "failed"),
-        view(3, "no_amount")
-      ])
-    ).toBe("发票 3 张");
+    expect(pickerGroupTitle([view(1, "recognized"), view(2, "failed")])).toBe(
+      "发票 2 张"
+    );
     expect(
       pickerGroupTitle([
         view(1, "recognized"),
@@ -330,6 +370,20 @@ describe("pickerGroupTitle", () => {
       ])
     ).toBe("附件 3 个");
     expect(pickerGroupTitle([])).toBe("发票 0 张");
+  });
+
+  it("没读出金额的不一定是发票，标题说附件", () => {
+    expect(pickerGroupTitle([view(1, "no_amount"), view(2, "no_amount")])).toBe(
+      "附件 2 个"
+    );
+  });
+
+  it("合并文件不止一张发票，标题说附件", () => {
+    expect(
+      pickerGroupTitle([
+        view(1, "recognized", { amount: 1, merged_label: "含 11 张发票" })
+      ])
+    ).toBe("附件 1 个");
   });
 });
 

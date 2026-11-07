@@ -64,6 +64,7 @@ const {
   detail,
   form,
   loading,
+  loadFailed,
   dirty,
   amountTouched,
   pollingPaused,
@@ -138,7 +139,8 @@ const guidance = computed(() =>
   resolveGuidance(detail.value, {
     workspaceView: isWorkspaceView.value,
     uploadingCount: uploads.items.value.length,
-    isCreate: isCreate.value
+    isCreate: isCreate.value,
+    loadFailed: loadFailed.value
   })
 );
 
@@ -223,7 +225,12 @@ const {
 });
 
 const initializeEnvelope = async () => {
-  await load();
+  try {
+    await load();
+  } catch {
+    // 失败已经记在 loadFailed 里，标题会说没加载出来，不用再往外抛
+    return;
+  }
   titleEntityId.value = detail.value?.invoice_title_entity_id ?? undefined;
   applyDefaultSelection();
 };
@@ -300,7 +307,7 @@ const onSplitDone = async () => {
         </template>
       </VerdictHeader>
 
-      <div class="rb-review">
+      <div v-if="!loadFailed" class="rb-review">
         <AttachmentPicker
           :views="views"
           :uploads="uploads.items.value"

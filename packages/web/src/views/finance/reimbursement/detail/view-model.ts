@@ -14,6 +14,7 @@ export type PickerSelection =
 
 const BLOCKING_RISK_LEVELS = ["high", "medium"];
 const PROBLEM_STATES = ["failed", "not_invoice", "no_amount"];
+const NOT_SURELY_INVOICE_STATES = ["not_invoice", "no_amount"];
 const SUBMIT_ACTIONS = ["submit", "resubmit"];
 
 export const formatYuan = (value: number): string =>
@@ -26,8 +27,9 @@ const problemRank = (view: AttachmentReviewView): number => {
   if (hasBlockingDuplicate(view)) return 0;
   const index = PROBLEM_STATES.indexOf(view.state);
   if (index >= 0) return index + 1;
-  if (view.attention) return PROBLEM_STATES.length + 1;
-  return PROBLEM_STATES.length + 2;
+  if (view.merged_label) return PROBLEM_STATES.length + 1;
+  if (view.attention) return PROBLEM_STATES.length + 2;
+  return PROBLEM_STATES.length + 3;
 };
 
 export const sortAttachmentViews = (
@@ -69,29 +71,52 @@ const FALLBACK_GUIDANCE: Guidance = {
   actions: []
 };
 
+const LOADING_GUIDANCE: Guidance = {
+  tone: "normal",
+  headline: "正在加载…",
+  next_step: "",
+  note: null,
+  actions: []
+};
+
+const LOAD_FAILED_GUIDANCE: Guidance = {
+  tone: "warn",
+  headline: "这张报销没有加载出来",
+  next_step: "请刷新页面重试。",
+  note: null,
+  actions: []
+};
+
 const withSubmitDisabled = (actions: GuidanceAction[]): GuidanceAction[] =>
   actions.map(action =>
     SUBMIT_ACTIONS.includes(action.key) ? { ...action, disabled: true } : action
   );
 
+type GuidanceContext = {
+  workspaceView: boolean;
+  uploadingCount: number;
+  isCreate: boolean;
+  loadFailed?: boolean;
+};
+
 const pickServerGuidance = (
   detail: ReimbursementEnvelopeDetail | null,
-  workspaceView: boolean,
-  isCreate: boolean
+  ctx: GuidanceContext
 ): Guidance => {
-  if (isCreate || !detail) return CREATE_GUIDANCE;
+  if (ctx.isCreate) return CREATE_GUIDANCE;
+  if (!detail) return ctx.loadFailed ? LOAD_FAILED_GUIDANCE : LOADING_GUIDANCE;
   const guidance = detail.guidance;
   if (!guidance) return FALLBACK_GUIDANCE;
-  return workspaceView
+  return ctx.workspaceView
     ? guidance.applicant
     : (guidance.office ?? guidance.applicant);
 };
 
 export const resolveGuidance = (
   detail: ReimbursementEnvelopeDetail | null,
-  ctx: { workspaceView: boolean; uploadingCount: number; isCreate: boolean }
+  ctx: GuidanceContext
 ): Guidance => {
-  const guidance = pickServerGuidance(detail, ctx.workspaceView, ctx.isCreate);
+  const guidance = pickServerGuidance(detail, ctx);
   if (ctx.uploadingCount <= 0) return guidance;
   return {
     ...guidance,
@@ -144,7 +169,9 @@ export const totalsDisplay = (
 };
 
 export const pickerGroupTitle = (views: AttachmentReviewView[]): string =>
-  views.some(view => view.state === "not_invoice")
+  views.some(
+    view => NOT_SURELY_INVOICE_STATES.includes(view.state) || view.merged_label
+  )
     ? `附件 ${views.length} 个`
     : `发票 ${views.length} 张`;
 
@@ -162,7 +189,9 @@ export const attachmentStatusText = (view: AttachmentReviewView): string =>
     : (STATE_TEXT[view.state] ?? "");
 
 export const isProblemView = (view: AttachmentReviewView): boolean =>
-  hasBlockingDuplicate(view) || PROBLEM_STATES.includes(view.state);
+  hasBlockingDuplicate(view) ||
+  PROBLEM_STATES.includes(view.state) ||
+  Boolean(view.merged_label);
 
 export type EnvelopeForm = {
   project_id: number | undefined;

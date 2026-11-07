@@ -168,12 +168,17 @@ const isSelected = (attachmentId: number) =>
           </el-button>
         </div>
         <div
-          v-if="hasBlockingDuplicate(view) || view.attention"
+          v-if="
+            hasBlockingDuplicate(view) || view.merged_label || view.attention
+          "
           class="rb-pick__badges"
         >
           <span v-if="hasBlockingDuplicate(view)" class="rb-badge rb-badge--bad"
             >疑似重复</span
           >
+          <span v-if="view.merged_label" class="rb-badge rb-badge--bad">{{
+            view.merged_label
+          }}</span>
           <span v-if="view.attention" class="rb-badge">留意</span>
         </div>
       </div>

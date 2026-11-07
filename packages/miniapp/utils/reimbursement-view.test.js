@@ -27,6 +27,7 @@ const attachmentView = (id, state, fields = {}) => ({
   raw_text_summary: null,
   duplicates: [],
   attention: null,
+  merged_label: null,
   ...fields
 });
 
@@ -80,6 +81,39 @@ const tests = {
     assert.strictEqual(view.nextStep, "可以一次传多张。");
     assert.strictEqual(view.canSubmit, false);
     assert.strictEqual(view.actions[0].disabled, true);
+  },
+
+  "打开已有的单、数据还没到时不说新建的话"() {
+    const view = buildReimbursementView(null, { opening: true });
+    assert.strictEqual(view.headline, "正在加载…");
+    assert.strictEqual(view.nextStep, "");
+    assert.strictEqual(view.canSubmit, false);
+    assert.deepStrictEqual(view.actions, []);
+  },
+
+  "打开已有的单失败时说清楚"() {
+    const view = buildReimbursementView(null, { opening: true, openFailed: true });
+    assert.strictEqual(view.headline, "这张报销没有加载出来");
+    assert.strictEqual(view.nextStep, "请返回后重新打开。");
+    assert.strictEqual(view.tone, "warn");
+    assert.deepStrictEqual(view.actions, []);
+  },
+
+  "合并文件照常显示金额，并标出来排在前面"() {
+    const view = buildReimbursementView(
+      detail({
+        attachment_views: [
+          attachmentView(1, "recognized", { amount: 500 }),
+          attachmentView(2, "recognized", { amount: 100, merged_label: "含 11 张发票" })
+        ]
+      })
+    );
+    assert.deepStrictEqual(view.rows.map((row) => row.attachmentId), [2, 1]);
+    assert.strictEqual(view.rows[0].statusText, "¥100.00");
+    assert.strictEqual(view.rows[0].mergedText, "这个文件含 11 张发票，系统没法逐张查重");
+    assert.strictEqual(view.rows[0].tone, "warn");
+    assert.strictEqual(view.rows[1].mergedText, "");
+    assert.strictEqual(view.rows[1].tone, "normal");
   },
 
   "上传中覆盖结论为「还有 N 张发票没传完」，canSubmit=false"() {

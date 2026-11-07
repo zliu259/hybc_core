@@ -26,6 +26,8 @@ export const useEnvelopeDetail = (options: {
   const baseline = ref<EnvelopeForm>(createDefaultForm());
   const amountTouched = ref(false);
   const loading = ref(false);
+  /** 一直没拿到数据才算失败；已经显示内容后，刷新失败不换掉页面。 */
+  const loadFailed = ref(false);
   const pollingPaused = ref(false);
 
   let timer: number | null = null;
@@ -69,6 +71,7 @@ export const useEnvelopeDetail = (options: {
     form.value = createDefaultForm();
     baseline.value = createDefaultForm();
     amountTouched.value = false;
+    loadFailed.value = false;
     stopPolling();
   };
 
@@ -105,7 +108,11 @@ export const useEnvelopeDetail = (options: {
       }
       baseline.value = buildEnvelopeForm(server);
       detail.value = server;
+      loadFailed.value = false;
       syncPolling();
+    } catch (error) {
+      if (sequence === loadSequence && !detail.value) loadFailed.value = true;
+      throw error;
     } finally {
       if (!silent) loading.value = false;
     }
@@ -123,6 +130,7 @@ export const useEnvelopeDetail = (options: {
     detail,
     form,
     loading,
+    loadFailed,
     dirty,
     amountTouched,
     pollingPaused,

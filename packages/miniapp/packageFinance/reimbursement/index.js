@@ -97,12 +97,9 @@ Page({
   onLoad(options) {
     this.createQueue();
     const id = Number((options && options.id) || 0);
+    if (id) this.setData({ mode: "detail", latestEnvelopeId: id });
     this.refreshView();
-    if (id) {
-      this.setData({ mode: "detail", latestEnvelopeId: id });
-      return this.loadEnvelopeDetail(id);
-    }
-    return undefined;
+    return id ? this.loadEnvelopeDetail(id) : undefined;
   },
 
   onShow() {
@@ -156,7 +153,12 @@ Page({
 
   refreshView() {
     const uploadItems = this._queue.getItems();
-    const view = buildReimbursementView(this._detail, { uploadItems });
+    const opening = Boolean(this.data.latestEnvelopeId) && !this._detail;
+    const view = buildReimbursementView(this._detail, {
+      uploadItems,
+      opening,
+      openFailed: opening && Boolean(this._openFailed)
+    });
     const canDelete = this.canRemoveAttachment();
     this.setData({
       headline: view.headline,
@@ -200,11 +202,16 @@ Page({
       this.applyDetail((res && res.data) || {}, targetId);
     } catch (error) {
       sayToast({ title: error.message || "加载详情失败", icon: "none", danger: true });
+      if (sequence === this._loadSequence && !this._detail) {
+        this._openFailed = true;
+        this.refreshView();
+      }
     }
   },
 
   applyDetail(detail, targetId) {
     this._detail = detail;
+    this._openFailed = false;
     const channel = detail.channel === "electronic" ? "electronic" : "physical";
     const totals = detail.review_totals;
     const amount = resolveDeclaredAmount({
