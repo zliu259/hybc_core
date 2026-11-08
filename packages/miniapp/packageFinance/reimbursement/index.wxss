@@ -150,7 +150,6 @@
 
 .rb-scan,
 .rb-save {
-  display: block;
   margin-top: 16rpx;
 }
 
@@ -159,8 +158,26 @@
 }
 
 .rb-action {
-  display: block;
   margin-bottom: 16rpx;
+}
+
+/*
+ * app.json 开了 "style": "v2"：基础库给按钮固定 184px 宽并居中（优先级高过 TDesign 的 block），
+ * 还藏掉了 TDesign 描边按钮用来画边框的 ::after。所以按钮放进 flex 行用 flex:1 撑开，
+ * 描边按钮自己画边框。见 utils/reimbursement-buttons.test.js。
+ */
+.rb-btn-row {
+  display: flex;
+  gap: 12rpx;
+}
+
+.rb-btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.rb-btn--line {
+  border: 1rpx solid #d7dbe3;
 }
 
 .rb-links {
