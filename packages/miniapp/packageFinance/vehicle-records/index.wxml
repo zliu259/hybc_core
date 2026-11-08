@@ -1,0 +1,44 @@
+<view class="page">
+  <view class="segment">
+    <view class="segment-item {{tab === 'fuel' ? 'segment-active' : ''}}" data-tab="fuel" bindtap="switchTab">⛽ 油卡申请</view>
+    <view class="segment-item {{tab === 'maintenance' ? 'segment-active' : ''}}" data-tab="maintenance" bindtap="switchTab">🔧 保养记录</view>
+  </view>
+
+  <view class="toolbar">
+    <picker class="toolbar-picker" mode="selector" range="{{tabs[tab].statusOptions}}" range-key="label" value="{{tabs[tab].statusIndex}}" bindchange="onStatusChange">
+      <view class="picker-value">{{tabs[tab].statusOptions[tabs[tab].statusIndex].label}}</view>
+    </picker>
+    <t-button class="btn-fill" theme="primary" bindtap="goCreate">{{tab === 'fuel' ? '新的油卡申请' : '新的保养记录'}}</t-button>
+  </view>
+
+  <view wx:if="{{tabs[tab].loaded && !tabs[tab].errorText}}" class="count-line">共 {{tabs[tab].total}} 条</view>
+
+  <view wx:if="{{tabs[tab].errorText}}" class="state-box">
+    <view class="state-text">{{tabs[tab].errorText}}</view>
+    <t-button variant="outline" size="small" bindtap="retry">重新加载</t-button>
+  </view>
+
+  <view wx:elif="{{tabs[tab].loaded && tabs[tab].list.length === 0}}" class="state-box">
+    <view class="state-text">{{tabs[tab].emptyText}}</view>
+  </view>
+
+  <view wx:for="{{tabs[tab].list}}" wx:key="id" class="record-card" data-id="{{item.id}}" bindtap="goDetail">
+    <view class="record-head">
+      <text class="record-title">{{item.title}}</text>
+      <t-tag theme="{{item.statusTheme}}" variant="light" size="small">{{item.statusLabel}}</t-tag>
+    </view>
+    <view class="record-amount {{item.amountEmpty ? 'record-amount-empty' : ''}}">{{item.amountText}}</view>
+    <view class="record-meta">{{item.metaText}}</view>
+    <view wx:if="{{item.noteText}}" class="record-note">需要补充：{{item.noteText}}</view>
+    <view class="record-foot">
+      <text class="record-time">{{item.timeText}}</text>
+      <text class="record-link">详情 ›</text>
+    </view>
+  </view>
+
+  <view wx:if="{{tabs[tab].loading}}" class="list-foot">
+    <t-loading theme="dots" size="40rpx" />
+  </view>
+  <view wx:elif="{{tabs[tab].list.length > 0 && tabs[tab].list.length < tabs[tab].total}}" class="list-foot list-more" bindtap="loadMore">加载更多</view>
+  <view wx:elif="{{tabs[tab].list.length > 0}}" class="list-foot">没有更多了</view>
+</view>

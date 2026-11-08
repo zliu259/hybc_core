@@ -31,6 +31,7 @@ const ENTRIES = [
   { key: "reimbursement", label: "报销", tone: "orange", path: "/packageFinance/reimbursement-list/index" },
   { key: "fuel", label: "油卡申请", tone: "orange", path: "/packageFinance/fuel-apply/index" },
   { key: "maintenance", label: "车辆保养", tone: "orange", path: "/packageFinance/vehicle-maintenance/index" },
+  { key: "vehicleRecords", label: "车辆记录", tone: "slate", path: "/packageFinance/vehicle-records/index" },
   { key: "archive", label: "信封核查", tone: "orange", path: "/packageFinance/reimbursement-archive/index" },
   { key: "query", label: "综合查询", tone: "slate", path: "/pages/query/index", roles: OFFICE_ROLES },
   { key: "contractPrecheck", label: "合同预审", tone: "slate", path: "/packageTools/contract-precheck-list/index", roles: OFFICE_ROLES },

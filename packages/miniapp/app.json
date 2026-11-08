@@ -42,6 +42,9 @@
         "payment-apply/index",
         "fuel-apply/index",
         "vehicle-maintenance/index",
+        "vehicle-records/index",
+        "fuel-record-detail/index",
+        "maintenance-record-detail/index",
         "reimbursement-list/index",
         "reimbursement/index",
         "reimbursement-archive/index"

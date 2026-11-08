@@ -1,0 +1,18 @@
+/* 油卡申请详情、保养记录详情共用 */
+@import "../../styles/detail-cards.wxss";
+
+.muted-note {
+  font-size: 26rpx;
+  line-height: 1.55;
+  color: #7b8494;
+}
+
+.action-row {
+  margin-top: 20rpx;
+}
+
+.retry-row {
+  display: flex;
+  justify-content: center;
+  margin-top: 16rpx;
+}

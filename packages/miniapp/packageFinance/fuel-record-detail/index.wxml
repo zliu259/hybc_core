@@ -1,0 +1,63 @@
+<view class="page detail-page" wx:if="{{detailState === 'ready' && detail}}">
+  <view class="card hero">
+    <view class="hero-head">
+      <text class="hero-label">申请额度</text>
+      <t-tag theme="{{detail.statusTheme}}" variant="light" size="small">{{detail.statusLabel}}</t-tag>
+    </view>
+    <view class="voucher-amount">{{detail.amountText}}<text class="voucher-unit" wx:if="{{detail.amountText !== '-'}}">元</text></view>
+    <view class="stop-notice stop-returned" wx:if="{{detail.needsInfoReason}}">需要补充：{{detail.needsInfoReason}}</view>
+    <view class="kv" wx:for="{{detail.facts}}" wx:key="label">
+      <text class="k">{{item.label}}</text>
+      <text class="v">{{item.value}}</text>
+    </view>
+    <view class="hero-foot">
+      <text class="hero-no" user-select="{{true}}">油卡申请 · {{detail.serialNo}}</text>
+    </view>
+    <view class="action-row" wx:if="{{detail.canResubmit}}">
+      <t-button theme="primary" block bindtap="goResubmit">去补充资料</t-button>
+    </view>
+  </view>
+
+  <view class="card">
+    <view class="card-head"><text class="card-title">办公室处理</text></view>
+    <view class="muted-note" wx:if="{{!detail.handled}}">办公室还没处理</view>
+    <view class="kv" wx:for="{{detail.handleFacts}}" wx:key="label">
+      <text class="k">{{item.label}}</text>
+      <text class="v">{{item.value}}</text>
+    </view>
+  </view>
+
+  <view class="card" wx:if="{{detail.riskSummary}}">
+    <view class="card-head"><text class="card-title">风险提示</text></view>
+    <view class="report-text">{{detail.riskSummary}}</view>
+  </view>
+
+  <view class="card">
+    <view class="card-head"><text class="card-title">现场照片（{{detail.photos.length}}）</text></view>
+    <view class="muted-note" wx:if="{{detail.photos.length === 0}}">没有上传照片</view>
+    <view class="attach-row" wx:for="{{detail.photos}}" wx:key="file_key" data-key="{{item.file_key}}" data-url="{{item.file_url}}" data-name="{{item.openName}}" bindtap="openPhoto">
+      <text class="attach-ext">{{item.extLabel}}</text>
+      <text class="attach-name">{{item.file_name}}</text>
+    </view>
+  </view>
+</view>
+
+<view wx:if="{{detailState === 'loading'}}" class="page skeleton-page">
+  <view class="skeleton-card" wx:for="{{[0, 1]}}" wx:key="*this">
+    <view class="skeleton-line skeleton-title"></view>
+    <view class="skeleton-line"></view>
+    <view class="skeleton-line"></view>
+    <view class="skeleton-line skeleton-short"></view>
+  </view>
+  <view class="skeleton-hint">
+    <t-loading theme="dots" size="40rpx" />
+    <text class="skeleton-hint-text">加载油卡申请中…</text>
+  </view>
+</view>
+
+<view wx:if="{{detailState === 'error'}}" class="empty-wrap">
+  <t-empty description="{{detailErrorText}}" />
+  <view class="retry-row" wx:if="{{id}}">
+    <t-button variant="outline" size="small" bindtap="loadDetail">重新加载</t-button>
+  </view>
+</view>

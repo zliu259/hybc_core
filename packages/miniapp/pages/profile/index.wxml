@@ -41,6 +41,10 @@
         <view class="action-title">🔔 一键催办</view>
         <view class="action-desc">提醒待处理审批人</view>
       </view>
+      <view class="action-card action-card-wide" bindtap="goToVehicleRecords">
+        <view class="action-title">🚗 我的车辆记录</view>
+        <view class="action-desc">油卡申请和保养记录的进度、详情和附件</view>
+      </view>
     </view>
   </hy-panel-card>
 
