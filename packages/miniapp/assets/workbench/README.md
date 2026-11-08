@@ -18,6 +18,7 @@
 | reimbursement | receipt-text |
 | fuel | fuel |
 | maintenance | car |
+| vehicleRecords | clipboard-list |
 | archive | mail-check |
 | query | search |
 | contractPrecheck | file-check-2 |

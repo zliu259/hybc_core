@@ -63,6 +63,14 @@ Page({
     myApplications: []
   },
 
+  // 从「我的车辆记录」详情点「去补充资料」进来时带 resubmit=<申请编号>，记录加载完后自动带入
+  onLoad(options) {
+    const id = options && /^[1-9]\d*$/.test(String(options.resubmit || ""))
+      ? String(options.resubmit)
+      : "";
+    this.pendingResubmitId = id;
+  },
+
   onShow() {
     this.loadData();
   },
@@ -101,9 +109,26 @@ Page({
         needsInfoCount,
         myApplications
       });
+      this.applyPendingResubmit(Boolean(myRes));
     } finally {
       this.setData({ loading: false });
     }
+  },
+
+  applyPendingResubmit(recordsLoaded) {
+    const id = this.pendingResubmitId;
+    if (!id) return;
+    this.pendingResubmitId = "";
+    if (!recordsLoaded) {
+      wx.showToast({ title: "申请记录没加载出来，请在下方记录里点「补充资料」", icon: "none" });
+      return;
+    }
+    const target = this.data.myApplications.find((item) => String(item.id) === id);
+    if (!target || target.status !== "needs_info") {
+      wx.showToast({ title: "这张申请现在不需要补充资料", icon: "none" });
+      return;
+    }
+    this.beginResubmit(id);
   },
 
   // 让在途的按车拉卡请求作废（换车、补充、重置时调用）
@@ -219,7 +244,10 @@ Page({
   },
 
   startResubmit(e) {
-    const id = e.currentTarget.dataset.id;
+    this.beginResubmit(e.currentTarget.dataset.id);
+  },
+
+  beginResubmit(id) {
     const target = this.data.myApplications.find(
       (item) => String(item.id) === String(id)
     );

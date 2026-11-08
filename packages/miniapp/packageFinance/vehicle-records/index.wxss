@@ -1,0 +1,149 @@
+.segment {
+  display: flex;
+  background: #ffffff;
+  border-radius: 16rpx;
+  padding: 6rpx;
+  margin-bottom: 20rpx;
+}
+
+.segment-item {
+  flex: 1;
+  text-align: center;
+  padding: 18rpx 0;
+  border-radius: 12rpx;
+  font-size: 28rpx;
+  color: #5c667a;
+}
+
+.segment-active {
+  background: #1677ff;
+  color: #ffffff;
+  font-weight: 600;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 16rpx;
+}
+
+.toolbar-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.picker-value {
+  background: #ffffff;
+  border: 1rpx solid #d7dbe3;
+  border-radius: 12rpx;
+  padding: 18rpx 20rpx;
+  box-sizing: border-box;
+  font-size: 28rpx;
+  color: #1f2937;
+}
+
+.count-line {
+  font-size: 24rpx;
+  color: #7b8494;
+  margin: 4rpx 4rpx 12rpx;
+}
+
+.state-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 20rpx;
+  padding: 80rpx 0;
+}
+
+.state-text {
+  font-size: 28rpx;
+  color: #7b8494;
+  text-align: center;
+}
+
+.record-card {
+  background: #ffffff;
+  border-radius: 20rpx;
+  padding: 24rpx;
+  margin-bottom: 16rpx;
+  box-shadow: 0 8rpx 24rpx rgba(0, 0, 0, 0.04);
+}
+
+.record-card:active {
+  opacity: 0.85;
+}
+
+.record-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.record-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 26rpx;
+  color: #5c667a;
+  word-break: break-all;
+}
+
+.record-amount {
+  margin-top: 10rpx;
+  font-size: 36rpx;
+  font-weight: 700;
+  color: #1f2329;
+}
+
+.record-amount-empty {
+  font-size: 28rpx;
+  font-weight: 400;
+  color: #7b8494;
+}
+
+.record-meta {
+  margin-top: 8rpx;
+  font-size: 26rpx;
+  color: #3d4555;
+}
+
+.record-note {
+  margin-top: 12rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 12rpx;
+  background: #fff7ea;
+  color: #a15c00;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+.record-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 12rpx;
+}
+
+.record-time {
+  font-size: 24rpx;
+  color: #7b8494;
+}
+
+.record-link {
+  font-size: 24rpx;
+  color: #1677ff;
+}
+
+.list-foot {
+  display: flex;
+  justify-content: center;
+  padding: 20rpx 0;
+  font-size: 24rpx;
+  color: #7b8494;
+}
+
+.list-more {
+  color: #1677ff;
+}

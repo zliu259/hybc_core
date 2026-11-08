@@ -250,6 +250,10 @@ Page({
     wx.navigateTo({ url: "/packageFinance/fuel-apply/index" });
   },
 
+  goToVehicleRecords() {
+    wx.navigateTo({ url: "/packageFinance/vehicle-records/index" });
+  },
+
   openSettings() {
     wx.navigateTo({ url: "/pages/profile-settings/index" });
   },

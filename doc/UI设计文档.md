@@ -1706,6 +1706,17 @@
 - 一轮发单共用一个 run id，合同创建 / 合同送审 / 付款创建 / 付款送审的 `Idempotency-Key` 均由「scope + run id + 步骤内容指纹」派生，失败重试同 key、改内容换 key：`packages/web/src/views/finance/payment/wizard-submit-keys.ts`、`packages/web/src/api/contract.ts`
 - 后端 `POST /api/v1/contract` 支持 `Idempotency-Key`，缺省按内容指纹在 5 分钟窗内自动去重，与付款申请创建一致：`packages/api/src/routes/contract.ts`
 
+### 8.22 小程序「我的车辆记录」（2026-11-08）
+
+- 新增分包页「我的车辆记录」：顶部切换「油卡申请 / 保养记录」，各自按状态筛选、触底分页（每页 20 条）、下拉刷新，右上「新的油卡申请 / 新的保养记录」跳对应提交页；只看本人提交的（请求带 `mine=true`）：`packages/miniapp/packageFinance/vehicle-records/index.{js,wxml,wxss,json}`
+  - 油卡卡片：单号、状态、申请额度、车牌 ｜ 里程、申请时间；待补充时带出补充原因。
+  - 保养卡片：单号、状态（有效/已作废）、费用（没填显示浅色「未填费用」）、车牌 ｜ 类型 ｜ 里程、保养日期。
+- 油卡申请详情：额度、状态、补充原因、车辆 · 车型、油卡卡号、里程、申请时间、补充次数（最近时间）；「办公室处理」卡片列处理人、处理时间、办公室备注（与补充原因相同时不重复）、处理后余额，待处理（含补充后重新提交）显示「办公室还没处理」；风险提示；现场照片点开预览。待补充时有「去补充资料」，跳 `fuel-apply?resubmit=<id>` 自动带入这张单：`packages/miniapp/packageFinance/fuel-record-detail/`、`packages/miniapp/packageFinance/fuel-apply/index.js`
+- 保养记录详情：费用、状态、作废时间和原因（已作废时）、车辆、保养类型、里程、保养日期、保养人、提交时间、保养内容、备注、附件（图片预览、文件打开）：`packages/miniapp/packageFinance/maintenance-record-detail/`
+- 两个详情页共用 `styles/detail-cards.wxss` 的版式，视图模型在分包内 `packageFinance/common/vehicle-records-view.js`。
+- 入口：工作台新增「车辆记录」（slate，图标 Lucide clipboard-list）；「我的」页常用动作区第五张卡「我的车辆记录」占满一行：`packages/miniapp/utils/workbench-view.js`、`packages/miniapp/pages/profile/index.{js,wxml,wxss}`
+- 后端：`GET /api/v1/fleet/fuel-applications` 带 `page`/`pageSize` 时分页并返回 `pagination`（不带时照旧整表返回）；新增 `GET /api/v1/fleet/fuel-applications/:id`，只允许申请人本人和 super_admin/manager/finance 查看：`packages/api/src/routes/fleet.ts`
+
 ## 9. 智能体接入（2026-07）
 
 ### 9.1 页面与路由映射
