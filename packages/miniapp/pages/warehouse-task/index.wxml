@@ -101,8 +101,8 @@
       </view>
 
       <view class="detail-actions">
-        <t-button wx:if="{{selectedTask.canStart}}" theme="primary" bindtap="startTask" loading="{{actionBusy}}" disabled="{{actionBusy}}">开始任务</t-button>
-        <t-button wx:if="{{selectedTask.canSubmit}}" theme="primary" bindtap="submitTask" loading="{{actionBusy}}" disabled="{{actionBusy || photoBusy}}">提交结果</t-button>
+        <t-button wx:if="{{selectedTask.canStart}}" theme="primary" block bindtap="startTask" loading="{{actionBusy}}" disabled="{{actionBusy}}">开始任务</t-button>
+        <t-button wx:if="{{selectedTask.canSubmit}}" theme="primary" block bindtap="submitTask" loading="{{actionBusy}}" disabled="{{actionBusy || photoBusy}}">提交结果</t-button>
       </view>
     </view>
   </view>

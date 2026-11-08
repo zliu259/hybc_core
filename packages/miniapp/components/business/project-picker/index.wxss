@@ -23,3 +23,8 @@
   background: #eaf3ff;
   color: #1677ff;
 }
+
+/* t-button 的 class 落在 TDesign 组件内部，只认本组件的样式，app.wxss 的 .btn 套不上 */
+.btn {
+  flex: 1;
+}

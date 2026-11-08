@@ -63,7 +63,9 @@
   color: #64748b;
 }
 
+/* 以前 app.json 开着 style v2，基础库把按钮定成 184px；去掉 v2 后原生按钮整行宽，这里保持原来的大小 */
 .wecom-btn {
+  width: 184px;
   margin-top: 28rpx;
   padding: 0;
   background: transparent;

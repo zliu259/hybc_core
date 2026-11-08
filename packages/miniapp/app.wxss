@@ -41,6 +41,12 @@ page {
   min-height: 96rpx;
 }
 
+/* flex 行里并排平分的按钮，不改高度（.btn 会把按钮拉到 96rpx） */
+.btn-fill {
+  flex: 1;
+  min-width: 0;
+}
+
 .btn-primary {
   --td-button-primary-bg-color: #1677ff;
   --td-button-primary-border-color: #1677ff;
