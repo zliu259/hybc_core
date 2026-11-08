@@ -20,8 +20,8 @@
       <view class="input">{{templateNames[templateIndex] || '请选择模板'}}</view>
     </picker>
     <view class="row">
-      <t-button size="small" variant="outline" bindtap="applyTemplate" disabled="{{busy}}">套用模板并继续修改</t-button>
-      <t-button size="small" variant="outline" bindtap="clearCart" disabled="{{busy || cartItems.length === 0}}">清空清单</t-button>
+      <t-button class="btn-fill" size="small" variant="outline" bindtap="applyTemplate" disabled="{{busy}}">套用模板并继续修改</t-button>
+      <t-button class="btn-fill" size="small" variant="outline" bindtap="clearCart" disabled="{{busy || cartItems.length === 0}}">清空清单</t-button>
     </view>
 
     <view class="label required">资产类型快速选型</view>

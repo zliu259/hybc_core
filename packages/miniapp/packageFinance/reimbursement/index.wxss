@@ -150,7 +150,6 @@
 
 .rb-scan,
 .rb-save {
-  display: block;
   margin-top: 16rpx;
 }
 
@@ -159,8 +158,18 @@
 }
 
 .rb-action {
-  display: block;
   margin-bottom: 16rpx;
+}
+
+/* 按钮放进 flex 行用 flex:1 撑开：单个按钮占满整行，几个按钮并排时平分 */
+.rb-btn-row {
+  display: flex;
+  gap: 12rpx;
+}
+
+.rb-btn {
+  flex: 1;
+  min-width: 0;
 }
 
 .rb-links {

@@ -392,8 +392,8 @@
     </view>
 
     <view class="step-nav">
-      <t-button wx:if="{{currentStep > 0}}" variant="outline" disabled="{{busy || submitting}}" bindtap="goPrevStep">上一步</t-button>
-      <t-button wx:if="{{currentStep < 2}}" theme="primary" disabled="{{busy || submitting}}" bindtap="goNextStep">下一步</t-button>
+      <t-button wx:if="{{currentStep > 0}}" class="btn-fill" variant="outline" disabled="{{busy || submitting}}" bindtap="goPrevStep">上一步</t-button>
+      <t-button wx:if="{{currentStep < 2}}" class="btn-fill" theme="primary" disabled="{{busy || submitting}}" bindtap="goNextStep">下一步</t-button>
     </view>
 
   </hy-panel-card>

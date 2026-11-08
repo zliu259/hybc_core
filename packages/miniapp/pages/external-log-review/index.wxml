@@ -55,8 +55,8 @@
     </view>
 
     <view class="action-row">
-      <t-button theme="primary" data-id="{{item.id}}" data-projectid="{{item.projectId}}" data-action="approve" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">放行</t-button>
-      <t-button theme="danger" variant="outline" data-id="{{item.id}}" data-projectid="{{item.projectId}}" data-action="reject" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">驳回</t-button>
+      <t-button theme="primary" block data-id="{{item.id}}" data-projectid="{{item.projectId}}" data-action="approve" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">放行</t-button>
+      <t-button theme="danger" variant="outline" block data-id="{{item.id}}" data-projectid="{{item.projectId}}" data-action="reject" bindtap="confirmReview" loading="{{actionBusy}}" disabled="{{actionBusy}}">驳回</t-button>
     </view>
   </view>
 </view>

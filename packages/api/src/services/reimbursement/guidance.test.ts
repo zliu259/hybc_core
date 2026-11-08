@@ -41,6 +41,7 @@ const view = (
   raw_text_summary: null,
   duplicates: [],
   attention: null,
+  merged_label: null,
   ...extra
 });
 
@@ -48,6 +49,8 @@ const duplicateView = (riskLevel = "high") =>
   view("recognized", 100, {
     duplicates: [{ match_type: "invoice_no_date", risk_level: riskLevel, summary: "重复", matched_envelope_id: 9 }]
   });
+
+const mergedView = (label = "含 11 张发票") => view("recognized", 100, { merged_label: label });
 
 interface Scenario {
   fields?: Partial<EnvelopeFields>;
@@ -92,7 +95,11 @@ describe("申请人的结论和提醒", () => {
     ["草稿，有疑似重复", { fields: draft, views: [duplicateView(), view("recognized", 1)] }, "1 张发票疑似重复报销", "先看标出的那张，确认不是重复再提交。", ["submit"]],
     ["草稿，有识别失败", { fields: draft, views: [view("failed"), view("failed"), view("recognized", 1)] }, "2 张发票没读出来", "可以重新识别，或自己填写报销金额。", ["rerecognize_failed", "submit"]],
     ["草稿，还在识别", { fields: draft, views: [view("recognizing"), view("recognized", 1)] }, "还有 1 张发票在识别", "可以等识别完再确认金额，也可以自己填好直接提交。", ["submit"]],
-    ["草稿，有附件没金额", { fields: draft, views: [view("no_amount"), view("not_invoice"), view("recognized", 1)] }, "2 个附件没读出金额", "请自己填写报销金额，办公室会核对原件。", ["submit"]],
+    ["草稿，多张疑似重复", { fields: draft, views: [duplicateView(), duplicateView()] }, "2 张发票疑似重复报销", "先看标出的这几张，确认不是重复再提交。", ["submit"]],
+    ["草稿，有附件没金额，还没填金额", { fields: { ...draft, amount: 0 }, views: [view("no_amount"), view("not_invoice"), view("recognized", 1)] }, "2 个附件没读出金额", "请自己填写报销金额，办公室会核对原件。", ["submit"]],
+    ["草稿，有附件没金额，已经填了金额", { fields: { ...draft, amount: 2300 }, views: [view("no_amount"), view("no_amount")] }, "2 个附件没读出金额", "请确认报销金额 ¥2,300.00，办公室会核对原件。", ["submit"]],
+    ["草稿，一个文件合并了多张发票", { fields: draft, views: [mergedView()] }, "1 个文件含 11 张发票，系统没法逐张查重", "请拆成单张重新上传，这样才能查重。", ["submit"]],
+    ["草稿，多个文件合并了多张发票", { fields: draft, views: [mergedView(), mergedView("含多张发票")] }, "2 个文件各含多张发票，系统没法逐张查重", "请拆成单张重新上传，这样才能查重。", ["submit"]],
     ["草稿，全部读出", { fields: draft, views: [view("recognized", 1000), view("recognized", 568.95)] }, "2 张发票都识别了，票面合计 ¥1,568.95", "确认金额，就可以提交了。", ["submit"]],
     ["supplement", { fields: { precheck_status: "supplement", precheck_comment: "请补餐费发票。" } }, "办公室要求补充材料", "请补餐费发票，补完重新提交。", ["resubmit"]],
     ["supplement 没有原话", { fields: { precheck_status: "supplement" } }, "办公室要求补充材料", "补完重新提交。", ["resubmit"]],
@@ -137,6 +144,9 @@ describe("办公室的结论和提醒", () => {
     ["mismatch", { fields: { verification_status: "mismatch", verification_note: "原件少一张" } }, "已标记核查异常", "原件少一张。和申请人核对后，可以重新签收或要求补充。", ["verify", "precheck_supplement", "precheck_reject"]],
     ["mismatch 没有备注", { fields: { verification_status: "mismatch" } }, "已标记核查异常", "和申请人核对后，可以重新签收或要求补充。", ["verify", "precheck_supplement", "precheck_reject"]],
     ["submitted，疑似重复", { views: [duplicateView(), view("recognized", 1)] }, "1 张发票疑似重复报销", "先看标出的那张，确认后再签收。", ["verify", "mark_mismatch"]],
+    ["submitted，多张疑似重复", { views: [duplicateView(), duplicateView()] }, "2 张发票疑似重复报销", "先看标出的这几张，确认后再签收。", ["verify", "mark_mismatch"]],
+    ["submitted，一个文件合并了多张发票", { views: [mergedView()] }, "1 个文件含 11 张发票，系统没法逐张查重", "请逐张核对原件，确认没有重复就签收，不对就标记异常。", ["verify", "mark_mismatch"]],
+    ["submitted，合并文件数不出张数", { views: [mergedView("含多张发票")] }, "1 个文件含多张发票，系统没法逐张查重", "请逐张核对原件，确认没有重复就签收，不对就标记异常。", ["verify", "mark_mismatch"]],
     ["submitted，混入电子发票", { fields: { channel: "physical" }, einvoiceDetected: true }, "实物信封里有电子发票", "复核时会被拦下。可以驳回让申请人改走电子通道，财务可填理由放行。", ["verify", "mark_mismatch"]],
     ["submitted，有识别失败", { views: [view("failed"), view("failed")] }, "2 张发票没读出来", "请直接看原件，或重新识别这 2 张。", ["rerecognize_failed", "verify"]],
     ["submitted，还在识别", { views: [view("recognizing"), view("recognized", 1)] }, "还有 1 张发票在识别", "可以先看原件，识别完会自动更新。", ["verify", "mark_mismatch"]],
@@ -149,6 +159,9 @@ describe("办公室的结论和提醒", () => {
     ["received，已复核通过", { fields: { status: "received", precheck_status: "approved" } }, "已复核通过，等待成批", "到报销批次里成批送审。", ["open_batching"]],
     ["received，还在识别", { fields: received, views: [view("recognizing")] }, "已签收，还在识别", "识别完才能复核通过。", ["precheck_supplement", "precheck_reject"]],
     ["received，疑似重复", { fields: received, views: [duplicateView()] }, "已签收，但 1 张发票疑似重复", "先看标出的那张，确认不是重复才能通过。", ["precheck_approve", "precheck_supplement", "precheck_reject"]],
+    ["received，多张疑似重复", { fields: received, views: [duplicateView(), duplicateView()] }, "已签收，但 2 张发票疑似重复", "先看标出的这几张，确认不是重复才能通过。", ["precheck_approve", "precheck_supplement", "precheck_reject"]],
+    ["received，一个文件合并了多张发票", { fields: received, views: [mergedView()] }, "已签收，但 1 个文件含 11 张发票", "请逐张核对原件，确认没有重复再通过。", ["precheck_approve", "precheck_supplement", "precheck_reject"]],
+    ["received，多个文件合并了多张发票", { fields: received, views: [mergedView(), mergedView()] }, "已签收，但 2 个文件各含多张发票", "请逐张核对原件，确认没有重复再通过。", ["precheck_approve", "precheck_supplement", "precheck_reject"]],
     ["received，混入电子发票", { fields: { status: "received", channel: "physical" }, einvoiceDetected: true }, "已签收，但实物信封里有电子发票", "驳回让申请人改走电子通道，财务可填理由放行。", ["precheck_reject", "precheck_supplement", "precheck_approve"]],
     ["received", { fields: received }, "已签收，等你复核", "确认无误就通过，缺材料就要求补充。", ["precheck_approve", "precheck_supplement", "precheck_reject"]]
   ];
@@ -208,6 +221,28 @@ describe("优先级和特殊情况", () => {
     expect(run({ views: [view("failed"), view("recognizing")] }).office?.headline).toBe("1 张发票没读出来");
     expect(run({ views: [view("recognizing"), view("no_amount")] }).office?.headline).toBe("还有 1 张发票在识别");
     expect(run({ fields: { amount: 1 }, views: [view("no_amount"), view("recognized", 50)] }).office?.headline).toBe("1 个附件没有金额，合计可能不全");
+  });
+
+  it("合并文件的优先级：重复、失败、在识别在前，没金额和差额在后", () => {
+    expect(run({ views: [duplicateView(), mergedView()] }).office?.headline).toBe("1 张发票疑似重复报销");
+    expect(run({ views: [view("failed"), mergedView()] }).office?.headline).toBe("1 张发票没读出来");
+    expect(run({ views: [view("recognizing"), mergedView()] }).office?.headline).toBe("还有 1 张发票在识别");
+    expect(run({ views: [view("no_amount"), mergedView()] }).office?.headline).toBe("1 个文件含 11 张发票，系统没法逐张查重");
+    expect(run({ fields: { amount: 1 }, views: [mergedView()] }).office?.headline).toBe("1 个文件含 11 张发票，系统没法逐张查重");
+    expect(
+      run({ views: [view("no_amount", null, { merged_label: "含 3 张发票" })] }).office?.headline
+    ).toBe("1 个文件含 3 张发票，系统没法逐张查重");
+  });
+
+  it("合并文件金额对得上也不说都识别了", () => {
+    const { office } = run({ fields: { amount: 1954.9 }, views: [view("recognized", 1954.9, { merged_label: "含 11 张发票" })] });
+    expect(office?.headline).not.toContain("都识别了");
+    expect(office?.tone).toBe("warn");
+    expect(office?.actions.map((action) => action.key)).toEqual(["verify", "mark_mismatch"]);
+  });
+
+  it("已提交后申请人不用因为合并文件再做什么", () => {
+    expect(run({ views: [mergedView()] }).applicant.headline).toBe("已提交，等办公室核查");
   });
 
   it("批次被驳回优先于已复核", () => {

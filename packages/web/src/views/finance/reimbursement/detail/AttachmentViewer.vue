@@ -111,7 +111,16 @@ const duplicateRows = computed(() =>
       </div>
     </dl>
 
-    <dl v-if="view.amount === null && view.raw_text_summary" class="rb-read">
+    <p v-if="view.merged_label" class="rb-line rb-line--bad">
+      这个文件{{ view.merged_label }}，系统没法逐张查重。
+    </p>
+
+    <dl
+      v-if="
+        (view.amount === null || view.merged_label) && view.raw_text_summary
+      "
+      class="rb-read"
+    >
       <dt>系统读到的内容</dt>
       <dd>{{ view.raw_text_summary }}</dd>
     </dl>

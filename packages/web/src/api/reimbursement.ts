@@ -85,6 +85,8 @@ export type AttachmentReviewView = {
     matched_envelope_id: number | null;
   }[];
   attention: string | null;
+  /** 文件里合并了多张发票时是「含 11 张发票」 */
+  merged_label: string | null;
 };
 
 export type ReviewTotals = {

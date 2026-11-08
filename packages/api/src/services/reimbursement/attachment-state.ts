@@ -1,4 +1,5 @@
 import type { EnvelopeAttachment, ReimbursementDuplicateCheck } from "../../types/reimbursement";
+import { resolveMergedLabel } from "./merged-invoice";
 import { parseStoredJson, type InvoiceReviewRow } from "./review-helpers";
 
 // 每个附件的识别状态和整单合计。网页和小程序都读这里算好的结果，不在客户端各算一遍。
@@ -33,6 +34,8 @@ export interface AttachmentReviewView {
   raw_text_summary: string | null;
   duplicates: AttachmentDuplicateView[];
   attention: string | null;
+  /** 文件里合并了多张发票时是「含 11 张发票」，否则是 null。金额照常计入合计，但没法逐张查重。 */
+  merged_label: string | null;
 }
 
 export interface ReviewTotals {
@@ -150,7 +153,8 @@ export const buildAttachmentViews = (input: {
           summary: duplicate.summary,
           matched_envelope_id: duplicate.matched_envelope_id
         })),
-      attention: attention?.reason ?? null
+      attention: attention?.reason ?? null,
+      merged_label: row?.task_status === "completed" ? resolveMergedLabel(extraction) : null
     };
   });
 };

@@ -83,6 +83,7 @@ const resetState = () => {
   state.pickedImages = [];
   state.pickedFiles = [];
   state.detail = baseDetail();
+  state.detailFails = false;
   state.bound = [];
   state.submitResponses = [];
   state.createFails = false;
@@ -112,7 +113,10 @@ const respond = (options) => {
     return { data: { attachment_ids: state.bound.map((_, index) => index + 1) } };
   }
   if (method === "PUT" && url === `/api/v1/reimbursement/${ENVELOPE_ID}`) return { success: true };
-  if (method === "GET" && url === `/api/v1/reimbursement/${ENVELOPE_ID}`) return { data: state.detail };
+  if (method === "GET" && url === `/api/v1/reimbursement/${ENVELOPE_ID}`) {
+    if (state.detailFails) throw new Error("断网了");
+    return { data: state.detail };
+  }
   if (method === "POST" && url === `/api/v1/reimbursement/${ENVELOPE_ID}/submit`) {
     const next = state.submitResponses.shift();
     if (next && next.error) throw next.error;
@@ -229,6 +233,22 @@ const event = (dataset) => ({ currentTarget: { dataset } });
 const image = (name, size = 100) => ({ path: `/tmp/${name}`, name, size });
 
 const tests = {
+  async "打开已有的单失败时说没加载出来，不说新建的话"() {
+    state.detailFails = true;
+    const page = await openPage({ id: String(ENVELOPE_ID) });
+    assert.strictEqual(page.data.headline, "这张报销没有加载出来");
+    assert.deepStrictEqual(page.data.actions, []);
+
+    state.detailFails = false;
+    await page.loadEnvelopeDetail(ENVELOPE_ID);
+    assert.strictEqual(page.data.headline, "还差发票，传完就能提交");
+  },
+
+  async "新建页不受影响"() {
+    const page = await openPage();
+    assert.strictEqual(page.data.headline, "先选项目，再把发票传上来");
+  },
+
   async "一次选 3 张：3 次绑定，只调 POST /attachments，不调 /electronic-upload"() {
     const page = await newElectronicPage();
     state.pickedImages = [image("a.jpg"), image("b.jpg"), image("c.jpg")];

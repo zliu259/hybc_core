@@ -84,7 +84,8 @@ const viewOf = (state: AttachmentReviewState, amount: number | null = null): Att
   seller_name: null,
   raw_text_summary: null,
   duplicates: [],
-  attention: null
+  attention: null,
+  merged_label: null
 });
 
 const viewsWithAmounts = (amounts: number[]) => amounts.map((amount) => viewOf("recognized", amount));
@@ -299,5 +300,80 @@ describe("buildAttachmentViews", () => {
       ]
     });
     expect(views.map((view) => view.attention)).toEqual([null, "日期异常", null]);
+  });
+});
+
+describe("合并了多张发票的文件", () => {
+  const viewFrom = (extraction: Record<string, unknown>, fields: Partial<InvoiceReviewRow> = {}) =>
+    build(
+      [attachment(1)],
+      [review(1, 1, { invoice_amount: 1954.9, extraction_json: JSON.stringify(extraction), ...fields })]
+    )[0];
+
+  it("识别结果给了张数就用张数", () => {
+    expect(viewFrom({ invoice_count: 11 }).merged_label).toBe("含 11 张发票");
+    expect(viewFrom({ invoice_count: 2 }).merged_label).toBe("含 2 张发票");
+  });
+
+  it("识别结果说只有一张或没有时不看摘要", () => {
+    expect(viewFrom({ invoice_count: 1, raw_text_summary: "附件包含 3 张发票" }).merged_label).toBeNull();
+    expect(viewFrom({ invoice_count: 0, raw_text_summary: "附件包含 3 张发票" }).merged_label).toBeNull();
+  });
+
+  it("张数不是整数时当作没有，改看摘要", () => {
+    const summary = "附件包含 3 张发票";
+    expect(viewFrom({ invoice_count: "11", raw_text_summary: summary }).merged_label).toBe("含 3 张发票");
+    expect(viewFrom({ invoice_count: 2.5, raw_text_summary: summary }).merged_label).toBe("含 3 张发票");
+    expect(viewFrom({ invoice_count: null, raw_text_summary: summary }).merged_label).toBe("含 3 张发票");
+  });
+
+  // 前面几条是生产上的真实摘要（信封 329、327）
+  it.each<[string, string | null]>([
+    ["附件包含报销单及11张电子普通发票，销售方和开票日期不唯一。", "含 11 张发票"],
+    ["附件包含多张收据及一张支出凭单，未见发票。", null],
+    ["附件包含多张手写收据及一张购物清单，非单张发票。", null],
+    ["收据，编号4318026，日期为10月3日，年份未填写。", null],
+    ["共有发票 3 张", "含 3 张发票"],
+    ["发票共3张，合计 100 元", "含 3 张发票"],
+    ["包含两张增值税发票", "含 2 张发票"],
+    ["合并了十一张发票", "含 11 张发票"],
+    ["二十张发票", "含 20 张发票"],
+    ["附件包含多张电子发票", "含多张发票"],
+    ["若干张发票", "含多张发票"],
+    ["3张发票，其中1张发票金额较小", "含 3 张发票"],
+    ["一张电子发票", null],
+    ["1张发票", null],
+    ["2张收据和1张发票", null],
+    ["电子发票，价税合计 100 元", null],
+    ["发票号码 123456 张三开具", null],
+    ["编号 1234567 张三的发票", null]
+  ])("摘要「%s」→ %s", (summary, label) => {
+    expect(viewFrom({ raw_text_summary: summary }).merged_label).toBe(label);
+  });
+
+  it("没有识别结果时不判断", () => {
+    expect(build([attachment(1)], [])[0].merged_label).toBeNull();
+    expect(viewFrom({}).merged_label).toBeNull();
+  });
+
+  it("识别没结束或失败时不判断", () => {
+    const extraction = { invoice_count: 11, raw_text_summary: "11张发票" };
+    expect(viewFrom(extraction, { task_status: "running" }).merged_label).toBeNull();
+    expect(viewFrom(extraction, { task_status: "failed" }).merged_label).toBeNull();
+  });
+
+  it("有金额仍算已识别，并计入合计", () => {
+    const view = viewFrom({ invoice_count: 11 });
+    expect(view.state).toBe("recognized");
+    const totals = computeReviewTotals([view], 1954.9);
+    expect(totals.extracted_total).toBe(1954.9);
+    expect(totals.complete).toBe(true);
+    expect(totals.mismatch).toBe(false);
+  });
+
+  it("没读到金额时状态不变，仍然标出来", () => {
+    const view = viewFrom({ invoice_count: 3 }, { invoice_amount: null });
+    expect(view.state).toBe("no_amount");
+    expect(view.merged_label).toBe("含 3 张发票");
   });
 });
