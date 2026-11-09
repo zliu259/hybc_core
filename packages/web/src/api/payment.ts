@@ -71,19 +71,39 @@ export type Payee = {
 
 type Pagination = { page: number; pageSize: number; total: number };
 
-export const listPaymentRequests = (params?: {
-  contract_id?: number;
+/** 列表接口每行多带的字段 */
+export type PaymentRequestListItem = PaymentRequest & {
+  /** 收款方名称（payee.name） */
+  payee_name: string | null;
+};
+
+/** 付款管理页的条件筛选参数；日期均为北京时间的 YYYY-MM-DD */
+export type PaymentListFilterParams = {
   project_id?: number;
-  status?: string;
   keyword?: string;
   applicant_userid?: string;
-  mine?: boolean;
-  page?: number;
-  pageSize?: number;
-}) => {
+  payee_keyword?: string;
+  amount_min?: number;
+  amount_max?: number;
+  created_from?: string;
+  created_to?: string;
+  paid_from?: string;
+  paid_to?: string;
+  ai_risk_status?: string;
+};
+
+export const listPaymentRequests = (
+  params?: PaymentListFilterParams & {
+    contract_id?: number;
+    status?: string;
+    mine?: boolean;
+    page?: number;
+    pageSize?: number;
+  }
+) => {
   return http.request<{
     success: boolean;
-    data: PaymentRequest[];
+    data: PaymentRequestListItem[];
     pagination: Pagination;
   }>("get", "/api/v1/payment", { params });
 };
