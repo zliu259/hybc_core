@@ -23,6 +23,7 @@ import {
   cancelPendingTasksForBiz
 } from "../services/task-queue";
 import { recentPaymentsQuery } from "../services/recent-payments";
+import { buildPaymentListWhere, toWhereSql } from "./payment-list-filters";
 import {
   abandonIdempotentRequest,
   beginIdempotentRequest,
@@ -70,7 +71,10 @@ type ApprovalInstanceLite = {
   status: string;
 };
 
-type PaymentRequestListRow = PaymentRequest & { approval_status: string | null };
+type PaymentRequestListRow = PaymentRequest & {
+  approval_status: string | null;
+  payee_name: string | null;
+};
 
 const isPaymentNoLongerApprovedError = (error: unknown): boolean => {
   return (
@@ -578,81 +582,25 @@ paymentRoutes.get(
 
 paymentRoutes.get("/", async (c) => {
   const auth = c.get("auth");
-  const contractId = c.req.query("contract_id");
-  const projectId = c.req.query("project_id");
-  const projectName = c.req.query("project_name");
-  const status = c.req.query("status")?.trim().toLowerCase() || "";
-  const keyword = c.req.query("keyword");
-  const legacyDataId = c.req.query("legacy_data_id");
-  const applicantUserid = c.req.query("applicant_userid");
-  const dateFrom = c.req.query("date_from");
-  const dateTo = c.req.query("date_to");
-  const mine = c.req.query("mine") === "true";
   const page = Number(c.req.query("page") ?? "1");
   const pageSize = Number(c.req.query("pageSize") ?? "20");
   const offset = (page - 1) * pageSize;
 
-  const includeCancelled = status === "cancelled";
-  let sql = includeCancelled
-    ? "SELECT p.*, ai.status AS approval_status FROM payment_request p LEFT JOIN approval_instance ai ON ai.id = p.approval_instance_id WHERE 1=1"
-    : "SELECT p.*, ai.status AS approval_status FROM payment_request p LEFT JOIN approval_instance ai ON ai.id = p.approval_instance_id WHERE p.status != 'cancelled'";
-  let countSql = includeCancelled
-    ? "SELECT COUNT(*) as total FROM payment_request p WHERE 1=1"
-    : "SELECT COUNT(*) as total FROM payment_request p WHERE p.status != 'cancelled'";
-  const params: (string | number)[] = [];
+  const built = buildPaymentListWhere((name) => c.req.query(name), auth.sub);
+  if (!built.ok) {
+    return c.json({ success: false, error: { message: built.message } }, 400);
+  }
+  const whereSql = toWhereSql(built.where);
+  const params = built.where.params;
 
-  if (contractId) {
-    sql += " AND p.contract_id = ?";
-    countSql += " AND p.contract_id = ?";
-    params.push(Number(contractId));
-  }
-  if (projectId) {
-    sql += " AND p.project_id = ?";
-    countSql += " AND p.project_id = ?";
-    params.push(Number(projectId));
-  }
-  if (projectName) {
-    sql += " AND p.project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
-    countSql += " AND p.project_id IN (SELECT id FROM project WHERE project_name LIKE ? OR project_code LIKE ?)";
-    params.push(`%${projectName}%`, `%${projectName}%`);
-  }
-  if (status) {
-    sql += " AND p.status = ?";
-    countSql += " AND p.status = ?";
-    params.push(status);
-  }
-  if (keyword) {
-    sql += " AND (p.serial_no LIKE ? OR p.content LIKE ?)";
-    countSql += " AND (p.serial_no LIKE ? OR p.content LIKE ?)";
-    params.push(`%${keyword}%`, `%${keyword}%`);
-  }
-  if (legacyDataId) {
-    sql += " AND p.legacy_data_id = ?";
-    countSql += " AND p.legacy_data_id = ?";
-    params.push(legacyDataId);
-  }
-  if (mine) {
-    sql += " AND p.applicant_userid = ?";
-    countSql += " AND p.applicant_userid = ?";
-    params.push(auth.sub);
-  } else if (applicantUserid) {
-    sql += " AND p.applicant_userid = ?";
-    countSql += " AND p.applicant_userid = ?";
-    params.push(applicantUserid);
-  }
-  if (dateFrom) {
-    sql += " AND p.expected_payment_date >= ?";
-    countSql += " AND p.expected_payment_date >= ?";
-    params.push(dateFrom);
-  }
-  if (dateTo) {
-    sql += " AND p.expected_payment_date <= ?";
-    countSql += " AND p.expected_payment_date <= ?";
-    params.push(dateTo);
-  }
-
+  const countSql = `SELECT COUNT(*) as total FROM payment_request p${whereSql}`;
   // 按业务时间排序（同刻按 id 兜底）：历史导入行 created_at 为旧系统提交时间，自然沉底
-  sql += " ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?";
+  const sql =
+    "SELECT p.*, ai.status AS approval_status, pe.name AS payee_name" +
+    " FROM payment_request p" +
+    " LEFT JOIN approval_instance ai ON ai.id = p.approval_instance_id" +
+    " LEFT JOIN payee pe ON pe.id = p.payee_id" +
+    `${whereSql} ORDER BY p.created_at DESC, p.id DESC LIMIT ? OFFSET ?`;
 
   const countResult = await c.env.DB.prepare(countSql)
     .bind(...params)

@@ -7,18 +7,24 @@ import {
   listPaymentRequests,
   markPaymentPaid,
   type PaymentConsoleSummary,
-  type PaymentRequest
+  type PaymentRequestListItem
 } from "@/api/payment";
 import { listProjects, type Project } from "@/api/project";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import PaymentDetailDrawer from "./components/PaymentDetailDrawer.vue";
+import PaymentFilterPanel from "./components/PaymentFilterPanel.vue";
 import {
   formatBeijingDateTime,
   paymentStatusTagType,
-  toPaymentMethodLabel,
   toPaymentStatusLabel,
   type PaymentTagType
 } from "./payment-labels";
+import {
+  createEmptyPaymentFilters,
+  toPaymentListParams,
+  validatePaymentFilters,
+  type PaymentListFilters
+} from "./payment-list-filters";
 
 defineOptions({ name: "PaymentList" });
 
@@ -55,7 +61,7 @@ const toAiRiskLabel = (value: string | null | undefined): string => {
 
 const router = useRouter();
 const loading = ref(false);
-const list = ref<PaymentRequest[]>([]);
+const list = ref<PaymentRequestListItem[]>([]);
 const projects = ref<Project[]>([]);
 const { wecomUsers, loadWecomUsers } = useWecomUserOptions();
 const summary = ref<PaymentConsoleSummary | null>(null);
@@ -63,18 +69,14 @@ const stage = ref<Stage>("pending");
 const page = ref(1);
 const pageSize = ref(20);
 const total = ref(0);
-const filters = ref({
-  project_id: undefined as number | undefined,
-  applicant_userid: "",
-  keyword: ""
-});
+const filters = ref<PaymentListFilters>(createEmptyPaymentFilters());
 
 const todayStr = new Date().toISOString().slice(0, 10);
 
-const isReturned = (row: PaymentRequest) =>
+const isReturned = (row: PaymentRequestListItem) =>
   row.status === "draft" && RESUBMITTABLE.has(row.approval_status ?? "");
 
-const isOverdue = (row: PaymentRequest) =>
+const isOverdue = (row: PaymentRequestListItem) =>
   row.status === "approved" && row.expected_payment_date < todayStr;
 
 const displayList = computed(() => {
@@ -132,16 +134,19 @@ const loadSummary = async () => {
 let loadSeq = 0;
 
 const loadData = async () => {
+  const invalid = validatePaymentFilters(filters.value);
+  if (invalid) {
+    message(invalid, { type: "warning" });
+    return;
+  }
   const seq = ++loadSeq;
   loading.value = true;
   try {
     const result = await listPaymentRequests({
+      ...toPaymentListParams(filters.value),
       page: page.value,
       pageSize: pageSize.value,
-      project_id: filters.value.project_id,
-      applicant_userid: filters.value.applicant_userid || undefined,
-      status: STAGE_STATUS[stage.value] || undefined,
-      keyword: filters.value.keyword || undefined
+      status: STAGE_STATUS[stage.value] || undefined
     });
     if (seq !== loadSeq) return;
     list.value = result.data;
@@ -157,9 +162,14 @@ const switchStage = (next: Stage) => {
   loadData();
 };
 
-const onHeaderSearch = () => {
+const onFilterSearch = () => {
   page.value = 1;
   loadData();
+};
+
+const onFilterReset = () => {
+  filters.value = createEmptyPaymentFilters();
+  onFilterSearch();
 };
 
 const detailDrawerVisible = ref(false);
@@ -175,7 +185,7 @@ const onDetailDrawerClosed = async () => {
 };
 const goEdit = (id: number) =>
   router.push(`/finance/payment/detail/${id}?edit=1`);
-const goApproval = (row: PaymentRequest) => {
+const goApproval = (row: PaymentRequestListItem) => {
   if (row.approval_instance_id)
     router.push(`/approval/detail/${row.approval_instance_id}`);
 };
@@ -262,40 +272,16 @@ onMounted(async () => {
           </template>
         </el-tab-pane>
       </el-tabs>
-      <el-space wrap>
-        <el-select
-          v-model="filters.project_id"
-          clearable
-          filterable
-          placeholder="所属项目"
-          style="width: 200px"
-          @change="onHeaderSearch"
-        >
-          <el-option
-            v-for="item in projects"
-            :key="item.id"
-            :label="item.project_name"
-            :value="item.id"
-          />
-        </el-select>
-        <el-select
-          v-model="filters.applicant_userid"
-          clearable
-          filterable
-          placeholder="申请人"
-          style="width: 160px"
-          @change="onHeaderSearch"
-        >
-          <el-option
-            v-for="item in wecomUsers"
-            :key="item.userid"
-            :label="item.name || item.userid"
-            :value="item.userid"
-          />
-        </el-select>
-        <el-button type="primary" @click="goCreate">发起付款</el-button>
-      </el-space>
+      <el-button type="primary" @click="goCreate">发起付款</el-button>
     </div>
+
+    <PaymentFilterPanel
+      v-model="filters"
+      :projects="projects"
+      :wecom-users="wecomUsers"
+      @search="onFilterSearch"
+      @reset="onFilterReset"
+    />
 
     <el-table
       v-loading="loading"
@@ -311,28 +297,12 @@ onMounted(async () => {
           projectMap[scope.row.project_id] || scope.row.project_id
         }}</template>
       </el-table-column>
-      <el-table-column min-width="220" show-overflow-tooltip>
-        <template #header>
-          <div class="content-search-header">
-            <span>付款内容</span>
-            <el-input
-              v-model="filters.keyword"
-              size="small"
-              clearable
-              placeholder="全局搜索内容/流水号"
-              @keyup.enter="onHeaderSearch"
-              @clear="onHeaderSearch"
-            />
-          </div>
-        </template>
+      <el-table-column label="付款内容" min-width="220" show-overflow-tooltip>
         <template #default="scope">{{ scope.row.content || "-" }}</template>
       </el-table-column>
       <el-table-column prop="amount" label="金额" width="120" />
-      <el-table-column prop="amount_cn" label="金额大写" min-width="160" />
-      <el-table-column label="付款方式" width="120">
-        <template #default="scope">{{
-          toPaymentMethodLabel(scope.row.payment_method)
-        }}</template>
+      <el-table-column label="收款方" min-width="180" show-overflow-tooltip>
+        <template #default="scope">{{ scope.row.payee_name || "-" }}</template>
       </el-table-column>
       <el-table-column label="标签" width="110">
         <template #default="scope">
@@ -469,19 +439,5 @@ onMounted(async () => {
 
 :deep(.payment-row-overdue) {
   background: #fef2f2;
-}
-
-.content-search-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.content-search-header span {
-  flex-shrink: 0;
-}
-
-.content-search-header .el-input {
-  max-width: 200px;
 }
 </style>
