@@ -166,6 +166,206 @@ describe.skipIf(!hasSqlite)("POST /:id/attachments/:attachmentId/delete", () => 
     expect((await remove(h, id, attachmentId)).status).toBe(403);
   });
 
+  it.each([
+    [{ status: "submitted", precheck_status: "pending" }, "office", ["finance"], 200],
+    [{ status: "submitted", precheck_status: "pending" }, "office", ["site_manager"], 200],
+    [{ status: "received", precheck_status: "approved" }, "office", ["manager"], 200],
+    [{ status: "received", precheck_status: "pending" }, "u1", ["manager"], 403],
+    [{ status: "received", precheck_status: "pending" }, "u1", ["finance"], 200],
+    [{ status: "received", precheck_status: "pending", batch_id: 3 }, "office", ["finance"], 400],
+    [{ status: "received", precheck_status: "approved", approval_instance_id: 9 }, "office", ["finance"], 400],
+    [{ status: "batched" }, "office", ["finance"], 400],
+    [{ status: "paid" }, "office", ["super_admin"], 400],
+    [{ status: "cancelled" }, "office", ["finance"], 400]
+  ])("办公室删发票：%j 用户 %s %j 返回 %i", async (fields, sub, roles, expected) => {
+    const { h } = setup();
+    asUser(sub, roles);
+    const id = await h.seedEnvelope({ applicant_userid: "u1", ...fields });
+    const attachmentId = await h.seedAttachment(id);
+    expect((await remove(h, id, attachmentId)).status).toBe(expected);
+    const row = h.db.prepare("SELECT status FROM envelope_attachment WHERE id = ?").get(attachmentId);
+    expect(row.status).toBe(expected === 200 ? "deleted" : "active");
+  });
+});
+
+describe.skipIf(!hasSqlite)("办公室删发票后报销信息跟着变", () => {
+  beforeEach(() => {
+    asUser("u1");
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("ok")));
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const remove = (h, id, attachmentId, body = {}) =>
+    callReimbursement(h, "POST", `/${id}/attachments/${attachmentId}/delete`, body);
+
+  const invoice = (amount, invoiceNo, date = "2026-10-01") => ({
+    amount_with_tax: amount,
+    invoice_no: invoiceNo,
+    issue_date: date,
+    document_type: "invoice"
+  });
+
+  /** 申请人建单、传票、识别完、提交，然后换成办公室。outputs 为 null 的那张识别失败。 */
+  const seedSubmitted = async (h, file, outputs, fields = {}) => {
+    const id = await h.seedEnvelope({ status: "draft", applicant_userid: "u1" });
+    const keys = outputs.map((_, index) => file(`reimbursement/${id}-${index}.pdf`));
+    const { data } = await (await attach(h, id, keys)).json();
+    const reviews = h.listReviews(id);
+    for (const [index, output] of outputs.entries()) {
+      await h.finishTask(reviews[index].task_id, output ? "completed" : "failed", output ?? undefined);
+    }
+    const declared = outputs.reduce((sum, output) => sum + (output?.amount_with_tax ?? 0), 0);
+    h.db
+      .prepare("UPDATE reimbursement_envelope SET status = ?, precheck_status = ?, amount = ? WHERE id = ?")
+      .run(fields.status ?? "submitted", fields.precheck_status ?? "pending", fields.amount ?? declared, id);
+    const { syncEnvelopeAuditState } = await import("../src/services/reimbursement/review-pipeline");
+    await syncEnvelopeAuditState(h.env, id);
+    asUser("office", ["finance"]);
+    return { id, attachmentIds: data.attachment_ids };
+  };
+
+  const auditRows = (h, id) =>
+    h.db
+      .prepare("SELECT actor_userid, detail_json FROM api_audit_log WHERE action = 'reimbursement.envelope.attachment_delete' AND target_id = ?")
+      .all(String(id))
+      .map((row) => ({ ...row, detail: JSON.parse(row.detail_json) }));
+
+  it("报销金额减去这张发票的金额，合计和返回值一起变", async () => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(100, "A1"), invoice(48.5, "A2")]);
+    const response = await remove(h, id, attachmentIds[1]);
+    expect(response.status).toBe(200);
+    expect((await response.json()).data).toMatchObject({ deducted_amount: 48.5, amount: 100, precheck_reset: false });
+    expect(h.getEnvelope(id).amount).toBe(100);
+
+    const detail = (await (await callReimbursement(h, "GET", `/${id}`)).json()).data;
+    expect(detail.review_totals).toMatchObject({ extracted_total: 100, declared_amount: 100, mismatch: false });
+    expect(detail.attachment_views.map((view) => view.attachment_id)).toEqual([attachmentIds[0]]);
+  });
+
+  it("申请人少报的差额保留", async () => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(100, "A1"), invoice(60, "A2")], { amount: 150 });
+    await remove(h, id, attachmentIds[1]);
+    expect(h.getEnvelope(id).amount).toBe(90);
+  });
+
+  it("没识别出金额的不扣", async () => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(100, "A1"), null], { amount: 130 });
+    const response = await remove(h, id, attachmentIds[1]);
+    expect((await response.json()).data).toMatchObject({ deducted_amount: 0, amount: 130 });
+    expect(h.getEnvelope(id).amount).toBe(130);
+  });
+
+  it("最少扣到 0", async () => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(80, "A1")], { amount: 50 });
+    await remove(h, id, attachmentIds[0]);
+    expect(h.getEnvelope(id).amount).toBe(0);
+  });
+
+  it("识别刚完成还没同步的也按金额扣", async () => {
+    const { h, file } = setup();
+    const id = await h.seedEnvelope({ status: "submitted", precheck_status: "pending", applicant_userid: "u1", amount: 300 });
+    const { data } = await (await attach(h, id, [file("reimbursement/x.pdf"), file("reimbursement/y.pdf")])).json();
+    const reviews = h.listReviews(id);
+    await h.finishTask(reviews[0].task_id, "completed", invoice(200, "B1"));
+    await h.finishTask(reviews[1].task_id, "completed", invoice(100, "B2"));
+    asUser("office", ["finance"]);
+    await remove(h, id, data.attachment_ids[1]);
+    expect(h.getEnvelope(id).amount).toBe(200);
+  });
+
+  it("连点两次只扣一次", async () => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(100, "A1"), invoice(40, "A2")]);
+    const [first, second] = await Promise.all([remove(h, id, attachmentIds[1]), remove(h, id, attachmentIds[1])]);
+    expect([first.status, second.status].sort()).toEqual([200, 404]);
+    expect(h.getEnvelope(id).amount).toBe(100);
+  });
+
+  it.each([
+    ["删附件之前", "UPDATE envelope_attachment SET status = 'deleted'"],
+    ["删了附件、扣钱之前", "amount = MAX(0, ROUND(COALESCE(amount, 0)"]
+  ])("%s报销被成批了：不删、不扣钱，返回 409", async (_label, marker) => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(100, "A1"), invoice(40, "A2")], {
+      status: "received"
+    });
+    const realPrepare = h.env.DB.prepare;
+    h.env.DB.prepare = (sql) => {
+      if (sql.includes(marker)) h.db.prepare("UPDATE reimbursement_envelope SET batch_id = 7 WHERE id = ?").run(id);
+      return realPrepare(sql);
+    };
+    const response = await remove(h, id, attachmentIds[1]);
+    h.env.DB.prepare = realPrepare;
+    expect(response.status).toBe(409);
+    expect(h.db.prepare("SELECT status FROM envelope_attachment WHERE id = ?").get(attachmentIds[1]).status).toBe("active");
+    expect(h.getEnvelope(id).amount).toBe(140);
+  });
+
+  it("已复核通过的退回待复核，并记下谁删的、为什么", async () => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(100, "A1"), invoice(40, "A2")], {
+      status: "received",
+      precheck_status: "approved"
+    });
+    const response = await remove(h, id, attachmentIds[1], { reason: "  和 326 重复 " });
+    expect((await response.json()).data.precheck_reset).toBe(true);
+    expect(h.getEnvelope(id).precheck_status).toBe("pending");
+    expect(auditRows(h, id)).toEqual([
+      expect.objectContaining({
+        actor_userid: "office",
+        detail: expect.objectContaining({
+          attachment_id: attachmentIds[1],
+          deducted_amount: 40,
+          amount_before: 140,
+          amount_after: 100,
+          precheck_reset: true,
+          envelope_status: "received",
+          reason: "和 326 重复"
+        })
+      })
+    ]);
+  });
+
+  it("草稿里自己删不记审计", async () => {
+    const { h } = setup();
+    const id = await h.seedEnvelope({ status: "draft" });
+    const attachmentId = await h.seedAttachment(id);
+    expect((await remove(h, id, attachmentId)).status).toBe(200);
+    expect(auditRows(h, id)).toHaveLength(0);
+  });
+
+  it.each([
+    [{ reason: "很".repeat(201) }],
+    [{ reason: 1 }]
+  ])("原因不合法 %j 返回 400 且不删", async (body) => {
+    const { h, file } = setup();
+    const { id, attachmentIds } = await seedSubmitted(h, file, [invoice(100, "A1")]);
+    expect((await remove(h, id, attachmentIds[0], body)).status).toBe(400);
+    expect(h.getEnvelope(id).amount).toBe(100);
+  });
+
+  it("删掉重复的那张后，两边的重复提醒都消失", async () => {
+    const { h, file } = setup();
+    const { syncEnvelopeAuditState } = await import("../src/services/reimbursement/review-pipeline");
+    const a = await seedSubmitted(h, file, [invoice(100, "A1"), invoice(30, "DUP")]);
+    asUser("u1");
+    const b = await seedSubmitted(h, file, [invoice(30, "DUP")]);
+    await syncEnvelopeAuditState(h.env, a.id);
+    const duplicatesOf = (envelopeId) =>
+      h.db.prepare("SELECT matched_envelope_id FROM reimbursement_duplicate_check WHERE envelope_id = ?").all(envelopeId);
+    expect(duplicatesOf(a.id).map((row) => row.matched_envelope_id)).toContain(b.id);
+    expect(duplicatesOf(b.id).map((row) => row.matched_envelope_id)).toContain(a.id);
+
+    expect((await remove(h, a.id, a.attachmentIds[1])).status).toBe(200);
+    expect(duplicatesOf(a.id).map((row) => row.matched_envelope_id)).not.toContain(b.id);
+    expect(duplicatesOf(b.id).map((row) => row.matched_envelope_id)).not.toContain(a.id);
+    expect(h.getEnvelope(a.id).amount).toBe(100);
+  });
+
   it("删除后合计立刻更新", async () => {
     const { h, file } = setup();
     const id = await h.seedEnvelope({ status: "draft", amount: 100 });

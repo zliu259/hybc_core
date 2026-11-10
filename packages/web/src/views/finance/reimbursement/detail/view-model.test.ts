@@ -10,6 +10,7 @@ import type {
 import {
   buildEnvelopeForm,
   buildEnvelopeUpdatePayload,
+  buildInfoSummary,
   declaredAmountDefault,
   defaultSelection,
   formatYuan,
@@ -592,5 +593,30 @@ describe("withDeclaredAmount", () => {
     expect(
       withDeclaredAmount(totals({ extracted_total: 1568.95 }), 1568.91).delta
     ).toBe(0.04);
+  });
+});
+
+describe("buildInfoSummary", () => {
+  it("金额一行，项目和填报人一行", () => {
+    expect(
+      buildInfoSummary({
+        amount: 1568.91,
+        projectName: "东莞厂房",
+        applicantName: "李震"
+      })
+    ).toEqual({ amount: "¥1,568.91", meta: "东莞厂房 · 填报人 李震" });
+  });
+
+  it("缺项目只显示填报人", () => {
+    expect(
+      buildInfoSummary({ amount: 10, projectName: null, applicantName: "李震" })
+        .meta
+    ).toBe("填报人 李震");
+  });
+
+  it("什么都没填时提示里面有什么", () => {
+    expect(
+      buildInfoSummary({ amount: 0, projectName: null, applicantName: null })
+    ).toEqual({ amount: "还没填金额", meta: "项目、填报人、说明" });
   });
 });

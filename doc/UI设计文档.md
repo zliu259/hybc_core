@@ -309,8 +309,9 @@
 设计见 `docs/superpowers/specs/2026-11-06-reimbursement-multi-attachment-design.md` 第 6、7 节，样稿 `2026-11-06-reimbursement-detail-mock.html`。`detail.vue` 是薄入口，外部接口不变（`envelopeId`、`drawerMode`、`workspaceView`，事件 `close`、`changed`、`created`），内容在 `detail/` 下。
 
 - **顶部 `VerdictHeader`**：第一行结论（26px/600，有问题时 `#b4470c`），第二行该做什么（`#1361d8`），第三行小字谁报销、多少钱、哪个项目；办公室有「留意」时多一行提醒。右边是接口 `guidance.actions` 给的按钮（第一个是主按钮）、「更多」和返回或关闭。工作台路由用 `guidance.applicant`，其他入口有 `office` 用 `office`。上传中由前端覆盖为「还有 N 张发票没传完」，提交不可点。打开已有的单时，数据没到显示「正在加载…」，失败显示「这张报销没有加载出来」并隐藏下方内容。
-- **左列 `AttachmentPicker`（300px）**：第一行「报销信息」；分组标题「发票 N 张」，有非发票、没读到金额或合并文件时写「附件 N 个」；可编辑时有上传框（一次选或拖多个，只收 PDF、JPG、PNG，单个 20MB，同时传 3 个，失败的单独重试）；文件行显示销售方（没有用文件名）和状态或金额，标「疑似重复」「含 N 张发票」「留意」，可删除的有删除。排序：还在传的、重复、失败、不是发票、没金额、合并文件、留意的，然后金额从大到小。
-- **右侧 `AttachmentViewer`**：选中文件时显示原件（图片或 iframe，每次切换重新取签名地址）和销售方、发票号、开票日期、金额；没金额或合并文件时显示「系统读到的内容」；合并文件写明「这个文件含 N 张发票，系统没法逐张查重」；重复时写说明并能跳到那张单；办公室能看到留意的理由；失败的可重新识别。
+- **左列 `AttachmentPicker`（300px）**：顶部是「报销信息」卡片（2026-11-10 起，原来只是一行字，办公室常注意不到）：浅蓝底、蓝色图标，标题右边写「查看 / 修改 ›」（不能改时「查看 ›」，选中时「正在查看」），下面是报销金额（16px/600）和「项目 · 填报人 X」（最多两行）；看发票时也能一眼看到报的是多少。分组标题「发票 N 张」，有非发票、没读到金额或合并文件时写「附件 N 个」；可编辑时有上传框（一次选或拖多个，只收 PDF、JPG、PNG，单个 20MB，同时传 3 个，失败的单独重试）；文件行显示销售方（没有用文件名）和状态或金额，标「疑似重复」「含 N 张发票」「留意」，可删除的有删除。排序：还在传的、重复、失败、不是发票、没金额、合并文件、留意的，然后金额从大到小。
+- **右侧 `AttachmentViewer`**：选中文件时显示原件（图片或 iframe，每次切换重新取签名地址）和销售方、发票号、开票日期、金额；没金额或合并文件时显示「系统读到的内容」；合并文件写明「这个文件含 N 张发票，系统没法逐张查重」；重复时写说明并能跳到那张单；办公室能看到留意的理由；失败的可重新识别；能删的时候文件名右边「下载」旁有「删除这张发票」。
+- **删发票**（2026-11-10）：提交前和被退回时申请人能删；已提交、已签收还没成批没送审的，办公室能删（办公室角色删自己的单只有财务、超管可以），用于重复发票。确认框写明报销金额从多少改为多少（减去这张识别出的金额，最少到 0）；没识别出金额的写「不会自动改，删除后请到报销信息里核对」。提交后删要填原因（选填，疑似重复时默认「重复发票」），记审计 `reimbursement.envelope.attachment_delete`。删完回到「报销信息」，金额和合计已更新；已复核通过的退回待复核；和它重复的另一张报销会重新查重，提醒一起消失。
 - **右侧 `EnvelopeInfoPanel`**：选中「报销信息」时显示。项目、填报人、通道、费用日期、报销金额、类别、说明；改动后才出现「保存」，提交前自动保存，不做失焦保存。报销金额没改过时等于已识别合计，改过不再覆盖。下方是报销识别号、信封识别号和状态、发票抬头（显示、识别原文、来源、办公室指定）、PDF 状态和文件、批次；对应不到具体发票的重复（金额接近）列在这里。
 - **底部 `TotalsBar`**：票面合计、申报、差额。一致为绿色，有差额为警示色，没读全写「算不出」或「另有 N 个没有金额」，不比差额。
 - **更多 `MoreActionsMenu`**：换绑信封、切换通道、拆单、全部重新识别（原「二次静默审查」）、废止（必填原因）。权限沿用原来的判断（`useEnvelopePermissions`）。
@@ -319,7 +320,7 @@
 - **自动刷新**：有附件在识别时每 3 秒静默刷新，只更新数据，不动上传项，不冲掉正在填的表单；拆单弹窗打开时暂停。没有手动刷新按钮。
 - **宽度**：小于 860px（含抽屉）上下排列，用容器查询判断，因为页面也放在 `batch.vue`、`batch-detail.vue`、`payout.vue`、`office-workbench.vue` 的抽屉里。
 - **去掉**：状态总览、三张统计卡、智能核查摘要、可读版识别结果、附件类型选择、发票号字段、刷新识别状态按钮。
-- **API 指向**：`GET /api/v1/reimbursement/:id`（`guidance`、`attachment_views`、`review_totals`）、`POST /:id/attachments`、`POST /:id/attachments/:attachmentId/rerecognize`、`POST /:id/attachments/:attachmentId/delete`、`POST /:id/submit`（`resubmitted`）、`POST /:id/void`（`reason`），其余沿用。
+- **API 指向**：`GET /api/v1/reimbursement/:id`（`guidance`、`attachment_views`、`review_totals`）、`POST /:id/attachments`、`POST /:id/attachments/:attachmentId/rerecognize`、`POST /:id/attachments/:attachmentId/delete`（`reason`，返回 `deducted_amount`、`amount`、`precheck_reset`）、`POST /:id/submit`（`resubmitted`）、`POST /:id/void`（`reason`），其余沿用。
 
 #### F-3. 功能页融合说明（预审/查重）
 

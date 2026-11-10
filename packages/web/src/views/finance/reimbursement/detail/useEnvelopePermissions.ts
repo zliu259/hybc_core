@@ -9,6 +9,8 @@ import type { AttachmentReviewView } from "@/api/reimbursement";
 const OFFICE_ROLES = ["super_admin", "manager", "site_manager", "finance"];
 const EDITABLE_STATUSES = new Set(["draft", "submitted"]);
 const PRE_SUBMIT_STATUSES = new Set(["draft", "unregistered"]);
+// 与后端 attachment-delete.ts 的 OFFICE_DELETABLE_STATUSES 一致
+const OFFICE_DELETE_STATUSES = new Set(["submitted", "received"]);
 const TITLE_LOCKED_STATUSES = new Set([
   "batched",
   "pending_approval",
@@ -81,11 +83,18 @@ export const useEnvelopePermissions = (deps: {
       ["supplement", "rejected"].includes(detail.value.precheck_status)
   );
 
-  const canDeleteAttachments = computed(
-    () =>
-      !!detail.value &&
-      (PRE_SUBMIT_STATUSES.has(detail.value.status) || isReturned.value)
-  );
+  // 提交前和被退回时申请人能删；已提交、已签收还没成批的，办公室能删（比如重复发票）
+  const canDeleteAttachments = computed(() => {
+    if (!detail.value) return false;
+    if (PRE_SUBMIT_STATUSES.has(detail.value.status) || isReturned.value)
+      return true;
+    return (
+      canSeeOfficeReview.value &&
+      OFFICE_DELETE_STATUSES.has(detail.value.status) &&
+      !detail.value.batch_id &&
+      !detail.value.approval_instance_id
+    );
+  });
 
   const canRerecognize = (view: AttachmentReviewView): boolean => {
     if (view.state !== "failed" || !detail.value) return false;
