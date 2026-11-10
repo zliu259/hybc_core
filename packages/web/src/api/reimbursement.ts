@@ -400,12 +400,27 @@ export const rerecognizeAttachment = (id: number, attachmentId: number) => {
   );
 };
 
-export const deleteEnvelopeAttachment = (id: number, attachmentId: number) => {
+export type DeleteEnvelopeAttachmentResult = {
+  id: number;
+  attachment_id: number;
+  /** 从报销金额里扣掉的数，没识别出金额时是 0 */
+  deducted_amount: number;
+  /** 删除后的报销金额 */
+  amount: number;
+  /** 已复核通过的单删了发票会退回待复核 */
+  precheck_reset: boolean;
+};
+
+export const deleteEnvelopeAttachment = (
+  id: number,
+  attachmentId: number,
+  payload: { reason?: string } = {}
+) => {
   return http.request<{
     success: boolean;
-    data: { id: number; attachment_id: number };
+    data: DeleteEnvelopeAttachmentResult;
   }>("post", `/api/v1/reimbursement/${id}/attachments/${attachmentId}/delete`, {
-    data: {}
+    data: payload
   });
 };
 

@@ -15,11 +15,14 @@ const props = defineProps<{
   view: AttachmentReviewView;
   canRerecognize: boolean;
   rerecognizing: boolean;
+  canDelete: boolean;
+  removing: boolean;
 }>();
 
 const emit = defineEmits<{
   (event: "rerecognize", attachmentId: number): void;
   (event: "open-envelope", envelopeId: number): void;
+  (event: "remove", view: AttachmentReviewView): void;
 }>();
 
 const fileUrl = ref("");
@@ -94,14 +97,25 @@ const duplicateRows = computed(() =>
 
     <div class="rb-file-bar">
       <span class="rb-file-bar__name">{{ fileName }}</span>
-      <a
-        v-if="fileUrl"
-        :href="fileUrl"
-        target="_blank"
-        rel="noopener noreferrer"
-        :download="fileName"
-        >下载</a
-      >
+      <span class="rb-file-bar__tools">
+        <a
+          v-if="fileUrl"
+          :href="fileUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          :download="fileName"
+          >下载</a
+        >
+        <el-button
+          v-if="canDelete"
+          link
+          type="danger"
+          :loading="removing"
+          @click="emit('remove', view)"
+        >
+          删除这张发票
+        </el-button>
+      </span>
     </div>
 
     <dl class="rb-kv4">
@@ -211,8 +225,14 @@ const duplicateRows = computed(() =>
   white-space: nowrap;
 }
 
-.rb-file-bar a {
+.rb-file-bar__tools {
+  display: flex;
   flex: none;
+  gap: 16px;
+  align-items: center;
+}
+
+.rb-file-bar a {
   color: #1361d8;
 }
 

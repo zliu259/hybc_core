@@ -278,6 +278,26 @@ export const buildEnvelopeUpdatePayload = (
   description: form.description || undefined
 });
 
+export type InfoSummary = { amount: string; meta: string };
+
+/** 「报销信息」卡片上的摘要：金额一行，项目和填报人一行。看发票时也能看到报的是多少。 */
+export const buildInfoSummary = (input: {
+  amount: number;
+  projectName: string | null;
+  applicantName: string | null;
+}): InfoSummary => {
+  const meta = [
+    input.projectName,
+    input.applicantName ? `填报人 ${input.applicantName}` : null
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  return {
+    amount: input.amount > 0 ? formatYuan(input.amount) : "还没填金额",
+    meta: meta || "项目、填报人、说明"
+  };
+};
+
 /** 还能改的单按表单里的金额算差额。接口算的是已保存的金额，新草稿是 0，会显示假的差额。 */
 export const withDeclaredAmount = (
   totals: ReviewTotals,

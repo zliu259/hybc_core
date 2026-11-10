@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Tickets } from "@element-plus/icons-vue";
 import { computed, ref } from "vue";
 
 import type { AttachmentReviewView } from "@/api/reimbursement";
@@ -9,6 +10,7 @@ import {
   isProblemView,
   pickerGroupTitle,
   sortAttachmentViews,
+  type InfoSummary,
   type PickerSelection
 } from "./view-model";
 
@@ -16,6 +18,8 @@ const props = defineProps<{
   views: AttachmentReviewView[];
   uploads: UploadItem[];
   selection: PickerSelection;
+  infoSummary: InfoSummary;
+  infoEditable: boolean;
   canUpload: boolean;
   canDelete: boolean;
 }>();
@@ -25,11 +29,16 @@ const emit = defineEmits<{
   (event: "files", files: File[]): void;
   (event: "retry", localId: string): void;
   (event: "dismiss", localId: string): void;
-  (event: "remove", attachmentId: number, name: string): void;
+  (event: "remove", view: AttachmentReviewView): void;
 }>();
 
 const sortedViews = computed(() => sortAttachmentViews(props.views));
 const groupTitle = computed(() => pickerGroupTitle(props.views));
+const infoSelected = computed(() => props.selection.kind === "info");
+const infoAction = computed(() => {
+  if (infoSelected.value) return "正在查看";
+  return props.infoEditable ? "查看 / 修改 ›" : "查看 ›";
+});
 const dragging = ref(false);
 const fileInput = ref<HTMLInputElement | null>(null);
 
@@ -52,14 +61,27 @@ const isSelected = (attachmentId: number) =>
 
 <template>
   <nav class="rb-picker">
-    <button
-      type="button"
-      class="rb-pick rb-pick--info"
-      :class="{ 'rb-pick--on': selection.kind === 'info' }"
-      @click="emit('select', { kind: 'info' })"
-    >
-      <span>报销信息</span>
-    </button>
+    <div class="rb-info-wrap">
+      <button
+        type="button"
+        class="rb-info-card"
+        :class="{ 'rb-info-card--on': infoSelected }"
+        :aria-pressed="infoSelected"
+        @click="emit('select', { kind: 'info' })"
+      >
+        <span class="rb-info-card__icon" aria-hidden="true">
+          <el-icon :size="18"><Tickets /></el-icon>
+        </span>
+        <span class="rb-info-card__body">
+          <span class="rb-info-card__head">
+            <span class="rb-info-card__title">报销信息</span>
+            <span class="rb-info-card__action">{{ infoAction }}</span>
+          </span>
+          <span class="rb-info-card__amount">{{ infoSummary.amount }}</span>
+          <span class="rb-info-card__meta">{{ infoSummary.meta }}</span>
+        </span>
+      </button>
+    </div>
 
     <div class="rb-group">{{ groupTitle }}</div>
 
@@ -161,8 +183,8 @@ const isSelected = (attachmentId: number) =>
             link
             size="small"
             class="rb-pick__delete"
-            aria-label="删除这个附件"
-            @click.stop="emit('remove', view.attachment_id, view.display_name)"
+            :aria-label="`删除 ${view.display_name}`"
+            @click.stop="emit('remove', view)"
           >
             删除
           </el-button>
@@ -218,9 +240,94 @@ const isSelected = (attachmentId: number) =>
   border-top: 1px solid #e7ebf0;
 }
 
-.rb-pick--info {
-  font-weight: 500;
-  border-top: 0;
+.rb-info-wrap {
+  padding: 12px 16px 12px 24px;
+}
+
+.rb-info-card {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 12px 14px;
+  color: #1f2329;
+  text-align: left;
+  cursor: pointer;
+  background: #f3f7ff;
+  border: 1px solid #c9dafc;
+  border-radius: 10px;
+  transition:
+    background-color 0.15s,
+    border-color 0.15s,
+    box-shadow 0.15s;
+}
+
+.rb-info-card:hover {
+  background: #eaf2ff;
+  border-color: #1361d8;
+}
+
+.rb-info-card:focus-visible {
+  outline: 2px solid #1361d8;
+  outline-offset: 2px;
+}
+
+.rb-info-card--on {
+  background: #e6f0ff;
+  border-color: #1361d8;
+  box-shadow: inset 0 0 0 1px #1361d8;
+}
+
+.rb-info-card__icon {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  color: #fff;
+  background: #1361d8;
+  border-radius: 8px;
+}
+
+.rb-info-card__body {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rb-info-card__head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rb-info-card__title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.rb-info-card__action {
+  flex: none;
+  font-size: 12px;
+  color: #1361d8;
+}
+
+.rb-info-card__amount {
+  font-size: 16px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.rb-info-card__meta {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 2;
+  color: #5c667a;
+  -webkit-box-orient: vertical;
 }
 
 .rb-pick--upload {
@@ -365,7 +472,8 @@ const isSelected = (attachmentId: number) =>
   }
 
   .rb-group,
-  .rb-pick {
+  .rb-pick,
+  .rb-info-wrap {
     padding-left: 16px;
   }
 

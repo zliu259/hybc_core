@@ -180,7 +180,7 @@ watch(views, () => {
     selection.value = { kind: "info" };
 });
 
-const { facts, displayedTotals } = useEnvelopeSummary({
+const { facts, infoSummary, displayedTotals } = useEnvelopeSummary({
   detail,
   form,
   canEdit: permissions.canEdit,
@@ -312,6 +312,8 @@ const onSplitDone = async () => {
           :views="views"
           :uploads="uploads.items.value"
           :selection="selection"
+          :info-summary="infoSummary"
+          :info-editable="permissions.canEdit.value"
           :can-upload="permissions.canUpload.value"
           :can-delete="permissions.canDeleteAttachments.value"
           @select="selection = $event"
@@ -325,8 +327,11 @@ const onSplitDone = async () => {
           :view="selectedView"
           :can-rerecognize="permissions.canRerecognize(selectedView)"
           :rerecognizing="attachmentActions.rerecognizing.value"
+          :can-delete="permissions.canDeleteAttachments.value"
+          :removing="attachmentActions.removing.value"
           @rerecognize="attachmentActions.rerecognize([$event])"
           @open-envelope="openEnvelope"
+          @remove="attachmentActions.removeAttachment"
         />
         <EnvelopeInfoPanel
           v-else
