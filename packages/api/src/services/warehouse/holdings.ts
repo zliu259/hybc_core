@@ -4,6 +4,7 @@
  */
 import type { Env } from "../../types/env";
 import { listDevices, type DeviceRow } from "./device";
+import { queryIn } from "./query-in";
 
 export interface MaterialHolding {
   material_id: number;
@@ -24,15 +25,17 @@ export const loadHoldings = async (
   materialIds: readonly number[]
 ): Promise<Map<number, number>> => {
   if (materialIds.length === 0) return new Map();
-  const rows = await env.DB.prepare(
-    `SELECT material_id, ROUND(COALESCE(SUM(project_delta), 0), 3) AS holding
-       FROM wh_doc_line
-      WHERE project_id = ? AND material_id IN (${materialIds.map(() => "?").join(", ")})
-      GROUP BY material_id`
-  )
-    .bind(projectId, ...materialIds)
-    .all<{ material_id: number; holding: number }>();
-  return new Map((rows.results ?? []).map((row) => [Number(row.material_id), Number(row.holding)]));
+  const rows = await queryIn<{ material_id: number; holding: number }>(
+    env.DB,
+    (inList) =>
+      `SELECT material_id, ROUND(COALESCE(SUM(project_delta), 0), 3) AS holding
+         FROM wh_doc_line
+        WHERE project_id = ? AND material_id IN (${inList})
+        GROUP BY material_id`,
+    materialIds,
+    [projectId]
+  );
+  return new Map(rows.map((row) => [Number(row.material_id), Number(row.holding)]));
 };
 
 export const getProjectHoldings = async (

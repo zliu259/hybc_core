@@ -16,6 +16,7 @@ import { materialLabel, requireClientRequestId } from "./doc-input";
 import { badRequest, WarehouseError } from "./errors";
 import { assertInBatch } from "./guard";
 import { HOLDING_AT_LEAST_EXISTS_SQL, loadHoldings } from "./holdings";
+import { queryIn } from "./query-in";
 
 const REVERSIBLE = new Set(["opening", "inbound", "out", "back", "transfer"]);
 const num = (value: number): string => String(Number(value.toFixed(3)));
@@ -57,15 +58,15 @@ export const reverseWhDoc = async (
   const materialIds = [
     ...new Set(lines.flatMap((line) => (line.material_id === null ? [] : [line.material_id])))
   ];
-  const materials = new Map<number, Material>();
-  if (materialIds.length > 0) {
-    const rows = await env.DB.prepare(
-      `SELECT * FROM material WHERE id IN (${materialIds.map(() => "?").join(", ")})`
-    )
-      .bind(...materialIds)
-      .all<Material>();
-    for (const row of rows.results ?? []) materials.set(Number(row.id), row);
-  }
+  const materials = new Map<number, Material>(
+    (
+      await queryIn<Material>(
+        env.DB,
+        (inList) => `SELECT * FROM material WHERE id IN (${inList})`,
+        materialIds
+      )
+    ).map((row) => [Number(row.id), row])
+  );
 
   const stockDelta = new Map<number, number>();
   const holdingDelta = new Map<string, { projectId: number; materialId: number; delta: number }>();

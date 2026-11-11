@@ -20,6 +20,7 @@ import { assertInBatch } from "./guard";
 import { HOLDING_AT_LEAST_EXISTS_SQL, loadHoldings } from "./holdings";
 import { getWarehouseSettings } from "./settings";
 import { buildTaskInsert, type TaskDraft } from "./task";
+import { queryIn } from "./query-in";
 
 const KIND_LABELS: Record<WhTaskKind, string> = {
   inspection: "检查",
@@ -39,12 +40,12 @@ const projectName = async (env: Env, id: number): Promise<string> => {
 
 const loadDevices = async (env: Env, ids: readonly number[]): Promise<Map<number, Device>> => {
   if (ids.length === 0) return new Map();
-  const rows = await env.DB.prepare(
-    `SELECT * FROM device WHERE id IN (${ids.map(() => "?").join(", ")})`
-  )
-    .bind(...ids)
-    .all<Device>();
-  const byId = new Map((rows.results ?? []).map((row) => [Number(row.id), row]));
+  const rows = await queryIn<Device>(
+    env.DB,
+    (inList) => `SELECT * FROM device WHERE id IN (${inList})`,
+    ids
+  );
+  const byId = new Map(rows.map((row) => [Number(row.id), row]));
   for (const id of ids) if (!byId.has(id)) throw badRequest("设备不存在");
   return byId;
 };
@@ -61,14 +62,18 @@ const assertDispatchable = async (env: Env, devices: Device[]): Promise<void> =>
       throw new WarehouseError(409, `${device.device_code} 不在库`);
   }
   if (devices.length === 0) return;
-  const rows = await env.DB.prepare(
-    `SELECT device_id, kind FROM wh_task
-      WHERE blocking = 1 AND status IN ('todo', 'submitted') AND device_id IN (${devices.map(() => "?").join(", ")})
-      ORDER BY CASE kind WHEN 'maintenance' THEN 0 WHEN 'inspection' THEN 1 ELSE 2 END, id ASC`
-  )
-    .bind(...devices.map((device) => device.id))
-    .all<{ device_id: number; kind: WhTaskKind }>();
-  const first = rows.results?.[0];
+  const rows = await queryIn<{ id: number; device_id: number; kind: WhTaskKind }>(
+    env.DB,
+    (inList) =>
+      `SELECT id, device_id, kind FROM wh_task
+        WHERE blocking = 1 AND status IN ('todo', 'submitted') AND device_id IN (${inList})`,
+    devices.map((device) => device.id)
+  );
+  // 分段查询后统一排序：先报维修中，再报待检，其他最后
+  const rank = (kind: WhTaskKind) => (kind === "maintenance" ? 0 : kind === "inspection" ? 1 : 2);
+  const first = [...rows].sort(
+    (a, b) => rank(a.kind) - rank(b.kind) || Number(a.id) - Number(b.id)
+  )[0];
   if (first) {
     const device = devices.find((item) => item.id === Number(first.device_id));
     throw new WarehouseError(
@@ -189,13 +194,14 @@ export const createMoveDoc = async (
 
   let needInspection: Device[] = [];
   if (type === "back" && devices.length > 0) {
-    const open = await env.DB.prepare(
-      `SELECT DISTINCT device_id FROM wh_task
-        WHERE kind = 'inspection' AND status IN ('todo', 'submitted') AND device_id IN (${devices.map(() => "?").join(", ")})`
-    )
-      .bind(...devices.map((device) => device.id))
-      .all<{ device_id: number }>();
-    const busy = new Set((open.results ?? []).map((row) => Number(row.device_id)));
+    const open = await queryIn<{ device_id: number }>(
+      env.DB,
+      (inList) =>
+        `SELECT DISTINCT device_id FROM wh_task
+          WHERE kind = 'inspection' AND status IN ('todo', 'submitted') AND device_id IN (${inList})`,
+      devices.map((device) => device.id)
+    );
+    const busy = new Set(open.map((row) => Number(row.device_id)));
     needInspection = devices.filter((device) => !busy.has(device.id));
   }
   const settings = needInspection.length > 0 ? await getWarehouseSettings(env) : null;

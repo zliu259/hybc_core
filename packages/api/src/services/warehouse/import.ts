@@ -10,6 +10,7 @@ import { badRequest, WarehouseError } from "./errors";
 import { assertInBatch, isGuardFailure, releaseGuards } from "./guard";
 import { nextMaterialCode, parseMaterialFields } from "./material";
 import { optionalNumber, optionalText, requireQuantity, requireText } from "./validation";
+import { queryIn } from "./query-in";
 
 export interface ImportRowError {
   row: number;
@@ -119,23 +120,23 @@ export const importDevices = async (
   ];
   const projects = new Map<string, number>();
   if (projectNames.length > 0) {
-    const found = await env.DB.prepare(
-      `SELECT id, project_name FROM project WHERE project_name IN (${inPlaceholders(projectNames.length)})`
-    )
-      .bind(...projectNames)
-      .all<{ id: number; project_name: string }>();
-    for (const project of found.results ?? [])
-      projects.set(project.project_name, Number(project.id));
+    const found = await queryIn<{ id: number; project_name: string }>(
+      env.DB,
+      (inList) => `SELECT id, project_name FROM project WHERE project_name IN (${inList})`,
+      projectNames
+    );
+    for (const project of found) projects.set(project.project_name, Number(project.id));
   }
   const codes = valid.flatMap((row) => (row.device_code ? [row.device_code.toUpperCase()] : []));
   const existing = new Set<string>();
   if (codes.length > 0) {
-    const found = await env.DB.prepare(
-      `SELECT UPPER(device_code) AS code FROM device WHERE UPPER(device_code) IN (${inPlaceholders(codes.length)})`
-    )
-      .bind(...codes)
-      .all<{ code: string }>();
-    for (const row of found.results ?? []) existing.add(row.code);
+    const found = await queryIn<{ code: string }>(
+      env.DB,
+      (inList) =>
+        `SELECT UPPER(device_code) AS code FROM device WHERE UPPER(device_code) IN (${inList})`,
+      [...new Set(codes)]
+    );
+    for (const row of found) existing.add(row.code);
   }
   const categories = await env.DB.prepare("SELECT name, status FROM device_category").all<{
     name: string;
@@ -279,12 +280,12 @@ export const importMaterials = async (
   const names = [...new Set(parsed.flatMap((row) => (row ? [String(row.columns.name)] : [])))];
   const existing = new Set<string>();
   if (names.length > 0) {
-    const found = await env.DB.prepare(
-      `SELECT name, spec FROM material WHERE name IN (${inPlaceholders(names.length)})`
-    )
-      .bind(...names)
-      .all<{ name: string; spec: string }>();
-    for (const row of found.results ?? []) existing.add(nameSpecKey(row.name, row.spec));
+    const found = await queryIn<{ name: string; spec: string }>(
+      env.DB,
+      (inList) => `SELECT name, spec FROM material WHERE name IN (${inList})`,
+      names
+    );
+    for (const row of found) existing.add(nameSpecKey(row.name, row.spec));
   }
   const seen = new Set<string>();
   parsed.forEach((row, index) => {

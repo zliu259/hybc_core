@@ -9,6 +9,7 @@ import {
   requireId,
   requireQuantity
 } from "./validation";
+import { queryIn } from "./query-in";
 
 export const DOC_TYPES: readonly WhDocType[] = [
   "opening",
@@ -140,12 +141,12 @@ export const loadActiveMaterials = async (
 ): Promise<Map<number, Material>> => {
   const ids = [...new Set(lines.map((line) => line.material_id))];
   if (ids.length === 0) return new Map();
-  const rows = await env.DB.prepare(
-    `SELECT * FROM material WHERE id IN (${ids.map(() => "?").join(", ")})`
-  )
-    .bind(...ids)
-    .all<Material>();
-  const byId = new Map((rows.results ?? []).map((row) => [Number(row.id), row]));
+  const rows = await queryIn<Material>(
+    env.DB,
+    (inList) => `SELECT * FROM material WHERE id IN (${inList})`,
+    ids
+  );
+  const byId = new Map(rows.map((row) => [Number(row.id), row]));
   for (const id of ids) {
     const material = byId.get(id);
     if (!material) throw badRequest("物资不存在");

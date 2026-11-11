@@ -24,11 +24,20 @@ export const normalizeParam = (value) => {
   return value;
 };
 
+// D1 一条语句最多绑定 100 个参数（超过报 too many SQL variables），node:sqlite 的上限高得多，这里按 D1 拦
+const D1_MAX_BOUND_PARAMS = 100;
+const boundParams = (params) => {
+  if (params.length > D1_MAX_BOUND_PARAMS) {
+    throw new Error(`D1_ERROR: too many SQL variables (${params.length} > ${D1_MAX_BOUND_PARAMS})`);
+  }
+  return params.map(normalizeParam);
+};
+
 const returnsRows = (sql) => /^\s*(SELECT|WITH|PRAGMA)\b/i.test(sql) || /\bRETURNING\b/i.test(sql);
 
 const executeStatement = (database, sql, params) => {
   const prepared = database.prepare(sql);
-  const bound = params.map(normalizeParam);
+  const bound = boundParams(params);
   if (returnsRows(sql)) {
     return {
       success: true,
@@ -50,13 +59,13 @@ const createStatement = (database, sql, params, hooks) => ({
   bind: (...next) => createStatement(database, sql, next, hooks),
   async first(column) {
     hooks.beforeStatement?.();
-    const row = database.prepare(sql).get(...params.map(normalizeParam));
+    const row = database.prepare(sql).get(...boundParams(params));
     if (!row) return null;
     return column ? (row[column] ?? null) : { ...row };
   },
   async all() {
     hooks.beforeStatement?.();
-    return { success: true, results: database.prepare(sql).all(...params.map(normalizeParam)).map((row) => ({ ...row })), meta: {} };
+    return { success: true, results: database.prepare(sql).all(...boundParams(params)).map((row) => ({ ...row })), meta: {} };
   },
   async run() {
     hooks.beforeStatement?.();
