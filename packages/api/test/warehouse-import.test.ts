@@ -242,6 +242,50 @@ describe.skipIf(!hasSqlite)("导入", () => {
     expect((await listMaterials(h.env, {})).items[0].quantity).toBe(5);
   });
 
+  it("物资导入（不带期初）用同一个 client_request_id 重放：返回第一次的结果，不报重复", async () => {
+    const input = {
+      client_request_id: "imp-mat-0101",
+      rows: [material(), material({ spec: "Φ80" })]
+    };
+    const first = await importMaterials(h.env, input, "keeper");
+    const second = await importMaterials(h.env, input, "keeper");
+    expect(first).toEqual({ created: 2, errors: [], opening_doc_no: null });
+    expect(second).toEqual(first);
+    expect((await listMaterials(h.env, {})).total).toBe(2);
+  });
+
+  it("同一个 client_request_id 的另一个请求先写进去时，返回它的结果，本次什么都不写", async () => {
+    const realBatch = h.env.DB.batch.bind(h.env.DB);
+    h.env.DB.batch = async (statements) => {
+      h.database
+        .prepare(
+          "INSERT INTO wh_import (client_request_id, import_type, created_count, opening_doc_no, operator_userid, created_at) VALUES (?, 'material', 7, NULL, 'other', ?)"
+        )
+        .run("imp-mat-0102", new Date().toISOString());
+      return realBatch(statements);
+    };
+    const result = await importMaterials(
+      h.env,
+      { client_request_id: "imp-mat-0102", rows: [material()] },
+      "keeper"
+    );
+    expect(result).toEqual({ created: 7, errors: [], opening_doc_no: null });
+    expect((await listMaterials(h.env, {})).total).toBe(0);
+  });
+
+  it("设备导入的重放记录也在导入记录表里", async () => {
+    await importDevices(
+      h.env,
+      { client_request_id: "imp-dev-0101", rows: [machine(), machine()] },
+      "keeper"
+    );
+    expect(
+      h.database
+        .prepare("SELECT import_type, created_count FROM wh_import WHERE client_request_id = ?")
+        .get("imp-dev-0101")
+    ).toEqual({ import_type: "device", created_count: 2 });
+  });
+
   it("接口：操作员 403，库管 200", async () => {
     const call = (path, body) => callWh(h, mountWarehouseRoutes, "POST", path, body);
     expect(

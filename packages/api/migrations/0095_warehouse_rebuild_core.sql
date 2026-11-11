@@ -186,3 +186,13 @@ CREATE TABLE IF NOT EXISTS wh_task_photo (
   FOREIGN KEY (task_id) REFERENCES wh_task(id)
 );
 CREATE INDEX IF NOT EXISTS idx_wh_task_photo_task_id ON wh_task_photo(task_id);
+
+-- 每次成功的导入记一行：同一个 client_request_id 重发时直接返回这里的结果
+CREATE TABLE IF NOT EXISTS wh_import (
+  client_request_id TEXT PRIMARY KEY,
+  import_type TEXT NOT NULL CHECK (import_type IN ('device', 'material')),
+  created_count INTEGER NOT NULL,
+  opening_doc_no TEXT,
+  operator_userid TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);

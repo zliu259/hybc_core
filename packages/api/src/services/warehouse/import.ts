@@ -7,7 +7,6 @@ import { runAtomicBatch } from "../db-transaction";
 import { generateSerials } from "../serial";
 import { requireClientRequestId } from "./doc-input";
 import { badRequest, WarehouseError } from "./errors";
-import { assertInBatch, isGuardFailure, releaseGuards } from "./guard";
 import { nextMaterialCode, parseMaterialFields } from "./material";
 import { optionalNumber, optionalText, requireQuantity, requireText } from "./validation";
 import { queryIn } from "./query-in";
@@ -95,12 +94,39 @@ const parseDeviceRow = (row: Record<string, unknown>): DeviceImportRow => ({
   remark: optionalText(row.remark, "备注", 300)
 });
 
-const countImported = async (env: Env, ref: string): Promise<number> => {
-  const row = await env.DB.prepare("SELECT COUNT(*) AS n FROM device_event WHERE ref_type = ?")
-    .bind(ref)
-    .first<{ n: number }>();
-  return Number(row?.n ?? 0);
+/** 同一个 client_request_id 已经导入过：返回当时的结果。 */
+const findImport = async (env: Env, crid: string): Promise<ImportResult | null> => {
+  const row = await env.DB.prepare(
+    "SELECT created_count, opening_doc_no FROM wh_import WHERE client_request_id = ?"
+  )
+    .bind(crid)
+    .first<{ created_count: number; opening_doc_no: string | null }>();
+  return row
+    ? { created: Number(row.created_count), errors: [], opening_doc_no: row.opening_doc_no ?? null }
+    : null;
 };
+
+/** 放在批处理第一条：同一个 client_request_id 并发重发时，后到的在这里撞唯一键，整批回滚。 */
+const recordImport = (
+  env: Env,
+  crid: string,
+  type: "device" | "material",
+  created: number,
+  openingDocNo: string | null,
+  operatorUserid: string,
+  now: string
+): D1PreparedStatement =>
+  env.DB.prepare(
+    `INSERT INTO wh_import (client_request_id, import_type, created_count, opening_doc_no, operator_userid, created_at)
+     VALUES (?, ?, ?, ?, ?, ?)`
+  ).bind(crid, type, created, openingDocNo, operatorUserid, now);
+
+const isImportReplay = (error: unknown): boolean =>
+  error instanceof Error &&
+  error.message.includes("UNIQUE constraint failed: wh_import.client_request_id");
+
+const replayedImport = async (env: Env, crid: string): Promise<ImportResult> =>
+  (await findImport(env, crid)) ?? { created: 0, errors: [], opening_doc_no: null };
 
 export const importDevices = async (
   env: Env,
@@ -109,8 +135,8 @@ export const importDevices = async (
 ): Promise<ImportResult> => {
   const crid = requireClientRequestId(input.client_request_id);
   const ref = `import:${crid}`;
-  const done = await countImported(env, ref);
-  if (done > 0) return { created: done, errors: [], opening_doc_no: null };
+  const done = await findImport(env, crid);
+  if (done) return done;
   const rows = readRows(input);
   const { parsed, errors } = parseRows(rows, parseDeviceRow);
 
@@ -172,11 +198,7 @@ export const importDevices = async (
   let nextNumber = Math.max(Number(maxRow?.n ?? 0), fileMax) + 1;
   const now = nowIso();
   const statements: D1PreparedStatement[] = [
-    assertInBatch(
-      env.DB,
-      "SELECT 1 WHERE NOT EXISTS (SELECT 1 FROM device_event WHERE ref_type = ?)",
-      [ref]
-    )
+    recordImport(env, crid, "device", valid.length, null, operatorUserid, now)
   ];
   for (const name of new Set(valid.map((row) => row.category_name))) {
     if (categoryStatus.has(name)) continue;
@@ -220,12 +242,10 @@ export const importDevices = async (
       ).bind(code, ref, operatorUserid, now, now)
     );
   }
-  statements.push(releaseGuards(env.DB));
   try {
     await runAtomicBatch(env.DB, statements);
   } catch (error) {
-    if (isGuardFailure(error))
-      return { created: await countImported(env, ref), errors: [], opening_doc_no: null };
+    if (isImportReplay(error)) return replayedImport(env, crid);
     if (
       error instanceof Error &&
       error.message.includes("UNIQUE constraint failed: device.device_code")
@@ -270,11 +290,9 @@ export const importMaterials = async (
   operatorUserid: string
 ): Promise<ImportResult> => {
   const crid = requireClientRequestId(input.client_request_id);
-  const replay = await env.DB.prepare("SELECT doc_no FROM wh_doc WHERE client_request_id = ?")
-    .bind(crid)
-    .first<{ doc_no: string }>();
+  const done = await findImport(env, crid);
+  if (done) return done;
   const rows = readRows(input);
-  if (replay) return { created: rows.length, errors: [], opening_doc_no: replay.doc_no };
   const { parsed, errors } = parseRows(rows, parseMaterialRow);
 
   const names = [...new Set(parsed.flatMap((row) => (row ? [String(row.columns.name)] : [])))];
@@ -314,7 +332,11 @@ export const importMaterials = async (
     }))
     .filter((row): row is { code: string; quantity: number } => row.quantity !== null);
 
-  const statements: D1PreparedStatement[] = valid.map((row, index) => {
+  const openingDocNo = openings.length > 0 ? docNo : null;
+  const statements: D1PreparedStatement[] = [
+    recordImport(env, crid, "material", valid.length, openingDocNo, operatorUserid, now)
+  ];
+  const inserts = valid.map((row, index) => {
     const values = {
       ...row.columns,
       material_code: `WZ-${String(firstCode + index).padStart(4, "0")}`,
@@ -328,6 +350,7 @@ export const importMaterials = async (
       `INSERT INTO material (${keys.join(", ")}) VALUES (${inPlaceholders(keys.length)})`
     ).bind(...keys.map((key) => values[key] ?? null));
   });
+  statements.push(...inserts);
   if (openings.length > 0) {
     statements.push(
       env.DB.prepare(
@@ -351,14 +374,12 @@ export const importMaterials = async (
   try {
     await runAtomicBatch(env.DB, statements);
   } catch (error) {
+    if (isImportReplay(error)) return replayedImport(env, crid);
     const message = error instanceof Error ? error.message : "";
-    if (message.includes("UNIQUE constraint failed: wh_doc.client_request_id")) {
-      return { created: valid.length, errors: [], opening_doc_no: docNo };
-    }
     if (message.includes("UNIQUE constraint failed: material")) {
       throw new WarehouseError(409, "物资已被别人先导入或编号冲突，请刷新后重试");
     }
     throw error;
   }
-  return { created: valid.length, errors: [], opening_doc_no: openings.length > 0 ? docNo : null };
+  return { created: valid.length, errors: [], opening_doc_no: openingDocNo };
 };

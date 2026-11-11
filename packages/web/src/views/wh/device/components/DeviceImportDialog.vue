@@ -4,7 +4,7 @@ import { computed, ref, watch } from "vue";
 import { importDevices } from "@/api/wh/device";
 import type { DeviceImportRow, ImportRowError } from "@/api/wh/types";
 import { mapDeviceRows, parseTable } from "../../shared/csv";
-import { newClientRequestId } from "../../shared/ids";
+import { batchRequestId, newClientRequestId } from "../../shared/ids";
 import { useWhAction } from "../../shared/useWhAction";
 
 const visible = defineModel<boolean>({ required: true });
@@ -18,8 +18,12 @@ const text = ref("");
 const errors = ref<ImportRowError[]>([]);
 const done = ref(0);
 
+// 每次打开对话框换一个；同一次打开里同样内容的批次沿用同一个请求号
+let session = newClientRequestId();
+
 watch(visible, open => {
   if (open) {
+    session = newClientRequestId();
     text.value = "";
     errors.value = [];
     done.value = 0;
@@ -39,7 +43,7 @@ const submit = async () => {
   for (let start = 0; start < mapped.rows.length; start += BATCH) {
     const rows: DeviceImportRow[] = mapped.rows.slice(start, start + BATCH);
     const result = await run(() =>
-      importDevices({ client_request_id: newClientRequestId(), rows })
+      importDevices({ client_request_id: batchRequestId(session, rows), rows })
     );
     if (!result) return;
     if (result.data.errors.length > 0) {
