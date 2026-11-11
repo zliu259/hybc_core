@@ -11,6 +11,7 @@ import {
   requireClientRequestId,
   type ParsedDoc
 } from "./doc-input";
+import { createMoveDoc } from "./doc-move";
 import { badRequest } from "./errors";
 import { requireEnum } from "./validation";
 
@@ -66,5 +67,5 @@ export const createWhDoc = async (
   const doc = parseDocInput(input, docType);
   if (docType === "opening" || docType === "inbound")
     return createInbound(env, doc, operatorUserid);
-  throw badRequest("暂不支持这种单据");
+  return createMoveDoc(env, doc, input, operatorUserid);
 };

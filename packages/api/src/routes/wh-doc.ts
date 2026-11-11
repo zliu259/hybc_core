@@ -5,6 +5,7 @@ import { ALL_ROLES, requireHuman, requireKeeper } from "../services/warehouse/ac
 import { createWhDoc } from "../services/warehouse/doc";
 import { getWhDoc, listWhDocs } from "../services/warehouse/doc-query";
 import { WarehouseError } from "../services/warehouse/errors";
+import { getProjectHoldings } from "../services/warehouse/holdings";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
 export const whDocRoutes = new Hono<WhEnv>();
@@ -39,5 +40,14 @@ whDocRoutes.get(
     const doc = await getWhDoc(c.env, pathId(c, "id", "单据"));
     if (!doc) throw new WarehouseError(404, "单据不存在");
     return c.json({ success: true, data: doc });
+  })
+);
+
+whDocRoutes.get(
+  "/project/:projectId/holdings",
+  requireRoles(ALL_ROLES),
+  guarded(async (c) => {
+    const data = await getProjectHoldings(c.env, pathId(c, "projectId", "项目"));
+    return c.json({ success: true, data });
   })
 );
