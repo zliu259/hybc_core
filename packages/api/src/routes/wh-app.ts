@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types/env";
+import { whDeviceRoutes } from "./wh-device";
 import type { WhEnv } from "./wh-http";
 import { whSettingsRoutes } from "./wh-settings";
 
@@ -13,5 +14,6 @@ export const mountWarehouseRoutes = (app: Hono<{ Bindings: Env }>): void => {
   const warehouse = new Hono<WhEnv>();
   warehouse.use("*", authMiddleware);
   warehouse.route("/", whSettingsRoutes);
+  warehouse.route("/", whDeviceRoutes);
   app.route("/api/v1/warehouse", warehouse);
 };
