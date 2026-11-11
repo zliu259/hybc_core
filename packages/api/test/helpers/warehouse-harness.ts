@@ -127,6 +127,59 @@ export const createWarehouseHarness = () => {
         updated_at: now,
         ...overrides
       });
+    },
+    /** 模板加若干行；行只需写和默认值不同的字段。 */
+    kitTemplate(overrides = {}, lines = []) {
+      const now = nowIso();
+      const id = insertRow(database, "kit_template", {
+        name: `模板${next()}`,
+        status: "active",
+        created_by_userid: "seed",
+        created_at: now,
+        updated_at: now,
+        ...overrides
+      });
+      lines.forEach((line, index) =>
+        insertRow(database, "kit_template_line", {
+          template_id: id,
+          section: "顶进设备",
+          sort_order: index,
+          line_kind: "material",
+          default_qty: 1,
+          created_at: now,
+          ...line
+        })
+      );
+      return id;
+    },
+    /** 项目清单，默认已确认；行默认库房发、计划 1。 */
+    kit(overrides = {}, lines = []) {
+      const now = nowIso();
+      const n = next();
+      const id = insertRow(database, "project_kit", {
+        kit_no: `PT-TEST-${String(n).padStart(4, "0")}`,
+        title: `清单${n}`,
+        status: "confirmed",
+        created_by_userid: "seed",
+        confirmed_by_userid: "seed",
+        confirmed_at: now,
+        created_at: now,
+        updated_at: now,
+        ...overrides
+      });
+      lines.forEach((line, index) =>
+        insertRow(database, "project_kit_line", {
+          kit_id: id,
+          section: "顶进设备",
+          sort_order: index,
+          line_kind: "material",
+          planned_qty: 1,
+          source: "warehouse",
+          created_at: now,
+          ...line
+        })
+      );
+      return id;
     }
   };
 
