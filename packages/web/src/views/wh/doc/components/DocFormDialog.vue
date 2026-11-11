@@ -3,6 +3,7 @@ import { computed, onMounted, ref, watch } from "vue";
 
 import { uploadAttachmentFile } from "@/api/upload";
 import { createWhDoc, getProjectHoldings } from "@/api/wh/doc";
+import type { KitFulfilmentLine } from "@/api/wh/kit-types";
 import type { DeviceRow, WhDocResult } from "@/api/wh/types";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { resolveApiErrorMessage } from "@/utils/api-error";
@@ -13,14 +14,27 @@ import {
   buildDocPayload,
   newDocForm,
   prefillBackForm,
+  prefillOutFromKit,
   validateDocForm,
+  type DeviceNeed,
   type DocFormState,
   type DocFormType
 } from "../doc-form-model";
 import DevicePicker from "./DevicePicker.vue";
 import MaterialLineTable from "./MaterialLineTable.vue";
 
-const props = defineProps<{ docType: DocFormType }>();
+const props = defineProps<{
+  docType: DocFormType;
+  /** 按配套清单发货：项目固定，物资按待发预填，设备按类别提示还需几台 */
+  kit?: {
+    id: number;
+    kit_no: string;
+    project_id: number;
+    fulfilment: KitFulfilmentLine[];
+  };
+  /** 打开时预选的项目（项目物资页的"项目返库"） */
+  projectId?: number;
+}>();
 const visible = defineModel<boolean>({ required: true });
 const emit = defineEmits<{ created: [result: WhDocResult] }>();
 
@@ -29,13 +43,31 @@ const { busy, run } = useWhAction();
 const form = ref<DocFormState>(newDocForm(props.docType));
 const uploading = ref(false);
 
-const title = computed(() => DOC_TYPE_LABELS[props.docType]);
+const deviceNeeds = ref<DeviceNeed[]>([]);
+
+const title = computed(() =>
+  props.kit ? `按清单发货 ${props.kit.kit_no}` : DOC_TYPE_LABELS[props.docType]
+);
+/** 某个类别已经加了几台 */
+const pickedOf = (categoryId: number) =>
+  form.value.devices.filter(device => device.category_id === categoryId).length;
 const fromLabel = computed(() =>
   props.docType === "transfer" ? "来源项目" : "项目"
 );
 
 watch(visible, open => {
-  if (open) form.value = newDocForm(props.docType);
+  if (!open) return;
+  if (props.kit) {
+    const prefill = prefillOutFromKit(props.kit, props.kit.fulfilment);
+    form.value = prefill.form;
+    deviceNeeds.value = prefill.deviceNeeds;
+  } else {
+    form.value = {
+      ...newDocForm(props.docType),
+      project_id: props.projectId ?? null
+    };
+    deviceNeeds.value = [];
+  }
 });
 
 watch(
@@ -58,6 +90,7 @@ const addDevice = (device: DeviceRow) => {
       device_id: device.id,
       device_code: device.device_code,
       name: device.name,
+      category_id: device.category_id,
       usage_meters: "",
       soil_type: ""
     }
@@ -123,6 +156,7 @@ onMounted(() => {
         <el-select
           v-model="form.project_id"
           filterable
+          :disabled="Boolean(props.kit)"
           placeholder="选择项目"
           style="width: 320px"
         >
@@ -205,6 +239,21 @@ onMounted(() => {
               </template>
             </el-table-column>
           </el-table>
+          <div v-for="need in deviceNeeds" :key="need.category_id" class="need">
+            <span
+              >{{ need.category_name
+              }}{{ need.spec_text ? ` ${need.spec_text}` : "" }}：还需
+              {{ Math.max(0, need.count - pickedOf(need.category_id)) }}
+              台（可用 {{ need.available }}）</span
+            >
+            <DevicePicker
+              state="available"
+              :category-id="need.category_id"
+              :placeholder="`选一台${need.category_name}`"
+              :exclude-ids="form.devices.map(d => d.device_id)"
+              @pick="addDevice"
+            />
+          </div>
           <DevicePicker
             v-if="props.docType === 'out'"
             state="available"
@@ -254,5 +303,13 @@ onMounted(() => {
 <style scoped>
 .block {
   width: 100%;
+}
+
+.need {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-top: 8px;
+  color: var(--el-color-warning-dark-2);
 }
 </style>

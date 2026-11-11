@@ -95,6 +95,9 @@ const reverse = async () => {
         <el-descriptions-item label="备注" :span="2">{{
           doc.remark ?? "-"
         }}</el-descriptions-item>
+        <el-descriptions-item v-if="doc.kit_no" label="配套清单" :span="2">{{
+          doc.kit_no
+        }}</el-descriptions-item>
         <el-descriptions-item
           v-if="doc.reversed_by_doc_no"
           label="已冲销"

@@ -1,4 +1,5 @@
 import type { Env } from "../types/env";
+import { getProjectLedger } from "./warehouse/project-ledger";
 import { isWeComReadOnlyToolName, type WeComReadOnlyToolName } from "../types/wecom-tools";
 
 type ToolResult = {
@@ -341,6 +342,13 @@ const getProjectRiskSummary = async (
   };
 };
 
+const KIT_STATUS_LABELS = {
+  draft: "草稿",
+  submitted: "待确认",
+  confirmed: "已确认",
+  closed: "已关闭"
+} as const;
+
 const getEquipmentSummary = async (
   env: Env,
   input: Record<string, unknown>
@@ -356,6 +364,15 @@ const getEquipmentSummary = async (
     .bind(projectId)
     .all<{ device_code: string; name: string; category_name: string }>();
   const rows = devices.results ?? [];
+  const kits = await env.DB.prepare(
+    `SELECT kit_no, title, status FROM project_kit
+      WHERE project_id = ? AND NOT (status = 'closed' AND close_reason IS NOT NULL)
+      ORDER BY id ASC`
+  )
+    .bind(projectId)
+    .all<{ kit_no: string; title: string; status: keyof typeof KIT_STATUS_LABELS }>();
+  const kitRows = kits.results ?? [];
+  const settled = kitRows.length > 0 ? (await getProjectLedger(env, projectId)).settled : true;
 
   return {
     project_id: projectId,
@@ -364,6 +381,13 @@ const getEquipmentSummary = async (
       device_code: row.device_code,
       name: row.name,
       category_name: row.category_name
+    })),
+    // 作废的清单（未确认就关掉、写了原因）不列
+    kits: kitRows.map((kit) => ({
+      kit_no: kit.kit_no,
+      title: kit.title,
+      status_label: KIT_STATUS_LABELS[kit.status],
+      settled
     }))
   };
 };

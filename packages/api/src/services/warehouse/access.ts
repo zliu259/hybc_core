@@ -77,6 +77,11 @@ export const requireHuman: WhMiddleware = async (c, next) => {
 };
 
 export const requireKeeper = requireCapability((caps) => caps.is_keeper, "只有库管可以操作");
+/** 建、改、提交、作废配套清单。现场负责人限自己的项目，在 service 里再判断。 */
+export const requireKitCreator = requireCapability(
+  (caps) => caps.can_create_kit,
+  "没有建配套清单的权限"
+);
 export const requireSettingsManager = requireCapability(
   (caps) => caps.can_manage_settings,
   "只有经理或超级管理员可以操作"

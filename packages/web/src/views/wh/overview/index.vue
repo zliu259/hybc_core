@@ -21,6 +21,11 @@ const cards = computed(() => {
   if (!o) return [];
   return [
     {
+      label: "待确认清单",
+      value: o.kits_to_confirm,
+      to: { path: "/wh/kit", query: { status: "submitted" } }
+    },
+    {
       label: "待确认任务",
       value: o.tasks_to_confirm,
       to: { path: "/wh/task", query: { status: "submitted" } }

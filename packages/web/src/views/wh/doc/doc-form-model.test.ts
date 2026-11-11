@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import type { ProjectHoldings } from "@/api/wh/types";
+import type { KitFulfilmentLine } from "@/api/wh/kit-types";
 import {
   buildDocPayload,
   newDocForm,
   prefillBackForm,
+  prefillOutFromKit,
   validateDocForm,
   type DocFormState
 } from "./doc-form-model";
@@ -238,5 +240,145 @@ describe("库房单表单", () => {
     expect(newDocForm("out").client_request_id).not.toBe(
       newDocForm("out").client_request_id
     );
+  });
+});
+
+describe("按清单发货预填", () => {
+  const line = (patch: Partial<KitFulfilmentLine>): KitFulfilmentLine => ({
+    id: 1,
+    sort_order: 0,
+    section: "辅助设备",
+    line_kind: "material",
+    device_category_id: null,
+    material_id: 3,
+    name_text: "排泥钢管",
+    spec_text: null,
+    unit: "米",
+    planned_qty: 100,
+    source: "warehouse",
+    note: null,
+    material_code: "WZ-0003",
+    material_name: "排泥钢管",
+    material_spec: "Φ114",
+    material_unit: "米",
+    material_status: "active",
+    material_kind: "turnover",
+    category_name: null,
+    spec_choices: [],
+    shipped: 20,
+    pending: 80,
+    in_stock: 110,
+    ...patch
+  });
+
+  it("只取库房发、待发大于 0 的物资行；同一物资两行合并；数量默认待发；请求体带清单", () => {
+    const { form, deviceNeeds } = prefillOutFromKit({ id: 9, project_id: 7 }, [
+      line({ id: 1 }),
+      line({ id: 2, pending: 30, shipped: 20 }),
+      line({
+        id: 3,
+        material_id: 4,
+        material_name: "电焊条",
+        material_spec: "J422",
+        material_kind: "consumable",
+        pending: 0
+      }),
+      line({
+        id: 4,
+        material_id: 5,
+        material_name: "集装箱",
+        source: "rental",
+        pending: 0
+      }),
+      line({
+        id: 5,
+        line_kind: "text",
+        material_id: null,
+        name_text: "备忘",
+        pending: 0,
+        in_stock: null
+      })
+    ]);
+    expect(form).toMatchObject({
+      doc_type: "out",
+      project_id: 7,
+      project_kit_id: 9
+    });
+    expect(form.materials).toEqual([
+      {
+        material_id: 3,
+        name: "排泥钢管",
+        spec: "Φ114",
+        unit: "米",
+        kind: "turnover",
+        available: 110,
+        returned: "",
+        lost: "",
+        quantity: "110"
+      }
+    ]);
+    expect(deviceNeeds).toEqual([]);
+    expect(
+      buildDocPayload({
+        ...form,
+        materials: [{ ...form.materials[0], quantity: "80" }]
+      })
+    ).toMatchObject({
+      doc_type: "out",
+      project_id: 7,
+      project_kit_id: 9,
+      material_lines: [{ material_id: 3, quantity: 80 }]
+    });
+  });
+
+  it("设备行不预填具体设备，只按类别给出还需几台", () => {
+    const { form, deviceNeeds } = prefillOutFromKit({ id: 9, project_id: 7 }, [
+      line({
+        id: 1,
+        line_kind: "device",
+        material_id: null,
+        device_category_id: 2,
+        category_name: "顶管机",
+        spec_text: "DN1200",
+        pending: 1,
+        in_stock: 3
+      }),
+      line({
+        id: 2,
+        line_kind: "device",
+        material_id: null,
+        device_category_id: 2,
+        category_name: "顶管机",
+        spec_text: "DN1500",
+        pending: 1,
+        in_stock: 3
+      }),
+      line({
+        id: 3,
+        line_kind: "device",
+        material_id: null,
+        device_category_id: 5,
+        category_name: "发电机",
+        spec_text: null,
+        pending: 0,
+        in_stock: 1
+      })
+    ]);
+    expect(form.devices).toEqual([]);
+    expect(deviceNeeds).toEqual([
+      {
+        category_id: 2,
+        category_name: "顶管机",
+        spec_text: "DN1200、DN1500",
+        count: 2,
+        available: 3
+      }
+    ]);
+  });
+
+  it("没带清单的发货单请求体里没有 project_kit_id", () => {
+    expect(
+      buildDocPayload({ ...newDocForm("out"), project_id: 7 })
+    ).not.toHaveProperty("project_kit_id");
   });
 });

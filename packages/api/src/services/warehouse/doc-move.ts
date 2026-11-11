@@ -138,6 +138,17 @@ const baseLine = (patch: Partial<LineSpec>): LineSpec => ({
   ...patch
 });
 
+/** 按清单发货：清单要属于这个项目并且已确认。 */
+const assertKitShippable = async (env: Env, kitId: number, projectId: number): Promise<void> => {
+  const kit = await env.DB.prepare("SELECT project_id, status FROM project_kit WHERE id = ?")
+    .bind(kitId)
+    .first<{ project_id: number; status: string }>();
+  if (!kit) throw badRequest("配套清单不存在");
+  if (Number(kit.project_id) !== projectId) throw badRequest("配套清单不属于这个项目");
+  if (kit.status === "closed") throw new WarehouseError(409, "配套清单已关闭");
+  if (kit.status !== "confirmed") throw new WarehouseError(409, "配套清单还没确认");
+};
+
 export const createMoveDoc = async (
   env: Env,
   doc: ParsedDoc,
@@ -149,6 +160,7 @@ export const createMoveDoc = async (
   const toProject =
     type === "transfer" ? await requireProjectId(env, input.to_project_id, "目的项目") : null;
   if (toProject !== null && toProject === fromProject) throw badRequest("来源和目的项目不能相同");
+  if (doc.project_kit_id !== null) await assertKitShippable(env, doc.project_kit_id, fromProject);
   const fromName = await projectName(env, fromProject);
   const toName = toProject === null ? "" : await projectName(env, toProject);
 
@@ -215,6 +227,16 @@ export const createMoveDoc = async (
     build: async (now) => {
       const db = env.DB;
       const statements: D1PreparedStatement[] = [];
+      if (doc.project_kit_id !== null) {
+        // 清单在提交途中被关闭或作废时整单回滚
+        statements.push(
+          assertInBatch(
+            db,
+            "SELECT 1 FROM project_kit WHERE id = ? AND project_id = ? AND status = 'confirmed'",
+            [doc.project_kit_id, fromProject]
+          )
+        );
+      }
       for (const device of devices) {
         statements.push(
           type === "out"

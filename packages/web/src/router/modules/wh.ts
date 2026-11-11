@@ -18,6 +18,30 @@ export default {
       meta: { title: "总览" }
     },
     {
+      path: "/wh/kit",
+      name: "WhKit",
+      component: () => import("@/views/wh/kit/index.vue"),
+      meta: { title: "项目配套" }
+    },
+    {
+      path: "/wh/kit/:id",
+      name: "WhKitDetail",
+      component: () => import("@/views/wh/kit/detail.vue"),
+      meta: { title: "配套清单", showLink: false }
+    },
+    {
+      path: "/wh/kit/project/:projectId",
+      name: "WhKitProjectLedger",
+      component: () => import("@/views/wh/kit/project-ledger.vue"),
+      meta: { title: "项目物资", showLink: false }
+    },
+    {
+      path: "/wh/kit-template",
+      name: "WhKitTemplate",
+      component: () => import("@/views/wh/kit/template.vue"),
+      meta: { title: "配套模板", showLink: false }
+    },
+    {
       path: "/wh/device",
       name: "WhDevice",
       component: () => import("@/views/wh/device/index.vue"),

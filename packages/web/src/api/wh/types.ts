@@ -138,6 +138,9 @@ export interface WhDocRow {
   photo_keys_json: string | null;
   reverses_doc_id: number | null;
   reversed_by_doc_no: string | null;
+  /** 按配套清单发货时的清单 */
+  project_kit_id: number | null;
+  kit_no: string | null;
   operator_userid: string;
   occurred_at: string;
   line_count: number;
@@ -178,6 +181,8 @@ export interface CreateWhDocInput {
   client_request_id: string;
   project_id?: number;
   to_project_id?: number;
+  /** 只有发往项目的单能带 */
+  project_kit_id?: number;
   counterparty?: string;
   handover_name?: string;
   remark?: string;
@@ -251,6 +256,8 @@ export interface WarehouseOverview {
   devices_repairing: number;
   devices_on_project: number;
   low_stock_count: number;
+  /** 已提交、等库管确认的配套清单数 */
+  kits_to_confirm: number;
   recent_docs: WhDocRow[];
 }
 

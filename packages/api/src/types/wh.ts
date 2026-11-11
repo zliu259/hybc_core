@@ -168,3 +168,73 @@ export interface WhTaskPhoto {
   created_at: string;
   deleted_at: string | null;
 }
+
+// ─── 配套清单（阶段 2）──────────
+
+export type KitLineKind = "device" | "material" | "text";
+export type KitLineSource = "warehouse" | "site_purchase" | "rental" | "on_site";
+export type ProjectKitStatus = "draft" | "submitted" | "confirmed" | "closed";
+
+export interface KitTemplate {
+  id: number;
+  name: string;
+  machine_type: string | null;
+  remark: string | null;
+  status: "active" | "disabled";
+  version: number;
+  created_by_userid: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface KitTemplateLine {
+  id: number;
+  template_id: number;
+  section: string;
+  sort_order: number;
+  line_kind: KitLineKind;
+  device_category_id: number | null;
+  name_text: string;
+  spec_text: string | null;
+  unit: string | null;
+  default_qty: number | null;
+  note: string | null;
+}
+
+export interface ProjectKit {
+  id: number;
+  kit_no: string;
+  project_id: number;
+  title: string;
+  template_id: number | null;
+  copied_from_kit_id: number | null;
+  status: ProjectKitStatus;
+  remark: string | null;
+  created_by_userid: string;
+  submitted_by_userid: string | null;
+  submitted_at: string | null;
+  confirmed_by_userid: string | null;
+  confirmed_at: string | null;
+  closed_by_userid: string | null;
+  closed_at: string | null;
+  close_reason: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectKitLine {
+  id: number;
+  kit_id: number;
+  section: string;
+  sort_order: number;
+  line_kind: KitLineKind;
+  device_category_id: number | null;
+  material_id: number | null;
+  name_text: string;
+  spec_text: string | null;
+  unit: string | null;
+  planned_qty: number;
+  source: KitLineSource;
+  note: string | null;
+}

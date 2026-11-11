@@ -103,6 +103,7 @@
   - 库房单：`packages/web/src/views/wh/doc/index.vue`
   - 任务：`packages/web/src/views/wh/task/index.vue`
   - 设置：`packages/web/src/views/wh/settings/index.vue`（隐藏路由，从总览进入）
+  - 项目配套：`packages/web/src/views/wh/kit/index.vue`；清单详情 `kit/detail.vue`（`/wh/kit/:id`）、项目物资 `kit/project-ledger.vue`（`/wh/kit/project/:projectId`）、配套模板 `kit/template.vue`（`/wh/kit-template`），后三个是隐藏路由
 - 项目设备视图：`packages/web/src/views/project/equipment-view.vue`（只读，显示项目上现有的设备和物资）
 - 项目工作区项目群绑定：`packages/web/src/views/project/workspace/components/wecom-tool-binding-panel.vue`
   - 作为独立 Tab 嵌入 `packages/web/src/views/project/workspace/index.vue`，Tab 名称为“项目群绑定”。
@@ -479,7 +480,7 @@
 
 #### J. 库房（2026-11 重做）
 
-设计稿：`docs/superpowers/specs/2026-11-11-warehouse-rebuild-design.md`。菜单「库房」下五个页面：总览、设备、物资、库房单、任务；设置和设备详情是隐藏路由。旧的资产台账、仓库、调度看板、工单中心、组合方案、手册库、盘库等页面在阶段 1 一起下线。
+设计稿：`docs/superpowers/specs/2026-11-11-warehouse-rebuild-design.md`。菜单「库房」下六个页面：总览、项目配套、设备、物资、库房单、任务；设置、设备详情、清单详情、项目物资、配套模板是隐藏路由。旧的资产台账、仓库、调度看板、工单中心、组合方案、手册库、盘库等页面在阶段 1 一起下线。
 
 通用规则：
 
@@ -491,7 +492,7 @@
 
 ##### J-1. 总览 `views/wh/overview/index.vue`
 
-- 卡片：待确认任务、待派工任务、超期任务、待检设备、维修中设备、在项目设备、低库存物资。点卡片进对应的筛选列表（待派工 → `/wh/task?status=unassigned`，低库存 → `/wh/material?low_stock=1`）。
+- 卡片：待确认清单、待确认任务、待派工任务、超期任务、待检设备、维修中设备、在项目设备、低库存物资。点卡片进对应的筛选列表（待确认清单 → `/wh/kit?status=submitted`，待派工 → `/wh/task?status=unassigned`，低库存 → `/wh/material?low_stock=1`）。
 - 最近的库房单；还没设库管时顶部提示。右上角「设置」。
 - API：`GET /api/v1/warehouse/overview`
 
@@ -536,12 +537,28 @@
 - 检查不合格在完成时自动生成「维修：<设备名>」任务（挡住发出，待派工），设备显示维修中；维修完成后设备回到可用，维修记录进设备详情。
 - API：`/api/v1/warehouse/task`（`scope`、`status`、`assigned=yes|no` 筛选）、`/task/:id`、`/task/:id/assign`、`/photo`、`/submit`、`/confirm`、`/send-back`、`/cancel`
 
-##### J-7. 项目设备视图 `views/project/equipment-view.vue`、`workspace/equipment-panel.vue`
+##### J-7. 项目配套（阶段 2）`views/wh/kit/*`
+
+现有那张「设备出入库登记表」的系统版。清单只记计划，已发、已退、报损、在场都从库房单算出来。
+
+- **清单列表** `kit/index.vue`：按状态页签（草稿、待确认、已确认、已关闭）、项目、关键字筛选；列为清单号（`PT-`）、项目、标题、模板、行数、状态、更新时间。能建清单的人看到「新建清单」，库管另有「配套模板」。
+- **新建**：选项目（只是现场负责人时只列自己负责的项目）、标题；三选一：选模板 / 复制已有清单（可以是别的项目的）/ 空白。从模板生成时，物资行按品名找物资：模板写了规格就选同规格的，同品名只有一种规格就直接选上，否则显示「待选规格」。
+- **清单详情** `kit/detail.vue`：抬头（项目、标题、来源、创建/提交/确认人和时间、备注、作废原因）；行表格可改分节、类型、品名和规格（物资行是同品名规格的下拉，也能搜别的物资）、设备类别、单位、计划、来源（库房发、现场采购、租赁、现场已有）、备注，可加行删行。
+  - 提交前把还没选规格的行标红并滚到第一行；提交时先保存再提交。库管提交直接确认，其他人提交后等库管确认。
+  - 未确认的可以「作废」（必须写原因）；已确认的不能再改，要追加就新建一份清单。
+  - 已确认后表格多「已发、待发、在库」三列：一个项目多份清单时，已发数按确认先后依次分给各行。库管看到「按清单发货」和「关闭清单」（项目没结清时关闭会被拒绝，并说明还有几台设备、几种周转件在场）。
+- **按清单发货**：打开发货单，项目固定；物资行按待发数预填（同一物资几行合并）；设备区按类别提示「顶管机 DN1200：还需 1 台（可用 3）」，旁边的选择器只列这个类别里可用的设备；清单外的东西也能加。单据详情显示配套清单号。
+- **项目物资** `kit/project-ledger.vue`：顶部显示「已结清」或「未结清（N 台设备、M 种周转件在场）」；物资表列为分节、编号、品名和规格、单位、管法、计划、已发、转出、已退、报损、在场、首次出库、最后退库、报损金额（报损数 × 单价，没单价显示「-」），下面是报损金额合计；设备类别表（计划、已发、在场）和在场设备；本项目的清单列表，结清后库管可以在这里关闭。「项目返库」打开返库单并带出在场清单。
+- **配套模板** `kit/template.vue`：模板列表（名称、机型、行数、在用/停用）；点开编辑抬头和行，保存带版本号（别人先改了提示「数据已变化」）；「粘贴导入」从 Excel 粘贴整张表（列：分节、类型、品名、规格、单位、默认数量、设备类别、备注），类型认 设备/按台、物资/周转/消耗、备忘，设备类别必须先在设置里建好，有错的行逐行列出、整批不进表格。只有库管能改。
+- 权限：看清单所有人都能看；建、改、提交、作废：库管、经理、现场负责人（只限自己负责的项目）；确认、关闭、按清单发货、维护模板：库管。
+- API：`/api/v1/warehouse/kit-template`、`/kit`、`/kit/:id`、`/kit/:id/submit`、`/confirm`、`/discard`、`/close`、`/kit/:id/fulfilment`、`/project/:projectId/ledger`；发货单 `POST /api/v1/warehouse/doc` 可带 `project_kit_id`
+
+##### J-8. 项目设备视图 `views/project/equipment-view.vue`、`workspace/equipment-panel.vue`
 
 - 显示这个项目上现在有的设备和物资（来自库房单的累计），只读。
 - API：`GET /api/v1/warehouse/project/:projectId/holdings`
 
-##### J-8. 旧接口占位
+##### J-9. 旧接口占位
 
 已发布的小程序和 MCP 还在调旧路径。阶段 3 换掉小程序库房页之前：旧的列表接口返回空数组，其他旧路径返回「库房功能已升级，请使用新版页面」；`/warehouse/inventory` 和 `/warehouse/inventory/alert` 由新物资表接管。已发布的小程序库房页会显示空数据。
 

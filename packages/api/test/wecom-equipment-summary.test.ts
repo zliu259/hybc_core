@@ -45,7 +45,27 @@ describe.skipIf(!hasSqlite)("get_equipment_summary", () => {
       devices: [
         { device_code: "SB-0001", name: "唐兴 NSPD1200", category_name: "顶管机" },
         { device_code: "SB-0002", name: "泥浆泵", category_name: "顶管机" }
-      ]
+      ],
+      kits: []
     });
+  });
+
+  it("带上项目的配套清单（不含作废的），以及项目是否已结清", async () => {
+    const h = createWarehouseHarness();
+    const projectId = h.seed.project("临河 DN1200");
+    h.seed.kit({ project_id: projectId, kit_no: "PT-20261111-0001", title: "主清单" });
+    h.seed.kit({
+      project_id: projectId,
+      kit_no: "PT-20261111-0002",
+      title: "建错了",
+      status: "closed",
+      close_reason: "建错项目"
+    });
+    const result = await callWeComProjectTool(h.env, "get_equipment_summary", {
+      project_id: projectId
+    });
+    expect(result.data.kits).toEqual([
+      { kit_no: "PT-20261111-0001", title: "主清单", status_label: "已确认", settled: true }
+    ]);
   });
 });
