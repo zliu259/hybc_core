@@ -9,6 +9,7 @@ import {
   kitLineProblems,
   mapTemplateRows,
   newEditableLine,
+  saveThen,
   toKitLines,
   toTemplateLines
 } from "./kit-view";
@@ -306,5 +307,56 @@ describe("表格行和接口行互转", () => {
         note: "本地租"
       }
     ]);
+  });
+});
+
+describe("先保存再提交或确认", () => {
+  it("表格能改时先保存，保存成功才做下一步", async () => {
+    const calls: string[] = [];
+    const result = await saveThen(
+      true,
+      async () => {
+        calls.push("save");
+        return true;
+      },
+      async () => {
+        calls.push("confirm");
+        return "ok";
+      }
+    );
+    expect(calls).toEqual(["save", "confirm"]);
+    expect(result).toBe("ok");
+  });
+
+  it("保存失败就停下，不确认", async () => {
+    const calls: string[] = [];
+    const result = await saveThen(
+      true,
+      async () => {
+        calls.push("save");
+        return false;
+      },
+      async () => {
+        calls.push("confirm");
+        return "ok";
+      }
+    );
+    expect(calls).toEqual(["save"]);
+    expect(result).toBeUndefined();
+  });
+
+  it("不能改时直接做下一步", async () => {
+    const calls: string[] = [];
+    await saveThen(
+      false,
+      async () => {
+        calls.push("save");
+        return true;
+      },
+      async () => {
+        calls.push("confirm");
+      }
+    );
+    expect(calls).toEqual(["confirm"]);
   });
 });

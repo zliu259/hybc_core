@@ -294,3 +294,16 @@ export const toKitLines = (rows: readonly EditableKitLine[]): KitLineInput[] =>
     source: row.source,
     note: nullable(row.note)
   }));
+
+/**
+ * 表格能改时先保存，保存成功再做下一步（提交、确认）；保存失败就停下。
+ * 这样库管在待确认的清单上改了数量再点确认，改动不会被丢掉。
+ */
+export const saveThen = async <T>(
+  editable: boolean,
+  save: () => Promise<boolean>,
+  next: () => Promise<T>
+): Promise<T | undefined> => {
+  if (editable && !(await save())) return undefined;
+  return next();
+};

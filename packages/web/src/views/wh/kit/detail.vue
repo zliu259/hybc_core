@@ -28,6 +28,7 @@ import {
   kitActions,
   kitLineProblems,
   KIT_STATUS_LABELS,
+  saveThen,
   KIT_STATUS_TAG,
   toKitLines,
   type EditableKitLine
@@ -142,19 +143,33 @@ const scrollToProblem = async () => {
     ?.scrollIntoView({ block: "center", behavior: "smooth" });
 };
 
-const submit = async () => {
-  if (!kit.value) return;
-  triedSubmit.value = true;
-  if (problems.value.length > 0) {
-    message(`有 ${problems.value.length} 行要先处理`, { type: "warning" });
-    await scrollToProblem();
-    return;
-  }
+/** 把表格里的改动存下；成功后 kit 已重新加载，版本号是新的。 */
+const saveTable = async (): Promise<boolean> => {
+  if (!kit.value) return false;
   const { id, version } = kit.value;
+  return (
+    (await act(() => updateKit(id, { version, ...payload() }))) !== undefined
+  );
+};
+
+/** 提交和确认前先查行：有没选规格等问题就标红并停下。 */
+const blockedByProblems = async (): Promise<boolean> => {
+  triedSubmit.value = true;
+  if (problems.value.length === 0) return false;
+  message(`有 ${problems.value.length} 行要先处理`, { type: "warning" });
+  await scrollToProblem();
+  return true;
+};
+
+const submit = async () => {
+  if (!kit.value || (await blockedByProblems())) return;
+  const id = kit.value.id;
   // 先把表格里的改动存下，再用新版本号提交
-  const saved = await act(() => updateKit(id, { version, ...payload() }));
-  if (!saved || !kit.value) return;
-  const result = await act(() => submitKit(id, kit.value!.version));
+  const result = await saveThen(
+    Boolean(actions.value?.canEdit),
+    saveTable,
+    () => act(() => submitKit(id, kit.value!.version))
+  );
   if (result)
     message(
       result.data.status === "confirmed"
@@ -166,10 +181,15 @@ const submit = async () => {
     );
 };
 
-const confirm = () => {
+const confirm = async () => {
   if (!kit.value) return;
-  const { id, version } = kit.value;
-  void act(() => confirmKit(id, version), "清单已确认");
+  const editable = Boolean(actions.value?.canEdit);
+  if (editable && (await blockedByProblems())) return;
+  const id = kit.value.id;
+  // 库管在待确认的清单上改过数量再点确认：先保存，改动不会被丢掉
+  await saveThen(editable, saveTable, () =>
+    act(() => confirmKit(id, kit.value!.version), "清单已确认")
+  );
 };
 
 const discard = async () => {
