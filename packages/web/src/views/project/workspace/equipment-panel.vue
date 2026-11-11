@@ -1,49 +1,27 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
-import { statusLabel } from "@/utils/enum-labels";
-import { getAssetProjectView } from "@/api/asset";
+import { useRouter } from "vue-router";
+
+import { getProjectHoldings } from "@/api/wh/doc";
+import type { ProjectHoldings } from "@/api/wh/types";
+import { DEVICE_STATE_TAG } from "@/views/wh/shared/labels";
+import { resolveApiErrorMessage } from "@/utils/api-error";
 
 const props = defineProps<{ projectId: number }>();
+const router = useRouter();
 
 const loading = ref(false);
-const trackedAssets = ref<Array<Record<string, unknown>>>([]);
-const consumptions = ref<Array<Record<string, unknown>>>([]);
-const rentalAlert = ref({ active_count: 0, overdue_count: 0 });
-const assetDetailDrawerVisible = ref(false);
-const currentAsset = ref<Record<string, unknown> | null>(null);
-
-const openAssetDetail = (row: Record<string, unknown>) => {
-  currentAsset.value = row;
-  assetDetailDrawerVisible.value = true;
-};
+const loadError = ref("");
+const holdings = ref<ProjectHoldings>({ devices: [], materials: [] });
 
 const loadData = async () => {
   if (!props.projectId) return;
   loading.value = true;
+  loadError.value = "";
   try {
-    const result = await getAssetProjectView(props.projectId);
-    trackedAssets.value =
-      (result.data.tracked_assets as Array<Record<string, unknown>>) ?? [];
-    consumptions.value =
-      (result.data.consumptions as Array<Record<string, unknown>>) ?? [];
-    rentalAlert.value =
-      (
-        result.data.rental_alert as {
-          active_count?: number;
-          overdue_count?: number;
-        }
-      )?.active_count !== undefined
-        ? {
-            active_count: Number(
-              (result.data.rental_alert as { active_count?: number })
-                .active_count ?? 0
-            ),
-            overdue_count: Number(
-              (result.data.rental_alert as { overdue_count?: number })
-                .overdue_count ?? 0
-            )
-          }
-        : { active_count: 0, overdue_count: 0 };
+    holdings.value = (await getProjectHoldings(props.projectId)).data;
+  } catch (error) {
+    loadError.value = resolveApiErrorMessage(error, "在场设备加载失败");
   } finally {
     loading.value = false;
   }
@@ -62,80 +40,37 @@ onMounted(loadData);
 <template>
   <div v-loading="loading" class="equipment-panel">
     <el-alert
-      v-if="rentalAlert.active_count > 0"
-      style="margin-bottom: 12px"
-      :type="rentalAlert.overdue_count > 0 ? 'error' : 'info'"
-      :title="
-        rentalAlert.overdue_count > 0
-          ? `存在 ${rentalAlert.overdue_count} 台逾期租赁设备（共 ${rentalAlert.active_count} 台租赁设备）`
-          : `当前有 ${rentalAlert.active_count} 台租赁设备`
-      "
+      v-if="loadError"
+      :title="loadError"
+      type="error"
       show-icon
+      :closable="false"
     />
     <el-row :gutter="16">
       <el-col :md="14" :xs="24">
         <el-card shadow="never">
-          <template #header>
-            <span class="sec-title">项目设备列表</span>
-          </template>
-          <el-table :data="trackedAssets">
-            <template #empty>
-              <el-empty description="暂无设备" :image-size="48" />
-            </template>
-            <el-table-column prop="asset_code" label="资产编码" width="160" />
-            <el-table-column
-              prop="asset_name"
-              label="资产名称"
-              min-width="140"
-            />
-            <el-table-column label="状态" width="100">
-              <template #default="scope">{{
-                statusLabel(scope.row.status)
-              }}</template>
-            </el-table-column>
-            <el-table-column label="租赁" width="120">
-              <template #default="scope">
-                <el-tag
-                  v-if="scope.row.rental_mode"
-                  :type="
-                    scope.row.rental_mode === 'lease_in' ? 'warning' : 'primary'
-                  "
-                  size="small"
-                >
-                  {{ scope.row.rental_mode === "lease_in" ? "租入" : "外租" }}
-                </el-tag>
-                <span v-else>-</span>
-              </template>
-            </el-table-column>
-            <el-table-column label="到期/逾期" min-width="160">
-              <template #default="scope">
-                <span>
-                  {{ scope.row.rental_due_date || "-" }}
-                  <el-tag
-                    v-if="Number(scope.row.rental_overdue_days || 0) > 0"
-                    type="danger"
-                    size="small"
-                    style="margin-left: 6px"
-                  >
-                    逾期{{ scope.row.rental_overdue_days }}天
-                  </el-tag>
-                </span>
-              </template>
-            </el-table-column>
-            <el-table-column
-              prop="current_location"
-              label="位置"
-              min-width="120"
-            />
-            <el-table-column label="操作" width="90" fixed="right">
-              <template #default="scope">
-                <el-button
-                  link
+          <template #header><span class="sec-title">在场设备</span></template>
+          <el-table
+            :data="holdings.devices"
+            size="small"
+            empty-text="这个项目上没有设备"
+          >
+            <el-table-column prop="device_code" label="编号" width="110" />
+            <el-table-column label="名称" min-width="160">
+              <template #default="{ row }">
+                <el-link
                   type="primary"
-                  @click="openAssetDetail(scope.row)"
+                  @click="router.push(`/wh/device/${row.id}`)"
+                  >{{ row.name }}</el-link
                 >
-                  详情
-                </el-button>
+              </template>
+            </el-table-column>
+            <el-table-column prop="category_name" label="类别" width="100" />
+            <el-table-column label="状态" width="90">
+              <template #default="{ row }">
+                <el-tag :type="DEVICE_STATE_TAG[row.state]" size="small">{{
+                  row.state_label
+                }}</el-tag>
               </template>
             </el-table-column>
           </el-table>
@@ -143,83 +78,28 @@ onMounted(loadData);
       </el-col>
       <el-col :md="10" :xs="24">
         <el-card shadow="never">
-          <template #header>
-            <span class="sec-title">物资消耗</span>
-          </template>
-          <el-table :data="consumptions">
-            <template #empty>
-              <el-empty description="暂无消耗记录" :image-size="48" />
-            </template>
-            <el-table-column prop="type_name" label="类型" min-width="120" />
-            <el-table-column
-              prop="total_qty"
-              label="总消耗"
-              width="110"
-              align="right"
-            />
+          <template #header><span class="sec-title">在场周转件</span></template>
+          <el-table
+            :data="holdings.materials"
+            size="small"
+            empty-text="这个项目名下没有周转件"
+          >
+            <el-table-column prop="name" label="品名" min-width="100" />
+            <el-table-column prop="spec" label="规格" min-width="90" />
+            <el-table-column label="数量" width="90" align="right">
+              <template #default="{ row }"
+                >{{ row.holding }} {{ row.unit }}</template
+              >
+            </el-table-column>
           </el-table>
         </el-card>
       </el-col>
     </el-row>
-
-    <el-drawer
-      v-model="assetDetailDrawerVisible"
-      title="设备详情"
-      size="520px"
-      destroy-on-close
-    >
-      <el-descriptions :column="1" border>
-        <el-descriptions-item label="资产编码">
-          {{ currentAsset?.asset_code || "-" }}
-        </el-descriptions-item>
-        <el-descriptions-item label="资产名称">
-          {{ currentAsset?.asset_name || "-" }}
-        </el-descriptions-item>
-        <el-descriptions-item label="状态">
-          {{
-            currentAsset?.status
-              ? statusLabel(currentAsset.status as string)
-              : "-"
-          }}
-        </el-descriptions-item>
-        <el-descriptions-item label="当前位置">
-          {{ currentAsset?.current_location || "-" }}
-        </el-descriptions-item>
-        <el-descriptions-item label="租赁模式">
-          {{
-            currentAsset?.rental_mode
-              ? currentAsset?.rental_mode === "lease_in"
-                ? "租入"
-                : "外租"
-              : "-"
-          }}
-        </el-descriptions-item>
-        <el-descriptions-item label="到期日">
-          {{ currentAsset?.rental_due_date || "-" }}
-        </el-descriptions-item>
-        <el-descriptions-item label="逾期天数">
-          {{ currentAsset?.rental_overdue_days || 0 }}
-        </el-descriptions-item>
-        <el-descriptions-item label="最近更新时间">
-          {{ currentAsset?.updated_at || "-" }}
-        </el-descriptions-item>
-      </el-descriptions>
-    </el-drawer>
   </div>
 </template>
 
 <style scoped>
-.equipment-panel {
-  min-height: 200px;
-}
-
 .sec-title {
-  padding-left: 8px;
-  font-size: 13px;
-  font-weight: 700;
-  line-height: 1;
-  color: #6b4f2a;
-  letter-spacing: 0.06em;
-  border-left: 3px solid #c9a35c;
+  font-weight: 600;
 }
 </style>

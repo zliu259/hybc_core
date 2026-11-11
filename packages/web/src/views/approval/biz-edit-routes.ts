@@ -35,12 +35,6 @@ export const resolveBizEditRoute = (
   if (bizType === "invoice_request") {
     return resolveInvoiceListRoute(bizSummary);
   }
-  if (bizType === "stock_order") {
-    return "/warehouse/stock-order";
-  }
-  if (bizType === "warehouse_asset_work_order") {
-    return "/warehouse-assets/work-order";
-  }
   return null;
 };
 
