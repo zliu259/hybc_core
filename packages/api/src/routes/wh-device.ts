@@ -18,6 +18,7 @@ import {
 } from "../services/warehouse/device";
 import { scrapDevice, unscrapDevice } from "../services/warehouse/doc-scrap";
 import { WarehouseError } from "../services/warehouse/errors";
+import { importDevices } from "../services/warehouse/import";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
 export const whDeviceRoutes = new Hono<WhEnv>();
@@ -113,4 +114,16 @@ whDeviceRoutes.post(
     );
     return c.json({ success: true, data }, data.replayed ? 200 : 201);
   })
+);
+
+whDeviceRoutes.post(
+  "/device/import",
+  requireHuman,
+  requireKeeper,
+  guarded(async (c) =>
+    c.json({
+      success: true,
+      data: await importDevices(c.env, await readJsonBody(c), c.get("auth").sub)
+    })
+  )
 );

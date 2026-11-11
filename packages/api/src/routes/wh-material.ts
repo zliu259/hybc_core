@@ -4,6 +4,7 @@ import { requireRoles } from "../middleware/rbac";
 import { ALL_ROLES, requireHuman, requireKeeper } from "../services/warehouse/access";
 import { getMaterialLedger } from "../services/warehouse/doc-query";
 import { WarehouseError } from "../services/warehouse/errors";
+import { importMaterials } from "../services/warehouse/import";
 import {
   createMaterial,
   getMaterial,
@@ -80,4 +81,16 @@ whMaterialRoutes.get(
       pagination: { page: result.page, pageSize: result.pageSize, total: result.total }
     });
   })
+);
+
+whMaterialRoutes.post(
+  "/material/import",
+  requireHuman,
+  requireKeeper,
+  guarded(async (c) =>
+    c.json({
+      success: true,
+      data: await importMaterials(c.env, await readJsonBody(c), c.get("auth").sub)
+    })
+  )
 );
