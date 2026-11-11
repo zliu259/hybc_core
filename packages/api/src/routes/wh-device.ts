@@ -1,7 +1,13 @@
 import { Hono } from "hono";
 
 import { requireRoles } from "../middleware/rbac";
-import { ALL_ROLES, requireHuman, requireKeeper } from "../services/warehouse/access";
+import {
+  ALL_ROLES,
+  requireHuman,
+  requireKeeper,
+  requireScrap,
+  requireUnscrap
+} from "../services/warehouse/access";
 import {
   addDeviceNote,
   createDevice,
@@ -10,6 +16,7 @@ import {
   listDevices,
   updateDevice
 } from "../services/warehouse/device";
+import { scrapDevice, unscrapDevice } from "../services/warehouse/doc-scrap";
 import { WarehouseError } from "../services/warehouse/errors";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
@@ -75,5 +82,35 @@ whDeviceRoutes.post(
   guarded(async (c) => {
     await addDeviceNote(c.env, pathId(c, "id", "设备"), await readJsonBody(c), c.get("auth").sub);
     return c.json({ success: true }, 201);
+  })
+);
+
+whDeviceRoutes.post(
+  "/device/:id/scrap",
+  requireHuman,
+  requireScrap,
+  guarded(async (c) => {
+    const data = await scrapDevice(
+      c.env,
+      pathId(c, "id", "设备"),
+      await readJsonBody(c),
+      c.get("auth").sub
+    );
+    return c.json({ success: true, data }, data.replayed ? 200 : 201);
+  })
+);
+
+whDeviceRoutes.post(
+  "/device/:id/unscrap",
+  requireHuman,
+  requireUnscrap,
+  guarded(async (c) => {
+    const data = await unscrapDevice(
+      c.env,
+      pathId(c, "id", "设备"),
+      await readJsonBody(c),
+      c.get("auth").sub
+    );
+    return c.json({ success: true, data }, data.replayed ? 200 : 201);
   })
 );

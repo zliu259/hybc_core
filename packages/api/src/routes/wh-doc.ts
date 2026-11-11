@@ -4,6 +4,7 @@ import { requireRoles } from "../middleware/rbac";
 import { ALL_ROLES, requireHuman, requireKeeper } from "../services/warehouse/access";
 import { createWhDoc } from "../services/warehouse/doc";
 import { getWhDoc, listWhDocs } from "../services/warehouse/doc-query";
+import { reverseWhDoc } from "../services/warehouse/doc-reverse";
 import { WarehouseError } from "../services/warehouse/errors";
 import { getProjectHoldings } from "../services/warehouse/holdings";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
@@ -49,5 +50,20 @@ whDocRoutes.get(
   guarded(async (c) => {
     const data = await getProjectHoldings(c.env, pathId(c, "projectId", "项目"));
     return c.json({ success: true, data });
+  })
+);
+
+whDocRoutes.post(
+  "/doc/:id/reverse",
+  requireHuman,
+  requireKeeper,
+  guarded(async (c) => {
+    const data = await reverseWhDoc(
+      c.env,
+      pathId(c, "id", "单据"),
+      await readJsonBody(c),
+      c.get("auth").sub
+    );
+    return c.json({ success: true, data }, data.replayed ? 200 : 201);
   })
 );
