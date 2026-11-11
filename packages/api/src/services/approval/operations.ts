@@ -204,12 +204,13 @@ export const returnToInitiator = async (
     .bind(now, task.instance_id)
     .run();
 
-  // Revert the business record status to draft so initiator can edit and resubmit
+  // Revert the business record status to draft so initiator can edit and resubmit.
+  // 已删除的单据不回写，否则会被改回草稿重新出现。
   const instance = await loadInstance(env, task.instance_id);
   const bizTable = BIZ_TYPE_TABLE_MAP[instance.biz_type];
   if (bizTable) {
     await env.DB.prepare(
-      `UPDATE ${bizTable} SET status = 'draft', updated_at = ? WHERE id = ?`
+      `UPDATE ${bizTable} SET status = 'draft', updated_at = ? WHERE id = ? AND status != 'deleted'`
     )
       .bind(now, instance.biz_id)
       .run();

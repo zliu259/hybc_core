@@ -32,15 +32,20 @@ const handleApprovalApproved = async (env: Env, instanceId: number): Promise<voi
   const context = await getApprovalBizContext(env, instanceId);
   if (!context) return;
 
+  // 合同的回写都带 status != 'deleted'：已删除的合同不能被审批结果改回可见状态（SP-20261013-0005）
   if (context.biz_type === "outbound_contract") {
-    await env.DB.prepare("UPDATE contract SET status = 'active', updated_at = ? WHERE id = ?")
+    await env.DB.prepare(
+      "UPDATE contract SET status = 'active', updated_at = ? WHERE id = ? AND status != 'deleted'"
+    )
       .bind(nowIso(), context.biz_id)
       .run();
     return;
   }
 
   if (context.biz_type === "inbound_contract") {
-    await env.DB.prepare("UPDATE contract SET status = 'active', updated_at = ? WHERE id = ?")
+    await env.DB.prepare(
+      "UPDATE contract SET status = 'active', updated_at = ? WHERE id = ? AND status != 'deleted'"
+    )
       .bind(nowIso(), context.biz_id)
       .run();
     return;
@@ -107,14 +112,18 @@ const handleApprovalRejected = async (env: Env, instanceId: number): Promise<voi
   if (!context) return;
 
   if (context.biz_type === "outbound_contract") {
-    await env.DB.prepare("UPDATE contract SET status = 'draft', updated_at = ? WHERE id = ?")
+    await env.DB.prepare(
+      "UPDATE contract SET status = 'draft', updated_at = ? WHERE id = ? AND status != 'deleted'"
+    )
       .bind(nowIso(), context.biz_id)
       .run();
     return;
   }
 
   if (context.biz_type === "inbound_contract") {
-    await env.DB.prepare("UPDATE contract SET status = 'draft', updated_at = ? WHERE id = ?")
+    await env.DB.prepare(
+      "UPDATE contract SET status = 'draft', updated_at = ? WHERE id = ? AND status != 'deleted'"
+    )
       .bind(nowIso(), context.biz_id)
       .run();
     return;
