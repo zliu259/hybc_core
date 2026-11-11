@@ -622,20 +622,6 @@ systemRoutes.post("/automation/weekly-log-summary", apiKeyMiddleware, async (c) 
   return c.json({ success: true, data: { task_id: task.id } }, 201);
 });
 
-systemRoutes.get("/automation/inventory-alert-notify", apiKeyMiddleware, async (c) => {
-  const rows = await c.env.DB.prepare(
-    `SELECT i.id, i.warehouse_id, i.asset_type_id, i.quantity,
-            w.warehouse_name, at.type_name,
-            COALESCE(i.min_stock, at.min_stock, 0) as threshold
-     FROM inventory i
-     JOIN warehouse w ON w.id = i.warehouse_id
-     JOIN asset_type at ON at.id = i.asset_type_id
-     WHERE i.status = 'active' AND i.quantity < COALESCE(i.min_stock, at.min_stock, 0)
-     ORDER BY i.quantity ASC`
-  ).all();
-  return c.json({ success: true, data: rows.results ?? [] });
-});
-
 systemRoutes.post("/automation/cron/run", apiKeyMiddleware, async (c) => {
   const body = (await c.req.json().catch(() => ({}))) as { job?: string };
   const job = body.job ?? "all";

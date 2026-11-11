@@ -35,26 +35,6 @@ const withdrawAiGateTasks = async (
   }
 };
 
-const WITHDRAW_CANCEL_RESET_BIZ_TYPES = new Set<string>([
-  "stock_order",
-  "warehouse_asset_work_order"
-]);
-
-const resetBizRecordToDraftIfNeeded = async (
-  env: Env,
-  instance: ApprovalInstance,
-  now: string
-): Promise<void> => {
-  if (!WITHDRAW_CANCEL_RESET_BIZ_TYPES.has(instance.biz_type)) return;
-  const bizTable = BIZ_TYPE_TABLE_MAP[instance.biz_type];
-  if (!bizTable) return;
-  await env.DB.prepare(
-    `UPDATE ${bizTable} SET status = 'draft', updated_at = ? WHERE id = ?`
-  )
-    .bind(now, instance.biz_id)
-    .run();
-};
-
 // ─── Helper: Load and validate task ──────────
 
 const loadPendingTask = async (
@@ -535,7 +515,6 @@ export const withdraw = async (
   // 重提交会为新一轮另建关卡任务（handleResubmit），本轮没跑完的直接撤回
   await withdrawAiGateTasks(env, instance, "撤回");
 
-  await resetBizRecordToDraftIfNeeded(env, instance, now);
 
   // Record action
   await env.DB.prepare(
@@ -592,7 +571,6 @@ export const cancel = async (
 
   await withdrawAiGateTasks(env, instance, "取消");
 
-  await resetBizRecordToDraftIfNeeded(env, instance, now);
 
   // Record action
   await env.DB.prepare(

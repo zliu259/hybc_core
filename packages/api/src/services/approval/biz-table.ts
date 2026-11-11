@@ -8,7 +8,5 @@ export const BIZ_TYPE_TABLE_MAP: Readonly<Record<string, string>> = {
   outbound_contract: "contract",
   inbound_contract: "contract",
   reimbursement_batch: "reimbursement_batch",
-  invoice_request: "invoice_request",
-  stock_order: "stock_order",
-  warehouse_asset_work_order: "warehouse_asset_work_order"
+  invoice_request: "invoice_request"
 };

@@ -84,13 +84,6 @@ const defaultApprovalTemplates: Array<{
       '{"version":1,"start_key":"dept_review","nodes":[{"key":"dept_review","type":"sequential","name":"部门负责人审批","assignee_userids":["site_manager"],"next_key":"finance_review"},{"key":"finance_review","type":"sequential","name":"财务复核","assignee_userids":["finance_manager"],"conditions":[{"field":"amount","operator":"gt","value":500000,"next_key":"gm_approve"}],"default_next_key":"archive_cc"},{"key":"gm_approve","type":"sequential","name":"总经理审批","assignee_userids":["general_manager"],"next_key":"archive_cc"},{"key":"archive_cc","type":"cc","name":"抄送归档","assignee_userids":["manager"],"next_key":null}]}'
   },
   {
-    template_code: "TPL-STOCK-ORDER",
-    template_name: "出入库单审批模板",
-    biz_type: "stock_order",
-    config_json:
-      '{"version":1,"start_key":"warehouse_review","nodes":[{"key":"warehouse_review","type":"sequential","name":"仓库负责人审核","assignee_userids":["site_manager"],"next_key":"finance_review"},{"key":"finance_review","type":"sequential","name":"财务复核","assignee_userids":["finance_manager"],"next_key":"archive_cc"},{"key":"archive_cc","type":"cc","name":"抄送归档","assignee_userids":["manager"],"next_key":null}]}'
-  },
-  {
     template_code: "TPL-CONTRACT-AMOUNT-CHANGE",
     template_name: "合同金额变更审批模板",
     biz_type: "contract_amount_change",
@@ -1015,31 +1008,6 @@ adminRoutes.post("/ai-runtime/test-task", requireRoles(["super_admin"]), async (
     approval_ai_gate: {
       approval_id: bizId,
       context: "runtime_test"
-    },
-    warehouse_task_dispatch_recommendation: {
-      no_auto_dispatch: true,
-      tasks: [{ id: bizId, work_order_no: "WO-TEST", priority: "urgent" }],
-      workload_summary: []
-    },
-    tbm_composition_recommendation: {
-      no_auto_apply: true,
-      core_asset_id: bizId,
-      candidates: []
-    },
-    warehouse_manual_draft: {
-      manual_id: bizId,
-      manual_title: "库房手册 AI 草稿测试",
-      historical_tasks: [{ work_order_no: "WO-TEST", result_summary: "检查正常" }]
-    },
-    warehouse_task_summary: {
-      human_edit_required: true,
-      task: {
-        id: bizId,
-        work_order_no: "WO-TEST",
-        work_order_type: "inspection",
-        result_summary: "检查正常"
-      },
-      evidence: []
     },
     bidding_dedup_rewrite: {
       paragraphs: [{ id: "test#0", text: "测试段落内容。" }]

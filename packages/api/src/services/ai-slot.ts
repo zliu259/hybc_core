@@ -25,7 +25,6 @@ import { checkClauseText, parseContractSectionOutput } from "./contract-draft-ru
 import { CF_AI_COMPLETENESS_MODELS, tolerantJsonParse } from "./cf-ai";
 import { publishEvent } from "./event-bus";
 import { generateSerial } from "./serial";
-import { normalizeWarehouseManualDraftResultContent } from "./warehouse-manual-ai";
 
 const nowIso = () => new Date().toISOString();
 
@@ -667,21 +666,6 @@ export const completeTask = async (
       .run();
   }
 
-  if (task.task_type === "warehouse_manual_draft" && task.biz_type === "warehouse_manual") {
-    await env.DB.prepare(
-      `UPDATE warehouse_manual_version SET
-         content_json = ?,
-         ai_draft_status = 'completed',
-         updated_at = ?
-       WHERE ai_draft_task_id = ? AND manual_id = ?`
-    )
-      .bind(normalizeWarehouseManualDraftResultContent(result), now, taskId, task.biz_id)
-      .run();
-    await env.DB.prepare("UPDATE warehouse_manual SET updated_at = ? WHERE id = ?")
-      .bind(now, task.biz_id)
-      .run();
-  }
-
   if (task.task_type === "external_log_audit" && task.biz_type === "external_log_submission") {
     await applyExternalLogAuditResult(env, task.biz_id, taskId, result);
   }
@@ -944,17 +928,6 @@ export const failTask = async (
     await env.DB.prepare(
       "UPDATE contract SET ai_review_status = 'failed', updated_at = ? WHERE id = ?"
     )
-      .bind(now, task.biz_id)
-      .run();
-  }
-
-  if (task.task_type === "warehouse_manual_draft" && task.biz_type === "warehouse_manual") {
-    await env.DB.prepare(
-      "UPDATE warehouse_manual_version SET ai_draft_status = 'failed', updated_at = ? WHERE ai_draft_task_id = ? AND manual_id = ?"
-    )
-      .bind(now, taskId, task.biz_id)
-      .run();
-    await env.DB.prepare("UPDATE warehouse_manual SET updated_at = ? WHERE id = ?")
       .bind(now, task.biz_id)
       .run();
   }
