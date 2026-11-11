@@ -19,6 +19,7 @@ import {
   type ParsedKitLine
 } from "./kit-lines";
 import { requireVersion } from "./kit-template";
+import { getProjectLedger } from "./project-ledger";
 import { optionalId, optionalText, requireText } from "./validation";
 
 const STALE = "数据已变化，请刷新后重试";
@@ -293,5 +294,33 @@ export const discardProjectKit = async (
       `UPDATE project_kit SET status = 'closed', closed_by_userid = ?, closed_at = ?, close_reason = ?,
          version = version + 1, updated_at = ? WHERE id = ?`
     ).bind(auth.sub, now, reason, now, id)
+  ]);
+};
+
+/** 关闭已确认的清单：项目要先结清（设备都离场、周转件在场数都为 0）。 */
+export const closeProjectKit = async (
+  env: Env,
+  id: number,
+  input: Record<string, unknown>,
+  userid: string
+): Promise<void> => {
+  const kit = await loadKit(env, id);
+  if (kit.status === "closed") throw new WarehouseError(409, "清单已关闭");
+  if (kit.status !== "confirmed")
+    throw new WarehouseError(409, "清单还没确认，不需要关闭；不要了可以作废");
+  const version = checkVersion(kit, input);
+  const ledger = await getProjectLedger(env, kit.project_id);
+  if (!ledger.settled)
+    throw new WarehouseError(
+      409,
+      `项目还有 ${ledger.devices_on_site} 台设备、${ledger.turnover_kinds_on_site} 种周转件在场，结清后才能关闭`
+    );
+  const now = nowIso();
+  await runKitBatch(env, [
+    guardKit(env.DB, id, version, ["confirmed"]),
+    env.DB.prepare(
+      `UPDATE project_kit SET status = 'closed', closed_by_userid = ?, closed_at = ?,
+         version = version + 1, updated_at = ? WHERE id = ?`
+    ).bind(userid, now, now, id)
   ]);
 };

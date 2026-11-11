@@ -9,6 +9,7 @@ import {
 } from "../services/warehouse/access";
 import { WarehouseError } from "../services/warehouse/errors";
 import {
+  closeProjectKit,
   confirmProjectKit,
   createProjectKit,
   discardProjectKit,
@@ -16,6 +17,7 @@ import {
   updateProjectKit
 } from "../services/warehouse/kit";
 import { getProjectKit, listProjectKits } from "../services/warehouse/kit-query";
+import { getKitFulfilment } from "../services/warehouse/project-ledger";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
 /** 项目配套清单。谁能建和改在 service 里按项目判断（现场负责人只限自己的项目）。 */
@@ -105,6 +107,25 @@ whKitRoutes.post(
     const auth = c.get("auth");
     const caps = await getWarehouseCapabilities(c.env, auth);
     await discardProjectKit(c.env, pathId(c, "id", "清单"), await readJsonBody(c), auth, caps);
+    return c.json({ success: true });
+  })
+);
+
+whKitRoutes.get(
+  "/kit/:id/fulfilment",
+  requireRoles(ALL_ROLES),
+  guarded(async (c) => {
+    const data = await getKitFulfilment(c.env, pathId(c, "id", "清单"));
+    return c.json({ success: true, data });
+  })
+);
+
+whKitRoutes.post(
+  "/kit/:id/close",
+  requireHuman,
+  requireKeeper,
+  guarded(async (c) => {
+    await closeProjectKit(c.env, pathId(c, "id", "清单"), await readJsonBody(c), c.get("auth").sub);
     return c.json({ success: true });
   })
 );

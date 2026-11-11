@@ -7,6 +7,7 @@ import { getWhDoc, listWhDocs } from "../services/warehouse/doc-query";
 import { reverseWhDoc } from "../services/warehouse/doc-reverse";
 import { WarehouseError } from "../services/warehouse/errors";
 import { getProjectHoldings } from "../services/warehouse/holdings";
+import { getProjectLedger } from "../services/warehouse/project-ledger";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
 export const whDocRoutes = new Hono<WhEnv>();
@@ -65,5 +66,14 @@ whDocRoutes.post(
       c.get("auth").sub
     );
     return c.json({ success: true, data }, data.replayed ? 200 : 201);
+  })
+);
+
+whDocRoutes.get(
+  "/project/:projectId/ledger",
+  requireRoles(ALL_ROLES),
+  guarded(async (c) => {
+    const data = await getProjectLedger(c.env, pathId(c, "projectId", "项目"));
+    return c.json({ success: true, data });
   })
 );
