@@ -4,6 +4,7 @@ import { corsMiddleware } from "./middleware/cors";
 import { handleError } from "./middleware/error";
 import { requestLoggerMiddleware } from "./middleware/logger";
 import { adminRoutes } from "./routes/admin";
+import { adminWedriveProbeRoutes } from "./routes/admin-wedrive-probe";
 import { agentRoutes } from "./routes/agent";
 import { approvalRoutes } from "./routes/approval";
 import { assetRoutes } from "./routes/asset";
@@ -95,6 +96,7 @@ app.route("/internal/vertex-handoff", internalVertexHandoffRoutes);
 app.route("/api/v1/voice", voiceRoutes);
 app.route("/api/v1/wecom", wecomToolRoutes);
 app.route("/api/v1/agent", agentRoutes);
+app.route("/api/v1/admin/wedrive", adminWedriveProbeRoutes);
 app.route("/api/v1/admin", adminRoutes);
 app.route("/api/v1/dashboard", dashboardRoutes);
 

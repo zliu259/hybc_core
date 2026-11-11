@@ -93,7 +93,7 @@ const putCachedString = async (env: Env, key: string, value: string, expiresInSe
   await env.KV.put(key, value, { expirationTtl: ttl });
 };
 
-const fetchViaBridgeStrict = async <T>(
+export const fetchViaBridgeStrict = async <T>(
   env: Env,
   targetUrl: string,
   options?: {
