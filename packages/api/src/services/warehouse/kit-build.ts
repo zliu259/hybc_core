@@ -8,18 +8,15 @@ import { loadSpecChoices } from "./kit-query";
 import type { ParsedKitLine } from "./kit-lines";
 
 /**
- * 模板行只写品名，规格随管径变：模板写了规格且有同规格的物资就选它；
- * 同品名只有一种规格也选它；否则留空，让用户在清单里选。
+ * 模板行只写品名，规格随管径变：模板写了规格，就只认同规格的物资（没有就留空，不拿别的规格顶替）；
+ * 模板没写规格且同品名只有一种规格时选它；其余留空，让用户在清单里选。
  */
 export const pickMaterial = (
   specText: string | null,
   candidates: readonly { id: number; spec: string }[]
 ): number | null => {
   const wanted = specText?.trim();
-  if (wanted) {
-    const exact = candidates.find((candidate) => candidate.spec.trim() === wanted);
-    if (exact) return exact.id;
-  }
+  if (wanted) return candidates.find((candidate) => candidate.spec.trim() === wanted)?.id ?? null;
   return candidates.length === 1 ? candidates[0].id : null;
 };
 

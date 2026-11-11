@@ -104,6 +104,23 @@ describe.skipIf(!hasSqlite)("项目配套清单", () => {
     expect(kit.lines.map((l) => l.material_kind)).toEqual(["consumable", null, "turnover"]);
   });
 
+  it("模板写了规格但库里没有这个规格：不拿别的规格顶替，留作待选", async () => {
+    const [auth, caps] = await as("keeper", ["operator"]);
+    h.database.prepare("UPDATE material SET status = 'disabled' WHERE id = ?").run(pipe114);
+    const strict = h.seed.kitTemplate({ name: "只要 Φ114" }, [
+      { line_kind: "material", name_text: "排泥钢管", spec_text: "Φ114", default_qty: 120 }
+    ]);
+    const { id } = await createProjectKit(
+      h.env,
+      { project_id: projectId, title: "x", template_id: strict },
+      auth,
+      caps
+    );
+    const [line] = (await getProjectKit(h.env, id)).lines;
+    expect(line).toMatchObject({ material_id: null, spec_text: "Φ114" });
+    expect(line.spec_choices.map((c) => c.spec)).toEqual(["Φ80"]);
+  });
+
   it("还没选规格的物资行不能提交，报出第几行；选好后库管提交直接确认", async () => {
     const [auth, caps] = await as("keeper", ["operator"]);
     const { id } = await fromTemplate(auth, caps);
