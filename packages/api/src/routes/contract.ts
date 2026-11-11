@@ -14,7 +14,10 @@ import { writeAuditLog } from "../services/audit-log";
 import { generateSerial } from "../services/serial";
 import { publishEvent } from "../services/event-bus";
 import { createAiGateHandler, createTask } from "../services/ai-slot";
-import { cancelPendingTasksForBiz } from "../services/task-queue";
+import {
+  cancelPendingAiGateTasksForInstance,
+  cancelPendingTasksForBiz
+} from "../services/task-queue";
 import {
   abandonIdempotentRequest,
   beginIdempotentRequest,
@@ -24,6 +27,7 @@ import {
 } from "../services/idempotency";
 import { submitForApproval } from "../services/approval/engine";
 import { loadOurEntityContext } from "../services/our-entities";
+import { closeOpenApprovalsForBiz } from "../services/approval/close-open-instances";
 import { resubmit as resubmitOp } from "../services/approval/operations";
 import { isApprovalActive, isOwnerReworkState, isResubmittable } from "../services/approval/status";
 import { invoiceContractAmountSql } from "./receipt-invoice-amount";
@@ -47,6 +51,9 @@ import {
 const nowIso = () => new Date().toISOString();
 
 const CONTRACT_CREATE_IDEMPOTENCY_SCOPE = "contract:create";
+
+/** 合同本身走审批时用的 biz_type（金额变更是另一张单，biz_id 是变更单号，不在这里）。 */
+const CONTRACT_APPROVAL_BIZ_TYPES: readonly string[] = ["outbound_contract", "inbound_contract"];
 
 /**
  * Fallback key for clients that send no Idempotency-Key: the same actor posting
@@ -713,23 +720,71 @@ contractRoutes.delete(
   requireRoles(["super_admin", "manager", "finance"]),
   async (c) => {
     const id = Number(c.req.param("id"));
+    const auth = c.get("auth");
+    const now = nowIso();
+
+    const contract = await c.env.DB.prepare(
+      "SELECT id, contract_no, status FROM contract WHERE id = ?"
+    )
+      .bind(id)
+      .first<Pick<Contract, "id" | "contract_no" | "status">>();
+    if (!contract) {
+      return c.json({ success: false, error: { message: "Contract not found" } }, 404);
+    }
+
+    // 合同没有终止/作废路由，软删即作废，挂在它上面还没结束的审批要一起终止。
+    // 先终止审批再删合同：D1 没有事务，中途失败时合同还在，重试即可；
+    // 反过来会留下「合同已删、审批还在走」的单子（SP-20261013-0005）。
+    const closedInstanceIds = await closeOpenApprovalsForBiz(c.env.DB, {
+      bizTypes: CONTRACT_APPROVAL_BIZ_TYPES,
+      bizId: id,
+      actorUserId: auth.sub,
+      reason: `合同已删除（${contract.contract_no}）`,
+      now
+    });
+
     await c.env.DB.prepare(
       "UPDATE contract SET status = 'deleted', updated_at = ? WHERE id = ?"
     )
-      .bind(nowIso(), id)
+      .bind(now, id)
       .run();
 
-    // 合同没有终止/作废路由，软删即作废：撤回挂在合同上尚未执行的审查任务，别再占 runner。
-    // 本路由不级联审批实例（历史行为），其 AI 关卡任务随实例走，这里不碰。
+    // 撤回还没执行的 AI 任务，别再占 runner：合同自己的审查任务，加上被终止审批的 AI 关卡任务。
+    // 撤回失败不挡删除，这时合同已经删了，回 500 只会让人以为没删成。
     try {
+      const reason = "合同已删除，任务撤回";
       await cancelPendingTasksForBiz(c.env, {
         biz_type: "contract",
         biz_id: id,
-        reason: "合同已删除，任务撤回",
+        reason,
         source: "contract"
       });
+      for (const instanceId of closedInstanceIds) {
+        await cancelPendingAiGateTasksForInstance(c.env, {
+          instance_id: instanceId,
+          reason,
+          source: "contract"
+        });
+      }
     } catch (err) {
       console.error(`Failed to withdraw AI tasks for deleted contract ${id}`, err);
+    }
+
+    try {
+      await writeAuditLog(c.env.DB, {
+        actorUserId: auth.sub,
+        actorRoles: auth.roles,
+        action: "contract.delete",
+        targetType: "contract",
+        targetId: id,
+        detail: {
+          contract_no: contract.contract_no,
+          previous_status: contract.status,
+          closed_approval_instance_ids: closedInstanceIds
+        }
+      });
+    } catch (err) {
+      console.error(`Failed to write audit log for deleted contract ${id}`, err);
     }
 
     return c.json({ success: true });
