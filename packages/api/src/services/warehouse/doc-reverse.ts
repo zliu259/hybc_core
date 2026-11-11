@@ -127,7 +127,12 @@ export const reverseWhDoc = async (
             .all<{ id: number; status: string; photos: number }>()
         ).results ?? [])
       : [];
-  if (tasks.some((task) => task.status !== "todo" || Number(task.photos) > 0)) {
+  // 已提交、已完成，或者待执行但已经拍了照片，算检查开始了；已取消的不算
+  const started = (task: { status: string; photos: number }) =>
+    task.status === "submitted" ||
+    task.status === "done" ||
+    (task.status === "todo" && Number(task.photos) > 0);
+  if (tasks.some(started)) {
     throw new WarehouseError(409, "返库后的检查任务已经开始，不能冲销");
   }
 
@@ -173,8 +178,8 @@ export const reverseWhDoc = async (
             assertInBatch(
               db,
               `SELECT 1 WHERE NOT EXISTS (
-                 SELECT 1 FROM wh_task t WHERE t.origin_doc_id = ? AND (t.status <> 'todo'
-                   OR EXISTS (SELECT 1 FROM wh_task_photo p WHERE p.task_id = t.id AND p.deleted_at IS NULL)))`,
+                 SELECT 1 FROM wh_task t WHERE t.origin_doc_id = ? AND (t.status IN ('submitted', 'done')
+                   OR (t.status = 'todo' AND EXISTS (SELECT 1 FROM wh_task_photo p WHERE p.task_id = t.id AND p.deleted_at IS NULL))))`,
               [docId]
             ),
             db

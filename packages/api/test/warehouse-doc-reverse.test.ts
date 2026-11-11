@@ -8,7 +8,7 @@ import { reverseWhDoc } from "../src/services/warehouse/doc-reverse";
 import { scrapDevice, unscrapDevice } from "../src/services/warehouse/doc-scrap";
 import { getProjectHoldings } from "../src/services/warehouse/holdings";
 import { getMaterial } from "../src/services/warehouse/material";
-import { getTask } from "../src/services/warehouse/task";
+import { cancelTask, getTask } from "../src/services/warehouse/task";
 import { callWh, createWarehouseHarness } from "./helpers/warehouse-harness";
 import { hasSqlite } from "./helpers/sqlite-d1";
 
@@ -245,6 +245,30 @@ describe.skipIf(!hasSqlite)("报废和冲销", () => {
       current_project_id: projectId,
       usage_records: [],
       usage_meters_total: 0
+    });
+  });
+
+  it("检查任务已经被取消：冲销返库照常进行，设备回到项目", async () => {
+    await doc({ doc_type: "out", project_id: projectId, device_lines: [{ device_id: deviceId }] });
+    const back = await doc({
+      doc_type: "back",
+      project_id: projectId,
+      device_lines: [{ device_id: deviceId }]
+    });
+    await cancelTask(
+      h.env,
+      back.created_task_ids[0],
+      { reason: "返库录错了", version: 0 },
+      "keeper"
+    );
+    await reverse(back.id);
+    expect(await getDevice(h.env, deviceId)).toMatchObject({
+      location: "project",
+      current_project_id: projectId
+    });
+    expect(await getTask(h.env, back.created_task_ids[0])).toMatchObject({
+      status: "cancelled",
+      cancel_reason: "返库录错了"
     });
   });
 
