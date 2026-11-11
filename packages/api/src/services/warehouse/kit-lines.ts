@@ -112,7 +112,7 @@ export const assertCategoriesExist = async (
 
 export const assertMaterialsActive = async (
   env: Env,
-  lines: readonly ParsedKitLine[]
+  lines: readonly Pick<ParsedKitLine, "material_id">[]
 ): Promise<void> => {
   const ids = [...new Set(lines.flatMap((line) => (line.material_id ? [line.material_id] : [])))];
   const materials = new Map(
