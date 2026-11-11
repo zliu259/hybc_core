@@ -19,6 +19,8 @@ export interface DocHeader {
   doc_type: WhDocType;
   project_id: number | null;
   to_project_id: number | null;
+  /** 按配套清单发货时带上（只有 out 单）。 */
+  project_kit_id: number | null;
   counterparty: string | null;
   handover_name: string | null;
   remark: string | null;
@@ -144,14 +146,15 @@ export const executeDoc = async (
       await runAtomicBatch(env.DB, [
         env.DB.prepare(
           `INSERT INTO wh_doc
-            (doc_no, doc_type, project_id, to_project_id, counterparty, handover_name, remark, photo_keys_json,
+            (doc_no, doc_type, project_id, to_project_id, project_kit_id, counterparty, handover_name, remark, photo_keys_json,
              reverses_doc_id, operator_userid, occurred_at, client_request_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           docNo,
           header.doc_type,
           header.project_id,
           header.to_project_id,
+          header.project_kit_id,
           header.counterparty,
           header.handover_name,
           header.remark,

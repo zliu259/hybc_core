@@ -9,6 +9,7 @@ export type WhDocRow = WhDoc & {
   project_name: string | null;
   to_project_name: string | null;
   reversed_by_doc_no: string | null;
+  kit_no: string | null;
   line_count: number;
 };
 
@@ -28,12 +29,13 @@ export type LedgerRow = WhDocLineRow & {
   project_name: string | null;
 };
 
-const SELECT_DOC = `SELECT doc.*, p.project_name, tp.project_name AS to_project_name,
+const SELECT_DOC = `SELECT doc.*, p.project_name, tp.project_name AS to_project_name, k.kit_no,
     (SELECT r.doc_no FROM wh_doc r WHERE r.reverses_doc_id = doc.id) AS reversed_by_doc_no,
     (SELECT COUNT(*) FROM wh_doc_line l WHERE l.doc_id = doc.id) AS line_count
   FROM wh_doc doc
   LEFT JOIN project p ON p.id = doc.project_id
-  LEFT JOIN project tp ON tp.id = doc.to_project_id`;
+  LEFT JOIN project tp ON tp.id = doc.to_project_id
+  LEFT JOIN project_kit k ON k.id = doc.project_kit_id`;
 
 const SELECT_LINE = `SELECT l.*, d.device_code, d.name AS device_name, m.name AS material_name,
     m.spec AS material_spec, m.unit

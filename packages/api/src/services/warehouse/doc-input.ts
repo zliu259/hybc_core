@@ -3,6 +3,7 @@ import type { Env } from "../../types/env";
 import type { Material, WhDocType } from "../../types/wh";
 import { badRequest } from "./errors";
 import {
+  optionalId,
   optionalNumber,
   optionalText,
   requireEnum,
@@ -43,6 +44,7 @@ export interface ParsedDoc {
   client_request_id: string;
   project_id: number | null;
   to_project_id: number | null;
+  project_kit_id: number | null;
   counterparty: string | null;
   handover_name: string | null;
   remark: string | null;
@@ -84,6 +86,9 @@ const asRecord = (value: unknown): Record<string, unknown> =>
 
 export const parseDocInput = (input: Record<string, unknown>, docType: WhDocType): ParsedDoc => {
   const clientRequestId = requireClientRequestId(input.client_request_id);
+  const projectKitId = optionalId(input.project_kit_id, "配套清单");
+  if (projectKitId !== null && docType !== "out")
+    throw badRequest("只有发往项目的单能关联配套清单");
   const deviceLines = asArray(input.device_lines).map((raw) => {
     const line = asRecord(raw);
     return {
@@ -121,6 +126,7 @@ export const parseDocInput = (input: Record<string, unknown>, docType: WhDocType
     client_request_id: clientRequestId,
     project_id: null,
     to_project_id: null,
+    project_kit_id: projectKitId,
     counterparty: optionalText(input.counterparty, "供应商", 80),
     handover_name: optionalText(input.handover_name, "领料人", 30),
     remark: optionalText(input.remark, "备注", 300),

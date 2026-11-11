@@ -144,6 +144,7 @@ export const reverseWhDoc = async (
         doc_type: original.doc_type,
         project_id: original.project_id,
         to_project_id: original.to_project_id,
+        project_kit_id: original.project_kit_id,
         counterparty: original.counterparty,
         handover_name: original.handover_name,
         remark: `冲销 ${original.doc_no}`,

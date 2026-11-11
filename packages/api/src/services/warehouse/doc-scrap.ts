@@ -22,6 +22,7 @@ const header = (
   doc_type: type,
   project_id: projectId,
   to_project_id: null,
+  project_kit_id: null,
   counterparty: null,
   handover_name: null,
   remark,
