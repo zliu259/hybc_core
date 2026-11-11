@@ -28,7 +28,7 @@ const cards = computed(() => {
     {
       label: "待派工任务",
       value: o.tasks_unassigned,
-      to: { path: "/wh/task", query: { status: "todo" } }
+      to: { path: "/wh/task", query: { status: "unassigned" } }
     },
     { label: "超期任务", value: o.tasks_overdue, to: { path: "/wh/task" } },
     {

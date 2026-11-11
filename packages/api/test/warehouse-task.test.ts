@@ -356,6 +356,20 @@ describe.skipIf(!hasSqlite)("库房任务", () => {
     });
   });
 
+  it("列表：assigned=no 只看待派工，assigned=yes 只看已派工", async () => {
+    const a = await newTask({ title: "A" });
+    const b = await newTask({ title: "B" });
+    await assignTask(h.env, b.id, { assignee_userid: "worker", version: 0 }, "keeper");
+    const titles = async (assigned) =>
+      (await listTasks(h.env, { status: "todo", assigned }, "keeper")).items.map((t) => t.title);
+    expect(await titles("no")).toEqual(["A"]);
+    expect(await titles("yes")).toEqual(["B"]);
+    await expect(listTasks(h.env, { assigned: "maybe" }, "keeper")).rejects.toMatchObject({
+      status: 400
+    });
+    expect(a.id).not.toBe(b.id);
+  });
+
   it("generateSerials 一次返回连续的号", async () => {
     const serials = await generateSerials(h.env.DB, "KFR", "wh_task", "task_no", 3);
     expect(serials).toEqual([

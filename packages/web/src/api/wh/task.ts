@@ -15,6 +15,8 @@ const base = "/api/v1/warehouse/task";
 export interface TaskQuery {
   scope?: "mine" | "all";
   status?: TaskStatus;
+  /** 待派工 no / 已派工 yes，只在 status=todo 时有意义 */
+  assigned?: "yes" | "no";
   kind?: TaskKind;
   device_id?: number;
   page?: number;

@@ -37,6 +37,10 @@ export const listTasks = async (
       requireEnum(query.status, "任务状态", ["todo", "submitted", "done", "cancelled"] as const)
     );
   }
+  if (query.assigned) {
+    const assigned = requireEnum(query.assigned, "派工筛选", ["yes", "no"] as const);
+    where.push(assigned === "yes" ? "t.assignee_userid IS NOT NULL" : "t.assignee_userid IS NULL");
+  }
   if (query.kind) {
     where.push("t.kind = ?");
     params.push(
