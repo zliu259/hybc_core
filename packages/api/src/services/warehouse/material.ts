@@ -103,19 +103,30 @@ export const updateMaterial = async (
 ): Promise<void> => {
   const columns = parseMaterialFields(input, "update");
   const keys = Object.keys(columns) as (keyof Material)[];
-  const exists = await env.DB.prepare("SELECT id FROM material WHERE id = ?").bind(id).first();
-  if (!exists) throw new WarehouseError(404, "物资不存在");
+  const current = await env.DB.prepare("SELECT id, kind FROM material WHERE id = ?")
+    .bind(id)
+    .first<{ id: number; kind: Material["kind"] }>();
+  if (!current) throw new WarehouseError(404, "物资不存在");
   if (keys.length === 0) return;
+  // 周转和消耗记在场数的方式不同，已经有库房单的物资改管法会让在场数永远对不上
+  const changesKind = columns.kind !== undefined && columns.kind !== current.kind;
+  const kindGuard = changesKind
+    ? " AND NOT EXISTS (SELECT 1 FROM wh_doc_line WHERE material_id = ?)"
+    : "";
+  let changed = 0;
   try {
-    await env.DB.prepare(
-      `UPDATE material SET ${keys.map((key) => `${key} = ?`).join(", ")}, updated_at = ? WHERE id = ?`
+    const result = await env.DB.prepare(
+      `UPDATE material SET ${keys.map((key) => `${key} = ?`).join(", ")}, updated_at = ? WHERE id = ?${kindGuard}`
     )
-      .bind(...keys.map((key) => columns[key] ?? null), nowIso(), id)
+      .bind(...keys.map((key) => columns[key] ?? null), nowIso(), id, ...(changesKind ? [id] : []))
       .run();
+    changed = Number(result.meta?.changes ?? 0);
   } catch (error) {
     if (isNameSpecConflict(error)) throw new WarehouseError(409, "同品名同规格的物资已存在");
     throw error;
   }
+  if (changesKind && changed === 0)
+    throw new WarehouseError(409, "这个物资已经有库房单，不能再改管法");
 };
 
 export const getMaterial = async (env: Env, id: number): Promise<Material | null> =>

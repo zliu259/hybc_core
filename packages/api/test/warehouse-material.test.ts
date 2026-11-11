@@ -125,6 +125,31 @@ describe.skipIf(!hasSqlite)("物资档案", () => {
     });
   });
 
+  it("管法：没有库房单时可以改；有了库房单就不能再改（改了在场数就对不上）", async () => {
+    const { id } = await createMaterial(h.env, base);
+    await updateMaterial(h.env, id, { kind: "consumable" });
+    expect((await getMaterial(h.env, id)).kind).toBe("consumable");
+    await updateMaterial(h.env, id, { kind: "turnover" });
+    const now = new Date().toISOString();
+    const docId = h.database
+      .prepare(
+        "INSERT INTO wh_doc (doc_no, doc_type, operator_userid, occurred_at, client_request_id, created_at) VALUES ('KFD-T-1', 'inbound', 'keeper', ?, 'req-kind-0001', ?)"
+      )
+      .run(now, now).lastInsertRowid;
+    h.database
+      .prepare(
+        "INSERT INTO wh_doc_line (doc_id, material_id, quantity, outcome, stock_delta, balance_after, project_delta, created_at) VALUES (?, ?, 5, 'normal', 5, 5, 0, ?)"
+      )
+      .run(docId, id, now);
+    await expect(updateMaterial(h.env, id, { kind: "consumable" })).rejects.toMatchObject({
+      status: 409,
+      message: "这个物资已经有库房单，不能再改管法"
+    });
+    expect((await getMaterial(h.env, id)).kind).toBe("turnover");
+    await updateMaterial(h.env, id, { kind: "turnover", remark: "管法不变照常能改" });
+    expect((await getMaterial(h.env, id)).remark).toBe("管法不变照常能改");
+  });
+
   it("列表：关键字、分节、管法、只看低库存", async () => {
     h.seed.material({
       name: "排泥钢管",
