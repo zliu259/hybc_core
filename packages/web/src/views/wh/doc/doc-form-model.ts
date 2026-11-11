@@ -74,6 +74,14 @@ export const validateDocForm = (state: DocFormState): string | null => {
   }
   if (type === "inbound" && state.devices.length > 0)
     return "入库单不能包含设备";
+  // 顶进距离只在返库时填；填了就得是能入账的数字，否则提交时会被悄悄丢掉
+  const MAX_USAGE_METERS = 100000;
+  for (const device of type === "back" ? state.devices : []) {
+    if (!device.usage_meters.trim()) continue;
+    const meters = parseAmount(device.usage_meters);
+    if (meters === null || meters > MAX_USAGE_METERS)
+      return `${device.device_code} 的顶进距离不对，只填数字（米）`;
+  }
 
   let materialRows = 0;
   for (const line of state.materials) {

@@ -105,6 +105,28 @@ describe("库房单表单", () => {
     expect(validateDocForm(outState())).toBeNull();
   });
 
+  it("返库：顶进距离填了就必须是数字，不能悄悄丢掉", () => {
+    const backWith = (usage: string) =>
+      validateDocForm({
+        ...newDocForm("back"),
+        project_id: 7,
+        devices: [
+          {
+            device_id: 1,
+            device_code: "SB-0001",
+            name: "唐兴",
+            usage_meters: usage,
+            soil_type: ""
+          }
+        ]
+      });
+    expect(backWith("120米")).toBe("SB-0001 的顶进距离不对，只填数字（米）");
+    expect(backWith("120.5555")).toBe("SB-0001 的顶进距离不对，只填数字（米）");
+    expect(backWith("100001")).toBe("SB-0001 的顶进距离不对，只填数字（米）");
+    expect(backWith("")).toBeNull();
+    expect(backWith(" 320.5 ")).toBeNull();
+  });
+
   it("返库：退回加报损超过在场数时报错；耗材不能报损；全为 0 等于没有行", () => {
     const base = { ...newDocForm("back"), project_id: 7 };
     expect(
