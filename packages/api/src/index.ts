@@ -29,6 +29,7 @@ import { biddingDedupRoutes } from "./routes/bidding-dedup";
 import { taskRoutes } from "./routes/task";
 import { uploadRoutes } from "./routes/upload";
 import { warehouseLegacyStubRoutes } from "./routes/warehouse-legacy-stub";
+import { mountWarehouseRoutes } from "./routes/wh-app";
 import { userRoutes } from "./routes/user";
 import { vehicleMaintenanceRoutes } from "./routes/vehicle-maintenance";
 import { vertexRoutes } from "./routes/vertex";
@@ -79,6 +80,7 @@ app.route("/api/v1/receipt", receiptRoutes);
 app.route("/api/v1/log", logRoutes);
 app.route("/api/v1/survey", surveyRoutes);
 app.route("/api/v1/approval", approvalRoutes);
+mountWarehouseRoutes(app);
 // 旧库房和资产接口的占位，新库房路由必须挂在它前面。
 app.route("/api/v1/asset", warehouseLegacyStubRoutes);
 app.route("/api/v1/warehouse", warehouseLegacyStubRoutes);
