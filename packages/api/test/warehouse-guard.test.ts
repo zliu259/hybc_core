@@ -68,6 +68,17 @@ describe.skipIf(!hasSqlite)("库房批内断言", () => {
     expect(isGuardFailure("wh_guard.ok")).toBe(false);
   });
 
+  it("认得 D1 的真实报错文案（2026-11-11 在本地 workerd 上取得）", () => {
+    const guard = new Error(
+      "D1_ERROR: NOT NULL constraint failed: wh_guard.ok: SQLITE_CONSTRAINT NOT NULL constraint failed: wh_guard.ok: SQLITE_CONSTRAINT"
+    );
+    const check = new Error(
+      "D1_ERROR: CHECK constraint failed: material_quantity_non_negative: SQLITE_CONSTRAINT"
+    );
+    expect(isGuardFailure(guard)).toBe(true);
+    expect(isCheckFailure(check, "material_quantity_non_negative")).toBe(true);
+  });
+
   it("CHECK 失败只认对应的约束名", () => {
     const error = new Error("CHECK constraint failed: demo_qty_non_negative");
     expect(isCheckFailure(error, "demo_qty_non_negative")).toBe(true);
