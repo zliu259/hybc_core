@@ -2,7 +2,16 @@ import { describe, expect, it } from "vitest";
 
 import type { WarehouseCapabilities } from "@/api/wh/types";
 import { parseTable } from "../shared/csv";
-import { kitActions, kitLineProblems, mapTemplateRows } from "./kit-view";
+import {
+  editableFromKit,
+  editableFromTemplate,
+  kitActions,
+  kitLineProblems,
+  mapTemplateRows,
+  newEditableLine,
+  toKitLines,
+  toTemplateLines
+} from "./kit-view";
 
 const caps = (
   patch: Partial<WarehouseCapabilities> = {}
@@ -195,5 +204,106 @@ describe("模板粘贴导入", () => {
     expect(
       mapTemplateRows(parseTable("品名\t单位\n管钳\t把"), categories).errors
     ).toEqual([{ row: 0, message: "缺少列：分节、类型" }]);
+  });
+});
+
+describe("表格行和接口行互转", () => {
+  it("清单行：读回来再保存，字段不丢；设备行不带物资，物资行不带类别；空字符串存成 null", () => {
+    const rows = editableFromKit([
+      {
+        id: 7,
+        sort_order: 0,
+        section: "辅助设备",
+        line_kind: "material",
+        device_category_id: null,
+        material_id: 3,
+        name_text: "排泥钢管",
+        spec_text: null,
+        unit: "米",
+        planned_qty: 120,
+        source: "warehouse",
+        note: null,
+        material_code: "WZ-0003",
+        material_name: "排泥钢管",
+        material_spec: "Φ114",
+        material_unit: "米",
+        material_status: "active",
+        category_name: null,
+        spec_choices: [{ id: 3, spec: "Φ114" }]
+      }
+    ]);
+    expect(rows[0]).toMatchObject({
+      id: 7,
+      qty: 120,
+      material_label: "排泥钢管 Φ114",
+      spec_text: ""
+    });
+    const edited = [
+      ...rows,
+      {
+        ...newEditableLine("顶进设备"),
+        line_kind: "device" as const,
+        device_category_id: 1,
+        material_id: 9,
+        name_text: "机头",
+        qty: 1
+      }
+    ];
+    expect(toKitLines(edited)).toEqual([
+      {
+        section: "辅助设备",
+        line_kind: "material",
+        device_category_id: null,
+        material_id: 3,
+        name_text: "排泥钢管",
+        spec_text: null,
+        unit: "米",
+        planned_qty: 120,
+        source: "warehouse",
+        note: null
+      },
+      {
+        section: "顶进设备",
+        line_kind: "device",
+        device_category_id: 1,
+        material_id: null,
+        name_text: "机头",
+        spec_text: null,
+        unit: null,
+        planned_qty: 1,
+        source: "warehouse",
+        note: null
+      }
+    ]);
+  });
+
+  it("模板行：数量为空保持 null；备忘行不带类别", () => {
+    const rows = editableFromTemplate([
+      {
+        id: 1,
+        sort_order: 0,
+        section: "生活设施",
+        line_kind: "text",
+        device_category_id: 4,
+        device_category_name: null,
+        name_text: "集装箱",
+        spec_text: null,
+        unit: "个",
+        default_qty: null,
+        note: "本地租"
+      }
+    ]);
+    expect(toTemplateLines(rows)).toEqual([
+      {
+        section: "生活设施",
+        line_kind: "text",
+        device_category_id: null,
+        name_text: "集装箱",
+        spec_text: null,
+        unit: "个",
+        default_qty: null,
+        note: "本地租"
+      }
+    ]);
   });
 });

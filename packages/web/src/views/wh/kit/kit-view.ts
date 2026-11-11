@@ -1,7 +1,10 @@
 /** 项目配套页面用的纯函数：状态文案、按钮、提交前检查、模板粘贴导入。 */
 import type {
+  KitLineInput,
   KitLineKind,
   KitLineSource,
+  KitTemplateLine,
+  ProjectKitLine,
   ProjectKitRow,
   ProjectKitStatus,
   TemplateLineInput
@@ -177,3 +180,117 @@ export const mapTemplateRows = (
   });
   return { rows, errors };
 };
+
+/** 表格里正在编辑的一行；模板和清单共用，qty 在模板里是默认数量，在清单里是计划数。 */
+export interface EditableKitLine {
+  key: string;
+  id: number | null;
+  section: string;
+  line_kind: KitLineKind;
+  device_category_id: number | null;
+  material_id: number | null;
+  name_text: string;
+  spec_text: string;
+  unit: string;
+  qty: number | null;
+  source: KitLineSource;
+  note: string;
+  /** 同品名的可选规格（清单的物资行） */
+  spec_choices: { id: number; spec: string }[];
+  /** 已选物资的"品名 规格" */
+  material_label: string;
+}
+
+let keySeq = 0;
+const nextKey = (): string => {
+  keySeq += 1;
+  return `row-${keySeq}`;
+};
+
+export const newEditableLine = (section = ""): EditableKitLine => ({
+  key: nextKey(),
+  id: null,
+  section,
+  line_kind: "material",
+  device_category_id: null,
+  material_id: null,
+  name_text: "",
+  spec_text: "",
+  unit: "",
+  qty: null,
+  source: "warehouse",
+  note: "",
+  spec_choices: [],
+  material_label: ""
+});
+
+export const editableFromTemplate = (
+  lines: readonly KitTemplateLine[]
+): EditableKitLine[] =>
+  lines.map(line => ({
+    ...newEditableLine(line.section),
+    id: line.id,
+    line_kind: line.line_kind,
+    device_category_id: line.device_category_id,
+    name_text: line.name_text,
+    spec_text: line.spec_text ?? "",
+    unit: line.unit ?? "",
+    qty: line.default_qty,
+    note: line.note ?? ""
+  }));
+
+export const editableFromKit = (
+  lines: readonly ProjectKitLine[]
+): EditableKitLine[] =>
+  lines.map(line => ({
+    ...newEditableLine(line.section),
+    id: line.id,
+    line_kind: line.line_kind,
+    device_category_id: line.device_category_id,
+    material_id: line.material_id,
+    name_text: line.name_text,
+    spec_text: line.spec_text ?? "",
+    unit: line.unit ?? "",
+    qty: Number(line.planned_qty),
+    source: line.source,
+    note: line.note ?? "",
+    spec_choices: line.spec_choices ?? [],
+    material_label: line.material_id
+      ? [line.material_name ?? line.name_text, line.material_spec]
+          .filter(Boolean)
+          .join(" ")
+      : ""
+  }));
+
+const nullable = (text: string): string | null =>
+  text.trim() === "" ? null : text.trim();
+
+export const toTemplateLines = (
+  rows: readonly EditableKitLine[]
+): TemplateLineInput[] =>
+  rows.map(row => ({
+    section: row.section.trim(),
+    line_kind: row.line_kind,
+    device_category_id:
+      row.line_kind === "device" ? row.device_category_id : null,
+    name_text: row.name_text.trim(),
+    spec_text: nullable(row.spec_text),
+    unit: nullable(row.unit),
+    default_qty: row.qty,
+    note: nullable(row.note)
+  }));
+
+export const toKitLines = (rows: readonly EditableKitLine[]): KitLineInput[] =>
+  rows.map(row => ({
+    section: row.section.trim(),
+    line_kind: row.line_kind,
+    device_category_id:
+      row.line_kind === "device" ? row.device_category_id : null,
+    material_id: row.line_kind === "material" ? row.material_id : null,
+    name_text: row.name_text.trim(),
+    spec_text: nullable(row.spec_text),
+    unit: nullable(row.unit),
+    planned_qty: row.qty ?? 0,
+    source: row.source,
+    note: nullable(row.note)
+  }));
