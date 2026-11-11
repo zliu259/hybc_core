@@ -56,6 +56,21 @@ export const requireQuantity = (value: unknown, label: string): number => {
   return parsed;
 };
 
+/** 计划数这类可以为 0 的数量：空返回 null；否则 0 到 1000000，最多 3 位小数，integer 时必须是整数。 */
+export const optionalQuantity = (
+  value: unknown,
+  label: string,
+  options: { integer?: boolean } = {}
+): number | null => {
+  if (isBlank(value)) return null;
+  const parsed = typeof value === "boolean" ? null : toNumber(value);
+  if (parsed === null || parsed < 0 || parsed > MAX_QUANTITY || !hasAtMostThreeDecimals(parsed)) {
+    throw badRequest(`${label}必须是不小于 0 的数字，最多 3 位小数`);
+  }
+  if (options.integer && !Number.isInteger(parsed)) throw badRequest(`${label}必须是整数`);
+  return parsed;
+};
+
 export const optionalNumber = (
   value: unknown,
   label: string,
