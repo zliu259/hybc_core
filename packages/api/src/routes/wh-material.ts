@@ -2,6 +2,7 @@ import { Hono } from "hono";
 
 import { requireRoles } from "../middleware/rbac";
 import { ALL_ROLES, requireHuman, requireKeeper } from "../services/warehouse/access";
+import { getMaterialLedger } from "../services/warehouse/doc-query";
 import { WarehouseError } from "../services/warehouse/errors";
 import {
   createMaterial,
@@ -66,4 +67,17 @@ whMaterialRoutes.get(
   "/inventory/alert",
   requireRoles(ALL_ROLES),
   guarded(async (c) => c.json({ success: true, data: await listInventory(c.env, true) }))
+);
+
+whMaterialRoutes.get(
+  "/material/:id/ledger",
+  requireRoles(ALL_ROLES),
+  guarded(async (c) => {
+    const result = await getMaterialLedger(c.env, pathId(c, "id", "物资"), c.req.query());
+    return c.json({
+      success: true,
+      data: result.items,
+      pagination: { page: result.page, pageSize: result.pageSize, total: result.total }
+    });
+  })
 );

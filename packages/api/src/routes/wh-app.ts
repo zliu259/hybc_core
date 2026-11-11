@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import { authMiddleware } from "../middleware/auth";
 import type { Env } from "../types/env";
 import { whDeviceRoutes } from "./wh-device";
+import { whDocRoutes } from "./wh-doc";
 import type { WhEnv } from "./wh-http";
 import { whMaterialRoutes } from "./wh-material";
 import { whSettingsRoutes } from "./wh-settings";
@@ -19,5 +20,6 @@ export const mountWarehouseRoutes = (app: Hono<{ Bindings: Env }>): void => {
   warehouse.route("/", whDeviceRoutes);
   warehouse.route("/", whMaterialRoutes);
   warehouse.route("/", whTaskRoutes);
+  warehouse.route("/", whDocRoutes);
   app.route("/api/v1/warehouse", warehouse);
 };
