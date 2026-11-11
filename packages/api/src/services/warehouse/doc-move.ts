@@ -194,11 +194,12 @@ export const createMoveDoc = async (
 
   let needInspection: Device[] = [];
   if (type === "back" && devices.length > 0) {
+    // 已经有挡住发出的检查在办就不再建；不挡发出的手工检查不能代替返库检查
     const open = await queryIn<{ device_id: number }>(
       env.DB,
       (inList) =>
         `SELECT DISTINCT device_id FROM wh_task
-          WHERE kind = 'inspection' AND status IN ('todo', 'submitted') AND device_id IN (${inList})`,
+          WHERE kind = 'inspection' AND blocking = 1 AND status IN ('todo', 'submitted') AND device_id IN (${inList})`,
       devices.map((device) => device.id)
     );
     const busy = new Set(open.map((row) => Number(row.device_id)));

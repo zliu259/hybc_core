@@ -187,6 +187,23 @@ describe.skipIf(!hasSqlite)("库房单：发货、返库、转场", () => {
     });
   });
 
+  it("设备只有一个不挡发出的手工检查时，返库照样生成返库检查，设备待检", async () => {
+    await out({ material_lines: [] });
+    h.seed.task({ device_id: deviceId, kind: "inspection", blocking: 0, title: "顺便看看" });
+    const result = await createWhDoc(
+      h.env,
+      {
+        doc_type: "back",
+        project_id: projectId,
+        client_request_id: "req-back-nb-01",
+        device_lines: [{ device_id: deviceId }]
+      },
+      "keeper"
+    );
+    expect(result.created_task_ids).toHaveLength(1);
+    expect((await getDevice(h.env, deviceId)).state).toBe("pending_inspection");
+  });
+
   it("设了默认检查人时任务派给他；设备已有未完成检查时不重复建", async () => {
     h.database
       .prepare(
