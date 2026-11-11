@@ -256,6 +256,8 @@ export interface WarehouseOverview {
   devices_repairing: number;
   devices_on_project: number;
   low_stock_count: number;
+  /** 已提交、等库管确认的配套清单数 */
+  kits_to_confirm: number;
   recent_docs: WhDocRow[];
 }
 
