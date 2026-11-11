@@ -140,7 +140,10 @@ export const loadProjectShipped = async (
   ]);
 };
 
-/** 已确认、已关闭清单里"库房发"且计划数大于 0 的行，按确认先后排好。 */
+/**
+ * 已确认、已关闭清单里"库房发"且计划数大于 0 的行，按确认先后排好。
+ * 作废的清单（没确认就关掉，confirmed_at 为空）不算。
+ */
 const loadAllocatableLines = async (
   env: Env,
   projectId: number
@@ -157,7 +160,7 @@ const loadAllocatableLines = async (
     await env.DB.prepare(
       `SELECT l.id, l.line_kind, l.material_id, l.device_category_id, l.planned_qty
          FROM project_kit_line l JOIN project_kit k ON k.id = l.kit_id
-        WHERE k.project_id = ? AND k.status IN ('confirmed', 'closed')
+        WHERE k.project_id = ? AND k.status IN ('confirmed', 'closed') AND k.confirmed_at IS NOT NULL
           AND l.source = 'warehouse' AND l.planned_qty > 0 AND l.line_kind IN ('material', 'device')
         ORDER BY k.confirmed_at ASC, k.id ASC, l.sort_order ASC, l.id ASC`
     )
@@ -345,7 +348,10 @@ export const getKitFulfilment = async (env: Env, kitId: number): Promise<KitFulf
   const kit = await getProjectKitHeader(env, kitId);
   if (!kit) throw new WarehouseError(404, "清单不存在");
   const lines = await loadKitLines(env, kitId);
-  const counted = kit.status === "confirmed" || kit.status === "closed";
+  // 确认过的清单才参与分摊；作废的（没确认就关掉）既不分已发，也不再显示待发
+  const counted =
+    (kit.status === "confirmed" || kit.status === "closed") && kit.confirmed_at !== null;
+  const discarded = kit.status === "closed" && kit.confirmed_at === null;
   let allocation = new Map<number, number>();
   if (counted) {
     const [planLines, shipped] = await Promise.all([
@@ -367,7 +373,7 @@ export const getKitFulfilment = async (env: Env, kitId: number): Promise<KitFulf
     return {
       ...line,
       shipped,
-      pending: tracked ? round3(planned - shipped) : 0,
+      pending: tracked && !discarded ? round3(planned - shipped) : 0,
       in_stock: key ? (inStock.get(key) ?? 0) : null
     };
   });

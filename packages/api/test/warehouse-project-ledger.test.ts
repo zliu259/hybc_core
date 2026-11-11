@@ -89,6 +89,26 @@ describe.skipIf(!hasSqlite)("清单执行情况和项目物资", () => {
     expect(await ledgerRow(p, pipe)).toMatchObject({ planned: 150, shipped: 120, on_site: 120 });
   });
 
+  it("作废的清单（没确认就关掉）不参与分摊，也不算计划", async () => {
+    const discarded = h.seed.kit(
+      {
+        project_id: p,
+        status: "closed",
+        confirmed_at: null,
+        confirmed_by_userid: null,
+        close_reason: "建错了"
+      },
+      [{ material_id: pipe, name_text: "排泥钢管", planned_qty: 100 }]
+    );
+    const b = h.seed.kit({ project_id: p }, [
+      { material_id: pipe, name_text: "排泥钢管", planned_qty: 100 }
+    ]);
+    await out(p, [{ material_id: pipe, quantity: 100 }]);
+    expect(await lineOf(b, "排泥钢管")).toMatchObject({ shipped: 100, pending: 0 });
+    expect(await lineOf(discarded, "排泥钢管")).toMatchObject({ shipped: 0, pending: 0 });
+    expect(await ledgerRow(p, pipe)).toMatchObject({ planned: 100, shipped: 100 });
+  });
+
   it("发货单冲销后，已发减少，待发恢复", async () => {
     const a = h.seed.kit({ project_id: p }, [
       { material_id: pipe, name_text: "排泥钢管", planned_qty: 100 }
