@@ -4,7 +4,13 @@ import { ref } from "vue";
 import { listDevices } from "@/api/wh/device";
 import type { DeviceRow, DeviceState } from "@/api/wh/types";
 
-const props = defineProps<{ state?: DeviceState; excludeIds: number[] }>();
+const props = defineProps<{
+  state?: DeviceState;
+  /** 只列这个类别的设备（按清单发货时） */
+  categoryId?: number;
+  placeholder?: string;
+  excludeIds: number[];
+}>();
 const emit = defineEmits<{ pick: [device: DeviceRow] }>();
 
 const options = ref<DeviceRow[]>([]);
@@ -16,6 +22,7 @@ const search = async (keyword: string) => {
   try {
     const result = await listDevices({
       state: props.state,
+      category_id: props.categoryId,
       keyword: keyword || undefined,
       pageSize: 30
     });
@@ -43,7 +50,7 @@ const onPick = (id: number) => {
     remote
     :remote-method="search"
     :loading="loading"
-    placeholder="搜索设备编号或名称后选择"
+    :placeholder="props.placeholder ?? '搜索设备编号或名称后选择'"
     style="width: 320px"
     @focus="search('')"
     @change="onPick"

@@ -1,4 +1,5 @@
 /** 库房单录入表单的状态、前端校验和请求体。后端还会再校验一遍，这里只为让人当场看到错在哪。 */
+import type { KitFulfilmentLine } from "@/api/wh/kit-types";
 import type {
   CreateWhDocInput,
   MaterialKind,
@@ -12,6 +13,8 @@ export interface DocDeviceLine {
   device_id: number;
   device_code: string;
   name: string;
+  /** 按清单发货时用来数某类设备已加了几台 */
+  category_id?: number;
   usage_meters: string;
   soil_type: string;
 }
@@ -34,6 +37,8 @@ export interface DocFormState {
   client_request_id: string;
   project_id: number | null;
   to_project_id: number | null;
+  /** 按配套清单发货时的清单（只有发往项目） */
+  project_kit_id: number | null;
   counterparty: string;
   handover_name: string;
   remark: string;
@@ -47,6 +52,7 @@ export const newDocForm = (docType: DocFormType): DocFormState => ({
   client_request_id: newClientRequestId(),
   project_id: null,
   to_project_id: null,
+  project_kit_id: null,
   counterparty: "",
   handover_name: "",
   remark: "",
@@ -118,6 +124,8 @@ export const buildDocPayload = (state: DocFormState): CreateWhDocInput => {
     payload.project_id = state.project_id;
   if (state.doc_type === "transfer" && state.to_project_id !== null)
     payload.to_project_id = state.to_project_id;
+  if (state.doc_type === "out" && state.project_kit_id !== null)
+    payload.project_kit_id = state.project_kit_id;
   if (state.counterparty.trim())
     payload.counterparty = state.counterparty.trim();
   if (state.handover_name.trim())
@@ -190,3 +198,74 @@ export const prefillBackForm = (
     quantity: state.doc_type === "transfer" ? String(item.holding) : ""
   }))
 });
+
+export interface DeviceNeed {
+  category_id: number;
+  category_name: string;
+  /** 清单上写的规格要求，几行时用顿号连起来 */
+  spec_text: string;
+  count: number;
+  /** 这个类别现在可用的台数 */
+  available: number;
+}
+
+/**
+ * 按清单发货：项目固定为清单的项目；只取"库房发"、待发大于 0 的行。
+ * 物资行数量默认待发（同一物资几行合并成一行，后端不许一张单里重复）；
+ * 设备行不预填具体设备，只按类别给出还需几台，由库管扫码或挑选。
+ */
+export const prefillOutFromKit = (
+  kit: { id: number; project_id: number },
+  fulfilment: readonly KitFulfilmentLine[],
+  base: DocFormState = newDocForm("out")
+): { form: DocFormState; deviceNeeds: DeviceNeed[] } => {
+  const pending = fulfilment.filter(
+    line => line.source === "warehouse" && line.pending > 0
+  );
+  const materials = new Map<number, DocMaterialLine>();
+  for (const line of pending) {
+    if (line.line_kind !== "material" || !line.material_id) continue;
+    const existing = materials.get(line.material_id);
+    const quantity =
+      Math.round(
+        ((existing ? Number(existing.quantity) : 0) + line.pending) * 1000
+      ) / 1000;
+    materials.set(line.material_id, {
+      material_id: line.material_id,
+      name: line.material_name ?? line.name_text,
+      spec: line.material_spec ?? "",
+      unit: line.material_unit ?? line.unit ?? "",
+      kind: line.material_kind ?? "turnover",
+      available: line.in_stock,
+      returned: "",
+      lost: "",
+      quantity: String(quantity)
+    });
+  }
+  const needs = new Map<number, DeviceNeed>();
+  for (const line of pending) {
+    if (line.line_kind !== "device" || !line.device_category_id) continue;
+    const existing = needs.get(line.device_category_id);
+    const specs = [existing?.spec_text, line.spec_text]
+      .filter(Boolean)
+      .join("、");
+    needs.set(line.device_category_id, {
+      category_id: line.device_category_id,
+      category_name: line.category_name ?? "",
+      spec_text: specs,
+      count: (existing?.count ?? 0) + line.pending,
+      available: line.in_stock ?? 0
+    });
+  }
+  return {
+    form: {
+      ...base,
+      doc_type: "out",
+      project_id: kit.project_id,
+      project_kit_id: kit.id,
+      devices: [],
+      materials: [...materials.values()]
+    },
+    deviceNeeds: [...needs.values()]
+  };
+};

@@ -228,6 +228,7 @@ describe("表格行和接口行互转", () => {
         material_spec: "Φ114",
         material_unit: "米",
         material_status: "active",
+        material_kind: "turnover",
         category_name: null,
         spec_choices: [{ id: 3, spec: "Φ114" }]
       }

@@ -88,6 +88,7 @@ export interface ProjectKitLine extends KitLineInput {
   material_spec: string | null;
   material_unit: string | null;
   material_status: string | null;
+  material_kind: MaterialKind | null;
   category_name: string | null;
   spec_choices: { id: number; spec: string }[];
 }

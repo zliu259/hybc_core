@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElMessageBox, type MessageBoxInputData } from "element-plus";
-import { computed, nextTick, onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import {
@@ -21,6 +21,7 @@ import { message } from "@/utils/message";
 import { formatTime } from "../shared/ids";
 import { useWhCapabilities } from "../shared/useWhCapabilities";
 import { isConflictError } from "../task/task-view";
+import DocFormDialog from "../doc/components/DocFormDialog.vue";
 import KitLineTable from "./components/KitLineTable.vue";
 import {
   editableFromKit,
@@ -49,6 +50,18 @@ const title = ref("");
 const remark = ref("");
 const busy = ref(false);
 const triedSubmit = ref(false);
+const shipOpen = ref(false);
+
+const shipKit = computed(() =>
+  kit.value && fulfilment.value
+    ? {
+        id: kit.value.id,
+        kit_no: kit.value.kit_no,
+        project_id: kit.value.project_id,
+        fulfilment: fulfilment.value
+      }
+    : undefined
+);
 
 const actions = computed(() =>
   kit.value
@@ -197,6 +210,13 @@ const close = async () => {
   void act(() => closeKit(id, version), "清单已关闭");
 };
 
+// 从一份清单跳到另一份时路由只换参数、页面不重建，要自己重新加载
+watch(kitId, () => {
+  triedSubmit.value = false;
+  shipOpen.value = false;
+  void load();
+});
+
 onMounted(async () => {
   void loadUserNames();
   await loadCaps();
@@ -247,6 +267,12 @@ onMounted(async () => {
           <el-button v-if="actions?.canClose" @click="close"
             >关闭清单</el-button
           >
+          <el-button
+            v-if="actions?.canShip && shipKit"
+            type="primary"
+            @click="shipOpen = true"
+            >按清单发货</el-button
+          >
         </div>
       </div>
       <el-descriptions :column="3" border size="small" class="info">
@@ -296,6 +322,13 @@ onMounted(async () => {
         :readonly="!actions?.canEdit"
         :fulfilment="fulfilment"
         :problems="problems"
+      />
+      <DocFormDialog
+        v-if="shipKit"
+        v-model="shipOpen"
+        doc-type="out"
+        :kit="shipKit"
+        @created="load"
       />
     </template>
   </el-card>

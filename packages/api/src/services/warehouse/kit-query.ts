@@ -2,7 +2,7 @@
  * 项目配套清单的读：列表、详情（行带物资和类别的名字，物资行带同品名的可选规格）。
  */
 import type { Env } from "../../types/env";
-import type { ProjectKit, ProjectKitLine, ProjectKitStatus } from "../../types/wh";
+import type { MaterialKind, ProjectKit, ProjectKitLine, ProjectKitStatus } from "../../types/wh";
 import type { Paged } from "./device";
 import { queryIn } from "./query-in";
 import { requireEnum, requireId } from "./validation";
@@ -21,6 +21,7 @@ export interface ProjectKitLineView extends ProjectKitLine {
   material_spec: string | null;
   material_unit: string | null;
   material_status: string | null;
+  material_kind: MaterialKind | null;
   category_name: string | null;
   /** 同品名的在用物资，物资行"待选规格"时给前端下拉用。 */
   spec_choices: { id: number; spec: string }[];
@@ -123,7 +124,8 @@ export const loadKitLines = async (env: Env, kitId: number): Promise<ProjectKitL
     (
       await env.DB.prepare(
         `SELECT l.*, m.material_code, m.name AS material_name, m.spec AS material_spec,
-                m.unit AS material_unit, m.status AS material_status, c.name AS category_name
+                m.unit AS material_unit, m.status AS material_status, m.kind AS material_kind,
+                c.name AS category_name
            FROM project_kit_line l
            LEFT JOIN material m ON m.id = l.material_id
            LEFT JOIN device_category c ON c.id = l.device_category_id

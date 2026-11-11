@@ -101,6 +101,7 @@ describe.skipIf(!hasSqlite)("项目配套清单", () => {
       ["排泥钢管", "Φ80", 60, 2]
     ]);
     expect(kit.lines[1].spec_choices.map((c) => c.spec)).toEqual(["Φ114", "Φ80"]);
+    expect(kit.lines.map((l) => l.material_kind)).toEqual(["consumable", null, "turnover"]);
   });
 
   it("还没选规格的物资行不能提交，报出第几行；选好后库管提交直接确认", async () => {
