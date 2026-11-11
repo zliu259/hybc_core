@@ -96,39 +96,14 @@
   - 展示工具清单地址、工具调用地址和 Token 配置状态，支持复制地址与保存工具调用 Token；Token 保存后不回显。
   - 支持保存企业微信群机器人 Webhook URL；真实 URL 写入 KV，页面和 D1 只使用 `Webhook Secret Ref`。
   - 维护群聊目录，支持手动添加群聊、搜索群聊、同步外部客户群；内部普通群无法由企业微信 API 全量枚举时，通过手动或工具调用发现记录补齐。
-- 资产台账：`packages/web/src/views/asset/list.vue`
-- 资产运维看板：`packages/web/src/views/asset/ledger.vue`
-- 资产详情：`packages/web/src/views/asset/detail.vue`
-  - 详情页展示基础信息、组合配置历史、库房任务追溯、手册引用历史、任务照片与简报、文档库和事件时间线。
-  - 基础信息区顶部展示设备可用性状态条，明确“可出库/不可直接出库”和阻塞原因。
-  - 库房追溯区支持任务类型、证据类型、事件类型筛选，任务证据支持抽屉预览。
-  - 任务证据预览点击后调用 `packages/web/src/api/warehouse.ts` 的 `getWarehouseTaskEvidenceAccess` 获取短时签名 URL，再通过 `packages/web/src/api/upload.ts` 解析为可预览地址。
-- 设备总览：`packages/web/src/views/asset/dashboard.vue`
-- 仓库管理：`packages/web/src/views/warehouse/index.vue`
-- 库房总控台：`packages/web/src/views/warehouse/control-center.vue`
-- 库房任务调度台：`packages/web/src/views/warehouse/task-dispatch.vue`
-  - 展示任务队列、人员负载、任务包创建、任务包完成/未完/超时/异常汇总、批量加入任务包/批量派工、单任务派工、复核、证据查看和 AI 调度建议触发。
-  - 筛选区支持状态、来源、执行人、仓库、项目、资产类型组合筛选。
-  - AI 调度建议可基于当前筛选或勾选任务创建 `warehouse_task_dispatch_recommendation` 异步任务，结果只作为建议，不自动派工。
-  - 单任务可触发 `warehouse_task_summary` 简报草稿异步任务；顶部“AI结果”入口汇总查看调度建议、组合推荐、手册草稿和简报草稿任务结果。
-- 返库检查维护：`packages/web/src/views/warehouse/return-maintenance.vue`
-- 顶管机组合方案台：`packages/web/src/views/warehouse/tbm-composition.vue`
-  - 支持按所选机芯加载候选壳体/操作台，展示型号、厂家、兼容和不可用原因，型号/口径/厂家不一致会提示需改装。
-  - 支持创建组合方案，由组合方案生成任务包；任务包包含组合前检查、改装实施和组合确认步骤。
-  - 支持基于所选机芯触发 `tbm_composition_recommendation` AI 组合推荐异步任务，结果只作为候选建议，不自动创建或修改组合方案。
-- 操作手册库：`packages/web/src/views/warehouse/manual-library.vue`
-  - 支持手册创建、版本新增、AI 草稿、版本提审、审核发布、自动匹配规则维护；规则按手册、设备型号、资产类型、任务类型、组件角色配置。
-  - 版本记录区按状态显示操作：`draft` 可提审，`reviewing` 可发布，`published/archived` 不再显示误操作入口。
-  - AI 草稿从历史任务简报生成，进入 `warehouse_manual_draft` 异步任务；任务完成后回填草稿内容，不自动发布。
-- 仓库库存：`packages/web/src/views/warehouse/inventory.vue`
-- 库存预警中心：`packages/web/src/views/warehouse/alert.vue`
-- 出入库单管理：`packages/web/src/views/warehouse/stock-order.vue`
-- 出入库调度看板：`packages/web/src/views/warehouse/dispatch.vue`
-- 资产工单中心：`packages/web/src/views/warehouse/work-order.vue`
-- 消耗品管理总览：`packages/web/src/views/warehouse/consumables.vue`
-- 公司资产盘库：`packages/web/src/views/warehouse/stocktake.vue`
-- 项目设备规划：`packages/web/src/views/warehouse/equipment-plan.vue`
-- 项目设备视图：`packages/web/src/views/project/equipment-view.vue`
+- 库房（2026-11 重做；旧的资产台账、仓库、调度、工单、组合方案、手册、盘库等页面已下线，见下文「J. 库房」）：
+  - 总览：`packages/web/src/views/wh/overview/index.vue`
+  - 设备：`packages/web/src/views/wh/device/index.vue`；设备详情：`packages/web/src/views/wh/device/detail.vue`（隐藏路由 `/wh/device/:id`）
+  - 物资：`packages/web/src/views/wh/material/index.vue`
+  - 库房单：`packages/web/src/views/wh/doc/index.vue`
+  - 任务：`packages/web/src/views/wh/task/index.vue`
+  - 设置：`packages/web/src/views/wh/settings/index.vue`（隐藏路由，从总览进入）
+- 项目设备视图：`packages/web/src/views/project/equipment-view.vue`（只读，显示项目上现有的设备和物资）
 - 项目工作区项目群绑定：`packages/web/src/views/project/workspace/components/wecom-tool-binding-panel.vue`
   - 作为独立 Tab 嵌入 `packages/web/src/views/project/workspace/index.vue`，Tab 名称为“项目群绑定”。
   - Tab 入口仅对 `super_admin` 显示；非超级管理员访问 `tab=wecom` 时自动回到“项目动态与工作段”。
@@ -502,108 +477,73 @@
 - 任务队列卡片：筛选（状态/任务类型）+ 表格 + 分页。
 - API 指向：`/api/v1/admin/runner-runtime-config`, `/api/v1/admin/ai-runtime/test-task`, `/api/v1/task/nodes`, `/api/v1/task/queue`
 
-#### J. 资产台账 `views/asset/list.vue`
+#### J. 库房（2026-11 重做）
 
-- 列：资产码、类型、状态、资产归属（自有/租入）、所在项目、责任人、更新时间。
-- 支持：按资产类型动态展示属性字段。
-- 支持：按资产归属筛选；新建资产可指定归属（默认自有）。
-- 交互：资产编码与资产名称支持点击进入单设备管理详情页（`/warehouse-assets/device/:id`，页面文件 `views/asset/detail.vue`）。
-- 升级要求：支持“整机业务视图 / 部件资产视图”切换，列表页默认以资产类型筛选为主，并可按 whole-machine number、shell、core、console 关键字检索。
-- API 指向：`/api/v1/asset`
+设计稿：`docs/superpowers/specs/2026-11-11-warehouse-rebuild-design.md`。菜单「库房」下五个页面：总览、设备、物资、库房单、任务；设置和设备详情是隐藏路由。旧的资产台账、仓库、调度看板、工单中心、组合方案、手册库、盘库等页面在阶段 1 一起下线。
 
-#### J-2. 资产详情 `views/asset/detail.vue`
+通用规则：
 
-- 模块：基础信息、当前配置、Factory/Current/Project-Temporary 参数区、部件关系、事件时间线、文档库。
-- 交互：支持按 whole-machine view 查看当前 shell/core/console 组合，也支持切换到 shell 或 core 独立履历视图。
-- 升级要求：当资产为顶管机相关设备时，页面需要显式展示 `available now / available after modification / blocked by maintenance / returned quarantine` 等状态标签。
-- API 指向：`/api/v1/asset/:id`, `/api/v1/asset/:id/event`, `/api/v1/asset/:id/document`
+- 只有一个库房，不选仓库。设备一台一台流转，物资按数量记账；所有数量变化都来自「库房单」，库房单不能改不能删，只能冲销。
+- 设备状态（可用、待检、维修中、暂不可用、在项目、已报废）由位置和未完成的任务算出来，页面上没有改状态的入口。
+- 写操作都带 `client_request_id`（库房单、导入）或 `version`（任务）：双击、重发不会多记一笔；任务被别人先改时提示「数据已变化，请刷新后重试」并重新加载。
+- 权限：库管（设置里的名单）能录单、导入、建设备和物资、派工、确认；经理和超管能报废和改设置；只有超管能撤销报废；其他人只读；被派到任务的人能传照片、提交。
+- 失败提示统一用后端返回的中文；页面上不出现英文枚举值和数字 ID。
 
-#### K. 仓库管理 `views/warehouse/index.vue`
+##### J-1. 总览 `views/wh/overview/index.vue`
 
-- 模块：仓库 KPI 总览（仓库数/待处理制单/库存预警/库存条目）、业务入口（制单/调度/库存/资产查验）、仓库档案列表。
-- 交互：软删除，状态维护（active/inactive）。
-- API 指向：`/api/v1/warehouse`
+- 卡片：待确认任务、待派工任务、超期任务、待检设备、维修中设备、在项目设备、低库存物资。点卡片进对应的筛选列表（待派工 → `/wh/task?status=unassigned`，低库存 → `/wh/material?low_stock=1`）。
+- 最近的库房单；还没设库管时顶部提示。右上角「设置」。
+- API：`GET /api/v1/warehouse/overview`
 
-#### K-2. 仓库库存 `views/warehouse/inventory.vue`
+##### J-2. 设置 `views/wh/settings/index.vue`
 
-- 模块：库存总览、筛选、耗材消耗登记、页内预警清单。
-- 交互：按仓库/资产类型过滤，登记消耗后刷新库存；预警项支持一键触发 AI 分析。
-- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`, `/api/v1/warehouse/inventory/alert`, `/api/v1/warehouse/inventory/alert/:id/analyze`
+- 库管和资料管理员名单（从企微通讯录选人）、设备类别、默认检查人、返库检查要拍几张照片（0–9，默认 3）。
+- 经理、超管可改，其他人只读。
+- API：`/api/v1/warehouse/me`、`/member`、`/device-category`、`/settings`
 
-#### K-3. 库存预警中心 `views/warehouse/alert.vue`
+##### J-3. 设备 `views/wh/device/index.vue`、`detail.vue`
 
-- 模块：低库存清单、缺口展示、AI分析触发。
-- 交互：预警项支持一键触发 `inventory_alert_analysis`。
-- API 指向：`/api/v1/warehouse/inventory/alert`, `/api/v1/warehouse/inventory/alert/:id/analyze`
+- 列表：编号、名称、现场叫法、类别、机型、口径、状态、所在项目；按状态页签（带数量）、类别、关键字筛选。新增（编号不填自动生成 `SB-0001`）、粘贴表格导入（任何一行出错整批不导入，逐行报错）、勾选后打印二维码标签（内容 `HYBC:D:<编号>`，新窗口打印）。
+- 详情：基础信息和状态标签；维修使用记录（每次返库的项目、时间、顶进米数、土质，累计顶进；维修记录按液压、电气、传动、其他分栏）；时间线（建档、发出、返库、检查、维修、报废、备注）；报废（必须写原因、传照片）和撤销报废。
+- API：`/api/v1/warehouse/device`、`/device/import`、`/device/:id`、`/device/:id/note`、`/device/:id/scrap`、`/device/:id/unscrap`
 
-#### K-4. 出入库单管理 `views/warehouse/stock-order.vue`
+##### J-4. 物资 `views/wh/material/index.vue`
 
-- 模块：出入库单列表、购物车式创建表单、模板快速套用、关键字快速加入。
-- 交互：草稿单可提交审批；审批通过后可先执行 gate 检查再执行；草稿/待审可取消。
-- 交互增强：支持“扫码值/关键字 + 数量”快速加入清单，支持预制模板一键套用后继续编辑。
-- 特殊放行：审批通过的出库单可发起特殊放行审批，必须填写放行原因并勾选风险确认；后端记录审批人、原因和风险确认后，才允许绕过返库隔离或阻塞任务 gate。
-- 租赁增强：制单时可选关联 `rental_term_id`，逾期租期在出库前阻断；关联租期的入库执行会回填“已归还”。
-- 组合增强：清单行支持直接标记 `configuration_role`（整机 / 机壳 / 机芯 / 操作台 / 通用）与 `requires_modification`，用于把“已组合设备直接出库”与“兼容组合但需改装”两类方案在同一制单页内表达。
-- 升级要求：主要设备出库项支持两种模式——已组合设备直接选取、compatible 组件组合选取并显示 `modification required` 提示；返库执行后主要设备自动进入 returned quarantine，不直接恢复可用。
-- API 指向：`/api/v1/warehouse/stock-order`, `/api/v1/warehouse/stock-order/:id/gate-check`, `/api/v1/warehouse/stock-order/:id/override`, `/api/v1/warehouse/stock-order/:id/submit-approval`, `/api/v1/warehouse/stock-order/:id/execute`
+- 列表：编号（`WZ-0001`）、品名、规格、单位、分节、管法（周转/消耗）、在库、最低库存、库位；可只看低库存。
+- 新增、粘贴表格导入（可带期初数量，自动生成一张期初单）；每条物资的流水抽屉（单号、类型、变化、余额）。
+- API：`/api/v1/warehouse/material`、`/material/import`、`/material/:id/ledger`
 
-#### K-5. 项目设备规划 `views/warehouse/equipment-plan.vue`
+##### J-5. 库房单 `views/wh/doc/index.vue`
 
-- 模块：设备规划列表、新建规划、AI推荐触发、推荐结果查看、确认生成出库单。
-- 交互：确认时自动生成出库单并回写规划单。
-- 升级要求：规划结果需区分 `available now` 与 `available after modification`，并把 modification required 组合显式回传到出库单配置页。
-- API 指向：`/api/v1/warehouse/equipment-plan`, `/api/v1/warehouse/equipment-plan/:id/trigger-recommend`, `/api/v1/warehouse/equipment-plan/:id/recommendation`, `/api/v1/warehouse/equipment-plan/:id/confirm`
+- 列表按类型页签（入库、发往项目、项目返库、项目间转场、期初、盘点调整、报废），可按单号和时间筛选；点行看详情。
+- 录入四种：
+  - 入库：供应商、物资和数量。
+  - 发往项目：选项目和领料人；设备只能选可用的；物资不能超过在库数量（表单里先拦一次）。
+  - 项目返库：选项目后自动带出在这个项目上的设备和物资，默认全部退回；每行可改退回数和丢失损坏数，设备填顶进距离和土质。提交后每台设备生成一个返库检查任务，提示「已生成 N 个检查任务」。
+  - 项目间转场：从甲项目转到乙项目，数量默认等于在场数。
+- 详情抽屉：抬头、每行变化（退回/报损、在库变化、顶进米数）；冲销（确认后生成一张数量相反的单，原单保留；数量已经变动、冲不回去时显示后端原因）。
+- API：`/api/v1/warehouse/doc`、`/doc/:id`、`/doc/:id/reverse`、`/project/:projectId/holdings`
 
-#### K-5.1 出入库调度看板 `views/warehouse/dispatch.vue`
+##### J-6. 任务 `views/wh/task/index.vue`
 
-- 模块：调度状态总览、`available_now / available_after_modification / blocked / reserved / in_transit / on_project / scrapped` 七状态分栏、组合配置标签、阻塞工单与预留记录聚合视图。
-- 交互：支持按 warehouse / asset_type / project / dispatch_state 过滤；支持从资产卡片跳转到 `views/asset/detail.vue`，在卡片内直接查看调度原因、组合配置、阻塞工单与预留记录。
-- 升级要求：若对象依赖 `special override` 才可放行，调度看板必须显式展示 override 标识、审批状态与补检要求，不能与普通 `available now` 混淆。
-- API 指向：`/api/v1/asset/dashboard/dispatch-board`, `/api/v1/asset/:id`
+- 页签「我的」「全部」（库管默认全部）；状态筛选：待派工、待执行、待确认、已完成、已取消。列：任务号（`KFR-`）、类型、标题、设备、执行人、期限（超期标红）、状态、照片数/要求数。
+- 库管「新建任务」：检查、维修、保养、其他；标题、设备（可不选）、说明、是否挡住发出、照片要求、期限、执行人。
+- 详情抽屉：
+  - 任务信息；被退回时顶部红色提示框显示退回要求。
+  - 照片缩略图可点开预览；执行人在待执行时可上传、删自己的照片。
+  - 执行人的提交区：检查任务选合格或不合格，维修任务勾涉及的系统，写简报。照片不够时后端提示「还差 N 张照片」。非库管提交后待确认；库管自己做的任务提交即完成。
+  - 库管的操作：派工/改派、确认完成、退回补充（必须写要求，照片保留）、取消（必须写原因）。
+- 检查不合格在完成时自动生成「维修：<设备名>」任务（挡住发出，待派工），设备显示维修中；维修完成后设备回到可用，维修记录进设备详情。
+- API：`/api/v1/warehouse/task`（`scope`、`status`、`assigned=yes|no` 筛选）、`/task/:id`、`/task/:id/assign`、`/photo`、`/submit`、`/confirm`、`/send-back`、`/cancel`
 
-#### K-6. 消耗品管理总览 `views/warehouse/consumables.vue`
+##### J-7. 项目设备视图 `views/project/equipment-view.vue`、`workspace/equipment-panel.vue`
 
-- 模块：消耗品 KPI、库存清单、消耗记录、消耗登记。
-- 交互：按仓库/消耗品类型/项目筛选，支持直接跳转出入库制单与公司盘库页面。
-- API 指向：`/api/v1/warehouse/inventory`, `/api/v1/warehouse/consumption`, `/api/v1/asset/type`
+- 显示这个项目上现在有的设备和物资（来自库房单的累计），只读。
+- API：`GET /api/v1/warehouse/project/:projectId/holdings`
 
-#### K-7. 公司资产盘库 `views/warehouse/stocktake.vue`
+##### J-8. 旧接口占位
 
-- 模块：盘点任务列表、盘点执行区、差异汇总。
-- 交互：支持全公司/单仓库创建盘点任务；盘库过程中支持页内直接新增设备/消耗品并填写数量与状态（正常/新增/破损/盘亏），录入后自动计算差异并完成盘点。
-- API 指向：`/api/v1/warehouse/stocktake`, `/api/v1/warehouse/stocktake/:id`, `/api/v1/warehouse/stocktake/:id/line`, `/api/v1/warehouse/stocktake/:id/line/:lineId`, `/api/v1/warehouse/stocktake/:id/complete`
-
-#### K-8. 设备总览 `views/asset/dashboard.vue`
-
-- 模块：按类型/状态/位置三维统计。
-- 升级要求：增加顶管机专项统计：当前可用整机数、可改装后可用数、returned quarantine 数、buried shell 数、recovered core 数。
-- API 指向：`/api/v1/asset/dashboard/overview`
-
-#### K-9. 项目设备视图 `views/project/equipment-view.vue`
-
-- 模块：项目设备清单、项目维度物资消耗汇总。
-- 租赁提示：展示租赁模式、到期日、逾期天数，并在页头显示租赁设备与逾期设备汇总告警。
-- 升级要求：项目视图需显示当前 whole-machine configuration、关键部件状态、是否依赖 special override 放行、以及项目侧 freight attribution 摘要。
-- API 指向：`/api/v1/asset/dashboard/project/:projectId`
-
-#### K-10. 资产工单中心 `views/warehouse/work-order.vue`
-
-- 模块：inspection / maintenance / servicing / modification / scrapping 五类资产工单列表、创建表单、负责人分配、阻塞开关联动、结果摘要编辑。
-- 交互：支持按资产、组合配置、出入库单三类对象发起工单；支持草稿提审、审批通过后开始、进行中完成、非终态取消；支持在页内编辑负责人、计划日期、阻塞标记与结果摘要。
-- 角色可见性：
-  - 项目经理：可查看自己项目发起相关任务与阻塞原因，不可关闭库房维保任务。
-  - 办公室：可查看审核补充相关任务、资料缺失、特批流。
-  - 库房：可查看并执行 inspection / maintenance / modification / scrapping 任务。
-  - 管理层：可查看 special override 队列与高风险阻塞任务。
-- API 指向：`/api/v1/warehouse/work-order`, `/api/v1/warehouse/work-order/:id/submit-approval`, `/api/v1/warehouse/work-order/:id/start`, `/api/v1/warehouse/work-order/:id/complete`, `/api/v1/warehouse/work-order/:id/cancel`
-- 移动端执行契约：`packages/miniapp/pages/warehouse-task/index` 仅调用 `/api/v1/warehouse/work-order/mobile/my-tasks`, `/api/v1/warehouse/work-order/mobile/task/:id`, `/api/v1/warehouse/work-order/mobile/task/:id/start`, `/api/v1/warehouse/work-order/mobile/task/:id/submit`；不暴露 Web 端的创建、分派、审核、AI 推荐和任务包管理。
-
-#### K-11. 仓库升级角色可见性矩阵
-
-- 项目经理：发起出入库申请、查看项目设备规划与自己项目的阻塞原因。
-- 办公室：审核补充出入库单、查看资料缺口、参与特批流转。
-- 库房：执行出入库、安排运输、处理 inspection / maintenance / servicing / modification / scrapping 任务。
-- 管理层：审批 special override、查看高风险资产与关键阻塞。
+已发布的小程序和 MCP 还在调旧路径。阶段 3 换掉小程序库房页之前：旧的列表接口返回空数组，其他旧路径返回「库房功能已升级，请使用新版页面」；`/warehouse/inventory` 和 `/warehouse/inventory/alert` 由新物资表接管。已发布的小程序库房页会显示空数据。
 
 #### L. 系统配置 `views/admin/system.vue`
 

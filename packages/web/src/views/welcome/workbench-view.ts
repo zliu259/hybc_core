@@ -330,14 +330,14 @@ const ENTRIES: readonly EntryDefinition[] = [
     key: "ledger",
     label: "设备台账",
     tone: "green",
-    path: "/warehouse-assets/ledger",
+    path: "/wh/device",
     roles: MANAGE
   },
   {
     key: "warehouseTasks",
-    label: "任务调度",
+    label: "库房任务",
     tone: "green",
-    path: "/warehouse-assets/tasks",
+    path: "/wh/task",
     roles: MANAGE
   },
   {

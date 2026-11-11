@@ -152,7 +152,7 @@ export const weComToolDefinitions: Record<WeComToolName, WeComToolDefinition> = 
   get_equipment_summary: {
     name: "get_equipment_summary",
     title: "项目设备摘要",
-    description: "查询项目拟派和在场设备摘要。",
+    description: "查询项目当前在场的设备清单。",
     access: "read",
     scope: "project",
     input_schema: objectSchema({ project_id: projectIdSchema })

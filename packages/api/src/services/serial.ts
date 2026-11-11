@@ -1,7 +1,7 @@
 /**
  * Serial number generation service.
  * Format: {prefix}-{YYYYMMDD}-{0001}
- * 
+ *
  * Prefixes by business type:
  *   SP → approval (审批)
  *   TK → task (任务)
@@ -38,12 +38,34 @@ export const generateSerial = async (
   const date = nowDate();
   const pattern = `${prefix}-${date}-%`;
 
-  const result = await db.prepare(
-    `SELECT COUNT(*) as cnt FROM ${tableName} WHERE ${columnName} LIKE ?`
-  )
+  const result = await db
+    .prepare(`SELECT COUNT(*) as cnt FROM ${tableName} WHERE ${columnName} LIKE ?`)
     .bind(pattern)
     .first<{ cnt: number }>();
 
   const seq = String((result?.cnt ?? 0) + 1).padStart(4, "0");
   return `${prefix}-${date}-${seq}`;
+};
+
+/**
+ * 一次取 count 个连续流水号，格式同 generateSerial。给同一个批处理里要建多条记录的场景用（例如返库一次生成多个检查任务）。
+ * 和 generateSerial 一样按当天已有条数计数，并发时可能撞号，调用方要能处理唯一约束失败。
+ */
+export const generateSerials = async (
+  db: D1Database,
+  prefix: string,
+  tableName: string,
+  columnName: string,
+  count: number
+): Promise<string[]> => {
+  const date = nowDate();
+  const result = await db
+    .prepare(`SELECT COUNT(*) as cnt FROM ${tableName} WHERE ${columnName} LIKE ?`)
+    .bind(`${prefix}-${date}-%`)
+    .first<{ cnt: number }>();
+  const start = (result?.cnt ?? 0) + 1;
+  return Array.from(
+    { length: count },
+    (_, index) => `${prefix}-${date}-${String(start + index).padStart(4, "0")}`
+  );
 };

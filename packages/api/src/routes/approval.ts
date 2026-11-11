@@ -107,7 +107,6 @@ const approvalBizDetailSql = (instanceAlias: string): string => {
     WHEN 'inbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ${instanceAlias}.biz_id)
     WHEN 'reimbursement_batch' THEN (SELECT rb.batch_no || ' | ' || rb.item_count || '单' FROM reimbursement_batch rb WHERE rb.id = ${instanceAlias}.biz_id)
     WHEN 'invoice_request' THEN (SELECT ir.request_no || ' | ' || IFNULL(ir.customer_name, '-') FROM invoice_request ir WHERE ir.id = ${instanceAlias}.biz_id)
-    WHEN 'stock_order' THEN (SELECT so.order_no || ' | ' || IFNULL(so.order_type, '-') FROM stock_order so WHERE so.id = ${instanceAlias}.biz_id)
     ELSE NULL
   END`;
 };
@@ -290,7 +289,6 @@ approvalRoutes.get("/pending", async (c) => {
          WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
          WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
          WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
-         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
          ELSE NULL
        END AS biz_project_id,
        CASE ai.biz_type
@@ -299,7 +297,6 @@ approvalRoutes.get("/pending", async (c) => {
          WHEN 'inbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ai.biz_id)
          WHEN 'reimbursement_batch' THEN (SELECT rb.batch_no || ' | ' || rb.item_count || '单' FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
          WHEN 'invoice_request' THEN (SELECT ir.request_no || ' | ' || IFNULL(ir.customer_name, '-') FROM invoice_request ir WHERE ir.id = ai.biz_id)
-         WHEN 'stock_order' THEN (SELECT so.order_no || ' | ' || IFNULL(so.order_type, '-') FROM stock_order so WHERE so.id = ai.biz_id)
          ELSE NULL
        END AS biz_detail,
        p.project_name,
@@ -315,7 +312,6 @@ approvalRoutes.get("/pending", async (c) => {
          WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
          WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
          WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
-         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
          ELSE NULL
        END
      )
@@ -388,7 +384,6 @@ approvalRoutes.get("/processed", async (c) => {
          WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
          WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
          WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
-         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
          ELSE NULL
        END AS biz_project_id,
        CASE ai.biz_type
@@ -397,7 +392,6 @@ approvalRoutes.get("/processed", async (c) => {
          WHEN 'inbound_contract' THEN (SELECT ct.contract_no || ' | ' || IFNULL(ct.counterparty, '-') FROM contract ct WHERE ct.id = ai.biz_id)
          WHEN 'reimbursement_batch' THEN (SELECT rb.batch_no || ' | ' || rb.item_count || '单' FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
          WHEN 'invoice_request' THEN (SELECT ir.request_no || ' | ' || IFNULL(ir.customer_name, '-') FROM invoice_request ir WHERE ir.id = ai.biz_id)
-         WHEN 'stock_order' THEN (SELECT so.order_no || ' | ' || IFNULL(so.order_type, '-') FROM stock_order so WHERE so.id = ai.biz_id)
          ELSE NULL
        END AS biz_detail,
        p.project_name,
@@ -411,7 +405,6 @@ approvalRoutes.get("/processed", async (c) => {
          WHEN 'inbound_contract' THEN (SELECT ct.project_id FROM contract ct WHERE ct.id = ai.biz_id)
          WHEN 'reimbursement_batch' THEN (SELECT rb.project_id FROM reimbursement_batch rb WHERE rb.id = ai.biz_id)
          WHEN 'invoice_request' THEN (SELECT ir.project_id FROM invoice_request ir WHERE ir.id = ai.biz_id)
-         WHEN 'stock_order' THEN (SELECT so.project_id FROM stock_order so WHERE so.id = ai.biz_id)
          ELSE NULL
        END
      )

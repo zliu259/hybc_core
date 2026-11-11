@@ -346,55 +346,25 @@ const getEquipmentSummary = async (
   input: Record<string, unknown>
 ): Promise<Record<string, unknown>> => {
   const projectId = projectIdFromInput(input);
-  const plan = await env.DB.prepare(
-    `SELECT id, plan_no, plan_status, ai_status, updated_at
-       FROM project_equipment_plan
-      WHERE project_id = ?
-      ORDER BY id DESC LIMIT 1`
+  const devices = await env.DB.prepare(
+    `SELECT d.device_code, d.name, c.name AS category_name
+       FROM device d
+       JOIN device_category c ON c.id = d.category_id
+      WHERE d.location = 'project' AND d.current_project_id = ?
+      ORDER BY d.device_code ASC`
   )
     .bind(projectId)
-    .first<{
-      id: number;
-      plan_no: string;
-      plan_status: string;
-      ai_status: string;
-      updated_at: string;
-    }>();
-  const activeAssets = await env.DB.prepare(
-    "SELECT COUNT(*) AS active_asset_count FROM tracked_asset WHERE current_project_id = ?"
-  )
-    .bind(projectId)
-    .first<{ active_asset_count: number }>();
-  const items = plan
-    ? await env.DB.prepare(
-        `SELECT asset_type_id, planned_qty, recommended_qty, source, note
-           FROM project_equipment_plan_item
-          WHERE plan_id = ?
-          ORDER BY id ASC`
-      )
-        .bind(plan.id)
-        .all<{
-          asset_type_id: number;
-          planned_qty: number;
-          recommended_qty: number | null;
-          source: string | null;
-          note: string | null;
-        }>()
-    : { results: [] };
+    .all<{ device_code: string; name: string; category_name: string }>();
+  const rows = devices.results ?? [];
 
   return {
     project_id: projectId,
-    active_asset_count: activeAssets?.active_asset_count ?? 0,
-    latest_plan: plan
-      ? {
-          plan_id: plan.id,
-          plan_no: plan.plan_no,
-          plan_status: plan.plan_status,
-          ai_status: plan.ai_status,
-          updated_at: plan.updated_at,
-          items: items.results ?? []
-        }
-      : null
+    active_asset_count: rows.length,
+    devices: rows.map((row) => ({
+      device_code: row.device_code,
+      name: row.name,
+      category_name: row.category_name
+    }))
   };
 };
 
