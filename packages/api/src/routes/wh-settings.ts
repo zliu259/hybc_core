@@ -9,6 +9,7 @@ import {
   requireSettingsManager
 } from "../services/warehouse/access";
 import { WarehouseError } from "../services/warehouse/errors";
+import { getWarehouseOverview } from "../services/warehouse/overview";
 import { getWarehouseSettings, saveWarehouseSettings } from "../services/warehouse/settings";
 import { optionalNumber, requireEnum, requireText } from "../services/warehouse/validation";
 import type { DeviceCategory, WarehouseMember, WarehouseMemberRole } from "../types/wh";
@@ -157,4 +158,10 @@ whSettingsRoutes.put(
       throw error;
     }
   })
+);
+
+whSettingsRoutes.get(
+  "/overview",
+  requireRoles(ALL_ROLES),
+  guarded(async (c) => c.json({ success: true, data: await getWarehouseOverview(c.env) }))
 );
