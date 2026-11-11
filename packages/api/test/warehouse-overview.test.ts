@@ -62,4 +62,13 @@ describe.skipIf(!hasSqlite)("库房总览", () => {
     });
     expect(overview.recent_docs).toHaveLength(10);
   });
+
+  it("待确认清单只数已提交的", async () => {
+    const h = createWarehouseHarness();
+    const projectId = h.seed.project();
+    h.seed.kit({ project_id: projectId, status: "submitted", confirmed_at: null });
+    h.seed.kit({ project_id: projectId, status: "draft", confirmed_at: null });
+    h.seed.kit({ project_id: projectId });
+    expect((await getWarehouseOverview(h.env)).kits_to_confirm).toBe(1);
+  });
 });

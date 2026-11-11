@@ -5,7 +5,8 @@ import {
   ALL_ROLES,
   getWarehouseCapabilities,
   requireHuman,
-  requireKeeper
+  requireKeeper,
+  requireKitCreator
 } from "../services/warehouse/access";
 import { WarehouseError } from "../services/warehouse/errors";
 import {
@@ -49,6 +50,7 @@ whKitRoutes.get(
 whKitRoutes.post(
   "/kit",
   requireHuman,
+  requireKitCreator,
   guarded(async (c) => {
     const auth = c.get("auth");
     const caps = await getWarehouseCapabilities(c.env, auth);
@@ -60,6 +62,7 @@ whKitRoutes.post(
 whKitRoutes.put(
   "/kit/:id",
   requireHuman,
+  requireKitCreator,
   guarded(async (c) => {
     const auth = c.get("auth");
     const caps = await getWarehouseCapabilities(c.env, auth);
@@ -71,6 +74,7 @@ whKitRoutes.put(
 whKitRoutes.post(
   "/kit/:id/submit",
   requireHuman,
+  requireKitCreator,
   guarded(async (c) => {
     const auth = c.get("auth");
     const caps = await getWarehouseCapabilities(c.env, auth);
@@ -103,6 +107,7 @@ whKitRoutes.post(
 whKitRoutes.post(
   "/kit/:id/discard",
   requireHuman,
+  requireKitCreator,
   guarded(async (c) => {
     const auth = c.get("auth");
     const caps = await getWarehouseCapabilities(c.env, auth);

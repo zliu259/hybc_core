@@ -39,6 +39,7 @@ const SETTINGS = { manager: true, super_admin: true };
 const KEEPER = { keeper: true, super_admin: true };
 const SCRAP = { manager: true, super_admin: true };
 const UNSCRAP = { super_admin: true };
+const KIT = { keeper: true, manager: true, site_manager: true, super_admin: true };
 
 const MATRIX = [
   ["PUT", "/warehouse/settings", SETTINGS],
@@ -60,7 +61,15 @@ const MATRIX = [
   ["POST", "/warehouse/task/1/send-back", KEEPER],
   ["POST", "/warehouse/task/1/cancel", KEEPER],
   ["POST", "/warehouse/device/1/scrap", SCRAP],
-  ["POST", "/warehouse/device/1/unscrap", UNSCRAP]
+  ["POST", "/warehouse/device/1/unscrap", UNSCRAP],
+  ["POST", "/warehouse/kit-template", KEEPER],
+  ["PUT", "/warehouse/kit-template/1", KEEPER],
+  ["POST", "/warehouse/kit", KIT],
+  ["PUT", "/warehouse/kit/1", KIT],
+  ["POST", "/warehouse/kit/1/submit", KIT],
+  ["POST", "/warehouse/kit/1/discard", KIT],
+  ["POST", "/warehouse/kit/1/confirm", KEEPER],
+  ["POST", "/warehouse/kit/1/close", KEEPER]
 ];
 
 const CASES = MATRIX.flatMap(([method, path, allowed]) =>
@@ -79,7 +88,12 @@ const READS = [
   "/warehouse/doc",
   "/warehouse/task",
   "/warehouse/overview",
-  "/warehouse/project/1/holdings"
+  "/warehouse/project/1/holdings",
+  "/warehouse/project/1/ledger",
+  "/warehouse/kit-template",
+  "/warehouse/kit",
+  "/warehouse/kit/1",
+  "/warehouse/kit/1/fulfilment"
 ];
 
 describe.skipIf(!hasSqlite)("库房权限矩阵", () => {
@@ -88,6 +102,24 @@ describe.skipIf(!hasSqlite)("库房权限矩阵", () => {
   beforeEach(() => {
     h = createWarehouseHarness();
     h.seed.member("kp", "keeper");
+    // 项目 1 由现场负责人 sm 负责，清单 1 挂在它上面
+    h.seed.kit({ project_id: h.seed.project("矩阵项目", "sm") });
+  });
+
+  it("现场负责人只能动自己负责的项目的清单", async () => {
+    const other = h.seed.project("别人的项目", "someone-else");
+    const othersKit = h.seed.kit({ project_id: other, status: "draft", confirmed_at: null });
+    const ownKit = h.seed.kit({ project_id: 1, status: "draft", confirmed_at: null });
+    Object.assign(authState, IDENTITIES.site_manager);
+    const call = (path) =>
+      callWh(h, mountWarehouseRoutes, "PUT", path, { version: 0, title: "改" });
+    expect((await call(`/warehouse/kit/${othersKit}`)).status).toBe(403);
+    expect((await call(`/warehouse/kit/${ownKit}`)).status).toBe(200);
+    const create = await callWh(h, mountWarehouseRoutes, "POST", "/warehouse/kit", {
+      project_id: other,
+      title: "x"
+    });
+    expect(create.status).toBe(403);
   });
 
   it.each(CASES)("%s %s 身份 %s 允许=%s", async (method, path, who, allowed) => {
