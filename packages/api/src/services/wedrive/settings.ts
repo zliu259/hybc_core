@@ -98,12 +98,17 @@ export const getCallCount = async (env: Env, now: Date): Promise<number> => {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : 0;
 };
 
+/** 把本月已用次数写成 count。客户端在内存里累加后用它落盘。 */
+export const saveCallCount = async (env: Env, now: Date, count: number): Promise<void> => {
+  await env.KV.put(callCountKey(now), String(count), { expirationTtl: CALL_COUNT_TTL_SECONDS });
+};
+
 /**
  * 记一次微盘调用，返回加完之后的数。
  * 先读后写，不是原子的：镜像同一时间只有一个在跑（见 mirror-run.ts 的锁），够用了。
  */
 export const addCall = async (env: Env, now: Date): Promise<number> => {
   const next = (await getCallCount(env, now)) + 1;
-  await env.KV.put(callCountKey(now), String(next), { expirationTtl: CALL_COUNT_TTL_SECONDS });
+  await saveCallCount(env, now, next);
   return next;
 };

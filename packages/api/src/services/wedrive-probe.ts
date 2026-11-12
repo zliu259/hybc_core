@@ -7,8 +7,9 @@
  */
 import type { Env } from "../types/env";
 import { sha1StateHex } from "./sha1-state";
-import { fetchWeComAccessToken } from "./wecom-api";
-import { fetchViaBridgeStrict } from "./wecom-approval-push";
+import { createBridgeCaller, type WeComCaller, type WeComReply } from "./wedrive/client";
+
+export type { WeComCaller, WeComReply };
 
 type Scalar = string | number | boolean | null;
 
@@ -28,8 +29,6 @@ export interface WedriveProbeReport {
   api_calls: number;
 }
 
-export type WeComReply = { errcode: number; errmsg: string } & Record<string, unknown>;
-export type WeComCaller = (apiName: string, body: Record<string, unknown>) => Promise<WeComReply>;
 export type DownloadFetcher = (
   url: string,
   cookie: string
@@ -38,17 +37,6 @@ export type DownloadFetcher = (
 const SMALL_FILE_BYTES = 1024;
 const CHUNK_BYTES = 2 * 1024 * 1024;
 const BIG_FILE_BYTES = 3 * 1024 * 1024;
-
-const defaultCaller =
-  (env: Env): WeComCaller =>
-  async (apiName, body) => {
-    const token = await fetchWeComAccessToken(env);
-    return fetchViaBridgeStrict<WeComReply>(
-      env,
-      `https://qyapi.weixin.qq.com/cgi-bin/wedrive/${apiName}?access_token=${encodeURIComponent(token)}`,
-      { method: "POST", body }
-    );
-  };
 
 const defaultFetchDownload: DownloadFetcher = async (url, cookie) => {
   const response = await fetch(url, { headers: cookie ? { Cookie: cookie } : {} });
@@ -101,7 +89,7 @@ export const runWedriveProbe = async (
   options: { foreign_spaceid?: string },
   deps: { call?: WeComCaller; fetchDownload?: DownloadFetcher } = {}
 ): Promise<WedriveProbeReport> => {
-  const call = deps.call ?? defaultCaller(env);
+  const call = deps.call ?? createBridgeCaller(env);
   const fetchDownload = deps.fetchDownload ?? defaultFetchDownload;
   const startedAt = new Date().toISOString();
   const steps: WedriveProbeStep[] = [];
