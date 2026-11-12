@@ -80,10 +80,16 @@ const createPageHarness = ({ page, profile } = {}) => {
     .filter((file) => file !== __filename)
     .forEach((file) => delete require.cache[file]);
 
+  // 路径最长的优先；同样长时，一次性的先用（按登记顺序），再是最后登记的常驻响应
   const findHandler = (method, requestPath) =>
     handlers
       .filter((item) => item.method === method && requestPath.includes(item.includes))
-      .sort((a, b) => b.includes.length - a.includes.length || b.seq - a.seq)[0];
+      .sort(
+        (a, b) =>
+          b.includes.length - a.includes.length ||
+          Number(b.once) - Number(a.once) ||
+          (a.once ? a.seq - b.seq : b.seq - a.seq)
+      )[0];
 
   const request = async ({ method = "GET", path: requestPath, data }) => {
     const call = { method, path: requestPath, data: clone(data) };
@@ -227,6 +233,15 @@ const createPageHarness = ({ page, profile } = {}) => {
     /** 某个方法、路径发过的请求 */
     callsTo: (method, includes) =>
       state.calls.filter((call) => call.method === method && call.path.includes(includes)),
+    /** 只取页面传给 Page() 的配置，不跑生命周期。 */
+    loadConfig: () => {
+      const resolved = require.resolve(path.join(ROOT, `${page}.js`));
+      delete require.cache[resolved];
+      pageConfig = null;
+      require(resolved);
+      if (!pageConfig) throw new Error(`${page} 没有调用 Page()`);
+      return pageConfig;
+    },
     /** 加载页面并走 onLoad、onShow，返回带 setData 的页面对象。 */
     open: async (query = {}) => {
       const resolved = require.resolve(path.join(ROOT, `${page}.js`));

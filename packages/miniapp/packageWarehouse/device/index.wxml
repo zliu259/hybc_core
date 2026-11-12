@@ -1,0 +1,115 @@
+<view class="page">
+  <view wx:if="{{notFound}}" class="wh-empty">没有找到这台设备</view>
+  <block wx:elif="{{view}}">
+    <view class="wh-card">
+      <view class="wh-card-body device-head">
+        <view class="device-code-line">
+          <text class="device-code">{{view.header.code}}</text>
+          <hy-status-chip text="{{view.header.stateLabel}}" theme="{{view.header.stateTheme}}" />
+        </view>
+        <view class="device-name">{{view.header.name}}<text wx:if="{{view.header.alias}}" class="wh-muted">（{{view.header.alias}}）</text></view>
+        <view class="wh-kv">
+          <text class="wh-kv-label">位置</text>
+          <text class="wh-kv-value">{{view.header.locationText}}</text>
+        </view>
+        <view wx:if="{{view.header.categoryName}}" class="wh-kv">
+          <text class="wh-kv-label">类别</text>
+          <text class="wh-kv-value">{{view.header.categoryName}}</text>
+        </view>
+        <view wx:if="{{view.header.specText}}" class="wh-kv">
+          <text class="wh-kv-label">规格型号</text>
+          <text class="wh-kv-value">{{view.header.specText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{view.openTasks.length > 0}}" class="wh-card">
+      <view class="wh-card-head"><text class="wh-card-title">未完成的任务</text></view>
+      <view
+        wx:for="{{view.openTasks}}"
+        wx:key="id"
+        class="wh-row"
+        hover-class="wh-row-hover"
+        data-id="{{item.id}}"
+        bindtap="openTask"
+      >
+        <view class="wh-row-main">
+          <view class="wh-row-title">{{item.title}}</view>
+          <view class="wh-row-sub">{{item.kindLabel}} · {{item.statusLabel}}<text wx:if="{{item.blocking}}" class="wh-alert"> · 完成前设备不能发出</text></view>
+        </view>
+        <text class="wh-chevron">›</text>
+      </view>
+    </view>
+
+    <view wx:if="{{view.usage.rows.length > 0}}" class="wh-card">
+      <view class="wh-card-head">
+        <text class="wh-card-title">使用记录</text>
+        <text class="wh-card-more">{{view.usage.totalText}}</text>
+      </view>
+      <view wx:for="{{view.usage.rows}}" wx:key="index" class="wh-row">
+        <view class="wh-row-main">
+          <view class="wh-row-title">{{item.projectName}}</view>
+          <view class="wh-row-sub">{{item.timeText}} 返库<text wx:if="{{item.soilType}}"> · {{item.soilType}}</text></view>
+        </view>
+        <text class="wh-row-side">{{item.metersText}}</text>
+      </view>
+    </view>
+
+    <view class="wh-card">
+      <view class="wh-card-head"><text class="wh-card-title">时间线</text></view>
+      <view wx:if="{{timeline.length === 0}}" class="wh-empty">还没有记录</view>
+      <view wx:for="{{timeline}}" wx:key="id" class="wh-row">
+        <view class="wh-row-main">
+          <view class="wh-row-title">{{item.summary}}</view>
+          <view class="wh-row-sub">{{item.timeText}} · {{item.operatorName}}</view>
+        </view>
+      </view>
+      <view wx:if="{{hiddenEvents > 0}}" class="wh-link" bindtap="toggleEvents">展开其余 {{hiddenEvents}} 条</view>
+      <view wx:elif="{{showAllEvents && timeline.length > 10}}" class="wh-link" bindtap="toggleEvents">收起</view>
+    </view>
+
+    <block wx:if="{{view.actions.canReturn || view.actions.canShip || view.actions.canNewTask || view.actions.canNote}}">
+      <view class="wh-bar-space" />
+      <view class="wh-bar">
+        <t-button wx:if="{{view.actions.canNote}}" class="btn-fill" variant="outline" disabled="{{busy}}" bindtap="addNote">记事</t-button>
+        <t-button wx:if="{{view.actions.canNewTask}}" class="btn-fill" variant="outline" bindtap="goNewTask">建任务</t-button>
+        <t-button wx:if="{{view.actions.canShip}}" class="btn-fill" theme="primary" bindtap="goShip">发货</t-button>
+        <t-button wx:if="{{view.actions.canReturn}}" class="btn-fill" theme="primary" bindtap="openReturn">返库</t-button>
+      </view>
+    </block>
+
+    <block wx:if="{{returnOpen}}">
+      <view class="wh-mask" bindtap="closeReturn" catchtouchmove="noop" />
+      <view class="wh-sheet">
+        <view class="wh-sheet-title">{{view.header.code}} 返库</view>
+        <view class="wh-row-sub sheet-hint">从 {{view.header.locationText}} 退回库房，返库后生成检查任务。下面两项可以不填。</view>
+        <view class="wh-field">
+          <view class="wh-field-label">顶进距离（米）</view>
+          <input
+            class="wh-input"
+            type="digit"
+            value="{{returnForm.usageMeters}}"
+            placeholder="这个工程顶了多少米"
+            data-field="usageMeters"
+            bindinput="onReturnInput"
+          />
+        </view>
+        <view class="wh-field">
+          <view class="wh-field-label">土质</view>
+          <input
+            class="wh-input"
+            value="{{returnForm.soilType}}"
+            maxlength="50"
+            placeholder="例如 粉质黏土"
+            data-field="soilType"
+            bindinput="onReturnInput"
+          />
+        </view>
+        <view class="wh-sheet-actions">
+          <t-button class="btn-fill" variant="outline" disabled="{{busy}}" bindtap="closeReturn">取消</t-button>
+          <t-button class="btn-fill" theme="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="confirmReturn">确认返库</t-button>
+        </view>
+      </view>
+    </block>
+  </block>
+</view>
