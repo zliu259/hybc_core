@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import type { DocLibraryConfig } from "@/api/wh/doc-library-types";
 import {
+  defaultImportOwner,
   groupFolderImport,
   guessDocCategory,
   isJunkFile,
@@ -399,6 +400,21 @@ describe("groupFolderImport", () => {
   it("什么都没有时返回空", () => {
     expect(groupFolderImport([], devices)).toEqual([]);
     expect(summary(["资料/.DS_Store"])).toEqual([]);
+  });
+});
+
+describe("defaultImportOwner", () => {
+  it("对上设备的归那台设备；没对上的文件夹和散文件都留空，等人选或者跳过，不默认成通用", () => {
+    expect(defaultImportOwner({ folder: "老三号", deviceId: 7 })).toEqual({
+      kind: "device",
+      deviceId: 7,
+      categoryId: null
+    });
+    const blank = { kind: "device", deviceId: null, categoryId: null };
+    expect(defaultImportOwner({ folder: "不认识的", deviceId: null })).toEqual(
+      blank
+    );
+    expect(defaultImportOwner({ folder: "", deviceId: null })).toEqual(blank);
   });
 });
 

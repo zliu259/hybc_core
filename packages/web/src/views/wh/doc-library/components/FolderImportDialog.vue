@@ -8,12 +8,13 @@ import type { DeviceCategory } from "@/api/wh/types";
 import { resolveApiErrorMessage } from "@/utils/api-error";
 import { message } from "@/utils/message";
 import {
+  defaultImportOwner,
   groupFolderImport,
   isJunkFile,
   uploadProblem,
   type ImportDevice
 } from "../doc-upload";
-import { GENERAL_OWNER, ownerInput, ownerProblem } from "../doc-view";
+import { ownerInput, ownerProblem } from "../doc-view";
 import type { PickedFile } from "../folder-read";
 import { useDocUploadQueue } from "../useDocUploadQueue";
 import FolderImportReview, {
@@ -104,12 +105,7 @@ const buildGroups = () => {
       id: `group-${index}`,
       folder: group.folder,
       matchedBy: group.matchedBy,
-      // 对上了就归那台设备；散文件默认通用；没对上的留空，等人选或者跳过
-      owner: device
-        ? { kind: "device", deviceId: device.id, categoryId: null }
-        : group.folder === ""
-          ? GENERAL_OWNER
-          : { kind: "device", deviceId: null, categoryId: null },
+      owner: defaultImportOwner(group),
       deviceLabel: device ? `${device.device_code} ${device.name}` : null,
       skip: false,
       files: group.files.map(file => {
@@ -216,8 +212,10 @@ const beforeClose = async (done: () => void) => {
       return;
     }
   }
-  reset();
+  // 这一轮只要有文件开始传过，记录就可能已经写成了（哪怕看着是失败或没传完）：关的时候让列表刷新
+  const dirty = reset();
   done();
+  if (dirty) emit("uploaded");
 };
 const close = () => beforeClose(() => (visible.value = false));
 </script>

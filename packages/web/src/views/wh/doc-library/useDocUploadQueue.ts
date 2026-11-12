@@ -19,8 +19,11 @@ export const useDocUploadQueue = (): {
   /** 还有排队的或正在传的 */
   busy: ComputedRef<boolean>;
   queue: DocUploadQueue;
-  /** 清空：没传完的放弃，传完的从清单里拿掉 */
-  reset: () => void;
+  /**
+   * 清空清单（打开、关闭对话框时用）：没传完的放弃。
+   * 返回这一轮有没有文件开始传过；有的话记录可能已经写成了，调用方要刷新列表。
+   */
+  reset: () => boolean;
 } => {
   const items = ref<UploadItemState[]>([]);
   const queue = createDocUploadQueue({
@@ -37,9 +40,6 @@ export const useDocUploadQueue = (): {
       item => item.status === "waiting" || item.status === "uploading"
     )
   );
-  const reset = () => {
-    queue.cancelAll();
-    queue.clearFinished();
-  };
+  const reset = () => queue.clearAll();
   return { items, busy, queue, reset };
 };

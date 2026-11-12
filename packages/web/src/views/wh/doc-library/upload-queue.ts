@@ -60,6 +60,11 @@ export interface DocUploadQueue {
   cancel: (key: string) => void;
   cancelAll: () => void;
   clearFinished: () => void;
+  /**
+   * 清空整个清单（关对话框时用）：没传完的放弃；正在写记录的拦不住，但它回来以后不再出现在清单里。
+   * 返回这一轮有没有文件开始传过——有的话记录可能已经写成了，列表要刷新。
+   */
+  clearAll: () => boolean;
   items: () => UploadItemState[];
   summary: () => UploadSummary;
 }
@@ -94,6 +99,8 @@ export const createDocUploadQueue = (deps: QueueDeps): DocUploadQueue => {
   let jobs: ReadonlyMap<string, Job> = new Map();
   let active = 0;
   let idleWaiters: (() => void)[] = [];
+  /** 上次清空以来有没有文件开始传过 */
+  let touched = false;
 
   const emit = () => deps.onChange?.(states);
   const patch = (key: string, change: Partial<UploadItemState>) => {
@@ -141,6 +148,7 @@ export const createDocUploadQueue = (deps: QueueDeps): DocUploadQueue => {
     if (!job) return;
     const controller = new AbortController();
     setJob(key, { controller });
+    touched = true;
     patch(key, { status: "uploading", error: "" });
     try {
       const uploaded =
@@ -152,6 +160,8 @@ export const createDocUploadQueue = (deps: QueueDeps): DocUploadQueue => {
         upload_token: uploaded.upload_token,
         parts: uploaded.parts
       });
+      // 等回应的时候清单被清空了：记录已经写成，但这一项不再显示
+      if (!jobs.has(key)) return;
       patch(key, {
         status: "done",
         sentBytes: job.input.file.size,
@@ -255,6 +265,17 @@ export const createDocUploadQueue = (deps: QueueDeps): DocUploadQueue => {
       states
         .filter(state => state.status === "done")
         .forEach(state => remove(state.key)),
+    clearAll: () => {
+      const dirty = touched;
+      const controllers = [...jobs.values()].map(job => job.controller);
+      states = [];
+      jobs = new Map();
+      touched = false;
+      emit();
+      controllers.forEach(controller => controller?.abort());
+      settle();
+      return dirty;
+    },
     items: () => states,
     summary: () => ({
       total: states.length,

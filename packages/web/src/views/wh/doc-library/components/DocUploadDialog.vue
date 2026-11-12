@@ -189,8 +189,10 @@ const beforeClose = async (done: () => void) => {
       return;
     }
   }
-  reset();
+  // 这一轮只要有文件开始传过，记录就可能已经写成了（哪怕看着是失败或没传完）：关的时候让列表刷新
+  const dirty = reset();
   done();
+  if (dirty) emit("uploaded");
 };
 const close = () => beforeClose(() => (visible.value = false));
 </script>

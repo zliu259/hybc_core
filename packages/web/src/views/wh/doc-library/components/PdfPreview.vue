@@ -14,6 +14,14 @@ const emit = defineEmits<{ failed: [] }>();
 const FIRST_PAGES = 3;
 const MORE_PAGES = 2;
 const RANGE_CHUNK = 1024 * 1024;
+/**
+ * 字符映射表的地址（build/pdfjs-cmaps.ts 把它们放在这里）。
+ * 没内嵌中文字体的 PDF 靠它才画得出字。要写成完整地址：取它的是 worker，相对地址会相对到 worker 脚本上去。
+ */
+const CMAP_URL = new URL(
+  `${import.meta.env.BASE_URL}static/pdfjs/cmaps/`,
+  window.location.href
+).href;
 const MAX_PAGE_WIDTH = 1100;
 /** 离底部还有这么多像素时就开始画后面的页 */
 const NEAR_BOTTOM = 600;
@@ -122,7 +130,9 @@ const open = async (url: string) => {
       url,
       rangeChunkSize: RANGE_CHUNK,
       disableAutoFetch: true,
-      disableStream: true
+      disableStream: true,
+      cMapUrl: CMAP_URL,
+      cMapPacked: true
     });
     task = started;
     const doc = await started.promise;

@@ -289,6 +289,86 @@ describe("createDocUploadQueue", () => {
     expect(deps.complete).toHaveBeenCalledTimes(2);
   });
 
+  it("清空：正在写记录的那一项也拿掉，它回来以后不再冒出来；之后新加的照常传", async () => {
+    let finish: (value: { id: number }) => void = () => undefined;
+    let completes = 0;
+    const deps = makeDeps({
+      complete: async () => {
+        completes += 1;
+        if (completes > 1) return { id: 2 };
+        return new Promise<{ id: number }>(resolve => {
+          finish = resolve;
+        });
+      }
+    });
+    const seen: string[][] = [];
+    const queue = createDocUploadQueue({
+      ...deps,
+      onChange: items =>
+        seen.push(items.map(entry => `${entry.key}:${entry.status}`))
+    });
+    queue.add([item("a")]);
+    void queue.start();
+    await new Promise(resolve => setTimeout(resolve, 5));
+    expect(statusOf(queue.items())).toEqual({ a: "uploading" });
+
+    // 关对话框时清空：这一项的完成请求已经发出去了，拦不住，但清单里不该再有它
+    expect(queue.clearAll()).toBe(true);
+    expect(queue.items()).toEqual([]);
+    finish({ id: 1 });
+    await new Promise(resolve => setTimeout(resolve, 5));
+    expect(queue.items()).toEqual([]);
+    expect(seen[seen.length - 1]).toEqual([]);
+
+    queue.add([item("b")]);
+    await queue.start();
+    expect(statusOf(queue.items())).toEqual({ b: "done" });
+  });
+
+  it("清空时说得出这一轮有没有文件开始传过（可能已经写成了记录，列表要刷新）", async () => {
+    const deps = makeDeps();
+    const queue = createDocUploadQueue({ ...deps, concurrency: 1 });
+    // 只是加进来、没开始：不算
+    queue.add([item("a")]);
+    expect(queue.clearAll()).toBe(false);
+    // 传完的算
+    queue.add([item("b")]);
+    await queue.start();
+    expect(queue.clearAll()).toBe(true);
+    // 清空之后重新算起
+    expect(queue.clearAll()).toBe(false);
+    // 传失败的也算：完成请求超时的那种，记录可能其实写成了
+    const failing = makeDeps({
+      complete: async () => {
+        throw networkError();
+      }
+    });
+    const second = createDocUploadQueue(failing);
+    second.add([item("c")]);
+    await second.start();
+    expect(statusOf(second.items())).toEqual({ c: "failed" });
+    expect(second.clearAll()).toBe(true);
+    expect(second.items()).toEqual([]);
+  });
+
+  it("清空时正在传分片的那一项被放弃", async () => {
+    const holder: { queue?: ReturnType<typeof createDocUploadQueue> } = {};
+    const deps = makeDeps({
+      putPart: async (_token, partNumber, _blob, signal) => {
+        if (partNumber === 1) holder.queue?.clearAll();
+        if (signal?.aborted) throw new Error("aborted");
+        return { part_number: partNumber, etag: `e${partNumber}` };
+      }
+    });
+    const queue = createDocUploadQueue(deps);
+    holder.queue = queue;
+    queue.add([item("a")]);
+    await queue.start();
+    expect(queue.items()).toEqual([]);
+    expect(deps.abort).toHaveBeenCalledWith("tok-a.pdf");
+    expect(deps.complete).not.toHaveBeenCalled();
+  });
+
   it("clearFinished 只留下没传完的", async () => {
     const deps = makeDeps({
       putPart: vi.fn(async (token: string, partNumber: number) => {

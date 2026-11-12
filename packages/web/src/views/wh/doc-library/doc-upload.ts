@@ -6,7 +6,7 @@ import type {
   DocUploadedPart
 } from "@/api/wh/doc-library-types";
 
-import { formatFileSize } from "./doc-view";
+import { formatFileSize, type DocOwner } from "./doc-view";
 
 const TITLE_MAX = 120;
 const DEFAULT_RETRIES = 3;
@@ -230,6 +230,14 @@ const titleInFolder = (
   subFolders: readonly string[]
 ): string =>
   [...subFolders, titleFromFileName(fileName)].join(" - ").slice(0, TITLE_MAX);
+
+/**
+ * 导入预览里一个文件夹默认归到哪里：对上设备的归那台设备；
+ * 没对上的文件夹和散文件都留空，必须有人选好（或者勾跳过）才能开始——不默认成通用，通用的资料每台设备上都会出现。
+ */
+export const defaultImportOwner = (
+  group: Pick<FolderImportGroup, "folder" | "deviceId">
+): DocOwner => ({ kind: "device", deviceId: group.deviceId, categoryId: null });
 
 interface ImportEntry {
   file: File;
