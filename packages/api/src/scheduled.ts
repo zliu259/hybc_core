@@ -20,6 +20,7 @@ import {
   deliverPendingFleetNotifications
 } from "./services/fleet-notification";
 import { reconcileReimbursementReviews } from "./services/reimbursement/review-reconcile";
+import { publishDailyDigestIfDue } from "./services/warehouse/digest";
 import type { Env } from "./types/env";
 
 /**
@@ -89,6 +90,8 @@ export const scheduled = async (
         ]);
         await createFleetTimeoutNotifications(env);
         await deliverPendingFleetNotifications(env);
+        // 库房每日摘要：每小时叫一次，它自己判断是不是北京时间 8 点；永不抛出
+        await publishDailyDigestIfDue(env, new Date(event.scheduledTime));
         return;
       }
 

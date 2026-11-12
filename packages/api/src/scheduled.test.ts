@@ -19,10 +19,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sweepStalePendingActions } from "./services/agent-pending";
 import { scheduled } from "./scheduled";
+import { publishDailyDigestIfDue } from "./services/warehouse/digest";
 import type { Env } from "./types/env";
 
 vi.mock("./services/agent-pending", () => ({
   sweepStalePendingActions: vi.fn(async () => 0)
+}));
+
+vi.mock("./services/warehouse/digest", () => ({
+  publishDailyDigestIfDue: vi.fn(async () => "not_due")
 }));
 
 vi.mock("./services/ai-slot", () => ({ checkTimeouts: vi.fn(async () => {}) }));
@@ -54,7 +59,7 @@ vi.mock("./services/fleet-notification", () => ({
 const env = { DB: {}, KV: {} } as unknown as Env;
 
 /** 跑一次指定 cron 批次，并等到 waitUntil 登记的全部工作真正结束。 */
-const runCron = async (cron: string): Promise<void> => {
+const runCron = async (cron: string, scheduledTime = Date.now()): Promise<void> => {
   const pending: Promise<unknown>[] = [];
   const ctx = {
     waitUntil: (p: Promise<unknown>) => {
@@ -63,7 +68,7 @@ const runCron = async (cron: string): Promise<void> => {
     passThroughOnException: () => {}
   } as unknown as ExecutionContext;
 
-  await scheduled({ cron } as never, env, ctx);
+  await scheduled({ cron, scheduledTime } as never, env, ctx);
   await Promise.all(pending);
 };
 
@@ -94,5 +99,29 @@ describe("scheduled · agent 高危写清扫的接线", () => {
 
     await expect(runCron("0 * * * *")).resolves.toBeUndefined();
     expect(sweepStalePendingActions).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 库房每日摘要挂在小时级批次上，由它自己判断是不是北京时间 8 点。
+ * 这里只钉接线：每小时都叫它一次，把这一趟计划的时间（不是真正开始跑的时间）交给它。
+ */
+describe("scheduled · 库房每日摘要的接线", () => {
+  beforeEach(() => {
+    vi.mocked(publishDailyDigestIfDue).mockClear();
+  });
+
+  it("小时级批次调用它，带上这一趟计划的时间", async () => {
+    const eight = Date.parse("2026-11-13T00:00:00.000Z");
+    await runCron("0 * * * *", eight);
+    expect(publishDailyDigestIfDue).toHaveBeenCalledTimes(1);
+    const [calledEnv, calledAt] = vi.mocked(publishDailyDigestIfDue).mock.calls[0];
+    expect(calledEnv).toBe(env);
+    expect(calledAt).toEqual(new Date(eight));
+  });
+
+  it.each(["*/2 * * * *", "0 18 * * *"])("%s 批次不调用它", async (cron) => {
+    await runCron(cron);
+    expect(publishDailyDigestIfDue).not.toHaveBeenCalled();
   });
 });

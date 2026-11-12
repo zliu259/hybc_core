@@ -57,6 +57,14 @@ export const getWarehouseCapabilities = async (
   };
 };
 
+/** 库管名单里的人（超管不在名单里就不算），按 userid 排。通知的「全体库管」指他们。 */
+export const listKeeperUserids = async (env: Env): Promise<string[]> => {
+  const rows = await env.DB.prepare(
+    "SELECT userid FROM warehouse_member WHERE role = 'keeper' ORDER BY userid ASC"
+  ).all<{ userid: string }>();
+  return (rows.results ?? []).map((row) => row.userid);
+};
+
 type WhMiddleware = MiddlewareHandler<{ Bindings: Env; Variables: AuthVariables }>;
 
 const forbidden = (message: string) => ({ success: false, error: { message } });

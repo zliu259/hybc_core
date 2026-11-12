@@ -260,6 +260,8 @@ export interface WarehouseOverview {
   low_stock_count: number;
   /** 已提交、等库管确认的配套清单数 */
   kits_to_confirm: number;
+  /** 已过期或 30 天内到期的证书份数 */
+  certs_attention: number;
   recent_docs: WhDocRow[];
 }
 

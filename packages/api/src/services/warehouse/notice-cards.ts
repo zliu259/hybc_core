@@ -20,7 +20,9 @@ export const NOTICE_PAGES = {
   kit: (id: number): string => `packageWarehouse/kit/index?id=${id}`,
   task: (id: number): string => `packageWarehouse/task-detail/index?id=${id}`,
   myTasks: "packageWarehouse/task-list/index?tab=mine",
-  project: (id: number): string => `packageWarehouse/project/index?projectId=${id}`
+  project: (id: number): string => `packageWarehouse/project/index?projectId=${id}`,
+  /** 库房 tab 页（每日摘要点开这里） */
+  home: "pages/warehouse/index"
 } as const;
 
 // 企微模板卡片各字段的建议上限

@@ -55,6 +55,11 @@ const cards = computed(() => {
       label: "低库存物资",
       value: o.low_stock_count,
       to: { path: "/wh/material", query: { low_stock: "1" } }
+    },
+    {
+      label: "证书到期",
+      value: o.certs_attention,
+      to: { path: "/wh/doc-library", query: { expiring: "1" } }
     }
   ];
 });

@@ -9,7 +9,9 @@ export type WarehouseNotice =
   | { kind: "kit_submitted" | "kit_confirmed"; kit_id: number }
   | { kind: "tasks_assigned"; task_ids: number[] }
   | { kind: "task_sent_back" | "task_submitted" | "repair_created"; task_id: number }
-  | { kind: "doc_posted"; doc_id: number };
+  | { kind: "doc_posted"; doc_id: number }
+  /** 每日摘要：date 是北京日期，内容在投递时现算 */
+  | { kind: "daily_digest"; date: string };
 
 export type QueuedWarehouseNotice = WarehouseNotice & { actor_userid: string };
 
@@ -58,6 +60,10 @@ export const parseWarehouseNotice = (payload: unknown): QueuedWarehouseNotice | 
     case "doc_posted":
       return isId(raw.doc_id)
         ? { kind: "doc_posted", doc_id: raw.doc_id, actor_userid: actor }
+        : null;
+    case "daily_digest":
+      return typeof raw.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(raw.date)
+        ? { kind: "daily_digest", date: raw.date, actor_userid: actor }
         : null;
     default:
       return null;
