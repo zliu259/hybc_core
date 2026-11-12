@@ -5,7 +5,8 @@
   "description": "WeCom mini program workspace for HYBC",
   "scripts": {
     "lint": "tsc --noEmit",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:wh": "for f in utils/wh-*.test.js packageWarehouse/common/*.test.js; do node \"$f\" || exit 1; done"
   },
   "dependencies": {
     "@qiun/wx-ucharts": "^2.5.0-20230101",

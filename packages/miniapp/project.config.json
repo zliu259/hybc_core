@@ -59,6 +59,10 @@
         "value": ".test.js"
       },
       {
+        "type": "file",
+        "value": "packageWarehouse/common/wh-test-harness.js"
+      },
+      {
         "type": "suffix",
         "value": ".d.ts"
       }
