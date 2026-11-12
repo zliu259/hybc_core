@@ -34,11 +34,15 @@ export const createFakeR2 = () => {
   const uploads = new Map<string, FakeUpload>();
   let sequence = 0;
 
+  // 真的 R2 的 etag 是十六进制串；这里用键的编码保证它是纯 ASCII（要放进响应头）
+  const etagOf = (key: string, object: FakeR2Object): string =>
+    `etag-${encodeURIComponent(key)}-${object.body.length}`;
+
   const describe = (key: string, object: FakeR2Object) => ({
     key,
     size: object.body.length,
-    etag: `etag-${key}-${object.body.length}`,
-    httpEtag: `"etag-${key}-${object.body.length}"`,
+    etag: etagOf(key, object),
+    httpEtag: `"${etagOf(key, object)}"`,
     writeHttpMetadata(headers: Headers) {
       headers.set("content-type", object.contentType);
     }

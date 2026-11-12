@@ -9,6 +9,7 @@ import {
   listDocFiles,
   listDocsForDevice
 } from "../services/doc-library/query";
+import { deleteDocFile, getDocFileUrl, updateDocFile } from "../services/doc-library/file";
 import { abortDocUpload, completeDocUpload, initDocUpload } from "../services/doc-library/upload";
 import { ALL_ROLES, requireDocAdmin, requireHuman } from "../services/warehouse/access";
 import { WarehouseError } from "../services/warehouse/errors";
@@ -68,6 +69,35 @@ docLibraryRoutes.get(
       c.req.query("task_kind")
     );
     return c.json({ success: true, data });
+  })
+);
+
+docLibraryRoutes.get(
+  "/file/:id/url",
+  requireRoles(ALL_ROLES),
+  guarded(async (c) => {
+    const data = await getDocFileUrl(c.env, pathId(c, "id", "资料"), c.req.url);
+    return c.json({ success: true, data });
+  })
+);
+
+docLibraryRoutes.put(
+  "/file/:id",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    await updateDocFile(c.env, pathId(c, "id", "资料"), await readJsonBody(c));
+    return c.json({ success: true });
+  })
+);
+
+docLibraryRoutes.delete(
+  "/file/:id",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    await deleteDocFile(c.env, pathId(c, "id", "资料"), await readJsonBody(c), c.get("auth").sub);
+    return c.json({ success: true });
   })
 );
 

@@ -219,5 +219,9 @@ uploadRoutes.get("/object/:key{.+}", async (c) => {
     }
   }
 
-  return serveObject(c.env, key, c.req.raw, { hardened: warehouseFile });
+  return serveObject(c.env, key, c.req.raw, {
+    hardened: warehouseFile,
+    // 下载时显示的文件名（资料库取地址时带上）；只影响名字，不在签名里
+    fileName: warehouseFile ? c.req.query("filename") || undefined : undefined
+  });
 });
