@@ -204,6 +204,39 @@ describe.skipIf(!hasSqlite)("资料的修改、删除、查看地址", () => {
     expect((await listDocFiles(env, {})).items.map((row) => row.title)).toEqual(["v1"]);
   });
 
+  /** 让「别人的操作」正好落在本次请求写库之前（前面的检查都已经过了）。只插一次。 */
+  const justBeforeWrite = (other: () => void) => {
+    let armed = true;
+    h.hooks.beforeStatement = (info?: { kind: string }) => {
+      if (!armed || info?.kind !== "batch") return;
+      armed = false;
+      other();
+    };
+  };
+
+  it("删的时候别人正好把它替换了：删不掉，不会出现两个都是最新版", async () => {
+    const a = h.seed.docFile({ title: "A" });
+    const b = h.seed.docFile({ title: "B", supersedes_id: a });
+    justBeforeWrite(() => h.seed.docFile({ title: "C", supersedes_id: b }));
+    const res = await request("DELETE", `/doc-library/file/${b}`, { version: 0 });
+    h.hooks.beforeStatement = null;
+    expect(res.status).toBe(409);
+    expect((await listDocFiles(env, {})).items.map((row) => row.title)).toEqual(["C"]);
+  });
+
+  it("改的时候别人正好把它替换了：改不了", async () => {
+    const a = h.seed.docFile({ title: "A" });
+    justBeforeWrite(() => h.seed.docFile({ title: "B", supersedes_id: a }));
+    const res = await request("PUT", `/doc-library/file/${a}`, {
+      version: 0,
+      title: "改过的 A",
+      doc_category: "manual"
+    });
+    h.hooks.beforeStatement = null;
+    expect(res.status).toBe(409);
+    expect((await getDocFile(env, a))?.title).toBe("A");
+  });
+
   it("取查看地址：拿到的地址能读到文件，15 分钟后失效", async () => {
     const id = h.seed.docFile({ title: "合格证", file_name: "合格证.pdf" });
     const res = await request("GET", `/doc-library/file/${id}/url`);

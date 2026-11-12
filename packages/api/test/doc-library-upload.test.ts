@@ -206,6 +206,58 @@ describe.skipIf(!hasSqlite)("资料分片上传", () => {
     );
   });
 
+  it("初始化：扩展名是 constructor 这类名字的文件照样说不支持", async () => {
+    const res = await post("/upload/init", { file_name: "a.constructor", file_size: 10 });
+    expect(res.status).toBe(400);
+    expect(res.body.error!.message).toBe("不支持这种文件：constructor");
+    expect(h.files.uploads.size).toBe(0);
+  });
+
+  it("传分片：令牌不对、片号不对、声明的长度不对时不读请求体", async () => {
+    const init = await post("/upload/init", { file_name: "a.pdf", file_size: 20 * MB });
+    const token = init.body.data!.upload_token as string;
+    /** 一个记得自己有没有被读过的请求体 */
+    const probe = () => {
+      const state = { read: false };
+      const body = new ReadableStream<Uint8Array>(
+        {
+          pull(controller) {
+            state.read = true;
+            controller.enqueue(new Uint8Array(16));
+            controller.close();
+          }
+        },
+        { highWaterMark: 0 }
+      );
+      return { state, body };
+    };
+    const send = async (query: string, headers: Record<string, string> = {}) => {
+      const { state, body } = probe();
+      const res = await request("PUT", `/upload/part?${query}`, {
+        body,
+        headers,
+        duplex: "half"
+      } as RequestInit);
+      return { status: res.status, message: res.body.error?.message, read: state.read };
+    };
+    expect(await send("token=not-a-token&part=1")).toEqual({
+      status: 403,
+      message: "上传已失效，请重新上传",
+      read: false
+    });
+    expect(await send(`token=${encodeURIComponent(token)}&part=9`)).toEqual({
+      status: 400,
+      message: "分片序号不对",
+      read: false
+    });
+    // 这一片该是 8 MiB，声明的是 100 MiB：不读，直接拒绝
+    expect(
+      await send(`token=${encodeURIComponent(token)}&part=1`, {
+        "content-length": String(100 * MB)
+      })
+    ).toEqual({ status: 400, message: "分片大小不对", read: false });
+  });
+
   it("传分片：令牌不对、片号不对、大小不对都拒绝；最后一片可以小", async () => {
     const init = await post("/upload/init", { file_name: "a.pdf", file_size: 20 * MB });
     const token = init.body.data!.upload_token as string;

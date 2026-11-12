@@ -41,6 +41,8 @@ export const updateDocFile = async (
   const meta = await parseDocMeta(env, input);
   await runAtomicBatch(env.DB, [
     assertInBatch(env.DB, UNCHANGED_SQL, [id, version]),
+    // 前面查过是最新版，但查和写之间别人可能正好把它替换了
+    assertInBatch(env.DB, LATEST_DOC_EXISTS_SQL, [id]),
     env.DB.prepare(
       `UPDATE doc_file SET title = ?, doc_category = ?, device_id = ?, device_category_id = ?,
          valid_until = ?, version = version + 1, updated_at = ?
@@ -74,6 +76,8 @@ export const deleteDocFile = async (
   const now = nowIso();
   await runAtomicBatch(env.DB, [
     assertInBatch(env.DB, UNCHANGED_SQL, [id, version]),
+    // 写的那一刻还得是最新版：和别人的替换撞上时，不能把中间这一版删掉、让前后两版都显示成最新
+    assertInBatch(env.DB, LATEST_DOC_EXISTS_SQL, [id]),
     env.DB.prepare(
       `UPDATE doc_file SET deleted_at = ?, deleted_by_userid = ?, version = version + 1, updated_at = ?
        WHERE id = ?`

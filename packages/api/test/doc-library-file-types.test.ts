@@ -64,6 +64,18 @@ describe("资料库文件类型", () => {
     }
   });
 
+  it("扩展名正好是对象自带属性的名字（constructor、__proto__、toString）也不收", () => {
+    for (const name of [
+      "a.constructor",
+      "a.__proto__",
+      "a.toString",
+      "a.hasOwnProperty",
+      "a.valueOf"
+    ]) {
+      expect([name, contentTypeFor(name)]).toEqual([name, null]);
+    }
+  });
+
   it("文件名去掉路径和控制字符，保留中文和扩展名，不超过 120 个字符", () => {
     expect(safeFileName("../../etc/合格 证\u0000.pdf")).toBe("合格 证.pdf");
     expect(safeFileName("C:\\资料\\说明书.docx")).toBe("说明书.docx");

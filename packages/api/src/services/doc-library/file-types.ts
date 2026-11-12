@@ -67,8 +67,13 @@ export const extensionOf = (fileName: string): string => {
 };
 
 /** 不在白名单返回 null。 */
-export const contentTypeFor = (fileName: string): string | null =>
-  CONTENT_TYPES[extensionOf(fileName)] ?? null;
+export const contentTypeFor = (fileName: string): string | null => {
+  const extension = extensionOf(fileName);
+  // 只认表里自己的键：constructor、__proto__ 这类对象自带的属性名不算
+  return Object.prototype.hasOwnProperty.call(CONTENT_TYPES, extension)
+    ? CONTENT_TYPES[extension]
+    : null;
+};
 
 /** 去掉路径和控制字符，把地址里有特殊含义的字符换成下划线；保留中文和扩展名，最长 120 个字符。 */
 export const safeFileName = (fileName: string): string => {

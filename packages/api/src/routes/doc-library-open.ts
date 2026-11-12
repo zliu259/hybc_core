@@ -18,11 +18,13 @@ export const docLibraryOpenRoutes = new Hono<WhEnv>();
 docLibraryOpenRoutes.put(
   "/upload/part",
   guarded(async (c) => {
+    const declared = c.req.header("content-length");
     const data = await putDocUploadPart(
       c.env,
       c.req.query("token"),
       c.req.query("part"),
-      await c.req.arrayBuffer()
+      declared === undefined ? null : Number(declared),
+      () => c.req.arrayBuffer()
     );
     return c.json({ success: true, data });
   })

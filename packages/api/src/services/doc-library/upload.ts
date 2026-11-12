@@ -82,11 +82,18 @@ export const initDocUpload = async (
   return { upload_token: token, part_size: DOC_PART_SIZE, part_count: partCountOf(size) };
 };
 
+/**
+ * 传一片。这个请求不带登录态：令牌、片号、声明的长度都对了才去读请求体，
+ * 免得随便谁都能让服务端白白收下一大块数据。
+ * @param declaredLength 请求头里的 Content-Length；没有这个头是 null
+ * @param readBody 真要读的时候才调
+ */
 export const putDocUploadPart = async (
   env: Env,
   token: unknown,
   partNumber: unknown,
-  body: ArrayBuffer
+  declaredLength: number | null,
+  readBody: () => Promise<ArrayBuffer>
 ): Promise<{ part_number: number; etag: string }> => {
   const claims = await claimsOf(env, token);
   const count = partCountOf(claims.size);
@@ -94,6 +101,8 @@ export const putDocUploadPart = async (
   if (!Number.isInteger(part) || part < 1 || part > count) throw badRequest("分片序号不对");
   // 每一片该多大是定死的：除最后一片外都是 8 MiB，最后一片是剩下的
   const expected = part === count ? claims.size - DOC_PART_SIZE * (count - 1) : DOC_PART_SIZE;
+  if (declaredLength !== null && declaredLength !== expected) throw badRequest("分片大小不对");
+  const body = await readBody();
   if (body.byteLength !== expected) throw badRequest("分片大小不对");
   try {
     const uploaded = await env.FILES.resumeMultipartUpload(claims.key, claims.uploadId).uploadPart(
