@@ -107,7 +107,10 @@ describe.skipIf(!hasSqlite)("上传和下载签名", () => {
     expect((await call("GET", `${objectPath("wh-task/b.jpg")}${query}`)).status).toBe(401);
 
     const params = new URLSearchParams(query);
-    const tampered = `${params.get("signature")!.slice(0, -1)}0`;
+    // 签名是十六进制：把最后一位换成另一个字符。固定换成 0 的话，签名本来就以 0 结尾时等于没改
+    const original = params.get("signature")!;
+    const tampered = `${original.slice(0, -1)}${original.endsWith("0") ? "1" : "0"}`;
+    expect(tampered).not.toBe(original);
     expect(
       (
         await call(
