@@ -371,6 +371,35 @@ describe.skipIf(!hasSqlite)("资料分片上传", () => {
     expect(docCount()).toBe(3);
   });
 
+  it("存储临时出错时传分片返回 500，不说「上传已失效」；再传一次就成", async () => {
+    const init = await post("/upload/init", { file_name: "a.pdf", file_size: 1024 });
+    const token = init.body.data!.upload_token as string;
+    h.files.failOnce("uploadPart");
+    const first = await putPart(token, 1, new Uint8Array(1024));
+    expect(first.status).toBe(500);
+    expect(first.body.error!.message).toBe("服务器出错，请稍后重试");
+    const second = await putPart(token, 1, new Uint8Array(1024));
+    expect(second.status).toBe(200);
+    const done = await complete(token, [second.body.data]);
+    expect(done.status).toBe(201);
+    expect(docCount()).toBe(1);
+  });
+
+  it("拼分片时存储临时出错：返回 500、不写记录；原样再发一次完成请求就成，只有一条", async () => {
+    const { token, parts } = await upload("a.pdf", 1024);
+    h.files.failOnce(
+      "complete",
+      "completeMultipartUpload: We encountered an internal error. Please try again. (10001)"
+    );
+    const first = await complete(token, parts);
+    expect(first.status).toBe(500);
+    expect(docCount()).toBe(0);
+    const second = await complete(token, parts);
+    expect(second.status).toBe(201);
+    expect(docCount()).toBe(1);
+    expect(h.files.objects.size).toBe(1);
+  });
+
   it("放弃之后不能再传；别人放弃不了你的上传", async () => {
     const init = await post("/upload/init", { file_name: "a.pdf", file_size: 1024 });
     const token = init.body.data!.upload_token as string;

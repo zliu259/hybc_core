@@ -31,6 +31,16 @@ export const LATEST_DOC_EXISTS_SQL = `SELECT 1 FROM doc_file f
     AND NOT EXISTS (SELECT 1 FROM doc_file n WHERE n.supersedes_id = f.id AND n.deleted_at IS NULL)`;
 
 const nowIso = () => new Date().toISOString();
+
+/**
+ * R2 临时出错（内部错误、没说明原因的错误）：这一次没成，原样再来一次多半能成。
+ * 这种错不能说成「上传已失效」或「文件不完整」，那会让人把整个文件重传一遍。
+ * 认不出来的错不算临时的，按原来的处理。
+ */
+const isTransientStorageError = (error: unknown): boolean =>
+  error instanceof Error &&
+  /unspecified error|internal error|please try again|\((0|10001)\)/i.test(error.message);
+
 const partCountOf = (size: number): number => Math.ceil(size / DOC_PART_SIZE);
 
 /** 上传令牌失效用 403：小程序的请求层遇到 401 会把人登出去，这里不是登录态的问题。 */
@@ -92,8 +102,10 @@ export const putDocUploadPart = async (
     );
     return { part_number: uploaded.partNumber, etag: uploaded.etag };
   } catch (error) {
-    // 这次上传已经被放弃或完成了
     console.warn("[doc-library] 分片上传失败", { key: claims.key, part, error });
+    // 存储临时出错：照常报 500，客户端会重传这一片
+    if (isTransientStorageError(error)) throw error;
+    // 其余的：这次上传已经被放弃或完成了
     throw new WarehouseError(403, EXPIRED);
   }
 };
@@ -168,13 +180,19 @@ const assembleObject = async (
   claims: DocUploadClaims,
   parts: { partNumber: number; etag: string }[]
 ): Promise<void> => {
+  let failure: unknown = null;
   try {
     await env.FILES.resumeMultipartUpload(claims.key, claims.uploadId).complete(parts);
   } catch (error) {
+    failure = error;
     console.warn("[doc-library] 拼分片失败，看文件是不是已经拼好了", { key: claims.key, error });
   }
   const head = await env.FILES.head(claims.key);
-  if (!head) throw badRequest(INCOMPLETE);
+  if (!head) {
+    // 存储临时出错、分片还在：报 500，客户端原样再发一次完成请求，不用重传
+    if (isTransientStorageError(failure)) throw failure;
+    throw badRequest(INCOMPLETE);
+  }
   if (head.size !== claims.size) {
     await env.FILES.delete(claims.key);
     throw badRequest(INCOMPLETE);

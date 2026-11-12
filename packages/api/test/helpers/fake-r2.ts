@@ -21,6 +21,10 @@ interface RangeOption {
 }
 
 const MIN_PART_SIZE = 5 * 1024 * 1024;
+/** 真的 R2 对已经放弃或完成的分片上传报的错 */
+const NO_SUCH_UPLOAD = "The specified multipart upload does not exist. (10024)";
+/** 真的 R2（和本地模拟）偶尔报的临时错误 */
+export const R2_TRANSIENT_ERROR = "uploadPart: Unspecified error (0)";
 
 const toBytes = async (value: unknown): Promise<Uint8Array> => {
   if (value instanceof Uint8Array) return new Uint8Array(value);
@@ -33,6 +37,14 @@ export const createFakeR2 = () => {
   const objects = new Map<string, FakeR2Object>();
   const uploads = new Map<string, FakeUpload>();
   let sequence = 0;
+  /** 让下一次 uploadPart / complete 像真的 R2 偶尔那样临时出错一次（测试里用 failOnce 设） */
+  const pendingFailures: { op: "uploadPart" | "complete"; message: string }[] = [];
+  const maybeFail = (op: "uploadPart" | "complete") => {
+    const index = pendingFailures.findIndex((item) => item.op === op);
+    if (index < 0) return;
+    const [failure] = pendingFailures.splice(index, 1);
+    throw new Error(failure.message);
+  };
 
   // 真的 R2 的 etag 是十六进制串；这里用键的编码保证它是纯 ASCII（要放进响应头）
   const etagOf = (key: string, object: FakeR2Object): string =>
@@ -52,8 +64,9 @@ export const createFakeR2 = () => {
     key,
     uploadId,
     async uploadPart(partNumber: number, value: unknown) {
+      maybeFail("uploadPart");
       const upload = uploads.get(uploadId);
-      if (!upload || upload.aborted || upload.key !== key) throw new Error("NoSuchUpload");
+      if (!upload || upload.aborted || upload.key !== key) throw new Error(NO_SUCH_UPLOAD);
       const body = await toBytes(value);
       sequence += 1;
       const etag = `etag-${uploadId}-${partNumber}-${sequence}`;
@@ -61,8 +74,9 @@ export const createFakeR2 = () => {
       return { partNumber, etag };
     },
     async complete(parts: { partNumber: number; etag: string }[]) {
+      maybeFail("complete");
       const upload = uploads.get(uploadId);
-      if (!upload || upload.aborted || upload.key !== key) throw new Error("NoSuchUpload");
+      if (!upload || upload.aborted || upload.key !== key) throw new Error(NO_SUCH_UPLOAD);
       const ordered = [...parts].sort((a, b) => a.partNumber - b.partNumber);
       const bodies = ordered.map((part, index) => {
         const stored = upload.parts.get(part.partNumber);
@@ -97,6 +111,10 @@ export const createFakeR2 = () => {
   return {
     objects,
     uploads,
+    /** 下一次这种操作抛一个错，只抛一次 */
+    failOnce(op: "uploadPart" | "complete", message: string = R2_TRANSIENT_ERROR) {
+      pendingFailures.push({ op, message });
+    },
     async put(key: string, value: unknown, options?: { httpMetadata?: { contentType?: string } }) {
       const object = {
         body: await toBytes(value),
