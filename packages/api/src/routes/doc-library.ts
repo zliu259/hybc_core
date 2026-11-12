@@ -10,6 +10,7 @@ import {
   listDocsForDevice
 } from "../services/doc-library/query";
 import { deleteDocFile, getDocFileUrl, updateDocFile } from "../services/doc-library/file";
+import { createDocShare, listDocShares, revokeDocShare } from "../services/doc-library/share";
 import { abortDocUpload, completeDocUpload, initDocUpload } from "../services/doc-library/upload";
 import { ALL_ROLES, requireDocAdmin, requireHuman } from "../services/warehouse/access";
 import { WarehouseError } from "../services/warehouse/errors";
@@ -97,6 +98,45 @@ docLibraryRoutes.delete(
   requireDocAdmin,
   guarded(async (c) => {
     await deleteDocFile(c.env, pathId(c, "id", "资料"), await readJsonBody(c), c.get("auth").sub);
+    return c.json({ success: true });
+  })
+);
+
+// ─── 对外链接（公开下载在 doc-library-open.ts，不带登录态） ────
+// 列出也只给资料管理员：令牌就是下载凭据，不该让所有人看到。
+
+docLibraryRoutes.post(
+  "/file/:id/share",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    const data = await createDocShare(
+      c.env,
+      pathId(c, "id", "资料"),
+      await readJsonBody(c),
+      c.get("auth").sub,
+      c.req.url
+    );
+    return c.json({ success: true, data }, 201);
+  })
+);
+
+docLibraryRoutes.get(
+  "/file/:id/share",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    const data = await listDocShares(c.env, pathId(c, "id", "资料"), c.req.url);
+    return c.json({ success: true, data });
+  })
+);
+
+docLibraryRoutes.delete(
+  "/share/:token",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    await revokeDocShare(c.env, c.req.param("token"));
     return c.json({ success: true });
   })
 );
