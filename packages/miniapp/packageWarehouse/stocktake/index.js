@@ -159,8 +159,10 @@ Page({
       editing: {
         lineId: id,
         title: [line.name, line.spec].filter(Boolean).join(" "),
-        // 保存时记下的就是现在的账面数
-        bookText: `现在账面 ${line.current_qty} ${line.unit}`,
+        // 录过的行写录的时候记下的账面数（差额就是按它算的）；页面上的数可能已经不是最新的，不写「现在」
+        bookText: counted
+          ? `录的时候账面 ${line.book_qty} ${line.unit}`
+          : `账面 ${line.current_qty} ${line.unit}`,
         countText: counted ? String(line.counted_qty) : "",
         note: line.note || "",
         counted
@@ -195,9 +197,17 @@ Page({
       toast("先填实盘数");
       return;
     }
+    const note = String(editing.note || "").trim();
+    const line = this.detail.material_lines.find((item) => item.id === editing.lineId);
+    const unchanged =
+      line &&
+      line.counted_qty !== null &&
+      line.counted_qty !== undefined &&
+      Number(line.counted_qty) === parsed.value;
+    // 实盘数没动就只存备注：带上实盘数的话，后端会按现在的账面数重记，差额会悄悄变掉
     await this.sendLine(
       editing.lineId,
-      { counted_qty: parsed.value, note: String(editing.note || "").trim() },
+      unchanged ? { note } : { counted_qty: parsed.value, note },
       "已保存"
     );
   },

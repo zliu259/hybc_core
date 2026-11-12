@@ -50,3 +50,7 @@
 .stocktake-book {
   margin-bottom: 24rpx;
 }
+
+.stocktake-hint {
+  margin-top: 12rpx;
+}

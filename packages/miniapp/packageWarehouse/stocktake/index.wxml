@@ -136,6 +136,7 @@
       <view class="wh-field">
         <view class="wh-field-label">实盘数</view>
         <input class="wh-input" type="digit" value="{{editing.countText}}" placeholder="数出来是多少" focus="{{true}}" bindinput="onCountInput" />
+        <view wx:if="{{editing.counted}}" class="wh-row-sub stocktake-hint">改了实盘数再保存，会按保存那一刻的账面数重新记；只改备注不会。</view>
       </view>
       <view class="wh-field">
         <view class="wh-field-label">备注（可不填）</view>

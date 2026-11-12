@@ -145,7 +145,7 @@ runTests("wh-stocktake-page", [
       assert.deepStrictEqual(page.data.editing, {
         lineId: 11,
         title: "水泥 P.O42.5",
-        bookText: "现在账面 10 袋",
+        bookText: "账面 10 袋",
         countText: "",
         note: "",
         counted: false
@@ -218,6 +218,47 @@ runTests("wh-stocktake-page", [
       assert.deepStrictEqual(h.callsTo("PUT", `${BASE}/5/material-line/11`)[0].data, { counted_qty: null, note: "" });
       assert.strictEqual(page.data.view.materialRows[0].countText, "没盘");
       assert.strictEqual(page.data.editing, null);
+    }
+  ],
+  [
+    "录过的行只改备注：只发 note，不带实盘数（带了会按现在的账面数重记，差额就变了）",
+    async () => {
+      const counted = materialLine({ counted_qty: 8, book_qty: 10, current_qty: 7, diff: -2 });
+      const h = setup({ detail: detailOf({ material_counted: 1, material_diff: 1, material_lines: [counted] }) });
+      h.respond("PUT", `${BASE}/5/material-line/11`, ok({ ...counted, note: "箱子破损" }));
+      const page = await h.open({});
+      page.openLine(h.event({ id: 11 }));
+      // 录数层上写的是录的时候记下的账面数，不是「现在」的
+      assert.strictEqual(page.data.editing.bookText, "录的时候账面 10 袋");
+      page.onNoteInput(h.event({}, { value: "箱子破损" }));
+      await page.saveLine();
+      assert.deepStrictEqual(
+        h.callsTo("PUT", `${BASE}/5/material-line/11`).map((call) => call.data),
+        [{ note: "箱子破损" }]
+      );
+      assert.strictEqual(page.data.view.materialRows[0].diffText, "-2");
+      assert.strictEqual(page.data.view.materialRows[0].note, "箱子破损");
+      assert.strictEqual(page.data.editing, null);
+
+      // 实盘数写法不同但数一样（8.0）：也算没改
+      page.openLine(h.event({ id: 11 }));
+      page.onCountInput(h.event({}, { value: "8.0" }));
+      await page.saveLine();
+      assert.deepStrictEqual(h.callsTo("PUT", `${BASE}/5/material-line/11`)[1].data, { note: "箱子破损" });
+    }
+  ],
+  [
+    "录过的行改了实盘数：实盘数和备注一起发（这时才重记账面数）",
+    async () => {
+      const counted = materialLine({ counted_qty: 8, book_qty: 10, diff: -2, note: "少两袋" });
+      const h = setup({ detail: detailOf({ material_counted: 1, material_diff: 1, material_lines: [counted] }) });
+      h.respond("PUT", `${BASE}/5/material-line/11`, ok(materialLine({ counted_qty: 9, book_qty: 10, diff: -1, note: "少两袋" })));
+      const page = await h.open({});
+      page.openLine(h.event({ id: 11 }));
+      page.onCountInput(h.event({}, { value: "9" }));
+      await page.saveLine();
+      assert.deepStrictEqual(h.callsTo("PUT", `${BASE}/5/material-line/11`)[0].data, { counted_qty: 9, note: "少两袋" });
+      assert.strictEqual(page.data.view.materialRows[0].diffText, "-1");
     }
   ],
   [
