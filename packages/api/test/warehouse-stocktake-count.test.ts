@@ -128,10 +128,38 @@ describe.skipIf(!hasSqlite)("盘点录数和标记设备", () => {
       expect(fresh.version).toBe(st.version);
     });
 
-    it("没带 counted_qty 这个字段：400", async () => {
-      await expect(saveMaterialCount(h.env, st.id, lineA, { note: "x" }, "kp")).rejects.toMatchObject(
-        { status: 400, message: "实盘数请填数字" }
-      );
+    it("只改备注：实盘数和记下的账面数都不变，哪怕账面已经变了", async () => {
+      await saveMaterialCount(h.env, st.id, lineA, { counted_qty: 8, note: "少两个" }, "kp");
+      h.database.prepare("UPDATE material SET quantity = 7 WHERE id = ?").run(materialA);
+      const line = await saveMaterialCount(h.env, st.id, lineA, { note: " 找到一袋破的 " }, "kp2");
+      expect(line).toMatchObject({
+        counted_qty: 8,
+        book_qty: 10,
+        diff: -2,
+        note: "找到一袋破的",
+        counted_by_userid: "kp"
+      });
+      expect((await getStocktake(h.env, st.id)).version).toBe(st.version + 2);
+    });
+
+    it("没盘的行也可以先写备注；备注可以清掉", async () => {
+      const noted = await saveMaterialCount(h.env, st.id, lineB, { note: "库里没看到" }, "kp");
+      expect(noted).toMatchObject({ counted_qty: null, book_qty: null, note: "库里没看到" });
+      const cleared = await saveMaterialCount(h.env, st.id, lineB, { note: "" }, "kp");
+      expect(cleared.note).toBeNull();
+    });
+
+    it("录数时不带备注，原来的备注留着", async () => {
+      await saveMaterialCount(h.env, st.id, lineA, { counted_qty: 8, note: "少两个" }, "kp");
+      const line = await saveMaterialCount(h.env, st.id, lineA, { counted_qty: 9 }, "kp");
+      expect(line).toMatchObject({ counted_qty: 9, note: "少两个" });
+    });
+
+    it("实盘数和备注都没带：400", async () => {
+      await expect(saveMaterialCount(h.env, st.id, lineA, {}, "kp")).rejects.toMatchObject({
+        status: 400,
+        message: "实盘数请填数字"
+      });
     });
 
     it("别的盘点的行、不存在的行：404", async () => {

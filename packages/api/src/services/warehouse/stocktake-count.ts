@@ -31,7 +31,7 @@ const nowIso = () => new Date().toISOString();
 /** 实盘数：null 是清掉；否则 0 到 1000000，最多 3 位小数。只认普通写法的数字，不认 1e3、0x10。 */
 const parseCountedQty = (input: Record<string, unknown>): number | null => {
   const value = input.counted_qty;
-  if (value === null && "counted_qty" in input) return null;
+  if (value === null) return null;
   const text = typeof value === "string" ? value.trim() : "";
   if (typeof value === "string" && text.startsWith("-") && COUNT_TEXT.test(text.slice(1))) {
     throw badRequest("实盘数不能是负数");
@@ -60,6 +60,46 @@ const bumpVersion = (db: D1Database, stocktakeId: number, now: string): D1Prepar
     .prepare("UPDATE stocktake SET version = version + 1, updated_at = ? WHERE id = ?")
     .bind(now, stocktakeId);
 
+const materialLineUpdate = (
+  db: D1Database,
+  ids: { stocktakeId: number; lineId: number },
+  change: { counted?: number | null; note?: string | null },
+  userid: string,
+  now: string
+): D1PreparedStatement => {
+  const sets: string[] = [];
+  const params: (string | number | null)[] = [];
+  if (change.counted !== undefined) {
+    const cleared = change.counted === null;
+    // 账面数在同一条语句里取，不先读再写：记下的就是写入那一刻的数
+    sets.push(
+      "counted_qty = ?",
+      `book_qty = ${
+        cleared
+          ? "NULL"
+          : "(SELECT ROUND(m.quantity, 3) FROM material m WHERE m.id = stocktake_material_line.material_id)"
+      }`,
+      "counted_by_userid = ?",
+      "counted_at = ?"
+    );
+    params.push(change.counted, cleared ? null : userid, cleared ? null : now);
+  }
+  if (change.note !== undefined) {
+    sets.push("note = ?");
+    params.push(change.note);
+  }
+  return db
+    .prepare(
+      `UPDATE stocktake_material_line SET ${sets.join(", ")}, updated_at = ?
+        WHERE id = ? AND stocktake_id = ?`
+    )
+    .bind(...params, now, ids.lineId, ids.stocktakeId);
+};
+
+/**
+ * 录一行。带 counted_qty 就是录数（null 是清掉），同时重记账面数；
+ * 只带 note 是只改备注，实盘数和当时记下的账面数都不动。不带 note 时原来的备注留着。
+ */
 export const saveMaterialCount = async (
   env: Env,
   stocktakeId: number,
@@ -67,8 +107,13 @@ export const saveMaterialCount = async (
   input: Record<string, unknown>,
   userid: string
 ): Promise<StocktakeMaterialLineRow> => {
-  const counted = parseCountedQty(input);
-  const note = optionalText(input.note, "备注", 200);
+  const hasCount = "counted_qty" in input;
+  const hasNote = "note" in input;
+  if (!hasCount && !hasNote) throw badRequest("实盘数请填数字");
+  const change = {
+    ...(hasCount ? { counted: parseCountedQty(input) } : {}),
+    ...(hasNote ? { note: optionalText(input.note, "备注", 200) } : {})
+  };
   await requireCounting(env, stocktakeId);
   const db = env.DB;
   const existing = await db
@@ -78,29 +123,9 @@ export const saveMaterialCount = async (
   if (!existing) throw new WarehouseError(404, "这次盘点里没有这一行");
 
   const now = nowIso();
-  const cleared = counted === null;
   await runAtomicBatch(db, [
     assertInBatch(db, STOCKTAKE_COUNTING_EXISTS_SQL, [stocktakeId]),
-    // 账面数在同一条语句里取，不先读再写：记下的就是写入那一刻的数
-    db
-      .prepare(
-        `UPDATE stocktake_material_line
-            SET counted_qty = ?,
-                book_qty = CASE WHEN ? = 1 THEN NULL ELSE
-                  (SELECT ROUND(m.quantity, 3) FROM material m WHERE m.id = stocktake_material_line.material_id) END,
-                note = ?, counted_by_userid = ?, counted_at = ?, updated_at = ?
-          WHERE id = ? AND stocktake_id = ?`
-      )
-      .bind(
-        counted,
-        cleared ? 1 : 0,
-        note,
-        cleared ? null : userid,
-        cleared ? null : now,
-        now,
-        lineId,
-        stocktakeId
-      ),
+    materialLineUpdate(db, { stocktakeId, lineId }, change, userid, now),
     bumpVersion(db, stocktakeId, now),
     releaseGuards(db)
   ]);
