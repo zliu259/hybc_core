@@ -82,6 +82,9 @@ export const scheduled = async (
       }
 
       if (cron === "0 * * * *") {
+        // 库房每日摘要：每小时叫一次，它自己判断是不是北京时间 8 点；永不抛出。
+        // 放在最前面：一天只有 8 点那一趟会发，下面的任务没有各自兜住错误，不能让它们一抛就把摘要带掉。
+        await publishDailyDigestIfDue(env, new Date(event.scheduledTime));
         await Promise.all([
           checkApprovalTimeouts(env),
           refreshWeComContactsCache(env),
@@ -90,8 +93,6 @@ export const scheduled = async (
         ]);
         await createFleetTimeoutNotifications(env);
         await deliverPendingFleetNotifications(env);
-        // 库房每日摘要：每小时叫一次，它自己判断是不是北京时间 8 点；永不抛出
-        await publishDailyDigestIfDue(env, new Date(event.scheduledTime));
         return;
       }
 

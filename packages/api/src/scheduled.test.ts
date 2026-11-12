@@ -18,6 +18,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sweepStalePendingActions } from "./services/agent-pending";
+import { markOverdueRentalTerms } from "./services/cron-jobs";
+import { createFleetTimeoutNotifications } from "./services/fleet-notification";
 import { scheduled } from "./scheduled";
 import { publishDailyDigestIfDue } from "./services/warehouse/digest";
 import type { Env } from "./types/env";
@@ -123,5 +125,20 @@ describe("scheduled · 库房每日摘要的接线", () => {
   it.each(["*/2 * * * *", "0 18 * * *"])("%s 批次不调用它", async (cron) => {
     await runCron(cron);
     expect(publishDailyDigestIfDue).not.toHaveBeenCalled();
+  });
+
+  /**
+   * 一天只有 8 点那一趟会发摘要。同一批次里别的任务没有各自兜住错误：
+   * 哪个一抛，排在它后面的就都不跑了。所以摘要必须先跑，不能被它们连累。
+   */
+  it("同一批次里别的任务出错，摘要照样被调用", async () => {
+    vi.mocked(markOverdueRentalTerms).mockRejectedValueOnce(new Error("no such table"));
+    await runCron("0 * * * *").catch(() => {});
+    expect(publishDailyDigestIfDue).toHaveBeenCalledTimes(1);
+
+    vi.mocked(publishDailyDigestIfDue).mockClear();
+    vi.mocked(createFleetTimeoutNotifications).mockRejectedValueOnce(new Error("D1 unavailable"));
+    await runCron("0 * * * *").catch(() => {});
+    expect(publishDailyDigestIfDue).toHaveBeenCalledTimes(1);
   });
 });
