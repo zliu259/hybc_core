@@ -62,7 +62,13 @@ describe.skipIf(!hasSqlite)("微盘客户端", () => {
     const other = await client.createFolder(spaceId, spaceId, "通用");
     const fileId = await client.uploadDirect(spaceId, folder, "合格证.pdf", pattern(1000));
     expect(await client.listFolder(spaceId, folder)).toEqual([
-      { fileid: fileId, file_name: "合格证.pdf", file_size: 1000, file_type: 2, sha: expect.any(String) }
+      {
+        fileid: fileId,
+        file_name: "合格证.pdf",
+        file_size: 1000,
+        file_type: 2,
+        sha: expect.any(String)
+      }
     ]);
     await client.rename(fileId, "出厂合格证.pdf");
     await client.move(fileId, other);

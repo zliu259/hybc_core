@@ -21,6 +21,7 @@ import {
 } from "./services/fleet-notification";
 import { reconcileReimbursementReviews } from "./services/reimbursement/review-reconcile";
 import { publishDailyDigestIfDue } from "./services/warehouse/digest";
+import { requeueStaleMirrors } from "./services/wedrive/mirror-run";
 import type { Env } from "./types/env";
 
 /**
@@ -85,6 +86,8 @@ export const scheduled = async (
         // 库房每日摘要：每小时叫一次，它自己判断是不是北京时间 8 点；永不抛出。
         // 放在最前面：一天只有 8 点那一趟会发，下面的任务没有各自兜住错误，不能让它们一抛就把摘要带掉。
         await publishDailyDigestIfDue(env, new Date(event.scheduledTime));
+        // 微盘镜像补跑：把卡住的、失败未满次数的重新排上；永不抛出。同样放在会抛的任务前面。
+        await requeueStaleMirrors(env, new Date(event.scheduledTime));
         await Promise.all([
           checkApprovalTimeouts(env),
           refreshWeComContactsCache(env),

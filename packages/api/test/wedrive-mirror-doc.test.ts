@@ -31,7 +31,11 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
   let deviceId;
 
   const row = (id) => h.database.prepare("SELECT * FROM doc_file WHERE id = ?").get(id);
-  const reconcile = (id, patch = {}) => reconcileDoc(h.env, client, { ...settings, ...patch }, id);
+  /** 调用方（排空）的约定：先把这一行标成 syncing 再调 reconcileDoc */
+  const reconcile = (id, patch = {}) => {
+    h.database.prepare("UPDATE doc_file SET mirror_status = 'syncing' WHERE id = ?").run(id);
+    return reconcileDoc(h.env, client, { ...settings, ...patch }, id);
+  };
   const uploadCalls = () => fake.calls.filter((call) => call.api.startsWith("file_upload"));
   const seedDoc = (overrides = {}) =>
     h.seed.docFile({
@@ -41,9 +45,15 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
       device_id: deviceId,
       ...overrides
     });
-  /** 调用方（排空）会先把次数加一再调 reconcileDoc；这里模拟「不是第一次试」 */
-  const markRetry = (id) =>
-    h.database.prepare("UPDATE doc_file SET mirror_attempts = 2 WHERE id = ?").run(id);
+  /** 模拟「上次已经开始传了、没记下文件 ID」：库里只留着打算放哪、叫什么 */
+  const markUploadStarted = (id, name = "出厂合格证.pdf") =>
+    h.database
+      .prepare("UPDATE doc_file SET wedrive_name = ?, wedrive_folder_key = ? WHERE id = ?")
+      .run(name, `device:${deviceId}`, id);
+  const deviceFolderId = () =>
+    h.database
+      .prepare("SELECT fileid FROM wedrive_folder WHERE folder_key = ?")
+      .get(`device:${deviceId}`).fileid;
 
   beforeEach(async () => {
     h = createWarehouseHarness();
@@ -139,7 +149,9 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
     const id = seedDoc();
     await reconcile(id);
     const uploads = uploadCalls().length;
-    h.database.prepare("UPDATE doc_file SET title = '出厂合格证（2026 复检）' WHERE id = ?").run(id);
+    h.database
+      .prepare("UPDATE doc_file SET title = '出厂合格证（2026 复检）' WHERE id = ?")
+      .run(id);
     expect(await reconcile(id)).toBe("synced");
     expect(uploadCalls().length).toBe(uploads);
     expect(fake.callsTo("file_rename")).toHaveLength(1);
@@ -169,7 +181,9 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
     const newId = seedDoc({ title: "合格证 2026", supersedes_id: oldId });
     expect(await reconcile(oldId)).toBe("removed");
     expect(await reconcile(newId)).toBe("synced");
-    expect(Object.keys(fake.tree()["顶管机"]["SB-0003 唐兴 NSPD1200"])).toEqual(["合格证 2026.pdf"]);
+    expect(Object.keys(fake.tree()["顶管机"]["SB-0003 唐兴 NSPD1200"])).toEqual([
+      "合格证 2026.pdf"
+    ]);
     expect(row(oldId)).toMatchObject({
       mirror_status: "synced",
       wedrive_fileid: null,
@@ -186,7 +200,11 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
       .run(id);
     expect(await reconcile(id)).toBe("removed");
     expect(fake.tree()).toEqual({ 顶管机: { "SB-0003 唐兴 NSPD1200": {} } });
-    expect(row(id)).toMatchObject({ wedrive_fileid: null, wedrive_name: null, mirror_status: "synced" });
+    expect(row(id)).toMatchObject({
+      wedrive_fileid: null,
+      wedrive_name: null,
+      mirror_status: "synced"
+    });
   });
 
   it("删除一份从来没镜像过的：什么请求都不发", async () => {
@@ -211,36 +229,84 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
     expect(fake.calls.length).toBe(before);
   });
 
-  it("上次传完没记下来（不是第一次试，微盘里已经有同名同大小的）：认领它，不再上传", async () => {
+  it("上传之前先记下打算放哪、叫什么；传失败了这两项也留着", async () => {
+    const id = seedDoc();
+    fake.failNext("file_upload", 640003);
+    fake.failNext("file_upload_init", 640003);
+    await expect(reconcile(id)).rejects.toThrow("640003");
+    expect(row(id)).toMatchObject({
+      wedrive_fileid: null,
+      wedrive_name: "出厂合格证.pdf",
+      wedrive_folder_key: `device:${deviceId}`
+    });
+  });
+
+  it("上次传完没记下来（微盘里已经有同名同大小的）：认领它，不再上传", async () => {
     const id = seedDoc();
     // 目录已经在了，文件也在微盘里了，但库里没记下文件 ID
     await reconcile(seedDoc({ title: "别的资料" }));
-    const folderId = h.database
-      .prepare("SELECT fileid FROM wedrive_folder WHERE folder_key = ?")
-      .get(`device:${deviceId}`).fileid;
-    const orphan = fake.putFile(settings.space_id, folderId, "出厂合格证.pdf", 10);
-    markRetry(id);
+    const orphan = fake.putFile(settings.space_id, deviceFolderId(), "出厂合格证.pdf", 10);
+    markUploadStarted(id);
     const uploads = uploadCalls().length;
     expect(await reconcile(id)).toBe("synced");
     expect(uploadCalls().length).toBe(uploads);
-    expect(row(id).wedrive_fileid).toBe(orphan);
+    expect(row(id)).toMatchObject({ wedrive_fileid: orphan, mirror_status: "synced" });
   });
 
-  it("不是第一次试，但微盘里那个同名文件大小不一样：不认领，照常上传", async () => {
+  it("上次开始传过，但微盘里那个同名文件大小不一样：不认领，照常上传", async () => {
     const id = seedDoc();
     await reconcile(seedDoc({ title: "别的资料" }));
-    const folderId = h.database
-      .prepare("SELECT fileid FROM wedrive_folder WHERE folder_key = ?")
-      .get(`device:${deviceId}`).fileid;
-    const other = fake.putFile(settings.space_id, folderId, "出厂合格证.pdf", 999);
-    markRetry(id);
+    const other = fake.putFile(settings.space_id, deviceFolderId(), "出厂合格证.pdf", 999);
+    markUploadStarted(id);
     expect(await reconcile(id)).toBe("synced");
     expect(row(id).wedrive_fileid).not.toBe(other);
+  });
+
+  it("上次传完没记下来，之后标题又改了：按原来的名字找到它，认领后改名，不传第二份", async () => {
+    const id = seedDoc();
+    await reconcile(seedDoc({ title: "别的资料" }));
+    const orphan = fake.putFile(settings.space_id, deviceFolderId(), "出厂合格证.pdf", 10);
+    markUploadStarted(id);
+    h.database.prepare("UPDATE doc_file SET title = '新标题' WHERE id = ?").run(id);
+    const uploads = uploadCalls().length;
+    expect(await reconcile(id)).toBe("synced");
+    expect(uploadCalls().length).toBe(uploads);
+    expect(row(id)).toMatchObject({ wedrive_fileid: orphan, wedrive_name: "新标题.pdf" });
+    expect(fake.nodes.get(orphan).file_name).toBe("新标题.pdf");
+  });
+
+  it("上次传完没记下来，之后这份资料被删了：在微盘里找到并删掉", async () => {
+    const id = seedDoc();
+    await reconcile(seedDoc({ title: "别的资料" }));
+    const orphan = fake.putFile(settings.space_id, deviceFolderId(), "出厂合格证.pdf", 10);
+    markUploadStarted(id);
+    h.database
+      .prepare("UPDATE doc_file SET deleted_at = '2026-11-12T00:00:00.000Z' WHERE id = ?")
+      .run(id);
+    expect(await reconcile(id)).toBe("removed");
+    expect(fake.nodes.has(orphan)).toBe(false);
+    expect(row(id)).toMatchObject({ wedrive_fileid: null, wedrive_name: null });
   });
 
   it("第一次试的时候不列目录（省一次调用）", async () => {
     await reconcile(seedDoc());
     expect(fake.callsTo("file_list")).toHaveLength(0);
+  });
+
+  it("对的过程中这一行又被标成了 pending（有人改了它）：文件 ID 照记，状态不改成 synced", async () => {
+    const id = seedDoc();
+    h.database.prepare("UPDATE doc_file SET mirror_status = 'syncing' WHERE id = ?").run(id);
+    const racing = {
+      ...client,
+      uploadDirect: async (...args) => {
+        const fileId = await client.uploadDirect(...args);
+        h.database.prepare("UPDATE doc_file SET mirror_status = 'pending' WHERE id = ?").run(id);
+        return fileId;
+      }
+    };
+    expect(await reconcileDoc(h.env, racing, settings, id)).toBe("synced");
+    expect(row(id).mirror_status).toBe("pending");
+    expect(fake.nodes.has(row(id).wedrive_fileid)).toBe(true);
   });
 
   it("什么都没变：unchanged，不发请求", async () => {

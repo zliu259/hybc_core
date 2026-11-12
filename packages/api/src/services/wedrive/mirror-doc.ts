@@ -57,7 +57,11 @@ const pickName = async (
   folderKey: string,
   wanted: string
 ): Promise<string> => {
-  if (doc.wedrive_name && doc.wedrive_folder_key === folderKey && isVariantOf(doc.wedrive_name, wanted)) {
+  if (
+    doc.wedrive_name &&
+    doc.wedrive_folder_key === folderKey &&
+    isVariantOf(doc.wedrive_name, wanted)
+  ) {
     return doc.wedrive_name;
   }
   const rows = await env.DB.prepare(
@@ -73,6 +77,10 @@ const pickName = async (
   }
 };
 
+/**
+ * 记下这份资料在微盘里的样子。状态只在这一行还是 syncing 时才改成 synced：
+ * 对的过程中有人又改了它（被重新标成 pending）的话，文件 ID 照记，状态留给下一轮。
+ */
 const markSynced = async (
   env: Env,
   docId: number,
@@ -81,11 +89,26 @@ const markSynced = async (
   const now = nowIso();
   await env.DB.prepare(
     `UPDATE doc_file
-        SET mirror_status = 'synced', mirror_error = NULL, mirrored_at = ?,
-            wedrive_fileid = ?, wedrive_name = ?, wedrive_folder_key = ?
+        SET mirror_status = CASE WHEN mirror_status = 'syncing' THEN 'synced' ELSE mirror_status END,
+            mirror_error = CASE WHEN mirror_status = 'syncing' THEN NULL ELSE mirror_error END,
+            mirrored_at = ?, wedrive_fileid = ?, wedrive_name = ?, wedrive_folder_key = ?
       WHERE id = ?`
   )
     .bind(now, mirror.fileid, mirror.name, mirror.folderKey, docId)
+    .run();
+};
+
+/** 上传之前先记下打算放哪、叫什么（文件 ID 还空着）：传完没来得及记的话，下次按这个去找。 */
+const recordUploadIntent = async (
+  env: Env,
+  docId: number,
+  name: string,
+  folderKey: string
+): Promise<void> => {
+  await env.DB.prepare(
+    "UPDATE doc_file SET wedrive_fileid = NULL, wedrive_name = ?, wedrive_folder_key = ? WHERE id = ?"
+  )
+    .bind(name, folderKey, docId)
     .run();
 };
 
@@ -122,8 +145,12 @@ const upload = async (
 ): Promise<string> => {
   const size = Number(doc.file_size);
   const chunked = () =>
-    client.uploadChunked(spaceId, folderId, name, size, async () =>
-      (await openObject(env, doc.file_key)).body
+    client.uploadChunked(
+      spaceId,
+      folderId,
+      name,
+      size,
+      async () => (await openObject(env, doc.file_key)).body
     );
   // 空间开放之后不用直传：直传没法不给成员推卡片
   if (settings.space_open || size > DIRECT_UPLOAD_MAX_BYTES) return chunked();
@@ -143,7 +170,25 @@ const upload = async (
 };
 
 /**
- * 出错就抛（WedriveQuotaError 原样抛），由调用方记失败。调用方已经把这一行标成 syncing，并把 mirror_attempts 加了一。
+ * 库里没有文件 ID、但留着「打算放哪、叫什么」：上次开始传过。去那个目录里按名字和大小找，找到就是它。
+ * 没开始传过的（两项都空）不找，省一次调用。
+ */
+const findFromIntent = async (
+  env: Env,
+  client: WedriveClient,
+  spaceId: string,
+  doc: DocFile
+): Promise<string | null> => {
+  if (!doc.wedrive_name || !doc.wedrive_folder_key) return null;
+  const folder = await env.DB.prepare("SELECT fileid FROM wedrive_folder WHERE folder_key = ?")
+    .bind(doc.wedrive_folder_key)
+    .first<{ fileid: string }>();
+  if (!folder) return null;
+  return findUploaded(client, spaceId, folder.fileid, doc.wedrive_name, Number(doc.file_size));
+};
+
+/**
+ * 出错就抛（WedriveQuotaError 原样抛），由调用方记失败。调用方已经把这一行标成 syncing。
  */
 export const reconcileDoc = async (
   env: Env,
@@ -159,16 +204,21 @@ export const reconcileDoc = async (
   if (!doc || !settings.space_id) return "unchanged";
   const spaceId = settings.space_id;
 
+  // 这份资料现在在微盘里的文件：记着的，或者上次传完没来得及记的
+  const fileId = doc.wedrive_fileid ?? (await findFromIntent(env, client, spaceId, doc));
+
   const shouldExist = doc.deleted_at === null && Number(doc.is_latest) === 1;
   if (!shouldExist) {
-    if (doc.wedrive_fileid) await client.remove([doc.wedrive_fileid]);
+    if (fileId) await client.remove([fileId]);
     await markSynced(env, doc.id, { fileid: null, name: null, folderKey: null });
-    return doc.wedrive_fileid ? "removed" : "unchanged";
+    return fileId ? "removed" : "unchanged";
   }
 
-  if (!doc.wedrive_fileid && Number(doc.file_size) > settings.mirror_max_bytes) {
+  if (!fileId && Number(doc.file_size) > settings.mirror_max_bytes) {
     await env.DB.prepare(
-      "UPDATE doc_file SET mirror_status = 'skipped', mirror_error = ? WHERE id = ?"
+      `UPDATE doc_file SET mirror_status = 'skipped', mirror_error = ?,
+              wedrive_name = NULL, wedrive_folder_key = NULL
+        WHERE id = ? AND mirror_status = 'syncing'`
     )
       .bind(SKIPPED_TOO_LARGE, doc.id)
       .run();
@@ -178,22 +228,17 @@ export const reconcileDoc = async (
   const folder = await ensureFolder(env, client, spaceId, await loadFolderChain(env, doc));
   const name = await pickName(env, doc, folder.key, wedriveFileName(doc.title, doc.file_name));
 
-  if (doc.wedrive_fileid) {
+  if (fileId) {
     const renamed = doc.wedrive_name !== name;
     const moved = doc.wedrive_folder_key !== folder.key;
-    if (renamed) await client.rename(doc.wedrive_fileid, name);
-    if (moved) await client.move(doc.wedrive_fileid, folder.fileid);
-    await markSynced(env, doc.id, { fileid: doc.wedrive_fileid, name, folderKey: folder.key });
-    return renamed || moved ? "synced" : "unchanged";
+    if (renamed) await client.rename(fileId, name);
+    if (moved) await client.move(fileId, folder.fileid);
+    await markSynced(env, doc.id, { fileid: fileId, name, folderKey: folder.key });
+    return renamed || moved || !doc.wedrive_fileid ? "synced" : "unchanged";
   }
 
-  // 不是第一次试：上次可能已经传上去了、只是没来得及记，先在目录里找
-  const adopted =
-    Number(doc.mirror_attempts) > 1
-      ? await findUploaded(client, spaceId, folder.fileid, name, Number(doc.file_size))
-      : null;
-  const fileid =
-    adopted ?? (await upload(env, client, settings, doc, spaceId, folder.fileid, name));
-  await markSynced(env, doc.id, { fileid, name, folderKey: folder.key });
+  await recordUploadIntent(env, doc.id, name, folder.key);
+  const uploaded = await upload(env, client, settings, doc, spaceId, folder.fileid, name);
+  await markSynced(env, doc.id, { fileid: uploaded, name, folderKey: folder.key });
   return "synced";
 };

@@ -7,6 +7,7 @@ import { buildSignedObjectUrl, getUploadBaseUrl, signObjectAccess } from "../upl
 import { WarehouseError } from "../warehouse/errors";
 import { assertInBatch, releaseGuards } from "../warehouse/guard";
 import { requireVersion } from "../warehouse/kit-template";
+import { markForMirror } from "../wedrive/mirror-run";
 import { LATEST_DOC_EXISTS_SQL, parseDocMeta } from "./upload";
 
 const URL_TTL_MS = 15 * 60 * 1000;
@@ -58,6 +59,8 @@ export const updateDocFile = async (
     ),
     releaseGuards(env.DB)
   ]);
+  // 标题或归属变了，微盘里要跟着改名或移动
+  await markForMirror(env, [id]);
 };
 
 /**
@@ -87,6 +90,8 @@ export const deleteDocFile = async (
     ).bind(now, id),
     releaseGuards(env.DB)
   ]);
+  // 微盘里的那一份也要删掉
+  await markForMirror(env, [id]);
 };
 
 export interface DocFileUrl {

@@ -20,6 +20,7 @@ import {
   type ApprovalResultType
 } from "./services/wecom-approval-push";
 import { pushProjectLogEventToWeComGroups } from "./services/wecom-message-push";
+import { runMirrorDrain } from "./services/wedrive/mirror-run";
 
 const nowIso = () => new Date().toISOString();
 
@@ -847,6 +848,11 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
         case "WAREHOUSE_NOTICE": {
           // 不包 try/catch：发不出去就抛，让下面的 msg.retry() 重试；不用发的情况函数自己返回。
           await deliverWarehouseNotice(env, event.payload);
+          break;
+        }
+        case "WAREHOUSE_DOC_MIRROR": {
+          // 排空自己管锁、限额和每份资料的失败；这里抛出来的只会是意料之外的错，让消息重试。
+          await runMirrorDrain(env);
           break;
         }
         default:

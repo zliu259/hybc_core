@@ -5,7 +5,7 @@
  */
 import type { Env } from "../../types/env";
 import type { WedriveFolder } from "../../types/wh";
-import type { WedriveClient } from "./client";
+import { WedriveError, type WedriveClient } from "./client";
 
 export interface FolderTarget {
   key: string;
@@ -129,6 +129,29 @@ const cachedFolder = (env: Env, key: string): Promise<WedriveFolder | null> =>
     .bind(key)
     .first<WedriveFolder>();
 
+const FILE_TYPE_FOLDER = 1;
+
+/**
+ * 建一个目录。企微明确拒绝了（有错误码）就是没建上，直接抛。
+ * 超时这类说不清的：可能其实建上了，先看一眼，有同名的目录就用它，免得微盘里出现两个。
+ */
+const createOrAdoptFolder = async (
+  client: WedriveClient,
+  spaceId: string,
+  parentId: string,
+  name: string
+): Promise<string> => {
+  try {
+    return await client.createFolder(spaceId, parentId, name);
+  } catch (error) {
+    if (error instanceof WedriveError) throw error;
+    const existing = (await client.listFolder(spaceId, parentId)).find(
+      (item) => item.file_type === FILE_TYPE_FOLDER && item.file_name === name
+    );
+    return existing ? existing.fileid : client.createFolder(spaceId, parentId, name);
+  }
+};
+
 /**
  * 保证这一串目录在微盘里存在、名字和位置都对，返回最里面那个的 fileid 和 key。
  * 每建好或改好一层就记一层：中途失败时，下次从断的地方接着做。
@@ -146,7 +169,7 @@ export const ensureFolder = async (
     const existing = await cachedFolder(env, target.key);
     const now = nowIso();
     if (!existing) {
-      const fileid = await client.createFolder(spaceId, parentId, target.name);
+      const fileid = await createOrAdoptFolder(client, spaceId, parentId, target.name);
       await env.DB.prepare(
         `INSERT INTO wedrive_folder (folder_key, fileid, name, parent_key, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, ?)`

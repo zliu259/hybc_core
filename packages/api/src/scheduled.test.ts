@@ -22,6 +22,7 @@ import { markOverdueRentalTerms } from "./services/cron-jobs";
 import { createFleetTimeoutNotifications } from "./services/fleet-notification";
 import { scheduled } from "./scheduled";
 import { publishDailyDigestIfDue } from "./services/warehouse/digest";
+import { requeueStaleMirrors } from "./services/wedrive/mirror-run";
 import type { Env } from "./types/env";
 
 vi.mock("./services/agent-pending", () => ({
@@ -30,6 +31,10 @@ vi.mock("./services/agent-pending", () => ({
 
 vi.mock("./services/warehouse/digest", () => ({
   publishDailyDigestIfDue: vi.fn(async () => "not_due")
+}));
+
+vi.mock("./services/wedrive/mirror-run", () => ({
+  requeueStaleMirrors: vi.fn(async () => 0)
 }));
 
 vi.mock("./services/ai-slot", () => ({ checkTimeouts: vi.fn(async () => {}) }));
@@ -140,5 +145,33 @@ describe("scheduled · 库房每日摘要的接线", () => {
     vi.mocked(createFleetTimeoutNotifications).mockRejectedValueOnce(new Error("D1 unavailable"));
     await runCron("0 * * * *").catch(() => {});
     expect(publishDailyDigestIfDue).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * 微盘镜像的补跑挂在小时级批次上：把卡住的、失败未满次数的重新排上。
+ * 和每日摘要一样放在前面，不被同批次里别的任务连累。
+ */
+describe("scheduled · 微盘镜像补跑的接线", () => {
+  beforeEach(() => {
+    vi.mocked(requeueStaleMirrors).mockClear();
+  });
+
+  it("小时级批次调用它，带上这一趟计划的时间", async () => {
+    const at = Date.parse("2026-11-13T05:00:00.000Z");
+    await runCron("0 * * * *", at);
+    expect(requeueStaleMirrors).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(requeueStaleMirrors).mock.calls[0]).toEqual([env, new Date(at)]);
+  });
+
+  it.each(["*/2 * * * *", "0 18 * * *"])("%s 批次不调用它", async (cron) => {
+    await runCron(cron);
+    expect(requeueStaleMirrors).not.toHaveBeenCalled();
+  });
+
+  it("同一批次里别的任务出错，它照样被调用", async () => {
+    vi.mocked(markOverdueRentalTerms).mockRejectedValueOnce(new Error("no such table"));
+    await runCron("0 * * * *").catch(() => {});
+    expect(requeueStaleMirrors).toHaveBeenCalledTimes(1);
   });
 });

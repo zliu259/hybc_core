@@ -87,7 +87,9 @@ describe.skipIf(!hasSqlite)("ensureFolder", () => {
     { key: "device:3", name: "SB-0003 唐兴 NSPD1200", parentKey: "category:9" }
   ];
   const cached = () =>
-    h.database.prepare("SELECT folder_key, name, parent_key FROM wedrive_folder ORDER BY folder_key").all();
+    h.database
+      .prepare("SELECT folder_key, name, parent_key FROM wedrive_folder ORDER BY folder_key")
+      .all();
 
   beforeEach(async () => {
     h = createWarehouseHarness();
@@ -164,9 +166,46 @@ describe.skipIf(!hasSqlite)("ensureFolder", () => {
     expect(fake.callsTo("file_create").length).toBe(creates + 1);
   });
 
+  it("建目录超时、其实已经建上了：认领那个目录，不建第二个", async () => {
+    let timeouts = 1;
+    const flaky = createWedriveClient(h.env, {
+      budget: 900,
+      call: async (api, body) => {
+        const reply = await fake.call(api, body);
+        if (api === "file_create" && timeouts > 0) {
+          timeouts -= 1;
+          throw new Error("bridge proxy timeout");
+        }
+        return reply;
+      }
+    });
+    const result = await ensureFolder(h.env, flaky, spaceId, chain);
+    expect(fake.tree()).toEqual({ 顶管机: { "SB-0003 唐兴 NSPD1200": {} } });
+    expect(fake.callsTo("file_create")).toHaveLength(2);
+    expect(fake.nodes.get(result.fileid).file_name).toBe("SB-0003 唐兴 NSPD1200");
+    expect(cached().map((row) => row.folder_key)).toEqual(["category:9", "device:3"]);
+  });
+
+  it("建目录超时、确实没建上：再建一次", async () => {
+    fake.failNext("file_create", "timeout");
+    await ensureFolder(h.env, client, spaceId, chain);
+    expect(fake.tree()).toEqual({ 顶管机: { "SB-0003 唐兴 NSPD1200": {} } });
+    expect(fake.callsTo("file_list")).toHaveLength(1);
+  });
+
+  it("企微明确拒绝建目录（有错误码）：直接抛，不去列目录", async () => {
+    fake.failNext("file_create", 640003);
+    await expect(ensureFolder(h.env, client, spaceId, chain)).rejects.toThrow("640003");
+    expect(fake.callsTo("file_list")).toHaveLength(0);
+  });
+
   it("loadFolderChain：从库里查设备和类别，拼出目录", async () => {
     const category = h.seed.category("顶管机");
-    const device = h.seed.device({ device_code: "SB-0003", name: "唐兴 NSPD1200", category_id: category });
+    const device = h.seed.device({
+      device_code: "SB-0003",
+      name: "唐兴 NSPD1200",
+      category_id: category
+    });
     expect(await loadFolderChain(h.env, { device_id: device, device_category_id: null })).toEqual([
       { key: `category:${category}`, name: "顶管机", parentKey: null },
       { key: `device:${device}`, name: "SB-0003 唐兴 NSPD1200", parentKey: `category:${category}` }
