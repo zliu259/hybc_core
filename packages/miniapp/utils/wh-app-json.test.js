@@ -29,7 +29,8 @@ const SUB_PAGES = [
   "material/index",
   "docs/index",
   "doc-view/index",
-  "doc-upload/index"
+  "doc-upload/index",
+  "stocktake/index"
 ];
 
 OLD_PAGES.forEach((page) => {

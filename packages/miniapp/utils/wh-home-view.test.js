@@ -91,6 +91,7 @@ assert.deepStrictEqual(
     ["项目返库", "/packageWarehouse/ship/index?type=back"],
     ["转场", "/packageWarehouse/ship/index?type=transfer"],
     ["入库", "/packageWarehouse/ship/index?type=in"],
+    ["盘点", "/packageWarehouse/stocktake/index"],
     ["查库存", "/packageWarehouse/material/index"],
     ["全部任务", "/packageWarehouse/task-list/index?tab=all"]
   ]

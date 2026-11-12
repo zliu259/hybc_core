@@ -1,0 +1,151 @@
+<view class="page">
+  <view wx:if="{{!view && loading}}" class="wh-empty">加载中…</view>
+
+  <block wx:elif="{{!view}}">
+    <view class="wh-card">
+      <view class="wh-empty">{{loadFailed ? "加载失败，下拉重试" : "现在没有进行中的盘点"}}</view>
+    </view>
+    <view wx:if="{{isKeeper && !loadFailed}}" class="wh-card">
+      <view class="wh-card-head">
+        <view class="wh-card-title">发起盘点</view>
+      </view>
+      <view class="wh-card-body">
+        <view
+          wx:for="{{scopeOptions}}"
+          wx:key="key"
+          class="wh-row {{index === 0 ? 'wh-row-first' : ''}}"
+          hover-class="wh-row-hover"
+          data-scope="{{item.key}}"
+          bindtap="onStart"
+        >
+          <view class="wh-row-main">
+            <view class="wh-row-title">{{item.label}}</view>
+            <view class="wh-row-sub">{{item.hint}}</view>
+          </view>
+          <view class="wh-chevron">›</view>
+        </view>
+      </view>
+    </view>
+  </block>
+
+  <block wx:else>
+    <view class="wh-card stocktake-head">
+      <view class="stocktake-head-main">
+        <view class="wh-row-title">{{view.header.no}}</view>
+        <view class="wh-row-sub">范围：{{view.header.scopeLabel}}<text wx:if="{{view.header.adjustText}}"> · {{view.header.adjustText}}</text></view>
+      </view>
+      <hy-status-chip text="{{view.header.statusLabel}}" theme="{{view.header.statusTheme}}" />
+    </view>
+    <view wx:if="{{view.readOnlyNotice}}" class="wh-notice">{{view.readOnlyNotice}}</view>
+
+    <view wx:if="{{view.tabs.length > 1}}" class="wh-tabs">
+      <view
+        wx:for="{{view.tabs}}"
+        wx:key="key"
+        class="wh-tab {{item.key === view.activeTab ? 'wh-tab-active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onTab"
+      >{{item.label}}</view>
+    </view>
+
+    <block wx:if="{{view.activeTab === 'material'}}">
+      <input
+        class="wh-input stocktake-search"
+        value="{{keyword}}"
+        placeholder="输入品名、规格或编号"
+        confirm-type="search"
+        bindinput="onSearchInput"
+      />
+      <view class="wh-chips stocktake-filter">
+        <view
+          wx:for="{{filterOptions}}"
+          wx:key="key"
+          class="wh-chip {{item.key === filter ? 'wh-chip-active' : ''}}"
+          data-key="{{item.key}}"
+          bindtap="onFilter"
+        >{{item.label}}</view>
+      </view>
+      <view class="wh-card">
+        <view wx:if="{{view.materialRows.length === 0}}" class="wh-empty">没有符合条件的物资</view>
+        <view
+          wx:for="{{view.materialRows}}"
+          wx:key="id"
+          class="wh-row {{index === 0 ? 'wh-row-first' : ''}}"
+          hover-class="{{view.canEdit ? 'wh-row-hover' : ''}}"
+          data-id="{{item.id}}"
+          bindtap="openLine"
+        >
+          <view class="wh-row-main">
+            <view class="wh-row-title">{{item.title}}</view>
+            <view class="wh-row-sub">{{item.sub}}</view>
+            <view wx:if="{{item.note}}" class="wh-row-sub">备注：{{item.note}}</view>
+          </view>
+          <view class="wh-row-side">
+            <view class="stocktake-count {{item.counted ? '' : 'stocktake-count-empty'}}">{{item.countText}}</view>
+            <view class="wh-row-sub">{{item.bookText}}<text wx:if="{{item.diffText}}" class="{{item.diffClass}}"> {{item.diffText}}</text></view>
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{view.materialMore > 0}}" class="wh-empty">还有 {{view.materialMore}} 条没显示，输关键字找</view>
+      <view wx:elif="{{view.materialCount > 0}}" class="wh-empty">共 {{view.materialCount}} 条</view>
+    </block>
+
+    <block wx:if="{{view.activeTab === 'device'}}">
+      <view wx:if="{{view.canEdit}}" class="stocktake-scan">
+        <t-button class="btn-fill" theme="primary" loading="{{scanning}}" disabled="{{scanning || busy}}" bindtap="onScan">连续扫码</t-button>
+        <t-button class="btn-fill" variant="outline" disabled="{{scanning || busy}}" bindtap="onInputCode">输编号</t-button>
+      </view>
+      <view class="wh-card">
+        <view wx:if="{{view.deviceRows.length === 0}}" class="wh-empty">这次盘点没有设备</view>
+        <view
+          wx:for="{{view.deviceRows}}"
+          wx:key="id"
+          class="wh-row {{index === 0 ? 'wh-row-first' : ''}}"
+          hover-class="{{view.canEdit ? 'wh-row-hover' : ''}}"
+          data-id="{{item.deviceId}}"
+          bindtap="onDeviceTap"
+        >
+          <view class="wh-row-main">
+            <view class="wh-row-title">{{item.code}}</view>
+            <view class="wh-row-sub">{{item.name}}</view>
+            <view wx:if="{{item.hint}}" class="wh-row-sub wh-alert">{{item.hint}}</view>
+            <view wx:if="{{item.note}}" class="wh-row-sub">备注：{{item.note}}</view>
+          </view>
+          <view class="wh-row-side">
+            <hy-status-chip text="{{item.statusText}}" theme="{{item.statusTheme}}" />
+          </view>
+        </view>
+      </view>
+      <view wx:if="{{view.canEdit}}" class="wh-empty">点一台可以标记找到、没找到</view>
+    </block>
+
+    <block wx:if="{{view.canEdit}}">
+      <view class="wh-bar-space" />
+      <view class="wh-bar">
+        <t-button class="btn-fill" variant="outline" disabled="{{busy || scanning}}" bindtap="onCancel">取消盘点</t-button>
+        <t-button class="btn-fill" theme="primary" loading="{{busy && !editing}}" disabled="{{busy || scanning}}" bindtap="onComplete">完成盘点</t-button>
+      </view>
+    </block>
+  </block>
+
+  <block wx:if="{{editing}}">
+    <view class="wh-mask" bindtap="closeEdit" catchtouchmove="noop" />
+    <view class="wh-sheet">
+      <view class="wh-sheet-title">{{editing.title}}</view>
+      <view class="wh-row-sub stocktake-book">{{editing.bookText}}</view>
+      <view class="wh-field">
+        <view class="wh-field-label">实盘数</view>
+        <input class="wh-input" type="digit" value="{{editing.countText}}" placeholder="数出来是多少" focus="{{true}}" bindinput="onCountInput" />
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">备注（可不填）</view>
+        <input class="wh-input" value="{{editing.note}}" maxlength="200" placeholder="比如：有两袋受潮了" bindinput="onNoteInput" />
+      </view>
+      <view class="wh-sheet-actions">
+        <t-button wx:if="{{editing.counted}}" class="btn-fill" theme="danger" variant="outline" disabled="{{busy}}" bindtap="clearLine">清掉</t-button>
+        <t-button wx:else class="btn-fill" variant="outline" disabled="{{busy}}" bindtap="closeEdit">取消</t-button>
+        <t-button class="btn-fill" theme="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="saveLine">保存</t-button>
+      </view>
+    </view>
+  </block>
+</view>

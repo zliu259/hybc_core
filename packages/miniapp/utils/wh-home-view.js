@@ -19,6 +19,7 @@ const KEEPER_ACTIONS = [
   { key: "back", label: "项目返库", url: `${SUB}/ship/index?type=back` },
   { key: "transfer", label: "转场", url: `${SUB}/ship/index?type=transfer` },
   { key: "inbound", label: "入库", url: `${SUB}/ship/index?type=in` },
+  { key: "stocktake", label: "盘点", url: `${SUB}/stocktake/index` },
   { key: "material", label: "查库存", url: `${SUB}/material/index` },
   { key: "tasks", label: "全部任务", url: `${SUB}/task-list/index?tab=all` }
 ];
