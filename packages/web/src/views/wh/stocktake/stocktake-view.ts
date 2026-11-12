@@ -113,9 +113,9 @@ export const deviceLineStatus = (
     return { text: "已找到", type: "success" };
   }
   if (line.found === 0) return { text: "没找到", type: "danger" };
-  // 已完成的盘点里还空着的，是盘点期间已经出库、所以没被记成没找到的
+  // 已完成的盘点里还空着的：盘点期间出库了，或者这次没盘设备。两种都没有被记成没找到
   return status === "done"
-    ? { text: "盘点期间已出库", type: "info" }
+    ? { text: "没标记", type: "info" }
     : { text: "没扫到", type: "info" };
 };
 
@@ -133,8 +133,17 @@ export const completeSummary = (detail: StocktakeRow): string[] => {
     detail.device_missing > 0
       ? `${detail.device_missing} 台在库设备没找到，会在时间线上记「盘点未找到」`
       : "",
-    detail.device_expected > 0 && detail.device_missing === 0
+    detail.device_expected > 0 &&
+    detail.device_missing === 0 &&
+    detail.device_found > 0
       ? "设备都找到了"
+      : "",
+    // 一台都没标记（多半是选了「全部」但只盘了物资）：完成时不会给设备记「没找到」
+    detail.device_expected > 0 &&
+    detail.device_missing === 0 &&
+    detail.device_found === 0 &&
+    detail.device_unexpected === 0
+      ? "设备一台都没标记，这次不记设备的盘点结果"
       : "",
     detail.device_unexpected > 0
       ? `${detail.device_unexpected} 台扫到了但账上不在库，记得补返库单`
@@ -162,16 +171,20 @@ const materialSummary = (lines: readonly StocktakeMaterialLineRow[]) => ({
     .length
 });
 
-/** 和后端的口径一样：盘点中，账上在库、没标记找到、现在仍在库的算「会被记成没找到」。 */
+/**
+ * 和后端的口径一样：盘点中，账上在库、没标记找到、现在仍在库的算「会被记成没找到」；
+ * 但一台设备都还没标记时是 0（这种盘点完成时不记设备）。
+ */
 const deviceSummary = (lines: readonly StocktakeDeviceLineRow[]) => {
   const expected = lines.filter(line => line.expected === 1);
+  const anyMarked = lines.some(line => line.found !== null);
   return {
     device_expected: expected.length,
     device_found: expected.filter(line => line.found === 1).length,
     device_missing: expected.filter(
       line =>
         line.found === 0 ||
-        (line.found === null && line.location === "warehouse")
+        (anyMarked && line.found === null && line.location === "warehouse")
     ).length,
     device_unexpected: lines.filter(
       line => line.expected === 0 && line.found === 1

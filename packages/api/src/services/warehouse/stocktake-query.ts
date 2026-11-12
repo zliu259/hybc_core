@@ -22,6 +22,7 @@ export interface StocktakeSummary {
   /**
    * 没找到的：已完成的盘点里是记成没找到的台数；
    * 盘点中是「现在点完成会被记成没找到」的台数（账上在库、没标记找到、现在仍在库）。
+   * 一台设备都还没标记时是 0：这种盘点完成时不记设备（多半是只盘了物资）。
    */
   device_missing: number;
   /** 扫到了但发起时账上不在库的 */
@@ -68,6 +69,13 @@ export const STOCKTAKE_STATUSES: readonly StocktakeStatus[] = ["counting", "done
 export const STOCKTAKE_COUNTING_EXISTS_SQL =
   "SELECT 1 FROM stocktake WHERE id = ? AND status = 'counting'";
 
+/**
+ * 这次盘点里至少有一台设备被标记过（找到或没找到）。绑定一个参数（盘点 id）。
+ * 一台都没标记的盘点，完成时不把没扫到的设备记成「没找到」。
+ */
+export const ANY_DEVICE_MARKED_SQL =
+  "SELECT 1 FROM stocktake_device_line x WHERE x.stocktake_id = ? AND x.found IS NOT NULL";
+
 /** 以 l 为物资行别名：已录且有差额。完成盘点时出调整单的也是这些行。 */
 export const LINE_HAS_DIFF_SQL =
   "l.counted_qty IS NOT NULL AND ROUND(l.counted_qty - l.book_qty, 3) <> 0";
@@ -88,7 +96,9 @@ const SELECT_ROW = `SELECT s.*,
     ${deviceCount("dl.expected = 1 AND dl.found = 1")} AS device_found,
     ${deviceCount(
       `dl.expected = 1 AND (dl.found = 0
-         OR (dl.found IS NULL AND s.status = 'counting' AND d.location = 'warehouse'))`
+         OR (dl.found IS NULL AND s.status = 'counting' AND d.location = 'warehouse'
+             AND EXISTS (SELECT 1 FROM stocktake_device_line x
+                          WHERE x.stocktake_id = s.id AND x.found IS NOT NULL)))`
     )} AS device_missing,
     ${deviceCount("dl.expected = 0 AND dl.found = 1")} AS device_unexpected,
     ${adjustDoc("id")} AS adjust_doc_id,

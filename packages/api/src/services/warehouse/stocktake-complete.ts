@@ -9,6 +9,7 @@ import { DOC_ID_SQL, executeDoc } from "./doc-core";
 import { badRequest, WarehouseError } from "./errors";
 import { assertInBatch, releaseGuards } from "./guard";
 import {
+  ANY_DEVICE_MARKED_SQL,
   getStocktake,
   getStocktakeRow,
   LINE_HAS_DIFF_SQL,
@@ -50,13 +51,7 @@ const toResult = async (
 };
 
 const anyDeviceMarked = async (env: Env, id: number): Promise<boolean> =>
-  Boolean(
-    await env.DB.prepare(
-      "SELECT 1 AS ok FROM stocktake_device_line WHERE stocktake_id = ? AND found IS NOT NULL LIMIT 1"
-    )
-      .bind(id)
-      .first()
-  );
+  Boolean(await env.DB.prepare(`${ANY_DEVICE_MARKED_SQL} LIMIT 1`).bind(id).first());
 
 /** 完成那一刻账面数不够减的第一条：给出具体是哪条物资。 */
 const assertCanDeduct = async (env: Env, id: number): Promise<void> => {
@@ -115,14 +110,17 @@ const closingStatements = (
   userid: string,
   now: string
 ): D1PreparedStatement[] => [
-  // 盘点期间已经发往项目的不算没找到，所以只动现在仍在库的
+  // 盘点期间已经发往项目的不算没找到，所以只动现在仍在库的。
+  // 一台设备都没标记过的盘点（多半是选了「全部」但只盘了物资）不记设备：
+  // 不然每台设备的时间线上都会多一条去不掉的「盘点未找到」。
   db
     .prepare(
       `UPDATE stocktake_device_line SET found = 0, updated_at = ?
         WHERE stocktake_id = ? AND expected = 1 AND found IS NULL
-          AND device_id IN (SELECT d.id FROM device d WHERE d.location = 'warehouse')`
+          AND device_id IN (SELECT d.id FROM device d WHERE d.location = 'warehouse')
+          AND EXISTS (${ANY_DEVICE_MARKED_SQL})`
     )
-    .bind(now, stocktake.id),
+    .bind(now, stocktake.id, stocktake.id),
   db
     .prepare(
       `INSERT INTO device_event

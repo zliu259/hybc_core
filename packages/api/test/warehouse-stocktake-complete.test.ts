@@ -289,6 +289,26 @@ describe.skipIf(!hasSqlite)("完成盘点", () => {
     expect((await getDevice(h.env, d2)).location).toBe("warehouse");
   });
 
+  it("范围是全部但一台设备都没标记：只按物资完成，不给设备记「盘点未找到」，设备行保持空着", async () => {
+    await record(cement, 8);
+    expect(await getStocktake(h.env, st.id)).toMatchObject({ device_expected: 2, device_missing: 0 });
+    const result = await complete();
+    expect(result.stocktake.status).toBe("done");
+    expect(await quantityOf(cement)).toBe(8);
+    expect(missingEvents(d1)).toEqual([]);
+    expect(missingEvents(d2)).toEqual([]);
+    expect(result.stocktake.device_lines.map((line) => line.found)).toEqual([null, null]);
+    expect(result.stocktake).toMatchObject({ device_found: 0, device_missing: 0 });
+  });
+
+  it("只标记了一台账上不在库的设备：算盘过设备，没扫到的在库设备照样记", async () => {
+    await markStocktakeDevice(h.env, st.id, { device_id: d3, found: true }, "kp");
+    expect((await getStocktake(h.env, st.id)).device_missing).toBe(2);
+    await complete();
+    expect(missingEvents(d1)).toHaveLength(1);
+    expect(missingEvents(d2)).toHaveLength(1);
+  });
+
   it("盘点期间已经发往项目的设备不记「盘点未找到」", async () => {
     await markStocktakeDevice(h.env, st.id, { device_id: d1, found: true }, "kp");
     await shipOut([], [d2]);

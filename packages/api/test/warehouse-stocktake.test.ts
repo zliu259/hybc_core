@@ -56,7 +56,8 @@ describe.skipIf(!hasSqlite)("发起和取消盘点", () => {
       material_diff: 0,
       device_expected: 1,
       device_found: 0,
-      device_missing: 1,
+      // 一台设备都还没标记：现在点完成不会给设备记「没找到」
+      device_missing: 0,
       device_unexpected: 0
     });
     // 物资按类别、品名排

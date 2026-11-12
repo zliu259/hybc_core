@@ -204,11 +204,12 @@ describe("stocktake-view", () => {
       text: "已找到",
       type: "success"
     });
-    // 已完成的盘点里还空着的，是盘点期间已经出库的
+    // 已完成的盘点里还空着的：盘点期间出库了，或者这次根本没盘设备，都叫「没标记」
     expect(
       deviceLineStatus(deviceLine({ location: "project" }), "done")
-    ).toEqual({
-      text: "盘点期间已出库",
+    ).toEqual({ text: "没标记", type: "info" });
+    expect(deviceLineStatus(deviceLine(), "done")).toEqual({
+      text: "没标记",
       type: "info"
     });
   });
@@ -265,6 +266,31 @@ describe("stocktake-view", () => {
     ).toEqual([
       "还有 10 条物资没盘，这些不动",
       "1 台在库设备没找到，会在时间线上记「盘点未找到」"
+    ]);
+  });
+
+  it("completeSummary：一台设备都没标记时说明这次不记设备，不说都找到了", () => {
+    expect(
+      completeSummary(
+        detail({ material_total: 3, material_counted: 3, device_expected: 2 })
+      )
+    ).toEqual([
+      "账面和实盘一致，不出调整单",
+      "设备一台都没标记，这次不记设备的盘点结果"
+    ]);
+    // 只扫到一台账上不在库的：算盘过设备
+    expect(
+      completeSummary(
+        detail({
+          scope: "device",
+          device_expected: 2,
+          device_missing: 2,
+          device_unexpected: 1
+        })
+      )
+    ).toEqual([
+      "2 台在库设备没找到，会在时间线上记「盘点未找到」",
+      "1 台扫到了但账上不在库，记得补返库单"
     ]);
   });
 
@@ -338,5 +364,11 @@ describe("stocktake-view", () => {
       device_missing: 1
     });
     expect(before.device_lines).toHaveLength(2);
+    // 把唯一的标记清掉：一台都没标记，「会被记成没找到」的台数回到 0
+    const cleared = applyDeviceLine(
+      found,
+      deviceLine({ id: 1, device_id: 1, found: null })
+    );
+    expect(cleared).toMatchObject({ device_found: 0, device_missing: 0 });
   });
 });

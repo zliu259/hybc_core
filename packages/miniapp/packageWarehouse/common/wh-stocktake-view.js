@@ -57,12 +57,18 @@ const completeSummary = (detail) => {
   const uncounted = count(detail.material_total) - counted;
   const missing = count(detail.device_missing);
   const unexpected = count(detail.device_unexpected);
+  const expected = count(detail.device_expected);
+  const found = count(detail.device_found);
   return [
     diff > 0 ? `${diff} 条物资有差额，会出一张盘点调整单` : "",
     counted > 0 && diff === 0 ? "账面和实盘一致，不出调整单" : "",
     uncounted > 0 ? `还有 ${uncounted} 条物资没盘，这些不动` : "",
     missing > 0 ? `${missing} 台在库设备没找到，会在时间线上记「盘点未找到」` : "",
-    count(detail.device_expected) > 0 && missing === 0 ? "设备都找到了" : "",
+    expected > 0 && missing === 0 && found > 0 ? "设备都找到了" : "",
+    // 一台都没标记（多半是选了「全部」但只盘了物资）：完成时不会给设备记「没找到」
+    expected > 0 && missing === 0 && found === 0 && unexpected === 0
+      ? "设备一台都没标记，这次不记设备的盘点结果"
+      : "",
     unexpected > 0 ? `${unexpected} 台扫到了但账上不在库，记得补返库单` : ""
   ].filter(Boolean);
 };
@@ -106,8 +112,8 @@ const deviceStatus = (line, status) => {
     return { text: "已找到", theme: "success" };
   }
   if (line.found === 0) return { text: "没找到", theme: "danger" };
-  // 已完成的盘点里还空着的，是盘点期间已经出库、所以没被记成没找到的
-  return { text: status === "done" ? "盘点期间已出库" : "没扫到", theme: "default" };
+  // 已完成的盘点里还空着的：盘点期间出库了，或者这次没盘设备。两种都没有被记成没找到
+  return { text: status === "done" ? "没标记" : "没扫到", theme: "default" };
 };
 
 const toDeviceRow = (line, status) => {
@@ -222,13 +228,16 @@ const withDeviceLine = (detail, line) => {
         String(a.device_code) < String(b.device_code) ? -1 : String(a.device_code) > String(b.device_code) ? 1 : 0
       );
   const expected = lines.filter((item) => item.expected === 1);
+  const unmarked = (item) => item.found === null || item.found === undefined;
+  // 一台设备都还没标记时，完成盘点不记设备，所以「会被记成没找到」的是 0
+  const anyMarked = lines.some((item) => !unmarked(item));
   return {
     ...detail,
     device_lines: lines,
     device_expected: expected.length,
     device_found: expected.filter((item) => item.found === 1).length,
     device_missing: expected.filter(
-      (item) => item.found === 0 || ((item.found === null || item.found === undefined) && item.location === "warehouse")
+      (item) => item.found === 0 || (anyMarked && unmarked(item) && item.location === "warehouse")
     ).length,
     device_unexpected: lines.filter((item) => item.expected === 0 && item.found === 1).length
   };

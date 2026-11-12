@@ -118,6 +118,11 @@ assert.deepStrictEqual(completeSummary(detail({ material_total: 10, material_cou
 assert.deepStrictEqual(completeSummary(detail({ scope: "device", device_expected: 2, device_found: 2 })), [
   "设备都找到了"
 ]);
+// 一台设备都没标记：说明这次不记设备，不说都找到了
+assert.deepStrictEqual(completeSummary(detail({ material_total: 3, material_counted: 3, device_expected: 2 })), [
+  "账面和实盘一致，不出调整单",
+  "设备一台都没标记，这次不记设备的盘点结果"
+]);
 
 // ── 库管 + 盘点中：能改；别人或已结束：只读 ──
 {
@@ -177,8 +182,8 @@ assert.deepStrictEqual(completeSummary(detail({ scope: "device", device_expected
   assert.strictEqual(done.header.statusLabel, "已完成");
   assert.strictEqual(done.header.statusTheme, "success");
   assert.strictEqual(done.header.adjustText, "调整单 KFD-20261112-0001");
-  // 已完成的盘点里还空着的设备，是盘点期间出库的
-  assert.strictEqual(done.deviceRows[0].statusText, "盘点期间已出库");
+  // 已完成的盘点里还空着的设备：盘点期间出库了，或者这次没盘设备，都叫「没标记」
+  assert.strictEqual(done.deviceRows[0].statusText, "没标记");
 
   const cancelled = buildStocktakeView({ ...counting, status: "cancelled" }, options());
   assert.strictEqual(cancelled.header.statusLabel, "已取消");
@@ -317,6 +322,9 @@ assert.deepStrictEqual(deviceActions(null), []);
   );
   assert.strictEqual(unexpected.device_unexpected, 1);
   assert.strictEqual(before.device_lines.length, 2);
+  // 把唯一的标记清掉：一台都没标记，「会被记成没找到」的台数回到 0
+  const cleared = withDeviceLine(found, deviceLine({ id: 1, device_id: 1, found: null }));
+  assert.deepStrictEqual([cleared.device_found, cleared.device_missing], [0, 0]);
 }
 
 // ── 没有盘点时 ──
