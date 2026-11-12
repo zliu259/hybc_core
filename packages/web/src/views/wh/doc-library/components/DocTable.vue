@@ -9,6 +9,7 @@ import type {
 import type { WarehouseCapabilities } from "@/api/wh/types";
 import { useWecomUserOptions } from "@/composables/useWecomUserOptions";
 import { formatTime } from "../../shared/ids";
+import { mirrorTag, type MirrorTag } from "../../settings/wedrive-view";
 import {
   docActions,
   formatFileSize,
@@ -16,11 +17,16 @@ import {
   validityTag
 } from "../doc-view";
 
-/** 资料列表。能做哪些操作由 docActions 决定：旧版本和没有权限的人只有「查看」。 */
+/**
+ * 资料列表。能做哪些操作由 docActions 决定：旧版本和没有权限的人只有「查看」。
+ * 微盘的同步状态和「重新同步」只在 showMirror 时出现：建过微盘空间，并且看的人是库管或资料管理员。
+ * 状态写在标题那一格里，不单独占一列：1440 宽的屏幕上再加一列，表格就要横着滚了。
+ */
 const props = defineProps<{
   rows: DocFileRow[];
   caps: WarehouseCapabilities | null;
   docCategories: DocLibraryConfig["categories"];
+  showMirror?: boolean;
 }>();
 const emit = defineEmits<{
   view: [row: DocFileRow];
@@ -29,6 +35,7 @@ const emit = defineEmits<{
   replace: [row: DocFileRow];
   share: [row: DocFileRow];
   remove: [row: DocFileRow];
+  remirror: [row: DocFileRow];
 }>();
 
 const { loadUserNames, userNameOf } = useWecomUserOptions();
@@ -39,11 +46,16 @@ const categoryLabels = computed(
 const categoryLabel = (key: DocCategory): string =>
   categoryLabels.value.get(key) ?? "其他";
 
+/** 这一行的微盘状态；不该显示时是 null */
+const mirrorOf = (row: DocFileRow): MirrorTag | null =>
+  props.showMirror ? mirrorTag(row) : null;
+
 const onCommand = (command: string, row: DocFileRow) => {
   if (command === "history") emit("history", row);
   else if (command === "replace") emit("replace", row);
   else if (command === "share") emit("share", row);
   else if (command === "remove") emit("remove", row);
+  else if (command === "remirror") emit("remirror", row);
 };
 
 onMounted(() => void loadUserNames());
@@ -59,9 +71,22 @@ onMounted(() => void loadUserNames());
         <el-tag v-if="!row.is_latest" type="info" size="small" class="tag"
           >旧版本</el-tag
         >
+        <el-tooltip
+          v-if="mirrorOf(row) && mirrorOf(row)!.type !== 'success'"
+          :content="mirrorOf(row)!.tip"
+          :disabled="!mirrorOf(row)!.tip"
+          placement="top"
+        >
+          <el-tag :type="mirrorOf(row)!.type" size="small" class="tag"
+            >微盘：{{ mirrorOf(row)!.text }}</el-tag
+          >
+        </el-tooltip>
         <div class="sub">
           {{ row.file_name }} ·
           <span class="nowrap">{{ formatFileSize(row.file_size) }}</span>
+          <span v-if="mirrorOf(row)?.type === 'success'" class="nowrap">
+            · 微盘已同步</span
+          >
         </div>
       </template>
     </el-table-column>
@@ -127,6 +152,13 @@ onMounted(() => void loadUserNames());
                 v-if="row.supersedes_id !== null"
                 command="history"
                 >历史版本</el-dropdown-item
+              >
+              <el-dropdown-item
+                v-if="
+                  props.showMirror && docActions(row, props.caps).canRemirror
+                "
+                command="remirror"
+                >重新同步到微盘</el-dropdown-item
               >
               <el-dropdown-item
                 v-if="docActions(row, props.caps).canDelete"

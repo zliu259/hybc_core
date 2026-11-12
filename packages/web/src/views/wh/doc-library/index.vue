@@ -16,6 +16,7 @@ import type {
   DocTree as DocTreeData
 } from "@/api/wh/doc-library-types";
 import { listDeviceCategories } from "@/api/wh/settings";
+import { getWedriveStatus, remirrorDoc } from "@/api/wh/wedrive";
 import type { DeviceCategory } from "@/api/wh/types";
 import { useWhAction } from "../shared/useWhAction";
 import { useWhCapabilities } from "../shared/useWhCapabilities";
@@ -61,6 +62,8 @@ const filters = reactive<{
 }>({ keyword: "", expiring: false, history: false });
 const page = reactive({ page: 1, pageSize: 20, total: 0 });
 const rows = ref<DocFileRow[]>([]);
+/** 「微盘」一列和「重新同步」：建过微盘空间、看的人是库管或资料管理员才出现 */
+const showMirror = ref(false);
 
 const active = ref<DocFileRow | null>(null);
 const previewVisible = ref(false);
@@ -107,6 +110,16 @@ const loadTree = async () => {
     tree.value = (await getDocTree()).data;
   } catch (error) {
     console.error("[doc-library] 目录加载失败", error);
+  }
+};
+
+/** 微盘镜像建没建过。只有管资料的人问得到；问不到就当没有，不打扰别的功能。 */
+const loadMirror = async () => {
+  if (!caps.value?.is_doc_admin) return;
+  try {
+    showMirror.value = (await getWedriveStatus()).data.initialized;
+  } catch (error) {
+    console.error("[doc-library] 微盘镜像状态加载失败", error);
   }
 };
 
@@ -165,6 +178,13 @@ const remove = async (row: DocFileRow) => {
   await refresh();
 };
 
+const remirror = async (row: DocFileRow) => {
+  await run(() => remirrorDoc(row.id), {
+    success: "已排上，过一会儿刷新看结果"
+  });
+  await load();
+};
+
 onMounted(async () => {
   // 从设备详情带着设备过来：直接筛到那台
   const deviceId = Number(route.query.device_id);
@@ -182,7 +202,7 @@ onMounted(async () => {
   ]);
   if (configResult) config.value = configResult.data;
   if (categoryResult) deviceCategories.value = categoryResult.data;
-  await load();
+  await Promise.all([load(), loadMirror()]);
 });
 </script>
 
@@ -233,12 +253,14 @@ onMounted(async () => {
           :rows="rows"
           :caps="caps"
           :doc-categories="config?.categories ?? []"
+          :show-mirror="showMirror"
           @view="openPreview"
           @edit="openEdit"
           @history="openHistory"
           @replace="openReplace"
           @share="openShare"
           @remove="remove"
+          @remirror="remirror"
         />
         <el-pagination
           v-model:current-page="page.page"
