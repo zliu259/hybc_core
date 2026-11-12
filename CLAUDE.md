@@ -196,6 +196,6 @@ Production runs as a Cloudflare Container (`.cf-runner-container/`, `runner.hybc
 - CF Worker execution time is limited — heavy compute must go to task-runner nodes
 - AI tasks are async via Queue — never block user submissions
 - WeCom API is rate-limited — contact book cached in KV, messages queued
-- WeDrive (微盘) allows 1000 API calls per enterprise per month on the free edition. Every WeDrive call must go through `WedriveClient` (`services/wedrive/client.ts`), which counts calls per Beijing month in KV and pauses the mirror at the budget (default 900) or on errcodes 640019 / 640035; resuming is manual. Tests must use `test/helpers/fake-wedrive.ts`, never real WeCom.
+- WeDrive (微盘) allows 1000 API calls per enterprise per month on the free edition. Every WeDrive call must go through `WedriveClient` (`services/wedrive/client.ts`), which counts calls per Beijing month in D1 (`system_config`, one atomic statement — not KV, which allows one write per key per second) and pauses the mirror at the budget (default 900) or on errcodes 640019 / 640035; resuming is manual. Tests must use `test/helpers/fake-wedrive.ts`, never real WeCom.
 - Legacy DB is read-only — never write to `LEGACY_DB`
 - task-runner without model API keys uses only the local-rules provider (`MOCK_AI_ONLY=true` forces this even when keys are set); `cf_ai` tasks call Cloudflare AI remotely even in local dev (needs `wrangler login`)
