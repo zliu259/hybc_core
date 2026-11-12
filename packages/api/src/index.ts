@@ -29,6 +29,7 @@ import { biddingDedupRoutes } from "./routes/bidding-dedup";
 import { taskRoutes } from "./routes/task";
 import { docLibraryRoutes } from "./routes/doc-library";
 import { docLibraryOpenRoutes } from "./routes/doc-library-open";
+import { docLibraryWedriveRoutes } from "./routes/doc-library-wedrive";
 import { uploadRoutes } from "./routes/upload";
 import { warehouseLegacyStubRoutes } from "./routes/warehouse-legacy-stub";
 import { mountWarehouseRoutes } from "./routes/wh-app";
@@ -92,6 +93,7 @@ app.route("/api/v1/dict", dictRoutes);
 app.route("/api/v1/upload", uploadRoutes);
 // 不带登录态的那组（传分片、对外链接下载）要挂在前面
 app.route("/api/v1/doc-library", docLibraryOpenRoutes);
+app.route("/api/v1/doc-library", docLibraryWedriveRoutes);
 app.route("/api/v1/doc-library", docLibraryRoutes);
 app.route("/api/v1/vertex", vertexRoutes);
 // 仅供 vertex Worker 经 Service Binding 调用；handler 内拒绝公网边缘请求。
