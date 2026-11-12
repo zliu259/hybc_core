@@ -50,6 +50,8 @@ export interface LedgerDeviceRow {
 export interface ProjectLedger {
   project_id: number;
   project_name: string;
+  /** 小程序的项目页用它判断现场负责人能不能给这个项目建清单。 */
+  project_manager_userid: string | null;
   settled: boolean;
   devices_on_site: number;
   turnover_kinds_on_site: number;
@@ -198,9 +200,11 @@ const sumPlanned = (
 };
 
 export const getProjectLedger = async (env: Env, projectId: number): Promise<ProjectLedger> => {
-  const project = await env.DB.prepare("SELECT id, project_name FROM project WHERE id = ?")
+  const project = await env.DB.prepare(
+    "SELECT id, project_name, manager_userid FROM project WHERE id = ?"
+  )
     .bind(projectId)
-    .first<{ id: number; project_name: string }>();
+    .first<{ id: number; project_name: string; manager_userid: string | null }>();
   if (!project) throw new WarehouseError(404, "项目不存在");
 
   const [movements, deviceShipped, planLines, devices, kits] = await Promise.all([
@@ -302,6 +306,7 @@ export const getProjectLedger = async (env: Env, projectId: number): Promise<Pro
   return {
     project_id: Number(project.id),
     project_name: project.project_name,
+    project_manager_userid: project.manager_userid ?? null,
     settled: devicesOnSite === 0 && turnoverKindsOnSite === 0,
     devices_on_site: devicesOnSite,
     turnover_kinds_on_site: turnoverKindsOnSite,

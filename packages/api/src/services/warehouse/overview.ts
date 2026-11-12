@@ -19,8 +19,11 @@ export interface WarehouseOverview {
 const beijingToday = (): string =>
   new Date(Date.now() + 8 * 3600 * 1000).toISOString().slice(0, 10);
 
-export const getWarehouseOverview = async (env: Env): Promise<WarehouseOverview> => {
-  const [tasks, devices, lowStock, recent, kits] = await Promise.all([
+/** 总览里的数字，不含最近的单。小程序首页也用。 */
+export type OverviewCounts = Omit<WarehouseOverview, "recent_docs">;
+
+export const getOverviewCounts = async (env: Env): Promise<OverviewCounts> => {
+  const [tasks, devices, lowStock, kits] = await Promise.all([
     env.DB.prepare(
       `SELECT
          SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS to_confirm,
@@ -39,7 +42,6 @@ export const getWarehouseOverview = async (env: Env): Promise<WarehouseOverview>
     env.DB.prepare(
       "SELECT COUNT(*) AS n FROM material WHERE status = 'active' AND min_stock IS NOT NULL AND quantity <= min_stock"
     ).first<{ n: number }>(),
-    listWhDocs(env, { pageSize: "10" }),
     env.DB.prepare("SELECT COUNT(*) AS n FROM project_kit WHERE status = 'submitted'").first<{
       n: number;
     }>()
@@ -53,7 +55,14 @@ export const getWarehouseOverview = async (env: Env): Promise<WarehouseOverview>
     devices_repairing: byState.get("repairing") ?? 0,
     devices_on_project: byState.get("on_project") ?? 0,
     low_stock_count: Number(lowStock?.n ?? 0),
-    kits_to_confirm: Number(kits?.n ?? 0),
-    recent_docs: recent.items
+    kits_to_confirm: Number(kits?.n ?? 0)
   };
+};
+
+export const getWarehouseOverview = async (env: Env): Promise<WarehouseOverview> => {
+  const [counts, recent] = await Promise.all([
+    getOverviewCounts(env),
+    listWhDocs(env, { pageSize: "10" })
+  ]);
+  return { ...counts, recent_docs: recent.items };
 };
