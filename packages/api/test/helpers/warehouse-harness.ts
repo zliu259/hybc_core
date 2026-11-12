@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 
+import { createFakeR2 } from "./fake-r2";
 import { createMigratedDatabase, createSqliteD1, normalizeParam } from "./sqlite-d1";
 
 // 库房重做的真实 SQL 测试夹具：跑全部迁移，env.DB 是 node:sqlite 上的 D1 外壳。
@@ -21,6 +22,7 @@ export const createWarehouseHarness = () => {
   const hooks = { beforeStatement: null };
   const db = createSqliteD1(database, hooks);
   const kv = new Map();
+  const files = createFakeR2();
   const queued = [];
   let sequence = 0;
   const next = () => {
@@ -45,7 +47,10 @@ export const createWarehouseHarness = () => {
       send: async (message) => {
         queued.push(message);
       }
-    }
+    },
+    // 内存里的假 R2；files.objects 可以直接断言
+    FILES: files,
+    UPLOAD_SIGNING_SECRET: "upload-test-secret"
   };
 
   const seed = {
@@ -152,6 +157,28 @@ export const createWarehouseHarness = () => {
       );
       return id;
     },
+    /** 一份资料：默认说明书、通用；同时往假 R2 里放同样大小的文件。 */
+    docFile(overrides = {}) {
+      const now = nowIso();
+      const n = next();
+      const row = {
+        title: `资料${n}`,
+        file_name: `资料${n}.pdf`,
+        file_key: `doc-library/2026/seed-${n}-资料${n}.pdf`,
+        file_size: 10,
+        content_type: "application/pdf",
+        doc_category: "manual",
+        uploaded_by_userid: "seed",
+        created_at: now,
+        updated_at: now,
+        ...overrides
+      };
+      files.objects.set(row.file_key, {
+        body: new Uint8Array(row.file_size),
+        contentType: row.content_type
+      });
+      return insertRow(database, "doc_file", row);
+    },
     /** 项目清单，默认已确认；行默认库房发、计划 1。 */
     kit(overrides = {}, lines = []) {
       const now = nowIso();
@@ -183,7 +210,7 @@ export const createWarehouseHarness = () => {
     }
   };
 
-  return { database, db, env, hooks, kv, queued, seed };
+  return { database, db, env, files, hooks, kv, queued, seed };
 };
 
 export const authPayload = (sub, roles, authMethod = "wecom_oauth") => ({
