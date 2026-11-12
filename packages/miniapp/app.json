@@ -70,7 +70,9 @@
         "device/index",
         "task-list/index",
         "task-detail/index",
-        "task-new/index"
+        "task-new/index",
+        "kit-list/index",
+        "kit/index"
       ]
     }
   ],

@@ -1,0 +1,113 @@
+<view class="page">
+  <view wx:if="{{notFound}}" class="wh-empty">没有找到这份清单</view>
+  <block wx:elif="{{header}}">
+    <view class="wh-card">
+      <view class="wh-card-body kit-head">
+        <view class="kit-title-line">
+          <text class="kit-title">{{header.title}}</text>
+          <hy-status-chip text="{{header.statusLabel}}" theme="{{header.statusTheme}}" />
+        </view>
+        <view class="wh-row-sub">{{header.kitNo}}</view>
+        <view class="wh-kv" hover-class="wh-row-hover" bindtap="goProject">
+          <text class="wh-kv-label">项目</text>
+          <text class="wh-kv-value">{{header.projectName}}<text class="wh-chevron">›</text></text>
+        </view>
+        <view class="wh-kv">
+          <text class="wh-kv-label">来源</text>
+          <text class="wh-kv-value">{{header.sourceText}}</text>
+        </view>
+        <view wx:if="{{header.submittedText}}" class="wh-kv">
+          <text class="wh-kv-label">提交</text>
+          <text class="wh-kv-value">{{header.submittedText}}</text>
+        </view>
+        <view wx:if="{{header.confirmedText}}" class="wh-kv">
+          <text class="wh-kv-label">确认</text>
+          <text class="wh-kv-value">{{header.confirmedText}}</text>
+        </view>
+        <view wx:if="{{header.remark}}" class="wh-kv">
+          <text class="wh-kv-label">备注</text>
+          <text class="wh-kv-value">{{header.remark}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{header.closeReason}}" class="wh-notice">作废原因：{{header.closeReason}}</view>
+    <view wx:if="{{actions.canEdit}}" class="wh-notice kit-tip">点分节展开，改计划数量、来源，给"待选规格"的行选规格。这个工程用不上的行把数量填 0。加行、删行在 Web 上做。</view>
+
+    <view wx:if="{{groups.length === 0}}" class="wh-card"><view class="wh-empty">清单还没有任何行</view></view>
+
+    <view wx:for="{{groups}}" wx:for-item="group" wx:for-index="g" wx:key="section" class="wh-card">
+      <view class="kit-section {{group.problemCount > 0 ? 'kit-section-problem' : ''}}" hover-class="wh-row-hover" data-g="{{g}}" bindtap="toggleSection">
+        <text class="kit-section-name">{{group.section}}（{{group.count}}）</text>
+        <text wx:if="{{group.problemCount > 0}}" class="wh-alert kit-section-flag">{{group.problemCount}} 行要处理</text>
+        <text class="wh-chevron">{{group.open ? "收起" : "展开"}}</text>
+      </view>
+      <block wx:if="{{group.open}}">
+        <view wx:for="{{group.rows}}" wx:for-item="row" wx:for-index="r" wx:key="key" class="kit-row {{row.problem ? 'kit-row-problem' : ''}}">
+          <view class="kit-row-head">
+            <text class="kit-row-name">{{row.nameText}}</text>
+            <text class="kit-row-kind">{{row.kindLabel}}</text>
+          </view>
+          <view wx:if="{{row.problem}}" class="wh-alert kit-row-note">{{row.problem}}</view>
+
+          <!-- 规格：物资行能改时可选；其余只显示 -->
+          <block wx:if="{{row.lineKind === 'material'}}">
+            <picker
+              wx:if="{{actions.canEdit && row.specLabels.length > 0}}"
+              mode="selector"
+              range="{{row.specLabels}}"
+              data-g="{{g}}"
+              data-r="{{r}}"
+              bindchange="onSpecPick"
+            >
+              <view class="kit-pick {{row.needsSpec ? 'kit-pick-needed' : ''}}">规格：{{row.needsSpec ? "待选规格，点这里选" : (row.detailText || "无规格")}}<text class="wh-chevron">›</text></view>
+            </picker>
+            <view wx:elif="{{row.needsSpec}}" class="kit-row-note wh-alert">物资档案里没有这个品名，要在 Web 上处理，或者把数量填 0</view>
+            <view wx:elif="{{row.detailText}}" class="kit-row-note">规格：{{row.detailText}}</view>
+          </block>
+          <view wx:elif="{{row.detailText}}" class="kit-row-note">{{row.detailText}}</view>
+
+          <block wx:if="{{row.lineKind !== 'text'}}">
+            <view wx:if="{{actions.canEdit}}" class="kit-edit">
+              <view class="kit-edit-qty">
+                <text class="wh-muted">计划</text>
+                <input
+                  class="wh-input kit-qty-input"
+                  type="digit"
+                  value="{{row.qty}}"
+                  data-g="{{g}}"
+                  data-r="{{r}}"
+                  bindinput="onQtyInput"
+                />
+                <text class="wh-muted">{{row.unitText}}</text>
+              </view>
+              <picker mode="selector" range="{{sourceLabels}}" value="{{row.sourceIndex}}" data-g="{{g}}" data-r="{{r}}" bindchange="onSourcePick">
+                <view class="kit-pick">{{row.sourceLabel}}<text class="wh-chevron">›</text></view>
+              </picker>
+            </view>
+            <view wx:else class="kit-row-note">
+              计划 {{row.qty}} {{row.unitText}} · {{row.sourceLabel}}
+              <block wx:if="{{showFulfilment && row.shippedText}}">
+                · 已发 {{row.shippedText}} ·
+                <text class="{{row.done ? 'kit-done' : 'wh-alert'}}">{{row.done ? "发齐了" : "待发 " + row.pendingText}}</text>
+              </block>
+            </view>
+          </block>
+          <view wx:if="{{row.note}}" class="kit-row-note wh-muted">备注：{{row.note}}</view>
+        </view>
+      </block>
+    </view>
+
+    <block wx:if="{{actions.canEdit || actions.canConfirm || actions.canDiscard || actions.canClose || actions.canShip}}">
+      <view class="wh-bar-space" />
+      <view class="wh-bar">
+        <t-button wx:if="{{actions.canDiscard}}" class="btn-fill" variant="outline" theme="danger" disabled="{{busy}}" bindtap="discardKit">作废</t-button>
+        <t-button wx:if="{{actions.canEdit}}" class="btn-fill" variant="{{dirty ? 'base' : 'outline'}}" theme="{{dirty ? 'primary' : 'default'}}" disabled="{{busy}}" bindtap="save">保存</t-button>
+        <t-button wx:if="{{actions.canSubmit}}" class="btn-fill" theme="primary" disabled="{{busy}}" bindtap="submit">提交</t-button>
+        <t-button wx:if="{{actions.canConfirm}}" class="btn-fill" theme="primary" disabled="{{busy}}" bindtap="confirmKit">确认</t-button>
+        <t-button wx:if="{{actions.canClose}}" class="btn-fill" variant="outline" disabled="{{busy}}" bindtap="closeKit">关闭清单</t-button>
+        <t-button wx:if="{{actions.canShip}}" class="btn-fill" theme="primary" bindtap="goShip">按清单发货</t-button>
+      </view>
+    </block>
+  </block>
+</view>
