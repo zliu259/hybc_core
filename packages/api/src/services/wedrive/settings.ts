@@ -27,7 +27,8 @@ const KEY = {
 } as const;
 
 const MB = 1024 * 1024;
-const DEFAULT_MIRROR_MAX_MB = 200;
+/** 实测：SHA1 约 95 MiB/s、base64 约 60 MiB/s（开发机）；Worker 一次调用默认 30 秒 CPU，留足余量 */
+const DEFAULT_MIRROR_MAX_MB = 100;
 const MAX_MIRROR_MAX_MB = 1000;
 const DEFAULT_MONTHLY_BUDGET = 900;
 /** 企业每月的上限；预算不能比它高 */

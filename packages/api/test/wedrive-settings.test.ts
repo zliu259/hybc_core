@@ -27,13 +27,13 @@ describe.skipIf(!hasSqlite)("镜像设置", () => {
     env = h.env as unknown as Env;
   });
 
-  it("什么都没配：没初始化、关着、没开放、没暂停，上限 200 MB，预算 900", async () => {
+  it("什么都没配：没初始化、关着、没开放、没暂停，上限 100 MB，预算 900", async () => {
     expect(await getWedriveSettings(env)).toEqual({
       space_id: null,
       enabled: false,
       space_open: false,
       paused_reason: null,
-      mirror_max_bytes: 200 * MB,
+      mirror_max_bytes: 100 * MB,
       monthly_budget: 900
     });
   });
@@ -85,13 +85,13 @@ describe.skipIf(!hasSqlite)("镜像设置", () => {
     await setSystemConfig(env, "warehouse.wedrive_mirror_max_mb", "abc", "boss");
     await setSystemConfig(env, "warehouse.wedrive_monthly_budget", "-5", "boss");
     expect(await getWedriveSettings(env)).toMatchObject({
-      mirror_max_bytes: 200 * MB,
+      mirror_max_bytes: 100 * MB,
       monthly_budget: 900
     });
     await setSystemConfig(env, "warehouse.wedrive_mirror_max_mb", "999999", "boss");
     await setSystemConfig(env, "warehouse.wedrive_monthly_budget", "5000", "boss");
     expect(await getWedriveSettings(env)).toMatchObject({
-      mirror_max_bytes: 200 * MB,
+      mirror_max_bytes: 100 * MB,
       monthly_budget: 900
     });
   });
