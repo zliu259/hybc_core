@@ -67,7 +67,9 @@
     {
       "root": "packageWarehouse",
       "pages": [
-        "device/index"
+        "device/index",
+        "task-list/index",
+        "task-detail/index"
       ]
     }
   ],

@@ -1,0 +1,43 @@
+<view class="page">
+  <view wx:if="{{tabs.length > 1}}" class="wh-tabs">
+    <view
+      wx:for="{{tabs}}"
+      wx:key="key"
+      class="wh-tab {{item.key === activeTab ? 'wh-tab-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onTab"
+    >{{item.label}}</view>
+  </view>
+
+  <view class="wh-card">
+    <view wx:if="{{rows.length === 0 && !loading}}" class="wh-empty">{{loadFailed ? "加载失败，下拉重试" : "没有任务"}}</view>
+    <view
+      wx:for="{{rows}}"
+      wx:key="id"
+      class="wh-row {{index === 0 ? 'wh-row-first' : ''}}"
+      hover-class="wh-row-hover"
+      data-id="{{item.id}}"
+      bindtap="openTask"
+    >
+      <view class="wh-row-main">
+        <view class="wh-row-title">{{item.title}}</view>
+        <view class="wh-row-sub">{{item.kindLabel}}<text wx:if="{{item.deviceText}}"> · {{item.deviceText}}</text></view>
+        <view class="wh-row-sub">{{item.assigneeName}}<text wx:if="{{item.photoText}}"> · {{item.photoText}}</text></view>
+      </view>
+      <view class="wh-row-side">
+        <hy-status-chip text="{{item.statusLabel}}" theme="{{item.statusTheme}}" />
+        <view wx:if="{{item.dueText}}" class="task-due {{item.overdue ? 'wh-alert' : ''}}">{{item.dueText}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="wh-empty">加载中…</view>
+  <view wx:elif="{{finished && rows.length > 0}}" class="wh-empty">共 {{total}} 个</view>
+
+  <block wx:if="{{canCreate}}">
+    <view class="wh-bar-space" />
+    <view class="wh-bar">
+      <t-button class="btn-fill" theme="primary" bindtap="goNew">新建任务</t-button>
+    </view>
+  </block>
+</view>
