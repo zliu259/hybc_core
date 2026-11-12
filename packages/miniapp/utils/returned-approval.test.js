@@ -9,8 +9,6 @@ const {
 const expectedBizTypes = [
   "payment_request",
   "reimbursement_batch",
-  "stock_order",
-  "warehouse_asset_work_order",
   "outbound_contract",
   "inbound_contract",
   "invoice_request"
@@ -72,3 +70,15 @@ assert.strictEqual(isBizRecordCancelled({ status: "cancelled" }), true);
 assert.strictEqual(isBizRecordCancelled({ status: " CANCELLED " }), true, "状态比较应忽略大小写与首尾空白");
 
 console.log("returned-approval.test.js passed");
+
+// 旧库房的出入库单和工单已经下线，退回后不再给编辑入口
+for (const bizType of ["stock_order", "warehouse_asset_work_order"]) {
+  assert.strictEqual(getReturnedApprovalEditRoute({ approvalId: 19, bizType, bizId: 88 }), "");
+  assert.strictEqual(
+    canEditReturnedApproval(
+      { status: "returned", initiator_userid: "user-a", biz_type: bizType, biz_id: 1, id: 2 },
+      "user-a"
+    ),
+    false
+  );
+}

@@ -102,7 +102,12 @@ const setResponses = () => {
     pagination: { total: 3 }
   };
   state.responses["/log/progress-alert"] = { success: true, data: [{}, {}] };
-  state.responses["/mobile/my-tasks"] = { success: true, data: [] };
+  // 库房任务数取分页里的总数，不是这一页的条数
+  state.responses["/warehouse/task?scope=mine"] = {
+    success: true,
+    data: [{}],
+    pagination: { total: 4 }
+  };
 };
 
 const countOf = (page, key) => page.data.todos.find((tile) => tile.key === key).countText;
@@ -119,6 +124,12 @@ test("待审批用接口的总数，不是这一页的条数", async () => {
   assert.strictEqual(countOf(page, "returned"), "2");
   assert.strictEqual(countOf(page, "review"), "3");
   assert.strictEqual(countOf(page, "warning"), "2");
+  assert.strictEqual(countOf(page, "tasks"), "4");
+  assert.ok(
+    state.calls.includes("/api/v1/warehouse/task?scope=mine&status=todo&page=1&pageSize=1"),
+    "库房任务数要查新接口"
+  );
+  assert.ok(!state.calls.some((item) => item.includes("/work-order/")), "不能再调旧的库房工单接口");
 });
 
 test("预览只取 3 条，不再查项目总数", async () => {
@@ -133,7 +144,7 @@ test("角色取不了的接口不发请求", async () => {
   state.profile = { username: "f", nickname: "财务", roles: ["finance"] };
   const page = await openPage();
   assert.deepStrictEqual(page.data.todos.map((tile) => tile.key), ["pending", "returned"]);
-  ["/external-log-submissions", "/log/progress-alert", "/mobile/my-tasks"].forEach((item) => {
+  ["/external-log-submissions", "/log/progress-alert", "/warehouse/task"].forEach((item) => {
     assert.ok(!state.calls.some((call) => call.includes(item)), item);
   });
 });

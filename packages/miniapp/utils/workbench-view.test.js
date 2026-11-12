@@ -20,7 +20,7 @@ assert.deepStrictEqual(keysOf(siteManager.common), [
   "projects",
   "reimbursement",
   "paymentApply",
-  "asset",
+  "progress",
   "survey",
   "initiated"
 ]);
@@ -31,7 +31,7 @@ assert.ok(keysOf(manager.common).includes("query"));
 
 const finance = buildEntrySections(["finance"], {});
 assert.strictEqual(finance.common[0].key, "query");
-assert.ok(!keysOf(finance.common).includes("asset"), "财务调不了设备接口");
+assert.ok(!keysOf(finance.common).includes("survey"), "财务没有现场入口");
 
 const operator = buildEntrySections(["operator"], {});
 assert.strictEqual(operator.common[0].key, "operatorLog");
@@ -50,8 +50,18 @@ const operatorKeys = [...keysOf(operator.common), ...keysOf(operator.more)];
   assert.ok(!operatorKeys.includes(key), `操作手不该看到 ${key}`);
 });
 const financeKeys = [...keysOf(finance.common), ...keysOf(finance.more)];
-["asset", "survey", "progress", "operatorLog", "dashboard"].forEach((key) => {
+["survey", "progress", "operatorLog", "dashboard"].forEach((key) => {
   assert.ok(!financeKeys.includes(key), `财务不该看到 ${key}`);
+});
+
+// 旧的"设备查验"页已经下线（扫设备在库房 tab 页），哪个角色都不该再有这个入口
+[["super_admin"], ["manager"], ["site_manager"], ["finance"], ["operator"]].forEach((roles) => {
+  const sections = buildEntrySections(roles, {});
+  const entries = [...sections.common, ...sections.more];
+  assert.ok(!keysOf(entries).includes("asset"), `${roles[0]} 不该有设备查验入口`);
+  entries.forEach((entry) => {
+    assert.ok(!/\/pages\/(asset|warehouse-)/.test(entry.path), `${entry.key} 指向了已下线的页面`);
+  });
 });
 
 // 多角色按权限最高的给默认顺序
@@ -110,6 +120,12 @@ assert.strictEqual(busy.length, 5);
 assert.deepStrictEqual(
   keysOf(buildTodoTiles(["manager"], { pending: 0, returned: 0, review: 0, warning: 0, tasks: 4 })),
   ["pending", "returned", "review", "tasks"]
+);
+
+// 库房任务的数字点开是新任务列表的"我的"
+assert.strictEqual(
+  busy.find((tile) => tile.key === "tasks").path,
+  "/packageWarehouse/task-list/index?tab=mine"
 );
 
 // 按角色：财务没有复核、预警、库房任务

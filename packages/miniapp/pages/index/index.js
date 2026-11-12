@@ -28,7 +28,10 @@ const TODO_LOADERS = {
     read: totalOf
   },
   warning: { path: "/api/v1/log/progress-alert", read: lengthOf },
-  tasks: { path: "/api/v1/warehouse/work-order/mobile/my-tasks", read: lengthOf }
+  tasks: {
+    path: "/api/v1/warehouse/task?scope=mine&status=todo&page=1&pageSize=1",
+    read: totalOf
+  }
 };
 
 const get = (path) => request({ method: "GET", path });

@@ -1,8 +1,6 @@
 const RETURNED_APPROVAL_EDIT_BIZ_TYPES = [
   "payment_request",
   "reimbursement_batch",
-  "stock_order",
-  "warehouse_asset_work_order",
   "outbound_contract",
   "inbound_contract",
   "invoice_request"
