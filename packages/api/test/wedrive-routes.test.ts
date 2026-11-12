@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { docLibraryRoutes } from "../src/routes/doc-library";
 import { docLibraryOpenRoutes } from "../src/routes/doc-library-open";
 import { docLibraryWedriveRoutes } from "../src/routes/doc-library-wedrive";
-import { runMirrorDrain } from "../src/services/wedrive/mirror-run";
+import { markForMirror, runMirrorDrain } from "../src/services/wedrive/mirror-run";
 import { getWedriveSettings, saveWedriveSetting } from "../src/services/wedrive/settings";
 import { createFakeWedrive } from "./helpers/fake-wedrive";
 import { createWarehouseHarness } from "./helpers/warehouse-harness";
@@ -112,8 +112,10 @@ describe.skipIf(!hasSqlite)("微盘镜像接口", () => {
       initialized: false,
       enabled: false,
       space_open: false,
+      space_open_confirmed: false,
       paused_reason: null,
       counts: { pending: 2, syncing: 0, synced: 0, failed: 0, skipped: 0 },
+      failed_removals: 0,
       calls_this_month: 0,
       monthly_budget: 900,
       mirror_max_mb: 100
@@ -233,13 +235,42 @@ describe.skipIf(!hasSqlite)("微盘镜像接口", () => {
     expect((await getWedriveSettings(h.env)).space_open).toBe(false);
   });
 
-  it("开放时连不上企微（超时）：502，没记成已开放", async () => {
+  it("开放时答复丢了（其实已经加上了）：502，但系统按已开放处理，之后的小文件走分块、不推卡片", async () => {
     await setup();
-    fake.failNext("space_acl_add", "timeout");
+    fake.failNext("space_acl_add", "lost");
     const res = await request("POST", "/wedrive/open");
     expect(res.status).toBe(502);
-    expect(res.message).toContain("连不上企业微信的微盘接口");
-    expect((await getWedriveSettings(h.env)).space_open).toBe(false);
+    expect(res.message).toContain("没收到企业微信的答复");
+    expect([...fake.spaces.values()][0].members).toHaveLength(1);
+    expect(await status()).toMatchObject({ space_open: true, space_open_confirmed: false });
+    h.seed.docFile({});
+    await drain();
+    expect(fake.callsTo("file_upload")).toHaveLength(0);
+    expect(fake.callsTo("file_upload_init")).toHaveLength(1);
+    expect(fake.cards).toEqual([]);
+  });
+
+  it("开放没收到答复之后可以再点一次：成了就算确认；这时不再卡「还有没镜像完的」", async () => {
+    await setup();
+    fake.failNext("space_acl_add", "timeout");
+    expect((await request("POST", "/wedrive/open")).status).toBe(502);
+    expect(await status()).toMatchObject({ space_open: true, space_open_confirmed: false });
+    h.seed.docFile({});
+    const again = await request("POST", "/wedrive/open");
+    expect(again.status).toBe(200);
+    expect(again.data).toMatchObject({ space_open: true, space_open_confirmed: true });
+    expect((await request("POST", "/wedrive/open")).status).toBe(409);
+  });
+
+  it("开放时本月预算已经用完（请求根本没发）：502，没记成已开放", async () => {
+    await setup();
+    await h.env.DB.prepare(
+      "UPDATE system_config SET config_value = '900' WHERE config_key LIKE 'warehouse.wedrive_calls.%'"
+    ).run();
+    const res = await request("POST", "/wedrive/open");
+    expect(res.status).toBe(502);
+    expect(fake.callsTo("space_acl_add")).toHaveLength(0);
+    expect(await status()).toMatchObject({ space_open: false, space_open_confirmed: false });
   });
 
   it("开放之后新传的资料走分块上传，不给成员推卡片", async () => {
@@ -278,6 +309,45 @@ describe.skipIf(!hasSqlite)("微盘镜像接口", () => {
     }
     expect(mirrorMessages()).toHaveLength(messages + 2);
     expect((await request("POST", "/wedrive/retry-failed")).data.requeued).toBe(0);
+  });
+
+  it("替换之后把新版删掉：上一版重新成为最新版，也重新传到微盘", async () => {
+    await setup();
+    const first = h.seed.docFile({ title: "合格证" });
+    await drain();
+    const second = h.seed.docFile({ title: "合格证", supersedes_id: first });
+    await markForMirror(h.env, [second, first]);
+    await drain();
+    expect(fake.tree()).toEqual({ 通用: { "合格证.pdf": 10 } });
+    expect(row(first).wedrive_fileid).toBeNull();
+
+    as("wang", ["operator"]);
+    expect((await request("DELETE", `/file/${second}`, { version: 0 })).status).toBe(200);
+    await drain();
+    expect(row(first)).toMatchObject({ mirror_status: "synced", wedrive_name: "合格证.pdf" });
+    expect(fake.nodes.has(row(first).wedrive_fileid)).toBe(true);
+    expect(fake.tree()).toEqual({ 通用: { "合格证.pdf": 10 } });
+    expect(row(second).wedrive_fileid).toBeNull();
+  });
+
+  it("已删除的资料在微盘里删不掉：状态里单独数出来，「全部重试」能把它重新排上", async () => {
+    await setup();
+    const id = h.seed.docFile({});
+    await drain();
+    setRow(id, {
+      deleted_at: "2026-11-12T03:00:00.000Z",
+      mirror_status: "failed",
+      mirror_attempts: 5,
+      mirror_error: "bridge proxy timeout"
+    });
+    const before = await status();
+    expect(before.counts.failed).toBe(0);
+    expect(before.failed_removals).toBe(1);
+    const retried = await request("POST", "/wedrive/retry-failed");
+    expect(retried.data.requeued).toBe(1);
+    await drain();
+    expect((await status()).failed_removals).toBe(0);
+    expect(fake.tree()).toEqual({ 通用: {} });
   });
 
   it("已删除的资料不能重新同步：404", async () => {

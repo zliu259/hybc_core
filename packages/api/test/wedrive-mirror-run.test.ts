@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { createWedriveClient } from "../src/services/wedrive/client";
+import { getSystemConfig } from "../src/services/system-config";
+import { createWedriveClient, WedriveError } from "../src/services/wedrive/client";
 import {
   markForMirror,
   MIRROR_MAX_ATTEMPTS,
@@ -58,6 +59,23 @@ describe.skipIf(!hasSqlite)("镜像排空", () => {
       return reply;
     });
     return { stalled, release };
+  };
+  /** 把失败的标回待镜像（模拟整点补跑） */
+  const saveFailedBackToPending = () => requeueStaleMirrors(h.env, now());
+  /** 先补跑一次再排空用：返回空对象，只是为了写在一行里 */
+  const requeued = () => {
+    h.database
+      .prepare("UPDATE doc_file SET mirror_status = 'pending' WHERE mirror_status = 'failed'")
+      .run();
+    return {};
+  };
+  /** 一份已经好好地在微盘里的资料该有的样子 */
+  const inWedrive = {
+    mirror_status: "synced",
+    wedrive_fileid: "f.somewhere",
+    wedrive_name: "x.pdf",
+    wedrive_folder_key: "general",
+    mirrored_at: "2099-01-01T00:00:00.000Z"
   };
   const waitForSyncing = (id) =>
     vi.waitFor(() => expect(row(id).mirror_status).toBe("syncing"), { timeout: 2000 });
@@ -183,19 +201,22 @@ describe.skipIf(!hasSqlite)("镜像排空", () => {
     expect(statuses(ids)).toEqual(["synced", "failed", "failed", "synced", "failed"]);
   });
 
-  it("连着三份失败但原因各不相同：不停", async () => {
+  it("连着三份失败但企微给的错误码各不相同：不算同一个原因，不停", async () => {
     const ids = seedDocs(4);
     let n = 0;
+    const reject = (apiName) => {
+      throw new WedriveError(apiName, 640100 + n, `第 ${n} 种毛病`);
+    };
     const flaky = {
       ...client,
       uploadDirect: async (...args) => {
         n += 1;
-        if (n <= 3) throw new Error(`第 ${n} 种毛病`);
+        if (n <= 3) reject("file_upload");
         return client.uploadDirect(...args);
       },
-      // 直传失败会改用分块：让分块也因为同一个毛病失败
+      // 直传被拒会改用分块：让分块也被同一个错误码拒掉
       uploadChunked: async (...args) => {
-        if (n <= 3) throw new Error(`第 ${n} 种毛病`);
+        if (n <= 3) reject("file_upload_init");
         return client.uploadChunked(...args);
       }
     };
@@ -205,6 +226,117 @@ describe.skipIf(!hasSqlite)("镜像排空", () => {
       stopped: "done"
     });
     expect(statuses(ids)).toEqual(["failed", "failed", "failed", "synced"]);
+  });
+
+  it("企微每次回的原话都不一样（带着不同的 hint），错误码一样：照样算同一个原因，停下", async () => {
+    const ids = seedDocs(6);
+    fake.failNext("file_create", 60020, 10);
+    expect(await drain()).toEqual({ processed: 0, failed: 3, remaining: 3, stopped: "failing" });
+    expect(new Set(ids.slice(0, 3).map((id) => row(id).mirror_error)).size).toBe(3);
+  });
+
+  it("没有错误码的失败（超时、连不上）原话不一样也算同一个原因", async () => {
+    seedDocs(6);
+    const texts = ["bridge proxy timeout", "Bridge proxy failed: 504", "fetch failed"];
+    let n = 0;
+    const down = makeClient(900, async () => {
+      n += 1;
+      throw new Error(texts[n % 3]);
+    });
+    expect(await drain({ client: down })).toMatchObject({ failed: 3, stopped: "failing" });
+  });
+
+  it("资料自己的毛病（存储里没有这个文件）连着几份也不算微盘出了问题：不停", async () => {
+    const ids = seedDocs(5);
+    for (const id of ids.slice(0, 4)) h.files.objects.delete(row(id).file_key);
+    expect(await drain()).toEqual({ processed: 1, failed: 4, remaining: 0, stopped: "done" });
+  });
+
+  it("连着三趟都因为同一个原因停下：暂停，通知超管一次，写上原因；之后一个请求都不发", async () => {
+    seedDocs(9);
+    const down = makeClient(900, async () => {
+      throw new Error("bridge proxy timeout");
+    });
+    expect((await drain({ client: down })).stopped).toBe("failing");
+    expect((await drain({ client: down })).stopped).toBe("failing");
+    expect(notified).toEqual([]);
+    expect(await drain({ client: down })).toMatchObject({ failed: 3, stopped: "paused" });
+    const reason = (await getWedriveSettings(h.env)).paused_reason;
+    expect(reason).toContain("连着 3 趟");
+    expect(reason).toContain("bridge proxy timeout");
+    expect(notified).toEqual([reason]);
+    const before = fake.calls.length;
+    expect((await drain()).stopped).toBe("paused");
+    expect(fake.calls.length).toBe(before);
+  });
+
+  it("中间有一趟做成了：从头数，不暂停", async () => {
+    seedDocs(3);
+    const down = makeClient(900, async () => {
+      throw new Error("bridge proxy timeout");
+    });
+    expect((await drain({ client: down })).stopped).toBe("failing");
+    expect((await drain({ client: down, ...requeued() })).stopped).toBe("failing");
+    // 好了一阵：做成一份
+    seedDocs(1, { title: "新来的" });
+    await saveFailedBackToPending();
+    expect(await drain()).toMatchObject({ processed: 4, stopped: "done" });
+    expect(await getSystemConfig(h.env, "warehouse.wedrive_trip_count")).toBeNull();
+    // 又坏了：从 1 数起，两趟还不到暂停
+    seedDocs(6, { title: "后来的" });
+    expect((await drain({ client: down })).stopped).toBe("failing");
+    expect((await drain({ client: down })).stopped).toBe("failing");
+    expect((await getWedriveSettings(h.env)).paused_reason).toBeNull();
+  });
+
+  it("做到一半镜像被关掉：手上这一份做完就停，不再开始下一份，也不再发消息", async () => {
+    const ids = seedDocs(4);
+    let uploads = 0;
+    const closing = makeClient(900, async (apiName, body) => {
+      const reply = await fake.call(apiName, body);
+      if (apiName === "file_upload") {
+        uploads += 1;
+        if (uploads === 1) await saveWedriveSetting(h.env, { enabled: false }, "boss");
+      }
+      return reply;
+    });
+    expect(await drain({ client: closing })).toEqual({
+      processed: 1,
+      failed: 0,
+      remaining: 3,
+      stopped: "inactive"
+    });
+    expect(statuses(ids)).toEqual(["synced", "pending", "pending", "pending"]);
+    expect(mirrorMessages()).toHaveLength(0);
+  });
+
+  it("做到一半被人暂停：同样停下", async () => {
+    seedDocs(3);
+    let uploads = 0;
+    const pausing = makeClient(900, async (apiName, body) => {
+      const reply = await fake.call(apiName, body);
+      if (apiName === "file_upload") {
+        uploads += 1;
+        if (uploads === 1) await saveWedriveSetting(h.env, { paused_reason: "先停一下" }, "boss");
+      }
+      return reply;
+    });
+    expect(await drain({ client: pausing })).toMatchObject({
+      processed: 1,
+      remaining: 2,
+      stopped: "paused"
+    });
+  });
+
+  it("先删后传：该从微盘删掉的排在要传的前面，新的那份不会被加上（2）", async () => {
+    const [old] = seedDocs(1, { title: "合格证" });
+    await drain();
+    const fresh = h.seed.docFile({ title: "合格证", file_name: "新.pdf", supersedes_id: old });
+    // 新的那份没试过、旧的试过一次：光按次数排的话会先传新的
+    setRow(old, { mirror_status: "pending" });
+    expect(await drain()).toMatchObject({ processed: 2, stopped: "done" });
+    expect(row(fresh).wedrive_name).toBe("合格证.pdf");
+    expect(fake.tree()).toEqual({ 通用: { "合格证.pdf": 10 } });
   });
 
   it("先做没试过的，试过的排在后面", async () => {
@@ -414,7 +546,7 @@ describe.skipIf(!hasSqlite)("镜像排空", () => {
         mirror_attempts: MIRROR_MAX_ATTEMPTS,
         mirror_error: "超时"
       });
-      setRow(done, { mirror_status: "synced" });
+      setRow(done, inWedrive);
       expect(await requeueStaleMirrors(h.env, now())).toBe(2);
       expect(statuses([stuck, fresh, failedTwice, failedOut, done])).toEqual([
         "pending",
@@ -430,7 +562,7 @@ describe.skipIf(!hasSqlite)("镜像排空", () => {
 
     it("没有待办：不发消息；本来就有 pending 的：发一条", async () => {
       const [id] = seedDocs(1);
-      setRow(id, { mirror_status: "synced" });
+      setRow(id, inWedrive);
       expect(await requeueStaleMirrors(h.env, now())).toBe(0);
       expect(mirrorMessages()).toHaveLength(0);
       setRow(id, { mirror_status: "pending" });
@@ -444,6 +576,58 @@ describe.skipIf(!hasSqlite)("镜像排空", () => {
       await saveWedriveSetting(h.env, { enabled: false }, "test");
       expect(await requeueStaleMirrors(h.env, now())).toBe(1);
       expect(mirrorMessages()).toHaveLength(0);
+    });
+
+    it("同步中断满 5 次的不再重来：记成 failed，写明原因", async () => {
+      const [dead, alive] = seedDocs(2);
+      setRow(dead, {
+        mirror_status: "syncing",
+        mirror_attempts: MIRROR_MAX_ATTEMPTS,
+        mirror_started_at: minutesAgo(31)
+      });
+      setRow(alive, {
+        mirror_status: "syncing",
+        mirror_attempts: MIRROR_MAX_ATTEMPTS - 1,
+        mirror_started_at: minutesAgo(31)
+      });
+      expect(await requeueStaleMirrors(h.env, now())).toBe(1);
+      expect(statuses([dead, alive])).toEqual(["failed", "pending"]);
+      expect(row(dead).mirror_error).toContain("中断");
+    });
+
+    it("对一遍账：写着已同步、其实该删的（删除或被替换的时候没标上）补标成 pending", async () => {
+      const [deleted, old, fine] = seedDocs(3);
+      setRow(deleted, { ...inWedrive, deleted_at: "2026-11-12T01:00:00.000Z" });
+      setRow(old, inWedrive);
+      h.seed.docFile({ title: "新版", supersedes_id: old, ...inWedrive });
+      setRow(fine, inWedrive);
+      expect(await requeueStaleMirrors(h.env, now())).toBe(2);
+      expect(statuses([deleted, old, fine])).toEqual(["pending", "pending", "synced"]);
+      expect(mirrorMessages()).toHaveLength(1);
+    });
+
+    it("对一遍账：写着已同步、该在微盘里却没有文件的（新版被删、上一版又成了最新）补标成 pending", async () => {
+      const [restored, gone] = seedDocs(2);
+      setRow(restored, { mirror_status: "synced", mirrored_at: "2099-01-01T00:00:00.000Z" });
+      // 已删除、微盘里也没有了：这是一致的，不动
+      setRow(gone, {
+        mirror_status: "synced",
+        mirrored_at: "2099-01-01T00:00:00.000Z",
+        deleted_at: "2026-11-12T01:00:00.000Z"
+      });
+      expect(await requeueStaleMirrors(h.env, now())).toBe(1);
+      expect(statuses([restored, gone])).toEqual(["pending", "synced"]);
+    });
+
+    it("对一遍账：同步之后又改过（改的时候没标上）补标成 pending", async () => {
+      const [edited] = seedDocs(1);
+      setRow(edited, {
+        ...inWedrive,
+        mirrored_at: "2026-11-12T01:00:00.000Z",
+        updated_at: "2026-11-12T02:00:00.000Z"
+      });
+      expect(await requeueStaleMirrors(h.env, now())).toBe(1);
+      expect(statuses([edited])).toEqual(["pending"]);
     });
 
     it("出错不抛，返回 0", async () => {

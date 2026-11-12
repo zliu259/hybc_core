@@ -170,6 +170,22 @@ describe.skipIf(!hasSqlite)("微盘客户端", () => {
     expect(await used()).toBe(3);
   });
 
+  it("一趟里跨过月底：新的一个月从 1 开始数，不把上个月的数带过去", async () => {
+    let clock = Date.parse("2026-11-30T15:59:58.000Z");
+    const rolling = createWedriveClient(h.env, {
+      call: fake.call,
+      now: () => new Date(clock),
+      budget: 900
+    });
+    const space = await rolling.createSpace("设备资料库");
+    await rolling.createFolder(space, space, "a");
+    clock += 5000;
+    await rolling.createFolder(space, space, "b");
+    // 十一月：开头建空间 1 次，加上这里的建空间和第一个目录
+    expect(await getCallCount(h.env, new Date("2026-11-30T15:00:00.000Z"))).toBe(3);
+    expect(await getCallCount(h.env, new Date(clock))).toBe(1);
+  });
+
   it("另一个客户端接着用同一个月的次数", async () => {
     await client.createFolder(spaceId, spaceId, "a");
     const second = make(3);

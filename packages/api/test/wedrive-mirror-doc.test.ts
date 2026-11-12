@@ -116,13 +116,28 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
     expect(fake.nodes.get(row(id).wedrive_fileid).file_size).toBe(8 * MiB);
   });
 
-  it("直传超时：先看微盘里有没有，没有就改用分块传成", async () => {
+  it("直传超时：这一趟不重传（可能晚一点才落地）；下一趟先找，没有就改用分块传成", async () => {
     const id = seedDoc();
     fake.failNext("file_upload", "timeout");
+    await expect(reconcile(id)).rejects.toThrow("timeout");
+    expect(uploadCalls().map((call) => call.api)).toEqual(["file_upload"]);
+    expect(row(id)).toMatchObject({ wedrive_fileid: null, wedrive_name: "出厂合格证.pdf" });
     expect(await reconcile(id)).toBe("synced");
     expect(fake.callsTo("file_list")).toHaveLength(1);
+    // 上次直传没成，这次不再用直传
+    expect(fake.callsTo("file_upload")).toHaveLength(1);
     expect(fake.callsTo("file_upload_finish")).toHaveLength(1);
     expect(Object.keys(fake.tree()["顶管机"]["SB-0003 唐兴 NSPD1200"])).toEqual(["出厂合格证.pdf"]);
+  });
+
+  it("直传其实传上了、只是答复丢了：这一趟抛出；下一趟认领，微盘里只有一份", async () => {
+    const id = seedDoc();
+    fake.failNext("file_upload", "lost");
+    await expect(reconcile(id)).rejects.toThrow("timeout");
+    expect(await reconcile(id)).toBe("synced");
+    expect(uploadCalls().map((call) => call.api)).toEqual(["file_upload"]);
+    expect(fake.tree()).toEqual({ 顶管机: { "SB-0003 唐兴 NSPD1200": { "出厂合格证.pdf": 10 } } });
+    expect(fake.nodes.has(row(id).wedrive_fileid)).toBe(true);
   });
 
   it("直传被企微拒绝（不是超时）：直接改用分块，不用先列目录", async () => {
@@ -229,16 +244,30 @@ describe.skipIf(!hasSqlite)("对一份资料做镜像", () => {
     expect(fake.calls.length).toBe(before);
   });
 
-  it("上传之前先记下打算放哪、叫什么；传失败了这两项也留着", async () => {
+  it("上传之前先记下打算放哪、叫什么；说不清传没传上的（超时）留着这两项", async () => {
+    const id = seedDoc();
+    fake.failNext("file_upload", "timeout");
+    await expect(reconcile(id)).rejects.toThrow("timeout");
+    expect(row(id)).toMatchObject({
+      wedrive_fileid: null,
+      wedrive_name: "出厂合格证.pdf",
+      wedrive_folder_key: `device:${deviceId}`
+    });
+  });
+
+  it("企微明确拒绝了（肯定没传上）：把打算清掉，下次当成第一次传，不用先列目录", async () => {
     const id = seedDoc();
     fake.failNext("file_upload", 640003);
     fake.failNext("file_upload_init", 640003);
     await expect(reconcile(id)).rejects.toThrow("640003");
     expect(row(id)).toMatchObject({
       wedrive_fileid: null,
-      wedrive_name: "出厂合格证.pdf",
-      wedrive_folder_key: `device:${deviceId}`
+      wedrive_name: null,
+      wedrive_folder_key: null
     });
+    expect(await reconcile(id)).toBe("synced");
+    expect(fake.callsTo("file_list")).toHaveLength(0);
+    expect(fake.callsTo("file_upload")).toHaveLength(2);
   });
 
   it("上次传完没记下来（微盘里已经有同名同大小的）：认领它，不再上传", async () => {

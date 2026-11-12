@@ -5,7 +5,9 @@
  */
 import type { Env } from "../../types/env";
 import type { WedriveFolder } from "../../types/wh";
-import { WedriveError, type WedriveClient } from "./client";
+import { WedriveError, WedriveQuotaError, type WedriveClient } from "./client";
+
+const isQuota = (error: unknown): boolean => error instanceof WedriveQuotaError;
 
 export interface FolderTarget {
   key: string;
@@ -130,25 +132,60 @@ const cachedFolder = (env: Env, key: string): Promise<WedriveFolder | null> =>
     .first<WedriveFolder>();
 
 const FILE_TYPE_FOLDER = 1;
+/** 记了打算建、还没拿到文件夹 ID 的目录，fileid 先存空串 */
+const NOT_CREATED = "";
+
+const setFolderId = async (env: Env, key: string, fileid: string): Promise<void> => {
+  await env.DB.prepare("UPDATE wedrive_folder SET fileid = ?, updated_at = ? WHERE folder_key = ?")
+    .bind(fileid, nowIso(), key)
+    .run();
+};
 
 /**
- * 建一个目录。企微明确拒绝了（有错误码）就是没建上，直接抛。
- * 超时这类说不清的：可能其实建上了，先看一眼，有同名的目录就用它，免得微盘里出现两个。
+ * 把一个目录在微盘里建出来，返回它的 ID。
+ * 先在库里记下「打算建」（fileid 空着），再去建：建上了但没收到答复的话，这一趟直接抛出；
+ * 下一趟看到这条「打算建」，先在上一级目录里按名字找，找到就用它，免得微盘里出现两个同名目录。
+ * 不在同一趟里马上重建：超时的那次请求可能晚一点才落地。
  */
-const createOrAdoptFolder = async (
+const createFolder = async (
+  env: Env,
   client: WedriveClient,
   spaceId: string,
   parentId: string,
-  name: string
+  target: FolderTarget,
+  intended: WedriveFolder | null
 ): Promise<string> => {
+  if (!intended) {
+    const now = nowIso();
+    await env.DB.prepare(
+      `INSERT INTO wedrive_folder (folder_key, fileid, name, parent_key, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    )
+      .bind(target.key, NOT_CREATED, target.name, target.parentKey, now, now)
+      .run();
+  }
+  const name = intended ? intended.name : target.name;
+  const landed = intended
+    ? (await client.listFolder(spaceId, parentId)).find(
+        (item) => item.file_type === FILE_TYPE_FOLDER && item.file_name === name
+      )
+    : undefined;
+  if (landed) {
+    await setFolderId(env, target.key, landed.fileid);
+    return landed.fileid;
+  }
   try {
-    return await client.createFolder(spaceId, parentId, name);
+    const fileid = await client.createFolder(spaceId, parentId, name);
+    await setFolderId(env, target.key, fileid);
+    return fileid;
   } catch (error) {
-    if (error instanceof WedriveError) throw error;
-    const existing = (await client.listFolder(spaceId, parentId)).find(
-      (item) => item.file_type === FILE_TYPE_FOLDER && item.file_name === name
-    );
-    return existing ? existing.fileid : client.createFolder(spaceId, parentId, name);
+    // 企微明确拒绝了（有错误码）或者请求根本没发（预算用完）：肯定没建上，下次不用再去找
+    if (error instanceof WedriveError && (error.errcode !== null || isQuota(error))) {
+      await env.DB.prepare("DELETE FROM wedrive_folder WHERE folder_key = ? AND fileid = ?")
+        .bind(target.key, NOT_CREATED)
+        .run();
+    }
+    throw error;
   }
 };
 
@@ -166,36 +203,36 @@ export const ensureFolder = async (
   let parentId = spaceId;
   let last = { fileid: spaceId, key: "" };
   for (const target of chain) {
-    const existing = await cachedFolder(env, target.key);
+    const cached = await cachedFolder(env, target.key);
+    const existing: WedriveFolder =
+      cached && cached.fileid !== NOT_CREATED
+        ? cached
+        : {
+            folder_key: target.key,
+            fileid: await createFolder(env, client, spaceId, parentId, target, cached),
+            name: cached ? cached.name : target.name,
+            parent_key: cached ? cached.parent_key : target.parentKey,
+            created_at: "",
+            updated_at: ""
+          };
     const now = nowIso();
-    if (!existing) {
-      const fileid = await createOrAdoptFolder(client, spaceId, parentId, target.name);
+    if (existing.name !== target.name) {
+      await client.rename(existing.fileid, target.name);
       await env.DB.prepare(
-        `INSERT INTO wedrive_folder (folder_key, fileid, name, parent_key, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?)`
+        "UPDATE wedrive_folder SET name = ?, updated_at = ? WHERE folder_key = ?"
       )
-        .bind(target.key, fileid, target.name, target.parentKey, now, now)
+        .bind(target.name, now, target.key)
         .run();
-      last = { fileid, key: target.key };
-    } else {
-      if (existing.name !== target.name) {
-        await client.rename(existing.fileid, target.name);
-        await env.DB.prepare(
-          "UPDATE wedrive_folder SET name = ?, updated_at = ? WHERE folder_key = ?"
-        )
-          .bind(target.name, now, target.key)
-          .run();
-      }
-      if ((existing.parent_key ?? null) !== target.parentKey) {
-        await client.move(existing.fileid, parentId);
-        await env.DB.prepare(
-          "UPDATE wedrive_folder SET parent_key = ?, updated_at = ? WHERE folder_key = ?"
-        )
-          .bind(target.parentKey, now, target.key)
-          .run();
-      }
-      last = { fileid: existing.fileid, key: target.key };
     }
+    if ((existing.parent_key ?? null) !== target.parentKey) {
+      await client.move(existing.fileid, parentId);
+      await env.DB.prepare(
+        "UPDATE wedrive_folder SET parent_key = ?, updated_at = ? WHERE folder_key = ?"
+      )
+        .bind(target.parentKey, now, target.key)
+        .run();
+    }
+    last = { fileid: existing.fileid, key: target.key };
     parentId = last.fileid;
   }
   return last;

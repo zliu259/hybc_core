@@ -19,8 +19,14 @@ export const mirrorHeadline = (status: WedriveStatus): MirrorHeadline => {
     return { text: `已暂停：${status.paused_reason}`, type: "danger" };
   }
   if (!status.enabled) return { text: "镜像已关闭", type: "info" };
-  if (status.counts.failed > 0) {
-    return { text: `${status.counts.failed} 份没传上去`, type: "warning" };
+  const problems = [
+    status.counts.failed > 0 ? `${status.counts.failed} 份没传上去` : "",
+    status.failed_removals > 0
+      ? `${status.failed_removals} 份该删的还留在微盘里`
+      : ""
+  ].filter(Boolean);
+  if (problems.length > 0) {
+    return { text: problems.join("，"), type: "warning" };
   }
   if (waiting(status) > 0) {
     return { text: `正在镜像，还有 ${waiting(status)} 份`, type: "info" };
@@ -56,8 +62,9 @@ export const mirrorActions = (
     setup: false,
     toggle: status.enabled ? "off" : "on",
     resume: status.paused_reason !== null,
-    open: !status.space_open,
-    retryFailed: status.counts.failed > 0
+    // 问过企微但没收到答复的，还能再点一次
+    open: !status.space_open || !status.space_open_confirmed,
+    retryFailed: status.counts.failed > 0 || status.failed_removals > 0
   };
 };
 
@@ -93,8 +100,19 @@ export const mirrorCountItems = (
   { label: "已同步", value: status.counts.synced },
   { label: "等待同步", value: waiting(status) },
   { label: "没传上去", value: status.counts.failed },
-  { label: "不镜像", value: status.counts.skipped }
+  { label: "不镜像", value: status.counts.skipped },
+  ...(status.failed_removals > 0
+    ? [{ label: "该删没删掉", value: status.failed_removals }]
+    : [])
 ];
+
+/** 微盘里的「设备资料库」现在谁能看到 */
+export const mirrorAudienceText = (status: WedriveStatus): string => {
+  if (!status.space_open) return "还没有开放，微盘里谁也看不到";
+  return status.space_open_confirmed
+    ? "全公司，只能下载"
+    : "不确定：上次开放没收到企业微信的答复，请到微盘里看一下成员";
+};
 
 export const mirrorCallsText = (status: WedriveStatus): string =>
   `已用 ${status.calls_this_month} / 预算 ${status.monthly_budget}（企业每月上限 1000 次）`;

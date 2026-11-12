@@ -6,17 +6,22 @@ import type { Env } from "../../types/env";
 import type { DocMirrorStatus } from "../../types/wh";
 import { IS_LATEST } from "../doc-library/query";
 import { badRequest, WarehouseError } from "../warehouse/errors";
-import { createWedriveClient, WedriveError, type WedriveClient } from "./client";
+import { createWedriveClient, WedriveError, WedriveQuotaError, type WedriveClient } from "./client";
 import { kickMirrorDrain, markForMirror } from "./mirror-run";
 import { getCallCount, getWedriveSettings, mirrorActive, saveWedriveSetting } from "./settings";
 
 export interface WedriveStatus {
   initialized: boolean;
   enabled: boolean;
+  /** 按已开放处理（新文件不走直传）。问过企微但没收到答复时也是 true */
   space_open: boolean;
+  /** 企微确实答复了「加上了」 */
+  space_open_confirmed: boolean;
   paused_reason: string | null;
   /** 只数应该在微盘里的资料：没删、是最新版 */
   counts: Record<DocMirrorStatus, number>;
+  /** 已经删除或被替换、但微盘里那一份没删掉（试了几次都失败）的份数 */
+  failed_removals: number;
   calls_this_month: number;
   monthly_budget: number;
   mirror_max_mb: number;
@@ -67,21 +72,35 @@ const countByStatus = async (env: Env): Promise<Record<DocMirrorStatus, number>>
   );
 };
 
+/** 不该在微盘里（已删除或被替换）、微盘里可能还留着、而且删的时候失败了的。 */
+const countFailedRemovals = async (env: Env): Promise<number> => {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM doc_file f
+      WHERE f.mirror_status = 'failed'
+        AND (f.wedrive_fileid IS NOT NULL OR f.wedrive_name IS NOT NULL)
+        AND (f.deleted_at IS NOT NULL OR NOT ${IS_LATEST})`
+  ).first<{ n: number }>();
+  return Number(row?.n ?? 0);
+};
+
 export const getWedriveStatus = async (
   env: Env,
   now: Date = new Date()
 ): Promise<WedriveStatus> => {
-  const [settings, counts, calls] = await Promise.all([
+  const [settings, counts, failedRemovals, calls] = await Promise.all([
     getWedriveSettings(env),
     countByStatus(env),
+    countFailedRemovals(env),
     getCallCount(env, now)
   ]);
   return {
     initialized: settings.space_id !== null,
     enabled: settings.enabled,
     space_open: settings.space_open,
+    space_open_confirmed: settings.space_open_confirmed,
     paused_reason: settings.paused_reason,
     counts,
+    failed_removals: failedRemovals,
     calls_this_month: calls,
     monthly_budget: settings.monthly_budget,
     mirror_max_mb: Math.round(settings.mirror_max_bytes / MB)
@@ -133,7 +152,15 @@ export const updateWedriveSettings = async (
   return getWedriveStatus(env);
 };
 
-/** 把公司根部门加为只能下载的成员。之后新传的文件一律走分块上传（不推卡片）。 */
+const OPEN_UNSURE =
+  "没收到企业微信的答复，不确定有没有开放成功。系统先按已开放处理（之后新传的文件不会给人推卡片）。请到企业微信的微盘里看「设备资料库」有没有成员：没有的话，再点一次「对全公司开放」";
+
+/**
+ * 把公司根部门加为只能下载的成员。之后新传的文件一律走分块上传（不推卡片）。
+ * 先把「按已开放处理」记下来再发请求：分块上传在开没开放时都安全，反过来（其实开放了、系统还以为没开放）
+ * 就会继续用直传给全公司推卡片，页面上还写着「谁也看不到」。企微明确拒绝、或者请求根本没发时才改回去；
+ * 没收到答复的留在「不确定」，可以再点一次。
+ */
 export const openWedriveSpace = async (
   env: Env,
   userid: string,
@@ -141,15 +168,29 @@ export const openWedriveSpace = async (
 ): Promise<WedriveStatus> => {
   const settings = await getWedriveSettings(env);
   if (settings.space_id === null) throw new WarehouseError(409, NOT_INITIALIZED);
-  if (settings.space_open) throw new WarehouseError(409, "已经对全公司开放过了");
-  const counts = await countByStatus(env);
-  const unfinished = counts.pending + counts.syncing;
-  if (unfinished > 0) {
-    throw new WarehouseError(409, `还有 ${unfinished} 份资料没镜像完，等它们完成再开放`);
+  if (settings.space_open_confirmed) throw new WarehouseError(409, "已经对全公司开放过了");
+  const retrying = settings.space_open;
+  if (!retrying) {
+    const counts = await countByStatus(env);
+    const unfinished = counts.pending + counts.syncing;
+    if (unfinished > 0) {
+      throw new WarehouseError(409, `还有 ${unfinished} 份资料没镜像完，等它们完成再开放`);
+    }
   }
   const client = deps.client ?? createWedriveClient(env, deps.now ? { now: deps.now } : {});
   const spaceId = settings.space_id;
-  await reachWedrive("space_acl_add", () => client.openSpaceToCompany(spaceId));
+  await saveWedriveSetting(env, { space_open: "asked" }, userid);
+  try {
+    await client.openSpaceToCompany(spaceId);
+  } catch (error) {
+    const definite =
+      error instanceof WedriveError &&
+      (error.errcode !== null || error instanceof WedriveQuotaError);
+    if (!definite) throw new WedriveError("space_acl_add", null, OPEN_UNSURE);
+    // 第一次点就被明确拒绝：确实没开放，改回去。重试时被拒（比如「已经是成员」）说明不了什么，留在不确定。
+    if (!retrying) await saveWedriveSetting(env, { space_open: false }, userid);
+    throw error;
+  }
   await saveWedriveSetting(env, { space_open: true }, userid);
   return getWedriveStatus(env, deps.now?.());
 };

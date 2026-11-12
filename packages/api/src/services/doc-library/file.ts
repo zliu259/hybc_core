@@ -74,7 +74,7 @@ export const deleteDocFile = async (
   userid: string
 ): Promise<void> => {
   const version = requireVersion(input.version);
-  await loadDoc(env, id);
+  const doc = await loadDoc(env, id);
   await assertLatest(env, id, "旧版本不能删除，只能删除最新版");
   const now = nowIso();
   await runAtomicBatch(env.DB, [
@@ -90,8 +90,8 @@ export const deleteDocFile = async (
     ).bind(now, id),
     releaseGuards(env.DB)
   ]);
-  // 微盘里的那一份也要删掉
-  await markForMirror(env, [id]);
+  // 微盘里的那一份也要删掉；它替换掉的上一版重新成了最新版，要重新传上去
+  await markForMirror(env, doc.supersedes_id === null ? [id] : [id, doc.supersedes_id]);
 };
 
 export interface DocFileUrl {

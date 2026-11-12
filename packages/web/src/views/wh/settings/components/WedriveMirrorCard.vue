@@ -15,6 +15,7 @@ import { message } from "@/utils/message";
 import { useWhAction } from "../../shared/useWhAction";
 import {
   mirrorActions,
+  mirrorAudienceText,
   mirrorCallsText,
   mirrorCountItems,
   mirrorHeadline
@@ -146,9 +147,7 @@ onMounted(() => void load());
           >{{ status.mirror_max_mb }} MB，超过的不镜像</el-descriptions-item
         >
         <el-descriptions-item label="谁能看到">{{
-          status.space_open
-            ? "全公司，只能下载"
-            : "还没有开放，微盘里谁也看不到"
+          mirrorAudienceText(status)
         }}</el-descriptions-item>
       </el-descriptions>
       <div v-if="props.canManage" class="actions">

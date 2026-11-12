@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { WedriveStatus } from "@/api/wh/wedrive";
 import {
   mirrorActions,
+  mirrorAudienceText,
   mirrorCallsText,
   mirrorCountItems,
   mirrorHeadline,
@@ -13,8 +14,10 @@ const status = (patch: Partial<WedriveStatus> = {}): WedriveStatus => ({
   initialized: true,
   enabled: true,
   space_open: false,
+  space_open_confirmed: false,
   paused_reason: null,
   counts: { pending: 0, syncing: 0, synced: 12, failed: 0, skipped: 0 },
+  failed_removals: 0,
   calls_this_month: 40,
   monthly_budget: 900,
   mirror_max_mb: 100,
@@ -59,6 +62,17 @@ describe("mirrorHeadline", () => {
       mirrorHeadline(status({ counts: counts({ failed: 2, pending: 5 }) }))
     ).toEqual({ text: "2 份没传上去", type: "warning" });
   });
+  it("已删除的资料在微盘里没删掉：橙色，单独说", () => {
+    expect(mirrorHeadline(status({ failed_removals: 2 }))).toEqual({
+      text: "2 份该删的还留在微盘里",
+      type: "warning"
+    });
+    expect(
+      mirrorHeadline(
+        status({ counts: counts({ failed: 1 }), failed_removals: 2 })
+      ).text
+    ).toBe("1 份没传上去，2 份该删的还留在微盘里");
+  });
   it("有待传的：等待和正在传的加在一起", () => {
     expect(
       mirrorHeadline(status({ counts: counts({ pending: 3, syncing: 1 }) }))
@@ -102,12 +116,36 @@ describe("mirrorActions", () => {
     );
   });
   it("已经开放：没有「对全公司开放」", () => {
-    expect(mirrorActions(status({ space_open: true }), true).open).toBe(false);
+    expect(
+      mirrorActions(
+        status({ space_open: true, space_open_confirmed: true }),
+        true
+      ).open
+    ).toBe(false);
   });
   it("有失败的：多一个「全部重试」", () => {
     expect(
       mirrorActions(status({ counts: counts({ failed: 1 }) }), true).retryFailed
     ).toBe(true);
+  });
+  it("只有该删没删掉的：也给「全部重试」", () => {
+    expect(
+      mirrorActions(status({ failed_removals: 1 }), true).retryFailed
+    ).toBe(true);
+  });
+  it("开放过但没收到企业微信的答复：还能再点一次「对全公司开放」", () => {
+    expect(
+      mirrorActions(
+        status({ space_open: true, space_open_confirmed: false }),
+        true
+      ).open
+    ).toBe(true);
+    expect(
+      mirrorActions(
+        status({ space_open: true, space_open_confirmed: true }),
+        true
+      ).open
+    ).toBe(false);
   });
   it("不是经理或超管：什么按钮都没有", () => {
     expect(mirrorActions(status({ initialized: false }), false)).toEqual(
@@ -179,6 +217,26 @@ describe("卡片上的数字", () => {
       { label: "没传上去", value: 2 },
       { label: "不镜像", value: 1 }
     ]);
+  });
+  it("该删没删掉的：有才多出一项", () => {
+    expect(mirrorCountItems(status({ failed_removals: 3 })).at(-1)).toEqual({
+      label: "该删没删掉",
+      value: 3
+    });
+    expect(mirrorCountItems(status())).toHaveLength(4);
+  });
+  it("谁能看到：没开放、已开放、不确定三种说法", () => {
+    expect(mirrorAudienceText(status())).toBe("还没有开放，微盘里谁也看不到");
+    expect(
+      mirrorAudienceText(
+        status({ space_open: true, space_open_confirmed: true })
+      )
+    ).toBe("全公司，只能下载");
+    expect(
+      mirrorAudienceText(
+        status({ space_open: true, space_open_confirmed: false })
+      )
+    ).toBe("不确定：上次开放没收到企业微信的答复，请到微盘里看一下成员");
   });
   it("本月调用次数", () => {
     expect(mirrorCallsText(status())).toBe(

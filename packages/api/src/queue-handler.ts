@@ -602,8 +602,18 @@ const resolveRejectPushReason = async (env: Env, instanceId: number): Promise<st
 
 const REIMBURSEMENT_REVIEW_TASK_TYPES = new Set(["ocr_extract", "reimbursement_anomaly"]);
 
+const isMirrorMessage = (msg: Message<DomainEvent>): boolean =>
+  msg.body.type === "WAREHOUSE_DOC_MIRROR";
+
 export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise<void> => {
-  for (const msg of batch.messages) {
+  // 微盘镜像排空一趟可能要几分钟：排到这一批的最后，别挡着同一批里的审批推送和通知。
+  const ordered = [
+    ...batch.messages.filter((msg) => !isMirrorMessage(msg)),
+    ...batch.messages.filter(isMirrorMessage)
+  ];
+  /** 排空的上限（份数、字节、时间）是按一趟算的：一批里有几条镜像消息也只排空一次 */
+  let mirrorDrained = false;
+  for (const msg of ordered) {
     try {
       // publishEvent 投递前已写过 event_log，这里不再写。
       const event = msg.body;
@@ -852,7 +862,11 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
         }
         case "WAREHOUSE_DOC_MIRROR": {
           // 排空自己管锁、限额和每份资料的失败；这里抛出来的只会是意料之外的错，让消息重试。
-          await runMirrorDrain(env);
+          // 还有剩的它会自己再发一条消息，所以同一批里其余的镜像消息直接确认。
+          if (!mirrorDrained) {
+            mirrorDrained = true;
+            await runMirrorDrain(env);
+          }
           break;
         }
         default:

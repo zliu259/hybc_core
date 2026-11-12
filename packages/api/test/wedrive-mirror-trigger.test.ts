@@ -125,6 +125,16 @@ describe.skipIf(!hasSqlite)("资料的写操作会触发镜像", () => {
     expect(mirrorMessages()).toHaveLength(1);
   });
 
+  it("删除最新版：它替换掉的上一版重新成为最新版，也被标成 pending（要重新传到微盘）", async () => {
+    const previous = h.seed.docFile({});
+    const latest = h.seed.docFile({ supersedes_id: previous });
+    markSynced(previous);
+    markSynced(latest);
+    expect((await json("DELETE", `/file/${latest}`, { version: 0 })).status).toBe(200);
+    expect(row(previous)).toMatchObject({ mirror_status: "pending", mirror_attempts: 0 });
+    expect(row(latest).mirror_status).toBe("pending");
+  });
+
   it("镜像没开：接口照常，状态是 pending，不发消息", async () => {
     await saveWedriveSetting(h.env, { enabled: false }, "test");
     const done = await upload();

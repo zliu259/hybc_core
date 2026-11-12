@@ -7,12 +7,16 @@ import type { ApiResult } from "./types";
 export interface WedriveStatus {
   initialized: boolean;
   enabled: boolean;
-  /** 空间有没有对全公司开放 */
+  /** 按已开放处理（新文件不给人推卡片）。问过企微但没收到答复时也是 true */
   space_open: boolean;
+  /** 企微确实答复了「加上了」 */
+  space_open_confirmed: boolean;
   /** 不为空就是暂停中，值是原因 */
   paused_reason: string | null;
   /** 只数应该在微盘里的资料：没删、是最新版 */
   counts: Record<DocMirrorStatus, number>;
+  /** 已经删除或被替换、但微盘里那一份没删掉的份数 */
+  failed_removals: number;
   calls_this_month: number;
   monthly_budget: number;
   mirror_max_mb: number;

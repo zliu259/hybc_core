@@ -16,6 +16,7 @@ const renamed = (name, n) => {
 
 export const createFakeWedrive = (options = {}) => {
   let seq = 0;
+  let hintSeq = 0;
   const nextId = (prefix) => {
     seq += 1;
     return `${prefix}.${seq}`;
@@ -229,7 +230,17 @@ export const createFakeWedrive = (options = {}) => {
       failure.times -= 1;
       failures = failures.filter((item) => item.times > 0);
       if (failure.errcode === "timeout") throw new Error("bridge proxy timeout");
-      return err(failure.errcode, `fake failure ${failure.errcode}`);
+      if (failure.errcode === "lost") {
+        // 请求到了、微盘也照做了，只是答复没回来
+        handlers[apiName]?.(body);
+        throw new Error("bridge proxy timeout");
+      }
+      // 企微的原话里每次请求都带一个不一样的 hint
+      hintSeq += 1;
+      return err(
+        failure.errcode,
+        `fake failure ${failure.errcode}, hint: [17${hintSeq}_fake], from ip: 203.0.113.9`
+      );
     }
     const handler = handlers[apiName];
     if (!handler) return err(40058, `unknown api ${apiName}`);
@@ -258,7 +269,10 @@ export const createFakeWedrive = (options = {}) => {
     nodes,
     tree,
     instantShas,
-    /** 接下来 times 次调这个接口：回这个错误码；errcode 给 "timeout" 就抛出（模拟代理超时） */
+    /**
+     * 接下来 times 次调这个接口：回这个错误码。errcode 给 "timeout" 就抛出（请求没到）；
+     * 给 "lost" 是请求到了、微盘照做了，但答复丢了（也是抛出）。
+     */
     failNext: (api, errcode, times = 1) => {
       failures = [...failures, { api, errcode, times }];
     },

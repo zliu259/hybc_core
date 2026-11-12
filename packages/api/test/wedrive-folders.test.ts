@@ -86,9 +86,12 @@ describe.skipIf(!hasSqlite)("ensureFolder", () => {
     { key: "category:9", name: "顶管机", parentKey: null },
     { key: "device:3", name: "SB-0003 唐兴 NSPD1200", parentKey: "category:9" }
   ];
+  /** 已经建好的目录（只开了个头、还没拿到文件夹 ID 的不算） */
   const cached = () =>
     h.database
-      .prepare("SELECT folder_key, name, parent_key FROM wedrive_folder ORDER BY folder_key")
+      .prepare(
+        "SELECT folder_key, name, parent_key FROM wedrive_folder WHERE fileid <> '' ORDER BY folder_key"
+      )
       .all();
 
   beforeEach(async () => {
@@ -166,36 +169,36 @@ describe.skipIf(!hasSqlite)("ensureFolder", () => {
     expect(fake.callsTo("file_create").length).toBe(creates + 1);
   });
 
-  it("建目录超时、其实已经建上了：认领那个目录，不建第二个", async () => {
-    let timeouts = 1;
-    const flaky = createWedriveClient(h.env, {
-      budget: 900,
-      call: async (api, body) => {
-        const reply = await fake.call(api, body);
-        if (api === "file_create" && timeouts > 0) {
-          timeouts -= 1;
-          throw new Error("bridge proxy timeout");
-        }
-        return reply;
-      }
-    });
-    const result = await ensureFolder(h.env, flaky, spaceId, chain);
+  it("建目录其实建上了、只是答复丢了：这一趟抛出；下一趟认领那个目录，不建第二个", async () => {
+    fake.failNext("file_create", "lost");
+    await expect(ensureFolder(h.env, client, spaceId, chain)).rejects.toThrow("timeout");
+    expect(fake.callsTo("file_create")).toHaveLength(1);
+    const result = await ensureFolder(h.env, client, spaceId, chain);
     expect(fake.tree()).toEqual({ 顶管机: { "SB-0003 唐兴 NSPD1200": {} } });
+    // 类别那一层是认领的，只新建了设备那一层
     expect(fake.callsTo("file_create")).toHaveLength(2);
+    expect(fake.callsTo("file_list")).toHaveLength(1);
     expect(fake.nodes.get(result.fileid).file_name).toBe("SB-0003 唐兴 NSPD1200");
     expect(cached().map((row) => row.folder_key)).toEqual(["category:9", "device:3"]);
   });
 
-  it("建目录超时、确实没建上：再建一次", async () => {
+  it("建目录超时、确实没建上：这一趟抛出；下一趟先看一眼，没有再建", async () => {
     fake.failNext("file_create", "timeout");
+    await expect(ensureFolder(h.env, client, spaceId, chain)).rejects.toThrow("timeout");
     await ensureFolder(h.env, client, spaceId, chain);
     expect(fake.tree()).toEqual({ 顶管机: { "SB-0003 唐兴 NSPD1200": {} } });
     expect(fake.callsTo("file_list")).toHaveLength(1);
   });
 
-  it("企微明确拒绝建目录（有错误码）：直接抛，不去列目录", async () => {
+  it("第一次建目录不列目录（省一次调用）", async () => {
+    await ensureFolder(h.env, client, spaceId, chain);
+    expect(fake.callsTo("file_list")).toHaveLength(0);
+  });
+
+  it("企微明确拒绝建目录（有错误码）：直接抛；下一趟也不用先列目录", async () => {
     fake.failNext("file_create", 640003);
     await expect(ensureFolder(h.env, client, spaceId, chain)).rejects.toThrow("640003");
+    await ensureFolder(h.env, client, spaceId, chain);
     expect(fake.callsTo("file_list")).toHaveLength(0);
   });
 

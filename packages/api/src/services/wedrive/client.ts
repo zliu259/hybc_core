@@ -7,7 +7,7 @@ import type { Env } from "../../types/env";
 import { fetchWeComAccessToken } from "../wecom-api";
 import { fetchViaBridgeStrict } from "../wecom-approval-push";
 import { computeBlockSha, forEachBlock } from "./block-sha";
-import { getCallCount, getWedriveSettings, saveCallCount } from "./settings";
+import { countCall, getWedriveSettings } from "./settings";
 
 export type WeComReply = { errcode: number; errmsg: string } & Record<string, unknown>;
 export type WeComCaller = (
@@ -32,6 +32,17 @@ export class WedriveQuotaError extends WedriveError {
   constructor(apiName: string, errcode: number | null, message: string) {
     super(apiName, errcode, message);
     this.name = "WedriveQuotaError";
+  }
+}
+
+/**
+ * 这份资料自己的文件有问题（存储里没有、大小对不上），和微盘那一头没关系。
+ * 排空用它区分：这种失败连着几份也不说明微盘出了问题。
+ */
+export class SourceFileError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "SourceFileError";
   }
 }
 
@@ -130,8 +141,6 @@ export const createWedriveClient = (
   const call = deps.call ?? createBridgeCaller(env);
   const now = deps.now ?? (() => new Date());
   let budget: number | null = deps.budget ?? null;
-  /** 本月已用次数：第一次调用前从 KV 读一次，之后在内存里累加、每次落盘 */
-  let used: number | null = null;
 
   const invoke = async (
     apiName: string,
@@ -139,13 +148,10 @@ export const createWedriveClient = (
     options?: { timeoutMs?: number }
   ): Promise<WeComReply> => {
     if (budget === null) budget = (await getWedriveSettings(env)).monthly_budget;
-    if (used === null) used = await getCallCount(env, now());
-    if (used >= budget) {
+    // 发之前就记：请求超时的时候，企微那边多半已经算了一次。到了预算就不记也不发。
+    if ((await countCall(env, now(), budget)) === null) {
       throw new WedriveQuotaError(apiName, null, "本月微盘接口调用次数已经用到预算");
     }
-    // 发之前就记：请求超时的时候，企微那边多半已经算了一次
-    used += 1;
-    await saveCallCount(env, now(), used);
     const reply = await call(apiName, body, options);
     if (reply.errcode !== 0) {
       const message = `微盘接口 ${apiName} 返回 ${reply.errcode}：${String(reply.errmsg ?? "").slice(0, 120)}`;
@@ -260,7 +266,7 @@ export const createWedriveClient = (
     uploadChunked: async (spaceId, parentId, name, size, open) => {
       // 第一遍：算出每一块的累积摘要（init 时就要全部交上去）
       const digest = await computeBlockSha(await open());
-      if (digest.size !== size) throw new Error("文件大小和记录的不一样");
+      if (digest.size !== size) throw new SourceFileError("文件大小和记录的不一样");
       const init = await invoke("file_upload_init", {
         spaceid: spaceId,
         fatherid: parentId,

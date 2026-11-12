@@ -9,6 +9,7 @@ import { extensionOf } from "../doc-library/file-types";
 import { IS_LATEST } from "../doc-library/query";
 import {
   DIRECT_UPLOAD_MAX_BYTES,
+  SourceFileError,
   WedriveError,
   WedriveQuotaError,
   type WedriveClient
@@ -114,7 +115,7 @@ const recordUploadIntent = async (
 
 const openObject = async (env: Env, fileKey: string): Promise<R2ObjectBody> => {
   const object = await env.FILES.get(fileKey);
-  if (!object) throw new Error("文件不在存储里");
+  if (!object) throw new SourceFileError("文件不在存储里");
   return object;
 };
 
@@ -134,6 +135,20 @@ const findUploaded = async (
   return match ? match.fileid : null;
 };
 
+const clearUploadIntent = async (env: Env, docId: number): Promise<void> => {
+  await env.DB.prepare(
+    "UPDATE doc_file SET wedrive_name = NULL, wedrive_folder_key = NULL WHERE id = ? AND wedrive_fileid IS NULL"
+  )
+    .bind(docId)
+    .run();
+};
+
+const isQuotaError = (error: unknown): boolean => error instanceof WedriveQuotaError;
+
+/**
+ * 把文件传上去，返回文件 ID。
+ * startedBefore：上次已经开始传过、这次在目录里没找到。上次多半是直传超时，这次不再用直传。
+ */
 const upload = async (
   env: Env,
   client: WedriveClient,
@@ -141,7 +156,8 @@ const upload = async (
   doc: DocFile,
   spaceId: string,
   folderId: string,
-  name: string
+  name: string,
+  startedBefore: boolean
 ): Promise<string> => {
   const size = Number(doc.file_size);
   const chunked = () =>
@@ -153,19 +169,20 @@ const upload = async (
       async () => (await openObject(env, doc.file_key)).body
     );
   // 空间开放之后不用直传：直传没法不给成员推卡片
-  if (settings.space_open || size > DIRECT_UPLOAD_MAX_BYTES) return chunked();
+  if (settings.space_open || size > DIRECT_UPLOAD_MAX_BYTES || startedBefore) return chunked();
   const bytes = new Uint8Array(await (await openObject(env, doc.file_key)).arrayBuffer());
   try {
     return await client.uploadDirect(spaceId, folderId, name, bytes);
   } catch (error) {
-    if (error instanceof WedriveQuotaError) throw error;
-    // 企微明确拒绝了（有错误码）：文件肯定没传上，直接改分块。
-    // 超时这类说不清的：可能其实传上了，先看一眼，免得微盘里出现两份。
-    if (!(error instanceof WedriveError)) {
-      const existing = await findUploaded(client, spaceId, folderId, name, size);
-      if (existing) return existing;
-    }
-    return chunked();
+    // 企微明确拒绝了（有错误码，也不是限额）：文件肯定没传上，直接改分块。
+    const rejected =
+      error instanceof WedriveError &&
+      !(error instanceof WedriveQuotaError) &&
+      error.errcode !== null;
+    if (rejected) return chunked();
+    // 超时这类说不清的：可能其实传上了，也可能晚一点才落地。这一趟不重传，直接抛出；
+    // 下一趟按「打算放哪、叫什么」去目录里找，找到就认领，找不到再传。
+    throw error;
   }
 };
 
@@ -183,7 +200,8 @@ const findFromIntent = async (
   const folder = await env.DB.prepare("SELECT fileid FROM wedrive_folder WHERE folder_key = ?")
     .bind(doc.wedrive_folder_key)
     .first<{ fileid: string }>();
-  if (!folder) return null;
+  // 目录本身还没建好（只记了打算建）：文件不可能在里面
+  if (!folder || !folder.fileid) return null;
   return findUploaded(client, spaceId, folder.fileid, doc.wedrive_name, Number(doc.file_size));
 };
 
@@ -237,8 +255,25 @@ export const reconcileDoc = async (
     return renamed || moved || !doc.wedrive_fileid ? "synced" : "unchanged";
   }
 
+  const startedBefore = Boolean(doc.wedrive_name && doc.wedrive_folder_key);
   await recordUploadIntent(env, doc.id, name, folder.key);
-  const uploaded = await upload(env, client, settings, doc, spaceId, folder.fileid, name);
+  const uploaded = await upload(
+    env,
+    client,
+    settings,
+    doc,
+    spaceId,
+    folder.fileid,
+    name,
+    startedBefore
+  ).catch(async (error: unknown) => {
+    // 企微明确拒绝了、或者请求根本没发（预算用完）：文件肯定不在微盘里，把「打算」清掉，
+    // 下次当成第一次传（不用先去目录里找，小文件还能用直传）。说不清的留着。
+    if (error instanceof WedriveError && (error.errcode !== null || isQuotaError(error))) {
+      await clearUploadIntent(env, doc.id);
+    }
+    throw error;
+  });
   await markSynced(env, doc.id, { fileid: uploaded, name, folderKey: folder.key });
   return "synced";
 };
