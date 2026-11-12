@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { sha1StateHex } from "./sha1-state";
+import { createSha1Stream, sha1StateHex } from "./sha1-state";
 
 const hex = (buffer: ArrayBuffer): string =>
   [...new Uint8Array(buffer)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -39,5 +39,60 @@ describe("sha1StateHex", () => {
 
   it("长度不是 64 的倍数时报错", () => {
     expect(() => sha1StateHex(new Uint8Array(10), "big")).toThrow("64");
+  });
+});
+
+const pattern = (length: number, seed = 7): Uint8Array =>
+  new Uint8Array(length).map((_, index) => (index * 31 + seed) % 251);
+const webSha1 = async (bytes: Uint8Array): Promise<string> =>
+  hex(await crypto.subtle.digest("SHA-1", bytes));
+
+describe("createSha1Stream", () => {
+  it.each([0, 1, 55, 56, 63, 64, 65, 119, 120, 128, 1000, 3 * 1024 * 1024 + 5])(
+    "digestHex 和 Web Crypto 的 SHA-1 一致：%i 字节",
+    async (length) => {
+      const bytes = pattern(length);
+      const stream = createSha1Stream();
+      stream.update(bytes);
+      expect(stream.digestHex()).toBe(await webSha1(bytes));
+    }
+  );
+
+  it("分多次喂和一次喂结果一样（切在任意位置）", async () => {
+    const bytes = pattern(1000);
+    for (const cuts of [[1], [63, 64], [64, 128], [7, 500, 999], [0, 1000]]) {
+      const stream = createSha1Stream();
+      let from = 0;
+      for (const cut of [...cuts, bytes.length]) {
+        stream.update(bytes.subarray(from, cut));
+        from = cut;
+      }
+      expect(stream.digestHex()).toBe(await webSha1(bytes));
+    }
+  });
+
+  it("stateHex 和原来的 sha1StateHex 一致，两种端序都是", () => {
+    const bytes = pattern(128);
+    const stream = createSha1Stream();
+    stream.update(bytes.subarray(0, 50));
+    stream.update(bytes.subarray(50));
+    expect(stream.stateHex("little")).toBe(sha1StateHex(bytes, "little"));
+    expect(stream.stateHex("big")).toBe(sha1StateHex(bytes, "big"));
+  });
+
+  it("digestHex 不改变状态，之后还能接着喂", async () => {
+    const bytes = pattern(200);
+    const stream = createSha1Stream();
+    stream.update(bytes.subarray(0, 64));
+    expect(stream.digestHex()).toBe(await webSha1(bytes.subarray(0, 64)));
+    expect(stream.stateHex("little")).toBe(sha1StateHex(bytes.subarray(0, 64), "little"));
+    stream.update(bytes.subarray(64));
+    expect(stream.digestHex()).toBe(await webSha1(bytes));
+  });
+
+  it("已喂的长度不是 64 的倍数时取状态报错", () => {
+    const stream = createSha1Stream();
+    stream.update(new Uint8Array(10));
+    expect(() => stream.stateHex("little")).toThrow("64");
   });
 });
