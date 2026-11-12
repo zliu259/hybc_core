@@ -69,7 +69,8 @@
       "pages": [
         "device/index",
         "task-list/index",
-        "task-detail/index"
+        "task-detail/index",
+        "task-new/index"
       ]
     }
   ],

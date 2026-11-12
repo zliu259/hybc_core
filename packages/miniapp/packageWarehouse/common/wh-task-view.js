@@ -170,12 +170,85 @@ const toSubmitPayload = (task, form) => ({
   result_note: String(form.resultNote || "").trim()
 });
 
+/** 新建任务能选的类型；维修排第一，是手工建得最多的。 */
+const NEW_TASK_KINDS = ["maintenance", "servicing", "other", "inspection"].map((key) => ({
+  key,
+  label: TASK_KIND_LABELS[key]
+}));
+
+/**
+ * 新建任务的空表单。requiredPhotoCount 是输入框里的字符串。
+ * @param {{ id: number, device_code: string, name: string } | null} device
+ */
+const newTaskForm = (device) => ({
+  kind: "maintenance",
+  title: "",
+  description: "",
+  deviceId: device ? device.id : null,
+  deviceText: device ? [device.device_code, device.name].filter(Boolean).join(" ") : "",
+  assigneeUserid: "",
+  dueDate: "",
+  requiredPhotoCount: "0"
+});
+
+const photoCountOfForm = (form) => {
+  const text = String(form.requiredPhotoCount === undefined ? "" : form.requiredPhotoCount).trim();
+  if (text === "") return 0;
+  return /^\d$/.test(text) ? Number(text) : Number.NaN;
+};
+
+/** 返回第一条问题，没有返回 ""。 */
+const newTaskProblem = (form) => {
+  if (!String(form.title || "").trim()) return "请填写任务标题";
+  if (Number.isNaN(photoCountOfForm(form))) return "照片要求填 0 到 9";
+  return "";
+};
+
+/** 新建任务的请求体；空的选填项传 null。 */
+const toNewTaskPayload = (form) => ({
+  kind: form.kind,
+  title: String(form.title || "").trim(),
+  description: String(form.description || "").trim() || null,
+  device_id: form.deviceId || null,
+  assignee_userid: form.assigneeUserid || null,
+  due_date: form.dueDate || null,
+  required_photo_count: photoCountOfForm(form)
+});
+
+/**
+ * 通讯录（userid → 姓名）→ hy-search-picker 的 range 和下标对应的 userid。
+ * 第 0 项是"不指定"；重名的人带上 userid 区分。
+ */
+const assigneeOptions = (nameMap) => {
+  const people = Object.entries(nameMap || {})
+    .map(([userid, name]) => ({ userid, name: String(name) }))
+    .sort((a, b) => a.name.localeCompare(b.name, "zh") || a.userid.localeCompare(b.userid));
+  const seen = people.reduce(
+    (counts, person) => ({ ...counts, [person.name]: (counts[person.name] || 0) + 1 }),
+    {}
+  );
+  return {
+    range: [
+      "不指定",
+      ...people.map((person) =>
+        seen[person.name] > 1 ? `${person.name} (${person.userid})` : person.name
+      )
+    ],
+    userids: ["", ...people.map((person) => person.userid)]
+  };
+};
+
 module.exports = {
   TASK_TABS,
   SYSTEM_OPTIONS,
+  NEW_TASK_KINDS,
   tabsFor,
   toTaskRow,
   buildTaskDetail,
   submitProblem,
-  toSubmitPayload
+  toSubmitPayload,
+  newTaskForm,
+  newTaskProblem,
+  toNewTaskPayload,
+  assigneeOptions
 };

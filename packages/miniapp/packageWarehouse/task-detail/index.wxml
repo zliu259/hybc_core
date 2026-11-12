@@ -28,7 +28,18 @@
         </view>
         <view class="wh-kv">
           <text class="wh-kv-label">执行人</text>
-          <text class="wh-kv-value">{{view.assigneeName}}</text>
+          <view wx:if="{{view.actions.canAssign}}" class="wh-kv-value">
+            <hy-search-picker
+              range="{{assignee.range}}"
+              value="{{assignee.index}}"
+              title="派给谁"
+              placeholder="未派工，点这里选人"
+              searchPlaceholder="输入姓名 / 拼音搜索"
+              disabled="{{busy}}"
+              bindchange="onAssignPick"
+            />
+          </view>
+          <text wx:else class="wh-kv-value">{{view.assigneeName}}</text>
         </view>
         <view wx:if="{{view.dueText}}" class="wh-kv">
           <text class="wh-kv-label">期限</text>
@@ -112,5 +123,14 @@
         <t-button theme="primary" block loading="{{busy}}" disabled="{{busy || uploading}}" bindtap="submit">提交</t-button>
       </view>
     </view>
+
+    <block wx:if="{{view.actions.canConfirm || view.actions.canSendBack || view.actions.canCancel}}">
+      <view class="wh-bar-space" />
+      <view class="wh-bar">
+        <t-button wx:if="{{view.actions.canCancel}}" class="btn-fill" variant="outline" theme="danger" disabled="{{busy}}" bindtap="cancelTask">取消任务</t-button>
+        <t-button wx:if="{{view.actions.canSendBack}}" class="btn-fill" variant="outline" disabled="{{busy}}" bindtap="sendBack">退回补充</t-button>
+        <t-button wx:if="{{view.actions.canConfirm}}" class="btn-fill" theme="primary" disabled="{{busy}}" bindtap="confirmDone">确认完成</t-button>
+      </view>
+    </block>
   </block>
 </view>

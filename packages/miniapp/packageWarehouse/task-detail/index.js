@@ -1,10 +1,12 @@
 const { resolveAttachmentUrl, signAttachmentUrl } = require("../../utils/attachment-open");
 const { uploadFileToR2 } = require("../../utils/upload");
+const { loadUserNameMap } = require("../../utils/user-names");
 const { wxChooseMediaImage } = require("../../utils/wx");
 const { whGet, whSend } = require("../common/wh-api");
 const { beijingToday } = require("../common/wh-format");
 const {
   SYSTEM_OPTIONS,
+  assigneeOptions,
   buildTaskDetail,
   submitProblem,
   toSubmitPayload
@@ -19,8 +21,10 @@ const {
   loadNameOf,
   queryId
 } = require("../common/wh-ui");
+const keeperActions = require("./keeper-actions");
 
 const MAX_PICK = 9;
+const NO_ASSIGNEE_OPTIONS = { range: [], userids: [], index: 0 };
 
 const emptyForm = () => ({ result: "", systems: [], resultNote: "" });
 
@@ -31,6 +35,8 @@ const isCancelled = (error) =>
   /cancel/i.test(String((error && (error.errMsg || error.message)) || ""));
 
 Page({
+  ...keeperActions,
+
   data: {
     loading: false,
     notFound: false,
@@ -39,7 +45,9 @@ Page({
     view: null,
     photos: [],
     form: emptyForm(),
-    systemOptions: systemOptions([])
+    systemOptions: systemOptions([]),
+    // 派工用的人员选项，只有库管看待执行的任务时才有
+    assignee: NO_ASSIGNEE_OPTIONS
   },
 
   onLoad(query) {
@@ -74,12 +82,20 @@ Page({
           canDelete: task.status === "todo" && photo.uploaded_by_userid === viewer.userid
         }))
       );
+      const view = buildTaskDetail(task, viewer, beijingToday(), nameOf);
+      const options = view.actions.canAssign ? assigneeOptions(await loadUserNameMap()) : null;
       this.task = task;
       this.viewer = viewer;
       this.setData({
-        view: buildTaskDetail(task, viewer, beijingToday(), nameOf),
+        view,
         photos,
-        notFound: false
+        notFound: false,
+        assignee: options
+          ? {
+              ...options,
+              index: Math.max(0, options.userids.indexOf(task.assignee_userid || ""))
+            }
+          : NO_ASSIGNEE_OPTIONS
       });
     } catch (error) {
       if (isNotFound(error)) this.setData({ notFound: true, view: null });

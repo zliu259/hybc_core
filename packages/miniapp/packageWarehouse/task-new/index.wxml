@@ -1,0 +1,91 @@
+<view class="page">
+  <view class="wh-card">
+    <view class="wh-card-body form-body">
+      <view class="wh-field">
+        <view class="wh-field-label">类型</view>
+        <picker mode="selector" range="{{kinds}}" value="{{kindIndex}}" bindchange="onKind">
+          <view class="wh-input form-picker">{{kinds[kindIndex]}}<text class="wh-chevron">›</text></view>
+        </picker>
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">任务标题</view>
+        <input
+          class="wh-input"
+          value="{{form.title}}"
+          maxlength="80"
+          placeholder="例如 更换主轴油封"
+          data-field="title"
+          bindinput="onInput"
+        />
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">任务说明（选填）</view>
+        <textarea
+          class="wh-textarea"
+          value="{{form.description}}"
+          maxlength="500"
+          placeholder="要做什么、注意什么"
+          data-field="description"
+          bindinput="onInput"
+        />
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">设备（选填）</view>
+        <view wx:if="{{form.deviceText}}" class="form-device">{{form.deviceText}}</view>
+        <view wx:if="{{!deviceLocked}}" class="form-device-pick">
+          <view class="form-device-search">
+            <hy-search-picker
+              range="{{deviceOptions.range}}"
+              value="{{0}}"
+              title="选择设备"
+              placeholder="{{form.deviceText ? '换一台设备' : '搜索设备'}}"
+              searchPlaceholder="输入设备编号或名称"
+              emptyText="没有找到设备"
+              remote="{{true}}"
+              remoteLoading="{{deviceSearching}}"
+              bind:search="onDeviceSearch"
+              bindchange="onDevicePick"
+            />
+          </view>
+          <t-button variant="outline" disabled="{{scanning}}" bindtap="onScanDevice">扫码</t-button>
+        </view>
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">执行人（选填，可以以后再派）</view>
+        <hy-search-picker
+          range="{{assignee.range}}"
+          value="{{assignee.index}}"
+          title="派给谁"
+          placeholder="不指定"
+          searchPlaceholder="输入姓名 / 拼音搜索"
+          bindchange="onAssigneePick"
+        />
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">期限（选填）</view>
+        <view class="form-due">
+          <picker class="form-due-picker" mode="date" value="{{form.dueDate}}" start="{{today}}" bindchange="onDueDate">
+            <view class="wh-input form-picker">{{form.dueDate || "不设期限"}}<text class="wh-chevron">›</text></view>
+          </picker>
+          <t-button wx:if="{{form.dueDate}}" variant="text" bindtap="clearDueDate">清除</t-button>
+        </view>
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">至少要几张照片（0 到 9）</view>
+        <input
+          class="wh-input"
+          type="number"
+          value="{{form.requiredPhotoCount}}"
+          maxlength="1"
+          data-field="requiredPhotoCount"
+          bindinput="onInput"
+        />
+      </view>
+    </view>
+  </view>
+
+  <view class="wh-bar-space" />
+  <view class="wh-bar">
+    <t-button class="btn-fill" theme="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="submit">建任务</t-button>
+  </view>
+</view>

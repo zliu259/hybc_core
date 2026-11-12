@@ -8,7 +8,12 @@ const {
   buildTaskDetail,
   submitProblem,
   toSubmitPayload,
-  SYSTEM_OPTIONS
+  SYSTEM_OPTIONS,
+  NEW_TASK_KINDS,
+  newTaskForm,
+  newTaskProblem,
+  toNewTaskPayload,
+  assigneeOptions
 } = require("./wh-task-view");
 
 const nameOf = (userid) => ({ wang: "王师傅", lz: "李震" })[userid] || userid;
@@ -202,5 +207,76 @@ assert.deepStrictEqual(SYSTEM_OPTIONS, [
   { key: "drive", label: "传动" },
   { key: "other", label: "其他" }
 ]);
+
+// 新建任务：表单
+assert.deepStrictEqual(NEW_TASK_KINDS, [
+  { key: "maintenance", label: "维修" },
+  { key: "servicing", label: "保养" },
+  { key: "other", label: "其他" },
+  { key: "inspection", label: "检查" }
+]);
+assert.deepStrictEqual(newTaskForm(null), {
+  kind: "maintenance",
+  title: "",
+  description: "",
+  deviceId: null,
+  deviceText: "",
+  assigneeUserid: "",
+  dueDate: "",
+  requiredPhotoCount: "0"
+});
+const withDevice = newTaskForm({ id: 7, device_code: "DG-01", name: "顶管机" });
+assert.strictEqual(withDevice.deviceId, 7);
+assert.strictEqual(withDevice.deviceText, "DG-01 顶管机");
+
+// 新建任务：检查
+assert.strictEqual(newTaskProblem({ ...newTaskForm(null), title: "  " }), "请填写任务标题");
+assert.strictEqual(newTaskProblem({ ...newTaskForm(null), title: "换油", requiredPhotoCount: "10" }), "照片要求填 0 到 9");
+assert.strictEqual(newTaskProblem({ ...newTaskForm(null), title: "换油", requiredPhotoCount: "1.5" }), "照片要求填 0 到 9");
+assert.strictEqual(newTaskProblem({ ...newTaskForm(null), title: "换油", requiredPhotoCount: "abc" }), "照片要求填 0 到 9");
+assert.strictEqual(newTaskProblem({ ...newTaskForm(null), title: "换油", requiredPhotoCount: "" }), "");
+assert.strictEqual(newTaskProblem({ ...newTaskForm(null), title: "换油", requiredPhotoCount: "3" }), "");
+
+// 新建任务：请求体，空的选填项传 null
+assert.deepStrictEqual(toNewTaskPayload({ ...newTaskForm(null), title: " 换油 " }), {
+  kind: "maintenance",
+  title: "换油",
+  description: null,
+  device_id: null,
+  assignee_userid: null,
+  due_date: null,
+  required_photo_count: 0
+});
+assert.deepStrictEqual(
+  toNewTaskPayload({
+    ...withDevice,
+    kind: "servicing",
+    title: "保养",
+    description: " 换液压油 ",
+    assigneeUserid: "wang",
+    dueDate: "2026-11-20",
+    requiredPhotoCount: "2"
+  }),
+  {
+    kind: "servicing",
+    title: "保养",
+    description: "换液压油",
+    device_id: 7,
+    assignee_userid: "wang",
+    due_date: "2026-11-20",
+    required_photo_count: 2
+  }
+);
+
+// 执行人选项：第 0 项是不指定；同名的带上 userid 区分
+assert.deepStrictEqual(assigneeOptions({ wang: "王师傅", lz: "李震" }), {
+  range: ["不指定", "李震", "王师傅"],
+  userids: ["", "lz", "wang"]
+});
+assert.deepStrictEqual(assigneeOptions({ a1: "张伟", a2: "张伟" }), {
+  range: ["不指定", "张伟 (a1)", "张伟 (a2)"],
+  userids: ["", "a1", "a2"]
+});
+assert.deepStrictEqual(assigneeOptions(null), { range: ["不指定"], userids: [""] });
 
 console.log("wh-task-view tests passed");
