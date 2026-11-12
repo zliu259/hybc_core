@@ -69,7 +69,9 @@
         "kit/index",
         "ship/index",
         "project/index",
-        "material/index"
+        "material/index",
+        "docs/index",
+        "doc-view/index"
       ]
     }
   ],

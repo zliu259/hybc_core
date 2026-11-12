@@ -207,6 +207,38 @@ runTests("wh-device-page", [
     }
   ],
   [
+    "资料入口：带着这台设备适用的资料份数，点进它的资料页",
+    async () => {
+      const h = setup();
+      h.respond("GET", "/doc-library/for-device/7", { success: true, data: [{ id: 1 }, { id: 2 }, { id: 3 }] });
+      const page = await h.open({ id: "7" });
+      assert.strictEqual(h.callsTo("GET", "/doc-library/for-device/7").length, 1);
+      assert.strictEqual(page.data.docCountText, "3 份");
+      page.goDocs();
+      assert.deepStrictEqual(h.state.navigations, ["/packageWarehouse/docs/index?deviceId=7&code=DG-01"]);
+    }
+  ],
+  [
+    "资料份数取不到：设备照常显示，入口还在，只是不写份数",
+    async () => {
+      const h = setup();
+      h.fail("GET", "/doc-library/for-device/7", "服务器出错，请稍后重试", 500);
+      const page = await h.open({ id: "7" });
+      assert.strictEqual(page.data.view.header.code, "DG-01");
+      assert.strictEqual(page.data.docCountText, "");
+      assert.strictEqual(page.data.loadFailed, false);
+      assert.deepStrictEqual(h.state.toasts, []);
+    }
+  ],
+  [
+    "还没有资料时写「还没有」",
+    async () => {
+      const h = setup();
+      const page = await h.open({ id: "7" });
+      assert.strictEqual(page.data.docCountText, "还没有");
+    }
+  ],
+  [
     "发货、建任务、看任务各去对应的页面",
     async () => {
       const h = setup();

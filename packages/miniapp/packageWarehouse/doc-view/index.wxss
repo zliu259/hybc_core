@@ -1,0 +1,23 @@
+@import "../common/wh.wxss";
+
+.doc-title {
+  margin-bottom: 12rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #1f2a3d;
+}
+
+.doc-file {
+  word-break: break-all;
+}
+
+.doc-soon {
+  color: #ad6800;
+}
+
+.doc-video {
+  width: 100%;
+  margin-bottom: 24rpx;
+  border-radius: 16rpx;
+}

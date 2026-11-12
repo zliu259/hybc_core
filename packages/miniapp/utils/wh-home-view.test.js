@@ -134,6 +134,19 @@ assert.deepStrictEqual(view.projects, []);
 
 // 接口没返回、字段缺失时不报错
 view = buildHomeView(null, "2026-11-12");
-assert.deepStrictEqual(view, { myTasks: { count: 0, items: [] }, projects: [], showProjects: false, tiles: [], actions: [] });
+assert.deepStrictEqual(view, {
+  myTasks: { count: 0, items: [] },
+  projects: [],
+  showProjects: false,
+  tiles: [],
+  actions: [],
+  links: [{ key: "docs", label: "设备资料", hint: "说明书、合格证、检测报告", url: "/packageWarehouse/docs/index" }]
+});
+
+// 设备资料的入口人人都有，不看身份
+view = buildHomeView(base, "2026-11-12");
+assert.deepStrictEqual(view.links.map((link) => link.url), ["/packageWarehouse/docs/index"]);
+view = buildHomeView({ ...base, caps: { is_keeper: true, can_create_kit: true }, keeper: {} }, "2026-11-12");
+assert.deepStrictEqual(view.links.map((link) => link.label), ["设备资料"]);
 
 console.log("wh-home-view tests passed");

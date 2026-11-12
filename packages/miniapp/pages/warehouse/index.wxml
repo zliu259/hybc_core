@@ -32,6 +32,21 @@
     </view>
   </view>
 
+  <!-- 所有人：设备资料 -->
+  <view class="section">
+    <view
+      wx:for="{{view.links}}"
+      wx:key="key"
+      class="section-head"
+      hover-class="row-hover"
+      data-url="{{item.url}}"
+      bindtap="goTo"
+    >
+      <text class="section-name">{{item.label}}</text>
+      <text class="section-more">{{item.hint}}<text class="chevron">›</text></text>
+    </view>
+  </view>
+
   <view wx:if="{{loadFailed}}" class="load-failed">加载失败，下拉重试</view>
 
   <!-- 库管：待办数字 -->

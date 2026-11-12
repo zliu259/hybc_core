@@ -23,6 +23,16 @@ const KEEPER_ACTIONS = [
   { key: "tasks", label: "全部任务", url: `${SUB}/task-list/index?tab=all` }
 ];
 
+/** 人人都有的入口 */
+const COMMON_LINKS = [
+  {
+    key: "docs",
+    label: "设备资料",
+    hint: "说明书、合格证、检测报告",
+    url: `${SUB}/docs/index`
+  }
+];
+
 const count = (value) => {
   const number = Number(value);
   return Number.isFinite(number) && number > 0 ? number : 0;
@@ -56,7 +66,8 @@ const projectSummary = (project) => {
  *   projects: { projectId: number, name: string, summary: string }[],
  *   showProjects: boolean,
  *   tiles: { key: string, label: string, count: number, url: string }[],
- *   actions: { key: string, label: string, url: string }[]
+ *   actions: { key: string, label: string, url: string }[],
+ *   links: { key: string, label: string, hint: string, url: string }[]
  * }}
  */
 const buildHomeView = (home, today) => {
@@ -82,7 +93,8 @@ const buildHomeView = (home, today) => {
     // 有自己负责的项目；或者能建清单（经理）但不是库管，给个进清单列表的地方
     showProjects: projects.length > 0 || (Boolean(caps.can_create_kit) && !keeper),
     tiles: keeper ? KEEPER_TILES.map((tile) => ({ ...tile, count: count(numbers[tile.key]) })) : [],
-    actions: keeper ? KEEPER_ACTIONS.map((action) => ({ ...action })) : []
+    actions: keeper ? KEEPER_ACTIONS.map((action) => ({ ...action })) : [],
+    links: COMMON_LINKS.map((link) => ({ ...link }))
   };
 };
 

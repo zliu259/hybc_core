@@ -61,6 +61,14 @@ const createPageHarness = ({ page, profile } = {}) => {
     modalInput: "",
     /** showActionSheet 点第几项；-1 是取消 */
     actionSheetIndex: 0,
+    /** downloadFile 请求过的地址 */
+    downloads: [],
+    /** 设了它，下一次 downloadFile 失败一次（{ errMsg } 是网络失败，数字是回了这个状态码） */
+    downloadFail: null,
+    /** openDocument 打开过的本地路径 */
+    opened: [],
+    /** 设了它，openDocument 失败 */
+    openDocumentFail: null,
     storage: {},
     profile: profile || { username: "lz", nickname: "李震", roles: ["operator"] }
   };
@@ -179,6 +187,35 @@ const createPageHarness = ({ page, profile } = {}) => {
     showLoading: () => {},
     hideLoading: () => {},
     previewImage: (options) => state.previews.push(options),
+    // 下载是异步的（下一拍才回来），这样连点两次的用例才测得出东西
+    downloadFile: (options) => {
+      state.downloads.push(options.url);
+      const failure = state.downloadFail;
+      state.downloadFail = null;
+      setTimeout(() => {
+        if (failure && typeof failure === "object") {
+          if (options.fail) options.fail(failure);
+        } else if (options.success) {
+          options.success({
+            statusCode: typeof failure === "number" ? failure : 200,
+            tempFilePath: `/tmp/download-${state.downloads.length}`
+          });
+        }
+        if (options.complete) options.complete();
+      }, 1);
+      return { onProgressUpdate: () => {}, abort: () => {} };
+    },
+    openDocument: (options) => {
+      const failure = state.openDocumentFail;
+      setTimeout(() => {
+        if (failure) {
+          if (options.fail) options.fail(failure);
+          return;
+        }
+        state.opened.push(options.filePath);
+        if (options.success) options.success({});
+      }, 1);
+    },
     stopPullDownRefresh: () => {
       state.pullStops += 1;
     },

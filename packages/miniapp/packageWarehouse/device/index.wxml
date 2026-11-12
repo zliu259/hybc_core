@@ -24,6 +24,19 @@
       </view>
     </view>
 
+    <view class="wh-card">
+      <view class="wh-row wh-row-first" hover-class="wh-row-hover" bindtap="goDocs">
+        <view class="wh-row-main">
+          <view class="wh-row-title">资料</view>
+          <view class="wh-row-sub">说明书、合格证、检测报告、保养维修记录</view>
+        </view>
+        <view class="wh-row-side">
+          <text class="wh-muted">{{docCountText}}</text>
+          <text class="wh-chevron">›</text>
+        </view>
+      </view>
+    </view>
+
     <view wx:if="{{view.openTasks.length > 0}}" class="wh-card">
       <view class="wh-card-head"><text class="wh-card-title">未完成的任务</text></view>
       <view

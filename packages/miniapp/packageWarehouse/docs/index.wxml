@@ -1,0 +1,69 @@
+<template name="docRow">
+  <view class="wh-row-main">
+    <view class="wh-row-title">{{row.title}}</view>
+    <view class="wh-row-sub">{{row.categoryLabel}}<text wx:if="{{showOwner}}"> · {{row.ownerText}}</text> · {{row.sizeText}}</view>
+  </view>
+  <view class="wh-row-side">
+    <text wx:if="{{row.validityText}}" class="{{row.expired ? 'wh-alert' : 'doc-soon'}}">{{row.validityText}}</text>
+    <text class="wh-chevron">›</text>
+  </view>
+</template>
+
+<view class="page">
+  <!-- 一台设备适用的资料：这台设备、这类设备、通用 -->
+  <block wx:if="{{deviceMode}}">
+    <view wx:if="{{groups.length === 0 && !loading}}" class="wh-empty">{{loadFailed ? "加载失败，下拉重试" : "这台设备还没有资料"}}</view>
+    <view wx:for="{{groups}}" wx:for-item="group" wx:key="scope" class="wh-card">
+      <view class="wh-card-head">
+        <text class="wh-card-title">{{group.label}}</text>
+        <text class="wh-card-more">{{group.rows.length}} 份</text>
+      </view>
+      <view
+        wx:for="{{group.rows}}"
+        wx:key="id"
+        class="wh-row"
+        hover-class="wh-row-hover"
+        data-id="{{item.id}}"
+        bindtap="openDoc"
+      >
+        <template is="docRow" data="{{row: item, showOwner: false}}" />
+      </view>
+    </view>
+  </block>
+
+  <!-- 全库浏览 -->
+  <block wx:else>
+    <input
+      class="wh-input docs-search"
+      value="{{keyword}}"
+      placeholder="输入标题、文件名或设备编号"
+      confirm-type="search"
+      bindinput="onSearchInput"
+    />
+    <view class="wh-chips docs-tabs">
+      <view
+        wx:for="{{tabs}}"
+        wx:key="key"
+        class="wh-chip {{item.key === activeTab ? 'wh-chip-active' : ''}}"
+        data-key="{{item.key}}"
+        bindtap="onTab"
+      >{{item.label}}</view>
+    </view>
+    <view class="wh-card">
+      <view wx:if="{{rows.length === 0 && !loading}}" class="wh-empty">{{loadFailed ? "加载失败，下拉重试" : "没有找到资料"}}</view>
+      <view
+        wx:for="{{rows}}"
+        wx:key="id"
+        class="wh-row {{index === 0 ? 'wh-row-first' : ''}}"
+        hover-class="wh-row-hover"
+        data-id="{{item.id}}"
+        bindtap="openDoc"
+      >
+        <template is="docRow" data="{{row: item, showOwner: true}}" />
+      </view>
+    </view>
+    <view wx:if="{{finished && rows.length > 0 && !loading}}" class="wh-empty">共 {{total}} 份</view>
+  </block>
+
+  <view wx:if="{{loading}}" class="wh-empty">加载中…</view>
+</view>

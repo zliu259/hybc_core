@@ -16,7 +16,7 @@ require.cache[resolved] = {
   }
 };
 
-const { whGet, whSend, newRequestId, toQuery } = require("./wh-api");
+const { whGet, whSend, docGet, docSend, newRequestId, toQuery } = require("./wh-api");
 
 const run = async () => {
   const result = await whGet("/task", { scope: "mine", status: "", page: 1, keyword: "排泥 管", kind: undefined, x: null });
@@ -34,6 +34,18 @@ const run = async () => {
 
   await whSend("DELETE", "/task/9/photo/5");
   assert.deepStrictEqual(calls[3], { method: "DELETE", path: "/api/v1/warehouse/task/9/photo/5", data: undefined });
+
+  // 设备资料库的接口在另一个前缀下
+  await docGet("/file", { doc_category: "cert", keyword: "", page: 1 });
+  assert.deepStrictEqual(calls[4], { method: "GET", path: "/api/v1/doc-library/file?doc_category=cert&page=1" });
+  await docGet("/for-device/7");
+  assert.strictEqual(calls[5].path, "/api/v1/doc-library/for-device/7");
+  await docSend("POST", "/upload/init", { file_name: "a.pdf", file_size: 3 });
+  assert.deepStrictEqual(calls[6], {
+    method: "POST",
+    path: "/api/v1/doc-library/upload/init",
+    data: { file_name: "a.pdf", file_size: 3 }
+  });
 
   assert.strictEqual(toQuery({}), "");
   assert.strictEqual(toQuery({ a: 0, b: false }), "?a=0&b=false");
