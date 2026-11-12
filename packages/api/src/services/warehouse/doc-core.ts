@@ -27,6 +27,8 @@ export interface DocHeader {
   photo_keys_json: string | null;
   occurred_at: string;
   reverses_doc_id: number | null;
+  /** 盘点调整单带上是哪次盘点（只有 adjust 单）。 */
+  stocktake_id?: number | null;
 }
 
 export interface LineSpec {
@@ -147,8 +149,8 @@ export const executeDoc = async (
         env.DB.prepare(
           `INSERT INTO wh_doc
             (doc_no, doc_type, project_id, to_project_id, project_kit_id, counterparty, handover_name, remark, photo_keys_json,
-             reverses_doc_id, operator_userid, occurred_at, client_request_id, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+             reverses_doc_id, stocktake_id, operator_userid, occurred_at, client_request_id, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
         ).bind(
           docNo,
           header.doc_type,
@@ -160,6 +162,7 @@ export const executeDoc = async (
           header.remark,
           header.photo_keys_json,
           header.reverses_doc_id,
+          header.stocktake_id ?? null,
           operatorUserid,
           header.occurred_at,
           clientRequestId,
