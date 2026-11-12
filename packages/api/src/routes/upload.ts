@@ -2,20 +2,27 @@ import { Hono } from "hono";
 import { verify } from "hono/jwt";
 
 import { authMiddleware, type AuthVariables } from "../middleware/auth";
+import { serveObject } from "../services/object-serve";
 import {
   buildObjectUrl,
   buildSignedObjectUrl,
+  getUploadBaseUrl,
   isObjectAccessSignatureValid,
   signObjectAccess
 } from "../services/upload-signature";
 import type { Env } from "../types/env";
 
+/** 资料库的文件只能从资料库自己的接口上传和取地址，这两个通用签名接口不给签。 */
+const DOC_LIBRARY_PREFIX = "doc-library/";
+const isDocLibraryCategory = (category: string): boolean =>
+  category === "doc-library" || category.startsWith(DOC_LIBRARY_PREFIX);
+
+/** 库房这三类文件：读要签名或人的登录态，出去时用收紧的回包头。 */
+const WAREHOUSE_PREFIXES = [DOC_LIBRARY_PREFIX, "wh-task/", "wh-doc/"];
+const PROTECTED_PREFIXES = ["contract-draft/", "legacy/fin/", ...WAREHOUSE_PREFIXES];
+
 const parseFileName = (name: string): string => {
   return name.replace(/[^a-zA-Z0-9._-]/g, "_");
-};
-
-const getUploadBaseUrl = (env: Env, requestUrl: string): string => {
-  return env.WECOM_PUSH_API_BASE_URL?.trim() || new URL(requestUrl).origin;
 };
 
 export const uploadRoutes = new Hono<{
@@ -30,10 +37,14 @@ uploadRoutes.post("/sign", authMiddleware, async (c) => {
     category?: string;
   };
 
+  if (isDocLibraryCategory(String(body.category ?? ""))) {
+    return c.json({ success: false, error: { message: "资料请从资料库上传" } }, 400);
+  }
+
   const expiresAt = Date.now() + 10 * 60 * 1000;
   const safeName = parseFileName(body.fileName || "file.bin");
   const key = `${body.category ?? "common"}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
-  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
+  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt, "put");
   const uploadBaseUrl = getUploadBaseUrl(c.env, c.req.url);
 
   return c.json({
@@ -62,8 +73,12 @@ uploadRoutes.post("/sign-download", authMiddleware, async (c) => {
     );
   }
 
+  if (key.startsWith(DOC_LIBRARY_PREFIX)) {
+    return c.json({ success: false, error: { message: "请从资料库打开这个文件" } }, 403);
+  }
+
   const expiresAt = Date.now() + 15 * 60 * 1000;
-  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
+  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt, "get");
 
   return c.json({
     success: true,
@@ -115,7 +130,8 @@ uploadRoutes.put("/object/:key{.+}", async (c) => {
     c.env.UPLOAD_SIGNING_SECRET,
     key,
     expires,
-    signature
+    signature,
+    "put"
   );
   if (!signatureValid) {
     return c.json(
@@ -160,20 +176,22 @@ uploadRoutes.get("/object/:key{.+}", async (c) => {
     );
   }
 
-  // M2：仅对受保护前缀强制鉴权，其余前缀行为不变（全量收紧记入 M3 待办）：
-  // - contract-draft/：AI 生成合同文书；
-  // - legacy/fin/：历史财务附件（旧系统补迁的发票/凭证/合同扫描件）。
-  // 三模式任一放行：HMAC 签名 query / x-api-key（runner）/ Bearer JWT。
-  const PROTECTED_PREFIXES = ["contract-draft/", "legacy/fin/"];
-  if (PROTECTED_PREFIXES.some(prefix => key.startsWith(prefix))) {
+  // 受保护的前缀要鉴权，其余前缀行为不变：
+  // - contract-draft/：AI 生成合同文书；legacy/fin/：历史财务附件；
+  // - doc-library/、wh-task/、wh-doc/：库房的资料、任务照片、库房单照片。
+  // 三种方式任一放行：下载签名 / x-api-key（计算节点）/ 登录态。智能体令牌读不了库房这三类。
+  const warehouseFile = WAREHOUSE_PREFIXES.some((prefix) => key.startsWith(prefix));
+  if (PROTECTED_PREFIXES.some((prefix) => key.startsWith(prefix))) {
     const expires = Number(c.req.query("expires") ?? 0);
     const signature = c.req.query("signature") ?? "";
-    let allowed = false;
     // expires 为毫秒时间戳，与 POST /sign、PUT /object 既有口径一致
-    if (expires > Date.now() && signature) {
-      const expected = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expires);
-      allowed = expected === signature;
-    }
+    let allowed = await isObjectAccessSignatureValid(
+      c.env.UPLOAD_SIGNING_SECRET,
+      key,
+      expires,
+      signature,
+      "get"
+    );
     if (!allowed) {
       const apiKey = c.req.header("x-api-key");
       if (apiKey && apiKey === c.env.TASK_API_KEY) allowed = true;
@@ -183,8 +201,8 @@ uploadRoutes.get("/object/:key{.+}", async (c) => {
       const token = authz.startsWith("Bearer ") ? authz.slice(7) : "";
       if (token) {
         try {
-          await verify(token, c.env.JWT_SECRET, "HS256");
-          allowed = true;
+          const payload = await verify(token, c.env.JWT_SECRET, "HS256");
+          allowed = !(warehouseFile && payload.auth_method === "mcp_agent");
         } catch {
           allowed = false;
         }
@@ -201,20 +219,5 @@ uploadRoutes.get("/object/:key{.+}", async (c) => {
     }
   }
 
-  const object = await c.env.FILES.get(key);
-  if (!object || !object.body) {
-    return c.json(
-      {
-        success: false,
-        error: { message: "File not found" }
-      },
-      404
-    );
-  }
-
-  const headers = new Headers();
-  object.writeHttpMetadata(headers);
-  headers.set("etag", object.httpEtag);
-
-  return new Response(object.body, { headers });
+  return serveObject(c.env, key, c.req.raw, { hardened: warehouseFile });
 });
