@@ -9,9 +9,10 @@ import {
   listDocFiles,
   listDocsForDevice
 } from "../services/doc-library/query";
-import { ALL_ROLES } from "../services/warehouse/access";
+import { abortDocUpload, completeDocUpload, initDocUpload } from "../services/doc-library/upload";
+import { ALL_ROLES, requireDocAdmin, requireHuman } from "../services/warehouse/access";
 import { WarehouseError } from "../services/warehouse/errors";
-import { guarded, pathId, type WhEnv } from "./wh-http";
+import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
 /**
  * 设备资料库（要登录的接口）。挂在 /api/v1/doc-library。
@@ -67,5 +68,37 @@ docLibraryRoutes.get(
       c.req.query("task_kind")
     );
     return c.json({ success: true, data });
+  })
+);
+
+// ─── 上传（传分片在 doc-library-open.ts，不带登录态） ──────────
+
+docLibraryRoutes.post(
+  "/upload/init",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    const data = await initDocUpload(c.env, await readJsonBody(c), c.get("auth"));
+    return c.json({ success: true, data });
+  })
+);
+
+docLibraryRoutes.post(
+  "/upload/complete",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    const data = await completeDocUpload(c.env, await readJsonBody(c), c.get("auth"));
+    return c.json({ success: true, data }, data.replayed ? 200 : 201);
+  })
+);
+
+docLibraryRoutes.post(
+  "/upload/abort",
+  requireHuman,
+  requireDocAdmin,
+  guarded(async (c) => {
+    await abortDocUpload(c.env, await readJsonBody(c), c.get("auth"));
+    return c.json({ success: true });
   })
 );
