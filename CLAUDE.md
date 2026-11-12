@@ -94,7 +94,7 @@ Layered architecture: **Routes → Services → D1/KV/R2/Queue**
 - `types/` — TypeScript type definitions per domain (env.ts defines all Cloudflare bindings)
 - `migrations/` — D1 SQL migrations (`packages/api/migrations/`, sequential `NNNN_description.sql`)
 - `queue-handler.ts` — Cloudflare Queue consumer
-- `scheduled.ts` — Cron triggers (every 2 min, hourly, daily at 18:00 UTC = 02:00 Beijing)
+- `scheduled.ts` — Cron triggers (every 2 min, hourly, daily at 18:00 UTC = 02:00 Beijing). The hourly batch also publishes the warehouse daily digest when it is 08:00 Beijing time.
 
 **Cloudflare bindings** (defined in `wrangler.toml` and `types/env.ts`):
 - `DB` (D1) — main database
@@ -114,7 +114,7 @@ PureAdmin-based Vue 3 SPA:
 - `layout/` — PureAdmin layout templates
 
 ### Mini-app (packages/miniapp/)
-Native WeCom mini program written in JavaScript (type-checked with `tsc --noEmit`). TDesign components are vendored in `tdesign-miniprogram/`, so no "build npm" step is needed. Main pages cover workbench, projects, finance, warehouse, logs, approval and survey; subpackages are `packageFinance`, `packageProject`, `packageTools` and `packageWarehouse` (all warehouse pages except the tab page, including the device document pages `docs`, `doc-view`, `doc-upload`; its page paths are written into WeCom cards and must not be renamed). By default it calls the API through the bridge relay (`https://bridge.hybcdg.com`) and falls back to the Worker directly.
+Native WeCom mini program written in JavaScript (type-checked with `tsc --noEmit`). TDesign components are vendored in `tdesign-miniprogram/`, so no "build npm" step is needed. Main pages cover workbench, projects, finance, warehouse, logs, approval and survey; subpackages are `packageFinance`, `packageProject`, `packageTools` and `packageWarehouse` (all warehouse pages except the tab page, including the device document pages `docs`, `doc-view`, `doc-upload` and the stocktake page `stocktake`; its page paths are written into WeCom cards and must not be renamed). By default it calls the API through the bridge relay (`https://bridge.hybcdg.com`) and falls back to the Worker directly.
 
 ### Task Runner (task-runner/)
 Python compute nodes using pull-model (poll API every 3s by default, no inbound ports):
