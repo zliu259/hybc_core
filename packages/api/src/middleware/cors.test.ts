@@ -51,4 +51,30 @@ describe("corsMiddleware allowHeaders", () => {
       expect(allowed).toContain(header);
     }
   });
+
+  it("分段取文件：预检允许 Range，回包里的分段头页面脚本读得到（PDF 预览靠它判断能不能分段取）", async () => {
+    const app = buildApp();
+    const preflight = await app.request("/api/v1/things", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://web.hybcdg.com",
+        "access-control-request-method": "GET",
+        "access-control-request-headers": "range"
+      }
+    });
+    const allowed = (preflight.headers.get("access-control-allow-headers") ?? "")
+      .split(",")
+      .map((item) => item.trim().toLowerCase());
+    expect(allowed).toContain("range");
+
+    const res = await app.request("/api/v1/things", {
+      headers: { origin: "https://web.hybcdg.com" }
+    });
+    const exposed = (res.headers.get("access-control-expose-headers") ?? "")
+      .split(",")
+      .map((item) => item.trim().toLowerCase());
+    for (const header of ["accept-ranges", "content-range", "content-length"]) {
+      expect(exposed).toContain(header);
+    }
+  });
 });

@@ -1,4 +1,4 @@
-const { whGet, whSend, newRequestId } = require("../common/wh-api");
+const { whGet, whSend, docGet, newRequestId } = require("../common/wh-api");
 const { buildDeviceView, buildSingleReturn } = require("../common/wh-device-view");
 const {
   toast,
@@ -24,6 +24,8 @@ Page({
     timeline: [],
     hiddenEvents: 0,
     showAllEvents: false,
+    // 「资料」入口旁边写的份数；取不到是空串
+    docCountText: "",
     returnOpen: false,
     returnForm: emptyReturnForm()
   },
@@ -45,6 +47,8 @@ Page({
   async load() {
     if (this.deviceId === null || this.data.loading) return;
     this.setData({ loading: true });
+    // 资料份数只是入口旁边的一个数：不等它，慢了、取不到都不拖设备页
+    this.loadDocCount();
     try {
       const [result, viewer, nameOf] = await Promise.all([
         whGet(`/device/${this.deviceId}`),
@@ -63,6 +67,25 @@ Page({
     } finally {
       this.setData({ loading: false });
     }
+  },
+
+  /** 这台设备适用的资料有几份。只是入口旁边的一个数，取不到不提示、不影响设备页。 */
+  async loadDocCount() {
+    try {
+      const result = await docGet(`/for-device/${this.deviceId}`);
+      const count = Array.isArray(result.data) ? result.data.length : 0;
+      this.setData({ docCountText: count > 0 ? `${count} 份` : "还没有" });
+    } catch (error) {
+      console.warn("[wh-device] 资料份数没取到", errorText(error, ""));
+      this.setData({ docCountText: "" });
+    }
+  },
+
+  goDocs() {
+    const code = (this.data.view && this.data.view.header.code) || "";
+    wx.navigateTo({
+      url: `/packageWarehouse/docs/index?deviceId=${this.deviceId}&code=${encodeURIComponent(code)}`
+    });
   },
 
   showTimeline(view, all) {

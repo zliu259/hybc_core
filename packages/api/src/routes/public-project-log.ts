@@ -388,7 +388,7 @@ publicProjectLogRoutes.post("/:token/upload-sign", async (c) => {
   const safeName = parseFileName(body.fileName || "photo.jpg");
   const expiresAt = Date.now() + 10 * 60 * 1000;
   const key = `external-log/${resolved.project.id}/${Date.now()}-${crypto.randomUUID()}-${safeName}`;
-  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt);
+  const signature = await signObjectAccess(c.env.UPLOAD_SIGNING_SECRET, key, expiresAt, "put");
   const uploadBaseUrl = getUploadBaseUrl(c.env, c.req.url);
 
   return c.json({

@@ -82,6 +82,11 @@ export const requireKitCreator = requireCapability(
   (caps) => caps.can_create_kit,
   "没有建配套清单的权限"
 );
+/** 上传、替换、改、删资料，生成和作废对外链接。 */
+export const requireDocAdmin = requireCapability(
+  (caps) => caps.is_doc_admin,
+  "只有库管或资料管理员可以操作"
+);
 export const requireSettingsManager = requireCapability(
   (caps) => caps.can_manage_settings,
   "只有经理或超级管理员可以操作"

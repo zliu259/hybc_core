@@ -2,7 +2,8 @@ const { resolveAttachmentUrl, signAttachmentUrl } = require("../../utils/attachm
 const { uploadFileToR2 } = require("../../utils/upload");
 const { loadUserNameMap } = require("../../utils/user-names");
 const { wxChooseMediaImage } = require("../../utils/wx");
-const { whGet, whSend } = require("../common/wh-api");
+const { whGet, whSend, docGet } = require("../common/wh-api");
+const { previewDocs } = require("../common/wh-doc-view");
 const { beijingToday } = require("../common/wh-format");
 const {
   SYSTEM_OPTIONS,
@@ -24,6 +25,8 @@ const {
 const keeperActions = require("./keeper-actions");
 
 const MAX_PICK = 9;
+/** 任务页上最多列几条适用资料，多的点「全部」 */
+const DOC_PREVIEW = 5;
 const NO_ASSIGNEE_OPTIONS = { range: [], userids: [], index: 0 };
 
 const emptyForm = () => ({ result: "", systems: [], resultNote: "" });
@@ -47,6 +50,8 @@ Page({
     photos: [],
     form: emptyForm(),
     systemOptions: systemOptions([]),
+    // 这台设备适用的资料（前几条）；任务没有设备或没有资料时是 null
+    docs: null,
     // 派工用的人员选项，只有库管看待执行的任务时才有
     assignee: NO_ASSIGNEE_OPTIONS
   },
@@ -105,6 +110,8 @@ Page({
             }
           : NO_ASSIGNEE_OPTIONS
       });
+      // 适用资料是顺手带出来的：不等它，免得拖住加载状态和排着队的刷新
+      this.loadDocs(task);
     } catch (error) {
       if (isNotFound(error)) this.setData({ notFound: true, view: null });
       else if (!this.data.view) this.setData({ loadFailed: true });
@@ -116,6 +123,36 @@ Page({
       this.reloadPending = false;
       await this.load();
     }
+  },
+
+  /** 干这个活要看的资料。只是顺手带出来的，取不到不提示、不影响任务。 */
+  async loadDocs(task) {
+    if (!task.device_id) {
+      this.setData({ docs: null });
+      return;
+    }
+    try {
+      const result = await docGet(`/for-device/${task.device_id}`, { task_kind: task.kind });
+      // 这期间任务又刷新过：用新那一趟的结果
+      if (this.task !== task) return;
+      this.setData({ docs: previewDocs(result.data, DOC_PREVIEW) });
+    } catch (error) {
+      console.warn("[wh-task] 适用资料没取到", errorText(error, ""));
+      if (this.task === task) this.setData({ docs: null });
+    }
+  },
+
+  openDoc(event) {
+    const id = queryId(event.currentTarget.dataset.id);
+    if (id !== null) wx.navigateTo({ url: `/packageWarehouse/doc-view/index?id=${id}` });
+  },
+
+  goDocs() {
+    const device = this.data.view && this.data.view.device;
+    if (!device) return;
+    wx.navigateTo({
+      url: `/packageWarehouse/docs/index?deviceId=${device.id}&code=${encodeURIComponent(device.code)}`
+    });
   },
 
   async choosePhotos() {

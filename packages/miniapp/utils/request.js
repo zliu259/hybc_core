@@ -518,7 +518,7 @@ const loginRequest = ({
   return doRequest(1);
 };
 
-const uploadBinary = ({ path, arrayBuffer, contentType }) => {
+const uploadBinary = ({ path, arrayBuffer, contentType, timeout }) => {
   // The backend signs an absolute Worker URL (https://api.hybcdg.com/...).
   // Using it verbatim makes the PUT bypass the HK bridge and hit Cloudflare
   // directly — exactly the unreliable mainland-China path the bridge exists to
@@ -532,7 +532,8 @@ const uploadBinary = ({ path, arrayBuffer, contentType }) => {
       method: "PUT",
       path: relativePath,
       data: arrayBuffer,
-      timeout: UPLOAD_TIMEOUT_MS,
+      // 大的分片（设备资料一片 8 MB）在信号差的地方 60 秒传不完，调用方可以给长一点
+      timeout: Number(timeout) > 0 ? Number(timeout) : UPLOAD_TIMEOUT_MS,
       header: {
         "content-type": contentType || "application/octet-stream",
         // PUT to a fixed object key is idempotent; this header also opts the

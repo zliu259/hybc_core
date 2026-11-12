@@ -58,17 +58,24 @@ const createStatement = (database, sql, params, hooks) => ({
   params,
   bind: (...next) => createStatement(database, sql, next, hooks),
   async first(column) {
-    hooks.beforeStatement?.();
+    hooks.beforeStatement?.({ kind: "first", sql });
     const row = database.prepare(sql).get(...boundParams(params));
     if (!row) return null;
     return column ? (row[column] ?? null) : { ...row };
   },
   async all() {
-    hooks.beforeStatement?.();
-    return { success: true, results: database.prepare(sql).all(...boundParams(params)).map((row) => ({ ...row })), meta: {} };
+    hooks.beforeStatement?.({ kind: "all", sql });
+    return {
+      success: true,
+      results: database
+        .prepare(sql)
+        .all(...boundParams(params))
+        .map((row) => ({ ...row })),
+      meta: {}
+    };
   },
   async run() {
-    hooks.beforeStatement?.();
+    hooks.beforeStatement?.({ kind: "run", sql });
     return executeStatement(database, sql, params);
   }
 });
@@ -76,11 +83,12 @@ const createStatement = (database, sql, params, hooks) => ({
 /**
  * node:sqlite 上的 D1 外壳。和真实 D1 一样，prepare 不校验 SQL，执行时才报错。
  * hooks.beforeStatement 在每次和数据库往返前调用：别的请求只能插在这些点上，batch 算一次往返。
+ * 调用时带上这次往返是什么（kind: first / all / run / batch，和 SQL），用例可以挑着插。
  */
 export const createSqliteD1 = (database, hooks = {}) => ({
   prepare: (sql) => createStatement(database, sql, [], hooks),
   async batch(statements) {
-    hooks.beforeStatement?.();
+    hooks.beforeStatement?.({ kind: "batch", sql: "" });
     database.exec("BEGIN");
     try {
       const results = statements.map((statement) =>

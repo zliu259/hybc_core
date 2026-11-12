@@ -62,6 +62,86 @@ runTests("wh-task-detail-page", [
     }
   ],
   [
+    "有设备的任务：带出适用资料（按这个活排过序），最多 5 条，能点开、能看全部",
+    async () => {
+      const h = setup();
+      const docs = Array.from({ length: 7 }, (_, index) => ({
+        id: index + 1,
+        title: `资料 ${index + 1}`,
+        doc_category: index === 0 ? "maintenance" : "manual",
+        file_size: 1024,
+        scope: "device",
+        device_code: "DG-01",
+        device_name: "顶管机",
+        validity: index === 1 ? "expired" : "none"
+      }));
+      h.respond("GET", "/doc-library/for-device/7", { success: true, data: docs });
+      const page = await h.open({ id: "9" });
+      assert.deepStrictEqual(h.callsTo("GET", "/doc-library/").map((call) => call.path), [
+        "/api/v1/doc-library/for-device/7?task_kind=inspection"
+      ]);
+      assert.strictEqual(page.data.docs.total, 7);
+      assert.strictEqual(page.data.docs.more, true);
+      assert.deepStrictEqual(
+        page.data.docs.rows.map((row) => row.id),
+        [1, 2, 3, 4, 5]
+      );
+      assert.strictEqual(page.data.docs.rows[0].categoryLabel, "保养维修");
+      assert.strictEqual(page.data.docs.rows[1].expired, true);
+      page.openDoc(h.event({ id: 2 }));
+      page.goDocs();
+      assert.deepStrictEqual(h.state.navigations, [
+        "/packageWarehouse/doc-view/index?id=2",
+        "/packageWarehouse/docs/index?deviceId=7&code=DG-01"
+      ]);
+    }
+  ],
+  [
+    "资料请求慢：任务先出来、加载状态先结束，资料回来了再补上",
+    async () => {
+      const h = setup();
+      h.respond("GET", "/doc-library/for-device/7", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return { success: true, data: [{ id: 1, title: "说明书", doc_category: "manual", file_size: 10, scope: "device", validity: "none" }] };
+      });
+      const page = await h.open({ id: "9" });
+      assert.strictEqual(page.data.view.header.title, "返库检查");
+      assert.strictEqual(page.data.loading, false);
+      assert.strictEqual(page.data.docs, null);
+      await h.flush(120);
+      assert.strictEqual(page.data.docs.total, 1);
+    }
+  ],
+  [
+    "这台设备没有资料：不显示这一段",
+    async () => {
+      const h = setup();
+      const page = await h.open({ id: "9" });
+      assert.strictEqual(page.data.docs, null);
+    }
+  ],
+  [
+    "任务没有设备：不请求资料",
+    async () => {
+      const h = setup({ ...baseTask, device_id: null, device_code: null, device_name: null });
+      const page = await h.open({ id: "9" });
+      assert.strictEqual(h.callsTo("GET", "/doc-library/").length, 0);
+      assert.strictEqual(page.data.docs, null);
+      assert.strictEqual(page.data.view.header.title, "返库检查");
+    }
+  ],
+  [
+    "资料取不到不影响任务：任务照常显示，不弹提示",
+    async () => {
+      const h = setup();
+      h.fail("GET", "/doc-library/for-device/7", "服务器出错，请稍后重试", 500);
+      const page = await h.open({ id: "9" });
+      assert.strictEqual(page.data.view.actions.canWork, true);
+      assert.strictEqual(page.data.docs, null);
+      assert.deepStrictEqual(h.state.toasts, []);
+    }
+  ],
+  [
     "从卡片冷启动：登录是在第一次请求里完成的，执行人第一次打开就要能提交",
     async () => {
       const h = setup(baseTask, null);

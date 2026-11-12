@@ -61,6 +61,28 @@ const createPageHarness = ({ page, profile } = {}) => {
     modalInput: "",
     /** showActionSheet 点第几项；-1 是取消 */
     actionSheetIndex: 0,
+    /** downloadFile 请求过的地址 */
+    downloads: [],
+    /** 设了它，下一次 downloadFile 失败一次（{ errMsg } 是网络失败，数字是回了这个状态码） */
+    downloadFail: null,
+    /** downloadFile 多少毫秒后回来（放慢了才插得进「下载到一半」的动作） */
+    downloadDelayMs: 1,
+    /** 被中止的下载数 */
+    downloadAborts: 0,
+    /** openDocument 打开过的本地路径 */
+    opened: [],
+    /** 设了它，openDocument 失败 */
+    openDocumentFail: null,
+    /** 从聊天记录选文件依次吐出的结果：{ path, name, size } 或者 Error；用完了算用户取消 */
+    messageFiles: [],
+    /** 本地文件有多大（getFileInfo、读文件用）；没登记的按 1024 字节 */
+    fileSizes: {},
+    /** 读过的文件片段 [路径, 位置, 长度] */
+    reads: [],
+    /** 这些本地路径读不出来 */
+    readFailures: [],
+    /** 是不是开着「离开前先问一下」 */
+    leaveAlert: false,
     storage: {},
     profile: profile || { username: "lz", nickname: "李震", roles: ["operator"] }
   };
@@ -111,10 +133,28 @@ const createPageHarness = ({ page, profile } = {}) => {
     return error;
   };
 
+  // 二进制上传（传分片）：也记进 calls，方法是 PUT，data 里是这一片多大；
+  // 可以用 respond / fail("PUT", ...) 定它的结果，没定的按传成功算
+  const uploadBinary = async ({ path: requestPath, arrayBuffer, timeout }) => {
+    const call = {
+      method: "PUT",
+      path: requestPath,
+      data: { bytes: arrayBuffer ? arrayBuffer.byteLength : 0, timeout }
+    };
+    state.calls.push(call);
+    const handler = findHandler("PUT", requestPath);
+    if (handler) {
+      if (handler.once) handlers = handlers.filter((item) => item !== handler);
+      return handler.run(call);
+    }
+    const part = Number((/[?&]part=(\d+)/.exec(requestPath) || [])[1] || 0);
+    return { success: true, data: { part_number: part, etag: `etag-${part}` } };
+  };
+
   stub("utils/request.js", {
     request,
     buildUrl: (requestPath) => `https://test.local${requestPath}`,
-    uploadBinary: async () => ({})
+    uploadBinary
   });
   stub("utils/auth.js", {
     getUserProfile: () => state.profile,
@@ -134,6 +174,12 @@ const createPageHarness = ({ page, profile } = {}) => {
       const next = state.scans.shift();
       if (isThrown(next)) throw next;
       return { result: next };
+    },
+    wxChooseMessageFile: async () => {
+      if (state.messageFiles.length === 0) throw { errMsg: "chooseMessageFile:fail cancel" };
+      const next = state.messageFiles.shift();
+      if (isThrown(next)) throw next;
+      return { tempFiles: [{ ...next, tempFilePath: next.path }] };
     },
     wxChooseMediaImage: async () => {
       if (state.images.length === 0) throw { errMsg: "chooseMedia:fail cancel" };
@@ -179,6 +225,44 @@ const createPageHarness = ({ page, profile } = {}) => {
     showLoading: () => {},
     hideLoading: () => {},
     previewImage: (options) => state.previews.push(options),
+    // 下载是异步的（下一拍才回来），这样连点两次的用例才测得出东西
+    downloadFile: (options) => {
+      state.downloads.push(options.url);
+      const failure = state.downloadFail;
+      state.downloadFail = null;
+      let aborted = false;
+      setTimeout(() => {
+        if (aborted) {
+          if (options.fail) options.fail({ errMsg: "downloadFile:fail abort" });
+        } else if (failure && typeof failure === "object") {
+          if (options.fail) options.fail(failure);
+        } else if (options.success) {
+          options.success({
+            statusCode: typeof failure === "number" ? failure : 200,
+            tempFilePath: `/tmp/download-${state.downloads.length}`
+          });
+        }
+        if (options.complete) options.complete();
+      }, state.downloadDelayMs);
+      return {
+        onProgressUpdate: () => {},
+        abort: () => {
+          aborted = true;
+          state.downloadAborts += 1;
+        }
+      };
+    },
+    openDocument: (options) => {
+      const failure = state.openDocumentFail;
+      setTimeout(() => {
+        if (failure) {
+          if (options.fail) options.fail(failure);
+          return;
+        }
+        state.opened.push(options.filePath);
+        if (options.success) options.success({});
+      }, 1);
+    },
     stopPullDownRefresh: () => {
       state.pullStops += 1;
     },
@@ -189,6 +273,27 @@ const createPageHarness = ({ page, profile } = {}) => {
     },
     vibrateLong: () => {
       state.vibrations += 1;
+    },
+    getFileSystemManager: () => ({
+      getFileInfo: ({ filePath, success }) =>
+        success && success({ size: state.fileSizes[filePath] === undefined ? 1024 : state.fileSizes[filePath] }),
+      readFile: ({ filePath, position = 0, length, success, fail }) => {
+        if (state.readFailures.includes(filePath)) {
+          if (fail) fail({ errMsg: "readFile:fail" });
+          return;
+        }
+        state.reads.push([filePath, position, length]);
+        // 每一段开头写上它的位置：真文件的不同位置内容不一样
+        const data = new ArrayBuffer(length);
+        if (length >= 8) new DataView(data).setFloat64(0, position + 1);
+        if (success) success({ data });
+      }
+    }),
+    enableAlertBeforeUnload: () => {
+      state.leaveAlert = true;
+    },
+    disableAlertBeforeUnload: () => {
+      state.leaveAlert = false;
     },
     getStorageSync: (key) => state.storage[key],
     setStorageSync: (key, value) => {

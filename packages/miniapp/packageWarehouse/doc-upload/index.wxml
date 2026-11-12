@@ -1,0 +1,97 @@
+<view class="page">
+  <view wx:if="{{denied}}" class="wh-empty">只有库管或资料管理员可以上传</view>
+  <block wx:else>
+    <view class="wh-card">
+      <view class="wh-card-body form-body">
+        <view class="wh-field">
+          <view class="wh-field-label">文件</view>
+          <view wx:if="{{form.file}}" class="upload-file">{{fileText}}</view>
+          <view class="upload-pick">
+            <t-button class="btn-fill" variant="outline" disabled="{{busy || done}}" bindtap="chooseFile">{{form.file ? "换一个文件" : "从聊天记录选"}}</t-button>
+            <t-button class="btn-fill" variant="outline" disabled="{{busy || done}}" bindtap="choosePhoto">拍照或相册</t-button>
+          </view>
+          <view class="wh-row-sub upload-hint">文件先发到企业微信的聊天里（比如文件传输助手），再从这里选。大文件请在电脑上用网页版传。</view>
+        </view>
+
+        <view class="wh-field">
+          <view class="wh-field-label">标题</view>
+          <input
+            class="wh-input"
+            value="{{form.title}}"
+            maxlength="120"
+            placeholder="例如 出厂合格证"
+            disabled="{{busy}}"
+            bindinput="onTitleInput"
+          />
+        </view>
+
+        <view class="wh-field">
+          <view class="wh-field-label">资料类别</view>
+          <picker mode="selector" range="{{categoryLabels}}" value="{{categoryIndex}}" disabled="{{busy}}" bindchange="onCategoryPick">
+            <view class="wh-input form-picker">{{categoryLabels[categoryIndex] || "其他"}}<text class="wh-chevron">›</text></view>
+          </picker>
+        </view>
+
+        <view class="wh-field">
+          <view class="wh-field-label">归属</view>
+          <view wx:if="{{form.locked}}" class="upload-file">{{form.deviceText}}</view>
+          <block wx:else>
+            <view class="wh-chips upload-kinds">
+              <view
+                wx:for="{{ownerKinds}}"
+                wx:key="key"
+                class="wh-chip {{item.key === form.ownerKind ? 'wh-chip-active' : ''}}"
+                data-kind="{{item.key}}"
+                bindtap="onOwnerKind"
+              >{{item.label}}</view>
+            </view>
+            <block wx:if="{{form.ownerKind === 'device'}}">
+              <view wx:if="{{form.deviceText}}" class="upload-file">{{form.deviceText}}</view>
+              <hy-search-picker
+                range="{{deviceOptions.range}}"
+                value="{{0}}"
+                title="选择设备"
+                placeholder="{{form.deviceText ? '换一台设备' : '搜索设备'}}"
+                searchPlaceholder="输入设备编号或名称"
+                emptyText="没有找到设备"
+                remote="{{true}}"
+                remoteLoading="{{deviceSearching}}"
+                disabled="{{busy}}"
+                bind:search="onDeviceSearch"
+                bindchange="onDevicePick"
+              />
+            </block>
+            <picker
+              wx:elif="{{form.ownerKind === 'category'}}"
+              mode="selector"
+              range="{{deviceCategories.range}}"
+              value="{{deviceCategoryIndex < 0 ? 0 : deviceCategoryIndex}}"
+              disabled="{{busy}}"
+              bindchange="onDeviceCategoryPick"
+            >
+              <view class="wh-input form-picker">{{deviceCategoryIndex < 0 ? "选择设备类别" : deviceCategories.range[deviceCategoryIndex]}}<text class="wh-chevron">›</text></view>
+            </picker>
+            <view wx:else class="wh-row-sub">所有设备都适用，比如通用的安全规程。</view>
+          </block>
+        </view>
+
+        <view wx:if="{{showValidity}}" class="wh-field">
+          <view class="wh-field-label">有效期至（选填）</view>
+          <view class="upload-date">
+            <picker class="upload-date-picker" mode="date" value="{{form.validUntil || today}}" disabled="{{busy}}" bindchange="onValidUntil">
+              <view class="wh-input form-picker">{{form.validUntil || "不填"}}<text class="wh-chevron">›</text></view>
+            </picker>
+            <t-button wx:if="{{form.validUntil}}" variant="text" disabled="{{busy}}" bindtap="clearValidUntil">清掉</t-button>
+          </view>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{busy}}" class="wh-notice">正在上传 {{progress}}%，别退出这个页面。</view>
+
+    <view class="wh-bar-space" />
+    <view class="wh-bar">
+      <t-button class="btn-fill" theme="primary" loading="{{busy}}" disabled="{{busy || done}}" bindtap="submit">{{done ? "已上传" : (busy ? "上传中 " + progress + "%" : "上传")}}</t-button>
+    </view>
+  </block>
+</view>

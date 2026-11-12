@@ -53,6 +53,27 @@
       </view>
     </view>
 
+    <view wx:if="{{docs}}" class="wh-card">
+      <view class="wh-card-head">
+        <text class="wh-card-title">适用资料</text>
+        <text class="wh-card-more" bindtap="goDocs">全部 {{docs.total}} 份<text class="wh-chevron">›</text></text>
+      </view>
+      <view
+        wx:for="{{docs.rows}}"
+        wx:key="id"
+        class="wh-row"
+        hover-class="wh-row-hover"
+        data-id="{{item.id}}"
+        bindtap="openDoc"
+      >
+        <view class="wh-row-main">
+          <view class="wh-row-title">{{item.title}}</view>
+          <view class="wh-row-sub">{{item.categoryLabel}} · {{item.sizeText}}<text wx:if="{{item.validityText}}" class="{{item.expired ? 'wh-alert' : ''}}"> · {{item.validityText}}</text></view>
+        </view>
+        <text class="wh-chevron">›</text>
+      </view>
+    </view>
+
     <view wx:if="{{view.result}}" class="wh-card">
       <view class="wh-card-head"><text class="wh-card-title">提交的结果</text></view>
       <view class="wh-card-body">

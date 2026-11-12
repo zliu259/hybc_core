@@ -1,6 +1,7 @@
 import { cdn } from "./cdn";
 import vue from "@vitejs/plugin-vue";
 import { viteBuildInfo } from "./info";
+import { pdfjsCmaps } from "./pdfjs-cmaps";
 import svgLoader from "vite-svg-loader";
 import Icons from "unplugin-icons/vite";
 import type { PluginOption } from "vite";
@@ -33,6 +34,8 @@ export function getPluginsList(
       hideConsole: true
     }),
     viteBuildInfo(),
+    // pdf.js 的字符映射表：设备资料库预览没内嵌中文字体的 PDF 要用
+    pdfjsCmaps(),
     /**
      * 开发环境下移除非必要的vue-router动态路由警告No match found for location with path
      * 非必要具体看 https://github.com/vuejs/router/issues/521 和 https://github.com/vuejs/router/issues/359

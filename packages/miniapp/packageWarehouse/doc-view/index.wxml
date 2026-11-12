@@ -1,0 +1,68 @@
+<view class="page">
+  <view wx:if="{{notFound}}" class="wh-empty">没有找到这份资料</view>
+  <view wx:elif="{{loadFailed && !view}}" class="wh-empty">加载失败，下拉重试</view>
+  <block wx:elif="{{view}}">
+    <view wx:if="{{!view.isLatest}}" class="wh-notice">这是旧版本，已经有新文件替换它了。</view>
+    <view class="wh-card">
+      <view class="wh-card-body">
+        <view class="doc-title">{{view.title}}</view>
+        <view class="wh-kv">
+          <text class="wh-kv-label">文件</text>
+          <text class="wh-kv-value doc-file">{{view.fileName}}（{{view.sizeText}}）</text>
+        </view>
+        <view class="wh-kv">
+          <text class="wh-kv-label">资料类别</text>
+          <text class="wh-kv-value">{{view.categoryLabel}}</text>
+        </view>
+        <view class="wh-kv">
+          <text class="wh-kv-label">归属</text>
+          <text class="wh-kv-value">{{view.ownerText}}</text>
+        </view>
+        <view wx:if="{{view.validUntil}}" class="wh-kv">
+          <text class="wh-kv-label">有效期至</text>
+          <text class="wh-kv-value {{view.expired ? 'wh-alert' : (view.soon ? 'doc-soon' : '')}}">{{view.validUntil}}<text wx:if="{{view.validityText}}">（{{view.validityText}}）</text></text>
+        </view>
+        <view class="wh-kv">
+          <text class="wh-kv-label">上传</text>
+          <text class="wh-kv-value">{{view.uploadText}}</text>
+        </view>
+      </view>
+    </view>
+
+    <video
+      wx:if="{{videoUrl}}"
+      class="doc-video"
+      src="{{videoUrl}}"
+      controls
+      autoplay
+      binderror="onVideoError"
+    ></video>
+
+    <view wx:if="{{view.kind === 'unsupported'}}" class="wh-notice">这种文件手机上打不开，请在电脑上用网页版打开。</view>
+
+    <view wx:if="{{view.history.length > 0}}" class="wh-card">
+      <view class="wh-card-head"><text class="wh-card-title">历史版本</text></view>
+      <view
+        wx:for="{{view.history}}"
+        wx:key="id"
+        class="wh-row"
+        hover-class="wh-row-hover"
+        data-id="{{item.id}}"
+        bindtap="openHistory"
+      >
+        <view class="wh-row-main">
+          <view class="wh-row-title">{{item.fileName}}</view>
+          <view class="wh-row-sub">{{item.uploadText}} · {{item.sizeText}}</view>
+        </view>
+        <text class="wh-chevron">›</text>
+      </view>
+    </view>
+
+    <block wx:if="{{view.kind !== 'unsupported'}}">
+      <view class="wh-bar-space" />
+      <view class="wh-bar">
+        <t-button class="btn-fill" theme="primary" loading="{{opening}}" disabled="{{opening}}" bindtap="onOpen">{{opening ? (progress > 0 ? "下载中 " + progress + "%" : "正在打开…") : "打开"}}</t-button>
+      </view>
+    </block>
+  </block>
+</view>

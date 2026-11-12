@@ -238,3 +238,39 @@ export interface ProjectKitLine {
   source: KitLineSource;
   note: string | null;
 }
+
+// ─── 资料库（阶段 4A） ──────────
+
+export type DocCategory = "cert" | "report" | "params" | "manual" | "maintenance" | "other";
+
+export interface DocFile {
+  id: number;
+  title: string;
+  file_name: string;
+  file_key: string;
+  file_size: number;
+  content_type: string;
+  doc_category: DocCategory;
+  /** 归属：单台设备，或整个设备类别；都为空是通用资料 */
+  device_id: number | null;
+  device_category_id: number | null;
+  valid_until: string | null;
+  supersedes_id: number | null;
+  uploaded_by_userid: string;
+  deleted_at: string | null;
+  deleted_by_userid: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocShare {
+  id: number;
+  token: string;
+  doc_file_id: number;
+  expires_at: string;
+  created_by_userid: string;
+  revoked_at: string | null;
+  access_count: number;
+  created_at: string;
+}

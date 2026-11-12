@@ -1,5 +1,5 @@
 /**
- * 库房页面的注册情况：旧页面都下线了，新分包正好是定下的那 9 个页面，仓库里没有指向旧页面的地方。
+ * 库房页面的注册情况：旧页面都下线了，新分包正好是定下的这些页面，仓库里没有指向旧页面的地方。
  * 这些页面路径写进企微卡片后不能再改，所以在这里钉住。运行：node utils/wh-app-json.test.js
  */
 const assert = require("assert");
@@ -26,7 +26,10 @@ const SUB_PAGES = [
   "kit/index",
   "ship/index",
   "project/index",
-  "material/index"
+  "material/index",
+  "docs/index",
+  "doc-view/index",
+  "doc-upload/index"
 ];
 
 OLD_PAGES.forEach((page) => {
