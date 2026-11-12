@@ -19,7 +19,7 @@ description: 通过恒越百川(HYBC)MCP 查询公司后台——项目、付款
 - 付款：`list_payments`、`get_payment`
 - 合同：`list_contracts`、`get_contract`
 - 审批：`list_my_approvals`、`list_pending_approvals`、`get_approval`
-- 库房：`warehouse_inventory`、`warehouse_low_stock`、`list_stock_orders`
+- 库房：`warehouse_inventory`（物资库存）、`warehouse_low_stock`（低库存物资）、`list_devices`（设备在哪、能不能用）
 
 ### 写（需本人企业微信确认）
 - `approve_task(id, comment?)`：发起审批**通过**

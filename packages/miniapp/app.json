@@ -72,7 +72,8 @@
         "material/index",
         "docs/index",
         "doc-view/index",
-        "doc-upload/index"
+        "doc-upload/index",
+        "stocktake/index"
       ]
     }
   ],

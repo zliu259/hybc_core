@@ -9,6 +9,7 @@ import { whKitRoutes } from "./wh-kit";
 import { whKitTemplateRoutes } from "./wh-kit-template";
 import { whMaterialRoutes } from "./wh-material";
 import { whSettingsRoutes } from "./wh-settings";
+import { whStocktakeRoutes } from "./wh-stocktake";
 import { whTaskRoutes } from "./wh-task";
 
 /**
@@ -25,5 +26,6 @@ export const mountWarehouseRoutes = (app: Hono<{ Bindings: Env }>): void => {
   warehouse.route("/", whDocRoutes);
   warehouse.route("/", whKitTemplateRoutes);
   warehouse.route("/", whKitRoutes);
+  warehouse.route("/", whStocktakeRoutes);
   app.route("/api/v1/warehouse", warehouse);
 };

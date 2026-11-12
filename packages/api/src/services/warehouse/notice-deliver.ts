@@ -6,6 +6,7 @@ import type { Env } from "../../types/env";
 import type { WhTaskKind } from "../../types/wh";
 import { resolveWeComLinkTargets, sendWeComTemplateCard } from "../wecom-approval-push";
 import { getWeComContactBook } from "../wecom-contact-book";
+import { listKeeperUserids } from "./access";
 import { getProjectKitHeader } from "./kit-query";
 import { parseWarehouseNotice, type QueuedWarehouseNotice } from "./notice";
 import {
@@ -15,6 +16,7 @@ import {
   type NoticeCardInput,
   type NoticeLinks
 } from "./notice-cards";
+import { digestDrafts } from "./notice-digest";
 import { docDrafts } from "./notice-doc";
 import { queryIn } from "./query-in";
 import { getWarehouseSettings } from "./settings";
@@ -27,11 +29,13 @@ export interface NoticeDeps {
   loadNames?: () => Promise<Map<string, string>>;
   /** 默认是 resolveWeComLinkTargets */
   resolveLinks?: (env: Env) => Promise<NoticeLinks>;
+  /** 投递那一刻的时间，每日摘要用它算内容；默认是现在 */
+  now?: () => Date;
 }
 
 export interface NoticeOutcome {
   sent: number;
-  skipped: "disabled" | "invalid" | "no_recipient" | "no_link" | "gone" | null;
+  skipped: "disabled" | "invalid" | "no_recipient" | "no_link" | "gone" | "empty" | null;
 }
 
 /** 一张待发的卡片：发给谁、写什么。 */
@@ -51,13 +55,6 @@ const TASK_KIND_LABELS: Record<WhTaskKind, string> = {
 const TASK_WEB_PATH = "/wh/task";
 const nowIso = () => new Date().toISOString();
 
-const loadKeepers = async (env: Env): Promise<string[]> => {
-  const rows = await env.DB.prepare(
-    "SELECT userid FROM warehouse_member WHERE role = 'keeper' ORDER BY userid ASC"
-  ).all<{ userid: string }>();
-  return (rows.results ?? []).map((row) => row.userid);
-};
-
 const loadTasks = (env: Env, ids: readonly number[]): Promise<TaskRow[]> =>
   queryIn<TaskRow>(
     env.DB,
@@ -76,7 +73,7 @@ const kitDrafts = async (
   const kit = await getProjectKitHeader(env, notice.kit_id);
   if (!kit) return null;
   const submitted = notice.kind === "kit_submitted";
-  const candidates = submitted ? await loadKeepers(env) : [kit.submitted_by_userid];
+  const candidates = submitted ? await listKeeperUserids(env) : [kit.submitted_by_userid];
   return [
     {
       touser: recipientsExcept(candidates, notice.actor_userid),
@@ -167,7 +164,7 @@ const taskDrafts = async (
       }
     ];
   }
-  const keepers = recipientsExcept(await loadKeepers(env), notice.actor_userid);
+  const keepers = recipientsExcept(await listKeeperUserids(env), notice.actor_userid);
   if (notice.kind === "task_submitted") {
     const result =
       task.kind === "inspection" && task.result ? (task.result === "pass" ? "合格" : "不合格") : "";
@@ -207,9 +204,12 @@ const taskDrafts = async (
 const buildDrafts = (
   env: Env,
   notice: QueuedWarehouseNotice,
-  nameOf: NameOf
+  nameOf: NameOf,
+  now: Date
 ): Promise<NoticeDraft[] | null> => {
   switch (notice.kind) {
+    case "daily_digest":
+      return digestDrafts(env, now);
     case "kit_submitted":
     case "kit_confirmed":
       return kitDrafts(env, notice, nameOf);
@@ -270,8 +270,11 @@ export const deliverWarehouseNotice = async (
   if (!notice) return { sent: 0, skipped: "invalid" };
   if (!(await getWarehouseSettings(env)).notify_enabled) return { sent: 0, skipped: "disabled" };
 
-  const drafts = await buildDrafts(env, notice, await loadNameOf(env, deps));
+  const now = (deps.now ?? (() => new Date()))();
+  const drafts = await buildDrafts(env, notice, await loadNameOf(env, deps), now);
   if (drafts === null) return { sent: 0, skipped: "gone" };
+  // 摘要在投递时现算：这时已经没有要提醒的了
+  if (notice.kind === "daily_digest" && drafts.length === 0) return { sent: 0, skipped: "empty" };
   const targeted = drafts.filter((draft) => draft.touser.length > 0);
   if (targeted.length === 0) return { sent: 0, skipped: "no_recipient" };
 

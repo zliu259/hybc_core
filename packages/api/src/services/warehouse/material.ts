@@ -132,7 +132,8 @@ export const updateMaterial = async (
 export const getMaterial = async (env: Env, id: number): Promise<Material | null> =>
   env.DB.prepare("SELECT * FROM material WHERE id = ?").bind(id).first<Material>();
 
-const LOW_STOCK_SQL = "(m.min_stock IS NOT NULL AND m.quantity <= m.min_stock)";
+/** 以 m 为物资表别名：设了最低库存，而且在库数量不高于它。 */
+export const LOW_STOCK_SQL = "(m.min_stock IS NOT NULL AND m.quantity <= m.min_stock)";
 
 const positiveInt = (value: string | undefined, fallback: number, max: number): number => {
   const parsed = Number(value);

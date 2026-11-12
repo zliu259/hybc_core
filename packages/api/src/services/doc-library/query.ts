@@ -40,11 +40,12 @@ type RawRow = DocFile & {
   is_latest: number;
 };
 
-const EXPIRING_DAYS = 30;
+/** 多少天内到期算「快到期」。列表标橙和每日摘要用同一个数。 */
+export const EXPIRING_DAYS = 30;
 const MAX_HISTORY = 50;
 
 /** 没被一个没删除的新版本替换。f 是 doc_file 的别名。 */
-const IS_LATEST = `NOT EXISTS (SELECT 1 FROM doc_file n WHERE n.supersedes_id = f.id AND n.deleted_at IS NULL)`;
+export const IS_LATEST = `NOT EXISTS (SELECT 1 FROM doc_file n WHERE n.supersedes_id = f.id AND n.deleted_at IS NULL)`;
 
 const SELECT_DOC = `SELECT f.*, d.device_code, d.name AS device_name, c.name AS category_name,
     (${IS_LATEST}) AS is_latest

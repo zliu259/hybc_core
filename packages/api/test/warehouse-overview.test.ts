@@ -38,6 +38,11 @@ describe.skipIf(!hasSqlite)("库房总览", () => {
     h.seed.material({ quantity: 1, min_stock: 5 });
     h.seed.material({ quantity: 10, min_stock: 5 });
     const m = h.seed.material({ quantity: 0 });
+    // 证书：一份过期、一份 30 天内到期、一份还早、一份没填有效期
+    h.seed.docFile({ doc_category: "cert", valid_until: "2026-11-10" });
+    h.seed.docFile({ doc_category: "cert", valid_until: "2026-11-20" });
+    h.seed.docFile({ doc_category: "cert", valid_until: "2027-01-01" });
+    h.seed.docFile({});
     for (let i = 0; i < 12; i += 1) {
       await createWhDoc(
         h.env,
@@ -58,6 +63,7 @@ describe.skipIf(!hasSqlite)("库房总览", () => {
       devices_pending_inspection: 1,
       devices_repairing: 1,
       devices_on_project: 1,
+      certs_attention: 2,
       low_stock_count: 1
     });
     expect(overview.recent_docs).toHaveLength(10);

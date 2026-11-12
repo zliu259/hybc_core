@@ -274,3 +274,55 @@ export interface DocShare {
   access_count: number;
   created_at: string;
 }
+
+// ─── 盘点（阶段 5） ──────────
+
+export type StocktakeScope = "material" | "device" | "all";
+export type StocktakeStatus = "counting" | "done" | "cancelled";
+
+export interface Stocktake {
+  id: number;
+  stocktake_no: string;
+  scope: StocktakeScope;
+  status: StocktakeStatus;
+  remark: string | null;
+  cancel_reason: string | null;
+  created_by_userid: string;
+  completed_by_userid: string | null;
+  completed_at: string | null;
+  cancelled_by_userid: string | null;
+  cancelled_at: string | null;
+  /** 每次改这次盘点或它的行都加一；完成时核对 */
+  version: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StocktakeMaterialLine {
+  id: number;
+  stocktake_id: number;
+  material_id: number;
+  counted_qty: number | null;
+  /** 录入实盘数那一刻的账面数 */
+  book_qty: number | null;
+  note: string | null;
+  counted_by_userid: string | null;
+  counted_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StocktakeDeviceLine {
+  id: number;
+  stocktake_id: number;
+  device_id: number;
+  /** 1：发起时账上在库；0：盘的时候扫到的、账上不在库的 */
+  expected: 0 | 1;
+  /** null：还没看；1：找到；0：没找到 */
+  found: 0 | 1 | null;
+  note: string | null;
+  scanned_by_userid: string | null;
+  scanned_at: string | null;
+  created_at: string;
+  updated_at: string;
+}

@@ -17,7 +17,8 @@ import type { Env } from "../types/env";
 // Unit tests: the deny-by-default allowlist itself.
 // ---------------------------------------------------------------------------
 
-// 13 个 @hybc/mcp 只读工具端点，写成【生产完整路径】形态；normalize 后应命中白名单。
+// @hybc/mcp 只读工具调的全部端点（13 个现行的，加旧版客户端还在调的 stock-order），
+// 写成【生产完整路径】形态；normalize 后应命中白名单。
 const ALLOWED_FULL_PATHS = [
   "/api/v1/project",
   "/api/v1/project/123",
@@ -31,11 +32,14 @@ const ALLOWED_FULL_PATHS = [
   "/api/v1/approval/4",
   "/api/v1/warehouse/inventory",
   "/api/v1/warehouse/inventory/alert",
+  "/api/v1/warehouse/device",
+  // 0.1.0 的 list_stock_orders 还在调；删旧接口占位时一起去掉
   "/api/v1/warehouse/stock-order"
 ];
 
 describe("isAllowedAgentRead — allowlist = exactly the @hybc/mcp read surface", () => {
-  it("allows every one of the 13 read endpoints (full /api/v1 path form)", () => {
+  it("allows every one of the read endpoints (full /api/v1 path form)", () => {
+    expect(ALLOWED_FULL_PATHS).toHaveLength(14);
     for (const path of ALLOWED_FULL_PATHS) {
       expect(isAllowedAgentRead("GET", path)).toBe(true);
     }
@@ -67,6 +71,26 @@ describe("isAllowedAgentRead — allowlist = exactly the @hybc/mcp read surface"
     expect(isAllowedAgentRead("GET", "/user/routes")).toBe(false);
     expect(isAllowedAgentRead("GET", "/agent/grants")).toBe(false);
     expect(isAllowedAgentRead("GET", "/api/v1/admin/agent/grants")).toBe(false);
+  });
+
+  it("设备列表以外的库房路径都不放行", () => {
+    for (const path of [
+      "/api/v1/warehouse/device/1",
+      "/api/v1/warehouse/device/by-code/SB-0001",
+      "/api/v1/warehouse/device/",
+      "/api/v1/warehouse/devices",
+      "/api/v1/warehouse/stocktake",
+      "/api/v1/warehouse/stocktake/1",
+      "/api/v1/warehouse/doc",
+      "/api/v1/warehouse/home",
+      "/api/v1/warehouse/material",
+      "/api/v1/doc-library/file"
+    ]) {
+      expect(isAllowedAgentRead("GET", path)).toBe(false);
+    }
+    expect(isAllowedAgentRead("GET", "/api/v1/warehouse/device?state=available")).toBe(true);
+    expect(isAllowedAgentRead("POST", "/api/v1/warehouse/device")).toBe(false);
+    expect(isAllowedAgentRead("POST", "/api/v1/warehouse/stocktake")).toBe(false);
   });
 
   it("BLOCKS all mutating methods, even on an allowlisted read path", () => {

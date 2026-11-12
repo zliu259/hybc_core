@@ -69,7 +69,12 @@ const MATRIX = [
   ["POST", "/warehouse/kit/1/submit", KIT],
   ["POST", "/warehouse/kit/1/discard", KIT],
   ["POST", "/warehouse/kit/1/confirm", KEEPER],
-  ["POST", "/warehouse/kit/1/close", KEEPER]
+  ["POST", "/warehouse/kit/1/close", KEEPER],
+  ["POST", "/warehouse/stocktake", KEEPER],
+  ["PUT", "/warehouse/stocktake/1/material-line/1", KEEPER],
+  ["POST", "/warehouse/stocktake/1/device-scan", KEEPER],
+  ["POST", "/warehouse/stocktake/1/complete", KEEPER],
+  ["POST", "/warehouse/stocktake/1/cancel", KEEPER]
 ];
 
 const CASES = MATRIX.flatMap(([method, path, allowed]) =>
@@ -93,7 +98,8 @@ const READS = [
   "/warehouse/kit-template",
   "/warehouse/kit",
   "/warehouse/kit/1",
-  "/warehouse/kit/1/fulfilment"
+  "/warehouse/kit/1/fulfilment",
+  "/warehouse/stocktake"
 ];
 
 describe.skipIf(!hasSqlite)("库房权限矩阵", () => {

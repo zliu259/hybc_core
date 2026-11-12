@@ -78,6 +78,18 @@ export default {
       meta: { title: "任务" }
     },
     {
+      path: "/wh/stocktake",
+      name: "WhStocktake",
+      component: () => import("@/views/wh/stocktake/index.vue"),
+      meta: { title: "盘点" }
+    },
+    {
+      path: "/wh/stocktake/:id",
+      name: "WhStocktakeDetail",
+      component: () => import("@/views/wh/stocktake/detail.vue"),
+      meta: { title: "盘点详情", showLink: false }
+    },
+    {
       path: "/wh/settings",
       name: "WhSettings",
       component: () => import("@/views/wh/settings/index.vue"),

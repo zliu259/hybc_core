@@ -1,6 +1,7 @@
 /** 库房总览页的数字和最近单据。 */
 import type { Env } from "../../types/env";
 import { DEVICE_STATE_SQL } from "./device-state";
+import { countCertsNeedingAttention } from "./digest";
 import { listWhDocs, type WhDocRow } from "./doc-query";
 
 export interface WarehouseOverview {
@@ -13,6 +14,8 @@ export interface WarehouseOverview {
   low_stock_count: number;
   /** 已提交、等库管确认的配套清单数。 */
   kits_to_confirm: number;
+  /** 已过期或 30 天内到期的证书份数（只算最新版、没删除的）。 */
+  certs_attention: number;
   recent_docs: WhDocRow[];
 }
 
@@ -23,7 +26,7 @@ const beijingToday = (): string =>
 export type OverviewCounts = Omit<WarehouseOverview, "recent_docs">;
 
 export const getOverviewCounts = async (env: Env): Promise<OverviewCounts> => {
-  const [tasks, devices, lowStock, kits] = await Promise.all([
+  const [tasks, devices, lowStock, kits, certs] = await Promise.all([
     env.DB.prepare(
       `SELECT
          SUM(CASE WHEN status = 'submitted' THEN 1 ELSE 0 END) AS to_confirm,
@@ -44,7 +47,8 @@ export const getOverviewCounts = async (env: Env): Promise<OverviewCounts> => {
     ).first<{ n: number }>(),
     env.DB.prepare("SELECT COUNT(*) AS n FROM project_kit WHERE status = 'submitted'").first<{
       n: number;
-    }>()
+    }>(),
+    countCertsNeedingAttention(env, new Date())
   ]);
   const byState = new Map((devices.results ?? []).map((row) => [row.state, Number(row.n)]));
   return {
@@ -55,7 +59,8 @@ export const getOverviewCounts = async (env: Env): Promise<OverviewCounts> => {
     devices_repairing: byState.get("repairing") ?? 0,
     devices_on_project: byState.get("on_project") ?? 0,
     low_stock_count: Number(lowStock?.n ?? 0),
-    kits_to_confirm: Number(kits?.n ?? 0)
+    kits_to_confirm: Number(kits?.n ?? 0),
+    certs_attention: certs
   };
 };
 

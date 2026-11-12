@@ -172,6 +172,8 @@ onMounted(async () => {
     selection.value = { kind: "device", deviceId };
     currentKey.value = `device-${deviceId}`;
   }
+  // 从总览的「证书到期」过来：只看快到期和已过期的
+  if (route.query.expiring === "1") filters.expiring = true;
   const [configResult, categoryResult] = await Promise.all([
     run(() => getDocConfig()),
     run(() => listDeviceCategories()),
