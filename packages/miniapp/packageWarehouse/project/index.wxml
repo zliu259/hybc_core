@@ -63,6 +63,7 @@
             <hy-status-chip text="{{item.statusLabel}}" theme="{{item.statusTheme}}" />
           </view>
         </view>
+        <view wx:if="{{view.actions.canCreateKit}}" class="wh-link" bindtap="goCreateKit">新建清单</view>
       </view>
     </block>
 
@@ -79,10 +80,10 @@
       </view>
     </view>
 
-    <block wx:if="{{view.actions.canShip || view.actions.canReturn || view.actions.canTransfer || view.actions.canCreateKit}}">
+    <!-- 底部最多三个按钮，再多会折行；新建清单放在清单那一段里 -->
+    <block wx:if="{{view.actions.canShip || view.actions.canReturn || view.actions.canTransfer}}">
       <view class="wh-bar-space" />
       <view class="wh-bar">
-        <t-button wx:if="{{view.actions.canCreateKit}}" class="btn-fill" variant="outline" bindtap="goCreateKit">新建清单</t-button>
         <t-button wx:if="{{view.actions.canTransfer}}" class="btn-fill" variant="outline" data-type="transfer" bindtap="goShip">转场</t-button>
         <t-button wx:if="{{view.actions.canShip}}" class="btn-fill" variant="outline" data-type="out" bindtap="goShip">发货</t-button>
         <t-button wx:if="{{view.actions.canReturn}}" class="btn-fill" theme="primary" data-type="back" bindtap="goShip">项目返库</t-button>

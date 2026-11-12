@@ -82,7 +82,7 @@
       <view class="wh-mask" bindtap="closeReturn" catchtouchmove="noop" />
       <view class="wh-sheet">
         <view class="wh-sheet-title">{{view.header.code}} 返库</view>
-        <view class="wh-row-sub sheet-hint">从 {{view.header.locationText}} 退回库房，返库后生成检查任务。下面两项可以不填。</view>
+        <view class="wh-row-sub sheet-hint">现在{{view.header.locationText}}。退回库房后会生成检查任务，下面两项可以不填。</view>
         <view class="wh-field">
           <view class="wh-field-label">顶进距离（米）</view>
           <input
