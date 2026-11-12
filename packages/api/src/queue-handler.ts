@@ -1,4 +1,5 @@
 import type { Env } from "./types/env";
+import { deliverWarehouseNotice } from "./services/warehouse/notice-deliver";
 import type { DomainEvent } from "./services/event-bus";
 import { advanceWorkflow } from "./services/approval/engine";
 import { parseAiGateTaskResult } from "./services/approval/ai-gate-result";
@@ -7,7 +8,10 @@ import { hasPendingHumanTaskOnNode } from "./services/approval/ai-gate-fallback"
 import { createAiGateHandler } from "./services/ai-slot";
 import { executeCfAiTask, isCfAiTaskType } from "./services/cf-ai";
 import { wakeRunner } from "./services/cron-jobs";
-import { ensureInvoiceReviews, syncEnvelopeAuditState } from "./services/reimbursement/review-pipeline";
+import {
+  ensureInvoiceReviews,
+  syncEnvelopeAuditState
+} from "./services/reimbursement/review-pipeline";
 import {
   resolveApplicantDisplayName,
   resolveApprovalPushMeta,
@@ -234,9 +238,7 @@ export const handleAiGateTaskCompleted = async (env: Env, taskId: number): Promi
 
   // 拦截白名单裁决需要实例的真实业务类型（payload 里的 biz_type 与其一致，
   // 但以 approval_instance 为权威来源，兼容旧任务 payload 缺字段的情况）
-  const instanceRow = await env.DB.prepare(
-    "SELECT biz_type FROM approval_instance WHERE id = ?"
-  )
+  const instanceRow = await env.DB.prepare("SELECT biz_type FROM approval_instance WHERE id = ?")
     .bind(task.biz_id)
     .first<{ biz_type: string }>();
   const parsedResult = parseAiGateTaskResult(task.result_json, {
@@ -840,6 +842,11 @@ export const queue = async (batch: MessageBatch<DomainEvent>, env: Env): Promise
               external_submission_id: externalSubmissionId || null
             });
           }
+          break;
+        }
+        case "WAREHOUSE_NOTICE": {
+          // 不包 try/catch：发不出去就抛，让下面的 msg.retry() 重试；不用发的情况函数自己返回。
+          await deliverWarehouseNotice(env, event.payload);
           break;
         }
         default:

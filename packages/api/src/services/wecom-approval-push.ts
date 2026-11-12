@@ -228,6 +228,25 @@ const resolveRouteConfig = async (env: Env): Promise<WeComPushRouteConfig> => {
   }
 };
 
+/**
+ * 企微卡片能跳去哪：小程序的 appid 和 Web 的根地址。审批以外的卡片（库房通知）用它自己拼页面路径。
+ * Web 地址没单独配时退到登录回调地址的域名；都没有就是 null。
+ */
+export const resolveWeComLinkTargets = async (
+  env: Env
+): Promise<{ miniAppId: string | null; webBaseUrl: string | null }> => {
+  const config = await resolveRouteConfig(env);
+  const explicit = config.webBaseUrl?.replace(/\/+$/, "") || null;
+  if (explicit) return { miniAppId: config.miniAppId, webBaseUrl: explicit };
+  const redirect = env.WECHAT_REDIRECT_URI?.trim();
+  if (!redirect) return { miniAppId: config.miniAppId, webBaseUrl: null };
+  try {
+    return { miniAppId: config.miniAppId, webBaseUrl: new URL(redirect).origin };
+  } catch {
+    return { miniAppId: config.miniAppId, webBaseUrl: null };
+  }
+};
+
 const BIZ_TYPE_LABELS: Record<string, string> = {
   outbound_contract: "对外合同审批",
   inbound_contract: "收款合同审批",
@@ -452,7 +471,10 @@ export const sendWeComTemplateCard = async (
 
   if (json.errcode !== 0) {
     throw new Error(
-      weComErrorMessage(json.errmsg, input.fallback_error_message ?? "Failed to send WeCom template card")
+      weComErrorMessage(
+        json.errmsg,
+        input.fallback_error_message ?? "Failed to send WeCom template card"
+      )
     );
   }
 

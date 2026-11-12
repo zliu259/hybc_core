@@ -125,7 +125,11 @@ describe.skipIf(!hasSqlite)("库房权限和设置", () => {
       status: 200,
       body: {
         success: true,
-        data: { default_inspector_userid: null, return_inspection_photo_count: 3 }
+        data: {
+          default_inspector_userid: null,
+          return_inspection_photo_count: 3,
+          notify_enabled: false
+        }
       }
     });
     const rejected = await call("PUT", "/warehouse/settings", {
@@ -140,14 +144,30 @@ describe.skipIf(!hasSqlite)("库房权限和设置", () => {
     });
     expect(saved.body.data).toEqual({
       default_inspector_userid: "lizhen",
-      return_inspection_photo_count: 0
+      return_inspection_photo_count: 0,
+      notify_enabled: false
     });
 
     const cleared = await call("PUT", "/warehouse/settings", { default_inspector_userid: null });
     expect(cleared.body.data).toEqual({
       default_inspector_userid: null,
-      return_inspection_photo_count: 0
+      return_inspection_photo_count: 0,
+      notify_enabled: false
     });
+  });
+
+  it("设置：通知开关只收布尔值，能开能关", async () => {
+    as("boss", ["manager"]);
+    const rejected = await call("PUT", "/warehouse/settings", { notify_enabled: "yes" });
+    expect(rejected.status).toBe(400);
+    expect(rejected.body.error.message).toBe("通知开关只能是开或关");
+
+    const on = await call("PUT", "/warehouse/settings", { notify_enabled: true });
+    expect(on.body.data.notify_enabled).toBe(true);
+    expect((await call("GET", "/warehouse/settings")).body.data.notify_enabled).toBe(true);
+
+    const off = await call("PUT", "/warehouse/settings", { notify_enabled: false });
+    expect(off.body.data.notify_enabled).toBe(false);
   });
 
   it("库管不能改设置", async () => {
