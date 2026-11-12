@@ -234,6 +234,22 @@ describe.skipIf(!hasSqlite)("资料的修改、删除、查看地址", () => {
     vi.useRealTimers();
   });
 
+  it("查看地址加 download=1 就当附件下载（PDF 平时是在页面里打开）", async () => {
+    const id = h.seed.docFile({ file_name: "合格证.pdf" });
+    const res = await request("GET", `/doc-library/file/${id}/url`);
+    const url = new URL(res.body.data!.url as string);
+    const path = `${url.pathname.replace("/api/v1", "")}${url.search}`;
+    const name = encodeURIComponent("合格证.pdf");
+    expect((await request("GET", path)).headers.get("content-disposition")).toBe(
+      `inline; filename*=UTF-8''${name}`
+    );
+    const download = await request("GET", `${path}&download=1`);
+    expect(download.status).toBe(200);
+    expect(download.headers.get("content-disposition")).toBe(
+      `attachment; filename*=UTF-8''${name}`
+    );
+  });
+
   it("取查看地址：Office 文件当附件下载，带中文文件名；旧版本能取；已删除的取不到", async () => {
     const docx = h.seed.docFile({
       file_name: "说明 书.docx",

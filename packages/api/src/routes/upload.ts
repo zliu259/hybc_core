@@ -222,6 +222,8 @@ uploadRoutes.get("/object/:key{.+}", async (c) => {
   return serveObject(c.env, key, c.req.raw, {
     hardened: warehouseFile,
     // 下载时显示的文件名（资料库取地址时带上）；只影响名字，不在签名里
-    fileName: warehouseFile ? c.req.query("filename") || undefined : undefined
+    fileName: warehouseFile ? c.req.query("filename") || undefined : undefined,
+    // download=1：能在页面里打开的类型（PDF、图片、视频）也当附件下载。只会更严，不在签名里
+    forceAttachment: warehouseFile && c.req.query("download") === "1"
   });
 });
