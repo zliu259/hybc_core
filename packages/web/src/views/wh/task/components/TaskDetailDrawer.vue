@@ -32,6 +32,7 @@ import {
   taskActions
 } from "../task-view";
 import AssignDialog from "./AssignDialog.vue";
+import DeviceDocsCard from "../../doc-library/components/DeviceDocsCard.vue";
 import SubmitPanel from "./SubmitPanel.vue";
 
 const props = defineProps<{ taskId: number | null; isKeeper: boolean }>();
@@ -291,6 +292,15 @@ const cancel = async () => {
           formatTime(task.done_at)
         }}</el-descriptions-item>
       </el-descriptions>
+
+      <template v-if="task.device_id">
+        <div class="section-title">适用资料</div>
+        <DeviceDocsCard
+          :device-id="task.device_id"
+          :task-kind="task.kind"
+          compact
+        />
+      </template>
 
       <div class="section-title">
         照片 {{ task.photos.length }}

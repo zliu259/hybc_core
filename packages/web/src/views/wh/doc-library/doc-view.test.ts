@@ -5,6 +5,9 @@ import type { WarehouseCapabilities } from "@/api/wh/types";
 import {
   buildTreeNodes,
   docActions,
+  docCategoryLabel,
+  groupDocsByScope,
+  shareStatus,
   formatFileSize,
   ownerInput,
   ownerOfRow,
@@ -272,5 +275,61 @@ describe("归属的选择", () => {
     expect(
       ownerProblem({ kind: "device", deviceId: 3, categoryId: null })
     ).toBe("");
+  });
+});
+
+describe("docCategoryLabel", () => {
+  it("资料类别显示中文，不认识的算其他", () => {
+    expect(docCategoryLabel("cert")).toBe("合格证");
+    expect(docCategoryLabel("report")).toBe("检测报告");
+    expect(docCategoryLabel("params")).toBe("技术参数");
+    expect(docCategoryLabel("manual")).toBe("说明书");
+    expect(docCategoryLabel("maintenance")).toBe("保养维修");
+    expect(docCategoryLabel("other")).toBe("其他");
+    expect(docCategoryLabel("whatever" as never)).toBe("其他");
+  });
+});
+
+describe("groupDocsByScope", () => {
+  it("分成这台设备的、这类设备的、通用的三段，段内保持接口给的顺序，没有的段不出现", () => {
+    const rows = [
+      doc({ id: 1, scope: "device" }),
+      doc({ id: 2, scope: "device" }),
+      doc({ id: 3, scope: "general" })
+    ];
+    expect(
+      groupDocsByScope(rows).map(group => [
+        group.label,
+        group.rows.map(row => row.id)
+      ])
+    ).toEqual([
+      ["这台设备的", [1, 2]],
+      ["通用的", [3]]
+    ]);
+    expect(
+      groupDocsByScope([
+        doc({ id: 4, scope: "general" }),
+        doc({ id: 5, scope: "category" })
+      ]).map(group => group.label)
+    ).toEqual(["这类设备的", "通用的"]);
+    expect(groupDocsByScope([])).toEqual([]);
+  });
+});
+
+describe("shareStatus", () => {
+  const share = (patch: { active: boolean; revoked_at: string | null }) =>
+    shareStatus(patch);
+  it("有效、已作废、已过期", () => {
+    expect(share({ active: true, revoked_at: null })).toEqual({
+      text: "有效",
+      type: "success"
+    });
+    expect(
+      share({ active: false, revoked_at: "2026-11-12T00:00:00.000Z" })
+    ).toEqual({ text: "已作废", type: "info" });
+    expect(share({ active: false, revoked_at: null })).toEqual({
+      text: "已过期",
+      type: "info"
+    });
   });
 });

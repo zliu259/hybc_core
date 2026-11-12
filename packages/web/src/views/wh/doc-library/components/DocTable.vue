@@ -27,6 +27,7 @@ const emit = defineEmits<{
   edit: [row: DocFileRow];
   history: [row: DocFileRow];
   replace: [row: DocFileRow];
+  share: [row: DocFileRow];
   remove: [row: DocFileRow];
 }>();
 
@@ -41,6 +42,7 @@ const categoryLabel = (key: DocCategory): string =>
 const onCommand = (command: string, row: DocFileRow) => {
   if (command === "history") emit("history", row);
   else if (command === "replace") emit("replace", row);
+  else if (command === "share") emit("share", row);
   else if (command === "remove") emit("remove", row);
 };
 
@@ -115,6 +117,11 @@ onMounted(() => void loadUserNames());
                 v-if="docActions(row, props.caps).canReplace"
                 command="replace"
                 >替换文件</el-dropdown-item
+              >
+              <el-dropdown-item
+                v-if="docActions(row, props.caps).canShare"
+                command="share"
+                >对外链接</el-dropdown-item
               >
               <el-dropdown-item
                 v-if="row.supersedes_id !== null"

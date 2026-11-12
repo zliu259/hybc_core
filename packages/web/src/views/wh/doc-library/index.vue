@@ -22,6 +22,7 @@ import { useWhCapabilities } from "../shared/useWhCapabilities";
 import DocEditDialog from "./components/DocEditDialog.vue";
 import DocHistoryDrawer from "./components/DocHistoryDrawer.vue";
 import DocPreviewDialog from "./components/DocPreviewDialog.vue";
+import DocShareDialog from "./components/DocShareDialog.vue";
 import DocTable from "./components/DocTable.vue";
 import DocTree from "./components/DocTree.vue";
 import DocUploadDialog from "./components/DocUploadDialog.vue";
@@ -66,6 +67,7 @@ const previewVisible = ref(false);
 const editVisible = ref(false);
 const historyVisible = ref(false);
 const historyId = ref<number | null>(null);
+const shareVisible = ref(false);
 const uploadVisible = ref(false);
 const importVisible = ref(false);
 const replaceTarget = ref<DocFileRow | null>(null);
@@ -136,6 +138,10 @@ const openUpload = () => {
 const openReplace = (row: DocFileRow) => {
   replaceTarget.value = row;
   uploadVisible.value = true;
+};
+const openShare = (row: DocFileRow) => {
+  active.value = row;
+  shareVisible.value = true;
 };
 const openHistory = (row: DocFileRow) => {
   historyId.value = row.id;
@@ -229,6 +235,7 @@ onMounted(async () => {
           @edit="openEdit"
           @history="openHistory"
           @replace="openReplace"
+          @share="openShare"
           @remove="remove"
         />
         <el-pagination
@@ -250,6 +257,7 @@ onMounted(async () => {
       :doc-categories="config?.categories ?? []"
       @saved="refresh"
     />
+    <DocShareDialog v-model="shareVisible" :doc="active" />
     <DocUploadDialog
       v-model="uploadVisible"
       :config="config"

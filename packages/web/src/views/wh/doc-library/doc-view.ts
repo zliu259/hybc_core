@@ -1,8 +1,10 @@
 /** 设备资料库页面用的纯函数：怎么预览、大小怎么写、有效期和归属怎么显示、能做哪些操作。 */
 import type {
+  DocCategory,
   DocFileQuery,
   DocFileRow,
   DocScope,
+  DocShareRow,
   DocTree,
   DocValidity
 } from "@/api/wh/doc-library-types";
@@ -192,4 +194,45 @@ export const ownerProblem = (owner: DocOwner): string => {
     return "请选择设备类别";
   }
   return "";
+};
+
+/** 和后端 services/doc-library/file-types.ts 的 DOC_CATEGORY_LABELS 一致。 */
+const DOC_CATEGORY_LABELS: Record<DocCategory, string> = {
+  cert: "合格证",
+  report: "检测报告",
+  params: "技术参数",
+  manual: "说明书",
+  maintenance: "保养维修",
+  other: "其他"
+};
+
+export const docCategoryLabel = (category: DocCategory): string =>
+  DOC_CATEGORY_LABELS[category] ?? DOC_CATEGORY_LABELS.other;
+
+const SCOPE_SECTIONS: readonly { scope: DocScope; label: string }[] = [
+  { scope: "device", label: "这台设备的" },
+  { scope: "category", label: "这类设备的" },
+  { scope: "general", label: "通用的" }
+];
+
+export interface DocScopeGroup {
+  scope: DocScope;
+  label: string;
+  rows: DocFileRow[];
+}
+
+/** 一台设备适用的资料分三段显示；段内顺序用接口给的（已经按要干的活排过）。 */
+export const groupDocsByScope = (
+  rows: readonly DocFileRow[]
+): DocScopeGroup[] =>
+  SCOPE_SECTIONS.map(section => ({
+    ...section,
+    rows: rows.filter(row => row.scope === section.scope)
+  })).filter(group => group.rows.length > 0);
+
+export const shareStatus = (
+  share: Pick<DocShareRow, "active" | "revoked_at">
+): { text: string; type: "success" | "info" } => {
+  if (share.active) return { text: "有效", type: "success" };
+  return { text: share.revoked_at ? "已作废" : "已过期", type: "info" };
 };

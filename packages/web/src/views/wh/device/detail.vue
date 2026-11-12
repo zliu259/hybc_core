@@ -10,6 +10,7 @@ import { DEVICE_STATE_TAG, TASK_KIND_LABELS } from "../shared/labels";
 import { newClientRequestId } from "../shared/ids";
 import { useWhAction } from "../shared/useWhAction";
 import { useWhCapabilities } from "../shared/useWhCapabilities";
+import DeviceDocsCard from "../doc-library/components/DeviceDocsCard.vue";
 import DeviceFormDialog from "./components/DeviceFormDialog.vue";
 import DeviceTimeline from "./components/DeviceTimeline.vue";
 import DeviceUsagePanel from "./components/DeviceUsagePanel.vue";
@@ -144,6 +145,15 @@ onMounted(async () => {
           }}</template>
         </el-table-column>
       </el-table>
+    </el-card>
+
+    <el-card v-if="device" shadow="never">
+      <template #header>资料</template>
+      <DeviceDocsCard
+        :device-id="device.id"
+        :device-label="`${device.device_code} ${device.name}`"
+        :can-upload="Boolean(caps?.is_doc_admin)"
+      />
     </el-card>
 
     <el-row v-if="device" :gutter="16">
