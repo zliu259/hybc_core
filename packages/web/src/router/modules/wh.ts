@@ -66,6 +66,12 @@ export default {
       meta: { title: "库房单" }
     },
     {
+      path: "/wh/doc-library",
+      name: "WhDocLibrary",
+      component: () => import("@/views/wh/doc-library/index.vue"),
+      meta: { title: "设备资料库" }
+    },
+    {
       path: "/wh/task",
       name: "WhTask",
       component: () => import("@/views/wh/task/index.vue"),

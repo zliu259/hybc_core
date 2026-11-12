@@ -2,6 +2,8 @@
 import type {
   DocFileQuery,
   DocFileRow,
+  DocScope,
+  DocTree,
   DocValidity
 } from "@/api/wh/doc-library-types";
 import type { WarehouseCapabilities } from "@/api/wh/types";
@@ -113,4 +115,81 @@ export const treeSelection = (node: DocTreeSelection): TreeFilter => {
   }
   if (node.kind === "device") return { device_id: String(node.deviceId) };
   return {};
+};
+
+export interface DocTreeNode {
+  key: string;
+  label: string;
+  /** 这一项自己的资料数；设备类别只数归到类别本身的，不含下面各台设备的 */
+  count: number;
+  selection: DocTreeSelection;
+  children?: DocTreeNode[];
+}
+
+/** 目录树：全部、通用，然后是各设备类别，类别下面挂有资料的设备。 */
+export const buildTreeNodes = (tree: DocTree | null): DocTreeNode[] => [
+  {
+    key: "all",
+    label: "全部",
+    count: tree?.total ?? 0,
+    selection: { kind: "all" }
+  },
+  {
+    key: "general",
+    label: "通用",
+    count: tree?.general ?? 0,
+    selection: { kind: "general" }
+  },
+  ...(tree?.categories ?? []).map(category => ({
+    key: `category-${category.category_id}`,
+    label: category.category_name,
+    count: category.own,
+    selection: {
+      kind: "category" as const,
+      categoryId: category.category_id
+    },
+    children: category.devices.map(device => ({
+      key: `device-${device.device_id}`,
+      label: `${device.device_code} ${device.name}`,
+      count: device.count,
+      selection: { kind: "device" as const, deviceId: device.device_id }
+    }))
+  }))
+];
+
+/** 表单里选的归属：某台设备、某类设备，或者通用。 */
+export interface DocOwner {
+  kind: DocScope;
+  deviceId: number | null;
+  categoryId: number | null;
+}
+
+export const GENERAL_OWNER: DocOwner = {
+  kind: "general",
+  deviceId: null,
+  categoryId: null
+};
+
+export const ownerOfRow = (
+  row: Pick<DocFileRow, "scope" | "device_id" | "device_category_id">
+): DocOwner => ({
+  kind: row.scope,
+  deviceId: row.scope === "device" ? row.device_id : null,
+  categoryId: row.scope === "category" ? row.device_category_id : null
+});
+
+/** 接口要的两个字段：只带选中那一种，另一种清空。 */
+export const ownerInput = (
+  owner: DocOwner
+): { device_id: number | null; device_category_id: number | null } => ({
+  device_id: owner.kind === "device" ? owner.deviceId : null,
+  device_category_id: owner.kind === "category" ? owner.categoryId : null
+});
+
+export const ownerProblem = (owner: DocOwner): string => {
+  if (owner.kind === "device" && owner.deviceId === null) return "请选择设备";
+  if (owner.kind === "category" && owner.categoryId === null) {
+    return "请选择设备类别";
+  }
+  return "";
 };
