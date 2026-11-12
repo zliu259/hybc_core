@@ -1,0 +1,150 @@
+<view class="page">
+  <view wx:if="{{kitLocked}}" class="wh-notice ship-kit">按清单 {{kitNo}} 发货：物资按还没发的数量带出，可以改；清单外的东西也能加。</view>
+
+  <view wx:if="{{needsProject}}" class="wh-card">
+    <view class="wh-card-body ship-block">
+      <view wx:if="{{kitLocked}}" class="wh-kv">
+        <text class="wh-kv-label">发往项目</text>
+        <text class="wh-kv-value">{{projectName}}</text>
+      </view>
+      <hy-project-picker
+        wx:else
+        value="{{projectId || 0}}"
+        label="{{isOut ? '发往项目' : '来源项目'}}"
+        enableGps="{{false}}"
+        bind:change="onProjectChange"
+      />
+      <view wx:if="{{needsToProject}}" class="ship-to">
+        <hy-project-picker
+          value="{{toProjectId || 0}}"
+          label="目的项目"
+          enableGps="{{false}}"
+          excludeArchived="{{true}}"
+          bind:change="onToProjectChange"
+        />
+      </view>
+      <view wx:if="{{prefilling}}" class="wh-row-sub">正在带出清单…</view>
+    </view>
+  </view>
+
+  <view wx:if="{{canAddDevice}}" class="wh-card">
+    <view class="wh-card-head">
+      <text class="wh-card-title">设备</text>
+      <text class="wh-card-more">{{devices.length}} 台</text>
+    </view>
+    <view wx:if="{{hints.length > 0}}" class="ship-hints">
+      <view wx:for="{{hints}}" wx:key="*this" class="ship-hint">{{item}}</view>
+    </view>
+    <view wx:for="{{devices}}" wx:key="id" class="ship-line">
+      <view class="ship-line-head">
+        <text class="ship-line-name">{{item.code}} {{item.name}}</text>
+        <text class="ship-remove" data-id="{{item.id}}" bindtap="removeDeviceTap">移除</text>
+      </view>
+      <view wx:if="{{isBack}}" class="ship-inputs">
+        <view class="ship-input-cell">
+          <text class="wh-muted">顶进（米）</text>
+          <input class="wh-input ship-input" type="digit" value="{{item.usageMeters}}" placeholder="选填" data-id="{{item.id}}" data-field="usageMeters" bindinput="onDeviceField" />
+        </view>
+        <view class="ship-input-cell">
+          <text class="wh-muted">土质</text>
+          <input class="wh-input ship-input" value="{{item.soilType}}" maxlength="50" placeholder="选填" data-id="{{item.id}}" data-field="soilType" bindinput="onDeviceField" />
+        </view>
+      </view>
+    </view>
+    <view class="wh-card-body ship-add">
+      <t-button theme="primary" block loading="{{scanning}}" disabled="{{scanning}}" bindtap="onScanAdd">扫码加设备（可连续扫）</t-button>
+      <view class="ship-add-search">
+        <hy-search-picker
+          range="{{deviceOptions.range}}"
+          value="{{0}}"
+          title="选择设备"
+          placeholder="或者输入编号、名称搜索"
+          searchPlaceholder="输入设备编号或名称"
+          emptyText="没有找到设备"
+          remote="{{true}}"
+          remoteLoading="{{deviceSearching}}"
+          bind:search="onDeviceSearch"
+          bindchange="onDevicePick"
+        />
+      </view>
+    </view>
+  </view>
+
+  <view class="wh-card">
+    <view class="wh-card-head">
+      <text class="wh-card-title">物资</text>
+      <text class="wh-card-more">{{materials.length}} 项</text>
+    </view>
+    <view wx:if="{{materials.length === 0}}" class="wh-empty">{{isBack ? "这个项目没有周转件在场" : "还没有物资"}}</view>
+    <view wx:for="{{materials}}" wx:key="materialId" class="ship-line">
+      <view class="ship-line-head">
+        <text class="ship-line-name">{{item.label}}</text>
+        <text class="ship-remove" data-id="{{item.materialId}}" bindtap="removeMaterialTap">移除</text>
+      </view>
+      <view wx:if="{{item.availableText}}" class="wh-row-sub">{{item.availableText}} {{item.unit}}</view>
+      <view wx:if="{{isBack}}" class="ship-inputs">
+        <view class="ship-input-cell">
+          <text class="wh-muted">退回</text>
+          <input class="wh-input ship-input" type="digit" value="{{item.returned}}" data-id="{{item.materialId}}" data-field="returned" bindinput="onQtyInput" />
+        </view>
+        <view wx:if="{{item.showLost}}" class="ship-input-cell">
+          <text class="wh-muted">丢失损坏</text>
+          <input class="wh-input ship-input" type="digit" value="{{item.lost}}" data-id="{{item.materialId}}" data-field="lost" bindinput="onQtyInput" />
+        </view>
+      </view>
+      <view wx:else class="ship-inputs">
+        <view class="ship-input-cell">
+          <text class="wh-muted">数量</text>
+          <input class="wh-input ship-input" type="digit" value="{{item.quantity}}" data-id="{{item.materialId}}" data-field="quantity" bindinput="onQtyInput" />
+          <text class="wh-muted">{{item.unit}}</text>
+        </view>
+      </view>
+    </view>
+    <view wx:if="{{canAddMaterial}}" class="wh-card-body ship-add">
+      <hy-search-picker
+        range="{{materialOptions.range}}"
+        value="{{0}}"
+        title="选择物资"
+        placeholder="{{isBack ? '加一种要退回的耗材' : '加物资：输入品名搜索'}}"
+        searchPlaceholder="输入品名或规格"
+        emptyText="没有找到物资"
+        remote="{{true}}"
+        remoteLoading="{{materialSearching}}"
+        bind:search="onMaterialSearch"
+        bindchange="onMaterialPick"
+      />
+    </view>
+  </view>
+
+  <view class="wh-card">
+    <view class="wh-card-body ship-block">
+      <view wx:if="{{isIn}}" class="wh-field">
+        <view class="wh-field-label">供应商（选填）</view>
+        <input class="wh-input" value="{{counterparty}}" maxlength="80" data-field="counterparty" bindinput="onField" />
+      </view>
+      <view wx:if="{{isIn}}" class="wh-field">
+        <view class="wh-field-label">送货单照片（选填，最多 9 张）</view>
+        <view class="ship-photos">
+          <view wx:for="{{photos}}" wx:key="key" class="ship-photo">
+            <image class="ship-photo-image" src="{{item.path}}" mode="aspectFill" />
+            <view class="ship-photo-remove" data-index="{{index}}" bindtap="removePhoto">×</view>
+          </view>
+          <view wx:if="{{photos.length < 9}}" class="ship-photo ship-photo-add" bindtap="choosePhotos">{{uploading ? "上传中…" : "+ 拍照"}}</view>
+        </view>
+      </view>
+      <view wx:if="{{isOut}}" class="wh-field">
+        <view class="wh-field-label">领料人（选填）</view>
+        <input class="wh-input" value="{{handoverName}}" maxlength="30" data-field="handoverName" bindinput="onField" />
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">备注（选填）</view>
+        <input class="wh-input" value="{{remark}}" maxlength="300" data-field="remark" bindinput="onField" />
+      </view>
+    </view>
+  </view>
+
+  <view class="wh-bar-space" />
+  <view class="wh-bar">
+    <t-button class="btn-fill" theme="primary" loading="{{busy}}" disabled="{{busy || uploading || prefilling}}" bindtap="submit">提交</t-button>
+  </view>
+</view>

@@ -1,0 +1,125 @@
+@import "../common/wh.wxss";
+
+.ship-kit {
+  color: #0b5cad;
+  background: #e8f1ff;
+}
+
+.ship-block {
+  padding-top: 24rpx;
+}
+
+.ship-to {
+  margin-top: 24rpx;
+}
+
+.ship-hints {
+  padding: 0 24rpx 12rpx;
+}
+
+.ship-hint {
+  padding: 6rpx 0;
+  font-size: 26rpx;
+  color: #ad6800;
+}
+
+.ship-line {
+  padding: 20rpx 24rpx;
+  border-top: 1rpx solid #f0f2f5;
+}
+
+.ship-line-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.ship-line-name {
+  flex: 1;
+  min-width: 0;
+  font-size: 28rpx;
+  line-height: 1.4;
+  color: #1f2a3d;
+  word-break: break-all;
+}
+
+.ship-remove {
+  flex-shrink: 0;
+  padding: 4rpx 0 4rpx 16rpx;
+  font-size: 24rpx;
+  color: #8a94a6;
+}
+
+.ship-inputs {
+  display: flex;
+  gap: 24rpx;
+  margin-top: 12rpx;
+}
+
+.ship-input-cell {
+  display: flex;
+  flex: 1;
+  gap: 12rpx;
+  align-items: center;
+  min-width: 0;
+  font-size: 26rpx;
+}
+
+.ship-input {
+  flex: 1;
+  min-width: 0;
+  height: 68rpx;
+  text-align: center;
+}
+
+.ship-add {
+  border-top: 1rpx solid #f0f2f5;
+}
+
+.ship-add-search {
+  margin-top: 16rpx;
+}
+
+.ship-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.ship-photo {
+  position: relative;
+  width: 160rpx;
+  height: 160rpx;
+  overflow: hidden;
+  background: #f5f7fa;
+  border-radius: 12rpx;
+}
+
+.ship-photo-image {
+  width: 100%;
+  height: 100%;
+}
+
+.ship-photo-remove {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 48rpx;
+  height: 48rpx;
+  font-size: 32rpx;
+  line-height: 44rpx;
+  color: #fff;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 0 0 0 12rpx;
+}
+
+.ship-photo-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  color: #5c667a;
+  border: 2rpx dashed #b4bccb;
+}

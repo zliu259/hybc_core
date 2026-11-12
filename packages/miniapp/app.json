@@ -72,7 +72,8 @@
         "task-detail/index",
         "task-new/index",
         "kit-list/index",
-        "kit/index"
+        "kit/index",
+        "ship/index"
       ]
     }
   ],
