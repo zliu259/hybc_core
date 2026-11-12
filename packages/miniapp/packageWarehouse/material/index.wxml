@@ -1,0 +1,30 @@
+<view class="page">
+  <input
+    class="wh-input material-search"
+    value="{{keyword}}"
+    placeholder="输入品名或规格"
+    confirm-type="search"
+    bindinput="onSearchInput"
+  />
+  <view class="material-filter">
+    <text class="wh-muted">只看低库存</text>
+    <switch checked="{{lowOnly}}" color="#1677ff" bindchange="onLowToggle" />
+  </view>
+
+  <view class="wh-card">
+    <view wx:if="{{rows.length === 0 && !loading}}" class="wh-empty">{{loadFailed ? "加载失败，下拉重试" : (lowOnly ? "没有低库存的物资" : "没有找到物资")}}</view>
+    <view wx:for="{{rows}}" wx:key="id" class="wh-row {{index === 0 ? 'wh-row-first' : ''}}">
+      <view class="wh-row-main">
+        <view class="wh-row-title">{{item.label}}</view>
+        <view class="wh-row-sub">{{item.kindLabel}}<text wx:if="{{item.minStockText}}"> · {{item.minStockText}}</text></view>
+      </view>
+      <view class="wh-row-side">
+        <view class="material-qty {{item.low ? 'wh-alert' : ''}}">{{item.quantityText}} {{item.unit}}</view>
+        <view wx:if="{{item.low}}" class="wh-alert">低库存</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="wh-empty">加载中…</view>
+  <view wx:elif="{{finished && rows.length > 0}}" class="wh-empty">共 {{total}} 种</view>
+</view>

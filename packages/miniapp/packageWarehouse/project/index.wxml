@@ -1,0 +1,92 @@
+<view class="page">
+  <view wx:if="{{notFound}}" class="wh-empty">没有找到这个项目</view>
+  <block wx:elif="{{view}}">
+    <view wx:if="{{view.settledText}}" class="wh-notice {{view.settled ? 'project-settled' : ''}}">{{view.settledText}}</view>
+    <view wx:if="{{ledgerFailed}}" class="wh-notice">项目物资加载失败，下拉重试</view>
+
+    <block wx:if="{{!ledgerFailed}}">
+      <view class="wh-card">
+        <view class="wh-card-head">
+          <text class="wh-card-title">在场设备</text>
+          <text class="wh-card-more">{{view.devices.length}} 台</text>
+        </view>
+        <view wx:if="{{view.devices.length === 0}}" class="wh-empty">没有设备在场</view>
+        <view
+          wx:for="{{view.devices}}"
+          wx:key="id"
+          class="wh-row"
+          hover-class="wh-row-hover"
+          data-id="{{item.id}}"
+          bindtap="openDevice"
+        >
+          <view class="wh-row-main">
+            <view class="wh-row-title">{{item.code}} {{item.name}}</view>
+          </view>
+          <text class="wh-chevron">›</text>
+        </view>
+      </view>
+
+      <view class="wh-card">
+        <view class="wh-card-head">
+          <text class="wh-card-title">在场周转件</text>
+          <text class="wh-card-more">{{view.materials.length}} 种</text>
+        </view>
+        <view wx:if="{{view.materials.length === 0}}" class="wh-empty">没有周转件在场</view>
+        <view wx:for="{{view.materials}}" wx:key="materialId" class="wh-row">
+          <view class="wh-row-main">
+            <view class="wh-row-title">{{item.label}}</view>
+            <view class="wh-row-sub">已发 {{item.shippedText}} · 已退 {{item.returnedText}} · 报损 {{item.lostText}}</view>
+          </view>
+          <text class="wh-row-side project-onsite">在场 {{item.onSiteText}} {{item.unit}}</text>
+        </view>
+      </view>
+
+      <view class="wh-card">
+        <view class="wh-card-head" hover-class="wh-row-hover" bindtap="goKitList">
+          <text class="wh-card-title">配套清单</text>
+          <text class="wh-card-more">{{view.kits.length}} 份<text class="wh-chevron">›</text></text>
+        </view>
+        <view wx:if="{{view.kits.length === 0}}" class="wh-empty">这个项目还没有清单</view>
+        <view
+          wx:for="{{view.kits}}"
+          wx:key="id"
+          class="wh-row"
+          hover-class="wh-row-hover"
+          data-id="{{item.id}}"
+          bindtap="openKit"
+        >
+          <view class="wh-row-main">
+            <view class="wh-row-title">{{item.title}}</view>
+            <view class="wh-row-sub">{{item.kitNo}}</view>
+          </view>
+          <view class="wh-row-side">
+            <hy-status-chip text="{{item.statusLabel}}" theme="{{item.statusTheme}}" />
+          </view>
+        </view>
+      </view>
+    </block>
+
+    <view class="wh-card">
+      <view class="wh-card-head"><text class="wh-card-title">最近的库房单</text></view>
+      <view wx:if="{{docsFailed}}" class="wh-empty">加载失败，下拉重试</view>
+      <view wx:elif="{{view.docs.length === 0}}" class="wh-empty">还没有库房单</view>
+      <view wx:for="{{view.docs}}" wx:key="id" class="wh-row">
+        <view class="wh-row-main">
+          <view class="wh-row-title {{item.reversed ? 'project-reversed' : ''}}">{{item.typeLabel}} · {{item.docNo}}</view>
+          <view class="wh-row-sub">{{item.summary}}</view>
+        </view>
+        <text class="wh-row-side">{{item.timeText}}</text>
+      </view>
+    </view>
+
+    <block wx:if="{{view.actions.canShip || view.actions.canReturn || view.actions.canTransfer || view.actions.canCreateKit}}">
+      <view class="wh-bar-space" />
+      <view class="wh-bar">
+        <t-button wx:if="{{view.actions.canCreateKit}}" class="btn-fill" variant="outline" bindtap="goCreateKit">新建清单</t-button>
+        <t-button wx:if="{{view.actions.canTransfer}}" class="btn-fill" variant="outline" data-type="transfer" bindtap="goShip">转场</t-button>
+        <t-button wx:if="{{view.actions.canShip}}" class="btn-fill" variant="outline" data-type="out" bindtap="goShip">发货</t-button>
+        <t-button wx:if="{{view.actions.canReturn}}" class="btn-fill" theme="primary" data-type="back" bindtap="goShip">项目返库</t-button>
+      </view>
+    </block>
+  </block>
+</view>

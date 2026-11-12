@@ -73,7 +73,9 @@
         "task-new/index",
         "kit-list/index",
         "kit/index",
-        "ship/index"
+        "ship/index",
+        "project/index",
+        "material/index"
       ]
     }
   ],

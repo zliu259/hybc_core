@@ -229,6 +229,8 @@ const buildKitHeader = (kit, toUserName) => ({
 module.exports = {
   KIT_STATUS_TABS,
   SOURCE_OPTIONS,
+  canEditProject,
+  statusLabelOf,
   kitActions,
   kitLineProblems,
   rowProblems,
