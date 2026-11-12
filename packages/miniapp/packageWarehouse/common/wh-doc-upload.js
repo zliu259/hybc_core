@@ -24,6 +24,23 @@ const splitParts = (size, partSize) => {
 
 const wait = (ms) => (ms > 0 ? new Promise((resolve) => setTimeout(resolve, ms)) : Promise.resolve());
 
+/** 拿一段开头的这么多字节来比 */
+const SAMPLE_BYTES = 4096;
+const MIN_SAMPLE_BYTES = 16;
+
+const sampleOf = (chunk) =>
+  new Uint8Array(chunk.slice(0, Math.min(SAMPLE_BYTES, chunk.byteLength)));
+
+/** 两段的开头是不是一模一样（太短的不比）。 */
+const sameStart = (a, b) => {
+  const length = Math.min(a.length, b.length);
+  if (length < MIN_SAMPLE_BYTES) return false;
+  for (let index = 0; index < length; index += 1) {
+    if (a[index] !== b[index]) return false;
+  }
+  return true;
+};
+
 /**
  * 从文件里读一段，不把整个文件读进内存。
  * 老一点的客户端不认 position、length，会把整个文件给回来：那就从里面切出要的那一段。
@@ -58,8 +75,9 @@ const readChunk = (filePath, position, length) =>
  *   abort: (token: string) => Promise<unknown>,
  *   readChunk?: (path: string, position: number, length: number) => Promise<ArrayBuffer>,
  *   retries?: number,
- *   retryDelayMs?: number
- * }} deps
+ *   retryDelayMs?: number,
+ *   cancelled?: () => boolean
+ * }} deps cancelled 返回 true（人离开了页面）时不再往下传，放弃这次上传，抛出带 __cancelled 的错误
  * @param {(sentBytes: number) => void} onProgress 已经传完的字节数
  * @returns {Promise<{ upload_token: string, parts: { part_number: number, etag: string }[] }>}
  */
@@ -70,13 +88,16 @@ const uploadInParts = async (file, deps, onProgress) => {
   const retries = Math.max(1, deps.retries || DEFAULT_RETRIES);
   const delay = deps.retryDelayMs === undefined ? DEFAULT_RETRY_DELAY_MS : deps.retryDelayMs;
 
-  const giveUp = async (message) => {
+  const cancelled = () => Boolean(deps.cancelled && deps.cancelled());
+
+  const giveUp = async (message, extra = {}) => {
     // 放弃失败也不要紧：没完成的分片上传存储那边会自己清掉
     await Promise.resolve()
       .then(() => deps.abort(token))
       .catch(() => undefined);
-    throw new Error(message);
+    throw Object.assign(new Error(message), extra);
   };
+  const giveUpCancelled = () => giveUp("已取消", { __cancelled: true });
 
   const sendPart = async (piece, chunk) => {
     for (let attempt = 1; attempt <= retries; attempt += 1) {
@@ -84,6 +105,7 @@ const uploadInParts = async (file, deps, onProgress) => {
         return await deps.putPart(token, piece.partNumber, chunk);
       } catch (error) {
         console.warn("[wh-doc-upload] 这一片没传上", piece.partNumber, attempt, error && error.message);
+        if (cancelled()) return null;
         if (attempt < retries) await wait(delay);
       }
     }
@@ -91,14 +113,23 @@ const uploadInParts = async (file, deps, onProgress) => {
   };
 
   let parts = [];
+  let firstStart = null;
   for (const piece of splitParts(file.size, started.part_size)) {
+    if (cancelled()) return giveUpCancelled();
     // 每片只读一次，重传用的是同一份
     const chunk = await read(file.path, piece.start, piece.end - piece.start).catch((error) => {
       console.warn("[wh-doc-upload] 文件读不出来", error && (error.errMsg || error.message));
       return null;
     });
     if (!chunk) return giveUp("文件读不出来，请重新选一次");
+    // 有的客户端认长度不认位置，每次读到的都是文件开头：大小对得上，服务端查不出来，传上去的文件是坏的。
+    // 第二片的开头和第一片一模一样就按这种情况处理，不往下传。
+    if (piece.partNumber === 1) firstStart = sampleOf(chunk);
+    else if (piece.partNumber === 2 && sameStart(firstStart, sampleOf(chunk))) {
+      return giveUp("这台手机读不了这么大的文件，请在电脑上用网页版上传");
+    }
     const uploaded = await sendPart(piece, chunk);
+    if (cancelled()) return giveUpCancelled();
     if (!uploaded) return giveUp(`第 ${piece.partNumber} 片上传失败`);
     parts = [...parts, uploaded];
     onProgress(piece.end);

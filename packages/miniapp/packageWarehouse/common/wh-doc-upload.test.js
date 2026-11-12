@@ -27,6 +27,13 @@ const run = async () => {
   assert.strictEqual(splitParts(16 * MB, 8 * MB).length, 2);
   assert.deepStrictEqual(splitParts(0, 8 * MB), []);
 
+  // 假的文件内容：每一段开头写着它的位置（真文件不同位置的内容不一样）
+  const chunkAt = (position) => {
+    const data = new ArrayBuffer(64);
+    new DataView(data).setFloat64(0, position + 1);
+    return data;
+  };
+
   // 分片上传：一次只读一片
   const makeDeps = (putPart) => {
     const log = { reads: [], puts: [], inits: [], aborts: [] };
@@ -39,7 +46,7 @@ const run = async () => {
         },
         readChunk: async (path, position, length) => {
           log.reads.push([path, position, length]);
-          return new ArrayBuffer(8);
+          return chunkAt(position);
         },
         putPart: async (token, partNumber, chunk) => {
           log.puts.push(partNumber);
@@ -102,6 +109,36 @@ const run = async () => {
   assert.deepStrictEqual(ctx.log.aborts, ["tok"]);
   assert.strictEqual(ctx.log.reads.length, 2);
   assert.deepStrictEqual(progress, [8 * MB]);
+
+  // 中途离开页面：后面的片不读不传，放弃这次上传
+  ctx = makeDeps();
+  let left = false;
+  ctx.deps.cancelled = () => left;
+  progress = [];
+  await assert.rejects(
+    uploadInParts(file, ctx.deps, (sent) => {
+      progress.push(sent);
+      left = true;
+    }),
+    (error) => error.__cancelled === true
+  );
+  assert.deepStrictEqual(ctx.log.puts, [1]);
+  assert.strictEqual(ctx.log.reads.length, 1);
+  assert.deepStrictEqual(ctx.log.aborts, ["tok"]);
+
+  // 手机没按位置读（每次读到的都是文件开头）：第二片一读出来就发现，不往下传，说清楚换电脑传
+  ctx = makeDeps();
+  ctx.deps.readChunk = async (path, position, length) => {
+    ctx.log.reads.push([path, position, length]);
+    return chunkAt(0);
+  };
+  await assert.rejects(
+    uploadInParts(file, ctx.deps, () => {}),
+    /这台手机读不了这么大的文件，请在电脑上用网页版上传/
+  );
+  assert.deepStrictEqual(ctx.log.puts, [1]);
+  assert.strictEqual(ctx.log.reads.length, 2);
+  assert.deepStrictEqual(ctx.log.aborts, ["tok"]);
 
   // 文件读不出来：不重试，直接报
   ctx = makeDeps();

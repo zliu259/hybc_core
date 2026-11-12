@@ -154,6 +154,51 @@ runTests("wh-doc-view-page", [
     }
   ],
   [
+    "这里打不开之后再点：重新下载，不拿上次那个文件接着试",
+    async () => {
+      const h = setup();
+      const page = await h.open({ id: "5" });
+      h.state.openDocumentFail = { errMsg: "openDocument:fail" };
+      await page.onOpen();
+      h.state.openDocumentFail = null;
+      await page.onOpen();
+      assert.strictEqual(h.state.downloads.length, 2);
+      assert.deepStrictEqual(h.state.opened, ["/tmp/download-2"]);
+    }
+  ],
+  [
+    "下载到一半离开页面：下载停掉，不会过一会儿在别的页面上弹出文件",
+    async () => {
+      const h = setup();
+      const page = await h.open({ id: "5" });
+      h.state.downloadDelayMs = 40;
+      const opening = page.onOpen();
+      await h.flush(10);
+      assert.strictEqual(h.state.downloads.length, 1);
+      page.onUnload();
+      await opening;
+      await h.flush(60);
+      assert.strictEqual(h.state.downloadAborts, 1);
+      assert.deepStrictEqual(h.state.opened, []);
+      assert.deepStrictEqual(h.state.modals, []);
+      assert.deepStrictEqual(h.state.toasts, []);
+    }
+  ],
+  [
+    "还在取地址的时候离开页面：不下载、不预览",
+    async () => {
+      const h = setup(detail({ file_name: "铭牌.jpg", content_type: "image/jpeg" }));
+      const page = await h.open({ id: "5" });
+      h.respond("GET", "/doc-library/file/5/url", () => {
+        page.onUnload();
+        return { success: true, data: { url: URL } };
+      });
+      await page.onOpen();
+      assert.deepStrictEqual(h.state.previews, []);
+      assert.deepStrictEqual(h.state.downloads, []);
+    }
+  ],
+  [
     "取文件地址失败：提示原因，不下载",
     async () => {
       const h = setup();

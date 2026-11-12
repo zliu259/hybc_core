@@ -250,6 +250,59 @@ runTests("wh-doc-upload-page", [
     }
   ],
   [
+    "传完之后、自己返回之前再点上传：不会再传一遍",
+    async () => {
+      const h = setup();
+      const page = await h.open({ deviceId: "7" });
+      await pick(h, page, PDF);
+      await page.submit();
+      assert.strictEqual(page.data.done, true);
+      await page.submit();
+      await page.chooseFile();
+      await h.flush(900);
+      assert.strictEqual(h.callsTo("POST", "/upload/init").length, 1);
+      assert.strictEqual(h.callsTo("POST", "/upload/complete").length, 1);
+      assert.strictEqual(h.state.backs, 1);
+    }
+  ],
+  [
+    "传到一半离开页面：后面的片不传，不写记录，不提示，也不会过一会儿把别的页面退掉",
+    async () => {
+      const h = setup();
+      const page = await h.open({ deviceId: "7" });
+      h.respond("PUT", "/upload/part", (call) => {
+        // 第 1 片传完的时候人已经退出去了
+        if (call.path.includes("part=1")) page.onUnload();
+        return { success: true, data: { part_number: 1, etag: "etag-1" } };
+      });
+      await pick(h, page, PDF);
+      await page.submit();
+      await h.flush(900);
+      assert.deepStrictEqual(sequence(h), ["POST init", "PUT part?token=T&part=1", "POST abort"]);
+      assert.deepStrictEqual(h.state.reads.length, 1);
+      assert.ok(!h.state.toasts.includes("已上传"));
+      assert.deepStrictEqual(h.state.toasts, []);
+      assert.strictEqual(h.state.backs, 0);
+    }
+  ],
+  [
+    "最后一步发出去之后才离开页面：记录已经写了拦不住，但不提示、不退别的页面",
+    async () => {
+      const h = setup();
+      const page = await h.open({ deviceId: "7" });
+      h.respond("POST", "/doc-library/upload/complete", () => {
+        page.onUnload();
+        return { success: true, data: { id: 31, replayed: false } };
+      });
+      await pick(h, page, PDF);
+      await page.submit();
+      await h.flush(900);
+      assert.strictEqual(h.callsTo("POST", "/upload/complete").length, 1);
+      assert.deepStrictEqual(h.state.toasts, []);
+      assert.strictEqual(h.state.backs, 0);
+    }
+  ],
+  [
     "完成请求失败（超时）：提示、能再点，再点只重发完成请求，不重传",
     async () => {
       const h = setup();

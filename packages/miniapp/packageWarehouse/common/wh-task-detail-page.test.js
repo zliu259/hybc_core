@@ -97,6 +97,22 @@ runTests("wh-task-detail-page", [
     }
   ],
   [
+    "资料请求慢：任务先出来、加载状态先结束，资料回来了再补上",
+    async () => {
+      const h = setup();
+      h.respond("GET", "/doc-library/for-device/7", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return { success: true, data: [{ id: 1, title: "说明书", doc_category: "manual", file_size: 10, scope: "device", validity: "none" }] };
+      });
+      const page = await h.open({ id: "9" });
+      assert.strictEqual(page.data.view.header.title, "返库检查");
+      assert.strictEqual(page.data.loading, false);
+      assert.strictEqual(page.data.docs, null);
+      await h.flush(120);
+      assert.strictEqual(page.data.docs.total, 1);
+    }
+  ],
+  [
     "这台设备没有资料：不显示这一段",
     async () => {
       const h = setup();

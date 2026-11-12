@@ -231,6 +231,22 @@ runTests("wh-device-page", [
     }
   ],
   [
+    "资料请求慢：设备先出来，份数回来了再补上",
+    async () => {
+      const h = setup();
+      h.respond("GET", "/doc-library/for-device/7", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return { success: true, data: [{ id: 1 }, { id: 2 }] };
+      });
+      const page = await h.open({ id: "7" });
+      assert.strictEqual(page.data.view.header.code, "DG-01");
+      assert.strictEqual(page.data.loading, false);
+      assert.strictEqual(page.data.docCountText, "");
+      await h.flush(120);
+      assert.strictEqual(page.data.docCountText, "2 份");
+    }
+  ],
+  [
     "还没有资料时写「还没有」",
     async () => {
       const h = setup();

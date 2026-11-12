@@ -65,6 +65,10 @@ const createPageHarness = ({ page, profile } = {}) => {
     downloads: [],
     /** 设了它，下一次 downloadFile 失败一次（{ errMsg } 是网络失败，数字是回了这个状态码） */
     downloadFail: null,
+    /** downloadFile 多少毫秒后回来（放慢了才插得进「下载到一半」的动作） */
+    downloadDelayMs: 1,
+    /** 被中止的下载数 */
+    downloadAborts: 0,
     /** openDocument 打开过的本地路径 */
     opened: [],
     /** 设了它，openDocument 失败 */
@@ -226,8 +230,11 @@ const createPageHarness = ({ page, profile } = {}) => {
       state.downloads.push(options.url);
       const failure = state.downloadFail;
       state.downloadFail = null;
+      let aborted = false;
       setTimeout(() => {
-        if (failure && typeof failure === "object") {
+        if (aborted) {
+          if (options.fail) options.fail({ errMsg: "downloadFile:fail abort" });
+        } else if (failure && typeof failure === "object") {
           if (options.fail) options.fail(failure);
         } else if (options.success) {
           options.success({
@@ -236,8 +243,14 @@ const createPageHarness = ({ page, profile } = {}) => {
           });
         }
         if (options.complete) options.complete();
-      }, 1);
-      return { onProgressUpdate: () => {}, abort: () => {} };
+      }, state.downloadDelayMs);
+      return {
+        onProgressUpdate: () => {},
+        abort: () => {
+          aborted = true;
+          state.downloadAborts += 1;
+        }
+      };
     },
     openDocument: (options) => {
       const failure = state.openDocumentFail;
@@ -270,7 +283,10 @@ const createPageHarness = ({ page, profile } = {}) => {
           return;
         }
         state.reads.push([filePath, position, length]);
-        if (success) success({ data: new ArrayBuffer(length) });
+        // 每一段开头写上它的位置：真文件的不同位置内容不一样
+        const data = new ArrayBuffer(length);
+        if (length >= 8) new DataView(data).setFloat64(0, position + 1);
+        if (success) success({ data });
       }
     }),
     enableAlertBeforeUnload: () => {

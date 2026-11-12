@@ -57,6 +57,8 @@ Page({
   data: {
     denied: false,
     busy: false,
+    // 传完了，正等着返回上一页：这时候不能再点上传
+    done: false,
     progress: 0,
     form: newUploadForm(null),
     fileText: "",
@@ -77,6 +79,8 @@ Page({
     this.uploaded = null;
     this.titleTouched = false;
     this.categoryTouched = false;
+    // 人已经离开这个页面：正在传的停下来，不提示、不自己返回
+    this.unloaded = false;
     try {
       const viewer = await loadViewer();
       if (!(viewer.caps && viewer.caps.is_doc_admin)) {
@@ -97,6 +101,7 @@ Page({
   },
 
   onUnload() {
+    this.unloaded = true;
     if (this.backTimer) clearTimeout(this.backTimer);
   },
 
@@ -223,7 +228,7 @@ Page({
   },
 
   async chooseFile() {
-    if (this.data.denied || this.data.busy) return;
+    if (this.data.denied || this.data.busy || this.data.done) return;
     let picked;
     try {
       picked = await wxChooseMessageFile({ count: 1, type: "file" });
@@ -239,7 +244,7 @@ Page({
   },
 
   async choosePhoto() {
-    if (this.data.denied || this.data.busy) return;
+    if (this.data.denied || this.data.busy || this.data.done) return;
     let picked;
     try {
       picked = await wxChooseMediaImage({ count: 1 });
@@ -267,14 +272,15 @@ Page({
             timeout: PART_TIMEOUT_MS
           }).then((result) => result.data),
         abort: (token) => docSend("POST", "/upload/abort", { upload_token: token }),
-        retryDelayMs: this.retryDelayMs
+        retryDelayMs: this.retryDelayMs,
+        cancelled: () => this.unloaded
       },
       (sent) => this.setData({ progress: Math.floor((sent / file.size) * 100) })
     );
   },
 
   async submit() {
-    if (this.data.denied || this.data.busy) return;
+    if (this.data.denied || this.data.busy || this.data.done) return;
     const form = this.data.form;
     const problem = uploadFormProblem(form);
     if (problem) {
@@ -292,6 +298,13 @@ Page({
         const sent = await this.sendParts(form.file);
         this.uploaded = { ...sent, filePath: form.file.path };
       }
+      if (this.unloaded) {
+        // 分片刚传完人就走了：说过「离开要重新传」，这次上传作废，不写记录
+        const stale = this.uploaded.upload_token;
+        this.uploaded = null;
+        await docSend("POST", "/upload/abort", { upload_token: stale }).catch(() => undefined);
+        return;
+      }
       try {
         await docSend("POST", "/upload/complete", toCompletePayload(this.data.form, this.uploaded));
       } catch (error) {
@@ -299,15 +312,18 @@ Page({
         throw error;
       }
       this.uploaded = null;
-      this.setData({ progress: 100 });
+      // 最后一步发出去之后才离开的：记录已经写了，但不提示、不动别的页面
+      if (this.unloaded) return;
+      this.setData({ progress: 100, done: true });
       toast("已上传");
       this.backTimer = setTimeout(() => wx.navigateBack(), BACK_DELAY_MS);
     } catch (error) {
+      if (this.unloaded || (error && error.__cancelled)) return;
       if (!this.uploaded) this.setData({ progress: 0 });
       toast(errorText(error, "上传失败，请稍后重试"));
     } finally {
       if (typeof wx.disableAlertBeforeUnload === "function") wx.disableAlertBeforeUnload();
-      this.setData({ busy: false });
+      if (!this.unloaded) this.setData({ busy: false });
     }
   }
 });

@@ -110,7 +110,8 @@ Page({
             }
           : NO_ASSIGNEE_OPTIONS
       });
-      await this.loadDocs(task);
+      // 适用资料是顺手带出来的：不等它，免得拖住加载状态和排着队的刷新
+      this.loadDocs(task);
     } catch (error) {
       if (isNotFound(error)) this.setData({ notFound: true, view: null });
       else if (!this.data.view) this.setData({ loadFailed: true });
@@ -132,10 +133,12 @@ Page({
     }
     try {
       const result = await docGet(`/for-device/${task.device_id}`, { task_kind: task.kind });
+      // 这期间任务又刷新过：用新那一趟的结果
+      if (this.task !== task) return;
       this.setData({ docs: previewDocs(result.data, DOC_PREVIEW) });
     } catch (error) {
       console.warn("[wh-task] 适用资料没取到", errorText(error, ""));
-      this.setData({ docs: null });
+      if (this.task === task) this.setData({ docs: null });
     }
   },
 

@@ -47,12 +47,13 @@ Page({
   async load() {
     if (this.deviceId === null || this.data.loading) return;
     this.setData({ loading: true });
+    // 资料份数只是入口旁边的一个数：不等它，慢了、取不到都不拖设备页
+    this.loadDocCount();
     try {
       const [result, viewer, nameOf] = await Promise.all([
         whGet(`/device/${this.deviceId}`),
         loadViewer(),
-        loadNameOf(),
-        this.loadDocCount()
+        loadNameOf()
       ]);
       this.detail = result.data;
       const view = buildDeviceView(result.data, viewer.caps, nameOf);

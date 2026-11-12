@@ -33,11 +33,21 @@ Page({
     this.docId = queryId(query && query.id);
     // 这一页里下过的文档留着，再点「打开」不用重新下
     this.localPath = "";
+    // 人已经离开这个页面：正在下的停掉，下完也不再弹出来
+    this.unloaded = false;
+    this.downloadTask = null;
     if (this.docId === null) {
       this.setData({ notFound: true });
       return undefined;
     }
     return this.load();
+  },
+
+  onUnload() {
+    this.unloaded = true;
+    const task = this.downloadTask;
+    this.downloadTask = null;
+    if (task && typeof task.abort === "function") task.abort();
   },
 
   async onPullDownRefresh() {
@@ -84,12 +94,17 @@ Page({
           reject(new Error("下载失败，请检查网络后再试"));
         }
       });
+      this.downloadTask = task || null;
       if (task && typeof task.onProgressUpdate === "function") {
         task.onProgressUpdate((res) => {
           const progress = Number(res && res.progress) || 0;
-          if (progress - this.data.progress >= PROGRESS_STEP) this.setData({ progress });
+          if (!this.unloaded && progress - this.data.progress >= PROGRESS_STEP) {
+            this.setData({ progress });
+          }
         });
       }
+    }).finally(() => {
+      this.downloadTask = null;
     });
   },
 
@@ -111,8 +126,16 @@ Page({
   },
 
   async openDocumentFile() {
-    if (!this.localPath) this.localPath = await this.download(await this.fetchUrl());
+    if (!this.localPath) {
+      const url = await this.fetchUrl();
+      if (this.unloaded) return;
+      this.localPath = await this.download(url);
+    }
+    if (this.unloaded) return;
     if (await this.showDocument(this.localPath)) return;
+    // 打不开也可能是下到的文件有问题：下次再点重新下，不拿这一份接着试
+    this.localPath = "";
+    if (this.unloaded) return;
     await alertModal({
       title: "这里打不开这个文件",
       content: "请用手机，或者在电脑上用网页版打开。"
@@ -142,12 +165,13 @@ Page({
         return;
       }
       const url = await this.fetchUrl();
+      if (this.unloaded) return;
       if (view.kind === "image") wx.previewImage({ urls: [url], current: url });
       else this.setData({ videoUrl: url });
     } catch (error) {
-      toast(errorText(error, "打开失败，请稍后重试"));
+      if (!this.unloaded) toast(errorText(error, "打开失败，请稍后重试"));
     } finally {
-      this.setData({ opening: false });
+      if (!this.unloaded) this.setData({ opening: false });
     }
   },
 
