@@ -1,197 +1,132 @@
 const { request } = require("../../utils/request");
+const { scanDevice } = require("../../utils/wh-scan");
+const { buildHomeView } = require("../../utils/wh-home-view");
 
-const defaultKpis = {
-  myTaskCount: 0,
-  inProgressCount: 0,
-  rejectedCount: 0,
-  approvedOrderCount: 0,
-  alertCount: 0,
-  stocktakeCounting: 0
-};
+const SEARCH_DELAY_MS = 300;
+const BEIJING_OFFSET_MS = 8 * 3600 * 1000;
 
-const buildActions = (kpis) => [
-  {
-    title: "我的任务",
-    desc: "开始执行、上传照片、提交结果",
-    path: "/pages/warehouse-task/index",
-    tone: "green",
-    showBadge: true,
-    count: kpis.myTaskCount
-  },
-  {
-    title: "扫码查验",
-    desc: "查看设备状态与库房事件",
-    path: "/pages/asset/index",
-    tone: "blue",
-    showBadge: false,
-    count: 0
-  },
-  {
-    title: "待执行单据",
-    desc: "处理已审批的出入库单据",
-    path: "/pages/warehouse-dispatch/index",
-    tone: "orange",
-    showBadge: true,
-    count: kpis.approvedOrderCount
-  },
-  {
-    title: "盘库执行",
-    desc: "录入盘点数量与异常状态",
-    path: "/pages/warehouse-stocktake/index",
-    tone: "gray",
-    showBadge: true,
-    count: kpis.stocktakeCounting
-  }
-];
+const beijingToday = () => new Date(Date.now() + BEIJING_OFFSET_MS).toISOString().slice(0, 10);
 
-const buildSecondaryActions = (kpis) => [
-  {
-    title: "库存与预警",
-    desc: "查看库存余量和预警",
-    path: "/pages/warehouse-inventory/index",
-    showCount: true,
-    count: kpis.alertCount
-  },
-  {
-    title: "制单申请",
-    desc: "补充发起出入库申请",
-    path: "/pages/warehouse-stock-order/index",
-    showCount: false,
-    count: 0
-  }
-];
+const toast = (title) => wx.showToast({ title, icon: "none" });
+
+const errorText = (error, fallback) => (error && error.message) || fallback;
 
 Page({
   data: {
-    busy: false,
-    kpis: defaultKpis,
-    urgentTasks: [],
-    actions: buildActions(defaultKpis),
-    secondaryActions: buildSecondaryActions(defaultKpis)
+    loading: false,
+    loadFailed: false,
+    scanning: false,
+    view: buildHomeView(null, beijingToday()),
+    keyword: "",
+    searching: false,
+    searched: false,
+    searchResults: []
   },
 
   onShow() {
-    this.loadData();
+    return this.load();
   },
 
-  async loadData() {
-    if (this.data.busy) return;
-    this.setData({ busy: true });
+  async onPullDownRefresh() {
+    await this.load();
+    wx.stopPullDownRefresh();
+  },
+
+  onUnload() {
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+  },
+
+  async load() {
+    if (this.data.loading) return;
+    this.setData({ loading: true });
     try {
-      const [taskRes, orderRes, alertRes, stocktakeRes] = await Promise.all([
-        request({ method: "GET", path: "/api/v1/warehouse/work-order/mobile/my-tasks" }),
-        request({ method: "GET", path: "/api/v1/warehouse/stock-order" }),
-        request({ method: "GET", path: "/api/v1/warehouse/inventory/alert" }),
-        request({ method: "GET", path: "/api/v1/warehouse/stocktake", data: { status: "counting" } })
-      ]);
-
-      const tasks = Array.isArray(taskRes.data) ? taskRes.data : [];
-      const orders = Array.isArray(orderRes.data) ? orderRes.data : [];
-      const alerts = Array.isArray(alertRes.data) ? alertRes.data : [];
-      const stocktakes = Array.isArray(stocktakeRes.data) ? stocktakeRes.data : [];
-
-      const approvedOrderCount = orders.filter((item) => item.status === "approved").length;
-      const urgentTasks = tasks
-        .filter((item) => ["urgent", "high"].includes(item.priority) || item.status === "rejected")
-        .slice(0, 3)
-        .map((item) => ({
-          ...item,
-          typeText: this.toTypeLabel(item.work_order_type),
-          statusText: this.toStatusLabel(item.status),
-          priorityText: this.toPriorityLabel(item.priority),
-          scheduledDay: this.toShortDate(item.scheduled_date)
-        }));
-
-      const kpis = {
-        myTaskCount: tasks.length,
-        inProgressCount: tasks.filter((item) => item.status === "in_progress").length,
-        rejectedCount: tasks.filter((item) => item.status === "rejected").length,
-        approvedOrderCount,
-        alertCount: alerts.length,
-        stocktakeCounting: stocktakes.length
-      };
-
-      this.setData({
-        kpis,
-        urgentTasks,
-        actions: buildActions(kpis),
-        secondaryActions: buildSecondaryActions(kpis)
-      });
-    } catch {
-      this.setData({
-        kpis: defaultKpis,
-        urgentTasks: [],
-        actions: buildActions(defaultKpis),
-        secondaryActions: buildSecondaryActions(defaultKpis)
-      });
+      const result = await request({ method: "GET", path: "/api/v1/warehouse/home" });
+      this.setData({ view: buildHomeView(result.data, beijingToday()), loadFailed: false });
+    } catch (error) {
+      // 原有内容留着，只标出这次没取到
+      this.setData({ loadFailed: true });
+      toast(errorText(error, "加载失败，请下拉重试"));
     } finally {
-      this.setData({ busy: false });
+      this.setData({ loading: false });
     }
   },
 
-  toTypeLabel(value) {
-    const map = {
-      inspection: "检查",
-      maintenance: "维护",
-      servicing: "保养",
-      modification: "改装",
-      scrapping: "报废"
-    };
-    return map[value] || "任务";
+  async onScan() {
+    if (this.data.scanning) return;
+    this.setData({ scanning: true });
+    try {
+      const device = await scanDevice();
+      if (device) this.openDevice(device.id);
+    } catch (error) {
+      toast(errorText(error, "扫码失败，请重试"));
+    } finally {
+      this.setData({ scanning: false });
+    }
   },
 
-  toStatusLabel(value) {
-    const map = {
-      assigned: "待开始",
-      in_progress: "执行中",
-      rejected: "退回补充",
-      submitted: "已提交"
-    };
-    return map[value] || "待处理";
+  onSearchInput(event) {
+    const keyword = String((event.detail && event.detail.value) || "");
+    this.setData({ keyword });
+    if (this._searchTimer) clearTimeout(this._searchTimer);
+    if (!keyword.trim()) {
+      this.setData({ searchResults: [], searched: false });
+      return;
+    }
+    this._searchTimer = setTimeout(() => this.search(keyword.trim()), SEARCH_DELAY_MS);
   },
 
-  toPriorityLabel(value) {
-    const map = {
-      urgent: "紧急",
-      high: "高",
-      normal: "普通",
-      low: "低"
-    };
-    return map[value] || "普通";
+  async search(keyword) {
+    this.setData({ searching: true });
+    try {
+      const result = await request({
+        method: "GET",
+        path: `/api/v1/warehouse/device?keyword=${encodeURIComponent(keyword)}&pageSize=10`
+      });
+      // 等结果的时候又改了输入，这次的结果就不要了
+      if (this.data.keyword.trim() !== keyword) return;
+      const rows = Array.isArray(result.data) ? result.data : [];
+      this.setData({
+        searched: true,
+        searchResults: rows.map((device) => ({
+          id: device.id,
+          code: device.device_code,
+          name: device.name,
+          stateLabel: device.state_label
+        }))
+      });
+    } catch (error) {
+      toast(errorText(error, "搜索失败，请重试"));
+    } finally {
+      this.setData({ searching: false });
+    }
   },
 
-  toShortDate(value) {
-    if (!value) return "未排期";
-    return String(value).slice(0, 10);
+  onPickDevice(event) {
+    const id = Number(event.currentTarget.dataset.id);
+    if (!Number.isInteger(id) || id <= 0) return;
+    this.setData({ keyword: "", searchResults: [], searched: false });
+    this.openDevice(id);
   },
 
-  goTo(e) {
-    const path = e.currentTarget.dataset.path;
-    wx.navigateTo({ url: path });
+  openDevice(id) {
+    wx.navigateTo({ url: `/packageWarehouse/device/index?id=${id}` });
   },
 
-  openGlobalHelper() {
-    wx.showActionSheet({
-      itemList: ["我的库房任务", "扫码查验", "待执行单据", "库存与预警", "盘库执行"],
-      success: async (res) => {
-        if (res.tapIndex === 0) {
-          wx.navigateTo({ url: "/pages/warehouse-task/index" });
-          return;
-        }
-        if (res.tapIndex === 1) {
-          wx.navigateTo({ url: "/pages/asset/index" });
-          return;
-        }
-        if (res.tapIndex === 2) {
-          wx.navigateTo({ url: "/pages/warehouse-dispatch/index" });
-          return;
-        }
-        if (res.tapIndex === 3) {
-          wx.navigateTo({ url: "/pages/warehouse-inventory/index" });
-          return;
-        }
-        wx.navigateTo({ url: "/pages/warehouse-stocktake/index" });
-      }
-    });
+  openTask(event) {
+    const id = Number(event.currentTarget.dataset.id);
+    if (!Number.isInteger(id) || id <= 0) return;
+    wx.navigateTo({ url: `/packageWarehouse/task-detail/index?id=${id}` });
+  },
+
+  openProject(event) {
+    const id = Number(event.currentTarget.dataset.id);
+    if (!Number.isInteger(id) || id <= 0) return;
+    wx.navigateTo({ url: `/packageWarehouse/project/index?projectId=${id}` });
+  },
+
+  goTo(event) {
+    const url = event.currentTarget.dataset.url;
+    if (!url) return;
+    wx.navigateTo({ url });
   }
 });

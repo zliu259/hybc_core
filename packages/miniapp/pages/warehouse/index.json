@@ -1,3 +1,4 @@
 {
-  "navigationBarTitleText": "库房管理"
+  "navigationBarTitleText": "库房",
+  "enablePullDownRefresh": true
 }
