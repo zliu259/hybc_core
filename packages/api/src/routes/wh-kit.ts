@@ -18,6 +18,7 @@ import {
   updateProjectKit
 } from "../services/warehouse/kit";
 import { getProjectKit, listProjectKits } from "../services/warehouse/kit-query";
+import { publishWarehouseNotice } from "../services/warehouse/notice";
 import { getKitFulfilment } from "../services/warehouse/project-ledger";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
@@ -78,13 +79,12 @@ whKitRoutes.post(
   guarded(async (c) => {
     const auth = c.get("auth");
     const caps = await getWarehouseCapabilities(c.env, auth);
-    const data = await submitProjectKit(
-      c.env,
-      pathId(c, "id", "清单"),
-      await readJsonBody(c),
-      auth,
-      caps
-    );
+    const id = pathId(c, "id", "清单");
+    const data = await submitProjectKit(c.env, id, await readJsonBody(c), auth, caps);
+    // 库管提交是直接确认，没有人要等着确认
+    if (data.status === "submitted") {
+      await publishWarehouseNotice(c.env, { kind: "kit_submitted", kit_id: id }, auth.sub);
+    }
     return c.json({ success: true, data });
   })
 );
@@ -94,12 +94,10 @@ whKitRoutes.post(
   requireHuman,
   requireKeeper,
   guarded(async (c) => {
-    await confirmProjectKit(
-      c.env,
-      pathId(c, "id", "清单"),
-      await readJsonBody(c),
-      c.get("auth").sub
-    );
+    const id = pathId(c, "id", "清单");
+    const userid = c.get("auth").sub;
+    await confirmProjectKit(c.env, id, await readJsonBody(c), userid);
+    await publishWarehouseNotice(c.env, { kind: "kit_confirmed", kit_id: id }, userid);
     return c.json({ success: true });
   })
 );

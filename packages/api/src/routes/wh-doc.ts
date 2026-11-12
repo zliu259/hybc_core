@@ -7,6 +7,7 @@ import { getWhDoc, listWhDocs } from "../services/warehouse/doc-query";
 import { reverseWhDoc } from "../services/warehouse/doc-reverse";
 import { WarehouseError } from "../services/warehouse/errors";
 import { getProjectHoldings } from "../services/warehouse/holdings";
+import { publishWarehouseNotice } from "../services/warehouse/notice";
 import { getProjectLedger } from "../services/warehouse/project-ledger";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
@@ -17,7 +18,19 @@ whDocRoutes.post(
   requireHuman,
   requireKeeper,
   guarded(async (c) => {
-    const data = await createWhDoc(c.env, await readJsonBody(c), c.get("auth").sub);
+    const userid = c.get("auth").sub;
+    const data = await createWhDoc(c.env, await readJsonBody(c), userid);
+    // 重放的请求第一次已经通知过了
+    if (!data.replayed) {
+      await publishWarehouseNotice(c.env, { kind: "doc_posted", doc_id: data.id }, userid);
+      if (data.created_task_ids.length > 0) {
+        await publishWarehouseNotice(
+          c.env,
+          { kind: "tasks_assigned", task_ids: data.created_task_ids },
+          userid
+        );
+      }
+    }
     return c.json({ success: true, data }, data.replayed ? 200 : 201);
   })
 );
@@ -59,12 +72,11 @@ whDocRoutes.post(
   requireHuman,
   requireKeeper,
   guarded(async (c) => {
-    const data = await reverseWhDoc(
-      c.env,
-      pathId(c, "id", "单据"),
-      await readJsonBody(c),
-      c.get("auth").sub
-    );
+    const userid = c.get("auth").sub;
+    const data = await reverseWhDoc(c.env, pathId(c, "id", "单据"), await readJsonBody(c), userid);
+    if (!data.replayed) {
+      await publishWarehouseNotice(c.env, { kind: "doc_posted", doc_id: data.id }, userid);
+    }
     return c.json({ success: true, data }, data.replayed ? 200 : 201);
   })
 );

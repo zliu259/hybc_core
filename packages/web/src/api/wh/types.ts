@@ -40,6 +40,8 @@ export interface WarehouseCapabilities {
 export interface WarehouseSettings {
   default_inspector_userid: string | null;
   return_inspection_photo_count: number;
+  /** 企微通知总开关，新版小程序发布后再打开 */
+  notify_enabled: boolean;
 }
 export interface WarehouseMember {
   userid: string;
