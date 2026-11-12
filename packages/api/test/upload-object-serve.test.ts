@@ -16,6 +16,20 @@ const setup = async () => {
   });
   await files.put("wh-task/x.svg", "<svg/>", { httpMetadata: { contentType: "image/svg+xml" } });
   await files.put("miniapp/old.html", "<p>x</p>", { httpMetadata: { contentType: "text/html" } });
+  for (const [key, contentType] of [
+    ["external-log/1/x.svg", "image/svg+xml"],
+    ["external-log/1/x.xhtml", "application/xhtml+xml"],
+    ["external-log/1/x.xml", "text/xml"],
+    ["external-log/1/odd", "x/unknown"],
+    ["external-log/1/blob", "application/octet-stream"],
+    ["external-log/1/photo.jpg", "image/jpeg"],
+    ["external-log/1/clip.mp4", "video/mp4"],
+    ["external-log/1/voice.mp3", "audio/mpeg"],
+    ["external-log/1/note.txt", "text/plain"],
+    ["external-log/1/old.pdf", "application/pdf"]
+  ]) {
+    await files.put(key, "0123456789", { httpMetadata: { contentType } });
+  }
   const env = { FILES: files } as unknown as Env;
   const get = (key: string, range?: string, options?: Parameters<typeof serveObject>[3]) =>
     serveObject(
@@ -116,11 +130,43 @@ describe("serveObject", () => {
     expect(pdf.headers.get("content-disposition")).toBe("attachment; filename*=UTF-8''a.pdf");
   });
 
-  it("不收紧时保持原来的回包头（老前缀的行为不变）", async () => {
+  it("老前缀：图片、视频、音频、PDF 的回包头不变", async () => {
     const { get } = await setup();
-    const res = await get("miniapp/old.html");
-    expect(res.headers.get("content-disposition")).toBeNull();
-    expect(res.headers.get("x-content-type-options")).toBeNull();
-    expect(res.headers.get("content-type")).toBe("text/html");
+    for (const key of ["photo.jpg", "clip.mp4", "voice.mp3", "old.pdf"]) {
+      const res = await get(`external-log/1/${key}`);
+      expect([key, res.headers.get("content-disposition")]).toEqual([key, null]);
+      expect([key, res.headers.get("x-content-type-options")]).toEqual([key, null]);
+    }
+  });
+
+  it("老前缀：能当网页执行的内容（HTML、SVG、XML）不在我们的域名下打开，一律当附件", async () => {
+    const { get } = await setup();
+    for (const key of [
+      "miniapp/old.html",
+      "external-log/1/x.svg",
+      "external-log/1/x.xhtml",
+      "external-log/1/x.xml"
+    ]) {
+      const res = await get(key);
+      expect([key, res.status]).toEqual([key, 200]);
+      expect([key, res.headers.get("content-disposition")]).toEqual([key, "attachment"]);
+      expect([key, res.headers.get("x-content-type-options")]).toEqual([key, "nosniff"]);
+    }
+    // 类型还是存的那个，不改
+    expect((await get("miniapp/old.html")).headers.get("content-type")).toBe("text/html");
+  });
+
+  it("老前缀：说不清是什么的类型也当附件；纯文本照常显示但不让浏览器猜", async () => {
+    const { get } = await setup();
+    const odd = await get("external-log/1/odd");
+    expect(odd.headers.get("content-disposition")).toBe("attachment");
+    expect(odd.headers.get("x-content-type-options")).toBe("nosniff");
+    // 没写类型的二进制：当附件，但不加 nosniff（有的图片是这样存的，<img> 还要靠浏览器认出来）
+    const blob = await get("external-log/1/blob");
+    expect(blob.headers.get("content-disposition")).toBe("attachment");
+    expect(blob.headers.get("x-content-type-options")).toBeNull();
+    const text = await get("external-log/1/note.txt");
+    expect(text.headers.get("content-disposition")).toBeNull();
+    expect(text.headers.get("x-content-type-options")).toBe("nosniff");
   });
 });

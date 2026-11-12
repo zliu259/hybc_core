@@ -9,11 +9,45 @@ export interface ByteRange {
   length: number;
 }
 
+/** 去掉参数（; charset=…），小写。 */
+const essenceOf = (contentType: string): string =>
+  String(contentType ?? "")
+    .split(";")[0]
+    .trim()
+    .toLowerCase();
+
 /** 可以直接在页面里显示的类型。SVG 里能带脚本，不算。 */
-export const isInlineType = (contentType: string): boolean =>
-  contentType === "application/pdf" ||
-  contentType.startsWith("video/") ||
-  (contentType.startsWith("image/") && contentType !== "image/svg+xml");
+export const isInlineType = (contentType: string): boolean => {
+  const type = essenceOf(contentType);
+  return (
+    type === "application/pdf" ||
+    type.startsWith("video/") ||
+    (type.startsWith("image/") && type !== "image/svg+xml")
+  );
+};
+
+/** 浏览器只会照字面显示、不会当网页执行的文本。 */
+const isPlainText = (type: string): boolean => type === "text/plain" || type === "application/json";
+
+/** 没写类型的二进制。有的图片是这样存的，<img> 要靠浏览器自己认出来，所以不能加 nosniff。 */
+const isUntypedBinary = (type: string): boolean =>
+  type === "application/octet-stream" || type === "binary/octet-stream";
+
+/**
+ * 老前缀（没开收紧模式）的回包头。上传时存的类型是上传的人说的，不能信：
+ * 图片、视频、音频、PDF 照旧；纯文本加 nosniff；其余的（HTML、SVG、XML、说不清的类型…）一律当附件，
+ * 不让它在我们的域名下当网页打开——否则谁能传文件谁就能在这个域名下跑脚本。
+ */
+const applyLegacyHeaders = (headers: Headers): void => {
+  const type = essenceOf(headers.get("content-type") ?? "application/octet-stream");
+  if (isInlineType(type) || type.startsWith("audio/")) return;
+  if (isPlainText(type)) {
+    headers.set("x-content-type-options", "nosniff");
+    return;
+  }
+  headers.set("content-disposition", "attachment");
+  if (!isUntypedBinary(type)) headers.set("x-content-type-options", "nosniff");
+};
 
 /**
  * 解析 Range 头。只认单段：bytes=a-b、bytes=a-、bytes=-n。
@@ -41,7 +75,10 @@ export interface ServeOptions {
   fileName?: string;
   /** 连能内嵌的类型也当附件下载（对外链接） */
   forceAttachment?: boolean;
-  /** 收紧模式：加 nosniff，不能内嵌的类型当附件。老前缀不开，保持原来的回包头。 */
+  /**
+   * 收紧模式：加 nosniff，不能内嵌的类型当附件。
+   * 老前缀不开：图片、视频、音频、PDF 的回包头保持原样，但能当网页执行的内容照样当附件。
+   */
   hardened?: boolean;
 }
 
@@ -74,6 +111,8 @@ export const serveObject = async (
     if (!inline || options.fileName) {
       headers.set("content-disposition", disposition(inline, options.fileName));
     }
+  } else {
+    applyLegacyHeaders(headers);
   }
 
   if (range === "invalid") {
