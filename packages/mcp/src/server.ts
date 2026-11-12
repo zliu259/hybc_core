@@ -6,7 +6,7 @@ import { registerAllTools } from "./tools/index.js";
 
 export const buildServer = (client: HybcApiClient): McpServer => {
   const server = new McpServer(
-    { name: "hybc", version: "0.1.0" },
+    { name: "hybc", version: "0.2.0" },
     { instructions: INSTRUCTIONS }
   );
   registerAllTools(server, client);

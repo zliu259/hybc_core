@@ -14,7 +14,7 @@
  *
  * 白名单 = @hybc/mcp 客户端「只读工具」实际调用的全部端点，别无其它（P1c 核验：
  * packages/mcp/src/tools/{projects,payments,contracts,approvals,warehouse}.ts 均 client.get(...)；
- * cli.ts `serve` 仅注册这 13 个工具；`login` 走免鉴权设备流；`whoami`/`logout` 为本地操作。
+ * cli.ts `serve` 仅注册这 13 个只读工具（0.2.0 起库房的第三个是 list_devices，不再是 list_stock_orders）；`login` 走免鉴权设备流；`whoami`/`logout` 为本地操作。
  * 客户端启动/连接时不会用令牌发任何额外 GET，例如没有 /user/me、/user/routes、/agent/grants）。
  * 数字 id 由各工具 inputSchema 的 z.number().int() 保证，故 :id 用 \d+ 收紧，并避免
  * /approval/:id 误伤 /approval/pending。
@@ -54,6 +54,11 @@ const ALLOWED_AGENT_READS: readonly AgentReadRule[] = [
   { method: "GET", pattern: /^\/approval\/\d+$/, tool: "get_approval" },
   { method: "GET", pattern: /^\/warehouse\/inventory$/, tool: "warehouse_inventory" },
   { method: "GET", pattern: /^\/warehouse\/inventory\/alert$/, tool: "warehouse_low_stock" },
+  // 设备列表：routes/wh-device.ts 的 GET /device → listDevices，只有两条 SELECT，不写库（2026-11-12 核对）。
+  // 只放行列表本身；/warehouse/device/:id、by-code、盘点、库房单都不在白名单里。
+  { method: "GET", pattern: /^\/warehouse\/device$/, tool: "list_devices" },
+  // @hybc/mcp 0.1.0 的 list_stock_orders 还在调这个路径（现在由旧接口占位返回空列表）；
+  // 0.2.0 起换成 list_devices。删旧接口占位时一起去掉这一条。
   { method: "GET", pattern: /^\/warehouse\/stock-order$/, tool: "list_stock_orders" },
   // P2a：MCP 客户端轮询「待本人确认动作」的状态（pending / confirmed / rejected / expired）。
   // 这里只管形状：必须是真正的 UUID 分段结构（8-4-4-4-12），不是「36 个十六进制或连字符」——
