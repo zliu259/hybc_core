@@ -12,6 +12,7 @@
         value="{{projectId || 0}}"
         label="{{isOut ? '发往项目' : '来源项目'}}"
         enableGps="{{false}}"
+        autoSelect="{{false}}"
         bind:change="onProjectChange"
       />
       <view wx:if="{{needsToProject}}" class="ship-to">
@@ -19,6 +20,7 @@
           value="{{toProjectId || 0}}"
           label="目的项目"
           enableGps="{{false}}"
+          autoSelect="{{false}}"
           excludeArchived="{{true}}"
           bind:change="onToProjectChange"
         />

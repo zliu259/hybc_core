@@ -90,6 +90,13 @@ const rowProblems = (rows) =>
     }))
   );
 
+/**
+ * 保存前要拦的行：数量填错的。没选规格的不拦，草稿可以先存着。
+ * 不拦的话，填错的数量发到后端会被当成 0 存下，这一行就不会发货了。
+ */
+const saveProblems = (rows) =>
+  rowProblems(rows).filter((problem) => !problem.message.endsWith("还没选规格"));
+
 const detailTextOf = (line) => {
   if (line.line_kind === "device") {
     return [line.category_name, line.spec_text].filter(Boolean).join(" · ");
@@ -234,6 +241,7 @@ module.exports = {
   kitActions,
   kitLineProblems,
   rowProblems,
+  saveProblems,
   toEditableLines,
   toKitLines,
   groupBySection,

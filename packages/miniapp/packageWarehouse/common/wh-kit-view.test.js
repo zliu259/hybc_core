@@ -5,6 +5,7 @@ const {
   kitActions,
   kitLineProblems,
   rowProblems,
+  saveProblems,
   toEditableLines,
   toKitLines,
   groupBySection,
@@ -167,6 +168,19 @@ assert.deepStrictEqual(rowProblems(rows), [{ index: 2, message: "注浆管 还�
 assert.deepStrictEqual(rowProblems([{ ...rows[2], qty: "0" }]), []);
 assert.deepStrictEqual(rowProblems([{ ...rows[1], qty: "abc" }]), [{ index: 0, message: "数量不对" }]);
 assert.deepStrictEqual(rowProblems([{ ...rows[0], qty: "1.5" }]), [{ index: 0, message: "设备数量必须是整数" }]);
+
+// 保存前只拦数量填错的行；没选规格的草稿可以先存
+assert.deepStrictEqual(saveProblems(rows), []);
+assert.deepStrictEqual(
+  saveProblems([{ ...rows[1], qty: "5." }, rows[2], { ...rows[0], qty: "1.5" }, { ...rows[1], qty: "1.2345" }]),
+  [
+    { index: 0, message: "数量不对" },
+    { index: 2, message: "设备数量必须是整数" },
+    { index: 3, message: "数量不对" }
+  ]
+);
+// 数量填错的行不会被悄悄当成 0 发给后端
+assert.ok(Number.isNaN(toKitLines([{ ...rows[1], qty: "5." }])[0].planned_qty));
 
 // ---- 按分节分组
 const groups = groupBySection(rows, rowProblems(rows));

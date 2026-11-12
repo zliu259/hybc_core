@@ -62,6 +62,63 @@ runTests("wh-task-detail-page", [
     }
   ],
   [
+    "从卡片冷启动：登录是在第一次请求里完成的，执行人第一次打开就要能提交",
+    async () => {
+      const h = setup(baseTask, null);
+      h.state.profile = null;
+      h.respond("GET", "/warehouse/me", () => {
+        // request 发现没有登录态会先登录，登录完本地才有用户信息
+        h.state.profile = { username: "wang", roles: ["operator"] };
+        return { success: true, data: { is_keeper: false } };
+      });
+      const page = await h.open({ id: "9" });
+      assert.strictEqual(page.data.view.actions.canWork, true);
+      assert.strictEqual(page.data.photos[0].canDelete, true);
+    }
+  ],
+  [
+    "加载失败（不是不存在）：页面上写着加载失败，下拉后恢复",
+    async () => {
+      const h = setup();
+      h.failOnce("GET", "/warehouse/task/9", "网络连接失败");
+      const page = await h.open({ id: "9" });
+      assert.strictEqual(page.data.loadFailed, true);
+      assert.strictEqual(page.data.notFound, false);
+      assert.strictEqual(page.data.view, null);
+      await page.onPullDownRefresh();
+      assert.strictEqual(page.data.loadFailed, false);
+      assert.strictEqual(page.data.view.header.title, "返库检查");
+    }
+  ],
+  [
+    "选图回来时页面正在刷新：传完照片后要再取一次，不能停在旧的张数上",
+    async () => {
+      const h = setup({ ...baseTask, required_photo_count: 1, photo_count: 0, photos: [] });
+      h.respond("GET", "/warehouse/task/9", async () => {
+        const snapshot = { ...h.current };
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return { success: true, data: snapshot };
+      });
+      h.respond("POST", "/warehouse/task/9/photo", () => {
+        h.current = {
+          ...h.current,
+          photo_count: 1,
+          photos: [{ id: 5, task_id: 9, file_key: "wh-task/1.jpg", uploaded_by_userid: "wang" }]
+        };
+        return { success: true, data: { id: 5 } };
+      });
+      const page = await h.open({ id: "9" });
+      h.state.images = [["/tmp/1.jpg"]];
+      // 企微在选图界面关掉时会触发 onShow，它的刷新和上传同时在跑
+      await Promise.all([page.onShow(), page.choosePhotos()]);
+      await h.flush(200);
+      assert.strictEqual(page.data.view.photo.count, 1);
+      assert.strictEqual(page.data.view.photo.missing, 0);
+      assert.strictEqual(page.data.photos.length, 1);
+      assert.strictEqual(page.data.loading, false);
+    }
+  ],
+  [
     "任务不存在",
     async () => {
       const h = createPageHarness({ page: "packageWarehouse/task-detail/index" });

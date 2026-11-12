@@ -60,10 +60,30 @@ runTests("wh-ship-page", [
       h.state.scans = ["HYBC:D:DG-01", "HYBC:D:DG-01", "hello"];
       await page.onScanAdd();
       assert.deepStrictEqual(page.data.devices.map((item) => item.code), ["DG-01"]);
-      assert.deepStrictEqual(h.state.toasts, ["已加 DG-01", "DG-01 已经加过了", "不是设备码"]);
+      // 加不进去的要弹窗停住：扫码界面盖着页面，toast 一闪就没了，人看不到
+      assert.deepStrictEqual(h.state.modals.map((modal) => modal.title), ["DG-01 已经加过了", "不是设备码"]);
+      assert.deepStrictEqual(h.state.toasts, ["已加 DG-01"]);
       assert.strictEqual(page.data.scanning, false);
       assert.deepStrictEqual(page.data.hints, ["顶管机（DN1200）：还需 1 台（已选 1 台）"]);
       assert.ok(h.state.vibrations >= 1);
+    }
+  ],
+  [
+    "连续扫码：扫到不能发的设备弹窗说明，点结束就停，不再打开扫码",
+    async () => {
+      const h = setup();
+      h.respond("GET", "/device/by-code/DG-05", {
+        success: true,
+        data: { ...DEVICE, id: 9, device_code: "DG-05", state: "pending_inspection", state_label: "待检" }
+      });
+      const page = await h.open({ type: "out" });
+      h.state.scans = ["HYBC:D:DG-05", "HYBC:D:DG-01"];
+      h.state.modalConfirm = false;
+      await page.onScanAdd();
+      assert.deepStrictEqual(h.state.modals.map((modal) => modal.title), ["DG-05 现在是待检，不能发出"]);
+      assert.deepStrictEqual(page.data.devices, []);
+      assert.strictEqual(h.state.scans.length, 1);
+      assert.strictEqual(page.data.scanning, false);
     }
   ],
   [
@@ -135,6 +155,63 @@ runTests("wh-ship-page", [
       assert.strictEqual(h.state.toasts[1], "已提交 KF-20261112-001");
       await h.flush(BACK_WAIT);
       assert.strictEqual(h.state.backs, 1);
+    }
+  ],
+  [
+    "提交超时其实成功了，之后又改了单再提交：后端回的是原来那张单，要明说改动没记上",
+    async () => {
+      const h = setup();
+      h.failOnce("POST", "/warehouse/doc", "请求超时");
+      h.respond("POST", "/warehouse/doc", { success: true, data: { ...DOC_OK.data, replayed: true } });
+      const page = await h.open({ type: "out", kitId: "5" });
+      await page.submit();
+      page.onQtyInput(h.event({ id: 1, field: "quantity" }, { value: "60" }));
+      await page.submit();
+      await h.flush(BACK_WAIT);
+      assert.strictEqual(posts(h).length, 2);
+      assert.deepStrictEqual(h.state.toasts, ["请求超时"]);
+      assert.strictEqual(h.state.modals.length, 1);
+      assert.strictEqual(h.state.modals[0].title, "有改动没记上");
+      assert.ok(h.state.modals[0].content.includes("KF-20261112-001"));
+      assert.strictEqual(h.state.backs, 1);
+    }
+  ],
+  [
+    "换项目换得快：先发出的在场清单后回来，不能盖掉后选的项目",
+    async () => {
+      const h = setup();
+      h.respond("GET", "/warehouse/project/3/holdings", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 80));
+        return { success: true, data: HOLDINGS };
+      });
+      h.respond("GET", "/warehouse/project/4/holdings", { success: true, data: { devices: [], materials: [] } });
+      const page = await h.open({ type: "back" });
+      const first = page.onProjectChange(h.event({}, { projectId: 3, projectName: "一号工程" }));
+      const second = page.onProjectChange(h.event({}, { projectId: 4, projectName: "二号工程" }));
+      await Promise.all([first, second]);
+      await h.flush(150);
+      assert.strictEqual(page.data.projectId, 4);
+      assert.deepStrictEqual(page.data.devices, []);
+      assert.deepStrictEqual(page.data.materials, []);
+      assert.strictEqual(page.data.prefilling, false);
+    }
+  ],
+  [
+    "带项目参数进来：在场清单还没回来时，页面数据里已经有这个项目（选择器才不会当成没选）",
+    async () => {
+      const h = setup();
+      h.respond("GET", "/warehouse/project/3/holdings", async () => {
+        await new Promise((resolve) => setTimeout(resolve, 60));
+        return { success: true, data: HOLDINGS };
+      });
+      const page = await h.open({ type: "back" });
+      const loading = page.onLoad({ type: "back", projectId: "3" });
+      await h.flush(10);
+      assert.strictEqual(page.data.projectId, 3);
+      assert.strictEqual(page.data.prefilling, true);
+      await loading;
+      assert.strictEqual(page.data.devices.length, 1);
+      assert.strictEqual(page.data.prefilling, false);
     }
   ],
   [

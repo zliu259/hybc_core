@@ -18,6 +18,7 @@ Page({
   data: {
     loading: false,
     notFound: false,
+    loadFailed: false,
     busy: false,
     view: null,
     timeline: [],
@@ -52,11 +53,12 @@ Page({
       ]);
       this.detail = result.data;
       const view = buildDeviceView(result.data, viewer.caps, nameOf);
-      this.setData({ view, notFound: false });
+      this.setData({ view, notFound: false, loadFailed: false });
       this.showTimeline(view, this.data.showAllEvents);
       wx.setNavigationBarTitle({ title: view.header.code });
     } catch (error) {
       if (isNotFound(error)) this.setData({ notFound: true, view: null });
+      else if (!this.data.view) this.setData({ loadFailed: true });
       toast(errorText(error, "设备加载失败"));
     } finally {
       this.setData({ loading: false });

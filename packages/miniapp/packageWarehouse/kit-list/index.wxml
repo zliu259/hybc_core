@@ -48,6 +48,7 @@
           value="{{createForm.projectId || 0}}"
           label="项目"
           enableGps="{{false}}"
+          autoSelect="{{false}}"
           excludeArchived="{{true}}"
           bind:change="onCreateProject"
         />

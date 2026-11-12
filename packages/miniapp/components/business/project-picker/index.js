@@ -81,6 +81,12 @@ Component({
     excludeArchived: {
       type: Boolean,
       value: false
+    },
+    // 列表加载完、页面还没给项目时，要不要自己选第一个并发 change。
+    // 默认 true（老页面一直这样）。录单这类"选错项目就记错账"的页面要关掉，让人自己选。
+    autoSelect: {
+      type: Boolean,
+      value: true
     }
   },
 
@@ -169,6 +175,13 @@ Component({
           const currentProject = projects.find((item) => Number(item.id) === current);
           if (currentProject) {
             this.syncSelectedIndex(current);
+            return;
+          }
+
+          if (!this.properties.autoSelect) {
+            // 下标 -1：里面的选择器显示"请选择项目"
+            this.setData({ selectedIndex: -1 });
+            this.updateSelectedMeta(null);
             return;
           }
 

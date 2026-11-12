@@ -14,7 +14,7 @@ const {
   shipProblem,
   toDocPayload
 } = require("../common/wh-ship-view");
-const { toast, errorText, queryId } = require("../common/wh-ui");
+const { toast, errorText, alertModal, queryId } = require("../common/wh-ui");
 const adders = require("./adders");
 
 const BACK_DELAY_MS = 600;
@@ -88,6 +88,11 @@ Page({
     this.render();
   },
 
+  /** 现在显示的还是不是这一次选的项目（换项目换得快时，先发出的请求可能后回来）。 */
+  isLatestProject(sequence) {
+    return sequence === this.projectSequence;
+  },
+
   /** 表单 → 页面上显示的东西。 */
   render() {
     const form = this.form;
@@ -131,23 +136,29 @@ Page({
 
   /** 选了项目：返库和转场把这个项目在场的东西整单带出；换项目时先清空。 */
   async setProject(projectId) {
+    this.projectSequence = (this.projectSequence || 0) + 1;
+    const sequence = this.projectSequence;
     this.form = { ...this.form, projectId, devices: [], materials: [], deviceNeeds: [] };
+    // 马上让页面知道选了哪个项目，不等在场清单回来
+    this.render();
     if (this.form.type === "out") return;
     this.setData({ prefilling: true });
     try {
       const result = await whGet(`/project/${projectId}/holdings`);
+      // 这期间又换了项目：这份在场清单不要了
+      if (!this.isLatestProject(sequence)) return;
       this.form = prefillFromHoldings(this.form, result.data);
     } catch (error) {
-      toast(errorText(error, "在场清单加载失败"));
+      if (this.isLatestProject(sequence)) toast(errorText(error, "在场清单加载失败"));
     } finally {
-      this.setData({ prefilling: false });
+      if (this.isLatestProject(sequence)) this.setData({ prefilling: false });
     }
   },
 
   async loadDevice(deviceId) {
     try {
       const result = await whGet(`/device/${deviceId}`);
-      this.tryAddDevice(result.data, true);
+      this.tryAddDevice(result.data);
     } catch (error) {
       toast(errorText(error, "设备加载失败"));
     }
@@ -218,13 +229,17 @@ Page({
       toast(problem);
       return;
     }
+    const payload = toDocPayload(form);
+    const sent = JSON.stringify(payload);
     this.setData({ busy: true });
     let data;
     try {
-      const result = await whSend("POST", "/doc", toDocPayload(form));
+      const result = await whSend("POST", "/doc", payload);
       data = (result && result.data) || {};
     } catch (error) {
-      // 表单和请求号都留着：再点一次是同一张单，后端不会重复记
+      // 表单和请求号都留着：再点一次是同一张单，后端不会重复记。
+      // 记下这次发的内容：它可能其实已经记上了（超时），之后再改的东西后端不会认。
+      if (!this.firstSent) this.firstSent = sent;
       toast(errorText(error, "提交失败，请重试"));
       return;
     } finally {
@@ -232,6 +247,15 @@ Page({
     }
     this.submitted = true;
     this.form = { ...this.form, requestId: newRequestId() };
+    if (data.replayed && this.firstSent && this.firstSent !== sent) {
+      // 后端回的是第一次那张单，这次改的没有记上：必须让人看到，不能当成功带过
+      await alertModal({
+        title: "有改动没记上",
+        content: `${data.doc_no} 上一次其实已经提交成功，之后改的内容没有记上。请到项目页核对，缺的另开一张单。`
+      });
+      wx.navigateBack();
+      return;
+    }
     const tasks = Array.isArray(data.created_task_ids) ? data.created_task_ids.length : 0;
     toast(tasks > 0 ? `已提交 ${data.doc_no}，已生成 ${tasks} 个检查任务` : `已提交 ${data.doc_no}`);
     // 让提示露一下再返回

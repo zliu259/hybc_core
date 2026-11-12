@@ -75,6 +75,19 @@ runTests("wh-device-page", [
     }
   ],
   [
+    "加载失败（不是不存在）：页面上写着加载失败，下拉后恢复",
+    async () => {
+      const h = setup();
+      h.failOnce("GET", "/warehouse/device/7", "网络连接失败");
+      const page = await h.open({ id: "7" });
+      assert.strictEqual(page.data.loadFailed, true);
+      assert.strictEqual(page.data.notFound, false);
+      await page.onPullDownRefresh();
+      assert.strictEqual(page.data.loadFailed, false);
+      assert.strictEqual(page.data.view.header.code, "DG-01");
+    }
+  ],
+  [
     "参数不对",
     async () => {
       const h = createPageHarness({ page: "packageWarehouse/device/index" });

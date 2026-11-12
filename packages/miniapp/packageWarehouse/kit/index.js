@@ -5,6 +5,7 @@ const {
   groupBySection,
   kitActions,
   rowProblems,
+  saveProblems,
   toEditableLines,
   toKitLines,
   withFulfilment
@@ -41,6 +42,8 @@ Page({
     busy: false,
     // 有没保存的改动：保存按钮高亮；从别的页面回来时不重新加载，免得把改动冲掉
     dirty: false,
+    // 第一次就没取到（不是不存在）：页面上要有一句话，不能只闪一下提示就留白
+    loadFailed: false,
     header: null,
     actions: NO_ACTIONS,
     groups: [],
@@ -86,11 +89,13 @@ Page({
         groups: this.regroup(rows, []),
         showFulfilment,
         dirty: false,
-        notFound: false
+        notFound: false,
+        loadFailed: false
       });
       wx.setNavigationBarTitle({ title: header.kitNo });
     } catch (error) {
       if (isNotFound(error)) this.setData({ notFound: true, header: null });
+      else if (!this.data.header) this.setData({ loadFailed: true });
       toast(errorText(error, "清单加载失败"));
     } finally {
       this.setData({ loading: false });
@@ -240,6 +245,13 @@ Page({
 
   async save() {
     if (this.data.busy || !this.kit || !this.data.actions.canEdit) return;
+    const rows = this.flatRows();
+    const problems = saveProblems(rows);
+    if (problems.length > 0) {
+      toast(`有 ${problems.length} 行数量不对，改好再保存`);
+      this.setData({ groups: this.regroup(rows, problems) });
+      return;
+    }
     if (await this.saveRows()) toast("已保存");
   },
 

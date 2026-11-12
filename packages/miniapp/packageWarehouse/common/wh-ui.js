@@ -14,15 +14,16 @@ const isNotFound = (error) => Number(error && error.__statusCode) === 404;
 
 /**
  * 确认框。
- * @param {{ title: string, content?: string, confirmText?: string }} options
+ * @param {{ title: string, content?: string, confirmText?: string, cancelText?: string }} options
  * @returns {Promise<boolean>}
  */
-const confirmModal = ({ title, content = "", confirmText = "确定" }) =>
+const confirmModal = ({ title, content = "", confirmText = "确定", cancelText = "取消" }) =>
   new Promise((resolve) => {
     wx.showModal({
       title,
       content,
       confirmText,
+      cancelText,
       success: (result) => resolve(Boolean(result && result.confirm)),
       fail: () => resolve(false)
     });
@@ -50,8 +51,10 @@ const promptModal = ({ title, placeholder = "" }) =>
  * @returns {Promise<{ userid: string, roles: string[], caps: object }>}
  */
 const loadViewer = async () => {
-  const profile = getUserProfile() || {};
   const result = await whGet("/me");
+  // 先发请求再读本地的用户信息：从企微卡片冷启动时，登录是在第一次请求里完成的，
+  // 请求之前读到的是空的，会把执行人当成旁观者
+  const profile = getUserProfile() || {};
   return {
     userid: String(profile.username || ""),
     roles: Array.isArray(profile.roles) ? profile.roles : [],
@@ -65,6 +68,23 @@ const loadNameOf = async () => {
   return (userid) => (userid ? toUserName(userid, map, String(userid)) : "");
 };
 
+/**
+ * 只有"知道了"一个按钮的提示框：要人看到才往下走的话用它，不用 toast。
+ * @param {{ title: string, content?: string }} options
+ * @returns {Promise<void>}
+ */
+const alertModal = ({ title, content = "" }) =>
+  new Promise((resolve) => {
+    wx.showModal({
+      title,
+      content,
+      showCancel: false,
+      confirmText: "知道了",
+      success: () => resolve(),
+      fail: () => resolve()
+    });
+  });
+
 /** 页面参数里的正整数 id；不是就返回 null。 */
 const queryId = (value) => {
   const id = Number(value);
@@ -77,6 +97,7 @@ module.exports = {
   isConflict,
   isNotFound,
   confirmModal,
+  alertModal,
   promptModal,
   loadViewer,
   loadNameOf,

@@ -40,6 +40,7 @@ Page({
   data: {
     loading: false,
     notFound: false,
+    loadFailed: false,
     busy: false,
     uploading: false,
     view: null,
@@ -65,7 +66,13 @@ Page({
   },
 
   async load() {
-    if (this.taskId === null || this.data.loading) return;
+    if (this.taskId === null) return;
+    // 上一趟还没回来（企微在选图、扫码界面关掉时会触发 onShow 刷新）：记下来，等它回来再取一次。
+    // 直接丢掉的话，传完照片后页面会停在旧的张数上，提交时还说照片不够。
+    if (this.data.loading) {
+      this.reloadPending = true;
+      return;
+    }
     this.setData({ loading: true });
     try {
       const [result, viewer, nameOf] = await Promise.all([
@@ -90,6 +97,7 @@ Page({
         view,
         photos,
         notFound: false,
+        loadFailed: false,
         assignee: options
           ? {
               ...options,
@@ -99,9 +107,14 @@ Page({
       });
     } catch (error) {
       if (isNotFound(error)) this.setData({ notFound: true, view: null });
+      else if (!this.data.view) this.setData({ loadFailed: true });
       toast(errorText(error, "任务加载失败"));
     } finally {
       this.setData({ loading: false });
+    }
+    if (this.reloadPending) {
+      this.reloadPending = false;
+      await this.load();
     }
   },
 

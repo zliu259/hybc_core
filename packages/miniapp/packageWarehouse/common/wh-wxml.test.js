@@ -66,6 +66,14 @@ for (const page of pages) {
       `${page}.wxml 用了 ${handler}，页面里没有这个函数`
     );
   }
+  // 库房页面上的项目选择器不能自己选第一个项目（会把单记到错的项目上）
+  const raw = fs.readFileSync(path.join(ROOT, `${page}.wxml`), "utf8");
+  for (const picker of raw.match(/<hy-project-picker[\s\S]*?\/>/g) || []) {
+    assert.ok(
+      picker.includes('autoSelect="{{false}}"'),
+      `${page}.wxml 的项目选择器要写 autoSelect="{{false}}"`
+    );
+  }
   for (const file of ["json", "wxss"]) {
     assert.ok(fs.existsSync(path.join(ROOT, `${page}.${file}`)), `${page}.${file} 不存在`);
   }

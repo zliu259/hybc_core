@@ -137,6 +137,38 @@ runTests("wh-kit-page", [
     }
   ],
   [
+    "数量填错时保存：不发请求，标出那一行（不然后端会当成 0 存下，这一行就不发了）",
+    async () => {
+      const h = setup(kitOf());
+      const page = await h.open({ id: "5" });
+      page.onQtyInput(h.event({ g: 0, r: 1 }, { value: "5." }));
+      await page.save();
+      assert.deepStrictEqual(h.state.toasts, ["有 1 行数量不对，改好再保存"]);
+      assert.deepStrictEqual(sequence(h), []);
+      assert.strictEqual(page.data.groups[0].open, true);
+      assert.strictEqual(rowAt(page, 0, 1).problem, "数量不对");
+      assert.strictEqual(page.data.dirty, true);
+
+      // 没选规格的行不挡保存：草稿可以先存着
+      page.onQtyInput(h.event({ g: 0, r: 1 }, { value: "5" }));
+      await page.save();
+      assert.deepStrictEqual(sequence(h), ["PUT /kit/5"]);
+    }
+  ],
+  [
+    "加载失败（不是不存在）：页面上写着加载失败，下拉后恢复",
+    async () => {
+      const h = setup(kitOf());
+      h.failOnce("GET", "/warehouse/kit/5", "网络连接失败");
+      const page = await h.open({ id: "5" });
+      assert.strictEqual(page.data.loadFailed, true);
+      assert.strictEqual(page.data.notFound, false);
+      await page.onPullDownRefresh();
+      assert.strictEqual(page.data.loadFailed, false);
+      assert.strictEqual(page.data.header.kitNo, "PT-20261112-001");
+    }
+  ],
+  [
     "有物资行没选规格时提交：提示几行，不发请求，那个分节展开并标出",
     async () => {
       const h = setup(kitOf());

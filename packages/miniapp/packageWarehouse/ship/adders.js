@@ -5,7 +5,7 @@ const { wxChooseMediaImage } = require("../../utils/wx");
 const { whGet } = require("../common/wh-api");
 const { formatQty } = require("../common/wh-format");
 const { addDevice, addMaterial, materialLabel } = require("../common/wh-ship-view");
-const { toast, errorText } = require("../common/wh-ui");
+const { toast, errorText, confirmModal } = require("../common/wh-ui");
 
 const SEARCH_SIZE = 20;
 const MAX_PHOTOS = 9;
@@ -23,36 +23,56 @@ const materialOptionLabel = (material) =>
   `${materialLabel(material)} · 在库 ${formatQty(material.quantity)} ${material.unit || ""}`.trim();
 
 module.exports = {
-  /** 加一台设备到单上；加不进去时提示原因。返回加没加上。 */
-  tryAddDevice(device, quiet) {
+  /** 加一台设备到单上。加上了返回 ""，加不进去返回原因（不提示，由调用的地方决定怎么说）。 */
+  addDeviceToForm(device) {
     const result = addDevice(this.form, device);
-    if (result.error) {
-      toast(result.error);
-      return false;
-    }
+    if (result.error) return result.error;
     this.form = result.form;
     this.render();
-    if (!quiet) toast(`已加 ${device.device_code}`);
-    return true;
+    return "";
   },
 
-  /** 连续扫码：扫到一台加一台，直到取消。重复的、不是设备码的提示后接着扫；其他错误停下。 */
+  /** 搜索选中、从设备页带进来的设备：加不进去时提示原因。 */
+  tryAddDevice(device) {
+    const problem = this.addDeviceToForm(device);
+    if (problem) toast(problem);
+    return !problem;
+  },
+
+  /**
+   * 连续扫码：扫到一台加一台，直到取消。
+   * 加不进去的（重复、状态不对、不是设备码、查不到）弹窗停住，点"继续扫"才接着扫：
+   * 扫码界面盖着页面，toast 一闪就没了，人会以为这台已经加上。断网、相机打不开这类错误直接停。
+   */
   async onScanAdd() {
     if (this.data.scanning || !this.data.canAddDevice) return;
     this.setData({ scanning: true });
     try {
       for (;;) {
-        let device;
+        let problem = "";
         try {
-          device = await scanDevice();
+          const device = await scanDevice();
+          if (!device) break;
+          problem = this.addDeviceToForm(device);
+          if (!problem) {
+            wx.vibrateShort({ type: "light" });
+            toast(`已加 ${device.device_code}`);
+            continue;
+          }
         } catch (error) {
-          const message = errorText(error, "扫码失败，请重试");
-          toast(message);
-          if (canKeepScanning(message)) continue;
-          break;
+          problem = errorText(error, "扫码失败，请重试");
+          if (!canKeepScanning(problem)) {
+            toast(problem);
+            break;
+          }
         }
-        if (!device) break;
-        if (this.tryAddDevice(device)) wx.vibrateShort({ type: "light" });
+        const again = await confirmModal({
+          title: problem,
+          content: "这一台没有加到单上。",
+          confirmText: "继续扫",
+          cancelText: "结束"
+        });
+        if (!again) break;
       }
     } finally {
       this.setData({ scanning: false });
@@ -78,7 +98,7 @@ module.exports = {
   onDevicePick(event) {
     const index = Number(event.detail && event.detail.value);
     const device = Number.isInteger(index) ? this.data.deviceOptions.items[index] : undefined;
-    if (device) this.tryAddDevice(device, true);
+    if (device) this.tryAddDevice(device);
   },
 
   async onMaterialSearch(event) {
