@@ -1,0 +1,40 @@
+@import "../common/wh.wxss";
+
+.form-body {
+  padding-top: 24rpx;
+}
+
+.form-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.upload-file {
+  margin-bottom: 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  line-height: 1.5;
+  color: #1f2a3d;
+  word-break: break-all;
+}
+
+.upload-pick,
+.upload-date {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.upload-date-picker {
+  flex: 1;
+  min-width: 0;
+}
+
+.upload-hint {
+  margin-top: 12rpx;
+}
+
+.upload-kinds {
+  margin-bottom: 16rpx;
+}

@@ -191,6 +191,41 @@ runTests("wh-docs-page", [
     }
   ],
   [
+    "点上传去上传页；传完回来列表自己刷新",
+    async () => {
+      const h = setup({ is_doc_admin: true });
+      const page = await h.open({});
+      await page.onShow();
+      assert.strictEqual(listCalls(h).length, 1);
+      page.goUpload();
+      assert.deepStrictEqual(h.state.navigations, ["/packageWarehouse/doc-upload/index"]);
+      await page.onShow();
+      assert.strictEqual(listCalls(h).length, 2);
+      // 只刷这一次
+      await page.onShow();
+      assert.strictEqual(listCalls(h).length, 2);
+    }
+  ],
+  [
+    "看某台设备的资料时点上传：带着这台设备过去",
+    async () => {
+      const h = setup({ is_doc_admin: true });
+      h.respond("GET", "/doc-library/for-device/7", { success: true, data: [] });
+      const page = await h.open({ deviceId: "7", code: "SB-0007" });
+      page.goUpload();
+      assert.deepStrictEqual(h.state.navigations, ["/packageWarehouse/doc-upload/index?deviceId=7"]);
+    }
+  ],
+  [
+    "没有权限的人点不了上传",
+    async () => {
+      const h = setup({ is_doc_admin: false });
+      const page = await h.open({});
+      page.goUpload();
+      assert.deepStrictEqual(h.state.navigations, []);
+    }
+  ],
+  [
     "权限取不到不影响看资料",
     async () => {
       const h = setup();

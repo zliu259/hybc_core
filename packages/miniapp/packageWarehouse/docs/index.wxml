@@ -66,4 +66,12 @@
   </block>
 
   <view wx:if="{{loading}}" class="wh-empty">加载中…</view>
+
+  <!-- 资料管理员：上传 -->
+  <block wx:if="{{canUpload}}">
+    <view class="wh-bar-space" />
+    <view class="wh-bar">
+      <t-button class="btn-fill" theme="primary" bindtap="goUpload">{{deviceMode ? "上传到这台设备" : "上传资料"}}</t-button>
+    </view>
+  </block>
 </view>

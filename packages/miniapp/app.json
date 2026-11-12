@@ -71,7 +71,8 @@
         "project/index",
         "material/index",
         "docs/index",
-        "doc-view/index"
+        "doc-view/index",
+        "doc-upload/index"
       ]
     }
   ],

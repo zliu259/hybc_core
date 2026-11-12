@@ -69,6 +69,16 @@ const createPageHarness = ({ page, profile } = {}) => {
     opened: [],
     /** 设了它，openDocument 失败 */
     openDocumentFail: null,
+    /** 从聊天记录选文件依次吐出的结果：{ path, name, size } 或者 Error；用完了算用户取消 */
+    messageFiles: [],
+    /** 本地文件有多大（getFileInfo、读文件用）；没登记的按 1024 字节 */
+    fileSizes: {},
+    /** 读过的文件片段 [路径, 位置, 长度] */
+    reads: [],
+    /** 这些本地路径读不出来 */
+    readFailures: [],
+    /** 是不是开着「离开前先问一下」 */
+    leaveAlert: false,
     storage: {},
     profile: profile || { username: "lz", nickname: "李震", roles: ["operator"] }
   };
@@ -119,10 +129,28 @@ const createPageHarness = ({ page, profile } = {}) => {
     return error;
   };
 
+  // 二进制上传（传分片）：也记进 calls，方法是 PUT，data 里是这一片多大；
+  // 可以用 respond / fail("PUT", ...) 定它的结果，没定的按传成功算
+  const uploadBinary = async ({ path: requestPath, arrayBuffer, timeout }) => {
+    const call = {
+      method: "PUT",
+      path: requestPath,
+      data: { bytes: arrayBuffer ? arrayBuffer.byteLength : 0, timeout }
+    };
+    state.calls.push(call);
+    const handler = findHandler("PUT", requestPath);
+    if (handler) {
+      if (handler.once) handlers = handlers.filter((item) => item !== handler);
+      return handler.run(call);
+    }
+    const part = Number((/[?&]part=(\d+)/.exec(requestPath) || [])[1] || 0);
+    return { success: true, data: { part_number: part, etag: `etag-${part}` } };
+  };
+
   stub("utils/request.js", {
     request,
     buildUrl: (requestPath) => `https://test.local${requestPath}`,
-    uploadBinary: async () => ({})
+    uploadBinary
   });
   stub("utils/auth.js", {
     getUserProfile: () => state.profile,
@@ -142,6 +170,12 @@ const createPageHarness = ({ page, profile } = {}) => {
       const next = state.scans.shift();
       if (isThrown(next)) throw next;
       return { result: next };
+    },
+    wxChooseMessageFile: async () => {
+      if (state.messageFiles.length === 0) throw { errMsg: "chooseMessageFile:fail cancel" };
+      const next = state.messageFiles.shift();
+      if (isThrown(next)) throw next;
+      return { tempFiles: [{ ...next, tempFilePath: next.path }] };
     },
     wxChooseMediaImage: async () => {
       if (state.images.length === 0) throw { errMsg: "chooseMedia:fail cancel" };
@@ -226,6 +260,24 @@ const createPageHarness = ({ page, profile } = {}) => {
     },
     vibrateLong: () => {
       state.vibrations += 1;
+    },
+    getFileSystemManager: () => ({
+      getFileInfo: ({ filePath, success }) =>
+        success && success({ size: state.fileSizes[filePath] === undefined ? 1024 : state.fileSizes[filePath] }),
+      readFile: ({ filePath, position = 0, length, success, fail }) => {
+        if (state.readFailures.includes(filePath)) {
+          if (fail) fail({ errMsg: "readFile:fail" });
+          return;
+        }
+        state.reads.push([filePath, position, length]);
+        if (success) success({ data: new ArrayBuffer(length) });
+      }
+    }),
+    enableAlertBeforeUnload: () => {
+      state.leaveAlert = true;
+    },
+    disableAlertBeforeUnload: () => {
+      state.leaveAlert = false;
     },
     getStorageSync: (key) => state.storage[key],
     setStorageSync: (key, value) => {

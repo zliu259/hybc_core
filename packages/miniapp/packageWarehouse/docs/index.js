@@ -35,6 +35,13 @@ Page({
     return Promise.all([this.loadCaps(), this.reload()]);
   },
 
+  onShow() {
+    // 从上传页回来：刚传的要出现在列表里
+    if (!this.refreshOnShow) return undefined;
+    this.refreshOnShow = false;
+    return this.reload();
+  },
+
   onUnload() {
     if (this.searchTimer) clearTimeout(this.searchTimer);
   },
@@ -120,6 +127,13 @@ Page({
     if (key === this.data.activeTab) return;
     this.setData({ activeTab: key });
     await this.reload();
+  },
+
+  goUpload() {
+    if (!this.data.canUpload) return;
+    this.refreshOnShow = true;
+    const query = this.deviceId === null ? "" : `?deviceId=${this.deviceId}`;
+    wx.navigateTo({ url: `/packageWarehouse/doc-upload/index${query}` });
   },
 
   openDoc(event) {
