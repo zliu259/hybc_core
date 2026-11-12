@@ -53,18 +53,6 @@ describe.skipIf(!hasSqlite)("资料库表结构", () => {
     }
   });
 
-  it("没有镜像字段和微盘目录表（留给 4B）", () => {
-    const columns = h.database
-      .prepare("PRAGMA table_info(doc_file)")
-      .all()
-      .map((row) => row.name);
-    expect(columns).not.toContain("mirror_status");
-    expect(columns).toContain("version");
-    expect(
-      h.database.prepare("SELECT name FROM sqlite_master WHERE name = 'wedrive_folder'").all()
-    ).toEqual([]);
-  });
-
   it("归属只能填设备或类别其中一个", () => {
     const device = h.seed.device();
     const category = h.seed.category();

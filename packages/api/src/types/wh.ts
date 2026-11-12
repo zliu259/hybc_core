@@ -242,6 +242,8 @@ export interface ProjectKitLine {
 // ─── 资料库（阶段 4A） ──────────
 
 export type DocCategory = "cert" | "report" | "params" | "manual" | "maintenance" | "other";
+/** 镜像到微盘的进度。skipped：不镜像（比如文件太大），原因在 mirror_error 里 */
+export type DocMirrorStatus = "pending" | "syncing" | "synced" | "failed" | "skipped";
 
 export interface DocFile {
   id: number;
@@ -260,6 +262,25 @@ export interface DocFile {
   deleted_at: string | null;
   deleted_by_userid: string | null;
   version: number;
+  mirror_status: DocMirrorStatus;
+  mirror_error: string | null;
+  mirror_attempts: number;
+  mirror_started_at: string | null;
+  mirrored_at: string | null;
+  /** 在微盘里的文件、名字、所在目录；不在微盘里时都是 null */
+  wedrive_fileid: string | null;
+  wedrive_name: string | null;
+  wedrive_folder_key: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 在微盘里建过的目录。folder_key：general、uncategorized、category:<id>、category-general:<id>、device:<id> */
+export interface WedriveFolder {
+  folder_key: string;
+  fileid: string;
+  name: string;
+  parent_key: string | null;
   created_at: string;
   updated_at: string;
 }
