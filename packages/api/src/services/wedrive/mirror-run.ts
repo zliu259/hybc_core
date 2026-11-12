@@ -17,7 +17,8 @@ export interface DrainResult {
   processed: number;
   failed: number;
   remaining: number;
-  stopped: "done" | "budget" | "locked" | "inactive" | "paused";
+  /** failing：连着几份因为同一个原因失败，这一趟不再往下做 */
+  stopped: "done" | "budget" | "locked" | "inactive" | "paused" | "failing";
 }
 
 export interface DrainDeps {
@@ -43,6 +44,11 @@ const DEFAULT_MAX_DOCS = 25;
 const DEFAULT_MAX_BYTES = 100 * 1024 * 1024;
 const DEFAULT_MAX_MS = 4 * 60 * 1000;
 const MAX_ERROR_LENGTH = 200;
+/**
+ * 连着这么多份因为同一个原因失败，多半是微盘那头或网络出了问题，不是资料的问题：这一趟停下，剩下的留到下个整点。
+ * 不停的话，一次故障会把所有待镜像的资料各耗掉一次机会，还白白用掉每月的调用次数。
+ */
+const SAME_FAILURE_LIMIT = 3;
 const BUDGET_REASON = "本月微盘接口调用次数已经用到预算";
 /** D1 一条语句最多 100 个参数 */
 const MARK_CHUNK = 90;
@@ -167,10 +173,11 @@ interface PendingDoc {
   wedrive_fileid: string | null;
 }
 
+/** 下一份：没试过的在前，试过的排在后面，免得几份有毛病的资料每次都挡在前头。 */
 const nextPending = (env: Env): Promise<PendingDoc | null> =>
   env.DB.prepare(
     `SELECT id, file_size, wedrive_fileid FROM doc_file
-      WHERE mirror_status = 'pending' ORDER BY id LIMIT 1`
+      WHERE mirror_status = 'pending' ORDER BY mirror_attempts, id LIMIT 1`
   ).first<PendingDoc>();
 
 /** 认领一份：只有它还是 pending 才标成 syncing。 */
@@ -248,6 +255,8 @@ export const runMirrorDrain = async (env: Env, deps: DrainDeps = {}): Promise<Dr
   let processed = 0;
   let failed = 0;
   let bytes = 0;
+  let lastFailure: string | null = null;
+  let sameFailures = 0;
   let stopped: DrainResult["stopped"] = "done";
   try {
     for (;;) {
@@ -263,6 +272,8 @@ export const runMirrorDrain = async (env: Env, deps: DrainDeps = {}): Promise<Dr
       try {
         await reconcileDoc(env, client, settings, doc.id);
         processed += 1;
+        lastFailure = null;
+        sameFailures = 0;
       } catch (error) {
         if (error instanceof WedriveQuotaError) {
           await releaseClaim(env, doc.id);
@@ -272,6 +283,9 @@ export const runMirrorDrain = async (env: Env, deps: DrainDeps = {}): Promise<Dr
         }
         await markFailed(env, doc.id, error);
         failed += 1;
+        const reason = errorText(error);
+        sameFailures = reason === lastFailure ? sameFailures + 1 : 1;
+        lastFailure = reason;
       }
       // 没有文件 ID 的才会上传；改名、移动、删除不占字节数
       if (!doc.wedrive_fileid) bytes += Number(doc.file_size);
@@ -279,6 +293,10 @@ export const runMirrorDrain = async (env: Env, deps: DrainDeps = {}): Promise<Dr
       if (held === null) {
         // 锁被别人接走了（这一份做得太久）：不再往下做，也不去清别人的锁
         stopped = "locked";
+        break;
+      }
+      if (sameFailures >= SAME_FAILURE_LIMIT) {
+        stopped = "failing";
         break;
       }
     }

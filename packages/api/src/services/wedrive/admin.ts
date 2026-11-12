@@ -6,7 +6,7 @@ import type { Env } from "../../types/env";
 import type { DocMirrorStatus } from "../../types/wh";
 import { IS_LATEST } from "../doc-library/query";
 import { badRequest, WarehouseError } from "../warehouse/errors";
-import { createWedriveClient, type WedriveClient } from "./client";
+import { createWedriveClient, WedriveError, type WedriveClient } from "./client";
 import { kickMirrorDrain, markForMirror } from "./mirror-run";
 import { getCallCount, getWedriveSettings, mirrorActive, saveWedriveSetting } from "./settings";
 
@@ -37,6 +37,20 @@ const EMPTY_COUNTS: Record<DocMirrorStatus, number> = {
   synced: 0,
   failed: 0,
   skipped: 0
+};
+
+/**
+ * 管理员手动点的那两步（建空间、开放）：没有错误码的失败（超时、没配密钥）也说清楚是连不上企微，
+ * 不然页面上只有一句「服务器出错」。排空里的调用不走这里：那边要靠「有没有错误码」分辨文件到底传没传上。
+ */
+const reachWedrive = async <T>(apiName: string, action: () => Promise<T>): Promise<T> => {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof WedriveError) throw error;
+    const detail = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+    throw new WedriveError(apiName, null, `连不上企业微信的微盘接口：${detail}`);
+  }
 };
 
 const isMirrorStatus = (value: string): value is DocMirrorStatus => value in EMPTY_COUNTS;
@@ -84,7 +98,7 @@ export const setupWedrive = async (
     throw new WarehouseError(409, "微盘空间已经建过了");
   }
   const client = deps.client ?? createWedriveClient(env, deps.now ? { now: deps.now } : {});
-  const spaceId = await client.createSpace(WEDRIVE_SPACE_NAME);
+  const spaceId = await reachWedrive("space_create", () => client.createSpace(WEDRIVE_SPACE_NAME));
   await saveWedriveSetting(
     env,
     { space_id: spaceId, enabled: true, space_open: false, paused_reason: null },
@@ -134,7 +148,8 @@ export const openWedriveSpace = async (
     throw new WarehouseError(409, `还有 ${unfinished} 份资料没镜像完，等它们完成再开放`);
   }
   const client = deps.client ?? createWedriveClient(env, deps.now ? { now: deps.now } : {});
-  await client.openSpaceToCompany(settings.space_id);
+  const spaceId = settings.space_id;
+  await reachWedrive("space_acl_add", () => client.openSpaceToCompany(spaceId));
   await saveWedriveSetting(env, { space_open: true }, userid);
   return getWedriveStatus(env, deps.now?.());
 };

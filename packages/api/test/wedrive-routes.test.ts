@@ -155,6 +155,14 @@ describe.skipIf(!hasSqlite)("微盘镜像接口", () => {
     expect(mirrorMessages()).toHaveLength(0);
   });
 
+  it("建空间时连不上企微（超时）：502，说清楚是连不上，没记下空间 ID", async () => {
+    fake.failNext("space_create", "timeout");
+    const res = await request("POST", "/wedrive/setup");
+    expect(res.status).toBe(502);
+    expect(res.message).toBe("连不上企业微信的微盘接口：bridge proxy timeout");
+    expect((await getWedriveSettings(h.env)).space_id).toBeNull();
+  });
+
   it("关掉镜像后上传资料：不发微盘请求；再打开：补上", async () => {
     await setup();
     expect((await request("PUT", "/wedrive/settings", { enabled: false })).data.enabled).toBe(
@@ -222,6 +230,15 @@ describe.skipIf(!hasSqlite)("微盘镜像接口", () => {
     const res = await request("POST", "/wedrive/open");
     expect(res.status).toBe(502);
     expect(res.message).toContain("640027");
+    expect((await getWedriveSettings(h.env)).space_open).toBe(false);
+  });
+
+  it("开放时连不上企微（超时）：502，没记成已开放", async () => {
+    await setup();
+    fake.failNext("space_acl_add", "timeout");
+    const res = await request("POST", "/wedrive/open");
+    expect(res.status).toBe(502);
+    expect(res.message).toContain("连不上企业微信的微盘接口");
     expect((await getWedriveSettings(h.env)).space_open).toBe(false);
   });
 

@@ -159,6 +159,61 @@ describe.skipIf(!hasSqlite)("镜像排空", () => {
     expect(row(ids[1])).toMatchObject({ mirror_error: "文件不在存储里", mirror_attempts: 1 });
   });
 
+  it("连着三份因为同一个原因失败（微盘那头连不上）：这一趟停下，剩下的不动，也不再发消息", async () => {
+    const ids = seedDocs(6);
+    const down = makeClient(900, async () => {
+      throw new Error("bridge proxy timeout");
+    });
+    expect(await drain({ client: down })).toEqual({
+      processed: 0,
+      failed: 3,
+      remaining: 3,
+      stopped: "failing"
+    });
+    expect(statuses(ids)).toEqual(["failed", "failed", "failed", "pending", "pending", "pending"]);
+    expect(mirrorMessages()).toHaveLength(0);
+    // 好了之后：剩下的照常做（失败的那三份等整点补跑）
+    expect(await drain()).toMatchObject({ processed: 3, stopped: "done" });
+  });
+
+  it("失败的中间隔着成功的：不算连着，照常做完", async () => {
+    const ids = seedDocs(5);
+    for (const index of [1, 2, 4]) h.files.objects.delete(row(ids[index]).file_key);
+    expect(await drain()).toEqual({ processed: 2, failed: 3, remaining: 0, stopped: "done" });
+    expect(statuses(ids)).toEqual(["synced", "failed", "failed", "synced", "failed"]);
+  });
+
+  it("连着三份失败但原因各不相同：不停", async () => {
+    const ids = seedDocs(4);
+    let n = 0;
+    const flaky = {
+      ...client,
+      uploadDirect: async (...args) => {
+        n += 1;
+        if (n <= 3) throw new Error(`第 ${n} 种毛病`);
+        return client.uploadDirect(...args);
+      },
+      // 直传失败会改用分块：让分块也因为同一个毛病失败
+      uploadChunked: async (...args) => {
+        if (n <= 3) throw new Error(`第 ${n} 种毛病`);
+        return client.uploadChunked(...args);
+      }
+    };
+    expect(await drain({ client: flaky })).toMatchObject({
+      processed: 1,
+      failed: 3,
+      stopped: "done"
+    });
+    expect(statuses(ids)).toEqual(["failed", "failed", "failed", "synced"]);
+  });
+
+  it("先做没试过的，试过的排在后面", async () => {
+    const ids = seedDocs(3);
+    setRow(ids[0], { mirror_attempts: 2 });
+    expect(await drain({ maxDocs: 2 })).toMatchObject({ processed: 2, remaining: 1 });
+    expect(statuses(ids)).toEqual(["pending", "synced", "synced"]);
+  });
+
   it("失败原因太长时只留前 200 个字", async () => {
     const [id] = seedDocs(1);
     const broken = {
