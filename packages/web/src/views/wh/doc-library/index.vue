@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ElMessageBox } from "element-plus";
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import { useRoute } from "vue-router";
 
 import {
@@ -24,8 +24,13 @@ import DocHistoryDrawer from "./components/DocHistoryDrawer.vue";
 import DocPreviewDialog from "./components/DocPreviewDialog.vue";
 import DocTable from "./components/DocTable.vue";
 import DocTree from "./components/DocTree.vue";
+import DocUploadDialog from "./components/DocUploadDialog.vue";
+import FolderImportDialog from "./components/FolderImportDialog.vue";
 import {
+  buildTreeNodes,
+  GENERAL_OWNER,
   treeSelection,
+  type DocOwner,
   type DocTreeNode,
   type DocTreeSelection
 } from "./doc-view";
@@ -41,7 +46,12 @@ const deviceCategories = ref<DeviceCategory[]>([]);
 const tree = ref<DocTreeData | null>(null);
 const selection = ref<DocTreeSelection>({ kind: "all" });
 const currentKey = ref("all");
-const currentLabel = ref("全部");
+/** 选中那一项叫什么：从目录里找；带着设备过来、目录还没取到时先用个说法顶着 */
+const currentLabel = computed(() => {
+  const nodes = buildTreeNodes(tree.value);
+  const all = nodes.flatMap(node => [node, ...(node.children ?? [])]);
+  return all.find(node => node.key === currentKey.value)?.label ?? "这台设备";
+});
 const filters = reactive<{
   doc_category?: DocCategory;
   keyword: string;
@@ -56,6 +66,22 @@ const previewVisible = ref(false);
 const editVisible = ref(false);
 const historyVisible = ref(false);
 const historyId = ref<number | null>(null);
+const uploadVisible = ref(false);
+const importVisible = ref(false);
+const replaceTarget = ref<DocFileRow | null>(null);
+
+/** 上传时默认归到左边选中的那一项；选的是「全部」时让人自己挑设备 */
+const defaultOwner = computed<DocOwner>(() => {
+  const current = selection.value;
+  if (current.kind === "device") {
+    return { kind: "device", deviceId: current.deviceId, categoryId: null };
+  }
+  if (current.kind === "category") {
+    return { kind: "category", deviceId: null, categoryId: current.categoryId };
+  }
+  if (current.kind === "general") return GENERAL_OWNER;
+  return { kind: "device", deviceId: null, categoryId: null };
+});
 
 const load = async () => {
   const result = await run(() =>
@@ -92,7 +118,6 @@ const refresh = () => Promise.all([load(), loadTree()]);
 const selectNode = (node: DocTreeNode) => {
   selection.value = node.selection;
   currentKey.value = node.key;
-  currentLabel.value = node.label;
   void reload();
 };
 
@@ -103,6 +128,14 @@ const openPreview = (row: DocFileRow) => {
 const openEdit = (row: DocFileRow) => {
   active.value = row;
   editVisible.value = true;
+};
+const openUpload = () => {
+  replaceTarget.value = null;
+  uploadVisible.value = true;
+};
+const openReplace = (row: DocFileRow) => {
+  replaceTarget.value = row;
+  uploadVisible.value = true;
 };
 const openHistory = (row: DocFileRow) => {
   historyId.value = row.id;
@@ -132,7 +165,6 @@ onMounted(async () => {
   if (Number.isInteger(deviceId) && deviceId > 0) {
     selection.value = { kind: "device", deviceId };
     currentKey.value = `device-${deviceId}`;
-    currentLabel.value = "这台设备";
   }
   const [configResult, categoryResult] = await Promise.all([
     run(() => getDocConfig()),
@@ -184,6 +216,10 @@ onMounted(async () => {
             >显示旧版本</el-checkbox
           >
           <div class="spacer" />
+          <template v-if="caps?.is_doc_admin">
+            <el-button type="primary" @click="openUpload">上传</el-button>
+            <el-button @click="importVisible = true">按文件夹导入</el-button>
+          </template>
         </div>
         <DocTable
           :rows="rows"
@@ -192,6 +228,7 @@ onMounted(async () => {
           @view="openPreview"
           @edit="openEdit"
           @history="openHistory"
+          @replace="openReplace"
           @remove="remove"
         />
         <el-pagination
@@ -212,6 +249,21 @@ onMounted(async () => {
       :categories="deviceCategories"
       :doc-categories="config?.categories ?? []"
       @saved="refresh"
+    />
+    <DocUploadDialog
+      v-model="uploadVisible"
+      :config="config"
+      :categories="deviceCategories"
+      :replace-target="replaceTarget"
+      :default-owner="defaultOwner"
+      :default-device-label="selection.kind === 'device' ? currentLabel : null"
+      @uploaded="refresh"
+    />
+    <FolderImportDialog
+      v-model="importVisible"
+      :config="config"
+      :categories="deviceCategories"
+      @uploaded="refresh"
     />
     <DocHistoryDrawer
       v-model="historyVisible"

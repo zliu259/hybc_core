@@ -4,6 +4,7 @@ import type { DocLibraryConfig } from "@/api/wh/doc-library-types";
 import {
   groupFolderImport,
   guessDocCategory,
+  isJunkFile,
   splitParts,
   titleFromFileName,
   uploadFileInParts,
@@ -319,7 +320,7 @@ describe("groupFolderImport", () => {
     ]);
   });
 
-  it("选的文件夹本身就是一台设备、里面还有子文件夹：都算这台设备的，类别参考子文件夹名", () => {
+  it("选的文件夹本身就是一台设备、里面还有子文件夹：都算这台设备的，类别参考子文件夹名，标题带上子文件夹名", () => {
     expect(
       summary([
         "DG-1200-03/合格证/扫描件1.jpg",
@@ -331,7 +332,11 @@ describe("groupFolderImport", () => {
         folder: "DG-1200-03",
         deviceId: 1,
         matchedBy: "code",
-        files: ["扫描件1:cert", "2025:maintenance", "总览:other"]
+        files: [
+          "合格证 - 扫描件1:cert",
+          "维修记录 - 2025:maintenance",
+          "总览:other"
+        ]
       }
     ]);
   });
@@ -344,7 +349,7 @@ describe("groupFolderImport", () => {
         folder: "老三号",
         deviceId: 1,
         matchedBy: "name",
-        files: ["2026年:report"]
+        files: ["检测报告 - 2026年:report"]
       },
       { folder: "SB-0009", deviceId: 3, matchedBy: "code", files: ["a:other"] }
     ]);
@@ -394,6 +399,21 @@ describe("groupFolderImport", () => {
   it("什么都没有时返回空", () => {
     expect(groupFolderImport([], devices)).toEqual([]);
     expect(summary(["资料/.DS_Store"])).toEqual([]);
+  });
+});
+
+describe("isJunkFile", () => {
+  it("系统文件和 Office 临时文件算，正常文件不算", () => {
+    for (const name of [
+      ".DS_Store",
+      "Thumbs.db",
+      "desktop.ini",
+      "~$说明书.docx"
+    ]) {
+      expect(isJunkFile(name)).toBe(true);
+    }
+    expect(isJunkFile("说明书.docx")).toBe(false);
+    expect(isJunkFile("README")).toBe(false);
   });
 });
 

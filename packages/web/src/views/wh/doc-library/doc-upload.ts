@@ -179,7 +179,8 @@ export interface FolderImportGroup {
 }
 
 const JUNK_NAMES = new Set([".ds_store", "thumbs.db", "desktop.ini"]);
-const isJunk = (name: string): boolean =>
+/** 系统自己放的文件（.DS_Store、Thumbs.db）和 Office 打开文档时的临时文件：导入时直接不要，也不用提示。 */
+export const isJunkFile = (name: string): boolean =>
   JUNK_NAMES.has(name.toLowerCase()) || name.startsWith("~$");
 
 type DeviceMatch = Pick<FolderImportGroup, "deviceId" | "matchedBy">;
@@ -220,6 +221,16 @@ const categoryFromPath = (
     .map(guessDocCategory)
     .find(category => category !== "other") ?? "other";
 
+/**
+ * 设备文件夹里更深一层的文件，标题带上子文件夹名（「维修记录 - 2024」）：
+ * 这种文件名常常只是年份或「扫描件1」，单看认不出是什么。
+ */
+const titleInFolder = (
+  fileName: string,
+  subFolders: readonly string[]
+): string =>
+  [...subFolders, titleFromFileName(fileName)].join(" - ").slice(0, TITLE_MAX);
+
 interface ImportEntry {
   file: File;
   name: string;
@@ -247,7 +258,7 @@ export const groupFolderImport = (
         dirs: segments.slice(0, -1)
       };
     })
-    .filter(entry => entry.name !== "" && !isJunk(entry.name));
+    .filter(entry => entry.name !== "" && !isJunkFile(entry.name));
   if (entries.length === 0) return [];
 
   const roots = new Set(
@@ -267,7 +278,7 @@ export const groupFolderImport = (
     const folder = entry.dirs[depth] ?? "";
     const item: FolderImportFile = {
       file: entry.file,
-      title: titleFromFileName(entry.name),
+      title: titleInFolder(entry.name, entry.dirs.slice(depth + 1)),
       category: categoryFromPath(entry.name, entry.dirs.slice(depth))
     };
     return new Map(map).set(folder, [...(map.get(folder) ?? []), item]);
