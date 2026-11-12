@@ -934,4 +934,6 @@ git commit -m "chore: 删掉旧库房接口占位"
 2. 旧表里的 `stocktake_task`、`stocktake_line` 照删；新的 `stocktake`、`stocktake_material_line`、`stocktake_device_line` 不能出现在迁移里。测试里把这三张新表加进「必须还在」的名单，再加 `doc_file`、`doc_share`、`project_kit`。
 3. 设计稿第 14 节还要求清掉库房 AI 的提示词配置。阶段 1 去掉了 4 个库房 AI 任务类型；动手时先在代码和迁移里查这几个类型留下的配置行存在哪张表、哪些键，有就在同一个迁移里删，没有就在设计稿第 21 节记一句「没有要清的」。
 
+4. **删表之前先去掉还在写旧表的代码。** `services/cron-jobs.ts` 的 `markOverdueRentalTerms` 每小时都在 `UPDATE asset_rental_term`，而这张表在删除名单里；阶段 1 的 Task 19 没有提到它。不先去掉的话，删表之后每小时的定时批次都会在这一步报错，排在它后面的车队超时通知等任务就不跑了。做法：从 `scheduled.ts` 的小时批次里去掉它，删掉函数和它的测试、`RENTAL_OVERDUE_MARKED` 事件类型里没人用的部分；动手时再全仓库搜一遍删除名单里的每个表名（`rg -n "asset_rental_term|tracked_asset|stock_order|inventory_consumption|stocktake_task|stocktake_line|project_equipment_plan|warehouse_asset_work_order|warehouse_manual|warehouse_task_"`），确认运行时代码里没有别的引用。这一步和删表迁移放在同一个 PR 里，**代码先上线，再跑迁移**。
+
 生产执行步骤（两次 owner 确认）不变：先统计行数给 owner 看，再跑迁移、合并、验证健康检查和审批列表。
