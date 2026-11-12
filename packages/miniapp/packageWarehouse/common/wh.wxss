@@ -1,0 +1,268 @@
+/* 库房分包各页面共用的样式。类名都带 wh- 前缀，避开 app.wxss 里的全局类名（.row、.card、.title 等）。 */
+
+.wh-card {
+  margin-bottom: 24rpx;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 16rpx;
+}
+
+.wh-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx 24rpx 12rpx;
+}
+
+.wh-card-title {
+  font-size: 30rpx;
+  font-weight: 600;
+  color: #1f2a3d;
+}
+
+.wh-card-more {
+  font-size: 26rpx;
+  color: #5c667a;
+}
+
+.wh-card-body {
+  padding: 12rpx 24rpx 24rpx;
+}
+
+.wh-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 24rpx;
+  border-top: 1rpx solid #f0f2f5;
+}
+
+.wh-row-first {
+  border-top: 0;
+}
+
+.wh-row-hover {
+  background: #f5f7fa;
+}
+
+.wh-row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.wh-row-title {
+  font-size: 28rpx;
+  line-height: 1.4;
+  color: #1f2a3d;
+  word-break: break-all;
+}
+
+.wh-row-sub {
+  margin-top: 6rpx;
+  font-size: 24rpx;
+  line-height: 1.4;
+  color: #8a94a6;
+}
+
+.wh-row-side {
+  flex-shrink: 0;
+  margin-left: 16rpx;
+  font-size: 24rpx;
+  color: #8a94a6;
+  text-align: right;
+}
+
+.wh-kv {
+  display: flex;
+  padding: 8rpx 0;
+  font-size: 26rpx;
+  line-height: 1.5;
+}
+
+.wh-kv-label {
+  flex-shrink: 0;
+  width: 140rpx;
+  color: #8a94a6;
+}
+
+.wh-kv-value {
+  flex: 1;
+  min-width: 0;
+  color: #1f2a3d;
+  word-break: break-all;
+}
+
+.wh-empty {
+  padding: 48rpx 24rpx;
+  font-size: 26rpx;
+  color: #8a94a6;
+  text-align: center;
+}
+
+.wh-alert {
+  color: #d4380d;
+}
+
+.wh-muted {
+  color: #8a94a6;
+}
+
+.wh-chevron {
+  margin-left: 8rpx;
+  color: #b4bccb;
+}
+
+.wh-link {
+  padding: 20rpx 24rpx;
+  font-size: 26rpx;
+  color: #1677ff;
+  text-align: center;
+  border-top: 1rpx solid #f0f2f5;
+}
+
+.wh-notice {
+  margin-bottom: 24rpx;
+  padding: 16rpx 24rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  color: #ad6800;
+  background: #fff7e6;
+  border-radius: 12rpx;
+}
+
+/* 底部固定的动作条。页面最后放一个 .wh-bar-space 把内容垫高。 */
+.wh-bar {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 10;
+  display: flex;
+  gap: 16rpx;
+  padding: 16rpx 24rpx calc(16rpx + env(safe-area-inset-bottom));
+  background: #fff;
+  box-shadow: 0 -2rpx 12rpx rgba(31, 42, 61, 0.06);
+}
+
+.wh-bar-space {
+  height: calc(140rpx + env(safe-area-inset-bottom));
+}
+
+/* 底部弹出的面板：不用 t-popup，免得把它算进主包。 */
+.wh-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 20;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.wh-sheet {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 21;
+  max-height: 80vh;
+  padding: 32rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
+  overflow-y: auto;
+  background: #fff;
+  border-radius: 24rpx 24rpx 0 0;
+}
+
+.wh-sheet-title {
+  margin-bottom: 24rpx;
+  font-size: 32rpx;
+  font-weight: 600;
+  color: #1f2a3d;
+}
+
+.wh-sheet-actions {
+  display: flex;
+  gap: 16rpx;
+  margin-top: 32rpx;
+}
+
+.wh-field {
+  margin-bottom: 24rpx;
+}
+
+.wh-field-label {
+  margin-bottom: 12rpx;
+  font-size: 26rpx;
+  color: #5c667a;
+}
+
+.wh-input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 80rpx;
+  padding: 0 24rpx;
+  font-size: 28rpx;
+  color: #1f2a3d;
+  background: #f5f7fa;
+  border-radius: 12rpx;
+}
+
+.wh-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 160rpx;
+  padding: 20rpx 24rpx;
+  font-size: 28rpx;
+  line-height: 1.5;
+  color: #1f2a3d;
+  background: #f5f7fa;
+  border-radius: 12rpx;
+}
+
+.wh-tabs {
+  display: flex;
+  margin-bottom: 24rpx;
+  overflow: hidden;
+  background: #fff;
+  border-radius: 16rpx;
+}
+
+.wh-tab {
+  flex: 1;
+  padding: 22rpx 8rpx;
+  font-size: 26rpx;
+  color: #5c667a;
+  text-align: center;
+}
+
+.wh-tab-active {
+  font-weight: 600;
+  color: #1677ff;
+  box-shadow: inset 0 -4rpx 0 #1677ff;
+}
+
+.wh-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.wh-chip {
+  padding: 14rpx 28rpx;
+  font-size: 26rpx;
+  color: #5c667a;
+  background: #f5f7fa;
+  border: 2rpx solid #f5f7fa;
+  border-radius: 12rpx;
+}
+
+.wh-chip-active {
+  color: #1677ff;
+  background: #e8f1ff;
+  border-color: #1677ff;
+}
+
+.wh-chip-danger {
+  color: #d4380d;
+  background: #fff1ec;
+  border-color: #d4380d;
+}

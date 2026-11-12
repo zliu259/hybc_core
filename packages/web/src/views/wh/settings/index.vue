@@ -15,6 +15,7 @@ const { wecomUsers, loadUserNames } = useWecomUserOptions();
 const { busy, run } = useWhAction();
 const inspector = ref<string>("");
 const photoCount = ref(3);
+const notifyEnabled = ref(false);
 
 const canManage = computed(() => Boolean(caps.value?.can_manage_settings));
 const canEditCategories = computed(() => Boolean(caps.value?.is_keeper));
@@ -24,6 +25,7 @@ const loadSettings = async () => {
   if (!result) return;
   inspector.value = result.data.default_inspector_userid ?? "";
   photoCount.value = result.data.return_inspection_photo_count;
+  notifyEnabled.value = result.data.notify_enabled;
 };
 
 const save = async () => {
@@ -35,6 +37,15 @@ const save = async () => {
       }),
     { success: "已保存" }
   );
+  await loadSettings();
+};
+
+/** 开关一拨就保存；失败时重新读一遍，把开关拨回实际的状态。 */
+const saveNotify = async (value: string | number | boolean) => {
+  const enabled = value === true;
+  await run(() => saveWhSettings({ notify_enabled: enabled }), {
+    success: enabled ? "企微通知已打开" : "企微通知已关闭"
+  });
   await loadSettings();
 };
 
@@ -74,6 +85,17 @@ onMounted(async () => {
         </el-form-item>
       </el-form>
     </el-card>
+    <el-card v-loading="busy" shadow="never">
+      <template #header>企微通知</template>
+      <el-form label-width="120px" :disabled="!canManage">
+        <el-form-item label="发企微卡片">
+          <el-switch :model-value="notifyEnabled" @change="saveNotify" />
+          <div class="hint">
+            新版小程序发布后再打开。打开后，清单待确认和已确认、任务派工和退回、发货返库转场会给相关的人发企微卡片，点开进小程序对应的页面。
+          </div>
+        </el-form-item>
+      </el-form>
+    </el-card>
   </div>
 </template>
 
@@ -81,5 +103,13 @@ onMounted(async () => {
 .wh-settings {
   display: grid;
   gap: 16px;
+}
+
+.hint {
+  width: 100%;
+  margin-top: 4px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
 }
 </style>

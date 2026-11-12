@@ -77,6 +77,7 @@ cd packages/api && npm test -- path/to/file.test.ts      # Vitest
 cd packages/web && npm test -- src/path/to/file.test.ts  # Vitest
 cd packages/mcp && npm test                              # Vitest
 cd packages/miniapp && node utils/<name>.test.js         # plain node assert scripts
+cd packages/miniapp && npm run test:wh                   # all warehouse view-model and page-flow tests
 cd task-runner && pytest tests/test_file.py::test_case_name  # pytest is not in requirements.txt; install it separately
 ```
 
@@ -112,7 +113,7 @@ PureAdmin-based Vue 3 SPA:
 - `layout/` — PureAdmin layout templates
 
 ### Mini-app (packages/miniapp/)
-Native WeCom mini program written in JavaScript (type-checked with `tsc --noEmit`). TDesign components are vendored in `tdesign-miniprogram/`, so no "build npm" step is needed. Main pages cover workbench, projects, finance, warehouse, logs, approval and survey; subpackages are `packageFinance`, `packageProject` and `packageTools`. By default it calls the API through the bridge relay (`https://bridge.hybcdg.com`) and falls back to the Worker directly.
+Native WeCom mini program written in JavaScript (type-checked with `tsc --noEmit`). TDesign components are vendored in `tdesign-miniprogram/`, so no "build npm" step is needed. Main pages cover workbench, projects, finance, warehouse, logs, approval and survey; subpackages are `packageFinance`, `packageProject`, `packageTools` and `packageWarehouse` (all warehouse pages except the tab page; its page paths are written into WeCom cards and must not be renamed). By default it calls the API through the bridge relay (`https://bridge.hybcdg.com`) and falls back to the Worker directly.
 
 ### Task Runner (task-runner/)
 Python compute nodes using pull-model (poll API every 3s by default, no inbound ports):

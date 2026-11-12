@@ -222,5 +222,7 @@ const openQueryAttachment = async ({ key, url: fileUrl, name }, logTag) => {
 module.exports = {
   parseQueryAttachments,
   openQueryAttachment,
-  inferFileName
+  inferFileName,
+  resolveAttachmentUrl,
+  signAttachmentUrl
 };

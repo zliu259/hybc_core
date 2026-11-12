@@ -1,0 +1,78 @@
+<view class="page">
+  <view class="wh-tabs">
+    <view
+      wx:for="{{statusTabs}}"
+      wx:key="key"
+      class="wh-tab {{item.key === activeStatus ? 'wh-tab-active' : ''}}"
+      data-key="{{item.key}}"
+      bindtap="onStatusTab"
+    >{{item.label}}</view>
+  </view>
+
+  <view class="wh-card">
+    <view wx:if="{{rows.length === 0 && !loading}}" class="wh-empty">{{loadFailed ? "加载失败，下拉重试" : "没有清单"}}</view>
+    <view
+      wx:for="{{rows}}"
+      wx:key="id"
+      class="wh-row {{index === 0 ? 'wh-row-first' : ''}}"
+      hover-class="wh-row-hover"
+      data-id="{{item.id}}"
+      bindtap="openKit"
+    >
+      <view class="wh-row-main">
+        <view class="wh-row-title">{{item.projectName}}</view>
+        <view class="wh-row-sub">{{item.title}} · {{item.lineText}}</view>
+      </view>
+      <view class="wh-row-side">
+        <hy-status-chip text="{{item.statusLabel}}" theme="{{item.statusTheme}}" />
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{loading}}" class="wh-empty">加载中…</view>
+  <view wx:elif="{{finished && rows.length > 0}}" class="wh-empty">共 {{total}} 份</view>
+
+  <block wx:if="{{canCreate}}">
+    <view class="wh-bar-space" />
+    <view class="wh-bar">
+      <t-button class="btn-fill" theme="primary" bindtap="openCreate">新建清单</t-button>
+    </view>
+  </block>
+
+  <block wx:if="{{createOpen}}">
+    <view class="wh-mask" bindtap="closeCreate" catchtouchmove="noop" />
+    <view class="wh-sheet">
+      <view class="wh-sheet-title">新建清单</view>
+      <view class="wh-field">
+        <hy-project-picker
+          value="{{createForm.projectId || 0}}"
+          label="项目"
+          enableGps="{{false}}"
+          autoSelect="{{false}}"
+          excludeArchived="{{true}}"
+          bind:change="onCreateProject"
+        />
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">从哪份模板生成</view>
+        <hy-search-picker
+          range="{{templates.range}}"
+          value="{{createForm.templateIndex}}"
+          hasPlaceholderOption="{{false}}"
+          title="选择模板"
+          placeholder="空白清单"
+          bindchange="onTemplatePick"
+        />
+      </view>
+      <view class="wh-field">
+        <view class="wh-field-label">清单标题（追加的清单写"追加"）</view>
+        <input class="wh-input" value="{{createForm.title}}" maxlength="60" bindinput="onCreateTitle" />
+      </view>
+      <view class="wh-row-sub">生成后在清单里改计划数量、选规格，再提交。</view>
+      <view class="wh-sheet-actions">
+        <t-button class="btn-fill" variant="outline" disabled="{{busy}}" bindtap="closeCreate">取消</t-button>
+        <t-button class="btn-fill" theme="primary" loading="{{busy}}" disabled="{{busy}}" bindtap="submitCreate">生成清单</t-button>
+      </view>
+    </view>
+  </block>
+</view>

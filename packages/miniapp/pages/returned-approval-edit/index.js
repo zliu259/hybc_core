@@ -1,5 +1,4 @@
 const { request } = require("../../utils/request");
-const { orderTypeLabel, workOrderTypeLabel } = require("../../utils/enum-labels");
 const { loadUserNameMap } = require("../../utils/user-names");
 const { getUserProfile } = require("../../utils/auth");
 const {
@@ -98,51 +97,6 @@ const CONFIGS = {
       textField("payment_account", "付款账户说明")
     ],
     summary: (row) => `${row.batch_no || "报销批次"} | ${row.total_amount || ""}`
-  },
-  stock_order: {
-    title: "库房出入库单",
-    getPath: (id) => `/api/v1/warehouse/stock-order/${id}`,
-    updatePath: (id) => `/api/v1/warehouse/stock-order/${id}`,
-    submitPath: (id) => `/api/v1/warehouse/stock-order/${id}/submit-approval`,
-    fields: [
-      optionField("order_type", "单据类型", [
-        { label: "入库", value: "inbound" },
-        { label: "出库", value: "outbound" },
-        { label: "调拨", value: "transfer" }
-      ]),
-      numberField("project_id", "所属项目编号"),
-      numberField("from_warehouse_id", "来源仓库编号"),
-      numberField("to_warehouse_id", "目标仓库编号"),
-      textareaField("remark", "备注")
-    ],
-    summary: (row) => `${row.order_no || "库房单"} | ${orderTypeLabel(row.order_type, "")}`,
-    buildItems: (row) =>
-      (Array.isArray(row.items) ? row.items : []).map((item) => ({
-        id: item.id || `${item.asset_type_id || item.tracked_asset_id}`,
-        asset_type_id: item.asset_type_id,
-        tracked_asset_id: item.tracked_asset_id,
-        title: item.type_name || item.asset_type_name || item.asset_type_id || item.tracked_asset_id || "明细",
-        quantity: String(item.quantity ?? "")
-      }))
-  },
-  warehouse_asset_work_order: {
-    title: "库房工单",
-    getPath: (id) => `/api/v1/warehouse/work-order/${id}`,
-    updatePath: (id) => `/api/v1/warehouse/work-order/${id}`,
-    submitPath: (id) => `/api/v1/warehouse/work-order/${id}/submit-approval`,
-    fields: [
-      personField("assignee_userid", "执行人"),
-      optionField("priority", "优先级", [
-        { label: "紧急", value: "urgent" },
-        { label: "高", value: "high" },
-        { label: "普通", value: "normal" },
-        { label: "低", value: "low" }
-      ]),
-      dateField("scheduled_date", "计划日期"),
-      numberField("required_photo_count", "要求照片数"),
-      textareaField("remark", "备注")
-    ],
-    summary: (row) => `${row.work_order_no || "库房工单"} | ${workOrderTypeLabel(row.work_order_type, "")}`
   },
   outbound_contract: {
     title: "对外合同",
@@ -424,13 +378,6 @@ Page({
       const value = stringOrUndefined(raw);
       if (value !== undefined || field.key === "payment_method") payload[field.key] = value || "";
     });
-    if (this.data.bizType === "stock_order") {
-      payload.items = this.data.itemRows.map((item) => ({
-        asset_type_id: numberOrUndefined(item.asset_type_id),
-        tracked_asset_id: numberOrUndefined(item.tracked_asset_id),
-        quantity: Number(item.quantity || 0)
-      }));
-    }
     return payload;
   },
 

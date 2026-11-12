@@ -12,7 +12,6 @@
 | managerLog | notebook-pen |
 | operatorLog | hard-hat |
 | progress | chart-line |
-| asset | scan-line |
 | survey | shield-check |
 | paymentApply | badge-japanese-yen |
 | reimbursement | receipt-text |

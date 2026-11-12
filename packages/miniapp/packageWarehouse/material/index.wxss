@@ -1,0 +1,23 @@
+@import "../common/wh.wxss";
+
+.material-search {
+  margin-bottom: 16rpx;
+  background: #fff;
+}
+
+.material-filter {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24rpx;
+  padding: 16rpx 24rpx;
+  font-size: 26rpx;
+  background: #fff;
+  border-radius: 16rpx;
+}
+
+.material-qty {
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2a3d;
+}

@@ -1,0 +1,31 @@
+@import "../common/wh.wxss";
+
+.form-body {
+  padding-top: 24rpx;
+}
+
+.form-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.form-device {
+  margin-bottom: 12rpx;
+  font-size: 28rpx;
+  font-weight: 600;
+  color: #1f2a3d;
+}
+
+.form-device-pick,
+.form-due {
+  display: flex;
+  gap: 16rpx;
+  align-items: center;
+}
+
+.form-device-search,
+.form-due-picker {
+  flex: 1;
+  min-width: 0;
+}

@@ -1,0 +1,17 @@
+@import "../common/wh.wxss";
+
+.project-settled {
+  color: #2ba471;
+  background: #e8f8f0;
+}
+
+.project-onsite {
+  font-size: 26rpx;
+  font-weight: 600;
+  color: #1f2a3d;
+}
+
+.project-reversed {
+  color: #8a94a6;
+  text-decoration: line-through;
+}

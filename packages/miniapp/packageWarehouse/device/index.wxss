@@ -1,0 +1,27 @@
+@import "../common/wh.wxss";
+
+.device-head {
+  padding-top: 24rpx;
+}
+
+.device-code-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.device-code {
+  font-size: 40rpx;
+  font-weight: 600;
+  color: #1f2a3d;
+}
+
+.device-name {
+  margin: 8rpx 0 16rpx;
+  font-size: 28rpx;
+  color: #1f2a3d;
+}
+
+.sheet-hint {
+  margin: -8rpx 0 24rpx;
+}

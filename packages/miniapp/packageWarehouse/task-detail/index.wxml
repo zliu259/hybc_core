@@ -1,0 +1,137 @@
+<view class="page">
+  <view wx:if="{{notFound}}" class="wh-empty">没有找到这个任务</view>
+  <view wx:elif="{{loadFailed && !view}}" class="wh-empty">加载失败，下拉重试</view>
+  <block wx:elif="{{view}}">
+    <view class="wh-card">
+      <view class="wh-card-body task-head">
+        <view class="task-title-line">
+          <text class="task-title">{{view.header.title}}</text>
+          <hy-status-chip text="{{view.header.statusLabel}}" theme="{{view.header.statusTheme}}" />
+        </view>
+        <view class="wh-row-sub">{{view.header.kindLabel}} · {{view.header.taskNo}}</view>
+        <view wx:if="{{view.header.blocking}}" class="wh-row-sub wh-alert">这个任务完成前，设备不能发出</view>
+      </view>
+    </view>
+
+    <view wx:if="{{view.reviewNote}}" class="wh-notice">
+      <text wx:if="{{view.supplementRound > 0}}">第 {{view.supplementRound}} 次退回补充：</text>{{view.reviewNote}}
+    </view>
+    <view wx:if="{{view.cancelReason}}" class="wh-notice">已取消：{{view.cancelReason}}</view>
+
+    <view class="wh-card">
+      <view class="wh-card-body task-info">
+        <view wx:if="{{view.device}}" class="wh-kv" hover-class="wh-row-hover" bindtap="openDevice">
+          <text class="wh-kv-label">设备</text>
+          <view class="wh-kv-value">
+            <view>{{view.device.code}} {{view.device.name}}<text class="wh-chevron">›</text></view>
+            <view class="wh-row-sub">{{view.device.locationText}}</view>
+          </view>
+        </view>
+        <view class="wh-kv">
+          <text class="wh-kv-label">执行人</text>
+          <view wx:if="{{view.actions.canAssign}}" class="wh-kv-value">
+            <hy-search-picker
+              range="{{assignee.range}}"
+              value="{{assignee.index}}"
+              title="派给谁"
+              placeholder="未派工，点这里选人"
+              searchPlaceholder="输入姓名 / 拼音搜索"
+              disabled="{{busy}}"
+              bindchange="onAssignPick"
+            />
+          </view>
+          <text wx:else class="wh-kv-value">{{view.assigneeName}}</text>
+        </view>
+        <view wx:if="{{view.dueText}}" class="wh-kv">
+          <text class="wh-kv-label">期限</text>
+          <text class="wh-kv-value {{view.overdue ? 'wh-alert' : ''}}">{{view.dueText}}<text wx:if="{{view.overdue}}">（已超期）</text></text>
+        </view>
+        <view wx:if="{{view.description}}" class="wh-kv">
+          <text class="wh-kv-label">任务说明</text>
+          <text class="wh-kv-value">{{view.description}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{view.result}}" class="wh-card">
+      <view class="wh-card-head"><text class="wh-card-title">提交的结果</text></view>
+      <view class="wh-card-body">
+        <view wx:if="{{view.result.label}}" class="wh-kv">
+          <text class="wh-kv-label">检查结果</text>
+          <text class="wh-kv-value {{view.result.label === '不合格' ? 'wh-alert' : ''}}">{{view.result.label}}</text>
+        </view>
+        <view wx:if="{{view.result.systemsText}}" class="wh-kv">
+          <text class="wh-kv-label">涉及系统</text>
+          <text class="wh-kv-value">{{view.result.systemsText}}</text>
+        </view>
+        <view wx:if="{{view.result.note}}" class="wh-kv">
+          <text class="wh-kv-label">简报</text>
+          <text class="wh-kv-value">{{view.result.note}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view class="wh-card">
+      <view class="wh-card-head">
+        <text class="wh-card-title">照片</text>
+        <text class="wh-card-more {{view.photo.missing > 0 ? 'wh-alert' : ''}}">{{view.photo.text}}</text>
+      </view>
+      <view class="wh-card-body photo-grid">
+        <view wx:for="{{photos}}" wx:key="id" class="photo-cell">
+          <image class="photo-image" src="{{item.url}}" mode="aspectFill" data-index="{{index}}" bindtap="previewPhoto" />
+          <view wx:if="{{item.canDelete}}" class="photo-delete" data-id="{{item.id}}" catchtap="deletePhoto">×</view>
+        </view>
+        <view wx:if="{{view.actions.canWork}}" class="photo-cell photo-add {{uploading ? 'photo-add-busy' : ''}}" bindtap="choosePhotos">
+          <text class="photo-add-text">{{uploading ? "上传中…" : "+ 拍照 / 选图"}}</text>
+        </view>
+        <view wx:if="{{photos.length === 0 && !view.actions.canWork}}" class="wh-muted photo-none">没有照片</view>
+      </view>
+    </view>
+
+    <view wx:if="{{view.actions.canWork}}" class="wh-card">
+      <view class="wh-card-head"><text class="wh-card-title">提交任务</text></view>
+      <view class="wh-card-body">
+        <view wx:if="{{view.needsResult}}" class="wh-field">
+          <view class="wh-field-label">检查结果</view>
+          <view class="wh-chips">
+            <view class="wh-chip {{form.result === 'pass' ? 'wh-chip-active' : ''}}" data-value="pass" bindtap="onResult">合格</view>
+            <view class="wh-chip {{form.result === 'fail' ? 'wh-chip-danger' : ''}}" data-value="fail" bindtap="onResult">不合格</view>
+          </view>
+          <view wx:if="{{form.result === 'fail'}}" class="wh-row-sub">不合格会自动生成一个维修任务，设备显示维修中。</view>
+        </view>
+        <view wx:if="{{view.needsSystems}}" class="wh-field">
+          <view class="wh-field-label">维修涉及的系统（可多选）</view>
+          <view class="wh-chips">
+            <view
+              wx:for="{{systemOptions}}"
+              wx:key="key"
+              class="wh-chip {{item.active ? 'wh-chip-active' : ''}}"
+              data-key="{{item.key}}"
+              bindtap="toggleSystem"
+            >{{item.label}}</view>
+          </view>
+        </view>
+        <view class="wh-field">
+          <view class="wh-field-label">简报</view>
+          <textarea
+            class="wh-textarea"
+            value="{{form.resultNote}}"
+            maxlength="800"
+            placeholder="做了什么、发现了什么"
+            bindinput="onNoteInput"
+          />
+        </view>
+        <t-button theme="primary" block loading="{{busy}}" disabled="{{busy || uploading}}" bindtap="submit">提交</t-button>
+      </view>
+    </view>
+
+    <block wx:if="{{view.actions.canConfirm || view.actions.canSendBack || view.actions.canCancel}}">
+      <view class="wh-bar-space" />
+      <view class="wh-bar">
+        <t-button wx:if="{{view.actions.canCancel}}" class="btn-fill" variant="outline" theme="danger" disabled="{{busy}}" bindtap="cancelTask">取消任务</t-button>
+        <t-button wx:if="{{view.actions.canSendBack}}" class="btn-fill" variant="outline" disabled="{{busy}}" bindtap="sendBack">退回补充</t-button>
+        <t-button wx:if="{{view.actions.canConfirm}}" class="btn-fill" theme="primary" disabled="{{busy}}" bindtap="confirmDone">确认完成</t-button>
+      </view>
+    </block>
+  </block>
+</view>

@@ -1,19 +1,26 @@
 /** 库房任务的查询。 */
 import type { Env } from "../../types/env";
-import type { WhTask, WhTaskPhoto } from "../../types/wh";
+import type { DeviceLocation, WhTask, WhTaskPhoto } from "../../types/wh";
 import type { Paged } from "./device";
 import { requireEnum, requireId } from "./validation";
 
 export type TaskRow = WhTask & {
   device_code: string | null;
   device_name: string | null;
+  /** 设备现在在哪：任务页直接显示位置，不用再查设备。没有设备的任务三列都是 null。 */
+  device_location: DeviceLocation | null;
+  device_project_name: string | null;
+  device_storage_note: string | null;
   photo_count: number;
 };
 
-const SELECT_TASK = `SELECT t.*, d.device_code, d.name AS device_name,
+export const SELECT_TASK = `SELECT t.*, d.device_code, d.name AS device_name,
+    d.location AS device_location, dp.project_name AS device_project_name,
+    d.storage_note AS device_storage_note,
     (SELECT COUNT(*) FROM wh_task_photo ph WHERE ph.task_id = t.id AND ph.deleted_at IS NULL) AS photo_count
   FROM wh_task t
-  LEFT JOIN device d ON d.id = t.device_id`;
+  LEFT JOIN device d ON d.id = t.device_id
+  LEFT JOIN project dp ON dp.id = d.current_project_id`;
 
 const positiveInt = (value: string | undefined, fallback: number, max: number): number => {
   const parsed = Number(value);

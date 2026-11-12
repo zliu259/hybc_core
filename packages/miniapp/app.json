@@ -9,11 +9,6 @@
     "pages/project-create/index",
     "pages/finance/index",
     "pages/warehouse/index",
-    "pages/warehouse-task/index",
-    "pages/warehouse-stock-order/index",
-    "pages/warehouse-inventory/index",
-    "pages/warehouse-dispatch/index",
-    "pages/warehouse-stocktake/index",
     "pages/profile/index",
     "pages/profile-settings/index",
     "pages/log/index",
@@ -23,7 +18,6 @@
     "pages/approval-initiated/index",
     "pages/approval-detail/index",
     "pages/returned-approval-edit/index",
-    "pages/asset/index",
     "pages/survey/index",
     "pages/progress/index",
     "pages/notice/index",
@@ -62,6 +56,20 @@
       "root": "packageProject",
       "pages": [
         "project-section/index"
+      ]
+    },
+    {
+      "root": "packageWarehouse",
+      "pages": [
+        "device/index",
+        "task-list/index",
+        "task-detail/index",
+        "task-new/index",
+        "kit-list/index",
+        "kit/index",
+        "ship/index",
+        "project/index",
+        "material/index"
       ]
     }
   ],

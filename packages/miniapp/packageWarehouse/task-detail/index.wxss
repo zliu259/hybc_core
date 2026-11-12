@@ -1,0 +1,79 @@
+@import "../common/wh.wxss";
+
+.task-head,
+.task-info {
+  padding-top: 24rpx;
+}
+
+.task-title-line {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.task-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 34rpx;
+  font-weight: 600;
+  line-height: 1.4;
+  color: #1f2a3d;
+  word-break: break-all;
+}
+
+.photo-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.photo-cell {
+  position: relative;
+  width: 200rpx;
+  height: 200rpx;
+  overflow: hidden;
+  background: #f5f7fa;
+  border-radius: 12rpx;
+}
+
+.photo-image {
+  width: 100%;
+  height: 100%;
+}
+
+.photo-delete {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 56rpx;
+  height: 56rpx;
+  font-size: 36rpx;
+  line-height: 52rpx;
+  color: #fff;
+  text-align: center;
+  background: rgba(0, 0, 0, 0.55);
+  border-radius: 0 0 0 12rpx;
+}
+
+.photo-add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx dashed #b4bccb;
+}
+
+.photo-add-busy {
+  opacity: 0.6;
+}
+
+.photo-add-text {
+  padding: 0 12rpx;
+  font-size: 24rpx;
+  color: #5c667a;
+  text-align: center;
+}
+
+.photo-none {
+  font-size: 26rpx;
+}

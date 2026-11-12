@@ -47,7 +47,8 @@ export const domainEventTypes = [
   "MANAGER_LOG_UPDATED",
   "OPERATOR_LOG_CREATED",
   "OPERATOR_LOG_UPDATED",
-  "EXTERNAL_LOG_ADOPTED"
+  "EXTERNAL_LOG_ADOPTED",
+  "WAREHOUSE_NOTICE"
 ] as const;
 
 export type DomainEventType = (typeof domainEventTypes)[number];

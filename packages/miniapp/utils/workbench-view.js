@@ -25,7 +25,6 @@ const ENTRIES = [
   { key: "managerLog", label: "项目日志", tone: "green", path: "/pages/manager-log/index", roles: MANAGE_ROLES },
   { key: "operatorLog", label: "施工日志", tone: "green", path: "/pages/operator-log/index", roles: FIELD_ROLES },
   { key: "progress", label: "进度看板", tone: "blue", path: "/pages/progress/index", roles: FIELD_ROLES },
-  { key: "asset", label: "设备查验", tone: "green", path: "/pages/asset/index", roles: FIELD_ROLES },
   { key: "survey", label: "安全勘查", tone: "green", path: "/pages/survey/index", roles: FIELD_ROLES },
   { key: "paymentApply", label: "付款发单", tone: "orange", path: "/packageFinance/payment-apply/index", roles: ["super_admin", "manager", "site_manager", "finance", "operator"] },
   { key: "reimbursement", label: "报销", tone: "orange", path: "/packageFinance/reimbursement-list/index" },
@@ -44,9 +43,9 @@ const ENTRIES = [
 const COMMON_BY_ROLE = [
   { role: "super_admin", keys: ["dashboard", "projects", "query", "paymentApply", "reimbursement", "managerLog", "progress", "initiated"] },
   { role: "manager", keys: ["dashboard", "projects", "query", "paymentApply", "reimbursement", "managerLog", "progress", "initiated"] },
-  { role: "site_manager", keys: ["managerLog", "operatorLog", "projects", "reimbursement", "paymentApply", "asset", "survey", "initiated"] },
+  { role: "site_manager", keys: ["managerLog", "operatorLog", "projects", "reimbursement", "paymentApply", "progress", "survey", "initiated"] },
   { role: "finance", keys: ["query", "paymentApply", "reimbursement", "initiated", "archive", "contractPrecheck", "projects", "fuel"] },
-  { role: "operator", keys: ["operatorLog", "reimbursement", "asset", "survey", "fuel", "maintenance", "initiated", "projects"] }
+  { role: "operator", keys: ["operatorLog", "reimbursement", "progress", "survey", "fuel", "maintenance", "initiated", "projects"] }
 ];
 
 const canUse = (entry, roles) =>
@@ -100,7 +99,7 @@ const TODO_TILES = [
   { key: "returned", label: "被退回", path: "/pages/approval-initiated/index" },
   { key: "review", label: "待复核", path: "/pages/external-log-review/index", roles: MANAGE_ROLES },
   { key: "warning", label: "进度预警", path: "/pages/progress/index", roles: FIELD_ROLES },
-  { key: "tasks", label: "库房任务", path: "/pages/warehouse-task/index", roles: FIELD_ROLES }
+  { key: "tasks", label: "库房任务", path: "/packageWarehouse/task-list/index?tab=mine", roles: FIELD_ROLES }
 ];
 
 /** 这个角色要取哪些待办数字；取不了的接口不必发请求。 */
