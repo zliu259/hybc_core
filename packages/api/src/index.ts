@@ -27,6 +27,7 @@ import { supportRoutes } from "./routes/support";
 import { surveyRoutes } from "./routes/survey";
 import { biddingDedupRoutes } from "./routes/bidding-dedup";
 import { taskRoutes } from "./routes/task";
+import { docLibraryRoutes } from "./routes/doc-library";
 import { uploadRoutes } from "./routes/upload";
 import { warehouseLegacyStubRoutes } from "./routes/warehouse-legacy-stub";
 import { mountWarehouseRoutes } from "./routes/wh-app";
@@ -88,6 +89,7 @@ app.route("/api/v1/task", taskRoutes);
 app.route("/api/v1/bidding", biddingDedupRoutes);
 app.route("/api/v1/dict", dictRoutes);
 app.route("/api/v1/upload", uploadRoutes);
+app.route("/api/v1/doc-library", docLibraryRoutes);
 app.route("/api/v1/vertex", vertexRoutes);
 // 仅供 vertex Worker 经 Service Binding 调用；handler 内拒绝公网边缘请求。
 app.route("/internal/vertex-handoff", internalVertexHandoffRoutes);
