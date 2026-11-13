@@ -42,13 +42,16 @@ export const listDeviceCategories = () =>
 export const createDeviceCategory = (data: {
   name: string;
   sort_order?: number;
+  code_prefix?: string | null;
 }) =>
   http.request<ApiResult<{ id: number }>>("post", `${base}/device-category`, {
     data
   });
 export const updateDeviceCategory = (
   id: number,
-  data: Partial<Pick<DeviceCategory, "name" | "sort_order" | "status">>
+  data: Partial<
+    Pick<DeviceCategory, "name" | "sort_order" | "status" | "code_prefix">
+  >
 ) =>
   http.request<{ success: boolean }>("put", `${base}/device-category/${id}`, {
     data

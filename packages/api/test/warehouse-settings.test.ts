@@ -202,6 +202,70 @@ describe.skipIf(!hasSqlite)("库房权限和设置", () => {
     ]);
   });
 
+  it("类别的编号开头：建的时候可以带，存成大写；能改、能清掉；列表里带出来", async () => {
+    h.seed.member("lizhen", "keeper");
+    as("lizhen", ["operator"]);
+    const made = await call("POST", "/warehouse/device-category", {
+      name: "顶管机",
+      code_prefix: " dg "
+    });
+    expect(made.status).toBe(201);
+    const id = made.body.data.id;
+    const plain = await call("POST", "/warehouse/device-category", { name: "水泵" });
+    const prefixOf = async (categoryId) =>
+      (await call("GET", "/warehouse/device-category")).body.data.find((c) => c.id === categoryId)
+        .code_prefix;
+    expect(await prefixOf(id)).toBe("DG");
+    expect(await prefixOf(plain.body.data.id)).toBeNull();
+    expect(
+      (await call("PUT", `/warehouse/device-category/${id}`, { code_prefix: "DGJ" })).status
+    ).toBe(200);
+    expect(await prefixOf(id)).toBe("DGJ");
+    // 只改名字不动开头
+    await call("PUT", `/warehouse/device-category/${id}`, { name: "顶管机头" });
+    expect(await prefixOf(id)).toBe("DGJ");
+    for (const empty of [null, "", "  "]) {
+      await call("PUT", `/warehouse/device-category/${id}`, { code_prefix: "DG" });
+      expect(
+        (await call("PUT", `/warehouse/device-category/${id}`, { code_prefix: empty })).status
+      ).toBe(200);
+      expect(await prefixOf(id)).toBeNull();
+    }
+  });
+
+  it("编号开头只能是 1 到 4 个字母；两个类别不能用同一个", async () => {
+    h.seed.member("lizhen", "keeper");
+    as("lizhen", ["operator"]);
+    const first = await call("POST", "/warehouse/device-category", {
+      name: "顶管机",
+      code_prefix: "DG"
+    });
+    for (const bad of ["D1", "顶管", "ABCDE", "D-G", 12]) {
+      expect(
+        await call("POST", "/warehouse/device-category", { name: "别的", code_prefix: bad })
+      ).toEqual({
+        status: 400,
+        body: { success: false, error: { message: "编号开头只能是 1 到 4 个英文字母" } }
+      });
+    }
+    const clash = {
+      status: 409,
+      body: { success: false, error: { message: "这个编号开头已经被别的类别用了" } }
+    };
+    expect(
+      await call("POST", "/warehouse/device-category", { name: "顶铁", code_prefix: "dg" })
+    ).toEqual(clash);
+    const other = await call("POST", "/warehouse/device-category", { name: "顶铁" });
+    expect(
+      await call("PUT", `/warehouse/device-category/${other.body.data.id}`, { code_prefix: "DG" })
+    ).toEqual(clash);
+    // 自己存自己的不算撞
+    expect(
+      (await call("PUT", `/warehouse/device-category/${first.body.data.id}`, { code_prefix: "DG" }))
+        .status
+    ).toBe(200);
+  });
+
   it("操作员不能建类别，财务能看类别", async () => {
     as("op", ["operator"]);
     expect((await call("POST", "/warehouse/device-category", { name: "泵" })).status).toBe(403);

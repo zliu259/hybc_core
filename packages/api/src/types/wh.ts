@@ -12,6 +12,8 @@ export interface WarehouseMember {
 export interface DeviceCategory {
   id: number;
   name: string;
+  /** 这个类别的设备自动编号用的开头（顶管机 DG）；没设是 null，用 SB */
+  code_prefix: string | null;
   sort_order: number;
   status: "active" | "disabled";
   created_at: string;

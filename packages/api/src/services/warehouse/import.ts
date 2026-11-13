@@ -5,6 +5,7 @@
 import type { Env } from "../../types/env";
 import { runAtomicBatch } from "../db-transaction";
 import { generateSerials } from "../serial";
+import { createCodeAllocator, DEFAULT_CODE_PREFIX } from "./device-code";
 import { requireClientRequestId } from "./doc-input";
 import { badRequest, WarehouseError } from "./errors";
 import { nextMaterialCode, parseMaterialFields } from "./material";
@@ -164,11 +165,14 @@ export const importDevices = async (
     );
     for (const row of found) existing.add(row.code);
   }
-  const categories = await env.DB.prepare("SELECT name, status FROM device_category").all<{
-    name: string;
-    status: string;
-  }>();
+  const categories = await env.DB.prepare(
+    "SELECT name, status, code_prefix FROM device_category"
+  ).all<{ name: string; status: string; code_prefix: string | null }>();
   const categoryStatus = new Map((categories.results ?? []).map((row) => [row.name, row.status]));
+  // 这次导入才新建的类别没有编号开头，用 SB
+  const categoryPrefix = new Map(
+    (categories.results ?? []).map((row) => [row.name, row.code_prefix || DEFAULT_CODE_PREFIX])
+  );
 
   const seen = new Set<string>();
   parsed.forEach((row, index) => {
@@ -188,14 +192,14 @@ export const importDevices = async (
     return { created: 0, errors: errors.sort((a, b) => a.row - b.row), opening_doc_no: null };
   }
 
-  const maxRow = await env.DB.prepare(
-    "SELECT MAX(CAST(SUBSTR(device_code, 4) AS INTEGER)) AS n FROM device WHERE device_code GLOB 'SB-[0-9]*'"
-  ).first<{ n: number | null }>();
-  const fileMax = Math.max(
-    0,
-    ...valid.map((row) => Number(/^SB-(\d+)$/i.exec(row.device_code ?? "")?.[1] ?? 0))
+  // 每个开头各排各的流水：接着库里现有的最大号，文件里自带的同开头编号也要让开
+  const prefixOf = (row: DeviceImportRow): string =>
+    categoryPrefix.get(row.category_name) ?? DEFAULT_CODE_PREFIX;
+  const takeCode = await createCodeAllocator(
+    env,
+    valid.filter((row) => !row.device_code).map(prefixOf),
+    valid.flatMap((row) => (row.device_code ? [row.device_code] : []))
   );
-  let nextNumber = Math.max(Number(maxRow?.n ?? 0), fileMax) + 1;
   const now = nowIso();
   const statements: D1PreparedStatement[] = [
     recordImport(env, crid, "device", valid.length, null, operatorUserid, now)
@@ -209,7 +213,7 @@ export const importDevices = async (
     );
   }
   for (const row of valid) {
-    const code = row.device_code ?? `SB-${String(nextNumber++).padStart(4, "0")}`;
+    const code = row.device_code ?? takeCode(prefixOf(row));
     const projectId = row.project_name ? (projects.get(row.project_name) ?? null) : null;
     statements.push(
       env.DB.prepare(

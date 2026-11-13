@@ -8,6 +8,7 @@ import {
   DEVICE_STATES,
   type DeviceState
 } from "./device-state";
+import { nextDeviceCode } from "./device-code";
 import { badRequest, WarehouseError } from "./errors";
 import {
   optionalDate,
@@ -127,13 +128,6 @@ const parseDeviceFields = async (
   return columns;
 };
 
-const nextDeviceCode = async (env: Env): Promise<string> => {
-  const row = await env.DB.prepare(
-    "SELECT MAX(CAST(SUBSTR(device_code, 4) AS INTEGER)) AS n FROM device WHERE device_code GLOB 'SB-[0-9]*'"
-  ).first<{ n: number | null }>();
-  return `SB-${String(Number(row?.n ?? 0) + 1).padStart(4, "0")}`;
-};
-
 const insertDevice = async (
   env: Env,
   columns: DeviceColumns,
@@ -173,7 +167,7 @@ export const createDevice = async (
   const columns = await parseDeviceFields(env, input, "create");
   const ownCode = typeof columns.device_code === "string" ? columns.device_code : null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const code = ownCode ?? (await nextDeviceCode(env));
+    const code = ownCode ?? (await nextDeviceCode(env, Number(columns.category_id)));
     try {
       return { id: await insertDevice(env, columns, code, operatorUserid), device_code: code };
     } catch (error) {

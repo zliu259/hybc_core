@@ -149,6 +149,54 @@ describe.skipIf(!hasSqlite)("导入", () => {
     ]);
   });
 
+  it("按每行的类别取编号开头：设了开头的类别各排各的，没设的和新建的类别用 SB", async () => {
+    const dg = h.seed.category("顶管机");
+    const dt = h.seed.category("顶铁");
+    h.database.prepare("UPDATE device_category SET code_prefix = 'DG' WHERE id = ?").run(dg);
+    h.database.prepare("UPDATE device_category SET code_prefix = 'DT' WHERE id = ?").run(dt);
+    h.seed.device({ device_code: "DG-033", category_id: dg });
+    h.seed.device({ device_code: "DT-36", category_id: dt });
+    const result = await importDevices(
+      h.env,
+      {
+        client_request_id: "imp-dev-prefix-1",
+        rows: [
+          machine(),
+          machine({ name: "顶铁37号", category_name: "顶铁" }),
+          machine({ name: "水泵", category_name: "水泵" }),
+          machine(),
+          machine({ name: "顶铁38号", category_name: "顶铁" }),
+          machine({ name: "水泵2", category_name: "水泵" })
+        ]
+      },
+      "keeper"
+    );
+    expect(result.errors).toEqual([]);
+    const codes = h.database
+      .prepare("SELECT device_code FROM device WHERE created_by_userid = 'keeper' ORDER BY id")
+      .all()
+      .map((row) => row.device_code);
+    expect(codes).toEqual(["DG-034", "DT-37", "SB-0001", "DG-035", "DT-38", "SB-0002"]);
+  });
+
+  it("文件里自带了同一个开头的编号：自动排的跳过它", async () => {
+    const dg = h.seed.category("顶管机");
+    h.database.prepare("UPDATE device_category SET code_prefix = 'DG' WHERE id = ?").run(dg);
+    await importDevices(
+      h.env,
+      {
+        client_request_id: "imp-dev-prefix-2",
+        rows: [machine({ device_code: "DG-010" }), machine(), machine()]
+      },
+      "keeper"
+    );
+    expect((await listDevices(h.env, {})).items.map((d) => d.device_code)).toEqual([
+      "DG-010",
+      "DG-011",
+      "DG-012"
+    ]);
+  });
+
   it("设备导入（不带编号）用同一个 client_request_id 重放：不会多出设备，返回相同的条数", async () => {
     const input = { client_request_id: "imp-dev-0006", rows: [machine(), machine()] };
     const first = await importDevices(h.env, input, "keeper");

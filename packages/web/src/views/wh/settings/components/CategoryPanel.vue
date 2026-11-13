@@ -36,7 +36,9 @@ const add = async () => {
 
 const save = async (
   row: DeviceCategory,
-  patch: Partial<Pick<DeviceCategory, "name" | "sort_order" | "status">>
+  patch: Partial<
+    Pick<DeviceCategory, "name" | "sort_order" | "status" | "code_prefix">
+  >
 ) => {
   const done = await run(() => updateDeviceCategory(row.id, patch), {
     success: "已保存"
@@ -44,6 +46,8 @@ const save = async (
   await load();
   return done;
 };
+
+onMounted(() => void load());
 </script>
 
 <template>
@@ -59,6 +63,21 @@ const save = async (
             @change="value => save(row, { name: String(value) })"
           />
           <span v-else>{{ row.name }}</span>
+        </template>
+      </el-table-column>
+      <el-table-column label="编号开头" width="130">
+        <template #default="{ row }">
+          <el-input
+            v-if="props.canEdit"
+            :model-value="row.code_prefix ?? ''"
+            maxlength="4"
+            placeholder="SB"
+            @change="
+              value =>
+                save(row, { code_prefix: String(value).trim().toUpperCase() })
+            "
+          />
+          <span v-else>{{ row.code_prefix ?? "SB" }}</span>
         </template>
       </el-table-column>
       <el-table-column label="排序" width="130">
@@ -87,6 +106,11 @@ const save = async (
         </template>
       </el-table-column>
     </el-table>
+    <div class="hint">
+      编号开头：这个类别下新建设备不填编号时，系统按「开头-流水号」自动编号，例如顶管机填
+      DG，下一台就是 DG-034。1 到 4 个英文字母，不填用
+      SB。改开头不会动已有设备的编号。
+    </div>
     <div v-if="props.canEdit" class="add-row">
       <el-input
         v-model="newName"
@@ -107,5 +131,12 @@ const save = async (
   display: flex;
   gap: 8px;
   margin-top: 12px;
+}
+
+.hint {
+  margin-top: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--el-text-color-secondary);
 }
 </style>
