@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 
+import type { KitTemplateLine } from "@/api/wh/kit-types";
 import type { WarehouseCapabilities } from "@/api/wh/types";
-import { parseTable } from "../shared/csv";
+import { emptyRule } from "./kit-plan-view";
 import {
   editableFromKit,
   editableFromTemplate,
   kitActions,
   kitLineProblems,
-  mapTemplateRows,
   newEditableLine,
   saveThen,
   toKitLines,
@@ -137,77 +137,6 @@ describe("提交前的行检查", () => {
   });
 });
 
-describe("模板粘贴导入", () => {
-  const categories = [{ id: 1, name: "顶管机" }];
-  const paste = (body: string) =>
-    mapTemplateRows(
-      parseTable(
-        `分节\t类型\t品名\t规格\t单位\t默认数量\t设备类别\t备注\n${body}`
-      ),
-      categories
-    );
-
-  it("三行：设备、物资（周转/消耗都算物资）、备忘", () => {
-    expect(
-      paste(
-        "顶进设备\t按台\t机头土压\t2400\t台\t1\t顶管机\t\n辅助设备\t周转\t排泥钢管\tΦ114\t米\t120\t\t\n生活设施\t备忘\t集装箱\t\t个\t\t\t本地租"
-      )
-    ).toEqual({
-      rows: [
-        {
-          section: "顶进设备",
-          line_kind: "device",
-          device_category_id: 1,
-          name_text: "机头土压",
-          spec_text: "2400",
-          unit: "台",
-          default_qty: 1,
-          note: null
-        },
-        {
-          section: "辅助设备",
-          line_kind: "material",
-          device_category_id: null,
-          name_text: "排泥钢管",
-          spec_text: "Φ114",
-          unit: "米",
-          default_qty: 120,
-          note: null
-        },
-        {
-          section: "生活设施",
-          line_kind: "text",
-          device_category_id: null,
-          name_text: "集装箱",
-          spec_text: null,
-          unit: "个",
-          default_qty: null,
-          note: "本地租"
-        }
-      ],
-      errors: []
-    });
-  });
-
-  it("设备类别不存在、数量写成若干、类型认不出：逐行报错", () => {
-    expect(
-      paste(
-        "辅助设备\t设备\t泥浆泵\t\t台\t1\t泥浆泵\t\n工具\t物资\t管钳\t\t把\t若干\t\t\n工具\t工具\t扳手\t\t把\t1\t\t"
-      ).errors
-    ).toEqual([
-      { row: 1, message: "设备类别不存在：泥浆泵，请先在库房设置里添加" },
-      { row: 2, message: "默认数量不是数字：若干" },
-      { row: 3, message: "类型只能填 设备、物资 或 备忘：工具" }
-    ]);
-  });
-
-  it("缺少必填列时整张表报错", () => {
-    expect(
-      mapTemplateRows(parseTable("品名\t单位\n管钳\t把"), categories).errors
-    ).toEqual([{ row: 0, message: "缺少列：分节、类型" }]);
-  });
-});
-
 describe("表格行和接口行互转", () => {
   it("清单行：读回来再保存，字段不丢；设备行不带物资，物资行不带类别；空字符串存成 null", () => {
     const rows = editableFromKit([
@@ -292,7 +221,11 @@ describe("表格行和接口行互转", () => {
         spec_text: null,
         unit: "个",
         default_qty: null,
-        note: "本地租"
+        note: "本地租",
+        ...emptyRule(),
+        // 备忘行不存规则，带回来的也不往外发
+        qty_per_set: true,
+        role: "power"
       }
     ]);
     expect(toTemplateLines(rows)).toEqual([
@@ -304,9 +237,53 @@ describe("表格行和接口行互转", () => {
         spec_text: null,
         unit: "个",
         default_qty: null,
-        note: "本地租"
+        note: "本地租",
+        ...emptyRule()
       }
     ]);
+  });
+
+  it("模板行的规则：读回来再保存原样不变；固定的行不带系数和另加", () => {
+    const line = (patch: Partial<KitTemplateLine>): KitTemplateLine => ({
+      id: 1,
+      sort_order: 0,
+      section: "辅助设备",
+      line_kind: "material",
+      device_category_id: null,
+      device_category_name: null,
+      name_text: "排泥钢管",
+      spec_text: "Φ114",
+      unit: "米",
+      default_qty: 120,
+      note: null,
+      ...emptyRule(),
+      ...patch
+    });
+    const rule = {
+      qty_basis: "per_longest_metre" as const,
+      qty_factor: 2,
+      qty_extra: 60,
+      qty_per_set: true,
+      spec_by_diameter: true,
+      role: null
+    };
+    const [calculated, fixed] = toTemplateLines(
+      editableFromTemplate([
+        line(rule),
+        line({ qty_factor: 2, qty_extra: 5, role: "lodging" })
+      ])
+    );
+    expect(calculated).toMatchObject(rule);
+    expect(fixed).toMatchObject({
+      qty_basis: "fixed",
+      qty_factor: null,
+      qty_extra: null,
+      role: "lodging"
+    });
+  });
+
+  it("新加的一行默认是固定、不勾、不标", () => {
+    expect(newEditableLine("工具").rule).toEqual(emptyRule());
   });
 });
 
