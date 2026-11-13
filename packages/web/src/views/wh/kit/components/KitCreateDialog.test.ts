@@ -350,6 +350,51 @@ describe("新建清单：按项目参数生成", () => {
     });
   });
 
+  it("预览还没回来时又改了参数：晚到的预览不算数，「创建」仍然点不了", async () => {
+    let finish: (value: unknown) => void = () => {};
+    api.previewKitPlan.mockReturnValue(
+      new Promise(resolve => {
+        finish = resolve;
+      })
+    );
+    const wrapper = await openDialog();
+    await setField(wrapper, "project", 7);
+    await button(wrapper, "preview").trigger("click");
+    await flushPromises();
+    // 请求还在路上，人把套数从 1 改成 2
+    await setField(wrapper, "set_count", 2);
+    finish({ success: true, data: PREVIEW });
+    await flushPromises();
+    expect(wrapper.find(".plan-preview").exists()).toBe(false);
+    expect(button(wrapper, "create").attributes("disabled")).toBeDefined();
+  });
+
+  it("预览还没回来时换了模板或换了项目：晚到的预览也不算数", async () => {
+    const pending: ((value: unknown) => void)[] = [];
+    api.previewKitPlan.mockImplementation(
+      () =>
+        new Promise(resolve => {
+          pending.push(resolve);
+        })
+    );
+    const wrapper = await openDialog();
+    await setField(wrapper, "project", 7);
+    await button(wrapper, "preview").trigger("click");
+    await flushPromises();
+    await setField(wrapper, "plan_template", 2);
+    pending[0]({ success: true, data: PREVIEW });
+    await flushPromises();
+    expect(wrapper.find(".plan-preview").exists()).toBe(false);
+
+    await button(wrapper, "preview").trigger("click");
+    await flushPromises();
+    await setField(wrapper, "project", 8);
+    pending[1]({ success: true, data: PREVIEW });
+    await flushPromises();
+    expect(wrapper.find(".plan-preview").exists()).toBe(false);
+    expect(button(wrapper, "create").attributes("disabled")).toBeDefined();
+  });
+
   it("换项目：重新取参数，清掉预览", async () => {
     const wrapper = await openDialog();
     await setField(wrapper, "project", 7);

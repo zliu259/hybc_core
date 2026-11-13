@@ -52,36 +52,53 @@ const optional = (text: string): string | null =>
 
 type Cell = (column: string) => string;
 
+/** 只认表里自己写的词；「constructor」这类词不会碰巧查到东西。 */
+const lookup = <T>(table: Record<string, T>, key: string): T | undefined =>
+  Object.prototype.hasOwnProperty.call(table, key) ? table[key] : undefined;
+
+/** 一格数字：空的是 null；填错了返回那句错误。 */
+const numberCell = (column: string, text: string): number | null | string => {
+  if (text === "") return null;
+  const value = Number(text);
+  if (!Number.isFinite(value)) return `${column}不是数字：${text}`;
+  if (value < 0) return `${column}不能是负数：${text}`;
+  return value;
+};
+
+/** 一格是或否：填错了返回那句错误。 */
+const flagCell = (column: string, text: string): boolean | string => {
+  const flag = lookup(FLAG_BY_LABEL, text);
+  return flag === undefined ? `${column}只能填 是 或 否：${text}` : flag;
+};
+
 /** 一行的规则；填错了返回那句错误。 */
 const ruleOfRow = (cell: Cell, lineKind: KitLineKind): KitLineRule | string => {
   if (lineKind === "text") return emptyRule();
-  const basis = BASIS_BY_LABEL[cell("计算方式")];
+  const basis = lookup(BASIS_BY_LABEL, cell("计算方式"));
   if (!basis)
     return `计算方式只能填 固定、按总长、按最长一段、按段：${cell("计算方式")}`;
-  const numbers: Record<string, number | null> = {};
-  for (const column of ["系数", "另加"]) {
-    const text = cell(column);
-    const value = text === "" ? null : Number(text);
-    if (value !== null && !Number.isFinite(value))
-      return `${column}不是数字：${text}`;
-    if (value !== null && value < 0) return `${column}不能是负数：${text}`;
-    numbers[column] = value;
+  const factor = numberCell("系数", cell("系数"));
+  if (typeof factor === "string") return factor;
+  const extra = numberCell("另加", cell("另加"));
+  if (typeof extra === "string") return extra;
+  if (basis === "fixed") {
+    // 固定的行不用系数和另加。填了多半是忘了选计算方式：说出来，不悄悄丢掉
+    const filled = factor !== null ? "系数" : extra !== null ? "另加" : null;
+    if (filled)
+      return `填了${filled}，但计算方式是固定。要按它算就填计算方式，不用就把${filled}清掉`;
   }
-  const flags: Record<string, boolean> = {};
-  for (const column of ["每套一份", "规格随管径"]) {
-    const flag = FLAG_BY_LABEL[cell(column)];
-    if (flag === undefined) return `${column}只能填 是 或 否：${cell(column)}`;
-    flags[column] = flag;
-  }
-  const role = ROLE_BY_LABEL[cell("标记")];
+  const perSet = flagCell("每套一份", cell("每套一份"));
+  if (typeof perSet === "string") return perSet;
+  const byDiameter = flagCell("规格随管径", cell("规格随管径"));
+  if (typeof byDiameter === "string") return byDiameter;
+  const role = lookup(ROLE_BY_LABEL, cell("标记"));
   if (role === undefined) return `标记只能填 主机、发电、住宿：${cell("标记")}`;
   return {
     qty_basis: basis,
-    // 固定的行不存系数和另加，和服务端一致
-    qty_factor: basis === "fixed" ? null : numbers["系数"],
-    qty_extra: basis === "fixed" ? null : numbers["另加"],
-    qty_per_set: flags["每套一份"],
-    spec_by_diameter: flags["规格随管径"],
+    qty_factor: factor,
+    qty_extra: extra,
+    qty_per_set: perSet,
+    spec_by_diameter: byDiameter,
     role
   };
 };
@@ -110,7 +127,7 @@ export const mapTemplateRows = (
   table.rows.forEach((row, index) => {
     const cell: Cell = column => (row[column] ?? "").trim();
     const fail = (message: string) => errors.push({ row: index + 1, message });
-    const lineKind = KIND_BY_LABEL[cell("类型")];
+    const lineKind = lookup(KIND_BY_LABEL, cell("类型"));
     if (!lineKind)
       return fail(`类型只能填 设备、物资 或 备忘：${cell("类型")}`);
     let categoryId: number | null = null;

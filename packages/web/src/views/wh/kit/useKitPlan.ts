@@ -27,6 +27,13 @@ export const useKitPlan = (templates: Ref<KitTemplateRow[]>) => {
   const loadedFor = ref<number | null>(null);
   /** 换项目太快时，丢掉上一个项目晚到的结果 */
   let loadSeq = 0;
+  /** 预览每作废一次加一：请求发出以后人又改了东西，晚到的结果就不要了 */
+  let previewSeq = 0;
+
+  const dropPreview = () => {
+    previewSeq += 1;
+    preview.value = null;
+  };
 
   const problems = computed(() => planParamProblems(params.value));
 
@@ -45,7 +52,7 @@ export const useKitPlan = (templates: Ref<KitTemplateRow[]>) => {
     sources.value = {};
     templateId.value = null;
     templateTouched.value = false;
-    preview.value = null;
+    dropPreview();
     loading.value = false;
     loadFailed.value = false;
     loadedFor.value = null;
@@ -78,23 +85,27 @@ export const useKitPlan = (templates: Ref<KitTemplateRow[]>) => {
   ) => {
     params.value = { ...params.value, [key]: value };
     sources.value = { ...sources.value, [key]: { from: "manual" } };
-    preview.value = null;
+    dropPreview();
     if (key === "machine_type" || key === "pipe_diameter_mm") repickTemplate();
   };
 
   const setTemplate = (id: number | null) => {
     templateId.value = id;
     templateTouched.value = true;
-    preview.value = null;
+    dropPreview();
   };
 
   const loadPreview = async (projectId: number) => {
     if (templateId.value === null) return;
+    previewSeq += 1;
+    const seq = previewSeq;
     const result = await previewKitPlan({
       project_id: projectId,
       template_id: templateId.value,
       params: params.value
     });
+    // 等结果的时候参数、模板或项目变了：这份预览已经对不上，不显示
+    if (seq !== previewSeq) return;
     preview.value = result.data;
   };
 

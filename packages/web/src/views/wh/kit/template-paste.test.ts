@@ -126,12 +126,38 @@ describe("模板粘贴导入", () => {
     ]);
   });
 
-  it("计算方式是固定时，填了的系数和另加不要；备忘行不带规则", () => {
+  it("备忘行不带规则，规则的列填了什么都不管", () => {
     const result = withRules(
-      "工具\t物资\t电焊机\t\t\t2\t5\t\t\t\n设备维修配件\t备忘\t水泵配件\t\t按段\t2\t\t是\t是\t发电"
+      "设备维修配件\t备忘\t水泵配件\t\t按段\t2\t\t是\t是\t发电"
     );
     expect(result.errors).toEqual([]);
-    expect(result.rows.map(ruleOf)).toEqual([emptyRule(), emptyRule()]);
+    expect(result.rows.map(ruleOf)).toEqual([emptyRule()]);
+  });
+
+  it("填了系数或另加、计算方式却是固定：报错，不悄悄丢掉", () => {
+    const factorOnly =
+      "填了系数，但计算方式是固定。要按它算就填计算方式，不用就把系数清掉";
+    const extraOnly =
+      "填了另加，但计算方式是固定。要按它算就填计算方式，不用就把另加清掉";
+    expect(
+      withRules(
+        [
+          "工具\t物资\t电焊机\t\t\t2\t\t\t\t",
+          "工具\t物资\t焊把线\t\t固定\t\t5\t\t\t",
+          "工具\t物资\t角磨机\t\t固定\t2\t5\t\t\t",
+          "工具\t物资\t电锤\t\t\t0\t\t\t\t"
+        ].join("\n")
+      )
+    ).toEqual({
+      rows: [],
+      errors: [
+        { row: 1, message: factorOnly },
+        { row: 2, message: extraOnly },
+        { row: 3, message: factorOnly },
+        // 写了 0 也算填了：多半是忘了选计算方式
+        { row: 4, message: factorOnly }
+      ]
+    });
   });
 
   it.each([
