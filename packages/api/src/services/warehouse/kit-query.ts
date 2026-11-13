@@ -4,10 +4,14 @@
 import type { Env } from "../../types/env";
 import type { MaterialKind, ProjectKit, ProjectKitLine, ProjectKitStatus } from "../../types/wh";
 import type { Paged } from "./device";
+import { matchGenerated, readPlanRecord, type KitPlanView } from "./kit-plan-match";
 import { queryIn } from "./query-in";
 import { requireEnum, requireId } from "./validation";
 
-export interface ProjectKitRow extends ProjectKit {
+/** 列表和详情头：不带生成参数那一大段，只说有没有。 */
+export interface ProjectKitRow extends Omit<ProjectKit, "plan_json"> {
+  /** 是不是按项目参数生成的 */
+  has_plan: boolean;
   project_name: string;
   /** 前端判断现场负责人能不能改这份清单。 */
   project_manager_userid: string | null;
@@ -41,10 +45,19 @@ const SELECT_KIT = `SELECT k.*, p.project_name, p.manager_userid AS project_mana
     JOIN project p ON p.id = k.project_id
     LEFT JOIN kit_template t ON t.id = k.template_id`;
 
-const toRow = (row: ProjectKitRow): ProjectKitRow => ({
+type StoredKitRow = Omit<ProjectKitRow, "has_plan"> & { plan_json: string | null };
+
+const toRow = ({ plan_json: planJson, ...row }: StoredKitRow): ProjectKitRow => ({
   ...row,
-  line_count: Number(row.line_count)
+  line_count: Number(row.line_count),
+  has_plan: planJson !== null
 });
+
+/** 清单的行，带上生成时的数量和算式（不是按参数生成的清单这两项是空的）。 */
+export type ProjectKitLineWithPlan = ProjectKitLineView & {
+  calc_text: string | null;
+  generated_qty: number | null;
+};
 
 const positiveInt = (value: string | undefined, fallback: number, max: number): number => {
   const parsed = Number(value);
@@ -78,7 +91,7 @@ export const listProjectKits = async (
       `${SELECT_KIT}${whereSql} ORDER BY k.updated_at DESC, k.id DESC LIMIT ? OFFSET ?`
     )
       .bind(...params, pageSize, (page - 1) * pageSize)
-      .all<ProjectKitRow>(),
+      .all<StoredKitRow>(),
     env.DB.prepare(
       `SELECT COUNT(*) AS n FROM project_kit k JOIN project p ON p.id = k.project_id${whereSql}`
     )
@@ -93,8 +106,11 @@ export const listProjectKits = async (
   };
 };
 
+const loadStoredRow = (env: Env, id: number): Promise<StoredKitRow | null> =>
+  env.DB.prepare(`${SELECT_KIT} WHERE k.id = ?`).bind(id).first<StoredKitRow>();
+
 export const getProjectKitHeader = async (env: Env, id: number): Promise<ProjectKitRow | null> => {
-  const row = await env.DB.prepare(`${SELECT_KIT} WHERE k.id = ?`).bind(id).first<ProjectKitRow>();
+  const row = await loadStoredRow(env, id);
   return row ? toRow(row) : null;
 };
 
@@ -148,8 +164,15 @@ export const loadKitLines = async (env: Env, kitId: number): Promise<ProjectKitL
 export const getProjectKit = async (
   env: Env,
   id: number
-): Promise<(ProjectKitRow & { lines: ProjectKitLineView[] }) | null> => {
-  const header = await getProjectKitHeader(env, id);
-  if (!header) return null;
-  return { ...header, lines: await loadKitLines(env, id) };
+): Promise<
+  (ProjectKitRow & { plan: KitPlanView | null; lines: ProjectKitLineWithPlan[] }) | null
+> => {
+  const stored = await loadStoredRow(env, id);
+  if (!stored) return null;
+  const record = readPlanRecord(stored.plan_json);
+  const lines = matchGenerated(await loadKitLines(env, id), record?.generated ?? []);
+  const plan: KitPlanView | null = record
+    ? { v: record.v, params: record.params, sources: record.sources, template: record.template }
+    : null;
+  return { ...toRow(stored), plan, lines };
 };
