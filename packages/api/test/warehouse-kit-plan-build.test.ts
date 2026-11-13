@@ -350,7 +350,9 @@ describe.skipIf(!hasSqlite)("按项目参数生成：生成器", () => {
       "keeper"
     );
     const result = await plan({ ...YANGFANG, set_count: 2 }, id);
-    const strip = ({ calc_text, needs_spec, material_label, ...line }) => line;
+    const extra = ["calc_text", "needs_spec", "material_label"];
+    const strip = (line) =>
+      Object.fromEntries(Object.entries(line).filter(([key]) => !extra.includes(key)));
     expect(result.lines.map(strip)).toEqual(await linesFromTemplate(h.env, id));
     expect(result.lines.every((line) => line.calc_text === null)).toBe(true);
     expect(result.warnings).toEqual([

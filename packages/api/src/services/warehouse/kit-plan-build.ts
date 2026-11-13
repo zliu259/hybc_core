@@ -11,6 +11,8 @@ import { calcLineQty, hasAnyRule, type MissingInput, type PlanParams } from "./k
 import { loadSpecChoices } from "./kit-query";
 
 export interface PlannedLine extends ParsedKitLine {
+  /** 生成的行数量总是有的 */
+  qty: number;
   /** 数量是怎么算的；固定的行是空的 */
   calc_text: string | null;
   /** 物资行还没对上具体的物资，要人选规格 */
