@@ -216,6 +216,15 @@ describe("新建清单：按项目参数生成", () => {
     expect(wrapper.find(".plan-form").exists()).toBe(false);
   });
 
+  it("项目下拉按建档时间排，最新建的在最前（不是按最后修改时间，也不是接口给的顺序）", async () => {
+    const wrapper = await openDialog();
+    const labels = field(wrapper, "project")
+      .findAllComponents({ name: "ElOption" })
+      .map(option => (option.props() as { label?: string }).label);
+    // 接口给的顺序是 阳坊（4 月建）、西城（10 月建）
+    expect(labels).toEqual(["西城热力顶管", "26-08 阳坊"]);
+  });
+
   it("选了项目就取参数并填进去，按机型和管径预选模板，来源标在每一项下面", async () => {
     const wrapper = await openDialog();
     await setField(wrapper, "project", 7);
