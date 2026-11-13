@@ -71,6 +71,45 @@ describe.skipIf(!hasSqlite)("设备台账", () => {
     expect((await createDevice(h.env, base, "u1")).device_code).toBe("SB-0008");
   });
 
+  const setPrefix = (id, prefix) =>
+    h.database.prepare("UPDATE device_category SET code_prefix = ? WHERE id = ?").run(prefix, id);
+
+  it("类别设了编号开头：不填编号时按这个开头排；没设的类别还是 SB", async () => {
+    setPrefix(categoryId, "DG");
+    const other = h.seed.category("水泵");
+    expect((await createDevice(h.env, base, "u1")).device_code).toBe("DG-01");
+    expect((await createDevice(h.env, base, "u1")).device_code).toBe("DG-02");
+    expect((await createDevice(h.env, { ...base, category_id: other }, "u1")).device_code).toBe(
+      "SB-0001"
+    );
+  });
+
+  it("接着这个开头已有的最大号往下排，位数跟着已有的走", async () => {
+    setPrefix(categoryId, "DG");
+    const irons = h.seed.category("顶铁");
+    setPrefix(irons, "DT");
+    await createDevice(h.env, { ...base, device_code: "DG-033" }, "u1");
+    await createDevice(h.env, { ...base, device_code: "DG-007" }, "u1");
+    await createDevice(h.env, { ...base, category_id: irons, device_code: "DT-36" }, "u1");
+    expect((await createDevice(h.env, base, "u1")).device_code).toBe("DG-034");
+    expect((await createDevice(h.env, { ...base, category_id: irons }, "u1")).device_code).toBe(
+      "DT-37"
+    );
+    // 超过位数就自然变长，不截断
+    await createDevice(h.env, { ...base, category_id: irons, device_code: "DT-99" }, "u1");
+    expect((await createDevice(h.env, { ...base, category_id: irons }, "u1")).device_code).toBe(
+      "DT-100"
+    );
+  });
+
+  it("别的开头的编号、开头后面不是数字的编号不影响排号", async () => {
+    setPrefix(categoryId, "DG");
+    await createDevice(h.env, { ...base, device_code: "DGX-050" }, "u1");
+    await createDevice(h.env, { ...base, device_code: "DG-旧1" }, "u1");
+    await createDevice(h.env, { ...base, device_code: "SB-0040" }, "u1");
+    expect((await createDevice(h.env, base, "u1")).device_code).toBe("DG-01");
+  });
+
   it.each([
     [{ name: "" }, "设备名称不能为空"],
     [{ category_id: 999 }, "设备类别不存在或已停用"],

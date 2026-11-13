@@ -73,7 +73,7 @@ const save = async () => {
         <el-input
           v-model="form.device_code"
           maxlength="30"
-          placeholder="不填自动生成 SB-0001 这样的编号"
+          placeholder="不填按类别自动编号，如 DG-034"
         />
       </el-form-item>
       <el-form-item label="名称" required>

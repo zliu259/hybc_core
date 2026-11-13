@@ -98,7 +98,7 @@ module.exports = {
   /** 码坏了扫不出来的时候手输编号。 */
   async onInputCode() {
     if (this.data.busy || !this.canEdit()) return;
-    const code = await promptModal({ title: "输入设备编号", placeholder: "例如 SB-0012" });
+    const code = await promptModal({ title: "输入设备编号", placeholder: "例如 DG-012" });
     if (!code) return;
     await this.sendMark({ device_code: code, found: true });
   },
