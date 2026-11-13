@@ -205,7 +205,8 @@ describe.skipIf(!hasSqlite)("按项目参数生成：创建和读回", () => {
       name_text: "排泥钢管",
       spec_text: "Φ114",
       qty: 270,
-      calc_text: "按最长一段：2 × 105 + 60 = 270"
+      calc_text: "按最长一段：2 × 105 + 60 = 270",
+      note: null
     });
   });
 

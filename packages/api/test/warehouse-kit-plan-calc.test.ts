@@ -133,6 +133,27 @@ describe("calcLineQty", () => {
     });
   });
 
+  it("数量最多 3 位小数（清单保存时只收 3 位）；算式里的数和数量一致", () => {
+    expect(
+      calcLineQty(
+        rule({ qty_basis: "per_section", qty_factor: 1, qty_extra: 0.1234 }),
+        null,
+        params()
+      )
+    ).toEqual({ qty: 1.123, calc_text: "按段：1 × 1 + 0.123 = 1.123", missing: null });
+    expect(
+      calcLineQty(
+        rule({ qty_basis: "per_section", qty_factor: 1, qty_extra: 0.1236, qty_per_set: true }),
+        null,
+        params({ set_count: 3 })
+      )
+    ).toEqual({
+      qty: 3.372,
+      calc_text: "按段：1 × 1 + 0.124 = 1.124；每套一份 × 3 = 3.372",
+      missing: null
+    });
+  });
+
   it("不改传进来的规则和参数", () => {
     const lineRule = Object.freeze(rule({ qty_basis: "per_section", qty_factor: 2 }));
     const planParams = Object.freeze(params());

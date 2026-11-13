@@ -93,6 +93,55 @@ describe("matchGenerated", () => {
     ]);
   });
 
+  it("两行品名规格都一样，删掉前一行：剩下那行按数量认回自己，不拿前一行的算式", () => {
+    const generated = [
+      { ...gen("橡套电缆", 20, "a"), spec_text: "5芯6平方" },
+      { ...gen("橡套电缆", 0, null), spec_text: "5芯6平方" }
+    ];
+    const survivor = { ...cur("橡套电缆"), spec_text: "5芯6平方", planned_qty: 0 };
+    expect(pairs(matchGenerated([survivor], generated))).toEqual([[0, null]]);
+  });
+
+  it("两行品名规格都一样，没删没加：按先后配，改了数量的那行标得出来", () => {
+    const generated = [
+      { ...gen("橡套电缆", 20, "a"), spec_text: "5芯6平方" },
+      { ...gen("橡套电缆", 0, null), spec_text: "5芯6平方" }
+    ];
+    const lines = [
+      // 库管把第一行从 20 改成了 0
+      { ...cur("橡套电缆"), spec_text: "5芯6平方", planned_qty: 0 },
+      { ...cur("橡套电缆"), spec_text: "5芯6平方", planned_qty: 0 }
+    ];
+    expect(pairs(matchGenerated(lines, generated))).toEqual([
+      [20, "a"],
+      [0, null]
+    ]);
+  });
+
+  it("规格被「规格随管径」清空的同品名行：靠备注里的模板规格认回去", () => {
+    const generated = [
+      { ...gen("三通", 4, "x", "辅助设备"), note: "模板规格：DN114" },
+      { ...gen("三通", 20, "y", "辅助设备"), note: "模板规格：DN32" }
+    ];
+    // 删掉第一行以后
+    const left = {
+      ...cur("三通", "辅助设备"),
+      spec_text: null,
+      note: "模板规格：DN32",
+      planned_qty: 20
+    };
+    expect(pairs(matchGenerated([left], generated))).toEqual([[20, "y"]]);
+    // 库管给它选了规格、改了数量，也还认得
+    const picked = { ...left, spec_text: "DN40", planned_qty: 25 };
+    expect(pairs(matchGenerated([picked], generated))).toEqual([[20, "y"]]);
+  });
+
+  it("删掉一行、另加一行同品名但规格不同的：新加的行不拿被删那行的算式", () => {
+    const generated = [{ ...gen("橡套电缆", 100, "a"), spec_text: "5芯10平方" }];
+    const added = { ...cur("橡套电缆"), spec_text: "3芯4平方", planned_qty: 30 };
+    expect(pairs(matchGenerated([added], generated))).toEqual([[null, null]]);
+  });
+
   it("没有生成时的原样：每一行都是空的；保留行上原有的字段", () => {
     const [line] = matchGenerated([{ ...cur("三通"), id: 7 }], []);
     expect(line).toEqual({

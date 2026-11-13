@@ -67,10 +67,12 @@ const diameterFromSpec = (spec: string): number | null => {
 
 const fromSections = (rows: readonly SectionRow[]): SourceParams => {
   if (rows.length === 0) return {};
-  const lengths = rows
-    .map((row) => Number(row.section_length))
-    .filter((length) => Number.isFinite(length) && length > 0);
-  const total = round6(lengths.reduce((sum, length) => sum + length, 0));
+  const lengths = rows.map((row) =>
+    row.section_length === null ? Number.NaN : Number(row.section_length)
+  );
+  // 有一段没填长度（或者填的不是正数）就不给总长度和最长一段：只加填了的那几段是少算的数
+  const allKnown = lengths.every((length) => Number.isFinite(length) && length > 0);
+  const total = allKnown ? round6(lengths.reduce((sum, length) => sum + length, 0)) : 0;
   const diameters = [
     ...new Set(
       rows
@@ -85,7 +87,7 @@ const fromSections = (rows: readonly SectionRow[]): SourceParams => {
     assigned.length > 0 ? assigned : distinct(rows.map((row) => clean(row.jacking_method)));
   return {
     ...(rows.length <= MAX_SECTIONS ? { section_count: rows.length } : {}),
-    ...(lengths.length > 0 && total <= MAX_LENGTH_M
+    ...(allKnown && total <= MAX_LENGTH_M
       ? { total_length_m: total, longest_drive_m: Math.max(...lengths) }
       : {}),
     ...(diameters.length === 1 ? { pipe_diameter_mm: diameters[0] } : {}),

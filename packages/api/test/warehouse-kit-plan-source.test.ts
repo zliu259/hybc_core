@@ -88,6 +88,7 @@ describe.skipIf(!hasSqlite)("按项目参数生成：从工作段和项目档案
       assigned_machine_type: "泥水平衡"
     });
     addSection(projectId, {
+      section_length: 60.5,
       pipe_diameter_mm: 1600,
       soil_type: "粘土",
       assigned_machine_type: "泥水平衡"
@@ -96,7 +97,7 @@ describe.skipIf(!hasSqlite)("按项目参数生成：从工作段和项目档案
     expect(await loadPlanSource(h.env, projectId)).toEqual({
       params: {
         section_count: 3,
-        total_length_m: 185,
+        total_length_m: 245.5,
         longest_drive_m: 105,
         pipe_diameter_mm: 1600,
         soil: "粉质粘土、粘土",
@@ -112,6 +113,15 @@ describe.skipIf(!hasSqlite)("按项目参数生成：从工作段和项目档案
       },
       has_text: false
     });
+  });
+
+  it("有的工作段没填长度：不给总长度和最长一段（给了就是少算的数），段数照给", async () => {
+    addSection(projectId, { section_length: 80 });
+    addSection(projectId, { section_length: 105 });
+    addSection(projectId, {});
+    const source = await loadPlanSource(h.env, projectId);
+    expect(source.params).toEqual({ section_count: 3 });
+    expect(source.sources).toEqual({ section_count: { from: "section" } });
   });
 
   it("工作段的管径不一致时不取这一项，改从项目档案取；机型只有一种非空的就取", async () => {

@@ -145,6 +145,9 @@ const BASIS_INPUT: Record<
 /** 浮点误差：0.1 × 30 不能变成 3.0000000000000004 再被取整成 4。 */
 const round6 = (value: number): number => Math.round(value * 1e6) / 1e6;
 
+/** 清单行的数量最多 3 位小数（保存清单时只收 3 位），生成的数量也守这一条。 */
+const round3 = (value: number): number => Math.round(value * 1e3) / 1e3;
+
 /** 整数不带小数点；小数最多 3 位，去掉末尾的 0。 */
 const show = (value: number): string =>
   Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
@@ -173,7 +176,7 @@ const baseOf = (rule: KitLineRule, defaultQty: number | null, params: PlanParams
   const product = round6(rule.qty_factor * value);
   const whole = Math.ceil(product);
   const extra = rule.qty_extra ?? 0;
-  const qty = round6(whole + extra);
+  const qty = round3(whole + extra);
   const head = `${input.label}：${show(rule.qty_factor)} × ${show(value)}`;
   if (whole === product) {
     const text = extra > 0 ? `${head} + ${show(extra)} = ${show(qty)}` : `${head} = ${show(qty)}`;
@@ -199,7 +202,7 @@ export const calcLineQty = (
   const base = baseOf(rule, defaultQty, params);
   const sets = rule.qty_per_set ? params.set_count : 1;
   if (sets === 1) return { qty: base.qty, calc_text: base.text, missing: base.missing };
-  const qty = round6(base.qty * sets);
+  const qty = round3(base.qty * sets);
   const calcText = base.text
     ? `${base.text}；每套一份 × ${sets} = ${show(qty)}`
     : `每套一份：${show(base.qty)} × ${sets} = ${show(qty)}`;
