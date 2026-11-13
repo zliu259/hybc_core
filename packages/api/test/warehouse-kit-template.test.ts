@@ -191,4 +191,141 @@ describe.skipIf(!hasSqlite)("配套清单模板", () => {
     expect((await call("GET", `/warehouse/kit-template/${id}`)).body.data.lines).toHaveLength(1);
     expect((await call("GET", "/warehouse/kit-template/999")).status).toBe(404);
   });
+
+  const ruleOf = (line) => [
+    line.qty_basis,
+    line.qty_factor,
+    line.qty_extra,
+    line.qty_per_set,
+    line.spec_by_diameter,
+    line.role
+  ];
+
+  it("规则字段和管径：存进去读得回来；不传就是固定、不勾、不标", async () => {
+    const { id } = await createKitTemplate(
+      h.env,
+      {
+        name: "泥水平衡 D1600",
+        diameter_mm: 1600,
+        lines: [
+          {
+            section: "顶进设备",
+            line_kind: "device",
+            device_category_id: cat,
+            name_text: "机头泥水",
+            default_qty: 1,
+            qty_per_set: true,
+            role: "main_machine"
+          },
+          {
+            section: "辅助设备",
+            line_kind: "material",
+            name_text: "排泥钢管",
+            unit: "米",
+            default_qty: 120,
+            qty_basis: "per_longest_metre",
+            qty_factor: 2,
+            qty_extra: 60,
+            qty_per_set: 1,
+            spec_by_diameter: true
+          },
+          { section: "工具", line_kind: "material", name_text: "电焊机", default_qty: 1 }
+        ]
+      },
+      "keeper"
+    );
+    const saved = await getKitTemplate(h.env, id);
+    expect(saved.diameter_mm).toBe(1600);
+    expect(saved.lines.map(ruleOf)).toEqual([
+      ["fixed", null, null, true, false, "main_machine"],
+      ["per_longest_metre", 2, 60, true, true, null],
+      ["fixed", null, null, false, false, null]
+    ]);
+  });
+
+  it("修改时行整体替换：没带规则字段的行回到固定；只改名字不动管径；管径传 null 是清掉", async () => {
+    const { id } = await createKitTemplate(
+      h.env,
+      {
+        name: "甲",
+        diameter_mm: 1200,
+        lines: [
+          {
+            section: "工具",
+            line_kind: "material",
+            name_text: "排泥钢管",
+            qty_basis: "per_section",
+            qty_factor: 3
+          }
+        ]
+      },
+      "keeper"
+    );
+    await updateKitTemplate(h.env, id, { version: 0, name: "乙" });
+    expect((await getKitTemplate(h.env, id)).diameter_mm).toBe(1200);
+    expect((await getKitTemplate(h.env, id)).lines.map(ruleOf)).toEqual([
+      ["per_section", 3, null, false, false, null]
+    ]);
+    await updateKitTemplate(h.env, id, {
+      version: 1,
+      diameter_mm: null,
+      lines: [{ section: "工具", line_kind: "material", name_text: "排泥钢管" }]
+    });
+    const saved = await getKitTemplate(h.env, id);
+    expect(saved.diameter_mm).toBeNull();
+    expect(saved.lines.map(ruleOf)).toEqual([["fixed", null, null, false, false, null]]);
+  });
+
+  it("计算方式是固定时，带来的系数和另加不存；备忘行不存规则", async () => {
+    const { id } = await createKitTemplate(
+      h.env,
+      {
+        name: "甲",
+        lines: [
+          { section: "工具", line_kind: "material", name_text: "a", qty_factor: 2, qty_extra: 5 },
+          {
+            section: "工具",
+            line_kind: "text",
+            name_text: "备忘",
+            qty_basis: "per_section",
+            qty_factor: 2,
+            qty_per_set: true,
+            role: "power"
+          }
+        ]
+      },
+      "keeper"
+    );
+    expect((await getKitTemplate(h.env, id)).lines.map(ruleOf)).toEqual([
+      ["fixed", null, null, false, false, null],
+      ["fixed", null, null, false, false, null]
+    ]);
+  });
+
+  it.each([
+    [{ qty_basis: "per_set" }, "第 1 行：计算方式不对"],
+    [{ qty_basis: "per_section", qty_factor: -1 }, "第 1 行：系数必须是 0 到 1000000 之间的数字"],
+    [{ qty_basis: "per_section", qty_extra: "多" }, "第 1 行：另加必须是 0 到 1000000 之间的数字"],
+    [{ qty_per_set: "yes" }, "第 1 行：每套一份只能是勾或不勾"],
+    [{ spec_by_diameter: 2 }, "第 1 行：规格随管径只能是勾或不勾"],
+    [{ role: "boss" }, "第 1 行：标记不对"]
+  ])("规则字段不对时 400：%j", async (patch, message) => {
+    await expect(
+      createKitTemplate(
+        h.env,
+        {
+          name: "x",
+          lines: [{ section: "工具", line_kind: "material", name_text: "电焊机", ...patch }]
+        },
+        "keeper"
+      )
+    ).rejects.toMatchObject({ status: 400, message });
+    expect(countTemplates()).toBe(0);
+  });
+
+  it.each([100, 5001, 1600.5, "大"])("管径 %s 不在 300 到 5000 之间时 400", async (diameter) => {
+    await expect(
+      createKitTemplate(h.env, { name: "x", diameter_mm: diameter }, "keeper")
+    ).rejects.toMatchObject({ status: 400, message: "管径必须是 300 到 5000 之间的整数" });
+  });
 });

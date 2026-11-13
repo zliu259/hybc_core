@@ -5,6 +5,9 @@ import { createKit, listKits, listKitTemplates } from "@/api/wh/kit";
 import type { KitTemplateRow, ProjectKitRow } from "@/api/wh/kit-types";
 import { useProjectOptions } from "@/composables/useProjectOptions";
 import { useWhAction } from "../../shared/useWhAction";
+import { useKitPlan } from "../useKitPlan";
+import KitPlanForm from "./KitPlanForm.vue";
+import KitPlanPreview from "./KitPlanPreview.vue";
 
 const props = defineProps<{
   /** 只是现场负责人时，只列自己负责的项目 */
@@ -21,10 +24,12 @@ const searching = ref(false);
 const form = reactive({
   project_id: null as number | null,
   title: "",
-  source: "template" as "template" | "copy" | "blank",
+  source: "plan" as "plan" | "template" | "copy" | "blank",
   template_id: null as number | null,
   copy_from_kit_id: null as number | null
 });
+
+const plan = useKitPlan(templates);
 
 const projectOptions = computed(() =>
   props.onlyProjectsOf
@@ -39,11 +44,12 @@ watch(visible, async open => {
   Object.assign(form, {
     project_id: null,
     title: "",
-    source: "template",
+    source: "plan",
     template_id: null,
     copy_from_kit_id: null
   });
   copyOptions.value = [];
+  plan.reset();
   await Promise.all([
     loadProjects(100).catch(error =>
       console.error("[warehouse] 读取项目失败", error)
@@ -63,6 +69,28 @@ watch(
   }
 );
 
+// 按项目参数生成：选了项目（或者切回这一项）就取这个项目的参数
+watch(
+  () => [form.project_id, form.source] as const,
+  ([id, source], [oldId]) => {
+    if (source !== "plan" || id === null) return;
+    if (id !== oldId || plan.loadedFor.value !== id) void plan.loadFor(id);
+  }
+);
+
+const canPreview = computed(
+  () =>
+    form.project_id !== null &&
+    plan.templateId.value !== null &&
+    plan.problems.value.length === 0 &&
+    !plan.loading.value
+);
+const runPreview = async () => {
+  const projectId = form.project_id;
+  if (!canPreview.value || projectId === null) return;
+  await run(() => plan.loadPreview(projectId));
+};
+
 const searchKits = async (keyword: string) => {
   searching.value = true;
   try {
@@ -81,6 +109,7 @@ const ready = computed(
     form.project_id !== null &&
     form.title.trim() !== "" &&
     (form.source === "blank" ||
+      (form.source === "plan" && plan.preview.value !== null) ||
       (form.source === "template" && form.template_id !== null) ||
       (form.source === "copy" && form.copy_from_kit_id !== null))
 );
@@ -92,8 +121,17 @@ const submit = async () => {
       createKit({
         project_id: form.project_id as number,
         title: form.title.trim(),
-        template_id: form.source === "template" ? form.template_id : null,
-        copy_from_kit_id: form.source === "copy" ? form.copy_from_kit_id : null
+        template_id:
+          form.source === "plan"
+            ? plan.templateId.value
+            : form.source === "template"
+              ? form.template_id
+              : null,
+        copy_from_kit_id: form.source === "copy" ? form.copy_from_kit_id : null,
+        // 按项目参数生成：行由服务端按模板和参数算
+        ...(form.source === "plan"
+          ? { plan: { params: plan.params.value, sources: plan.sources.value } }
+          : {})
       }),
     { success: "清单已创建" }
   );
@@ -105,11 +143,16 @@ const submit = async () => {
 </script>
 
 <template>
-  <el-dialog v-model="visible" title="新建配套清单" width="560px">
+  <el-dialog
+    v-model="visible"
+    title="新建配套清单"
+    :width="form.source === 'plan' ? '760px' : '560px'"
+  >
     <el-form label-width="90px">
       <el-form-item label="项目" required>
         <el-select
           v-model="form.project_id"
+          data-field="project"
           filterable
           placeholder="选择项目"
           style="width: 100%"
@@ -136,15 +179,47 @@ const submit = async () => {
         />
       </el-form-item>
       <el-form-item label="从哪来">
-        <el-radio-group v-model="form.source">
+        <el-radio-group v-model="form.source" data-field="source">
+          <el-radio-button value="plan">按项目参数生成</el-radio-button>
           <el-radio-button value="template">选模板</el-radio-button>
           <el-radio-button value="copy">复制已有清单</el-radio-button>
           <el-radio-button value="blank">空白</el-radio-button>
         </el-radio-group>
       </el-form-item>
+      <template v-if="form.source === 'plan' && form.project_id !== null">
+        <KitPlanForm
+          :params="plan.params.value"
+          :sources="plan.sources.value"
+          :templates="templates"
+          :template-id="plan.templateId.value"
+          :loading="plan.loading.value"
+          :load-failed="plan.loadFailed.value"
+          :problems="plan.problems.value"
+          @change="plan.setParam"
+          @update:template-id="plan.setTemplate"
+        />
+        <div class="plan-actions">
+          <el-button
+            data-action="preview"
+            :disabled="!canPreview"
+            :loading="busy"
+            @click="runPreview"
+            >预览</el-button
+          >
+          <span class="hint">看过预览才能创建；改了参数或模板要重新预览。</span>
+        </div>
+        <KitPlanPreview
+          v-if="plan.preview.value"
+          :preview="plan.preview.value"
+        />
+      </template>
+      <div v-else-if="form.source === 'plan'" class="hint plan-empty">
+        先选项目，系统会把能确定的参数填好。
+      </div>
       <el-form-item v-if="form.source === 'template'" label="模板" required>
         <el-select
           v-model="form.template_id"
+          data-field="template"
           placeholder="选择模板"
           style="width: 100%"
         >
@@ -182,6 +257,7 @@ const submit = async () => {
     <template #footer>
       <el-button @click="visible = false">取消</el-button>
       <el-button
+        data-action="create"
         type="primary"
         :loading="busy"
         :disabled="!ready"
@@ -196,5 +272,15 @@ const submit = async () => {
 .hint {
   font-size: 12px;
   color: var(--el-text-color-secondary);
+}
+
+.plan-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.plan-empty {
+  margin-bottom: 12px;
 }
 </style>

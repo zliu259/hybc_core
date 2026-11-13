@@ -1,7 +1,8 @@
-/** 项目配套页面用的纯函数：状态文案、按钮、提交前检查、模板粘贴导入。 */
+/** 项目配套页面用的纯函数：状态文案、按钮、提交前检查、表格行和接口行互转。 */
 import type {
   KitLineInput,
   KitLineKind,
+  KitLineRule,
   KitLineSource,
   KitTemplateLine,
   ProjectKitLine,
@@ -9,8 +10,8 @@ import type {
   ProjectKitStatus,
   TemplateLineInput
 } from "@/api/wh/kit-types";
-import type { ImportRowError, WarehouseCapabilities } from "@/api/wh/types";
-import type { ParsedTable } from "../shared/csv";
+import type { WarehouseCapabilities } from "@/api/wh/types";
+import { emptyRule } from "./kit-plan-view";
 
 export const KIT_STATUS_LABELS: Record<ProjectKitStatus, string> = {
   draft: "草稿",
@@ -113,74 +114,6 @@ export const kitLineProblems = (
     return [];
   });
 
-const KIND_BY_LABEL: Record<string, KitLineKind> = {
-  设备: "device",
-  按台: "device",
-  物资: "material",
-  周转: "material",
-  消耗: "material",
-  备忘: "text"
-};
-
-const optional = (text: string): string | null =>
-  text.trim() === "" ? null : text.trim();
-
-/**
- * 粘贴的模板表格 → 模板行。列名：分节、类型、品名、规格、单位、默认数量、设备类别、备注。
- * 类型认 设备/按台、物资/周转/消耗、备忘；设备类别按名字找。
- */
-export const mapTemplateRows = (
-  table: ParsedTable,
-  categories: readonly { id: number; name: string }[]
-): { rows: TemplateLineInput[]; errors: ImportRowError[] } => {
-  const missing = ["分节", "类型", "品名"].filter(
-    column => !table.headers.includes(column)
-  );
-  if (missing.length)
-    return {
-      rows: [],
-      errors: [{ row: 0, message: `缺少列：${missing.join("、")}` }]
-    };
-  const categoryByName = new Map(
-    categories.map(category => [category.name, category.id])
-  );
-  const rows: TemplateLineInput[] = [];
-  const errors: ImportRowError[] = [];
-  table.rows.forEach((row, index) => {
-    const cell = (column: string) => (row[column] ?? "").trim();
-    const fail = (message: string) => errors.push({ row: index + 1, message });
-    const lineKind = KIND_BY_LABEL[cell("类型")];
-    if (!lineKind)
-      return fail(`类型只能填 设备、物资 或 备忘：${cell("类型")}`);
-    let categoryId: number | null = null;
-    if (lineKind === "device") {
-      if (!cell("设备类别")) return fail("设备行要填设备类别");
-      categoryId = categoryByName.get(cell("设备类别")) ?? null;
-      if (categoryId === null)
-        return fail(
-          `设备类别不存在：${cell("设备类别")}，请先在库房设置里添加`
-        );
-    }
-    const qtyText = cell("默认数量");
-    const qty = qtyText === "" ? null : Number(qtyText);
-    if (qty !== null && (!Number.isFinite(qty) || qty < 0))
-      return fail(`默认数量不是数字：${qtyText}`);
-    if (lineKind === "device" && qty !== null && !Number.isInteger(qty))
-      return fail("设备数量必须是整数");
-    rows.push({
-      section: cell("分节"),
-      line_kind: lineKind,
-      device_category_id: categoryId,
-      name_text: cell("品名"),
-      spec_text: optional(cell("规格")),
-      unit: optional(cell("单位")),
-      default_qty: qty,
-      note: optional(cell("备注"))
-    });
-  });
-  return { rows, errors };
-};
-
 /** 表格里正在编辑的一行；模板和清单共用，qty 在模板里是默认数量，在清单里是计划数。 */
 export interface EditableKitLine {
   key: string;
@@ -199,6 +132,12 @@ export interface EditableKitLine {
   spec_choices: { id: number; spec: string }[];
   /** 已选物资的"品名 规格" */
   material_label: string;
+  /** 模板行上的计算规则；清单行用不到，恒为默认值 */
+  rule: KitLineRule;
+  /** 按参数生成的清单：这一行是怎么算的。只用来显示，保存时不带 */
+  calc_text: string | null;
+  /** 按参数生成的清单：生成时的数量。只用来显示，保存时不带 */
+  generated_qty: number | null;
 }
 
 let keySeq = 0;
@@ -221,7 +160,10 @@ export const newEditableLine = (section = ""): EditableKitLine => ({
   source: "warehouse",
   note: "",
   spec_choices: [],
-  material_label: ""
+  material_label: "",
+  rule: emptyRule(),
+  calc_text: null,
+  generated_qty: null
 });
 
 export const editableFromTemplate = (
@@ -236,11 +178,22 @@ export const editableFromTemplate = (
     spec_text: line.spec_text ?? "",
     unit: line.unit ?? "",
     qty: line.default_qty,
-    note: line.note ?? ""
+    note: line.note ?? "",
+    rule: {
+      qty_basis: line.qty_basis,
+      qty_factor: line.qty_factor,
+      qty_extra: line.qty_extra,
+      qty_per_set: Boolean(line.qty_per_set),
+      spec_by_diameter: Boolean(line.spec_by_diameter),
+      role: line.role
+    }
   }));
 
 export const editableFromKit = (
-  lines: readonly ProjectKitLine[]
+  lines: readonly (ProjectKitLine & {
+    calc_text?: string | null;
+    generated_qty?: number | null;
+  })[]
 ): EditableKitLine[] =>
   lines.map(line => ({
     ...newEditableLine(line.section),
@@ -259,11 +212,27 @@ export const editableFromKit = (
       ? [line.material_name ?? line.name_text, line.material_spec]
           .filter(Boolean)
           .join(" ")
-      : ""
+      : "",
+    calc_text: line.calc_text ?? null,
+    generated_qty:
+      line.generated_qty === null || line.generated_qty === undefined
+        ? null
+        : Number(line.generated_qty)
   }));
 
 const nullable = (text: string): string | null =>
   text.trim() === "" ? null : text.trim();
+
+/** 保存时的规则：备忘行不存规则，固定的行不存系数和另加（和服务端一致）。 */
+const ruleToSave = (row: EditableKitLine): KitLineRule => {
+  if (row.line_kind === "text") return emptyRule();
+  const fixed = row.rule.qty_basis === "fixed";
+  return {
+    ...row.rule,
+    qty_factor: fixed ? null : row.rule.qty_factor,
+    qty_extra: fixed ? null : row.rule.qty_extra
+  };
+};
 
 export const toTemplateLines = (
   rows: readonly EditableKitLine[]
@@ -277,7 +246,8 @@ export const toTemplateLines = (
     spec_text: nullable(row.spec_text),
     unit: nullable(row.unit),
     default_qty: row.qty,
-    note: nullable(row.note)
+    note: nullable(row.note),
+    ...ruleToSave(row)
   }));
 
 export const toKitLines = (rows: readonly EditableKitLine[]): KitLineInput[] =>

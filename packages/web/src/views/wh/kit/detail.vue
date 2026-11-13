@@ -23,6 +23,7 @@ import { useWhCapabilities } from "../shared/useWhCapabilities";
 import { isConflictError } from "../task/task-view";
 import DocFormDialog from "../doc/components/DocFormDialog.vue";
 import KitLineTable from "./components/KitLineTable.vue";
+import KitPlanSummary from "./components/KitPlanSummary.vue";
 import {
   editableFromKit,
   kitActions,
@@ -335,6 +336,7 @@ onMounted(async () => {
           >{{ kit.close_reason }}</el-descriptions-item
         >
       </el-descriptions>
+      <KitPlanSummary v-if="kit.plan" :plan="kit.plan" />
       <KitLineTable
         v-model="lines"
         mode="kit"

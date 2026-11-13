@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 
 import type { TemplateLineInput } from "@/api/wh/kit-types";
 import { parseTable } from "../../shared/csv";
-import { mapTemplateRows } from "../kit-view";
+import { mapTemplateRows } from "../template-paste";
 
 const props = defineProps<{ categories: { id: number; name: string }[] }>();
 const visible = defineModel<boolean>({ required: true });
@@ -33,6 +33,7 @@ const apply = () => {
       复制整张表（含表头）粘贴到下面。列名：分节、类型、品名、规格、单位、默认数量、设备类别、备注。
       类型填
       设备（或按台）、物资（或周转、消耗）、备忘；设备行要填设备类别。导入后会替换表格里现有的行，保存后才生效。
+      计算规则可以多带六列：计算方式（固定、按总长、按最长一段、按段）、系数、另加、每套一份（是或否）、规格随管径（是或否）、标记（主机、发电、住宿）；不带这些列就都是固定。
     </p>
     <el-input
       v-model="text"

@@ -18,6 +18,9 @@ import {
   parseKitLines,
   type ParsedKitLine
 } from "./kit-lines";
+import { buildPlan } from "./kit-plan-build";
+import { parsePlanParams } from "./kit-plan-calc";
+import { buildPlanRecord, parsePlanSources, type KitPlanRecord } from "./kit-plan-match";
 import { requireVersion } from "./kit-template";
 import { getProjectLedger } from "./project-ledger";
 import { optionalId, optionalText, requireText } from "./validation";
@@ -125,6 +128,26 @@ const assertKitReady = async (env: Env, lines: readonly ProjectKitLine[]): Promi
 const isKitNoTaken = (error: unknown): boolean =>
   error instanceof Error && error.message.includes("UNIQUE constraint failed: project_kit.kit_no");
 
+/**
+ * 按项目参数生成：行由服务端按模板和参数算，不用页面传来的行。
+ * 没带 plan 时返回 null，走原来的三条路。
+ */
+const planFromInput = async (
+  env: Env,
+  rawPlan: unknown,
+  templateId: number | null,
+  copyFromKitId: number | null
+): Promise<{ lines: ParsedKitLine[]; record: KitPlanRecord } | null> => {
+  if (rawPlan === undefined || rawPlan === null) return null;
+  if (typeof rawPlan !== "object" || Array.isArray(rawPlan)) throw badRequest("生成参数的格式不对");
+  if (templateId === null || copyFromKitId !== null) throw badRequest("按项目参数生成要选模板");
+  const plan = rawPlan as Record<string, unknown>;
+  const params = parsePlanParams(plan.params);
+  const sources = parsePlanSources(plan.sources);
+  const result = await buildPlan(env, templateId, params);
+  return { lines: result.lines, record: buildPlanRecord(params, sources, result) };
+};
+
 export const createProjectKit = async (
   env: Env,
   input: Record<string, unknown>,
@@ -138,8 +161,10 @@ export const createProjectKit = async (
   const templateId = optionalId(input.template_id, "模板");
   const copyFromKitId = optionalId(input.copy_from_kit_id, "要复制的清单");
   if (templateId !== null && copyFromKitId !== null) throw badRequest("模板和复制只能选一个");
-  const lines =
-    templateId !== null
+  const planned = await planFromInput(env, input.plan, templateId, copyFromKitId);
+  const lines: ParsedKitLine[] = planned
+    ? planned.lines
+    : templateId !== null
       ? await linesFromTemplate(env, templateId)
       : copyFromKitId !== null
         ? await linesFromKit(env, copyFromKitId)
@@ -156,9 +181,20 @@ export const createProjectKit = async (
       await runAtomicBatch(env.DB, [
         env.DB.prepare(
           `INSERT INTO project_kit (kit_no, project_id, title, template_id, copied_from_kit_id, status, remark,
-             created_by_userid, version, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, 0, ?, ?)`
-        ).bind(kitNo, projectId, title, templateId, copyFromKitId, remark, auth.sub, now, now),
+             plan_json, created_by_userid, version, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, 'draft', ?, ?, ?, 0, ?, ?)`
+        ).bind(
+          kitNo,
+          projectId,
+          title,
+          templateId,
+          copyFromKitId,
+          remark,
+          planned ? JSON.stringify(planned.record) : null,
+          auth.sub,
+          now,
+          now
+        ),
         ...lines.map((line) =>
           insertKitLine(env.DB, "(SELECT id FROM project_kit WHERE kit_no = ?)", kitNo, line, now)
         )

@@ -3,6 +3,10 @@ import { http } from "@/utils/http";
 import type {
   KitFulfilmentLine,
   KitLineInput,
+  KitPlanParams,
+  KitPlanPreview,
+  KitPlanSource,
+  KitPlanSources,
   KitTemplateDetail,
   KitTemplateRow,
   ProjectKitDetail,
@@ -30,6 +34,7 @@ export const getKitTemplate = (id: number) =>
 export const createKitTemplate = (data: {
   name: string;
   machine_type?: string | null;
+  diameter_mm?: number | null;
   remark?: string | null;
   lines?: TemplateLineInput[];
 }) =>
@@ -42,6 +47,7 @@ export const updateKitTemplate = (
     version: number;
     name?: string;
     machine_type?: string | null;
+    diameter_mm?: number | null;
     remark?: string | null;
     status?: "active" | "disabled";
     lines?: TemplateLineInput[];
@@ -70,12 +76,30 @@ export const createKit = (data: {
   template_id?: number | null;
   copy_from_kit_id?: number | null;
   lines?: KitLineInput[];
+  /** 按项目参数生成：要和 template_id 一起给，行由服务端算 */
+  plan?: { params: KitPlanParams; sources: KitPlanSources };
 }) =>
   http.request<ApiResult<{ id: number; kit_no: string }>>(
     "post",
     `${base}/kit`,
     { data }
   );
+
+// ─── 按项目参数生成 ──────────
+/** 从工作段和项目档案取到的参数。 */
+export const getKitPlanSource = (projectId: number) =>
+  http.request<ApiResult<KitPlanSource>>("get", `${base}/kit/plan/source`, {
+    params: { project_id: projectId }
+  });
+/** 预览：算好的行、主要设备的候选、提醒。不写库。 */
+export const previewKitPlan = (data: {
+  project_id: number;
+  template_id: number;
+  params: KitPlanParams;
+}) =>
+  http.request<ApiResult<KitPlanPreview>>("post", `${base}/kit/plan/preview`, {
+    data
+  });
 export const updateKit = (
   id: number,
   data: {
