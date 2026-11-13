@@ -18,6 +18,8 @@ import {
   submitProjectKit,
   updateProjectKit
 } from "../services/warehouse/kit";
+import { buildPlan } from "../services/warehouse/kit-plan-build";
+import { parsePlanParams } from "../services/warehouse/kit-plan-calc";
 import { loadPlanSource } from "../services/warehouse/kit-plan-source";
 import { getProjectKit, listProjectKits } from "../services/warehouse/kit-query";
 import { publishWarehouseNotice } from "../services/warehouse/notice";
@@ -51,6 +53,22 @@ whKitRoutes.get(
     const caps = await getWarehouseCapabilities(c.env, auth);
     await assertCanEditKitFor(c.env, auth, caps, projectId);
     return c.json({ success: true, data: await loadPlanSource(c.env, projectId) });
+  })
+);
+
+/** 按项目参数生成的预览：算好的行、主要设备的候选、提醒。不写库。 */
+whKitRoutes.post(
+  "/kit/plan/preview",
+  requireKitCreator,
+  guarded(async (c) => {
+    const body = await readJsonBody(c);
+    const projectId = requireId(body.project_id, "项目");
+    const templateId = requireId(body.template_id, "模板");
+    const auth = c.get("auth");
+    const caps = await getWarehouseCapabilities(c.env, auth);
+    await assertCanEditKitFor(c.env, auth, caps, projectId);
+    const plan = await buildPlan(c.env, templateId, parsePlanParams(body.params));
+    return c.json({ success: true, data: plan });
   })
 );
 
