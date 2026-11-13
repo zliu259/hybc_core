@@ -66,7 +66,7 @@ const setNumber = (
     <div v-if="props.loadFailed" class="hint">没能取到项目的参数，请手填</div>
     <el-row :gutter="12">
       <el-col :span="12">
-        <el-form-item label="机型">
+        <el-form-item label-width="110px" label="机型">
           <el-select
             data-field="machine_type"
             :model-value="props.params.machine_type ?? ''"
@@ -93,7 +93,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <el-form-item label="管径（毫米）">
+        <el-form-item label-width="110px" label="管径（毫米）">
           <el-input-number
             data-field="pipe_diameter_mm"
             :model-value="props.params.pipe_diameter_mm ?? undefined"
@@ -112,7 +112,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <el-form-item label="总长度（米）">
+        <el-form-item label-width="110px" label="总长度（米）">
           <el-input-number
             data-field="total_length_m"
             :model-value="props.params.total_length_m ?? undefined"
@@ -130,7 +130,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <el-form-item label="最长一段（米）">
+        <el-form-item label-width="110px" label="最长一段（米）">
           <el-input-number
             data-field="longest_drive_m"
             :model-value="props.params.longest_drive_m ?? undefined"
@@ -148,7 +148,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <el-form-item label="段数">
+        <el-form-item label-width="110px" label="段数">
           <el-input-number
             data-field="section_count"
             :model-value="props.params.section_count ?? undefined"
@@ -166,7 +166,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <el-form-item label="套数">
+        <el-form-item label-width="110px" label="套数">
           <el-input-number
             data-field="set_count"
             :model-value="props.params.set_count"
@@ -181,7 +181,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <el-form-item label="土质">
+        <el-form-item label-width="110px" label="土质">
           <el-input
             data-field="soil"
             :model-value="props.params.soil ?? ''"
@@ -195,7 +195,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
       <el-col :span="12">
-        <el-form-item label="甲方提供">
+        <el-form-item label-width="110px" label="甲方提供">
           <el-checkbox-group
             data-field="client_supplies"
             :model-value="props.params.client_supplies"
@@ -214,7 +214,7 @@ const setNumber = (
         </el-form-item>
       </el-col>
     </el-row>
-    <el-form-item label="模板" required>
+    <el-form-item label-width="110px" label="模板" required>
       <el-select
         data-field="plan_template"
         :model-value="props.templateId"

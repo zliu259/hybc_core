@@ -120,6 +120,22 @@ const PREVIEW: KitPlanPreview = {
       calc_text: "按最长一段：2 × 105 + 60 = 270",
       needs_spec: false,
       material_label: "排泥钢管 Φ114"
+    },
+    {
+      section: "生活设施",
+      sort_order: 2,
+      line_kind: "material",
+      device_category_id: null,
+      material_id: 9,
+      name_text: "上下床",
+      spec_text: null,
+      unit: "套",
+      qty: 3,
+      source: "on_site",
+      note: null,
+      calc_text: null,
+      needs_spec: false,
+      material_label: "上下床"
     }
   ],
   devices: [
@@ -264,6 +280,10 @@ describe("新建清单：按项目参数生成", () => {
     expect(preview.text()).toContain("DG-012 唐兴1600（1600）");
     expect(preview.text()).toContain("模板是 DN1200，本项目 D1600");
     expect(preview.text()).toContain("按最长一段：2 × 105 + 60 = 270");
+    // 甲方提供的行在预览里标出来
+    expect(preview.findAll(".on-site").map(node => node.text())).toEqual([
+      "现场已有"
+    ]);
     expect(button(wrapper, "create").attributes("disabled")).toBeUndefined();
 
     await setField(wrapper, "set_count", 2);

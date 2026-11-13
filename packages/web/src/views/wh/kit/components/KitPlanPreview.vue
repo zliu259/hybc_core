@@ -75,6 +75,13 @@ const candidateText = (device: KitPlanPreview["devices"][number]): string =>
               size="small"
               type="warning"
               >待选规格</el-tag
+            >
+            <el-tag
+              v-if="row.source === 'on_site'"
+              class="on-site"
+              size="small"
+              type="info"
+              >现场已有</el-tag
             ></template
           >
         </el-table-column>
