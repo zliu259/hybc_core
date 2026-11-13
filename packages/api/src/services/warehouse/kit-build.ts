@@ -5,7 +5,7 @@ import type { Env } from "../../types/env";
 import type { KitTemplate, KitTemplateLine, ProjectKitLine } from "../../types/wh";
 import { badRequest } from "./errors";
 import { loadSpecChoices } from "./kit-query";
-import type { ParsedKitLine } from "./kit-lines";
+import { defaultRule, type ParsedKitLine } from "./kit-lines";
 
 /**
  * 模板行只写品名，规格随管径变：模板写了规格，就只认同规格的物资（没有就留空，不拿别的规格顶替）；
@@ -52,7 +52,8 @@ export const linesFromTemplate = async (env: Env, templateId: number): Promise<P
     unit: row.unit,
     qty: row.default_qty ?? 0,
     source: "warehouse",
-    note: row.note
+    note: row.note,
+    rule: defaultRule()
   }));
 };
 
@@ -81,6 +82,7 @@ export const linesFromKit = async (env: Env, kitId: number): Promise<ParsedKitLi
     unit: row.unit,
     qty: Number(row.planned_qty),
     source: row.source,
-    note: row.note
+    note: row.note,
+    rule: defaultRule()
   }));
 };

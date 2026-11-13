@@ -9,13 +9,20 @@ import { assertInBatch, isGuardFailure, releaseGuards } from "./guard";
 import { assertCategoriesExist, parseKitLines, type ParsedKitLine } from "./kit-lines";
 import { optionalNumber, optionalText, requireEnum, requireText } from "./validation";
 
-export interface KitTemplateLineView extends KitTemplateLine {
+/** 读回来的模板行：两个勾选项转成布尔值（库里存 0 和 1）。 */
+export interface KitTemplateLineView extends Omit<
+  KitTemplateLine,
+  "qty_per_set" | "spec_by_diameter"
+> {
+  qty_per_set: boolean;
+  spec_by_diameter: boolean;
   device_category_name: string | null;
 }
 export type KitTemplateRow = KitTemplate & { line_count: number };
 
 const TEMPLATE_STATUSES = ["active", "disabled"] as const;
 const STALE = "数据已变化，请刷新后重试";
+const DIAMETER_RANGE = { min: 300, max: 5000, integer: true };
 
 const nowIso = () => new Date().toISOString();
 
@@ -38,8 +45,9 @@ const insertLine = (
   db
     .prepare(
       `INSERT INTO kit_template_line
-         (template_id, section, sort_order, line_kind, device_category_id, name_text, spec_text, unit, default_qty, note, created_at)
-       VALUES (${templateIdSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+         (template_id, section, sort_order, line_kind, device_category_id, name_text, spec_text, unit, default_qty, note,
+          qty_basis, qty_factor, qty_extra, qty_per_set, spec_by_diameter, role, created_at)
+       VALUES (${templateIdSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       templateIdParam,
@@ -52,6 +60,12 @@ const insertLine = (
       line.unit,
       line.qty,
       line.note,
+      line.rule.qty_basis,
+      line.rule.qty_factor,
+      line.rule.qty_extra,
+      line.rule.qty_per_set ? 1 : 0,
+      line.rule.spec_by_diameter ? 1 : 0,
+      line.rule.role,
       now
     );
 
@@ -87,8 +101,15 @@ export const getKitTemplate = async (
       ORDER BY l.sort_order ASC, l.id ASC`
   )
     .bind(id)
-    .all<KitTemplateLineView>();
-  return { ...template, lines: lines.results ?? [] };
+    .all<KitTemplateLine & { device_category_name: string | null }>();
+  return {
+    ...template,
+    lines: (lines.results ?? []).map((line) => ({
+      ...line,
+      qty_per_set: Number(line.qty_per_set) === 1,
+      spec_by_diameter: Number(line.spec_by_diameter) === 1
+    }))
+  };
 };
 
 export const createKitTemplate = async (
@@ -97,17 +118,19 @@ export const createKitTemplate = async (
   userid: string
 ): Promise<{ id: number }> => {
   const name = requireText(input.name, "模板名称", 30);
+  const diameter = optionalNumber(input.diameter_mm, "管径", DIAMETER_RANGE);
   const lines = parseKitLines(input.lines, "template");
   await assertCategoriesExist(env, lines);
   const now = nowIso();
   try {
     await runAtomicBatch(env.DB, [
       env.DB.prepare(
-        `INSERT INTO kit_template (name, machine_type, remark, status, version, created_by_userid, created_at, updated_at)
-         VALUES (?, ?, ?, 'active', 0, ?, ?, ?)`
+        `INSERT INTO kit_template (name, machine_type, diameter_mm, remark, status, version, created_by_userid, created_at, updated_at)
+         VALUES (?, ?, ?, ?, 'active', 0, ?, ?, ?)`
       ).bind(
         name,
         optionalText(input.machine_type, "机型", 20),
+        diameter,
         optionalText(input.remark, "备注", 200),
         userid,
         now,
@@ -143,6 +166,10 @@ export const updateKitTemplate = async (
   const machineType =
     "machine_type" in input ? optionalText(input.machine_type, "机型", 20) : current.machine_type;
   const remark = "remark" in input ? optionalText(input.remark, "备注", 200) : current.remark;
+  const diameter =
+    "diameter_mm" in input
+      ? optionalNumber(input.diameter_mm, "管径", DIAMETER_RANGE)
+      : current.diameter_mm;
   const status =
     "status" in input ? requireEnum(input.status, "状态", TEMPLATE_STATUSES) : current.status;
   const lines = "lines" in input ? parseKitLines(input.lines, "template") : null;
@@ -152,9 +179,9 @@ export const updateKitTemplate = async (
   const statements = [
     assertInBatch(env.DB, "SELECT 1 FROM kit_template WHERE id = ? AND version = ?", [id, version]),
     env.DB.prepare(
-      `UPDATE kit_template SET name = ?, machine_type = ?, remark = ?, status = ?,
+      `UPDATE kit_template SET name = ?, machine_type = ?, diameter_mm = ?, remark = ?, status = ?,
          version = version + 1, updated_at = ? WHERE id = ?`
-    ).bind(name, machineType, remark, status, now, id),
+    ).bind(name, machineType, diameter, remark, status, now, id),
     ...(lines
       ? [
           env.DB.prepare("DELETE FROM kit_template_line WHERE template_id = ?").bind(id),
