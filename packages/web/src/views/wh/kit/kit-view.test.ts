@@ -9,6 +9,7 @@ import {
   kitActions,
   kitLineProblems,
   newEditableLine,
+  projectsByCreation,
   saveThen,
   toKitLines,
   toTemplateLines
@@ -395,5 +396,55 @@ describe("先保存再提交或确认", () => {
       }
     );
     expect(calls).toEqual(["confirm"]);
+  });
+});
+
+describe("projectsByCreation", () => {
+  const project = (
+    id: number,
+    created_at: string,
+    updated_at = created_at
+  ) => ({
+    id,
+    project_name: `项目${id}`,
+    created_at,
+    updated_at
+  });
+
+  it("最新建的项目排最前，不看修改时间，也不看编号大小", () => {
+    const older = project(
+      45678,
+      "2026-03-27T02:00:00.000Z",
+      "2026-11-13T04:33:00.000Z"
+    );
+    const newest = project(7, "2026-10-26T08:06:00.000Z");
+    const middle = project(
+      300,
+      "2026-05-26T01:00:00.000Z",
+      "2026-10-11T13:06:00.000Z"
+    );
+    expect(projectsByCreation([older, newest, middle]).map(p => p.id)).toEqual([
+      7, 300, 45678
+    ]);
+  });
+
+  it("建档时间一样时编号大的在前；没有建档时间的排最后", () => {
+    const same = "2026-01-09T00:00:00.000Z";
+    const rows = [
+      { ...project(1, ""), created_at: null },
+      project(8, same),
+      project(9, same),
+      project(2, "不是时间")
+    ];
+    expect(projectsByCreation(rows).map(p => p.id)).toEqual([9, 8, 2, 1]);
+  });
+
+  it("不改传进来的数组", () => {
+    const rows = [
+      project(1, "2025-01-01T00:00:00.000Z"),
+      project(2, "2026-01-01T00:00:00.000Z")
+    ];
+    projectsByCreation(rows);
+    expect(rows.map(p => p.id)).toEqual([1, 2]);
   });
 });

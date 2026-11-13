@@ -4,6 +4,7 @@ import { computed, reactive, ref, watch } from "vue";
 import { createKit, listKits, listKitTemplates } from "@/api/wh/kit";
 import type { KitTemplateRow, ProjectKitRow } from "@/api/wh/kit-types";
 import { useProjectOptions } from "@/composables/useProjectOptions";
+import { projectsByCreation } from "../kit-view";
 import { useWhAction } from "../../shared/useWhAction";
 import { useKitPlan } from "../useKitPlan";
 import KitPlanForm from "./KitPlanForm.vue";
@@ -31,12 +32,15 @@ const form = reactive({
 
 const plan = useKitPlan(templates);
 
+// 按建档时间排，最新建的项目在最前
 const projectOptions = computed(() =>
-  props.onlyProjectsOf
-    ? projects.value.filter(
-        project => project.manager_userid === props.onlyProjectsOf
-      )
-    : projects.value
+  projectsByCreation(
+    props.onlyProjectsOf
+      ? projects.value.filter(
+          project => project.manager_userid === props.onlyProjectsOf
+        )
+      : projects.value
+  )
 );
 
 watch(visible, async open => {

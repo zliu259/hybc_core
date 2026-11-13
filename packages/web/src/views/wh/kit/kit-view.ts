@@ -114,6 +114,24 @@ export const kitLineProblems = (
     return [];
   });
 
+/**
+ * 新建清单时项目的顺序：按建档时间，最新建的排最前。
+ * 建档时间一样看编号；没有建档时间或读不出来的排最后。
+ */
+export const projectsByCreation = <
+  T extends { id: number; created_at?: string | null }
+>(
+  projects: readonly T[]
+): T[] => {
+  const createdAt = (project: T): number => {
+    const time = Date.parse(project.created_at ?? "");
+    return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+  };
+  return [...projects].sort(
+    (a, b) => createdAt(b) - createdAt(a) || b.id - a.id
+  );
+};
+
 /** 表格里正在编辑的一行；模板和清单共用，qty 在模板里是默认数量，在清单里是计划数。 */
 export interface EditableKitLine {
   key: string;
