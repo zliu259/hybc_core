@@ -10,6 +10,7 @@ import {
 } from "../services/warehouse/access";
 import { WarehouseError } from "../services/warehouse/errors";
 import {
+  assertCanEditKitFor,
   closeProjectKit,
   confirmProjectKit,
   createProjectKit,
@@ -17,9 +18,11 @@ import {
   submitProjectKit,
   updateProjectKit
 } from "../services/warehouse/kit";
+import { loadPlanSource } from "../services/warehouse/kit-plan-source";
 import { getProjectKit, listProjectKits } from "../services/warehouse/kit-query";
 import { publishWarehouseNotice } from "../services/warehouse/notice";
 import { getKitFulfilment } from "../services/warehouse/project-ledger";
+import { requireId } from "../services/warehouse/validation";
 import { guarded, pathId, readJsonBody, type WhEnv } from "./wh-http";
 
 /** 项目配套清单。谁能建和改在 service 里按项目判断（现场负责人只限自己的项目）。 */
@@ -35,6 +38,19 @@ whKitRoutes.get(
       data: result.items,
       pagination: { page: result.page, pageSize: result.pageSize, total: result.total }
     });
+  })
+);
+
+/** 按项目参数生成：从工作段和项目档案取到的参数。只给能为这个项目建清单的人看。 */
+whKitRoutes.get(
+  "/kit/plan/source",
+  requireKitCreator,
+  guarded(async (c) => {
+    const projectId = requireId(c.req.query("project_id"), "项目");
+    const auth = c.get("auth");
+    const caps = await getWarehouseCapabilities(c.env, auth);
+    await assertCanEditKitFor(c.env, auth, caps, projectId);
+    return c.json({ success: true, data: await loadPlanSource(c.env, projectId) });
   })
 );
 
