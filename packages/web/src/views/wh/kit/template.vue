@@ -33,7 +33,12 @@ const { busy, run } = useWhAction();
 const templates = ref<KitTemplateRow[]>([]);
 const categories = ref<{ id: number; name: string }[]>([]);
 const current = ref<KitTemplateDetail | null>(null);
-const header = ref({ name: "", machine_type: "", remark: "" });
+const header = ref({
+  name: "",
+  machine_type: "",
+  diameter_mm: null as number | null,
+  remark: ""
+});
 const lines = ref<EditableKitLine[]>([]);
 const editorOpen = ref(false);
 const importOpen = ref(false);
@@ -50,6 +55,7 @@ const open = async (id: number) => {
   header.value = {
     name: result.data.name,
     machine_type: result.data.machine_type ?? "",
+    diameter_mm: result.data.diameter_mm,
     remark: result.data.remark ?? ""
   };
   lines.value = editableFromTemplate(result.data.lines);
@@ -101,6 +107,7 @@ const save = async (patch: { status?: "active" | "disabled" } = {}) => {
         version,
         name: header.value.name.trim(),
         machine_type: header.value.machine_type.trim() || null,
+        diameter_mm: header.value.diameter_mm ?? null,
         remark: header.value.remark.trim() || null,
         ...(patch.status
           ? { status: patch.status }
@@ -168,6 +175,11 @@ onMounted(async () => {
       <el-table-column label="机型" width="120">
         <template #default="{ row }">{{ row.machine_type ?? "-" }}</template>
       </el-table-column>
+      <el-table-column label="管径" width="100">
+        <template #default="{ row }">{{
+          row.diameter_mm ? `DN${row.diameter_mm}` : "-"
+        }}</template>
+      </el-table-column>
       <el-table-column prop="line_count" label="行数" width="80" />
       <el-table-column label="状态" width="90">
         <template #default="{ row }">
@@ -194,6 +206,21 @@ onMounted(async () => {
               v-model="header.machine_type"
               maxlength="20"
               placeholder="例如 泥水平衡"
+            />
+          </el-form-item>
+          <el-form-item label="管径（毫米）">
+            <el-input-number
+              :model-value="header.diameter_mm ?? undefined"
+              :min="300"
+              :max="5000"
+              :precision="0"
+              :controls="false"
+              placeholder="例如 1200"
+              style="width: 120px"
+              @update:model-value="
+                (value: number | null | undefined) =>
+                  (header.diameter_mm = value ?? null)
+              "
             />
           </el-form-item>
           <el-form-item label="备注">

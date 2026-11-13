@@ -10,6 +10,7 @@ import {
   newEditableLine,
   type EditableKitLine
 } from "../kit-view";
+import TemplateRuleCell from "./TemplateRuleCell.vue";
 
 const props = defineProps<{
   mode: "template" | "kit";
@@ -273,6 +274,19 @@ const fmt = (value: number | null | undefined) =>
           }}</template>
         </el-table-column>
       </template>
+      <el-table-column
+        v-if="props.mode === 'template'"
+        label="计算规则"
+        min-width="230"
+      >
+        <template #default="{ row }">
+          <TemplateRuleCell
+            v-model="row.rule"
+            :line-kind="row.line_kind"
+            :readonly="props.readonly"
+          />
+        </template>
+      </el-table-column>
       <el-table-column label="备注" min-width="140">
         <template #default="{ row }">
           <span v-if="props.readonly">{{ row.note }}</span>
