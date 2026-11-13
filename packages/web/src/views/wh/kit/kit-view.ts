@@ -134,6 +134,10 @@ export interface EditableKitLine {
   material_label: string;
   /** 模板行上的计算规则；清单行用不到，恒为默认值 */
   rule: KitLineRule;
+  /** 按参数生成的清单：这一行是怎么算的。只用来显示，保存时不带 */
+  calc_text: string | null;
+  /** 按参数生成的清单：生成时的数量。只用来显示，保存时不带 */
+  generated_qty: number | null;
 }
 
 let keySeq = 0;
@@ -157,7 +161,9 @@ export const newEditableLine = (section = ""): EditableKitLine => ({
   note: "",
   spec_choices: [],
   material_label: "",
-  rule: emptyRule()
+  rule: emptyRule(),
+  calc_text: null,
+  generated_qty: null
 });
 
 export const editableFromTemplate = (
@@ -184,7 +190,10 @@ export const editableFromTemplate = (
   }));
 
 export const editableFromKit = (
-  lines: readonly ProjectKitLine[]
+  lines: readonly (ProjectKitLine & {
+    calc_text?: string | null;
+    generated_qty?: number | null;
+  })[]
 ): EditableKitLine[] =>
   lines.map(line => ({
     ...newEditableLine(line.section),
@@ -203,7 +212,12 @@ export const editableFromKit = (
       ? [line.material_name ?? line.name_text, line.material_spec]
           .filter(Boolean)
           .join(" ")
-      : ""
+      : "",
+    calc_text: line.calc_text ?? null,
+    generated_qty:
+      line.generated_qty === null || line.generated_qty === undefined
+        ? null
+        : Number(line.generated_qty)
   }));
 
 const nullable = (text: string): string | null =>

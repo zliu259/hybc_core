@@ -144,6 +144,25 @@ export const ruleSummary = (rule: KitLineRule): string => {
     .join(" · ");
 };
 
+/** 生成时确认过的参数写成几段，清单详情顶部用。空着的不出现。 */
+export const planSummaryParts = (params: KitPlanParams): string[] =>
+  [
+    params.machine_type ?? "",
+    params.pipe_diameter_mm === null ? "" : `D${params.pipe_diameter_mm}`,
+    params.total_length_m === null
+      ? ""
+      : `总长 ${show(params.total_length_m)} 米`,
+    params.longest_drive_m === null
+      ? ""
+      : `最长一段 ${show(params.longest_drive_m)} 米`,
+    params.section_count === null ? "" : `${params.section_count} 段`,
+    `${params.set_count} 套`,
+    params.soil ?? "",
+    params.client_supplies.length > 0
+      ? `甲方提供${params.client_supplies.map(item => CLIENT_SUPPLY_LABELS[item]).join("、")}`
+      : ""
+  ].filter(Boolean);
+
 /** 现在的数量和生成时不一样。不是生成的行（生成时的数量是空的）不算改过。 */
 export const lineChanged = (line: {
   planned_qty: number;

@@ -7,6 +7,7 @@ import {
   lineChanged,
   pickTemplateFor,
   planParamProblems,
+  planSummaryParts,
   ruleSummary
 } from "./kit-plan-view";
 
@@ -166,5 +167,42 @@ describe("planParamProblems", () => {
       "管径必须是 300 到 5000 之间的整数",
       "套数必须是 1 到 200 的整数"
     ]);
+  });
+});
+
+describe("planSummaryParts", () => {
+  const full: KitPlanParams = {
+    machine_type: "泥水平衡",
+    pipe_diameter_mm: 1600,
+    total_length_m: 105,
+    longest_drive_m: 52.5,
+    section_count: 2,
+    set_count: 1,
+    soil: "粉质粘土",
+    client_supplies: ["power", "lodging"]
+  };
+
+  it("把确认过的参数写成几段", () => {
+    expect(planSummaryParts(full)).toEqual([
+      "泥水平衡",
+      "D1600",
+      "总长 105 米",
+      "最长一段 52.5 米",
+      "2 段",
+      "1 套",
+      "粉质粘土",
+      "甲方提供发电、住宿"
+    ]);
+  });
+
+  it("空着的参数不出现；甲方什么都不提供时不出现那一段；套数总是有", () => {
+    expect(planSummaryParts(emptyPlanParams())).toEqual(["1 套"]);
+    expect(
+      planSummaryParts({
+        ...emptyPlanParams(),
+        pipe_diameter_mm: 800,
+        set_count: 2
+      })
+    ).toEqual(["D800", "2 套"]);
   });
 });

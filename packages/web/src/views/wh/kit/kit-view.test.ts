@@ -287,6 +287,66 @@ describe("表格行和接口行互转", () => {
   });
 });
 
+describe("按参数生成的清单行", () => {
+  const detailLine = {
+    id: 9,
+    sort_order: 0,
+    section: "辅助设备",
+    line_kind: "material" as const,
+    device_category_id: null,
+    material_id: 3,
+    name_text: "排泥钢管",
+    spec_text: "Φ114",
+    unit: "米",
+    planned_qty: 300,
+    source: "warehouse" as const,
+    note: null,
+    material_code: "WZ-0007",
+    material_name: "排泥钢管",
+    material_spec: "Φ114",
+    material_unit: "米",
+    material_status: "active",
+    material_kind: "turnover" as const,
+    category_name: null,
+    spec_choices: [],
+    calc_text: "按最长一段：2 × 105 + 60 = 270",
+    generated_qty: 270
+  };
+
+  it("读回来带上算式和生成时的数量；保存时每一行只有原来那十个字段", () => {
+    const [row] = editableFromKit([detailLine]);
+    expect(row).toMatchObject({
+      qty: 300,
+      calc_text: "按最长一段：2 × 105 + 60 = 270",
+      generated_qty: 270
+    });
+    expect(Object.keys(toKitLines([row])[0]).sort()).toEqual([
+      "device_category_id",
+      "line_kind",
+      "material_id",
+      "name_text",
+      "note",
+      "planned_qty",
+      "section",
+      "source",
+      "spec_text",
+      "unit"
+    ]);
+  });
+
+  it("不是生成的行、新加的行：两项都是空的", () => {
+    const plain = { ...detailLine, calc_text: null, generated_qty: null };
+    expect(editableFromKit([plain])[0]).toMatchObject({
+      calc_text: null,
+      generated_qty: null
+    });
+    expect(newEditableLine("工具")).toMatchObject({
+      calc_text: null,
+      generated_qty: null
+    });
+  });
+});
+
 describe("先保存再提交或确认", () => {
   it("表格能改时先保存，保存成功才做下一步", async () => {
     const calls: string[] = [];

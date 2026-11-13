@@ -10,6 +10,7 @@ import {
   newEditableLine,
   type EditableKitLine
 } from "../kit-view";
+import { lineChanged } from "../kit-plan-view";
 import TemplateRuleCell from "./TemplateRuleCell.vue";
 
 const props = defineProps<{
@@ -113,6 +114,9 @@ const rowClass = ({ rowIndex }: { rowIndex: number }) =>
   problemByIndex.value.has(rowIndex) ? "problem-row" : "";
 const fmt = (value: number | null | undefined) =>
   value === null || value === undefined ? "-" : value;
+/** 按参数生成的行，现在的数量和生成时不一样 */
+const wasChanged = (row: EditableKitLine): boolean =>
+  lineChanged({ planned_qty: row.qty ?? 0, generated_qty: row.generated_qty });
 </script>
 
 <template>
@@ -225,7 +229,7 @@ const fmt = (value: number | null | undefined) =>
       </el-table-column>
       <el-table-column
         :label="props.mode === 'kit' ? '计划' : '默认数量'"
-        width="120"
+        :width="props.mode === 'kit' ? 170 : 120"
       >
         <template #default="{ row }">
           <span v-if="props.readonly">{{ fmt(row.qty) }}</span>
@@ -237,6 +241,14 @@ const fmt = (value: number | null | undefined) =>
             :controls="false"
             style="width: 100%"
           />
+          <template v-if="props.mode === 'kit'">
+            <div v-if="row.calc_text" class="calc-text">
+              {{ row.calc_text }}
+            </div>
+            <div v-if="wasChanged(row)" class="changed">
+              已改，生成时是 {{ row.generated_qty }}
+            </div>
+          </template>
         </template>
       </el-table-column>
       <el-table-column v-if="props.mode === 'kit'" label="来源" width="110">
@@ -311,6 +323,20 @@ const fmt = (value: number | null | undefined) =>
 .name-spec {
   display: flex;
   gap: 6px;
+}
+
+.calc-text,
+.changed {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.calc-text {
+  color: var(--el-text-color-secondary);
+}
+
+.changed {
+  color: var(--el-color-warning);
 }
 
 .problem {
