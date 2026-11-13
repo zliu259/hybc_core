@@ -10,8 +10,11 @@ const INITIAL_STATE = [0x67452301, 0xefcdab89, 0x98badcfe, 0x10325476, 0xc3d2e1f
 
 const rotl = (value: number, bits: number): number => (value << bits) | (value >>> (32 - bits));
 
+/** 压缩函数用的 80 个字。单线程同步执行，可以反复用同一块。 */
+const W = new Uint32Array(80);
+
 const compress = (state: number[], block: Uint8Array, offset: number): void => {
-  const w = new Array<number>(80);
+  const w = W;
   for (let i = 0; i < 16; i += 1) {
     const base = offset + i * 4;
     w[i] =
@@ -70,4 +73,71 @@ export const sha1StateHex = (bytes: Uint8Array, wordEndian: "big" | "little"): s
     compress(state, bytes, offset);
   }
   return state.map((word) => wordHex(word, wordEndian)).join("");
+};
+
+export interface Sha1Stream {
+  /** 可以分很多次喂，每次任意长度 */
+  update(bytes: Uint8Array): void;
+  /** 到目前为止的内部状态；已喂的总长度必须是 64 的倍数 */
+  stateHex(wordEndian: "big" | "little"): string;
+  /** 标准 SHA1（加结尾填充）；不改变这个对象，之后还能接着喂 */
+  digestHex(): string;
+}
+
+const BLOCK = 64;
+const TWO_POW_32 = 0x100000000;
+
+/**
+ * 能一段一段喂的 SHA1：既能在 64 字节的整数倍处取内部状态（微盘分块上传的「累积 sha」），
+ * 也能随时取标准摘要。Web Crypto 做不到前一件事。
+ */
+export const createSha1Stream = (): Sha1Stream => {
+  const state = [...INITIAL_STATE];
+  /** 还没凑满 64 字节的尾巴 */
+  const tail = new Uint8Array(BLOCK);
+  let tailLength = 0;
+  let total = 0;
+
+  const update = (bytes: Uint8Array): void => {
+    total += bytes.length;
+    let offset = 0;
+    if (tailLength > 0) {
+      const take = Math.min(BLOCK - tailLength, bytes.length);
+      tail.set(bytes.subarray(0, take), tailLength);
+      tailLength += take;
+      offset = take;
+      if (tailLength < BLOCK) return;
+      compress(state, tail, 0);
+      tailLength = 0;
+    }
+    for (; offset + BLOCK <= bytes.length; offset += BLOCK) compress(state, bytes, offset);
+    if (offset < bytes.length) {
+      tail.set(bytes.subarray(offset), 0);
+      tailLength = bytes.length - offset;
+    }
+  };
+
+  const stateHex = (wordEndian: "big" | "little"): string => {
+    if (tailLength !== 0) {
+      throw new Error(`sha1 stateHex: length must be a multiple of 64, got ${total}`);
+    }
+    return state.map((word) => wordHex(word, wordEndian)).join("");
+  };
+
+  const digestHex = (): string => {
+    // 在副本上做结尾填充：0x80、若干个 0、最后 8 个字节是总位数（大端）
+    const paddedLength = tailLength + 9 <= BLOCK ? BLOCK : BLOCK * 2;
+    const padded = new Uint8Array(paddedLength);
+    padded.set(tail.subarray(0, tailLength), 0);
+    padded[tailLength] = 0x80;
+    const bits = total * 8;
+    const view = new DataView(padded.buffer);
+    view.setUint32(paddedLength - 8, Math.floor(bits / TWO_POW_32));
+    view.setUint32(paddedLength - 4, bits % TWO_POW_32);
+    const copy = [...state];
+    for (let offset = 0; offset < paddedLength; offset += BLOCK) compress(copy, padded, offset);
+    return copy.map((word) => wordHex(word, "big")).join("");
+  };
+
+  return { update, stateHex, digestHex };
 };

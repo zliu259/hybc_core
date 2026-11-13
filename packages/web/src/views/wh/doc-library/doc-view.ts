@@ -82,9 +82,11 @@ export interface DocActions {
   canDelete: boolean;
   canReplace: boolean;
   canShare: boolean;
+  /** 把这一份重新对到微盘 */
+  canRemirror: boolean;
 }
 
-/** 改、删、替换、对外链接都要资料管理员；被替换的旧版本只能看。 */
+/** 改、删、替换、对外链接、重新同步都要资料管理员；被替换的旧版本只能看。 */
 export const docActions = (
   row: Pick<DocFileRow, "is_latest">,
   caps: Pick<WarehouseCapabilities, "is_doc_admin"> | null
@@ -94,7 +96,8 @@ export const docActions = (
     canEdit: allowed,
     canDelete: allowed,
     canReplace: allowed,
-    canShare: allowed
+    canShare: allowed,
+    canRemirror: allowed
   };
 };
 

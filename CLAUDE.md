@@ -90,11 +90,13 @@ Layered architecture: **Routes → Services → D1/KV/R2/Queue**
 - `middleware/` — auth (JWT), rbac, api-key (task nodes), cors, error handler, logger
 - `routes/` — one file per domain (project, contract, payment, approval, etc.), tests colocated as `*.test.ts`
   - `routes/doc-library.ts` (login required) and `routes/doc-library-open.ts` (no login: part upload by upload token, public share download) are both mounted at `/api/v1/doc-library`, the open one first
+  - `routes/doc-library-wedrive.ts` (WeDrive mirror admin: status, setup, on/off, resume, open to company, retry) is mounted at the same path between those two; it attaches `authMiddleware` only to its own paths
 - `services/` — business logic: approval engine (`services/approval/`), AI slot manager, `cf_ai` executor, event bus, serial number gen, task queue
+  - `services/wedrive/` — one-way mirror of device documents to a WeCom WeDrive (微盘) space, run inside the Worker through the existing bridge proxy (no bridge change). Document writes only mark the row `pending` and publish `WAREHOUSE_DOC_MIRROR`; the queue consumer drains under a D1 lock (`mirror-run.ts`) and reconciles one document at a time (`mirror-doc.ts`)
 - `types/` — TypeScript type definitions per domain (env.ts defines all Cloudflare bindings)
 - `migrations/` — D1 SQL migrations (`packages/api/migrations/`, sequential `NNNN_description.sql`)
 - `queue-handler.ts` — Cloudflare Queue consumer
-- `scheduled.ts` — Cron triggers (every 2 min, hourly, daily at 18:00 UTC = 02:00 Beijing). The hourly batch also publishes the warehouse daily digest when it is 08:00 Beijing time.
+- `scheduled.ts` — Cron triggers (every 2 min, hourly, daily at 18:00 UTC = 02:00 Beijing). The hourly batch also publishes the warehouse daily digest when it is 08:00 Beijing time, and requeues WeDrive mirror work that got stuck or failed fewer than 5 times.
 
 **Cloudflare bindings** (defined in `wrangler.toml` and `types/env.ts`):
 - `DB` (D1) — main database
@@ -194,5 +196,6 @@ Production runs as a Cloudflare Container (`.cf-runner-container/`, `runner.hybc
 - CF Worker execution time is limited — heavy compute must go to task-runner nodes
 - AI tasks are async via Queue — never block user submissions
 - WeCom API is rate-limited — contact book cached in KV, messages queued
+- WeDrive (微盘) allows 1000 API calls per enterprise per month on the free edition. Every WeDrive call must go through `WedriveClient` (`services/wedrive/client.ts`), which counts calls per Beijing month in D1 (`system_config`, one atomic statement — not KV, which allows one write per key per second) and pauses the mirror at the budget (default 900) or on errcodes 640019 / 640035; resuming is manual. Tests must use `test/helpers/fake-wedrive.ts`, never real WeCom.
 - Legacy DB is read-only — never write to `LEGACY_DB`
 - task-runner without model API keys uses only the local-rules provider (`MOCK_AI_ONLY=true` forces this even when keys are set); `cf_ai` tasks call Cloudflare AI remotely even in local dev (needs `wrangler login`)

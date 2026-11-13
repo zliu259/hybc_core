@@ -1,0 +1,221 @@
+/**
+ * 微盘镜像的管理动作：看状态、初始化空间、开关、恢复、对全公司开放、重试。
+ * 这里会直接调微盘的只有两处（建空间、给空间加成员），都经过 WedriveClient，照样计数、认限额。
+ */
+import type { Env } from "../../types/env";
+import type { DocMirrorStatus } from "../../types/wh";
+import { IS_LATEST } from "../doc-library/query";
+import { badRequest, WarehouseError } from "../warehouse/errors";
+import { createWedriveClient, WedriveError, WedriveQuotaError, type WedriveClient } from "./client";
+import { kickMirrorDrain, markForMirror } from "./mirror-run";
+import { getCallCount, getWedriveSettings, mirrorActive, saveWedriveSetting } from "./settings";
+
+export interface WedriveStatus {
+  initialized: boolean;
+  enabled: boolean;
+  /** 按已开放处理（新文件不走直传）。问过企微但没收到答复时也是 true */
+  space_open: boolean;
+  /** 企微确实答复了「加上了」 */
+  space_open_confirmed: boolean;
+  paused_reason: string | null;
+  /** 只数应该在微盘里的资料：没删、是最新版 */
+  counts: Record<DocMirrorStatus, number>;
+  /** 已经删除或被替换、但微盘里那一份没删掉（试了几次都失败）的份数 */
+  failed_removals: number;
+  calls_this_month: number;
+  monthly_budget: number;
+  mirror_max_mb: number;
+}
+
+export interface AdminDeps {
+  client?: WedriveClient;
+  now?: () => Date;
+}
+
+export const WEDRIVE_SPACE_NAME = "设备资料库";
+const MB = 1024 * 1024;
+const NOT_INITIALIZED = "微盘空间还没初始化";
+
+const EMPTY_COUNTS: Record<DocMirrorStatus, number> = {
+  pending: 0,
+  syncing: 0,
+  synced: 0,
+  failed: 0,
+  skipped: 0
+};
+
+/**
+ * 管理员手动点的那两步（建空间、开放）：没有错误码的失败（超时、没配密钥）也说清楚是连不上企微，
+ * 不然页面上只有一句「服务器出错」。排空里的调用不走这里：那边要靠「有没有错误码」分辨文件到底传没传上。
+ */
+const reachWedrive = async <T>(apiName: string, action: () => Promise<T>): Promise<T> => {
+  try {
+    return await action();
+  } catch (error) {
+    if (error instanceof WedriveError) throw error;
+    const detail = (error instanceof Error ? error.message : String(error)).slice(0, 120);
+    throw new WedriveError(apiName, null, `连不上企业微信的微盘接口：${detail}`);
+  }
+};
+
+const isMirrorStatus = (value: string): value is DocMirrorStatus => value in EMPTY_COUNTS;
+
+const countByStatus = async (env: Env): Promise<Record<DocMirrorStatus, number>> => {
+  const rows = await env.DB.prepare(
+    `SELECT f.mirror_status AS status, COUNT(*) AS n FROM doc_file f
+      WHERE f.deleted_at IS NULL AND ${IS_LATEST} GROUP BY f.mirror_status`
+  ).all<{ status: string; n: number }>();
+  return (rows.results ?? []).reduce(
+    (counts, row) =>
+      isMirrorStatus(row.status) ? { ...counts, [row.status]: Number(row.n) } : counts,
+    EMPTY_COUNTS
+  );
+};
+
+/** 不该在微盘里（已删除或被替换）、微盘里可能还留着、而且删的时候失败了的。 */
+const countFailedRemovals = async (env: Env): Promise<number> => {
+  const row = await env.DB.prepare(
+    `SELECT COUNT(*) AS n FROM doc_file f
+      WHERE f.mirror_status = 'failed'
+        AND (f.wedrive_fileid IS NOT NULL OR f.wedrive_name IS NOT NULL)
+        AND (f.deleted_at IS NOT NULL OR NOT ${IS_LATEST})`
+  ).first<{ n: number }>();
+  return Number(row?.n ?? 0);
+};
+
+export const getWedriveStatus = async (
+  env: Env,
+  now: Date = new Date()
+): Promise<WedriveStatus> => {
+  const [settings, counts, failedRemovals, calls] = await Promise.all([
+    getWedriveSettings(env),
+    countByStatus(env),
+    countFailedRemovals(env),
+    getCallCount(env, now)
+  ]);
+  return {
+    initialized: settings.space_id !== null,
+    enabled: settings.enabled,
+    space_open: settings.space_open,
+    space_open_confirmed: settings.space_open_confirmed,
+    paused_reason: settings.paused_reason,
+    counts,
+    failed_removals: failedRemovals,
+    calls_this_month: calls,
+    monthly_budget: settings.monthly_budget,
+    mirror_max_mb: Math.round(settings.mirror_max_bytes / MB)
+  };
+};
+
+/** 建一个没有成员的空间，记下空间 ID，把镜像打开，触发一次排空。 */
+export const setupWedrive = async (
+  env: Env,
+  userid: string,
+  deps: AdminDeps = {}
+): Promise<WedriveStatus> => {
+  if ((await getWedriveSettings(env)).space_id !== null) {
+    throw new WarehouseError(409, "微盘空间已经建过了");
+  }
+  const client = deps.client ?? createWedriveClient(env, deps.now ? { now: deps.now } : {});
+  const spaceId = await reachWedrive("space_create", () => client.createSpace(WEDRIVE_SPACE_NAME));
+  await saveWedriveSetting(
+    env,
+    { space_id: spaceId, enabled: true, space_open: false, paused_reason: null },
+    userid
+  );
+  await kickMirrorDrain(env);
+  return getWedriveStatus(env, deps.now?.());
+};
+
+/** { enabled?: boolean, resume?: true }：开关镜像；resume 清掉暂停原因。之后镜像能跑的话触发一次排空。 */
+export const updateWedriveSettings = async (
+  env: Env,
+  input: Record<string, unknown>,
+  userid: string
+): Promise<WedriveStatus> => {
+  const { enabled, resume } = input;
+  if (enabled === undefined && resume === undefined) throw badRequest("没有要改的内容");
+  if (enabled !== undefined && typeof enabled !== "boolean") throw badRequest("开关只能是开或关");
+  if (resume !== undefined && resume !== true) throw badRequest("恢复只能传 true");
+  if ((await getWedriveSettings(env)).space_id === null) {
+    throw new WarehouseError(409, NOT_INITIALIZED);
+  }
+  const saved = await saveWedriveSetting(
+    env,
+    {
+      ...(typeof enabled === "boolean" ? { enabled } : {}),
+      ...(resume === true ? { paused_reason: null } : {})
+    },
+    userid
+  );
+  if (mirrorActive(saved)) await kickMirrorDrain(env);
+  return getWedriveStatus(env);
+};
+
+const OPEN_UNSURE =
+  "没收到企业微信的答复，不确定有没有开放成功。系统先按已开放处理（之后新传的文件不会给人推卡片）。请到企业微信的微盘里看「设备资料库」有没有成员：没有的话，再点一次「对全公司开放」";
+
+/**
+ * 把公司根部门加为只能下载的成员。之后新传的文件一律走分块上传（不推卡片）。
+ * 先把「按已开放处理」记下来再发请求：分块上传在开没开放时都安全，反过来（其实开放了、系统还以为没开放）
+ * 就会继续用直传给全公司推卡片，页面上还写着「谁也看不到」。企微明确拒绝、或者请求根本没发时才改回去；
+ * 没收到答复的留在「不确定」，可以再点一次。
+ */
+export const openWedriveSpace = async (
+  env: Env,
+  userid: string,
+  deps: AdminDeps = {}
+): Promise<WedriveStatus> => {
+  const settings = await getWedriveSettings(env);
+  if (settings.space_id === null) throw new WarehouseError(409, NOT_INITIALIZED);
+  if (settings.space_open_confirmed) throw new WarehouseError(409, "已经对全公司开放过了");
+  const retrying = settings.space_open;
+  if (!retrying) {
+    const counts = await countByStatus(env);
+    const unfinished = counts.pending + counts.syncing;
+    if (unfinished > 0) {
+      throw new WarehouseError(409, `还有 ${unfinished} 份资料没镜像完，等它们完成再开放`);
+    }
+  }
+  const client = deps.client ?? createWedriveClient(env, deps.now ? { now: deps.now } : {});
+  const spaceId = settings.space_id;
+  await saveWedriveSetting(env, { space_open: "asked" }, userid);
+  try {
+    await client.openSpaceToCompany(spaceId);
+  } catch (error) {
+    const definite =
+      error instanceof WedriveError &&
+      (error.errcode !== null || error instanceof WedriveQuotaError);
+    if (!definite) throw new WedriveError("space_acl_add", null, OPEN_UNSURE);
+    // 第一次点就被明确拒绝：确实没开放，改回去。重试时被拒（比如「已经是成员」）说明不了什么，留在不确定。
+    if (!retrying) await saveWedriveSetting(env, { space_open: false }, userid);
+    throw error;
+  }
+  await saveWedriveSetting(env, { space_open: true }, userid);
+  return getWedriveStatus(env, deps.now?.());
+};
+
+/** 把失败的全部标回待镜像（次数清零）并触发排空。返回标了多少份。 */
+export const retryFailedMirrors = async (env: Env): Promise<{ requeued: number }> => {
+  const settings = await getWedriveSettings(env);
+  if (settings.space_id === null) throw new WarehouseError(409, NOT_INITIALIZED);
+  const result = await env.DB.prepare(
+    `UPDATE doc_file SET mirror_status = 'pending', mirror_attempts = 0, mirror_error = NULL
+      WHERE mirror_status = 'failed'`
+  ).run();
+  const requeued = Number(result.meta?.changes ?? 0);
+  if (requeued > 0 && mirrorActive(settings)) await kickMirrorDrain(env);
+  return { requeued };
+};
+
+/** 把一份资料重新对一遍（跳过的、失败的、看着不对的）。 */
+export const remirrorDoc = async (env: Env, id: number): Promise<void> => {
+  const doc = await env.DB.prepare("SELECT id FROM doc_file WHERE id = ? AND deleted_at IS NULL")
+    .bind(id)
+    .first<{ id: number }>();
+  if (!doc) throw new WarehouseError(404, "资料不存在");
+  if ((await getWedriveSettings(env)).space_id === null) {
+    throw new WarehouseError(409, NOT_INITIALIZED);
+  }
+  await markForMirror(env, [id]);
+};

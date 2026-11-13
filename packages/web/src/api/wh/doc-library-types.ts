@@ -9,6 +9,13 @@ export type DocCategory =
   | "other";
 export type DocScope = "device" | "category" | "general";
 export type DocValidity = "expired" | "soon" | "ok" | "none";
+/** 这份资料在微盘里的镜像做到哪了 */
+export type DocMirrorStatus =
+  | "pending"
+  | "syncing"
+  | "synced"
+  | "failed"
+  | "skipped";
 
 export interface DocLibraryConfig {
   part_size: number;
@@ -36,6 +43,10 @@ export interface DocFileRow {
   deleted_at: string | null;
   deleted_by_userid: string | null;
   version: number;
+  mirror_status: DocMirrorStatus;
+  /** 没传上去或不镜像的原因 */
+  mirror_error: string | null;
+  mirrored_at: string | null;
   created_at: string;
   updated_at: string;
   device_code: string | null;

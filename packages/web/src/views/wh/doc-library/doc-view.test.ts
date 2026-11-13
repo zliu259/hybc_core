@@ -34,6 +34,9 @@ const doc = (patch: Partial<DocFileRow> = {}): DocFileRow => ({
   deleted_at: null,
   deleted_by_userid: null,
   version: 0,
+  mirror_status: "pending",
+  mirror_error: null,
+  mirrored_at: null,
   created_at: "2026-11-12T00:00:00.000Z",
   updated_at: "2026-11-12T00:00:00.000Z",
   device_code: null,
@@ -146,13 +149,15 @@ describe("docActions", () => {
     canEdit: true,
     canDelete: true,
     canReplace: true,
-    canShare: true
+    canShare: true,
+    canRemirror: true
   };
   const none = {
     canEdit: false,
     canDelete: false,
     canReplace: false,
-    canShare: false
+    canShare: false,
+    canRemirror: false
   };
 
   it("资料管理员对最新版能改、删、替换、生成对外链接", () => {

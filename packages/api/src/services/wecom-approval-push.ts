@@ -100,6 +100,8 @@ export const fetchViaBridgeStrict = async <T>(
     method?: "GET" | "POST";
     body?: unknown;
     headers?: Record<string, string>;
+    /** 等多久算超时，默认 6 秒；往微盘传分片这类大请求要给长一点 */
+    timeoutMs?: number;
   }
 ): Promise<T> => {
   const proxyUrl = normalizeBridgeProxyUrl(env);
@@ -108,7 +110,7 @@ export const fetchViaBridgeStrict = async <T>(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 6000);
+  const timeout = setTimeout(() => controller.abort(), options?.timeoutMs ?? 6000);
 
   const headers: Record<string, string> = {
     "content-type": "application/json"

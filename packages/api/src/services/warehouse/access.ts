@@ -95,6 +95,11 @@ export const requireDocAdmin = requireCapability(
   (caps) => caps.is_doc_admin,
   "只有库管或资料管理员可以操作"
 );
+/** 看微盘镜像的状态：管资料的人和能改设置的人。 */
+export const requireMirrorViewer = requireCapability(
+  (caps) => caps.is_doc_admin || caps.can_manage_settings,
+  "只有库管、资料管理员、经理或超级管理员可以查看"
+);
 export const requireSettingsManager = requireCapability(
   (caps) => caps.can_manage_settings,
   "只有经理或超级管理员可以操作"

@@ -7,6 +7,7 @@ import { useWhAction } from "../shared/useWhAction";
 import { useWhCapabilities } from "../shared/useWhCapabilities";
 import CategoryPanel from "./components/CategoryPanel.vue";
 import MemberPanel from "./components/MemberPanel.vue";
+import WedriveMirrorCard from "./components/WedriveMirrorCard.vue";
 
 defineOptions({ name: "WhSettings" });
 
@@ -19,6 +20,10 @@ const notifyEnabled = ref(false);
 
 const canManage = computed(() => Boolean(caps.value?.can_manage_settings));
 const canEditCategories = computed(() => Boolean(caps.value?.is_keeper));
+/** 微盘镜像的状态只给管资料的人和能改设置的人看（后端也是这么限的） */
+const canSeeMirror = computed(
+  () => canManage.value || Boolean(caps.value?.is_doc_admin)
+);
 
 const loadSettings = async () => {
   const result = await run(() => getWhSettings());
@@ -96,6 +101,7 @@ onMounted(async () => {
         </el-form-item>
       </el-form>
     </el-card>
+    <WedriveMirrorCard v-if="canSeeMirror" :can-manage="canManage" />
   </div>
 </template>
 

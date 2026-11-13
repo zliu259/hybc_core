@@ -9,6 +9,7 @@ import { runAtomicBatch } from "../db-transaction";
 import { badRequest, WarehouseError } from "../warehouse/errors";
 import { assertInBatch, releaseGuards } from "../warehouse/guard";
 import { optionalDate, optionalId, requireEnum, requireText } from "../warehouse/validation";
+import { markForMirror } from "../wedrive/mirror-run";
 import { getDocLibraryConfig } from "./config";
 import {
   buildDocKey,
@@ -274,6 +275,8 @@ export const completeDocUpload = async (
   }
   const id = await findByKey(env, claims.key);
   if (id === null) throw new Error("doc_file row missing right after insert");
+  // 新的一份要传到微盘，被替换的那一份要从微盘删掉。不等结果，出错也不影响上传。
+  await markForMirror(env, supersedesId === null ? [id] : [id, supersedesId]);
   return { id, replayed: false };
 };
 
