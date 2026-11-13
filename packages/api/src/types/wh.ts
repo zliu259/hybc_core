@@ -177,10 +177,17 @@ export type KitLineKind = "device" | "material" | "text";
 export type KitLineSource = "warehouse" | "site_purchase" | "rental" | "on_site";
 export type ProjectKitStatus = "draft" | "submitted" | "confirmed" | "closed";
 
+/** 模板行的数量怎么算：固定、按总长、按最长一段、按段。 */
+export type KitQtyBasis = "fixed" | "per_total_metre" | "per_longest_metre" | "per_section";
+/** 生成时要特殊处理的行：主机（机头）、发电、住宿。 */
+export type KitLineRole = "main_machine" | "power" | "lodging";
+
 export interface KitTemplate {
   id: number;
   name: string;
   machine_type: string | null;
+  /** 模板对应的管径（毫米），按参数生成时用来选模板和判断规格要不要重选。 */
+  diameter_mm: number | null;
   remark: string | null;
   status: "active" | "disabled";
   version: number;
@@ -201,6 +208,12 @@ export interface KitTemplateLine {
   unit: string | null;
   default_qty: number | null;
   note: string | null;
+  qty_basis: KitQtyBasis;
+  qty_factor: number | null;
+  qty_extra: number | null;
+  qty_per_set: 0 | 1;
+  spec_by_diameter: 0 | 1;
+  role: KitLineRole | null;
 }
 
 export interface ProjectKit {
@@ -220,6 +233,8 @@ export interface ProjectKit {
   closed_by_userid: string | null;
   closed_at: string | null;
   close_reason: string | null;
+  /** 按项目参数生成时存的参数、来源和生成时的原样（JSON）。别的清单是空的。 */
+  plan_json: string | null;
   version: number;
   created_at: string;
   updated_at: string;
