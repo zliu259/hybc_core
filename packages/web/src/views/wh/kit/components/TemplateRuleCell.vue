@@ -10,7 +10,7 @@ import type {
 import { BASIS_LABELS, ROLE_LABELS, ruleSummary } from "../kit-plan-view";
 
 /**
- * 模板一行的计算规则：平时显示一句话，点「改」在格子里展开六样设置。
+ * 模板一行的计算规则：平时显示一句话，点「改」在格子里展开七样设置。
  * 每次改动都发出一个新的规则对象，不改传进来的那个。
  */
 const props = defineProps<{ lineKind: KitLineKind; readonly: boolean }>();
@@ -28,12 +28,22 @@ const patch = (change: Partial<KitLineRule>) => {
 const setBasis = (basis: KitQtyBasis) =>
   patch(
     basis === "fixed"
-      ? { qty_basis: basis, qty_factor: null, qty_extra: null }
+      ? {
+          qty_basis: basis,
+          qty_factor: null,
+          qty_extra: null,
+          qty_round_to: null
+        }
       : { qty_basis: basis }
   );
 // 输入框清空时 Element Plus 给 undefined 或 null：都当作没填
 const toNumber = (value: number | null | undefined): number | null =>
   value === null || value === undefined ? null : value;
+// 取整到的倍数要大于 0：清空或者填 0 都当作不取整
+const toMultiple = (value: number | null | undefined): number | null => {
+  const multiple = toNumber(value);
+  return multiple !== null && multiple > 0 ? multiple : null;
+};
 const setRole = (role: KitLineRole | "" | null | undefined) =>
   patch({ role: role || null });
 </script>
@@ -95,6 +105,21 @@ const setRole = (role: KitLineRole | "" | null | undefined) =>
             @update:model-value="
               (value: number | null | undefined) =>
                 patch({ qty_extra: toNumber(value) })
+            "
+          />
+        </label>
+        <label class="field">
+          <span>取整到</span>
+          <el-input-number
+            data-field="qty_round_to"
+            size="small"
+            :model-value="rule.qty_round_to ?? undefined"
+            :min="0"
+            :controls="false"
+            placeholder="向上取到它的倍数，可不填"
+            @update:model-value="
+              (value: number | null | undefined) =>
+                patch({ qty_round_to: toMultiple(value) })
             "
           />
         </label>

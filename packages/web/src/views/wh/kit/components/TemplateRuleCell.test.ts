@@ -6,7 +6,7 @@ import type { KitLineKind, KitLineRule } from "@/api/wh/kit-types";
 import { emptyRule } from "../kit-plan-view";
 import TemplateRuleCell from "./TemplateRuleCell.vue";
 
-// 模板行上的计算规则：平时一句话，点「改」在格子里展开六样设置。
+// 模板行上的计算规则：平时一句话，点「改」在格子里展开七样设置。
 
 interface Mounted {
   wrapper: VueWrapper;
@@ -78,6 +78,7 @@ describe("模板行的计算规则", () => {
       qty_basis: "per_longest_metre",
       qty_factor: 2,
       qty_extra: 60,
+      qty_round_to: null,
       qty_per_set: true,
       spec_by_diameter: false,
       role: null
@@ -88,12 +89,28 @@ describe("模板行的计算规则", () => {
     );
   });
 
-  it("计算方式改回固定时，系数和另加清空", async () => {
+  it("取整到：固定时没有这一格；填 50 发出 50，清空是 null；一句话里带上", async () => {
+    const { wrapper, current } = mountCell(emptyRule());
+    await wrapper.find(".rule-edit").trigger("click");
+    expect(wrapper.find('[data-field="qty_round_to"]').exists()).toBe(false);
+    await setField(wrapper, "qty_basis", "per_longest_metre");
+    await setField(wrapper, "qty_factor", 1);
+    await setField(wrapper, "qty_round_to", 50);
+    expect(current().qty_round_to).toBe(50);
+    expect(wrapper.find(".rule-text").text()).toBe(
+      "按最长一段 ×1，取到 50 的倍数"
+    );
+    await setField(wrapper, "qty_round_to", undefined);
+    expect(current().qty_round_to).toBeNull();
+  });
+
+  it("计算方式改回固定时，系数、另加和取整到清空", async () => {
     const { wrapper, current } = mountCell({
       ...emptyRule(),
       qty_basis: "per_section",
       qty_factor: 3,
       qty_extra: 1,
+      qty_round_to: 50,
       role: "lodging"
     });
     await wrapper.find(".rule-edit").trigger("click");

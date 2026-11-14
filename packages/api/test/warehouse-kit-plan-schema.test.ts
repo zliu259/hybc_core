@@ -130,3 +130,37 @@ describe.skipIf(!hasSqlite)("0101 配套模板的计算规则", () => {
     expect(roles("泥水平衡 DN600")[0]).toEqual(["机头", "power"]);
   });
 });
+
+// 迁移 0102：模板行的「取整到」，算出的数量向上取到它的倍数。
+
+describe.skipIf(!hasSqlite)("0102 模板行的取整到", () => {
+  let h;
+
+  beforeEach(() => {
+    h = createWarehouseHarness();
+  });
+
+  const seedLine = () => {
+    const templateId = h.seed.kitTemplate({ name: "甲" }, [{ name_text: "机头电缆" }]);
+    return h.database
+      .prepare("SELECT * FROM kit_template_line WHERE template_id = ?")
+      .get(templateId);
+  };
+
+  it("新列默认是空的", () => {
+    expect(seedLine().qty_round_to).toBeNull();
+  });
+
+  it("只收大于 0 的数或者空", () => {
+    const line = seedLine();
+    const set = (value) =>
+      h.database
+        .prepare("UPDATE kit_template_line SET qty_round_to = ? WHERE id = ?")
+        .run(value, line.id);
+    expect(() => set(0)).toThrow(/CHECK/);
+    expect(() => set(-50)).toThrow(/CHECK/);
+    set(50);
+    set(0.5);
+    set(null);
+  });
+});

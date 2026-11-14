@@ -137,6 +137,7 @@ const onImported = (rows: TemplateLineInput[]) => {
       qty_basis: row.qty_basis,
       qty_factor: row.qty_factor,
       qty_extra: row.qty_extra,
+      qty_round_to: row.qty_round_to,
       qty_per_set: row.qty_per_set,
       spec_by_diameter: row.spec_by_diameter,
       role: row.role

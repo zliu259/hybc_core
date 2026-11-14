@@ -39,6 +39,7 @@ export const emptyRule = (): KitLineRule => ({
   qty_basis: "fixed",
   qty_factor: null,
   qty_extra: null,
+  qty_round_to: null,
   qty_per_set: false,
   spec_by_diameter: false,
   role: null
@@ -124,7 +125,7 @@ export const pickTemplateFor = (
 const show = (value: number): string =>
   Number.isInteger(value) ? String(value) : String(Number(value.toFixed(3)));
 
-/** 模板行上规则的一句话，例如「按最长一段 ×2 +60 · 每套一份」。没配是空字符串。 */
+/** 模板行上规则的一句话，例如「按最长一段 ×2 +60，取到 50 的倍数 · 每套一份」。没配是空字符串。 */
 export const ruleSummary = (rule: KitLineRule): string => {
   const basis =
     rule.qty_basis === "fixed"
@@ -133,7 +134,7 @@ export const ruleSummary = (rule: KitLineRule): string => {
         ? `${BASIS_LABELS[rule.qty_basis]}（没填系数）`
         : `${BASIS_LABELS[rule.qty_basis]} ×${show(rule.qty_factor)}${
             rule.qty_extra ? ` +${show(rule.qty_extra)}` : ""
-          }`;
+          }${rule.qty_round_to ? `，取到 ${show(rule.qty_round_to)} 的倍数` : ""}`;
   return [
     basis,
     rule.qty_per_set ? "每套一份" : "",

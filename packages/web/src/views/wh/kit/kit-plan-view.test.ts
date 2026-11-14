@@ -96,7 +96,27 @@ describe("ruleSummary", () => {
       "按总长 ×0.3"
     ],
     [{ role: "lodging" as const }, "住宿"],
-    [{ role: "power" as const, spec_by_diameter: true }, "规格随管径 · 发电"]
+    [{ role: "power" as const, spec_by_diameter: true }, "规格随管径 · 发电"],
+    [
+      {
+        qty_basis: "per_longest_metre" as const,
+        qty_factor: 1,
+        qty_extra: 10,
+        qty_round_to: 50,
+        qty_per_set: true
+      },
+      "按最长一段 ×1 +10，取到 50 的倍数 · 每套一份"
+    ],
+    [
+      {
+        qty_basis: "per_section" as const,
+        qty_factor: 2,
+        qty_round_to: 0.5
+      },
+      "按段 ×2，取到 0.5 的倍数"
+    ],
+    // 固定的行不取整，带着取整到也不显示
+    [{ qty_round_to: 50 }, ""]
   ])("%j → %s", (patch, text) => {
     expect(ruleSummary({ ...emptyRule(), ...patch })).toBe(text);
   });

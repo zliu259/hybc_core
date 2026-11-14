@@ -158,6 +158,12 @@ interface Base {
   missing: MissingInput | null;
 }
 
+/** 向上取到 multiple 的倍数；没填就原样。 */
+const roundUpTo = (value: number, multiple: number | null): number =>
+  multiple === null || multiple <= 0
+    ? value
+    : round3(Math.ceil(round6(value / multiple)) * multiple);
+
 const baseOf = (rule: KitLineRule, defaultQty: number | null, params: PlanParams): Base => {
   const fallback = defaultQty ?? 0;
   if (rule.qty_basis === "fixed") return { qty: fallback, text: null, missing: null };
@@ -176,23 +182,25 @@ const baseOf = (rule: KitLineRule, defaultQty: number | null, params: PlanParams
   const product = round6(rule.qty_factor * value);
   const whole = Math.ceil(product);
   const extra = rule.qty_extra ?? 0;
-  const qty = round3(whole + extra);
+  const sum = round3(whole + extra);
+  const multiple = rule.qty_round_to ?? null;
+  const qty = roundUpTo(sum, multiple);
   const head = `${input.label}：${show(rule.qty_factor)} × ${show(value)}`;
+  // 已经是倍数的不多说一句
+  const stepped =
+    qty === sum || multiple === null ? "" : `，取到 ${show(multiple)} 的倍数 ${show(qty)}`;
   if (whole === product) {
-    const text = extra > 0 ? `${head} + ${show(extra)} = ${show(qty)}` : `${head} = ${show(qty)}`;
-    return { qty, text, missing: null };
+    const text = extra > 0 ? `${head} + ${show(extra)} = ${show(sum)}` : `${head} = ${show(sum)}`;
+    return { qty, text: `${text}${stepped}`, missing: null };
   }
   const rounded = `${head} = ${show(product)}，取整 ${show(whole)}`;
-  return {
-    qty,
-    text: extra > 0 ? `${rounded}，另加 ${show(extra)}，共 ${show(qty)}` : rounded,
-    missing: null
-  };
+  const text = extra > 0 ? `${rounded}，另加 ${show(extra)}，共 ${show(sum)}` : rounded;
+  return { qty, text: `${text}${stepped}`, missing: null };
 };
 
 /**
- * 一行的数量：先按计算方式算基数（缺参数或没填系数时退回模板默认数量），
- * 勾了「每套一份」再乘套数。
+ * 一行的数量：先按计算方式算基数（缺参数或没填系数时退回模板默认数量，不取整），
+ * 填了「取整到」就向上取到它的倍数，勾了「每套一份」再乘套数。
  */
 export const calcLineQty = (
   rule: KitLineRule,
