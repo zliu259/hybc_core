@@ -89,6 +89,7 @@ describe("模板粘贴导入", () => {
     qty_basis: row.qty_basis,
     qty_factor: row.qty_factor,
     qty_extra: row.qty_extra,
+    qty_round_to: row.qty_round_to,
     qty_per_set: row.qty_per_set,
     spec_by_diameter: row.spec_by_diameter,
     role: row.role
@@ -110,6 +111,7 @@ describe("模板粘贴导入", () => {
         qty_basis: "per_longest_metre",
         qty_factor: 2,
         qty_extra: 60,
+        qty_round_to: null,
         qty_per_set: true,
         spec_by_diameter: true,
         role: null
@@ -156,6 +158,65 @@ describe("模板粘贴导入", () => {
         { row: 3, message: factorOnly },
         // 写了 0 也算填了：多半是忘了选计算方式
         { row: 4, message: factorOnly }
+      ]
+    });
+  });
+
+  const withRoundTo = (body: string) =>
+    mapTemplateRows(
+      parseTable(`分节\t类型\t品名\t计算方式\t系数\t另加\t取整到\n${body}`),
+      categories
+    );
+
+  it("认「取整到」这一列：空着是 null，没有这一列也是 null", () => {
+    const result = withRoundTo(
+      [
+        "控制照明系统\t物资\t机头电缆\t按最长一段\t1\t10\t50",
+        "注浆设备\t物资\t对丝\t按段\t1\t\t0.5",
+        "控制照明系统\t物资\t控制线\t按最长一段\t1\t10\t",
+        "设备维修配件\t备忘\t水泵配件\t按段\t2\t\t50"
+      ].join("\n")
+    );
+    expect(result.errors).toEqual([]);
+    expect(result.rows.map(row => row.qty_round_to)).toEqual([
+      50,
+      0.5,
+      null,
+      null
+    ]);
+    expect(
+      withRules("辅助设备\t物资\t排泥钢管\t\t按最长一段\t2\t60\t是\t是\t")
+        .rows[0].qty_round_to
+    ).toBeNull();
+  });
+
+  it("取整到填错了逐行报错；计算方式是固定时填了也报错", () => {
+    expect(
+      withRoundTo(
+        [
+          "工具\t物资\t电焊机\t按段\t1\t\t多",
+          "工具\t物资\t焊把线\t按段\t1\t\t0",
+          "工具\t物资\t角磨机\t按段\t1\t\t-5",
+          "工具\t物资\t电锤\t固定\t\t\t50",
+          "工具\t物资\t风镐\t\t\t\t50"
+        ].join("\n")
+      )
+    ).toEqual({
+      rows: [],
+      errors: [
+        { row: 1, message: "取整到不是数字：多" },
+        { row: 2, message: "取整到要大于 0：0" },
+        { row: 3, message: "取整到不能是负数：-5" },
+        {
+          row: 4,
+          message:
+            "填了取整到，但计算方式是固定。要按它算就填计算方式，不用就把取整到清掉"
+        },
+        {
+          row: 5,
+          message:
+            "填了取整到，但计算方式是固定。要按它算就填计算方式，不用就把取整到清掉"
+        }
       ]
     });
   });

@@ -361,6 +361,35 @@ describe.skipIf(!hasSqlite)("按项目参数生成：生成器", () => {
     ]);
   });
 
+  it("模板行填了取整到：算出的数量取到倍数，算式里说明", async () => {
+    const { id } = await createKitTemplate(
+      h.env,
+      {
+        name: "带取整的模板",
+        machine_type: "泥水平衡",
+        lines: [
+          {
+            section: "控制照明系统",
+            line_kind: "material",
+            name_text: "机头电缆",
+            unit: "米",
+            default_qty: 120,
+            qty_basis: "per_longest_metre",
+            qty_factor: 1,
+            qty_extra: 10,
+            qty_round_to: 50,
+            qty_per_set: true
+          }
+        ]
+      },
+      "keeper"
+    );
+    expect(rowOf(await plan({ ...YANGFANG, set_count: 2 }, id), "机头电缆")).toMatchObject({
+      qty: 300,
+      calc_text: "按最长一段：1 × 105 + 10 = 115，取到 50 的倍数 150；每套一份 × 2 = 300"
+    });
+  });
+
   it("没填系数的行退回默认数量，并提醒", async () => {
     const { id } = await createKitTemplate(
       h.env,

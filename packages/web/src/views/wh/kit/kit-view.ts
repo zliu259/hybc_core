@@ -201,6 +201,8 @@ export const editableFromTemplate = (
       qty_basis: line.qty_basis,
       qty_factor: line.qty_factor,
       qty_extra: line.qty_extra,
+      // 接口还是旧版本时没有这一项
+      qty_round_to: line.qty_round_to ?? null,
       qty_per_set: Boolean(line.qty_per_set),
       spec_by_diameter: Boolean(line.spec_by_diameter),
       role: line.role
@@ -241,14 +243,15 @@ export const editableFromKit = (
 const nullable = (text: string): string | null =>
   text.trim() === "" ? null : text.trim();
 
-/** 保存时的规则：备忘行不存规则，固定的行不存系数和另加（和服务端一致）。 */
+/** 保存时的规则：备忘行不存规则，固定的行不存系数、另加和取整到（和服务端一致）。 */
 const ruleToSave = (row: EditableKitLine): KitLineRule => {
   if (row.line_kind === "text") return emptyRule();
   const fixed = row.rule.qty_basis === "fixed";
   return {
     ...row.rule,
     qty_factor: fixed ? null : row.rule.qty_factor,
-    qty_extra: fixed ? null : row.rule.qty_extra
+    qty_extra: fixed ? null : row.rule.qty_extra,
+    qty_round_to: fixed ? null : row.rule.qty_round_to
   };
 };
 

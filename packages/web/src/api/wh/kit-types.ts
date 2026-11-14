@@ -25,6 +25,8 @@ export interface KitLineRule {
   qty_factor: number | null;
   /** 算完再加的固定余量 */
   qty_extra: number | null;
+  /** 加完再向上取到它的倍数；固定时为空 */
+  qty_round_to: number | null;
   /** 每套设备各要一份：结果再乘套数 */
   qty_per_set: boolean;
   spec_by_diameter: boolean;

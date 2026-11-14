@@ -1,7 +1,7 @@
 /**
  * 「粘贴模板行」：从 Excel 复制的表格 → 模板行。
  * 必有的列：分节、类型、品名；可选：规格、单位、默认数量、设备类别、备注，
- * 以及计算规则的六列：计算方式、系数、另加、每套一份、规格随管径、标记。
+ * 以及计算规则的七列：计算方式、系数、另加、取整到、每套一份、规格随管径、标记。
  */
 import type {
   KitLineKind,
@@ -81,9 +81,19 @@ const ruleOfRow = (cell: Cell, lineKind: KitLineKind): KitLineRule | string => {
   if (typeof factor === "string") return factor;
   const extra = numberCell("另加", cell("另加"));
   if (typeof extra === "string") return extra;
+  const roundTo = numberCell("取整到", cell("取整到"));
+  if (typeof roundTo === "string") return roundTo;
+  if (roundTo === 0) return `取整到要大于 0：${cell("取整到")}`;
   if (basis === "fixed") {
-    // 固定的行不用系数和另加。填了多半是忘了选计算方式：说出来，不悄悄丢掉
-    const filled = factor !== null ? "系数" : extra !== null ? "另加" : null;
+    // 固定的行不用系数、另加和取整到。填了多半是忘了选计算方式：说出来，不悄悄丢掉
+    const filled =
+      factor !== null
+        ? "系数"
+        : extra !== null
+          ? "另加"
+          : roundTo !== null
+            ? "取整到"
+            : null;
     if (filled)
       return `填了${filled}，但计算方式是固定。要按它算就填计算方式，不用就把${filled}清掉`;
   }
@@ -97,6 +107,7 @@ const ruleOfRow = (cell: Cell, lineKind: KitLineKind): KitLineRule | string => {
     qty_basis: basis,
     qty_factor: factor,
     qty_extra: extra,
+    qty_round_to: roundTo,
     qty_per_set: perSet,
     spec_by_diameter: byDiameter,
     role

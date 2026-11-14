@@ -47,6 +47,7 @@ const ruleOf = (row: KitTemplateLine): KitLineRule => ({
   qty_basis: row.qty_basis,
   qty_factor: row.qty_factor === null ? null : Number(row.qty_factor),
   qty_extra: row.qty_extra === null ? null : Number(row.qty_extra),
+  qty_round_to: row.qty_round_to === null ? null : Number(row.qty_round_to),
   qty_per_set: Number(row.qty_per_set) === 1,
   spec_by_diameter: Number(row.spec_by_diameter) === 1,
   role: row.role

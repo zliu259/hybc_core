@@ -244,7 +244,7 @@ describe("表格行和接口行互转", () => {
     ]);
   });
 
-  it("模板行的规则：读回来再保存原样不变；固定的行不带系数和另加", () => {
+  it("模板行的规则：读回来再保存原样不变；固定的行不带系数、另加和取整到", () => {
     const line = (patch: Partial<KitTemplateLine>): KitTemplateLine => ({
       id: 1,
       sort_order: 0,
@@ -264,6 +264,7 @@ describe("表格行和接口行互转", () => {
       qty_basis: "per_longest_metre" as const,
       qty_factor: 2,
       qty_extra: 60,
+      qty_round_to: 50,
       qty_per_set: true,
       spec_by_diameter: true,
       role: null
@@ -271,7 +272,12 @@ describe("表格行和接口行互转", () => {
     const [calculated, fixed] = toTemplateLines(
       editableFromTemplate([
         line(rule),
-        line({ qty_factor: 2, qty_extra: 5, role: "lodging" })
+        line({
+          qty_factor: 2,
+          qty_extra: 5,
+          qty_round_to: 50,
+          role: "lodging"
+        })
       ])
     );
     expect(calculated).toMatchObject(rule);
@@ -279,6 +285,7 @@ describe("表格行和接口行互转", () => {
       qty_basis: "fixed",
       qty_factor: null,
       qty_extra: null,
+      qty_round_to: null,
       role: "lodging"
     });
   });

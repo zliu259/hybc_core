@@ -211,6 +211,7 @@ export interface KitTemplateLine {
   qty_basis: KitQtyBasis;
   qty_factor: number | null;
   qty_extra: number | null;
+  qty_round_to: number | null;
   qty_per_set: 0 | 1;
   spec_by_diameter: 0 | 1;
   role: KitLineRole | null;

@@ -46,8 +46,8 @@ const insertLine = (
     .prepare(
       `INSERT INTO kit_template_line
          (template_id, section, sort_order, line_kind, device_category_id, name_text, spec_text, unit, default_qty, note,
-          qty_basis, qty_factor, qty_extra, qty_per_set, spec_by_diameter, role, created_at)
-       VALUES (${templateIdSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+          qty_basis, qty_factor, qty_extra, qty_round_to, qty_per_set, spec_by_diameter, role, created_at)
+       VALUES (${templateIdSql}, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
     .bind(
       templateIdParam,
@@ -63,6 +63,7 @@ const insertLine = (
       line.rule.qty_basis,
       line.rule.qty_factor,
       line.rule.qty_extra,
+      line.rule.qty_round_to,
       line.rule.qty_per_set ? 1 : 0,
       line.rule.spec_by_diameter ? 1 : 0,
       line.rule.role,

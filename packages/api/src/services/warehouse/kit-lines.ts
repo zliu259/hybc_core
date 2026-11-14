@@ -46,6 +46,8 @@ export interface KitLineRule {
   qty_factor: number | null;
   /** 算完再加的固定余量；固定时为空 */
   qty_extra: number | null;
+  /** 加完再向上取到它的倍数（电缆按 50 米一档）；固定时为空 */
+  qty_round_to: number | null;
   /** 每套设备各要一份：结果再乘套数 */
   qty_per_set: boolean;
   spec_by_diameter: boolean;
@@ -56,6 +58,7 @@ export const defaultRule = (): KitLineRule => ({
   qty_basis: "fixed",
   qty_factor: null,
   qty_extra: null,
+  qty_round_to: null,
   qty_per_set: false,
   spec_by_diameter: false,
   role: null
@@ -92,6 +95,16 @@ const withRow = <T>(index: number, parse: () => T): T => {
 };
 
 const RULE_NUMBER_RANGE = { min: 0, max: 1_000_000 };
+/** 数量最多 3 位小数，取整到的倍数也一样；0 不是倍数。 */
+const ROUND_TO_RANGE = { min: 0.001, max: 1_000_000 };
+
+const parseRoundTo = (value: unknown): number | null => {
+  const roundTo = optionalNumber(value, "取整到", ROUND_TO_RANGE);
+  if (roundTo !== null && Math.round(roundTo * 1e3) / 1e3 !== roundTo) {
+    throw badRequest("取整到最多 3 位小数");
+  }
+  return roundTo;
+};
 
 const isBlank = (value: unknown): boolean =>
   value === undefined || value === null || (typeof value === "string" && value.trim() === "");
@@ -102,7 +115,7 @@ const parseFlag = (value: unknown, label: string): boolean => {
   throw badRequest(`${label}只能是勾或不勾`);
 };
 
-/** 模板行的规则。备忘行不参与计算，不存规则；固定的行不存系数和另加。 */
+/** 模板行的规则。备忘行不参与计算，不存规则；固定的行不存系数、另加和取整到。 */
 const parseRule = (line: Record<string, unknown>, lineKind: KitLineKind): KitLineRule => {
   if (lineKind === "text") return defaultRule();
   const basis = isBlank(line.qty_basis)
@@ -110,10 +123,12 @@ const parseRule = (line: Record<string, unknown>, lineKind: KitLineKind): KitLin
     : requireEnum(line.qty_basis, "计算方式", KIT_QTY_BASES);
   const factor = optionalNumber(line.qty_factor, "系数", RULE_NUMBER_RANGE);
   const extra = optionalNumber(line.qty_extra, "另加", RULE_NUMBER_RANGE);
+  const roundTo = parseRoundTo(line.qty_round_to);
   return {
     qty_basis: basis,
     qty_factor: basis === "fixed" ? null : factor,
     qty_extra: basis === "fixed" ? null : extra,
+    qty_round_to: basis === "fixed" ? null : roundTo,
     qty_per_set: parseFlag(line.qty_per_set, "每套一份"),
     spec_by_diameter: parseFlag(line.spec_by_diameter, "规格随管径"),
     role: isBlank(line.role) ? null : requireEnum(line.role, "标记", KIT_LINE_ROLES)

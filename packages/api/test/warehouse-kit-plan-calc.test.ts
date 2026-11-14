@@ -8,6 +8,7 @@ const rule = (patch = {}) => ({
   qty_basis: "fixed",
   qty_factor: null,
   qty_extra: null,
+  qty_round_to: null,
   qty_per_set: false,
   spec_by_diameter: false,
   role: null,
@@ -151,6 +152,102 @@ describe("calcLineQty", () => {
       qty: 3.372,
       calc_text: "按段：1 × 1 + 0.124 = 1.124；每套一份 × 3 = 3.372",
       missing: null
+    });
+  });
+
+  describe("取整到：算出的数量向上取到它的倍数", () => {
+    const cable = (patch = {}) =>
+      rule({
+        qty_basis: "per_longest_metre",
+        qty_factor: 1,
+        qty_extra: 10,
+        qty_round_to: 50,
+        ...patch
+      });
+
+    it("已经是倍数的不动，算式也不多说一句", () => {
+      expect(calcLineQty(cable(), 120, params({ longest_drive_m: 190 }))).toEqual({
+        qty: 200,
+        calc_text: "按最长一段：1 × 190 + 10 = 200",
+        missing: null
+      });
+    });
+
+    it("不是倍数的往上取，算式说明取到了多少", () => {
+      expect(calcLineQty(cable(), 120, params({ longest_drive_m: 195 }))).toEqual({
+        qty: 250,
+        calc_text: "按最长一段：1 × 195 + 10 = 205，取到 50 的倍数 250",
+        missing: null
+      });
+    });
+
+    it("先取整再加另加，最后才取到倍数", () => {
+      const perTotal = (patch = {}) =>
+        rule({ qty_basis: "per_total_metre", qty_factor: 0.3, qty_round_to: 10, ...patch });
+      expect(calcLineQty(perTotal(), null, params())).toEqual({
+        qty: 40,
+        calc_text: "按总长：0.3 × 105 = 31.5，取整 32，取到 10 的倍数 40",
+        missing: null
+      });
+      expect(calcLineQty(perTotal({ qty_extra: 60, qty_round_to: 50 }), null, params())).toEqual({
+        qty: 100,
+        calc_text: "按总长：0.3 × 105 = 31.5，取整 32，另加 60，共 92，取到 50 的倍数 100",
+        missing: null
+      });
+    });
+
+    it("每套一份：每套先取到倍数，再乘套数", () => {
+      expect(
+        calcLineQty(
+          cable({ qty_per_set: true }),
+          120,
+          params({ longest_drive_m: 195, set_count: 2 })
+        )
+      ).toEqual({
+        qty: 500,
+        calc_text: "按最长一段：1 × 195 + 10 = 205，取到 50 的倍数 250；每套一份 × 2 = 500",
+        missing: null
+      });
+    });
+
+    it("倍数可以是小数；0.3 取到 0.1 的倍数还是 0.3", () => {
+      const perSection = (patch = {}) =>
+        rule({ qty_basis: "per_section", qty_factor: 1, ...patch });
+      expect(
+        calcLineQty(perSection({ qty_extra: 0.3, qty_round_to: 0.5 }), null, params())
+      ).toEqual({
+        qty: 1.5,
+        calc_text: "按段：1 × 1 + 0.3 = 1.3，取到 0.5 的倍数 1.5",
+        missing: null
+      });
+      expect(
+        calcLineQty(
+          perSection({ qty_factor: 0, qty_extra: 0.3, qty_round_to: 0.1 }),
+          null,
+          params()
+        )
+      ).toEqual({ qty: 0.3, calc_text: "按段：0 × 1 + 0.3 = 0.3", missing: null });
+    });
+
+    it("缺参数或没填系数时退回的默认数量不取整", () => {
+      expect(calcLineQty(cable(), 120, params({ longest_drive_m: null }))).toEqual({
+        qty: 120,
+        calc_text: "缺最长一段，用模板默认数量",
+        missing: "longest_drive"
+      });
+      expect(calcLineQty(cable({ qty_factor: null }), 120, params())).toEqual({
+        qty: 120,
+        calc_text: "没填系数，用模板默认数量",
+        missing: "factor"
+      });
+    });
+
+    it("固定的行不取整", () => {
+      expect(calcLineQty(rule({ qty_round_to: 50 }), 4, params())).toEqual({
+        qty: 4,
+        calc_text: null,
+        missing: null
+      });
     });
   });
 

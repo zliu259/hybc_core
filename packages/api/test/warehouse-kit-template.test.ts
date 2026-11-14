@@ -302,10 +302,62 @@ describe.skipIf(!hasSqlite)("配套清单模板", () => {
     ]);
   });
 
+  it("取整到：存进去读得回来，写成字符串也认；不传是空的；固定的行不存", async () => {
+    const line = (patch) => ({ section: "控制照明系统", line_kind: "material", ...patch });
+    const { id } = await createKitTemplate(
+      h.env,
+      {
+        name: "甲",
+        lines: [
+          line({
+            name_text: "机头电缆",
+            qty_basis: "per_longest_metre",
+            qty_factor: 1,
+            qty_extra: 10,
+            qty_round_to: 50
+          }),
+          line({ name_text: "对丝", qty_basis: "per_section", qty_factor: 1, qty_round_to: "0.5" }),
+          line({ name_text: "控制线", qty_basis: "per_longest_metre", qty_factor: 1 }),
+          line({ name_text: "电焊机", qty_round_to: 50 })
+        ]
+      },
+      "keeper"
+    );
+    const roundTo = async () => (await getKitTemplate(h.env, id)).lines.map((l) => l.qty_round_to);
+    expect(await roundTo()).toEqual([50, 0.5, null, null]);
+    // 修改时行整体替换：没带的回到空
+    await updateKitTemplate(h.env, id, {
+      version: 0,
+      lines: [
+        line({ name_text: "机头电缆", qty_basis: "per_longest_metre", qty_factor: 1 }),
+        line({
+          name_text: "控制线",
+          qty_basis: "per_longest_metre",
+          qty_factor: 1,
+          qty_round_to: 100
+        })
+      ]
+    });
+    expect(await roundTo()).toEqual([null, 100]);
+  });
+
   it.each([
     [{ qty_basis: "per_set" }, "第 1 行：计算方式不对"],
     [{ qty_basis: "per_section", qty_factor: -1 }, "第 1 行：系数必须是 0 到 1000000 之间的数字"],
     [{ qty_basis: "per_section", qty_extra: "多" }, "第 1 行：另加必须是 0 到 1000000 之间的数字"],
+    [
+      { qty_basis: "per_section", qty_round_to: 0 },
+      "第 1 行：取整到必须是 0.001 到 1000000 之间的数字"
+    ],
+    [
+      { qty_basis: "per_section", qty_round_to: -50 },
+      "第 1 行：取整到必须是 0.001 到 1000000 之间的数字"
+    ],
+    [
+      { qty_basis: "per_section", qty_round_to: "多" },
+      "第 1 行：取整到必须是 0.001 到 1000000 之间的数字"
+    ],
+    [{ qty_basis: "per_section", qty_round_to: 12.3456 }, "第 1 行：取整到最多 3 位小数"],
     [{ qty_per_set: "yes" }, "第 1 行：每套一份只能是勾或不勾"],
     [{ spec_by_diameter: 2 }, "第 1 行：规格随管径只能是勾或不勾"],
     [{ role: "boss" }, "第 1 行：标记不对"]
